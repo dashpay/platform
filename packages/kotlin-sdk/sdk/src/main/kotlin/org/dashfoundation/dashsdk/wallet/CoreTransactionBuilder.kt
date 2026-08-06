@@ -18,9 +18,14 @@ import java.util.concurrent.atomic.AtomicLong
  * backstop; the class is NOT thread-safe (the FFI builder must be used from
  * one thread at a time).
  *
- * ## Not a public API — drive only through [ManagedPlatformWallet.sendToAddresses]
+ * ## Not a public API — drive only through [ManagedPlatformWallet]
  *
- * The old [setFunding] + [buildSigned] sequence remains only as a deprecated ABI
+ * SDK consumers reach this builder through
+ * [ManagedPlatformWallet.sendToAddresses] (immediate broadcast) and
+ * [ManagedPlatformWallet.buildSignedPayment] (deferred BIP70/BIP270 flows and
+ * MAYACHAIN-style deposits — the option parameters there thread [addOpReturn],
+ * [preserveOutputOrder] and [changeToFirstInput] into the build). The old
+ * [setFunding] + [buildSigned] sequence remains only as a deprecated ABI
  * compatibility path and is not used by SDK convenience sends.
  *
  * @param network the wallet network — output and change addresses are
@@ -63,7 +68,8 @@ class CoreTransactionBuilder internal constructor(network: Network) : AutoClosea
 
     /**
      * Add a zero-value OP_RETURN output carrying [data] for a MAYACHAIN-style
-     * deposit memo (mirror of Swift's `addOpReturn`). Payloads over the
+     * deposit memo (mirror of Swift's `addOpReturn` in
+     * packages/swift-sdk/.../CoreWallet/CoreTransactionBuilder.swift). Payloads over the
      * 80-byte standardness limit are rejected Rust-side without disturbing
      * outputs already added.
      * See https://docs.mayaprotocol.com/mayachain-dev-docs/concepts/sending-transactions
@@ -80,7 +86,8 @@ class CoreTransactionBuilder internal constructor(network: Network) : AutoClosea
     /**
      * Preserve outputs in insertion order (skip BIP-69 sorting) for a
      * MAYACHAIN-style deposit — vault must stay VOUT0, memo VOUT1 (mirror of
-     * Swift's `preserveOutputOrder`).
+     * Swift's `preserveOutputOrder` in
+     * packages/swift-sdk/.../CoreWallet/CoreTransactionBuilder.swift).
      */
     internal fun preserveOutputOrder(): CoreTransactionBuilder = apply {
         WalletManagerNative.coreTxBuilderPreserveOutputOrder(handle)
@@ -89,7 +96,8 @@ class CoreTransactionBuilder internal constructor(network: Network) : AutoClosea
     /**
      * Route change to the first selected input's address (VIN0) for a
      * MAYACHAIN-style deposit — MAYAChain identifies the depositor by VIN0
-     * and pays refunds there (mirror of Swift's `changeToFirstInput`).
+     * and pays refunds there (mirror of Swift's `changeToFirstInput` in
+     * packages/swift-sdk/.../CoreWallet/CoreTransactionBuilder.swift).
      */
     internal fun changeToFirstInput(): CoreTransactionBuilder = apply {
         WalletManagerNative.coreTxBuilderChangeToFirstInput(handle)
@@ -267,7 +275,8 @@ class FinalizedCoreTransaction internal constructor(handle: Long, val fee: Long)
 
     /**
      * Consensus-serialized signed transaction bytes (copied out) WITHOUT
-     * consuming the ownership token — mirror of Swift's `serializedData()`.
+     * consuming the ownership token — mirror of Swift's `serializedData()` in
+     * packages/swift-sdk/.../CoreWallet/CoreTransactionBuilder.swift.
      * Lets the caller assert the deposit shape (e.g. MAYACHAIN's
      * vault/OP_RETURN/change output order) before deciding to broadcast.
      */

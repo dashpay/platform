@@ -19,7 +19,11 @@
     "core_wallet_signed_payment_broadcast": "packages/rs-platform-wallet-ffi/src/core_wallet/signed_payment.rs",
     "core_wallet_signed_payment_finalize": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
     "core_wallet_signed_payment_release": "packages/rs-platform-wallet-ffi/src/core_wallet/signed_payment.rs",
+    "core_wallet_signed_transaction_v2_bytes": "packages/rs-platform-wallet-ffi/src/core_wallet/broadcast.rs",
+    "core_wallet_tx_builder_add_op_return": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
+    "core_wallet_tx_builder_change_to_first_input": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
     "core_wallet_tx_builder_finalize": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
+    "core_wallet_tx_builder_preserve_output_order": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
     "dash_sdk_sign_async_completion": "packages/rs-sdk-ffi/src/signer.rs",
     "dpns_name_array_free": "packages/rs-platform-wallet-ffi/src/dpns.rs",
     "managed_identity_get_contested_dpns_names": "packages/rs-platform-wallet-ffi/src/dpns.rs",
@@ -251,6 +255,74 @@
           "file": "packages/rs-platform-wallet/src/wallet/signed_payment_registry.rs",
           "id": "double_broadcast_is_a_stale_token_error",
           "command": "cargo test -p platform-wallet double_broadcast_is_a_stale_token_error",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "core.maya_op_return_deposit",
+      "title": "MAYACHAIN-shaped deposit build: OP_RETURN memo, preserved output order, change to VIN0, pre-broadcast bytes",
+      "area": "correctness",
+      "shared_apis": [
+        "core_wallet_tx_builder_add_op_return",
+        "core_wallet_tx_builder_preserve_output_order",
+        "core_wallet_tx_builder_change_to_first_input",
+        "core_wallet_signed_transaction_v2_bytes"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "not-applicable",
+          "restart": "not_applicable",
+          "reason": null
+        },
+        "kotlin": {
+          "sdk": "supported",
+          "example_app": "not-applicable",
+          "restart": "not_applicable",
+          "reason": null
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "integration",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKIntegrationTests/Core/MayaDepositVerificationIntegrationTests.swift",
+          "id": "testPrompt04StaticProofAndLegacyFeeParity",
+          "command": "RUN_INTEGRATION_TESTS=1 swift test --package-path packages/swift-sdk --filter MayaDepositVerificationIntegrationTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "integration",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKIntegrationTests/Core/MayaDepositVerificationIntegrationTests.swift",
+          "id": "testOpReturnCeilingBoundaryAndRejectionPreservesBuilder",
+          "command": "RUN_INTEGRATION_TESTS=1 swift test --package-path packages/swift-sdk --filter MayaDepositVerificationIntegrationTests",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/wallet/CoreTxBuilderOpReturnBindingTest.kt",
+          "id": "mayaShapeOptionsBindAndAccept",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/wallet/BuildSignedPaymentMayaOptionsTest.kt",
+          "id": "mayaOptionsThreadThroughThePublicBuildSignedPayment",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/wallet/BuildSignedPaymentMayaOptionsTest.kt",
+          "id": "oversizeMemoFailsBeforeSelectionAndWalletSurvives",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
           "covers_restart": false
         }
       ]
