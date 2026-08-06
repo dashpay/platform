@@ -738,12 +738,16 @@ pub struct PersistenceCallbacks {
             count: usize,
         ),
     >,
-    /// Forwards DashPay payment-history rows (the
-    /// `IdentityEntry.dashpay_payments` snapshots and any merged
-    /// `dashpay_payments_overlay` on the changeset, flattened + deduped
-    /// per `(owner, txid)`) to the host. Appended at the END so the
-    /// struct layout stays stable — a host built against the previous
-    /// vtable keeps working, it simply never sets this slot.
+    /// Forwards DashPay payment-history rows — the changeset's
+    /// `dashpay_payments_overlay`, which `record_dashpay_payment` (the
+    /// single writer for every payment mutation) populates with exactly
+    /// the changed `(owner, txid)` row(s) — to the host. Per-call work
+    /// is therefore bounded by the delta, never the identity's
+    /// accumulated history; the full-map snapshots riding
+    /// `changeset.identities` are deliberately not projected. Appended
+    /// at the END so the struct layout stays stable — a host built
+    /// against the previous vtable keeps working, it simply never sets
+    /// this slot.
     ///
     /// Rows are upserts only: the Rust-side map is append-only history
     /// keyed by txid, so status flips (Pending → Confirmed / Failed)
@@ -1336,38 +1340,24 @@ impl PlatformWalletPersistence for FFIPersister {
             }
         }
 
-        // Send DashPay payment-history rows. Payments reach a store round
-        // on TWO carriers: the full-map `IdentityEntry.dashpay_payments`
-        // snapshot inside `changeset.identities` (what
-        // `record_dashpay_payment` / every scalar identity mutation
-        // emits) and the merged `dashpay_payments_overlay` (what
-        // `Merge`-combined rounds carry). Project both, deduped by
-        // `(owner, txid)` with the overlay winning — it is the
-        // later-merged delta. Fires AFTER the identities callback so a
-        // brand-new owner's `PersistentIdentity` row is already staged
-        // in the same round when the host resolves the payment's owner
-        // link.
-        if let Some(cb) = self.callbacks.on_persist_dashpay_payments_fn {
-            let mut merged: std::collections::BTreeMap<
-                (dpp::prelude::Identifier, &str),
-                &platform_wallet::wallet::identity::PaymentEntry,
-            > = std::collections::BTreeMap::new();
-            if let Some(ref id_cs) = changeset.identities {
-                for (identity_id, entry) in &id_cs.identities {
-                    for (txid, payment) in &entry.dashpay_payments {
-                        merged.insert((*identity_id, txid.as_str()), payment);
-                    }
-                }
-            }
-            if let Some(ref overlay) = changeset.dashpay_payments_overlay {
-                for (identity_id, payments) in overlay {
-                    for (txid, payment) in payments {
-                        merged.insert((*identity_id, txid.as_str()), payment);
-                    }
-                }
-            }
-            if !merged.is_empty() {
-                let (entries, _string_storage) = build_payment_persist_entries(&merged);
+        // Send DashPay payment-history rows — the `dashpay_payments_overlay`
+        // ONLY. `record_dashpay_payment`, the single writer for every
+        // payment mutation (live sends, confirm-sweep flips, reconstruction
+        // upserts), emits exactly the changed `(owner, txid)` row on the
+        // overlay, so per-round work here is bounded by the delta. The
+        // full-map `IdentityEntry.dashpay_payments` snapshots riding
+        // `changeset.identities` are deliberately NOT projected: replaying
+        // an identity's complete history on every snapshot (including
+        // unrelated scalar mutations) is unbounded per-call work as history
+        // grows, against the persistence trait's bounded-work guidance —
+        // history bootstrap is the host restore buffer's job, and the
+        // getter-backed reconciler covers gaps. Fires AFTER the identities
+        // callback so a brand-new owner's `PersistentIdentity` row is
+        // already staged in the same round when the host resolves the
+        // payment's owner link.
+        if let Some(ref overlay) = changeset.dashpay_payments_overlay {
+            if let Some(cb) = self.callbacks.on_persist_dashpay_payments_fn {
+                let (entries, _string_storage) = build_payment_persist_entries(overlay);
                 if !entries.is_empty() {
                     let result = unsafe {
                         cb(
@@ -6117,18 +6107,19 @@ mod tests {
         );
     }
 
-    /// A store round whose changeset carries payment rows on either
-    /// carrier — the full-map `IdentityEntry.dashpay_payments` snapshot
-    /// (what `record_dashpay_payment` emits inside
-    /// `changeset.identities`) or a merged `dashpay_payments_overlay`
-    /// — must flatten BOTH through `on_persist_dashpay_payments_fn`,
-    /// deduped by `(owner, txid)` with the overlay winning. This is the
-    /// write half of the relaunch-durability loop: without it a live
-    /// send's Sent entry + memo exist only in memory and `store()`
-    /// returns Ok having persisted nothing for payments, silently
-    /// defeating `record_dashpay_payment`'s rollback invariant.
+    /// A store round carrying a `dashpay_payments_overlay` — the
+    /// single-row delta `record_dashpay_payment` emits for every
+    /// payment mutation — must project exactly those rows through
+    /// `on_persist_dashpay_payments_fn`, and a round carrying only the
+    /// full-map `IdentityEntry.dashpay_payments` snapshot must NOT
+    /// fire the callback at all. The first half is the write half of
+    /// the relaunch-durability loop (without it a live send's Sent
+    /// entry + memo exist only in memory while `store()` returns Ok);
+    /// the second half pins the bounded-work contract — replaying an
+    /// identity's complete history on every snapshot is unbounded
+    /// per-call work as history grows.
     #[test]
-    fn store_projects_dashpay_payments_from_identities_and_overlay() {
+    fn store_projects_dashpay_payments_overlay_only() {
         use platform_wallet::changeset::IdentityChangeSet;
         use platform_wallet::wallet::identity::{PaymentEntry, PaymentStatus};
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -6177,19 +6168,15 @@ mod tests {
             0
         }
 
-        // Live-send shape: a managed identity carrying one Pending Sent
-        // payment with a memo, snapshotted the same way
-        // `record_dashpay_payment` does.
+        // An identity snapshot whose payments map carries a row that is
+        // NOT in the overlay — the projection must ignore the snapshot
+        // entirely.
         let identity = dpp::identity::Identity::V0(dpp::identity::v0::IdentityV0::default());
         let mut managed = platform_wallet::ManagedIdentity::new(identity, 0);
-        let sent_txid = "aa".repeat(32);
+        let historical_txid = "cc".repeat(32);
         managed.dashpay_payments_mut().insert(
-            sent_txid.clone(),
-            PaymentEntry::new_sent(
-                dpp::prelude::Identifier::from([7u8; 32]),
-                12_000,
-                Some("lunch".into()),
-            ),
+            historical_txid.clone(),
+            PaymentEntry::new_sent(dpp::prelude::Identifier::from([6u8; 32]), 999, None),
         );
         let owner_id = managed.id();
         let mut id_cs = IdentityChangeSet::default();
@@ -6198,10 +6185,9 @@ mod tests {
             platform_wallet::changeset::IdentityEntry::from_managed(&managed),
         );
 
-        // Overlay carriers: (a) the SAME (owner, txid) flipped to
-        // Confirmed — must win over the snapshot's Pending row — and
-        // (b) a second owner's Received row that exists only on the
-        // overlay.
+        // The overlay delta: one Confirmed Sent row with a memo for the
+        // snapshot's owner, one Received row for a second owner.
+        let sent_txid = "aa".repeat(32);
         let mut confirmed = PaymentEntry::new_sent(
             dpp::prelude::Identifier::from([7u8; 32]),
             12_000,
@@ -6224,7 +6210,7 @@ mod tests {
         );
 
         let changeset = PlatformWalletChangeSet {
-            identities: Some(id_cs),
+            identities: Some(id_cs.clone()),
             dashpay_payments_overlay: Some(overlay),
             ..Default::default()
         };
@@ -6240,24 +6226,21 @@ mod tests {
             .store([1u8; 32], changeset)
             .expect("payment round must succeed");
 
-        assert_eq!(
-            sink.calls.load(Ordering::SeqCst),
-            1,
-            "both carriers must flatten into a single callback fire"
-        );
+        assert_eq!(sink.calls.load(Ordering::SeqCst), 1);
         let mut rows = sink.rows.lock().expect("sink lock").clone();
         rows.sort();
-        assert_eq!(rows.len(), 2, "one deduped row per (owner, txid)");
+        assert_eq!(
+            rows.len(),
+            2,
+            "exactly the overlay's delta rows — the snapshot's historical row must not ride along"
+        );
         // BTreeMap order: default-id owner ([0; 32]) before [9; 32].
         let (owner, txid, amount, direction, status, memo) = &rows[0];
         assert_eq!(*owner, owner_id.to_buffer());
         assert_eq!(*txid, sent_txid);
         assert_eq!(*amount, 12_000);
         assert_eq!(*direction, 0, "Sent discriminant");
-        assert_eq!(
-            *status, 1,
-            "the overlay's Confirmed flip must win over the snapshot's Pending row"
-        );
+        assert_eq!(*status, 1, "Confirmed discriminant");
         assert_eq!(memo.as_deref(), Some("lunch"));
         let (owner, txid, amount, direction, status, memo) = &rows[1];
         assert_eq!(*owner, [9u8; 32]);
@@ -6266,6 +6249,20 @@ mod tests {
         assert_eq!(*direction, 1, "Received discriminant");
         assert_eq!(*status, 1, "Received entries record as Confirmed");
         assert!(memo.is_none());
+
+        // A snapshot-only round (payments in the identity map, no
+        // overlay) must NOT fire the callback — the bounded-work pin:
+        // identity snapshots must not replay payment history.
+        persister
+            .store(
+                [1u8; 32],
+                PlatformWalletChangeSet {
+                    identities: Some(id_cs),
+                    ..Default::default()
+                },
+            )
+            .expect("snapshot-only round must succeed");
+        assert_eq!(sink.calls.load(Ordering::SeqCst), 1);
 
         // A payments-free round must not fire the callback at all.
         persister

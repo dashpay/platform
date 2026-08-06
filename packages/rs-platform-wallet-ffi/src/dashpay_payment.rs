@@ -14,11 +14,14 @@
 //!
 //! Payment history persists event-driven through
 //! `on_persist_dashpay_payments_fn` on the persister vtable, exactly
-//! like contact requests and profiles: every `store()` round whose
-//! changeset carries payment rows (an `IdentityEntry.dashpay_payments`
-//! snapshot from `record_dashpay_payment`, or a merged
-//! `dashpay_payments_overlay`) projects them to the host. This closes
-//! the write half of the durability loop whose read half — the
+//! like contact requests and profiles: `record_dashpay_payment` — the
+//! single writer for every payment mutation — rides the changed
+//! `(owner, txid)` row on `dashpay_payments_overlay`, and every
+//! `store()` round carrying that overlay projects it to the host.
+//! Only the overlay is projected (never the full-map
+//! `IdentityEntry.dashpay_payments` snapshots), so per-round work is
+//! bounded by the delta rather than the accumulated history. This
+//! closes the write half of the durability loop whose read half — the
 //! `payments` array on `IdentityRestoreEntryFFI` — already rehydrates
 //! the map at load. (An earlier revision shipped only the
 //! [`managed_identity_get_dashpay_payments`] getter, on the rationale
@@ -136,7 +139,7 @@ pub struct DashpayPaymentPersistEntryFFI {
     pub memo: *const c_char,
 }
 
-/// Flatten per-identity payment maps into persist-callback rows.
+/// Flatten a `dashpay_payments_overlay` into persist-callback rows.
 ///
 /// Returns the row array plus the `CString` storage backing every
 /// `txid` / `memo` pointer — the caller must keep the storage alive
@@ -145,32 +148,34 @@ pub struct DashpayPaymentPersistEntryFFI {
 /// panicking); a memo with an interior NUL degrades to null, matching
 /// [`cstring_or_null`]'s contract on the getter side.
 pub(crate) fn build_payment_persist_entries(
-    payments: &BTreeMap<(Identifier, &str), &PaymentEntry>,
+    overlay: &BTreeMap<Identifier, BTreeMap<String, PaymentEntry>>,
 ) -> (Vec<DashpayPaymentPersistEntryFFI>, Vec<CString>) {
     let mut storage: Vec<CString> = Vec::new();
-    let mut rows: Vec<DashpayPaymentPersistEntryFFI> = Vec::with_capacity(payments.len());
-    for ((owner_id, txid), entry) in payments {
-        let Ok(txid_c) = CString::new(*txid) else {
-            continue;
-        };
-        storage.push(txid_c);
-        let txid_ptr = storage.last().expect("pushed txid CString above").as_ptr();
-        let memo_ptr = match entry.memo.as_deref().map(CString::new) {
-            Some(Ok(memo_c)) => {
-                storage.push(memo_c);
-                storage.last().expect("pushed memo CString above").as_ptr()
-            }
-            _ => std::ptr::null(),
-        };
-        rows.push(DashpayPaymentPersistEntryFFI {
-            owner_identity_id: owner_id.to_buffer(),
-            counterparty_id: entry.counterparty_id.to_buffer(),
-            amount_duffs: entry.amount_duffs,
-            direction_raw: DashpayPaymentDirectionFFI::from(entry.direction) as u8,
-            status_raw: DashpayPaymentStatusFFI::from(entry.status) as u8,
-            txid: txid_ptr,
-            memo: memo_ptr,
-        });
+    let mut rows: Vec<DashpayPaymentPersistEntryFFI> = Vec::new();
+    for (owner_id, payments) in overlay {
+        for (txid, entry) in payments {
+            let Ok(txid_c) = CString::new(txid.as_str()) else {
+                continue;
+            };
+            storage.push(txid_c);
+            let txid_ptr = storage.last().expect("pushed txid CString above").as_ptr();
+            let memo_ptr = match entry.memo.as_deref().map(CString::new) {
+                Some(Ok(memo_c)) => {
+                    storage.push(memo_c);
+                    storage.last().expect("pushed memo CString above").as_ptr()
+                }
+                _ => std::ptr::null(),
+            };
+            rows.push(DashpayPaymentPersistEntryFFI {
+                owner_identity_id: owner_id.to_buffer(),
+                counterparty_id: entry.counterparty_id.to_buffer(),
+                amount_duffs: entry.amount_duffs,
+                direction_raw: DashpayPaymentDirectionFFI::from(entry.direction) as u8,
+                status_raw: DashpayPaymentStatusFFI::from(entry.status) as u8,
+                txid: txid_ptr,
+                memo: memo_ptr,
+            });
+        }
     }
     (rows, storage)
 }

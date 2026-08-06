@@ -962,11 +962,12 @@ final class DashPayPaymentPersistenceTests: XCTestCase {
     }
 
     /// A payments batch whose owner identity is staged LATER in the
-    /// same round (or is otherwise unresolvable mid-round) parks and
-    /// replays once the round commits — preserving the replay
-    /// semantics the refresh path has, instead of silently dropping
-    /// the rows.
-    func testRowsForAnOwnerStagedLaterInTheRoundReplayAfterCommit() throws {
+    /// same round parks mid-round and is staged again by `endChangeset`
+    /// BEFORE the round's single save — so the payment rows commit in
+    /// the same atomic transaction as the owner identity, never in a
+    /// second post-commit save a process kill could separate from the
+    /// round.
+    func testRowsForAnOwnerStagedLaterInTheRoundCommitAtomically() throws {
         let walletId = Data(repeating: 0xAA, count: 32)
         let lateOwner = Data(repeating: 0x33, count: 32)
         // Wallet row so `persistIdentities` can resolve the network
@@ -999,12 +1000,45 @@ final class DashPayPaymentPersistenceTests: XCTestCase {
             ],
             removed: []
         )
-        handler.endChangeset(walletId: walletId, success: true)
+        let committed = handler.endChangeset(walletId: walletId, success: true)
+        XCTAssertTrue(committed, "a resolvable parked owner must not fail the round")
 
         let rows = try fetchPaymentRows()
-        XCTAssertEqual(rows.count, 1, "parked rows must replay once the owner commits")
+        XCTAssertEqual(
+            rows.count, 1,
+            "parked rows must commit with the round's single save"
+        )
         XCTAssertEqual(rows.first?.ownerIdentityId, lateOwner)
         XCTAssertEqual(rows.first?.memo, "parked")
+    }
+
+    /// A payments batch whose owner identity never appears — neither
+    /// pre-existing nor staged by the round — must FAIL the round:
+    /// `endChangeset` rolls back and reports failure to Rust (which
+    /// then rolls its in-memory entry back), instead of committing the
+    /// rest of the round while silently dropping payment rows.
+    func testUnresolvableOwnerFailsTheRoundInsteadOfDroppingRows() throws {
+        let walletId = Data(repeating: 0xAA, count: 32)
+        let ghostOwner = Data(repeating: 0x55, count: 32)
+
+        handler.beginChangeset(walletId: walletId)
+        handler.persistDashpayPayments(
+            walletId: walletId,
+            entriesByOwner: [
+                ownerId: [makePayment()],
+                ghostOwner: [makePayment(memo: "orphaned")],
+            ]
+        )
+        let committed = handler.endChangeset(walletId: walletId, success: true)
+
+        XCTAssertFalse(
+            committed,
+            "an unresolvable payment owner must fail the round, not drop the rows"
+        )
+        XCTAssertEqual(
+            try fetchPaymentRows().count, 0,
+            "the failed round must roll back everything it staged"
+        )
     }
 
     /// A failed round discards BOTH staged and parked payment rows —

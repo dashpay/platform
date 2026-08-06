@@ -127,13 +127,16 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// callback fires before the payments callback in the same Rust
     /// `store()` round, and `FetchDescriptor` sees the round's pending
     /// inserts — so this only holds rows whose owner is in neither the
-    /// current round nor the store. Replayed once by `endChangeset`
-    /// after a successful commit (one more chance for a late owner
-    /// row), then dropped with a log — the `refreshDashPayPayments`
-    /// reconciler re-upserts anything dropped here. Discarded on
-    /// rollback: a failed round also rolls the entries back out of the
-    /// Rust in-memory map, so persisting them would fabricate history.
-    /// Confined to `serialQueue` like all other mutable handler state.
+    /// current round (yet) nor the store. Drained by `endChangeset`
+    /// BEFORE the round's single `save()`, so parked rows commit
+    /// atomically with everything else; a group whose owner is still
+    /// unresolvable at that point fails the whole round (rollback +
+    /// failure reported to Rust) rather than committing a lossy
+    /// persist. Cleared without staging on a failed round: the Rust
+    /// side rolled its in-memory entries back too, so persisting them
+    /// later would fabricate history. Never survives a round either
+    /// way, so it cannot grow across rounds. Confined to `serialQueue`
+    /// like all other mutable handler state.
     private var deferredPaymentUpserts: [(ownerIdentityId: Data, payments: [DashPayPayment])] = []
 
     public init(modelContainer: ModelContainer, network: Network? = nil) {
@@ -1374,13 +1377,34 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 self.drainDeferredBackfills()
             }
             if success {
+                // Stage payment groups parked on a mid-round missing owner
+                // BEFORE the round's single save — by now every identity
+                // insert the round staged is visible to the fetch. A group
+                // whose owner is STILL unresolvable fails the whole round:
+                // committing the rest while dropping payment rows would
+                // report success for a lossy persist, and Rust would keep
+                // in-memory payment state that never reached disk — the
+                // exact invariant `record_dashpay_payment`'s rollback
+                // protects. No second save after the commit: the round
+                // stays one atomic transaction.
+                let parked = deferredPaymentUpserts
+                deferredPaymentUpserts.removeAll()
+                for entry in parked where !stageDashpayPaymentUpserts(
+                    ownerIdentityId: entry.ownerIdentityId,
+                    payments: entry.payments
+                ) {
+                    print(
+                        "⚠️ endChangeset: no PersistentIdentity for owner "
+                            + "\(entry.ownerIdentityId.prefix(8).toHexString())… after the "
+                            + "round's identity applies; failing the round so Rust rolls "
+                            + "back \(entry.payments.count) payment row(s) instead of "
+                            + "losing them"
+                    )
+                    backgroundContext.rollback()
+                    return false
+                }
                 do {
                     try backgroundContext.save()
-                    // With the round durably committed, give payment rows
-                    // parked on a missing owner identity one replay — a
-                    // successful commit is the only point a late owner row
-                    // can have become visible.
-                    replayDeferredPaymentUpserts()
                     return true
                 } catch {
                     // The context still has the pending changes on
@@ -1391,14 +1415,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     // round did NOT commit, so report failure upward.
                     print("⚠️ endChangeset: save failed: \(error.localizedDescription)")
                     backgroundContext.rollback()
-                    // The failed round's Rust-side rollback also removed
-                    // these entries from the in-memory map — persisting
-                    // them would fabricate history.
-                    deferredPaymentUpserts.removeAll()
                     return false
                 }
             } else {
                 backgroundContext.rollback()
+                // Parked rows from the failed round die with it: the Rust
+                // side rolled its in-memory entries back too, so persisting
+                // them later would fabricate history.
                 deferredPaymentUpserts.removeAll()
                 return false
             }
@@ -2484,9 +2507,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// the round's `endChangeset` commit/rollback. A group whose owner
     /// `PersistentIdentity` row isn't resolvable — not even as a
     /// pending insert staged by this round's identities callback,
-    /// which fires first — is parked on `deferredPaymentUpserts` for
-    /// one post-commit replay rather than dropped (see that field's
-    /// doc).
+    /// which fires first — is parked on `deferredPaymentUpserts`;
+    /// `endChangeset` stages parked groups before the round's single
+    /// save and fails the round if an owner is still unresolvable (see
+    /// that field's doc).
     func persistDashpayPayments(
         walletId: Data,
         entriesByOwner: [Data: [DashPayPayment]]
@@ -2502,41 +2526,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // that invoked this callback brackets it with begin/end, so
             // `inChangeset` is set in practice; if a host ever fires it
             // without a bracket, autosave/next round flushes the stage.
-        }
-    }
-
-    /// Replay payment groups parked on a missing owner identity. Must
-    /// run on `serialQueue`, immediately after a successful round
-    /// commit (the only point a late owner row becomes visible). One
-    /// attempt: still-missing owners are dropped with a log — the
-    /// `refreshDashPayPayments` reconciler re-upserts them later —
-    /// so the parked list can never grow across rounds.
-    private func replayDeferredPaymentUpserts() {
-        guard !deferredPaymentUpserts.isEmpty else { return }
-        let parked = deferredPaymentUpserts
-        deferredPaymentUpserts.removeAll()
-        var stagedAny = false
-        for entry in parked {
-            if stageDashpayPaymentUpserts(
-                ownerIdentityId: entry.ownerIdentityId,
-                payments: entry.payments
-            ) {
-                stagedAny = true
-            } else {
-                print(
-                    "⚠️ persistDashpayPayments: owner identity "
-                        + "\(entry.ownerIdentityId.prefix(8).toHexString())… never appeared; dropping "
-                        + "\(entry.payments.count) parked payment row(s) — the refresh "
-                        + "reconciler will restore them on the next read"
-                )
-            }
-        }
-        if stagedAny {
-            do {
-                try backgroundContext.save()
-            } catch {
-                print("⚠️ replayDeferredPaymentUpserts: SwiftData save failed — payment history may be incomplete: \(error)")
-            }
         }
     }
 
@@ -7792,10 +7781,11 @@ private func listWalletCoreTxidsFreeCallback(
 /// we return. Rows without a txid pointer are skipped defensively —
 /// the Rust builder documents `txid` as always non-null.
 ///
-/// Always returns 0: a missing owner identity parks the group for a
-/// post-commit replay rather than failing (see
-/// `deferredPaymentUpserts`), and a commit failure is reported through
-/// the round's `on_changeset_end_fn` return instead.
+/// Always returns 0: a missing owner identity parks the group on
+/// `deferredPaymentUpserts` — staged before the round's single save,
+/// with a still-unresolvable owner failing the round — and a commit
+/// failure is reported through the round's `on_changeset_end_fn`
+/// return, so per-batch failure signaling here would be redundant.
 private func persistDashpayPaymentsCallback(
     context: UnsafeMutableRawPointer?,
     walletIdPtr: UnsafePointer<UInt8>?,

@@ -1083,8 +1083,16 @@
           "host": "shared",
           "kind": "unit",
           "file": "packages/rs-platform-wallet-ffi/src/persistence.rs",
-          "id": "store_projects_dashpay_payments_from_identities_and_overlay",
-          "command": "cargo test -p platform-wallet-ffi --lib store_projects_dashpay_payments_from_identities_and_overlay",
+          "id": "store_projects_dashpay_payments_overlay_only",
+          "command": "cargo test -p platform-wallet-ffi --lib store_projects_dashpay_payments_overlay_only",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/state/managed_identity/identity_ops.rs",
+          "id": "record_dashpay_payment_emits_single_row_overlay",
+          "command": "cargo test -p platform-wallet record_dashpay_payment_emits_single_row_overlay",
           "covers_restart": false
         }
       ]
