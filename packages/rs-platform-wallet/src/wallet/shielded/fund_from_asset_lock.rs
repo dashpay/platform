@@ -33,9 +33,7 @@ use dpp::prelude::AssetLockProof;
 use dpp::shielded::builder::{build_shield_from_asset_lock_transition_with_signer, OrchardProver};
 use dpp::shielded::compute_minimum_shielded_fee;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
-use key_wallet::wallet::managed_wallet_info::asset_lock_builder::{
-    AssetLockFundingAccount, AssetLockFundingType,
-};
+use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
 use crate::wallet::asset_lock::tracked::TrackedAssetLock;
 
@@ -190,63 +188,30 @@ impl PlatformWallet {
             }
         }
 
-        // Same guard for the whole-balance drain path: the exact lock value
-        // is only known after the build (Σ inputs − fee), so bound it from
-        // the funding account's final spendable balance minus an upper-bound
-        // L1 fee, and refuse a drain whose lock could not clear the pool fee.
-        if let AssetLockFunding::DrainAccountBalance { account } = &funding {
-            let (spendable_duffs, final_utxo_count) = {
-                let wallet_id = self.wallet_id();
-                let wm = self.wallet_manager.read().await;
-                let info = wm.get_wallet_info(&wallet_id).ok_or_else(|| {
-                    PlatformWalletError::WalletNotFound(hex::encode(wallet_id))
-                })?;
-                let funds = match account {
-                    AssetLockFundingAccount::Bip44 { account_index } => {
-                        info.core_wallet.accounts.standard_bip44_accounts.get(account_index)
-                    }
-                    AssetLockFundingAccount::CoinJoin { account_index } => {
-                        info.core_wallet.accounts.coinjoin_accounts.get(account_index)
-                    }
+        // Drain path: stamp the authoritative lock-value floor into the
+        // funding request. The drained value is only knowable from the BUILT
+        // payload (a pre-build balance estimate races concurrent
+        // reservations and the builder's own selection filters), so the
+        // asset-lock pipeline enforces this floor post-build / pre-broadcast
+        // and abandons an undersized build with an owner-guarded reservation
+        // release — a single-use L1 outpoint that could never clear the
+        // Type 18 pool fee is never created. The floor is the smallest
+        // whole-duff value STRICTLY above the pool fee, mirroring the
+        // `lock_value − pool_fee > 0` consumability requirement in Step 3.
+        let funding = match funding {
+            AssetLockFunding::DrainAccountBalance {
+                account,
+                minimum_lock_duffs: _,
+            } => {
+                let pool_fee_credits = self.shield_from_asset_lock_pool_fee(num_actions)?;
+                let minimum_lock_duffs = pool_fee_credits / CREDITS_PER_DUFF + 1;
+                AssetLockFunding::DrainAccountBalance {
+                    account,
+                    minimum_lock_duffs: Some(minimum_lock_duffs),
                 }
-                .ok_or_else(|| {
-                    PlatformWalletError::ShieldedBuildError(format!(
-                        "drain funding account {account:?} not found"
-                    ))
-                })?;
-                let mut total = 0u64;
-                let mut count = 0u64;
-                for utxo in funds.utxos.values() {
-                    // Mirror the builder's `require_final_inputs` filter.
-                    if (utxo.is_confirmed || utxo.is_instantlocked) && !utxo.is_locked {
-                        total = total.saturating_add(utxo.txout.value);
-                        count += 1;
-                    }
-                }
-                (total, count)
-            };
-            // Upper-bound L1 fee at the builder's 1 duff/byte rate:
-            // ~148 B per P2PKH input + ~54 B fixed (header + OP_RETURN burn
-            // + payload envelope).
-            let l1_fee_upper_duffs = 54u64.saturating_add(final_utxo_count.saturating_mul(148));
-            let lock_floor_duffs = spendable_duffs.saturating_sub(l1_fee_upper_duffs);
-            let lock_floor_credits =
-                lock_floor_duffs.checked_mul(CREDITS_PER_DUFF).ok_or_else(|| {
-                    PlatformWalletError::ShieldedBuildError(format!(
-                        "drain balance overflows credits conversion ({lock_floor_duffs} duffs * \
-                         {CREDITS_PER_DUFF} credits/duff > u64::MAX)"
-                    ))
-                })?;
-            let pool_fee_credits = self.shield_from_asset_lock_pool_fee(num_actions)?;
-            if lock_floor_credits <= pool_fee_credits {
-                return Err(PlatformWalletError::ShieldedBuildError(format!(
-                    "drain of {spendable_duffs} duffs ({final_utxo_count} UTXOs) could lock as \
-                     little as {lock_floor_credits} credits, at or below the \
-                     ShieldFromAssetLock pool fee ({pool_fee_credits} credits) — refusing to \
-                     broadcast a single-use L1 outpoint that would be unrecoverable on resume"
-                )));
             }
-        }
+            other => other,
+        };
 
         // Single-flight: serialise shield-class operations on this
         // wallet so two concurrent calls can't race the asset-lock

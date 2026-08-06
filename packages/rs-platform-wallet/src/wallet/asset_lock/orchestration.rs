@@ -145,7 +145,15 @@ pub enum AssetLockFunding {
     /// BIP44 lock.
     DrainAccountBalance {
         /// The account family + index to drain.
-        account: key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingAccount,
+        account:
+            key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingAccount,
+        /// Floor on the drained lock value, enforced against the BUILT
+        /// payload before tracking/broadcast (see
+        /// [`AssetLockBuildAmount::DrainAll`]); an undersized build is
+        /// abandoned with nothing on the wire. `None` skips the check.
+        ///
+        /// [`AssetLockBuildAmount::DrainAll`]: super::build::AssetLockBuildAmount::DrainAll
+        minimum_lock_duffs: Option<u64>,
     },
 
     /// Resume from a tracked asset lock identified by its outpoint
@@ -440,12 +448,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             }
             AssetLockFunding::DrainAccountBalance {
                 account,
+                minimum_lock_duffs,
             } => {
                 // Same pipeline as `FromWalletBalance`, with drain amount
                 // semantics and the caller-picked funding account family.
                 match self
                     .create_funded_asset_lock_proof_with_funding(
-                        super::build::AssetLockBuildAmount::DrainAll,
+                        super::build::AssetLockBuildAmount::DrainAll { minimum_lock_duffs },
                         account,
                         funding_type,
                         destination_index,

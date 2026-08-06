@@ -56,6 +56,10 @@ pub(crate) async fn broadcast_releasing_on_rejection<B: TransactionBroadcaster +
                     wallet_id,
                     ReservedFundingAccount::Standard(account_type, account_index),
                     tx,
+                    // The generic send path doesn't thread the build's
+                    // reservation token yet; keep its historical
+                    // unconditional release.
+                    None,
                 )
                 .await;
             }
@@ -89,6 +93,7 @@ pub(crate) async fn release_reservation_after_rejected_broadcast(
     wallet_id: &WalletId,
     funding_account: ReservedFundingAccount,
     tx: &Transaction,
+    reservation_token: Option<key_wallet::ReservationToken>,
 ) {
     // `release_reservation` takes `&self` and the manager map is
     // untouched, so a read lock suffices — this cleanup does not
@@ -112,7 +117,17 @@ pub(crate) async fn release_reservation_after_rejected_broadcast(
                 .get(&account_index),
         });
     match account {
-        Some(account) => account.release_reservation(tx),
+        // Owner-guarded when the build's `ReservationToken` is available:
+        // this cleanup always runs after `.await`s (build → broadcast), so
+        // the original reservation may have been swept and the same
+        // outpoints re-reserved by a NEWER build — an unconditional release
+        // would clobber that newer owner and make its inputs re-selectable
+        // by a conflicting transaction. Callers without a token (paths that
+        // predate token plumbing) keep the historical unconditional release.
+        Some(account) => match reservation_token {
+            Some(token) => account.release_reservation_if_owner(tx, token),
+            None => account.release_reservation(tx),
+        },
         None => tracing::warn!(
             wallet_id = %hex::encode(wallet_id),
             ?funding_account,

@@ -40,7 +40,16 @@ pub enum AssetLockBuildAmount {
     /// lock value is `Σ inputs − fee`, computed by the key-wallet builder
     /// (see `build_asset_lock_with_signer`'s drain mode). Required for
     /// CoinJoin funding, whose accounts have no change semantics.
-    DrainAll,
+    DrainAll {
+        /// Authoritative floor on the drained lock value, checked against
+        /// the BUILT payload before anything is tracked or broadcast — the
+        /// only sound place to enforce it, since the drained value is
+        /// unknowable beforehand (a pre-build balance estimate races
+        /// concurrent reservations and coin-selection filters). An
+        /// undersized build is abandoned with an owner-guarded reservation
+        /// release and nothing reaches the wire. `None` skips the check.
+        minimum_lock_duffs: Option<u64>,
+    },
 }
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
@@ -80,14 +89,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ) -> Result<(Transaction, DerivationPath), PlatformWalletError> {
         self.build_asset_lock_transaction_with_funding(
             AssetLockBuildAmount::Exact(amount_duffs),
-            AssetLockFundingAccount::Bip44 {
-                account_index,
-            },
+            AssetLockFundingAccount::Bip44 { account_index },
             funding_type,
             identity_index,
             signer,
         )
         .await
+        // Historical callers never had the reservation token; the funded
+        // pipeline (`broadcast_funded_asset_lock_with_funding`) threads it.
+        .map(|(tx, path, _token)| (tx, path))
     }
 
     /// Funding-parameterized form of [`Self::build_asset_lock_transaction`]:
@@ -103,12 +113,21 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         funding_type: AssetLockFundingType,
         identity_index: u32,
         signer: &S,
-    ) -> Result<(Transaction, DerivationPath), PlatformWalletError> {
+    ) -> Result<
+        (
+            Transaction,
+            DerivationPath,
+            Option<key_wallet::ReservationToken>,
+        ),
+        PlatformWalletError,
+    > {
         let (amount_duffs, drain) = match amount {
             AssetLockBuildAmount::Exact(v) => (v, false),
             // The credit-output value is a placeholder — the key-wallet
-            // drain build rewrites it to Σ inputs − fee.
-            AssetLockBuildAmount::DrainAll => (0, true),
+            // drain build rewrites it to Σ inputs − fee. The minimum is
+            // enforced by `broadcast_funded_asset_lock_with_funding`
+            // against the built payload.
+            AssetLockBuildAmount::DrainAll { .. } => (0, true),
         };
         if amount_duffs == 0 && !drain {
             return Err(PlatformWalletError::AssetLockTransaction(
@@ -199,7 +218,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             }
         };
 
-        Ok((result.transaction, path))
+        Ok((result.transaction, path, result.reservation_token))
     }
 
     /// Peek at the next unused address from a funding account without
@@ -629,9 +648,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
         self.create_funded_asset_lock_proof_with_funding(
             AssetLockBuildAmount::Exact(amount_duffs),
-            AssetLockFundingAccount::Bip44 {
-                account_index,
-            },
+            AssetLockFundingAccount::Bip44 { account_index },
             funding_type,
             identity_index,
             signer,
@@ -683,9 +700,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ) -> Result<(DerivationPath, OutPoint), PlatformWalletError> {
         self.broadcast_funded_asset_lock_with_funding(
             AssetLockBuildAmount::Exact(amount_duffs),
-            AssetLockFundingAccount::Bip44 {
-                account_index,
-            },
+            AssetLockFundingAccount::Bip44 { account_index },
             funding_type,
             identity_index,
             signer,
@@ -732,7 +747,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         let build_persist_guard = self.build_persist_serial.lock().await;
 
         // 1. Build the asset lock transaction.
-        let (tx, path) = self
+        let (tx, path, reservation_token) = self
             .build_asset_lock_transaction_with_funding(
                 amount,
                 funding_account,
@@ -755,6 +770,47 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             ) => p.credit_outputs.iter().map(|o| o.value).sum(),
             _ => 0,
         };
+
+        // Authoritative drain floor: judged on the BUILT payload, before the
+        // lock is tracked or broadcast. An undersized drain (its consumers
+        // derive `shield_amount = lock_value − pool_fee`, so a lock at or
+        // below the fee is unconsumable) is abandoned: owner-guarded
+        // reservation release (the build `.await`ed, so the reservation may
+        // have been swept and re-owned) and no transaction reaches the wire.
+        // The funding key index consumed by the build is the same residue any
+        // discarded build leaves and is reclaimed by the gap-limit scan.
+        if let AssetLockBuildAmount::DrainAll {
+            minimum_lock_duffs: Some(minimum),
+        } = amount
+        {
+            if locked_amount_duffs < minimum {
+                drop(build_persist_guard);
+                let reserved_account = match funding_account {
+                    AssetLockFundingAccount::Bip44 { account_index } => {
+                        crate::wallet::reservations::ReservedFundingAccount::Standard(
+                            key_wallet::account::account_type::StandardAccountType::BIP44Account,
+                            account_index,
+                        )
+                    }
+                    AssetLockFundingAccount::CoinJoin { account_index } => {
+                        crate::wallet::reservations::ReservedFundingAccount::CoinJoin(account_index)
+                    }
+                };
+                crate::wallet::reservations::release_reservation_after_rejected_broadcast(
+                    &self.wallet_manager,
+                    &self.wallet_id,
+                    reserved_account,
+                    &tx,
+                    reservation_token,
+                )
+                .await;
+                return Err(PlatformWalletError::AssetLockTransaction(format!(
+                    "drained asset lock of {locked_amount_duffs} duffs is below the required \
+                     minimum of {minimum} duffs (the balance cannot clear the shield pool fee); \
+                     nothing was broadcast"
+                )));
+            }
+        }
 
         // Persist the funding account's address pool now that the build marked
         // its index used. These asset-lock accounts fund OP_RETURN-payload
@@ -851,6 +907,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         &self.wallet_id,
                         reserved_account,
                         &tx,
+                        reservation_token,
                     )
                     .await;
                 }

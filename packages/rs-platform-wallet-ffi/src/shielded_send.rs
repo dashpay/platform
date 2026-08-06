@@ -1120,6 +1120,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock_c
                         key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingAccount::CoinJoin {
                             account_index,
                         },
+                    // The shielded fund flow stamps the authoritative
+                    // pool-fee floor before resolving the funding.
+                    minimum_lock_duffs: None,
                 },
                 vec![(recipient, None)],
                 &asset_lock_signer,
@@ -1136,13 +1139,14 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock_c
             )
             .await
     });
-    if let Err(e) = result {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("shielded coinjoin-drain fund-from-asset-lock failed: {e}"),
-        );
+    match result {
+        Ok(()) => PlatformWalletFFIResult::ok(),
+        // Typed conversion — preserves the broadcast-outcome distinction
+        // (ErrorTransactionBroadcastUnconfirmed vs ...Rejected) so the host
+        // can choose resume/do-not-redrain for a possibly-broadcast
+        // whole-account lock vs safely retrying a rejected build.
+        Err(e) => e.into(),
     }
-    PlatformWalletFFIResult::ok()
 }
 
 /// Resume a shielded fund-from-asset-lock by outpoint.
