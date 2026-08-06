@@ -80,7 +80,7 @@ Note also that the heavy E2E suites (`test:browsers`, `test:suite`, functional, 
 
 ## Publishing the GitHub release (after the PR merges)
 
-Tagging is a **separate manual step after the release PR is merged** into the dev branch. Publishing a GitHub **release** (with the version tag) is what triggers the asset pipeline: `.github/workflows/release.yml` runs `on: release: published` and builds + attaches the dashmate packages and Docker images.
+Tagging is a **separate manual step after the release PR is merged** into the dev branch. Publishing a GitHub **release** (with the version tag) is what triggers the asset pipeline: `.github/workflows/release.yml` runs `on: release: published` and builds + attaches the dashmate packages, Docker images, the Kotlin SDK AAR (`dash-sdk-android-<version>.aar`, also published to Maven Central as `org.dashj:dash-sdk-android:<version>` via the `maven-central` environment) and the Swift `DashSDKFFI-<version>.xcframework.zip` + checksum.
 
 1. Confirm the release PR is merged and the dev-branch tip carries the version bump.
 2. Write concise, **non-technical** release notes: a short highlights list (main features) + a bug-fixes/hardening summary + a link to the changelog. Summarize from the version's `CHANGELOG.md` section (its `### Features` / `### Bug Fixes` blocks) — don't paste the raw commit list.
@@ -94,7 +94,7 @@ gh release create v<version> --target <merge-commit-sha> \
 
 Changelog link for the notes: `https://github.com/dashpay/platform/blob/v<version>/CHANGELOG.md` (or the compare URL `.../compare/v<prev>...v<version>`).
 
-4. Publishing fires `release.yml` — verify the release build succeeds and the dashmate / Docker assets attach to the release.
+4. Publishing fires `release.yml` — verify the release build succeeds and the dashmate / Docker assets attach to the release. The Kotlin and Swift SDK jobs run in the same workflow but take longer (the Kotlin native build can run ~3 h) — the release page fills in as they finish. The Maven Central deploy runs automatically after the Kotlin build (no approval gate); note that PR CI does **not** exercise the release-profile arm64 SDK builds, so an SDK build break surfaces here first — for a stable release, confirm the SDK jobs were green on the preceding rc. To re-run just one SDK release: `gh workflow run release-kotlin-sdk.yml --ref v<version> -f tag=v<version>` (same for `release-swift-sdk.yml`) — must be dispatched **at the tag ref**, with the **plain tag name** as input (no `refs/tags/` prefix). **Confirm with the release owner immediately before dispatching**: the re-run attaches public release assets and the Kotlin one can publish an irrevocable Maven Central version (no approval gate). Works only for tags that already contain these workflow files (post-consolidation); for older tags, dispatch at the dev branch — assets attach, Maven deploy skips — and use the manual runbook in `packages/kotlin-sdk/PUBLISHING.md` for Maven.
 
 ## Known gotcha: a brand-new npm package breaks the publish
 
