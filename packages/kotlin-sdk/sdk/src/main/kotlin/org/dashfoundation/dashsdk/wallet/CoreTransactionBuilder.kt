@@ -188,6 +188,57 @@ class CoreTransactionBuilder internal constructor(network: Network) : AutoClosea
         return FinalizedCoreTransaction(transaction, fee)
     }
 
+    /**
+     * Consume this configured builder and, in ONE atomic native operation,
+     * select + reserve + sign the inputs and register the built transaction for
+     * deferred (BIP70/BIP270) submission. The concurrency-safe replacement for
+     * the deprecated [setFunding] + [buildSigned] + register split: selection
+     * and reservation commit as a single unit under the wallet-manager lock, so
+     * concurrent deferred builds cannot double-select an input. Returns the
+     * decoded [ManagedPlatformWallet.SignedCoreTransaction].
+     */
+    internal fun finalizeSignedPayment(
+        wallet: ManagedPlatformWallet,
+        accountType: AccountType,
+        accountIndex: Int,
+        coreSignerHandle: Long,
+    ): ManagedPlatformWallet.SignedCoreTransaction {
+        require(accountIndex >= 0) { "accountIndex must be non-negative" }
+        require(coreSignerHandle != 0L) { "coreSignerHandle must be non-zero" }
+        // Validate every borrowed dependency before transferring builder
+        // ownership. Once getAndSet(0) runs, JNI consumes the native builder.
+        val walletHandle = wallet.handle
+        val builderPtr = handleRef.getAndSet(0)
+        check(builderPtr != 0L) { "CoreTransactionBuilder has been consumed or closed" }
+        val blob = WalletManagerNative.coreWalletFinalizeSignedPayment(
+            builderPtr,
+            walletHandle,
+            accountType.ffiValue,
+            accountIndex,
+            coreSignerHandle,
+        )
+        // Native finalization has ALREADY inserted the payment and committed its
+        // reservation by the time this blob returns; the token only gains its
+        // owning NativeCleaner once fromRegisterBlob finishes constructing the
+        // SignedCoreTransaction. So if construction throws (allocation failure, a
+        // malformed blob from an ABI mismatch, or Cleaner-registration failure)
+        // the native token would be registered with no JVM owner able to release
+        // it, leaking the reservation until key-wallet's TTL. Parse the token
+        // first (its 8 big-endian bytes lead the blob) and release it defensively
+        // if ownership construction fails, mirroring the owner-guarded release on
+        // the rest of the deferred path (dashpay/platform#4185).
+        var token: Long? = null
+        return try {
+            token = java.nio.ByteBuffer.wrap(blob).long
+            ManagedPlatformWallet.SignedCoreTransaction.fromRegisterBlob(blob)
+        } catch (error: Throwable) {
+            token?.let { value ->
+                runCatching { WalletManagerNative.coreWalletReleaseSignedPayment(value) }
+            }
+            throw error
+        }
+    }
+
     override fun close() {
         cleanable.clean()
     }

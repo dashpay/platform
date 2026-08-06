@@ -28,6 +28,17 @@ internal fun interface ResumeIdentityNativeCall {
     ): IdentityRegistrationNativeResult
 }
 
+internal fun interface ClaimInvitationNativeCall {
+    fun call(
+        walletHandle: Long,
+        uri: String,
+        identityIndex: Int,
+        pubkeysBlob: ByteArray,
+        signerHandle: Long,
+        nowUnix: Long,
+    ): IdentityRegistrationNativeResult
+}
+
 internal fun interface SyncContestedDpnsNativeCall {
     fun call(walletHandle: Long, identityId: ByteArray): Int
 }
@@ -55,6 +66,10 @@ class IdentityRegistration internal constructor(
     private val gate: org.dashfoundation.dashsdk.wallet.TeardownGate? = null,
     private val resumeNative: ResumeIdentityNativeCall =
         ResumeIdentityNativeCall(IdentityNative::resumeIdentityWithExistingAssetLock),
+    private val claimInvitationNative: ClaimInvitationNativeCall =
+        ClaimInvitationNativeCall(
+            org.dashfoundation.dashsdk.ffi.DashpayNative::claimInvitation,
+        ),
     private val destroyManagedIdentity: (Long) -> Unit = TokensNative::managedIdentityDestroy,
     private val syncContestedDpnsNative: SyncContestedDpnsNativeCall =
         SyncContestedDpnsNativeCall(IdentityNative::syncContestedDpnsNames),
@@ -177,6 +192,134 @@ class IdentityRegistration internal constructor(
             }
             check(native.identityId.size == 32) {
                 "native registration returned ${native.identityId.size}-byte identity id"
+            }
+            native.identityId.copyOf()
+        }
+    }
+
+    /**
+     * Reclaim an unclaimed DIP-13 invitation voucher by registering a NEW
+     * identity funded by it — the "register" reclaim target (the sibling
+     * of `IdentityCredits.reclaimInvitationAsTopUp`). The voucher's DASH
+     * was OP_RETURN-burned at create; the value returns as the new
+     * identity's credits. ← Swift
+     * `ManagedPlatformWallet.resumeIdentityWithAssetLock(consumeInvitationVoucher: true)`
+     * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/ManagedPlatformWallet.swift).
+     *
+     * Takes the raw outpoint (from the invitation row's `rawOutPoint`),
+     * not a [TrackedAssetLock] — invitation locks are deliberately
+     * excluded from the generic tracked-lock recovery model, and no
+     * funding-type or registration-index gate applies: the identity slot
+     * is freely chosen (next unused). [keys] carries the **base 4-key**
+     * registration set (`includeDashPayKeys = false`) — a reclaim sends
+     * no contact request, matching iOS's `authKeyCount = 4`.
+     * `consumeInvitationVoucher = true` is the explicit authorization
+     * Rust core requires; this is one of the two call sites that pass it.
+     *
+     * @return the 32-byte identity id of the newly-registered identity.
+     */
+    suspend fun reclaimInvitationAsNewIdentity(
+        walletHandle: Long,
+        outPointTxid: ByteArray,
+        outPointVout: Int,
+        identityIndex: Int,
+        keys: RegistrationKeySet,
+        signerHandle: Long,
+        coreSignerHandle: Long,
+    ): ByteArray = gate.op {
+        require(outPointTxid.size == 32) {
+            "outPointTxid must be exactly 32 bytes, got ${outPointTxid.size}"
+        }
+        require(outPointVout >= 0) { "outPointVout must be non-negative, got $outPointVout" }
+        require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
+        require(keys.identityIndex == identityIndex) {
+            "reclaim keys use identityIndex ${keys.identityIndex}, expected $identityIndex"
+        }
+        val native = mapNativeErrors {
+            resumeNative.call(
+                walletHandle = walletHandle,
+                outpointTxid = outPointTxid,
+                outpointVout = outPointVout,
+                identityIndex = identityIndex,
+                pubkeysBlob = IdentityPubkeyCodec.encode(keys.rows),
+                signerHandle = signerHandle,
+                coreSignerHandle = coreSignerHandle,
+                consumeInvitationVoucher = true,
+            )
+        }
+        val managed = ManagedIdentityResultHandle(
+            native.managedIdentityHandle,
+            destroyManagedIdentity,
+        )
+        managed.use {
+            check(native.managedIdentityHandle != 0L) {
+                "native reclaim returned a null managed-identity handle"
+            }
+            check(native.identityId.size == 32) {
+                "native reclaim returned ${native.identityId.size}-byte identity id"
+            }
+            native.identityId.copyOf()
+        }
+    }
+
+    /**
+     * Claim a `dashpay://invite` link: register a NEW identity for the
+     * invitee funded by the imported voucher (DIP-13). Blocking (the SDK
+     * refetches the funding tx by txid, then waits for the Platform
+     * response). Works with no pre-existing identity — the fresh-invitee
+     * onboarding path. ← Swift `ManagedPlatformWallet.claimInvitation`
+     * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/ManagedPlatformWallet.swift).
+     *
+     * [keys] carries the full fresh-registration set (the base four
+     * auth/transfer keys PLUS the DashPay ENCRYPTION/DECRYPTION pair,
+     * `RegistrationKeys.buildRegistrationRows(includeDashPayKeys = true)`)
+     * — unlike asset-lock resume, a claim funds a brand-new transition, so
+     * the invitee gets DashPay capability from the start. Each row's
+     * private key must already be persisted (see
+     * [previewRegistrationKeySet]). No core signer: the asset-lock's outer
+     * signature uses the link's raw voucher key.
+     *
+     * The [uri] is a bearer credential (it embeds the one-time voucher
+     * key) — this wrapper never logs it and callers must not either.
+     *
+     * @return the 32-byte identity id of the newly-registered invitee
+     *   identity (already folded into Rust's manager and Room).
+     */
+    suspend fun claimInvitation(
+        walletHandle: Long,
+        uri: String,
+        identityIndex: Int,
+        keys: RegistrationKeySet,
+        signerHandle: Long,
+        // Long for the same 2038 reason as Dashpay.createInvitation.
+        nowUnix: Long = System.currentTimeMillis() / 1000L,
+    ): ByteArray = gate.op {
+        require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
+        require(keys.identityIndex == identityIndex) {
+            "claim keys use identityIndex ${keys.identityIndex}, expected $identityIndex"
+        }
+        val native = mapNativeErrors {
+            claimInvitationNative.call(
+                walletHandle = walletHandle,
+                uri = uri,
+                identityIndex = identityIndex,
+                pubkeysBlob = IdentityPubkeyCodec.encode(keys.rows),
+                signerHandle = signerHandle,
+                nowUnix = nowUnix,
+            )
+        }
+        // Adopt immediately. The standalone handle is only an FFI result;
+        // the identity itself is already folded into Rust's manager and Room.
+        val managed = ManagedIdentityResultHandle(
+            native.managedIdentityHandle,
+            destroyManagedIdentity,
+        )
+        managed.use {
+            check(native.managedIdentityHandle != 0L) {
+                "native claim returned a null managed-identity handle"
+            }
+            check(native.identityId.size == 32) {
+                "native claim returned ${native.identityId.size}-byte identity id"
             }
             native.identityId.copyOf()
         }

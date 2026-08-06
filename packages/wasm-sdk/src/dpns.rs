@@ -281,6 +281,7 @@ impl WasmSdk {
             having: vec![],
             order_by_clauses: vec![],
             limit: resolve_dpns_usernames_limit(limit),
+            offset: None,
             start: None,
         };
 

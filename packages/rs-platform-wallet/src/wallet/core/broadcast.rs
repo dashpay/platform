@@ -1,14 +1,24 @@
 use dashcore::Transaction;
 use key_wallet::account::account_type::StandardAccountType;
+use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
+use key_wallet::ReservationToken;
 
 use super::SignedCoreTransaction;
-use crate::broadcaster::TransactionBroadcaster;
+use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
 use crate::wallet::reservations::broadcast_releasing_on_rejection;
 use crate::{CoreWallet, PlatformWalletError};
 
 impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// Broadcast an atomically finalized transaction. A definitive rejection
     /// releases its reservation; an ambiguous `MaybeSent` outcome retains it.
+    ///
+    /// The release is owner-guarded by the finalized transaction's
+    /// [`reservation_token`](SignedCoreTransaction::reservation_token): the
+    /// broadcast is `.await`ed, and during that await key-wallet's TTL sweep can
+    /// reclaim this build's reservation and a concurrent build re-reserve the
+    /// same inputs under a new token. Releasing by outpoint alone would then
+    /// free that other build's inputs (the `dashpay/platform#4185` double-spend
+    /// window); presenting the token frees only inputs this build still owns.
     pub async fn broadcast_finalized_transaction(
         &self,
         transaction: &SignedCoreTransaction,
@@ -21,6 +31,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                         transaction.funding_account_type(),
                         transaction.funding_account_index(),
                         transaction.transaction(),
+                        transaction.reservation_token(),
                     )
                     .await;
                 }
@@ -85,6 +96,61 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         )
         .await
         .map_err(Into::into)
+    }
+
+    /// Broadcast a raw signed `transaction` for the deferred-payment
+    /// [`SignedPaymentRegistry`](crate::SignedPaymentRegistry), reconciling the
+    /// funding reservation on failure.
+    ///
+    /// Same policy as
+    /// [`broadcast_finalized_transaction`](Self::broadcast_finalized_transaction):
+    /// a definitive [`BroadcastError::Rejected`] releases the reservation for an
+    /// immediate rebuild; an ambiguous `MaybeSent` keeps it. Unlike the
+    /// `StandardAccountType`-typed
+    /// [`broadcast_transaction_releasing_reservation`](Self::broadcast_transaction_releasing_reservation)
+    /// used by the immediate send path, this takes an [`AccountTypePreference`]
+    /// so it ALSO reconciles a CoinJoin-funded deferred payment — one whose
+    /// `build_signed`/`finalize` reserved the selected inputs but which has no
+    /// `StandardAccountType`, and which previously kept its reservation held
+    /// until the TTL backstop.
+    ///
+    /// The release delegates to
+    /// [`release_transaction_reservation`](Self::release_transaction_reservation),
+    /// so it acts only on the wallet *generation* this handle names (a wallet
+    /// re-created under the same id between build and broadcast cannot have its
+    /// reservation freed by this token) AND — via `token` — only on inputs this
+    /// build still owns. The deferred registry can hold the reservation across a
+    /// long build→broadcast gap, so a TTL sweep re-reserving the same inputs
+    /// under a new token is a real risk; the owner guard closes the
+    /// `dashpay/platform#4185` release/re-reserve race.
+    ///
+    /// `account_type`/`account_index` identify the funding account handed to the
+    /// builder when the transaction was finalized; `token` is the
+    /// [`ReservationToken`] that build stamped
+    /// (`SignedCoreTransaction::reservation_token`), `None` only when the build
+    /// reserved nothing.
+    pub(crate) async fn broadcast_payment_releasing_reservation(
+        &self,
+        account_type: AccountTypePreference,
+        account_index: u32,
+        transaction: &Transaction,
+        token: Option<ReservationToken>,
+    ) -> Result<dashcore::Txid, PlatformWalletError> {
+        match self.broadcaster.broadcast(transaction).await {
+            Ok(txid) => Ok(txid),
+            Err(error) => {
+                if matches!(error, BroadcastError::Rejected { .. }) {
+                    self.release_transaction_reservation(
+                        account_type,
+                        account_index,
+                        transaction,
+                        token,
+                    )
+                    .await;
+                }
+                Err(error.into())
+            }
+        }
     }
 }
 

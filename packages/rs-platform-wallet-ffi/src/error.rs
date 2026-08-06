@@ -215,13 +215,6 @@ pub enum PlatformWalletFFIResultCode {
     /// join instead of erroring. Swift mirror:
     /// `PlatformWalletResultCode.errorShutdownIncomplete`.
     ErrorShutdownIncomplete = 27,
-    // Codes 28-30 are NOT claimed here. 28 and 30 are reserved (vacated by the
-    // deferred-payment reservation-token trio on dashpay/platform#4185/#4256
-    // when it moved to 34-36) and 29 belongs to ErrorAssetLockInsufficientFunds
-    // on the asset-lock funding branch (dashpay/platform#4184). Allocating any
-    // of them here too would merge without a textual conflict and silently
-    // misclassify across hosts. See
-    // packages/rs-platform-wallet-ffi/ERROR_CODE_REGISTRY.md.
     /// A state transition could not be signed because the signer has no
     /// usable private key for the requested public key — the stored blob is
     /// missing, stranded, or written under a different Keystore/Keychain
@@ -234,9 +227,80 @@ pub enum PlatformWalletFFIResultCode {
     /// Hosts route this to key repair instead of treating it as an opaque
     /// wallet-operation failure. Not retryable as-is — the key must be
     /// (re-)derived first.
+    ///
+    /// Also produced WITHOUT the signer round-trip, by
+    /// [`CoreWallet::sign_message`](platform_wallet::CoreWallet::sign_message):
+    /// a message-signing address that belongs to no signable funds account of
+    /// this wallet means no key can exist for it, which is the same conclusion
+    /// this code exists to carry — hosts route both to key repair / address
+    /// correction rather than to an opaque wallet-operation failure.
     ErrorSigningKeyUnavailable = 31,
 
-    NotFound = 98, // Used exclusively for all the Option that are retuned as errors
+    // Codes 27-33 are claimed outside this PR and MUST NOT be reused here.
+    // The deferred-token trio below therefore occupies the contiguous block
+    // 34-36. Current owners (see ERROR_CODE_REGISTRY.md, dashpay/platform#4261):
+    //
+    //   27  ErrorShutdownIncomplete         MERGED on v4.2-dev (dashpay/platform#4268)
+    //   28  (free — vacated by this PR)
+    //   29  ErrorAssetLockInsufficientFunds dashpay/platform#4184
+    //   30  (free — vacated by this PR)
+    //   31  ErrorSigningKeyUnavailable      dashpay/platform#4183, #4259
+    //   32  ErrorTransactionBuild           dashpay/platform#4247, #4256
+    //   33  ErrorTransactionSigning         dashpay/platform#4256
+    //
+    // This trio previously sat at 26-28, then 27/28/30. It moved to 34-36 after
+    // #4268 merged `ErrorShutdownIncomplete = 27` into the v4.2-dev ABI; the
+    // contiguous block above every current claim ends the renumbering churn.
+    /// Maps `SignedPaymentError::StaleReservationToken` from the deferred
+    /// build → broadcast/release core-send lifecycle (`core_wallet_signed_payment_*`):
+    /// the token has outlived the registry's `RESERVATION_MAX_AGE_BLOCKS` bound
+    /// and its funding reservation may already have been swept and re-selected by
+    /// key-wallet's TTL, so acting on it could touch a newer, unrelated
+    /// reservation. The operation did NOT touch the network. NOT retryable in
+    /// place — the host must rebuild the payment.
+    ///
+    /// Sibling codes split out the other two deferred-token failures that this
+    /// code used to conflate: [`Self::ErrorReservationTokenConsumed`] (35,
+    /// unknown / already broadcast / already released) and
+    /// [`Self::ErrorReservationWalletMismatch`] (36, minted against a different
+    /// wallet generation). All three are non-retryable-in-place and none touched
+    /// the network; they are distinct codes so a host can message each precisely.
+    ErrorStaleReservationToken = 34,
+
+    /// Maps `SignedPaymentError::StaleToken`. The deferred reservation token is
+    /// unknown, already broadcast, or already released — the guard that turns a
+    /// double-broadcast (or a broadcast after release) into a typed error
+    /// instead of a second send. Did NOT touch the network; NOT retryable
+    /// (rebuild the payment). Release is idempotent and never surfaces this.
+    ErrorReservationTokenConsumed = 35,
+
+    /// Maps `SignedPaymentError::WalletMismatch`. The deferred reservation token
+    /// was minted against a different wallet *generation* than the one it is
+    /// being broadcast through (e.g. a wallet re-created under the same id); its
+    /// reservation lives in that other generation's `ReservationSet`. Did NOT
+    /// touch the network and did NOT consume the rightful owner's token; NOT
+    /// retryable through this handle (rebuild the payment).
+    ///
+    ErrorReservationWalletMismatch = 36,
+
+    /// The named thing does not exist.
+    ///
+    /// Originally (and still mostly) the code for every `Option` returned as an
+    /// error — a handle that resolves to nothing, a lookup that came back empty.
+    ///
+    /// The deferred build → broadcast/release lifecycle also reports its
+    /// wallet-was-REMOVED case here rather than minting a fourth
+    /// deferred-token code, because it *is* that same "does not exist" case:
+    /// `core_wallet_signed_payment_broadcast` maps
+    /// `SignedPaymentError::WalletRemoved` (the token's wallet is no longer
+    /// registered in the manager), and `core_wallet_signed_payment_finalize`
+    /// refuses to register a payment whose wallet was removed while it was being
+    /// signed — reconciling that build's reservation before returning. Neither
+    /// touched the network. Contrast [`Self::ErrorReservationWalletMismatch`]
+    /// (36), where a DIFFERENT live generation answers to the same wallet id;
+    /// here there is no live generation at all, so there is nothing to retry
+    /// against (`dashpay/platform#4185`).
+    NotFound = 98,
     ErrorUnknown = 99,
 }
 
@@ -423,15 +487,92 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             {
                 PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
             }
-            // A txMetadata plaintext too large to seal into the encryptedMetadata
-            // field. Surfaced as a caller-input error (the payload parameter is
-            // out of range) rather than flattening to ErrorUnknown; the typed
-            // Display carries the supplied length and the accepted maximum. Maps
-            // to the already-mirrored ErrorInvalidParameter so no new numeric
-            // code churns the Swift/Kotlin mirror enums.
-            PlatformWalletError::TxMetadataPayloadTooLarge { .. } => {
+            // An unparseable / wrong-network / non-P2PKH message-signing
+            // address: a caller-input error, so it is routed to the
+            // already-mirrored ErrorInvalidParameter rather than spending a new
+            // numeric code (and churning the Swift/Kotlin mirror enums) on a
+            // case hosts handle by correcting the input. The typed Display
+            // names which of the three it was.
+            PlatformWalletError::MessageSigningAddressInvalid { .. } => {
                 PlatformWalletFFIResultCode::ErrorInvalidParameter
             }
+            // Message bytes that are not valid UTF-8: the same kind of
+            // caller-input error as the address arm above, so it gets the same
+            // code. It previously fell through to ErrorUnknown, which told a
+            // host "internal failure" about a malformed argument it could fix.
+            PlatformWalletError::MessageSigningMessageInvalid { .. } => {
+                PlatformWalletFFIResultCode::ErrorInvalidParameter
+            }
+            // A second, signer-free producer of code 31 (the arm above is the
+            // first): a message-signing address that belongs to no signable
+            // funds account means no key can exist for it — the same conclusion
+            // the code carries — so hosts route it to key repair / address
+            // correction instead of an opaque wallet-operation failure.
+            PlatformWalletError::MessageSigningKeyUnavailable { .. } => {
+                PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
+            }
+            // NOTE: `MessageSigningFailed` is deliberately NOT matched, so it
+            // falls to the `ErrorUnknown` catch-all below. Its causes are
+            // internal invariant breaks (a public key that does not own the
+            // address, no recovery id that recovers it) which should read as a
+            // bug rather than as a key-repair prompt, and it carries the
+            // signer's own `Display`, which reaches the host in the message
+            // either way.
+            //
+            // It is NOT promoted to code 31 by the key-unavailable arm above,
+            // and that is deliberate rather than an oversight. That arm matches
+            // STRUCTURALLY — `Sdk(Protocol(Generic(s)))` with the marker at
+            // position 0 — because #4183's review rejected sniffing the marker
+            // as a substring of the rendered error: a foreign signer can merely
+            // mention the token in human-readable text. `MessageSigningFailed`
+            // is a different variant, and `sign_message` composes its `reason`
+            // as "signer rejected the digest at {path}: {e}", so the marker
+            // could only ever appear mid-string. Matching it here would mean
+            // exactly the substring sniff that review ruled out.
+            //
+            // Consequence worth knowing: a signer-reported key-unavailable
+            // condition reaching `sign_message` surfaces as ErrorUnknown, not
+            // 31. That is NOT closable at this layer, and — having chased it —
+            // not closable at the producer either without an upstream change.
+            // The type chain is the whole story:
+            //
+            //   * `preserve_signer_key_unavailable_or` (platform-wallet's own
+            //     helper, #4183) takes a `dash_sdk::Error` and matches
+            //     `Protocol(Generic(s))` with the marker at position 0. It is
+            //     the right tool — for the STATE-TRANSITION signing paths
+            //     (document replace, DPNS, token transfer), whose failures ARE
+            //     `dash_sdk::Error`, which is where it is used.
+            //   * Message signing does not use that surface at all. It calls
+            //     key-wallet's `Signer::sign_ecdsa`, whose error is the
+            //     associated type `S::Error`, bounded only by
+            //     `Display + Send + Sync + 'static`. There is no enum to match:
+            //     no `dash_sdk::Error`, no `ProtocolError`, nothing structural.
+            //   * The one production impl, `MnemonicResolverCoreSigner`
+            //     (rs-sdk-ffi), has `Error = MnemonicResolverSignerError` — a
+            //     typed enum that never stamps the marker. Its `NotFound`
+            //     ("mnemonic not found in keychain") IS the key-unavailable
+            //     case, but nothing distinguishes it once it is `Display`ed.
+            //   * The marker is produced only in `rs-sdk-ffi`'s state-transition
+            //     completion callback (`SignResult = Result<Vec<u8>,
+            //     ProtocolError>`), never on a `Signer::sign_ecdsa` path.
+            //
+            // So a position-0 check on the signer's rendering would have zero
+            // producers today, and a `contains` check is the substring sniff
+            // #4183's review rejected. Note the marker constant IS visible here
+            // now (#4183 mirrored it as
+            // `platform_wallet::error::SIGNER_KEY_UNAVAILABLE_PREFIX`, pinned
+            // byte-identical by a compile-time assertion in this crate) — the
+            // blocker is the error TYPE, not the constant, which corrects an
+            // earlier note in this file's history.
+            //
+            // The fix belongs upstream, in ONE of:
+            //   (a) `MnemonicResolverCoreSigner` rendering its key-unavailable
+            //       variants with the marker at position 0, after which a
+            //       position-0 check in `sign_message` becomes principled; or
+            //   (b) key-wallet tightening `Signer::Error` so callers can match
+            //       a typed key-unavailable variant instead of a string.
+            // Both change shared, externally-consumed surfaces and want their
+            // own review; neither is in scope for message signing.
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
         PlatformWalletFFIResult::err(code, error.to_string())
@@ -984,6 +1125,22 @@ mod tests {
         );
     }
 
+    /// A second producer of code 31, reached with no signer round-trip and no
+    /// marker sniffing at all: the wallet simply holds no key for the address.
+    /// Hosts branch on it to correct the address or repair the key, so it must
+    /// not flatten to ErrorUnknown.
+    #[test]
+    fn message_signing_key_unavailable_maps_to_code_31() {
+        let err = PlatformWalletError::MessageSigningKeyUnavailable {
+            address: "yRd4FhXfVGHXpsuZXPNkMrfD9GVj46pnjt".to_string(),
+        };
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
+        );
+    }
+
     /// A generic protocol error without the prefix keeps the historical
     /// mapping — no message sniffing beyond the machine prefix.
     #[test]
@@ -1028,5 +1185,71 @@ mod tests {
             result.code,
             PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
         );
+    }
+
+    /// Malformed MESSAGE bytes are caller input just like a malformed address,
+    /// so they map to the same ErrorInvalidParameter — not ErrorUnknown, which
+    /// would report an internal failure for an argument the caller can fix.
+    /// Only reachable across the FFI, where the message arrives as raw bytes.
+    #[test]
+    fn message_signing_message_invalid_maps_to_invalid_parameter() {
+        let err = PlatformWalletError::MessageSigningMessageInvalid {
+            address: "yRd4FhXfVGHXpsuZXPNkMrfD9GVj46pnjt".to_string(),
+            reason: "invalid utf-8 sequence of 1 bytes from index 2".to_string(),
+        };
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        // The rendering must blame the message, not the address.
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert!(
+            msg.contains("message to sign") && !msg.contains("address is not valid"),
+            "the Display must name the message as the malformed argument: {msg}"
+        );
+    }
+
+    /// A bad message-signing address is caller input, so it maps to the
+    /// already-mirrored ErrorInvalidParameter rather than ErrorUnknown.
+    #[test]
+    fn message_signing_address_invalid_maps_to_invalid_parameter() {
+        let err = PlatformWalletError::MessageSigningAddressInvalid {
+            address: "not-an-address".to_string(),
+            reason: "not a valid Dash address".to_string(),
+        };
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+    }
+
+    /// `MessageSigningFailed` is intentionally unmapped: its causes are
+    /// internal invariant breaks, which should read as a bug rather than as a
+    /// key-repair prompt, so it falls through to ErrorUnknown carrying the
+    /// signer's own rendering. Pinned so a future arm cannot silently claim it.
+    ///
+    /// Note this variant no longer carries malformed-message-bytes, which used
+    /// to land here and therefore on ErrorUnknown; they now have their own
+    /// `MessageSigningMessageInvalid` mapping to ErrorInvalidParameter. What
+    /// remains here is genuinely internal.
+    ///
+    /// #4183's key-unavailable promotion does NOT reach this variant, by
+    /// design: it matches `Sdk(Protocol(Generic(s)))` structurally with the
+    /// marker at position 0, because that review rejected sniffing the marker as
+    /// a substring. `sign_message` composes `reason` as
+    /// "signer rejected the digest at {path}: {e}", so a marker could only ever
+    /// sit mid-string here. See the NOTE on the mapping arm.
+    #[test]
+    fn message_signing_failed_falls_through_to_unknown() {
+        let internal = PlatformWalletError::MessageSigningFailed {
+            address: "yRd4FhXfVGHXpsuZXPNkMrfD9GVj46pnjt".to_string(),
+            reason: "no recovery id in 0..=3 recovers the signing public key".to_string(),
+        };
+        let result: PlatformWalletFFIResult = internal.into();
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorUnknown);
     }
 }

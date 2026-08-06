@@ -58,14 +58,16 @@ pub use wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
 pub use wallet::asset_lock::AssetLockFunding;
 pub use wallet::core::WalletBalance;
 pub use wallet::core::{CoreWallet, SignedCoreTransaction};
+pub use wallet::signed_payment_registry::{
+    RegisterWrongGeneration, ReservationToken, SignedPaymentError, SignedPaymentRegistry,
+};
 // DashPay types + crypto helpers re-exported through the identity
 // domain (they live under `identity::types::dashpay::*` and
 // `identity::crypto::*` internally).
 pub use wallet::core_address_key::CoreAddressPrivateKey;
 pub use wallet::identity::network::{
-    derive_identity_auth_keypair, query_owned_encrypted_documents, AutoAcceptProofSource,
-    ContactCryptoProvider, ContactInfoOpened, ContactInfoPublishOutcome, ContactInfoSealed,
-    DecryptedEncryptedDocument, SeedBindingVerification, TxMetadataKeySource, IDENTITY_GAP_LIMIT,
+    derive_identity_auth_keypair, AutoAcceptProofSource, ContactCryptoProvider, ContactInfoOpened,
+    ContactInfoPublishOutcome, ContactInfoSealed, SeedBindingVerification, IDENTITY_GAP_LIMIT,
     MASTER_KEY_INDEX,
 };
 pub use wallet::identity::{

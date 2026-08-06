@@ -748,6 +748,7 @@ fn single_profile_query(
         having: vec![],
         order_by_clauses: vec![],
         limit: 1,
+        offset: None,
         start: None,
     }
 }
@@ -783,6 +784,7 @@ fn contact_profiles_chunk_query(
             ascending: true,
         }],
         limit: CONTACT_PROFILE_IN_CAP as u32,
+        offset: None,
         start: None,
     }
 }

@@ -53,6 +53,9 @@ pub mod paths;
 pub mod primary_key_tree_type;
 #[cfg(feature = "server")]
 pub(crate) mod prove;
+/// Terminal property-name tree resolution for ranked (indexed-tree) indexes
+#[cfg(feature = "server")]
+pub(crate) mod ranked_index_tree_type;
 
 /// Shared index-walker tree-type derivation for the v2 walkers
 #[cfg(feature = "server")]

@@ -4193,3 +4193,122 @@ extension ManagedPlatformWallet {
         }.value
     }
 }
+
+// MARK: - Deferred (BIP70/BIP270) signed payments
+
+extension ManagedPlatformWallet {
+
+    /// Build and sign a Core payment to `recipients` WITHOUT broadcasting,
+    /// reserving the funding UTXOs and returning a `SignedCoreTransaction`
+    /// whose `reservationToken` later drives `broadcastSigned` (merchant server
+    /// acked) or `releaseReservation` (abandoned / server nacked).
+    ///
+    /// The BIP70/BIP270 counterpart to the immediate build-and-send path: those
+    /// protocols sign, POST the raw bytes to a merchant server, and broadcast
+    /// only on ack, which a single build-sign-broadcast call cannot express.
+    /// The whole build is one atomic native operation — select + reserve + sign
+    /// + register under the wallet-manager lock — so once this returns the
+    /// reservation holds the inputs and the token operates on them later.
+    ///
+    /// The returned object OWNS the token: `close()` (or its `deinit` backstop)
+    /// releases it, so a payment that is neither broadcast nor released is
+    /// never orphaned. Consuming the token via `broadcastSigned` /
+    /// `releaseReservation` makes that release a native no-op.
+    ///
+    /// Process-death note: the reservation is in-memory. An app crash between
+    /// this call and `broadcastSigned` drops it on restart and the UTXOs become
+    /// spendable again.
+    ///
+    /// Kotlin parity: `ManagedPlatformWallet.buildSignedPayment`
+    /// (`ManagedPlatformWallet.kt`).
+    public func buildSignedPayment(
+        recipients: [(address: String, amountDuffs: UInt64)],
+        network: Network,
+        accountType: CoreTransactionBuilder.AccountType = .bip44,
+        accountIndex: UInt32 = 0
+    ) throws -> SignedCoreTransaction {
+        guard !recipients.isEmpty else {
+            throw PlatformWalletError.invalidParameter("recipients must not be empty")
+        }
+        guard recipients.allSatisfy({ $0.amountDuffs > 0 }) else {
+            throw PlatformWalletError.invalidParameter("every recipient amount must be positive")
+        }
+
+        let builder = try CoreTransactionBuilder(network: network)
+        for recipient in recipients {
+            try builder.addOutput(address: recipient.address, amountDuffs: recipient.amountDuffs)
+        }
+        return try builder.finalizeSignedPayment(
+            wallet: self,
+            accountType: accountType,
+            accountIndex: accountIndex
+        )
+    }
+
+    /// Broadcast the deferred payment behind `token` (from
+    /// `buildSignedPayment`) and return its txid — the "merchant server acked"
+    /// arm. Consumes the token: rather than double-broadcasting, an unusable
+    /// token throws one of the three sibling errors —
+    /// `.staleReservationToken` (aged out), `.reservationTokenConsumed`
+    /// (unknown / already consumed), `.reservationWalletMismatch` (a different
+    /// wallet generation) — or `.notFound` when the wallet was removed. None is
+    /// retryable in place; rebuild the payment.
+    ///
+    /// Callers holding a `SignedCoreTransaction` should prefer the object
+    /// overload: with the bare token, the source object must stay alive until
+    /// this call returns, or its `deinit` backstop can release the reservation
+    /// mid-broadcast.
+    ///
+    /// Kotlin parity: `ManagedPlatformWallet.broadcastSigned(token)`
+    /// (`ManagedPlatformWallet.kt`).
+    public func broadcastSigned(token: UInt64) throws -> String {
+        try coreWallet().broadcastSignedPayment(token: token)
+    }
+
+    /// Broadcast `payment` and return its txid — the object-owning form of
+    /// `broadcastSigned`. Prefer it over passing the bare
+    /// `SignedCoreTransaction.reservationToken`: the token's lifetime is
+    /// coupled to the object's, so a caller that extracts the `UInt64` and
+    /// drops the object races the `deinit` backstop and can find the
+    /// reservation released mid-broadcast. This overload keeps the object alive
+    /// across the whole native call and disarms the backstop once the token is
+    /// consumed.
+    ///
+    /// On a throw the payment stays armed, and its backstop later runs the
+    /// (idempotent, harmless) release.
+    ///
+    /// Kotlin parity: `ManagedPlatformWallet.broadcastSigned(payment)`
+    /// (`ManagedPlatformWallet.kt`).
+    public func broadcastSigned(_ payment: SignedCoreTransaction) throws -> String {
+        try withExtendedLifetime(payment) {
+            let txid = try broadcastSigned(token: payment.reservationToken)
+            payment.close()
+            return txid
+        }
+    }
+
+    /// Release the funding reservation behind `token` (from
+    /// `buildSignedPayment`) — the "payment abandoned / merchant server nacked"
+    /// arm — returning the reserved UTXOs to spendable. Idempotent: releasing
+    /// an unknown / already-broadcast / already-released token is a silent
+    /// no-op, so it is always safe to call defensively.
+    ///
+    /// Kotlin parity: `ManagedPlatformWallet.releaseReservation(token)`
+    /// (`ManagedPlatformWallet.kt`).
+    public func releaseReservation(token: UInt64) throws {
+        try core_wallet_signed_payment_release(token).check()
+    }
+
+    /// Release `payment`'s funding reservation — the object-owning form of
+    /// `releaseReservation`; see `broadcastSigned(_:)` for why it is preferred
+    /// over the bare-token form.
+    ///
+    /// Kotlin parity: `ManagedPlatformWallet.releaseReservation(payment)`
+    /// (`ManagedPlatformWallet.kt`).
+    public func releaseReservation(_ payment: SignedCoreTransaction) throws {
+        try withExtendedLifetime(payment) {
+            try releaseReservation(token: payment.reservationToken)
+            payment.close()
+        }
+    }
+}

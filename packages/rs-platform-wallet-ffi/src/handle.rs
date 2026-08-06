@@ -78,6 +78,21 @@ impl<T> HandleStorage<T> {
         let mut guard = self.items.write();
         guard.get_mut(&handle).map(f)
     }
+
+    /// Remove (and drop) every stored item satisfying `predicate`, returning how
+    /// many were removed. Used to sweep a wallet generation's handles at
+    /// teardown (e.g. abandon every finalized-transaction V2 handle whose
+    /// originating wallet was just removed from its manager — the reservation
+    /// ceases to exist with the generation, so dropping is the correct action).
+    pub fn remove_matching<F>(&self, predicate: F) -> usize
+    where
+        F: Fn(&T) -> bool,
+    {
+        let mut guard = self.items.write();
+        let before = guard.len();
+        guard.retain(|_, item| !predicate(item));
+        before - guard.len()
+    }
 }
 
 impl<T> Default for HandleStorage<T> {

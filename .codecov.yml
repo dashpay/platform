@@ -1,8 +1,17 @@
 codecov:
   require_ci_to_pass: true
 
+# The rust-strategy and rust-shielded suites run only on push/nightly (PRs
+# skip them for speed); carryforward makes codecov reuse the base commit's
+# coverage for a flag when a PR run doesn't upload it, so PR reports don't
+# show a spurious project-coverage drop for tests that intentionally didn't
+# run.
 flags:
   rust:
+    carryforward: true
+  rust-strategy:
+    carryforward: true
+  rust-shielded:
     carryforward: true
 
 ignore:
