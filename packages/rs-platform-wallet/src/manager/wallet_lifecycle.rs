@@ -718,9 +718,19 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         };
         let generation = Arc::clone(removed.generation());
 
+        // Every ID-keyed side-registry teardown below runs BEFORE the inner
+        // wallet-manager removal frees `wallet_id`. The side registries
+        // (shielded coordinator, identity-sync rows) are keyed by wallet /
+        // identity id, not by generation, so an unregister that ran after the
+        // id was freed could delete state a concurrent same-id registration
+        // (G2) had just installed. The inner manager's `insert_wallet` is the
+        // create path's commit point — a same-id create fails with
+        // `WalletAlreadyExists` until the removal below — so completing all
+        // id-keyed cleanup first makes the window unreachable rather than
+        // merely narrow.
         let owned_identity_ids: Vec<dpp::prelude::Identifier> = {
-            let mut wm = self.wallet_manager.write().await;
-            let ids = match wm.get_wallet_info(wallet_id) {
+            let wm = self.wallet_manager.read().await;
+            match wm.get_wallet_info(wallet_id) {
                 Some(info) => info
                     .identity_manager
                     .wallet_identities
@@ -734,52 +744,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     })
                     .unwrap_or_default(),
                 None => Vec::new(),
-            };
-            if let Err(e) = wm.remove_wallet(wallet_id) {
-                tracing::warn!(
-                    wallet_id = %hex::encode(wallet_id),
-                    error = %e,
-                    "remove_wallet: inner wallet-manager removal failed (state may be inconsistent)"
-                );
             }
-            ids
         };
-
-        // Test-only rendezvous: the window a concurrent same-id registration can
-        // publish a new generation into. See `REMOVE_WALLET_MIDPOINT_HOOK`.
-        #[cfg(test)]
-        {
-            let pending = REMOVE_WALLET_MIDPOINT_HOOK
-                .lock()
-                .expect("remove-wallet midpoint hook mutex")
-                .as_ref()
-                .map(|hook| hook(wallet_id));
-            if let Some(rendezvous) = pending {
-                rendezvous.await;
-            }
-        }
-
-        // Remove the public-map entry only while it still names the generation
-        // validated under the gate. A concurrent same-id registration could have
-        // published a NEW generation here in the window since the inner removal
-        // above freed the id (see the "Removal is by generation identity" note on
-        // this method); removing by key would evict that live wallet and hand it
-        // to `tear_down` under the wrong gate.
-        {
-            let mut wallets = self.wallets.write().await;
-            let entry_is_ours = wallets
-                .get(wallet_id)
-                .is_some_and(|wallet| Arc::ptr_eq(wallet.generation(), &generation));
-            if entry_is_ours {
-                wallets.remove(wallet_id);
-            } else {
-                tracing::warn!(
-                    wallet_id = %hex::encode(wallet_id),
-                    "remove_wallet: a new generation was registered under this id while the \
-                     previous one was being removed; leaving the new registration in place"
-                );
-            }
-        }
 
         // Detach the wallet's shielded state from the network
         // coordinator. After the Phase-2b refactor the coordinator
@@ -814,6 +780,75 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             self.identity_sync_manager
                 .unregister_identity(identity_id)
                 .await;
+        }
+
+        // Only now free the id in the inner manager — the LAST id-keyed step.
+        // An identity registered on this wallet after the snapshot above (a
+        // host racing an identity add against its own removal) is left as a
+        // stale sync row rather than unregistered post-removal, because a
+        // post-removal unregister-by-id would reopen the very window this
+        // ordering closes for a same-id recreation's rows. Surface it instead.
+        {
+            let mut wm = self.wallet_manager.write().await;
+            let late_identity_count = wm
+                .get_wallet_info(wallet_id)
+                .and_then(|info| info.identity_manager.wallet_identities.get(wallet_id))
+                .map(|inner| inner.len())
+                .unwrap_or(0)
+                .saturating_sub(owned_identity_ids.len());
+            if late_identity_count > 0 {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    late_identity_count,
+                    "remove_wallet: identities were added while the wallet was being removed; \
+                     their identity-sync rows are left for the next launch to reconcile"
+                );
+            }
+            if let Err(e) = wm.remove_wallet(wallet_id) {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error = %e,
+                    "remove_wallet: inner wallet-manager removal failed (state may be inconsistent)"
+                );
+            }
+        }
+
+        // Test-only rendezvous: the window a concurrent same-id registration can
+        // publish a new generation into. Sits AFTER every id-keyed unregister,
+        // so state a midpoint recreation installs is never torn down by this
+        // removal. See `REMOVE_WALLET_MIDPOINT_HOOK`.
+        #[cfg(test)]
+        {
+            let pending = REMOVE_WALLET_MIDPOINT_HOOK
+                .lock()
+                .expect("remove-wallet midpoint hook mutex")
+                .as_ref()
+                .map(|hook| hook(wallet_id));
+            if let Some(rendezvous) = pending {
+                rendezvous.await;
+            }
+        }
+
+        // Remove the public-map entry only while it still names the generation
+        // validated under the gate. A concurrent same-id registration could have
+        // published a NEW generation here in the window since the inner removal
+        // above freed the id (see the "Removal is by generation identity" note on
+        // this method); removing by key would evict that live wallet and hand it
+        // to `tear_down` under the wrong gate.
+        {
+            let mut wallets = self.wallets.write().await;
+            let entry_is_ours = wallets
+                .get(wallet_id)
+                .is_some_and(|wallet| Arc::ptr_eq(wallet.generation(), &generation));
+            if entry_is_ours {
+                wallets.remove(wallet_id);
+            } else {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    "remove_wallet: a new generation was registered under this id while the \
+                     previous one was being removed; leaving the new registration in place"
+                );
+            }
         }
 
         // Still under the generation's teardown gate: any deferred state naming
@@ -1060,7 +1095,15 @@ mod remove_versus_recreate_tests {
     use super::REMOVE_WALLET_MIDPOINT_HOOK;
     use crate::test_support::test_platform_wallet_manager;
     use crate::wallet::core::WalletGeneration;
+    use crate::wallet::identity::state::managed_identity::ManagedIdentity;
     use crate::wallet::PlatformWallet;
+    use dpp::identity::Identity;
+    use dpp::prelude::Identifier;
+
+    /// The identity id the scenario threads through both generations: G1 owns
+    /// it (so the removal's id-keyed unregister names it), and the midpoint
+    /// recreation re-registers it as G2's — the row the old ordering deleted.
+    const SHARED_IDENTITY_ID: [u8; 32] = [0x1D; 32];
 
     /// The mnemonic `test_platform_wallet_manager` builds its wallet from, so
     /// re-registering from the same seed collides on the same network-scoped
@@ -1116,6 +1159,32 @@ mod remove_versus_recreate_tests {
             .await
             .expect("fixture wallet is registered");
 
+        // Give G1 an owned identity + its identity-sync row, so the removal's
+        // id-keyed unregister has a real target — the state class a same-seed
+        // recreation re-registers under the identical identity id.
+        let identity_id = Identifier::new(SHARED_IDENTITY_ID);
+        {
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&wallet_id)
+                .expect("fixture wallet info");
+            let identity = Identity::new_with_id_and_keys(
+                identity_id,
+                Default::default(),
+                dpp::version::PlatformVersion::latest(),
+            )
+            .expect("bare test identity");
+            info.identity_manager
+                .wallet_identities
+                .entry(wallet_id)
+                .or_default()
+                .insert(0, ManagedIdentity::new(identity, 0));
+        }
+        manager
+            .identity_sync_manager
+            .register_identity(identity_id, [])
+            .await;
+
         // Filled by the rendezvous with the generation the re-registration
         // publishes, so the assertions can name it rather than infer it.
         let recreated: Arc<Mutex<Option<Arc<PlatformWallet>>>> = Arc::new(Mutex::new(None));
@@ -1156,6 +1225,13 @@ mod remove_versus_recreate_tests {
                              re-registration must succeed",
                         );
                     assert_eq!(wallet.wallet_id(), id, "the fixture seeds must collide");
+                    // G2 re-registers the SAME identity (same seed derives the
+                    // same identities) — the id-keyed sync row the old teardown
+                    // ordering deleted after the midpoint.
+                    manager
+                        .identity_sync_manager
+                        .register_identity(Identifier::new(SHARED_IDENTITY_ID), [])
+                        .await;
                     *recreated_slot.lock().expect("recreated slot") = Some(wallet);
                 })
             }));
@@ -1226,6 +1302,20 @@ mod remove_versus_recreate_tests {
         assert!(
             !original.core().is_current_generation().await,
             "the validated generation must be gone from the inner manager"
+        );
+
+        // 6. The id-keyed side-registry state the recreation installed
+        //    survived. Every id-keyed unregister ran BEFORE the inner removal
+        //    freed the wallet id, so it could only touch G1's rows — with the
+        //    old ordering (unregisters after the midpoint) this row was
+        //    deleted out from under the live G2.
+        assert!(
+            manager
+                .identity_sync_manager
+                .is_identity_registered(&identity_id)
+                .await,
+            "the removal's id-keyed unregister deleted the identity-sync row the recreated \
+             generation registered mid-removal"
         );
     }
 }
