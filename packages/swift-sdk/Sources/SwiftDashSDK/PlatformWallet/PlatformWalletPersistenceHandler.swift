@@ -2525,7 +2525,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             } else {
                 print(
                     "⚠️ persistDashpayPayments: owner identity "
-                        + "\(entry.ownerIdentityId.toHexString()) never appeared; dropping "
+                        + "\(entry.ownerIdentityId.prefix(8).toHexString())… never appeared; dropping "
                         + "\(entry.payments.count) parked payment row(s) — the refresh "
                         + "reconciler will restore them on the next read"
                 )

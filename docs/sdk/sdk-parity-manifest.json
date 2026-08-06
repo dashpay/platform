@@ -30,6 +30,7 @@
     "on_load_shielded_viewing_keys_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "on_load_shielded_viewing_keys_free_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "on_persist_address_balances_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
+    "on_persist_dashpay_payments_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "on_persist_shielded_viewing_keys_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "platform_address_wallet_addresses_with_balances": "packages/rs-platform-wallet-ffi/src/platform_addresses/wallet.rs",
     "platform_wallet_claim_invitation": "packages/rs-platform-wallet-ffi/src/invitation.rs",
@@ -1040,7 +1041,8 @@
       "title": "DashPay payment history persists event-driven through the persister callback",
       "area": "persistence",
       "shared_apis": [
-        "managed_identity_get_dashpay_payments"
+        "managed_identity_get_dashpay_payments",
+        "on_persist_dashpay_payments_fn"
       ],
       "required_persistence_capabilities": [
         "atomic_changesets",
@@ -1048,10 +1050,10 @@
       ],
       "hosts": {
         "swift": {
-          "sdk": "supported",
+          "sdk": "partial",
           "example_app": "not-applicable",
-          "restart": "tested",
-          "reason": "The on_persist_dashpay_payments_fn vtable slot lands PersistentDashpayPayment rows on every Rust store() round (live sends with memos, pending-to-confirmed sweep flips, reconstruction upserts), and the identity restore buffer's payments array feeds them back at load — Sent entries and memos survive relaunch without any UI surface appearing. The getter-backed refreshDashPayPayments path remains as a reconciler."
+          "restart": "required",
+          "reason": "The on_persist_dashpay_payments_fn vtable slot lands PersistentDashpayPayment rows on every Rust store() round (live sends with memos, pending-to-confirmed sweep flips, reconstruction upserts), and the identity restore buffer's payments array feeds them back at load; the getter-backed refreshDashPayPayments path remains as a reconciler. Remains partial pending a process-death restart gate: the loadWalletList() round-trip test exercises the write-then-restore loop in-process against an in-memory container, which does not validate survival across a real app kill and relaunch."
         },
         "kotlin": {
           "sdk": "not-applicable",
@@ -1067,7 +1069,7 @@
           "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/DashPayPersistenceTests.swift",
           "id": "testChangesetRoundPersistsSentEntryAndRestoreBufferRoundTripsIt",
           "command": "swift test --package-path packages/swift-sdk --filter DashPayPaymentPersistenceTests",
-          "covers_restart": true
+          "covers_restart": false
         },
         {
           "host": "swift",
