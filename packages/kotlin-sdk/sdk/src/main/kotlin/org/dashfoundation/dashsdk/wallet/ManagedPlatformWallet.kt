@@ -356,6 +356,11 @@ class ManagedPlatformWallet internal constructor(
                     accountIndex,
                     coreSignerHandle,
                 )
+            }
+        }
+    }
+
+    /**
      * Sign [message] with the private key behind [address] and return the
      * signature as base64 — a **classic Dash signed message**, byte-for-byte
      * compatible with dashj's `ECKey.signMessage` and Dash Core's `signmessage`
@@ -527,6 +532,9 @@ class ManagedPlatformWallet internal constructor(
         } finally {
             java.lang.ref.Reference.reachabilityFence(payment)
         }
+    }
+
+    /**
      * Whether every UTF-16 surrogate in this string is part of a well-formed
      * high/low pair — i.e. whether the string has an exact UTF-8 encoding.
      *
