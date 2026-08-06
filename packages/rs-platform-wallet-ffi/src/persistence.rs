@@ -44,6 +44,7 @@ use crate::contact_persistence::{
 };
 use crate::core_address_types::{AddressPoolTypeTagFFI, CoreAddressEntryFFI, KeyTypeTagFFI};
 use crate::core_wallet_types::{free_wallet_changeset_ffi, WalletChangeSetFFI};
+use crate::dashpay_payment::{build_payment_persist_entries, DashpayPaymentPersistEntryFFI};
 use crate::identity_persistence::{
     free_identity_entry_ffi, free_identity_key_entry_ffi, IdentityEntryFFI, IdentityKeyEntryFFI,
     IdentityKeyRemovalFFI,
@@ -737,6 +738,37 @@ pub struct PersistenceCallbacks {
             count: usize,
         ),
     >,
+    /// Forwards DashPay payment-history rows — the changeset's
+    /// `dashpay_payments_overlay`, which `record_dashpay_payment` (the
+    /// single writer for every payment mutation) populates with exactly
+    /// the changed `(owner, txid)` row(s) — to the host. Per-call work
+    /// is therefore bounded by the delta, never the identity's
+    /// accumulated history; the full-map snapshots riding
+    /// `changeset.identities` are deliberately not projected. Appended
+    /// at the END so the struct layout stays stable — a host built
+    /// against the previous vtable keeps working, it simply never sets
+    /// this slot.
+    ///
+    /// Rows are upserts only: the Rust-side map is append-only history
+    /// keyed by txid, so status flips (Pending → Confirmed / Failed)
+    /// re-emit the same `(owner, txid)` row and there is never a
+    /// tombstone array. Pointers inside each entry are Rust-owned for
+    /// the callback window; no paired free function (Rust drops the
+    /// backing strings after the call).
+    ///
+    /// Returns 0 on success. A non-zero return flips the round's
+    /// `success` flag to `false` so [`Self::on_changeset_end_fn`]
+    /// receives the rollback signal — load-bearing here, because a
+    /// dropped Sent entry + memo has no on-chain recovery (see
+    /// `record_dashpay_payment`'s rollback contract).
+    pub on_persist_dashpay_payments_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            entries: *const DashpayPaymentPersistEntryFFI,
+            count: usize,
+        ) -> i32,
+    >,
 }
 
 // SAFETY: The context pointer is managed by the FFI caller who must ensure
@@ -770,6 +802,7 @@ impl Default for PersistenceCallbacks {
             on_get_core_tx_record_free_fn: None,
             on_list_wallet_core_txids_fn: None,
             on_list_wallet_core_txids_free_fn: None,
+            on_persist_dashpay_payments_fn: None,
             #[cfg(feature = "shielded")]
             on_persist_shielded_notes_fn: None,
             #[cfg(feature = "shielded")]
@@ -1303,6 +1336,46 @@ impl PlatformWalletPersistence for FFIPersister {
                         result
                     );
                     round_success = false;
+                }
+            }
+        }
+
+        // Send DashPay payment-history rows — the `dashpay_payments_overlay`
+        // ONLY. `record_dashpay_payment`, the single writer for every
+        // payment mutation (live sends, confirm-sweep flips, reconstruction
+        // upserts), emits exactly the changed `(owner, txid)` row on the
+        // overlay, so per-round work here is bounded by the delta. The
+        // full-map `IdentityEntry.dashpay_payments` snapshots riding
+        // `changeset.identities` are deliberately NOT projected: replaying
+        // an identity's complete history on every snapshot (including
+        // unrelated scalar mutations) is unbounded per-call work as history
+        // grows, against the persistence trait's bounded-work guidance —
+        // history bootstrap is the host restore buffer's job, and the
+        // getter-backed reconciler covers gaps. Fires AFTER the identities
+        // callback so a brand-new owner's `PersistentIdentity` row is
+        // already staged in the same round when the host resolves the
+        // payment's owner link.
+        if let Some(ref overlay) = changeset.dashpay_payments_overlay {
+            if let Some(cb) = self.callbacks.on_persist_dashpay_payments_fn {
+                let (entries, _string_storage) = build_payment_persist_entries(overlay);
+                if !entries.is_empty() {
+                    let result = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            entries.as_ptr(),
+                            entries.len(),
+                        )
+                    };
+                    drop(entries);
+                    drop(_string_storage);
+                    if result != 0 {
+                        eprintln!(
+                            "DashPay payment persistence callback returned error code {}",
+                            result
+                        );
+                        round_success = false;
+                    }
                 }
             }
         }
@@ -5971,20 +6044,20 @@ mod tests {
         // deliberate, reviewed act, and prove the last-appended field really is
         // terminal — growth is only safe while it happens at the end, where no
         // previously-defined slot changes offset. The count moves with each
-        // append (invitations, then the `release_fn` context destructor, now
-        // the txid enumeration pair).
+        // append (invitations, then the `release_fn` context destructor, the
+        // txid enumeration pair, now the DashPay payment persist slot).
         #[cfg(not(feature = "shielded"))]
         assert_eq!(
             std::mem::size_of::<PersistenceCallbacks>(),
-            24 * std::mem::size_of::<usize>()
+            25 * std::mem::size_of::<usize>()
         );
         #[cfg(feature = "shielded")]
         assert_eq!(
             std::mem::size_of::<PersistenceCallbacks>(),
-            40 * std::mem::size_of::<usize>()
+            41 * std::mem::size_of::<usize>()
         );
         assert_eq!(
-            std::mem::offset_of!(PersistenceCallbacks, on_list_wallet_core_txids_free_fn)
+            std::mem::offset_of!(PersistenceCallbacks, on_persist_dashpay_payments_fn)
                 + std::mem::size_of::<usize>(),
             std::mem::size_of::<PersistenceCallbacks>()
         );
@@ -6032,6 +6105,170 @@ mod tests {
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DEFERRED_CONTACT_CRYPTO,
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PENDING_CONTACT_CRYPTO
         );
+    }
+
+    /// A store round carrying a `dashpay_payments_overlay` — the
+    /// single-row delta `record_dashpay_payment` emits for every
+    /// payment mutation — must project exactly those rows through
+    /// `on_persist_dashpay_payments_fn`, and a round carrying only the
+    /// full-map `IdentityEntry.dashpay_payments` snapshot must NOT
+    /// fire the callback at all. The first half is the write half of
+    /// the relaunch-durability loop (without it a live send's Sent
+    /// entry + memo exist only in memory while `store()` returns Ok);
+    /// the second half pins the bounded-work contract — replaying an
+    /// identity's complete history on every snapshot is unbounded
+    /// per-call work as history grows.
+    #[test]
+    fn store_projects_dashpay_payments_overlay_only() {
+        use platform_wallet::changeset::IdentityChangeSet;
+        use platform_wallet::wallet::identity::{PaymentEntry, PaymentStatus};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        type CollectedRow = ([u8; 32], String, u64, u8, u8, Option<String>);
+
+        #[derive(Default)]
+        struct PaymentSink {
+            rows: std::sync::Mutex<Vec<CollectedRow>>,
+            calls: AtomicUsize,
+        }
+        unsafe extern "C" fn collect_payments(
+            ctx: *mut c_void,
+            _wallet_id: *const u8,
+            entries: *const DashpayPaymentPersistEntryFFI,
+            count: usize,
+        ) -> i32 {
+            let sink = &*(ctx as *const PaymentSink);
+            sink.calls.fetch_add(1, Ordering::SeqCst);
+            let slice = std::slice::from_raw_parts(entries, count);
+            let mut rows = sink.rows.lock().expect("sink lock");
+            for e in slice {
+                let txid = std::ffi::CStr::from_ptr(e.txid)
+                    .to_str()
+                    .expect("txid utf8")
+                    .to_string();
+                let memo = if e.memo.is_null() {
+                    None
+                } else {
+                    Some(
+                        std::ffi::CStr::from_ptr(e.memo)
+                            .to_str()
+                            .expect("memo utf8")
+                            .to_string(),
+                    )
+                };
+                rows.push((
+                    e.owner_identity_id,
+                    txid,
+                    e.amount_duffs,
+                    e.direction_raw,
+                    e.status_raw,
+                    memo,
+                ));
+            }
+            0
+        }
+
+        // An identity snapshot whose payments map carries a row that is
+        // NOT in the overlay — the projection must ignore the snapshot
+        // entirely.
+        let identity = dpp::identity::Identity::V0(dpp::identity::v0::IdentityV0::default());
+        let mut managed = platform_wallet::ManagedIdentity::new(identity, 0);
+        let historical_txid = "cc".repeat(32);
+        managed.dashpay_payments_mut().insert(
+            historical_txid.clone(),
+            PaymentEntry::new_sent(dpp::prelude::Identifier::from([6u8; 32]), 999, None),
+        );
+        let owner_id = managed.id();
+        let mut id_cs = IdentityChangeSet::default();
+        id_cs.identities.insert(
+            owner_id,
+            platform_wallet::changeset::IdentityEntry::from_managed(&managed),
+        );
+
+        // The overlay delta: one Confirmed Sent row with a memo for the
+        // snapshot's owner, one Received row for a second owner.
+        let sent_txid = "aa".repeat(32);
+        let mut confirmed = PaymentEntry::new_sent(
+            dpp::prelude::Identifier::from([7u8; 32]),
+            12_000,
+            Some("lunch".into()),
+        );
+        confirmed.status = PaymentStatus::Confirmed;
+        let other_owner = dpp::prelude::Identifier::from([9u8; 32]);
+        let received_txid = "bb".repeat(32);
+        let mut overlay: std::collections::BTreeMap<
+            dpp::prelude::Identifier,
+            std::collections::BTreeMap<String, PaymentEntry>,
+        > = Default::default();
+        overlay
+            .entry(owner_id)
+            .or_default()
+            .insert(sent_txid.clone(), confirmed);
+        overlay.entry(other_owner).or_default().insert(
+            received_txid.clone(),
+            PaymentEntry::new_received(dpp::prelude::Identifier::from([8u8; 32]), 7_500, None),
+        );
+
+        let changeset = PlatformWalletChangeSet {
+            identities: Some(id_cs.clone()),
+            dashpay_payments_overlay: Some(overlay),
+            ..Default::default()
+        };
+
+        let sink = std::sync::Arc::new(PaymentSink::default());
+        let callbacks = PersistenceCallbacks {
+            context: std::sync::Arc::as_ptr(&sink) as *mut c_void,
+            on_persist_dashpay_payments_fn: Some(collect_payments),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new(callbacks);
+        persister
+            .store([1u8; 32], changeset)
+            .expect("payment round must succeed");
+
+        assert_eq!(sink.calls.load(Ordering::SeqCst), 1);
+        let mut rows = sink.rows.lock().expect("sink lock").clone();
+        rows.sort();
+        assert_eq!(
+            rows.len(),
+            2,
+            "exactly the overlay's delta rows — the snapshot's historical row must not ride along"
+        );
+        // BTreeMap order: default-id owner ([0; 32]) before [9; 32].
+        let (owner, txid, amount, direction, status, memo) = &rows[0];
+        assert_eq!(*owner, owner_id.to_buffer());
+        assert_eq!(*txid, sent_txid);
+        assert_eq!(*amount, 12_000);
+        assert_eq!(*direction, 0, "Sent discriminant");
+        assert_eq!(*status, 1, "Confirmed discriminant");
+        assert_eq!(memo.as_deref(), Some("lunch"));
+        let (owner, txid, amount, direction, status, memo) = &rows[1];
+        assert_eq!(*owner, [9u8; 32]);
+        assert_eq!(*txid, received_txid);
+        assert_eq!(*amount, 7_500);
+        assert_eq!(*direction, 1, "Received discriminant");
+        assert_eq!(*status, 1, "Received entries record as Confirmed");
+        assert!(memo.is_none());
+
+        // A snapshot-only round (payments in the identity map, no
+        // overlay) must NOT fire the callback — the bounded-work pin:
+        // identity snapshots must not replay payment history.
+        persister
+            .store(
+                [1u8; 32],
+                PlatformWalletChangeSet {
+                    identities: Some(id_cs),
+                    ..Default::default()
+                },
+            )
+            .expect("snapshot-only round must succeed");
+        assert_eq!(sink.calls.load(Ordering::SeqCst), 1);
+
+        // A payments-free round must not fire the callback at all.
+        persister
+            .store([1u8; 32], PlatformWalletChangeSet::default())
+            .expect("empty round must succeed");
+        assert_eq!(sink.calls.load(Ordering::SeqCst), 1);
     }
 
     #[cfg(feature = "shielded")]
