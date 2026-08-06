@@ -14,7 +14,7 @@ use key_wallet::managed_account::ManagedCoreFundsAccount;
 use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
 use key_wallet::wallet::managed_wallet_info::fee::FeeRate;
 use key_wallet::wallet::managed_wallet_info::transaction_builder::{
-    TransactionBuilder, DEFAULT_MAX_OP_RETURN_BYTES,
+    TransactionBuilder, MAX_STANDARD_OP_RETURN_BYTES,
 };
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
@@ -537,11 +537,11 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_op_return(
     // the caller already configured. Reject an over-long payload *before* taking the builder
     // so the slot keeps its real state. `add_op_return` re-checks; this is the same policy
     // constant, not a second opinion.
-    if data_len > DEFAULT_MAX_OP_RETURN_BYTES {
+    if data_len > MAX_STANDARD_OP_RETURN_BYTES {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
             format!(
-                "OP_RETURN payload too large: {data_len} bytes (max {DEFAULT_MAX_OP_RETURN_BYTES})"
+                "OP_RETURN payload too large: {data_len} bytes (max {MAX_STANDARD_OP_RETURN_BYTES})"
             ),
         );
     }
