@@ -79,6 +79,10 @@ pub unsafe extern "C" fn core_wallet_signed_payment_broadcast(
     out_txid: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_txid);
+    // Publish the null sentinel before any fallible step, so an invalid
+    // handle / consumed token / mismatch / stale token never leaves the
+    // caller's previous output value in place to be mistaken for a txid.
+    *out_txid = std::ptr::null_mut();
 
     let core = unwrap_option_or_return!(CORE_WALLET_STORAGE.with_item(core_handle, |w| w.clone()));
 

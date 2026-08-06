@@ -1517,6 +1517,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
         }
         if out_txid.is_null() {
             unsafe { platform_wallet_ffi::core_wallet_transaction_free(out_tx) };
+            // The registration already committed and holds the funding
+            // reservation; release the token so a defensive-branch failure
+            // doesn't orphan it to the TTL backstop (same policy as the
+            // byte-array failure path below).
+            let _ = unsafe { platform_wallet_ffi::core_wallet_signed_payment_release(token) };
             throw_sdk_exception(env, 1, "finalize returned a NULL txid");
             return ptr::null_mut();
         }
