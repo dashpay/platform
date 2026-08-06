@@ -2423,6 +2423,39 @@ sync_start_stop!(
     platform_wallet_ffi::platform_wallet_manager_identity_sync_is_running
 );
 
+/// Whether the manager has frozen its durable sync watermark this session
+/// (dashpay/platform#4069). `true` means the wallet-event adapter dropped
+/// record-bearing events, or a persistence `store()` was rejected, so the
+/// persisted `syncedHeight` is deliberately held behind the chain tip and a
+/// rescan is pending on the next launch — the host should surface a hard
+/// "verification failed / rescan pending" state rather than leave the fault
+/// in the error logs. Latches for the process lifetime. Backs
+/// `PlatformWalletManager.syncFaultDetected()`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_syncFaultDetected(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+) -> jboolean {
+    guard(&mut env, JNI_FALSE, |env| {
+        let mut detected = false;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_sync_fault_detected(
+                manager_handle as Handle,
+                &mut detected as *mut bool,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return JNI_FALSE;
+        }
+        if detected {
+            JNI_TRUE
+        } else {
+            JNI_FALSE
+        }
+    })
+}
+
 #[cfg(feature = "shielded")]
 sync_start_stop!(
     Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_shieldedSyncStart,
