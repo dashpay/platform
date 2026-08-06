@@ -50,6 +50,19 @@ internal object WalletManagerNative {
     /** Shut down + free a bundle from [nativeCreate]. Safe on 0. */
     external fun nativeDestroy(bundle: Long)
 
+    /**
+     * Resolve every (name, descriptor) pair the Rust persistence
+     * trampolines dispatch against [NativePersistenceBridge]. Returns
+     * `null` when all slots resolve; otherwise the first unresolvable
+     * `"name descriptor"` pair. Virtual dispatch defers each resolution to
+     * the slot's first live call, so without this check a drifted
+     * descriptor would surface only mid-flow at runtime — the instrumented
+     * suite calls it to pin the Rust↔Kotlin lockstep up front.
+     */
+    external fun nativeVerifyPersistenceBridgeDescriptors(
+        bridge: NativePersistenceBridge,
+    ): String?
+
     // ── Wallet creation / restore ─────────────────────────────────────
 
     /**
@@ -215,6 +228,28 @@ internal object WalletManagerNative {
     external fun platformWalletGetCore(walletHandle: Long): Long
 
     /**
+     * `core_wallet_sign_message` — sign [message] with the private key behind
+     * [address] and return the base64 signature (a classic Dash signed message).
+     *
+     * [coreHandle] is a core-wallet handle from [platformWalletGetCore].
+     * [address] must be a P2PKH address of THIS wallet on its network, owned by
+     * a signable funds account: a foreign or watch-only address throws
+     * `ErrorSigningKeyUnavailable` (31), while an unparseable, wrong-network, or
+     * non-P2PKH address throws `ErrorInvalidParameter` (2). [message] is signed
+     * verbatim — it is length-prefixed into the digest, so trailing whitespace
+     * and newlines are significant, and an empty string is valid and signable.
+     * [coreSignerHandle] is the manager's `MnemonicResolverHandle`.
+     *
+     * Moves no value: nothing is selected, reserved, broadcast, or persisted.
+     */
+    external fun coreWalletSignMessage(
+        coreHandle: Long,
+        address: String,
+        message: String,
+        coreSignerHandle: Long,
+    ): String
+
+    /**
      * `core_wallet_broadcast_transaction` — broadcast a transaction built by
      * [coreTxBuilderBuildSigned]. [accountType]/[accountIndex] identify the
      * funding account so a definitive rejection releases its UTXO
@@ -226,6 +261,22 @@ internal object WalletManagerNative {
         accountType: Int,
         accountIndex: Int,
     ): String
+
+    /**
+     * `core_wallet_next_receive_address` — the engine's next unused BIP-44
+     * EXTERNAL (receive) address for [accountIndex], base58-encoded.
+     * Answered from the engine's in-memory used-set (authoritative over
+     * the Room `core_addresses` mirror). Kotlin parity for the Swift
+     * binding (`coreWallet().nextReceiveAddress(accountIndex:)`).
+     */
+    external fun coreWalletNextReceiveAddress(coreHandle: Long, accountIndex: Int): String
+
+    /**
+     * `core_wallet_next_change_address` — the engine's next unused BIP-44
+     * INTERNAL (change) address for [accountIndex], base58-encoded. The
+     * change-side twin of [coreWalletNextReceiveAddress].
+     */
+    external fun coreWalletNextChangeAddress(coreHandle: Long, accountIndex: Int): String
 
     /** Consume and broadcast an atomically finalized V2 transaction. */
     external fun coreWalletBroadcastSignedTransactionV2(coreHandle: Long, transaction: Long): String
@@ -248,6 +299,45 @@ internal object WalletManagerNative {
      * 0; call exactly once per built transaction.
      */
     external fun coreTransactionFree(tx: Long)
+
+    /**
+     * `core_wallet_signed_payment_finalize` — atomically fund, reserve, sign,
+     * AND register a builder for deferred (BIP70/BIP270) submission in one
+     * native call. Selection and reservation commit as a single unit under the
+     * wallet-manager lock, closing the double-selection window. CONSUMES
+     * [builder]. [accountType]/[accountIndex] identify the funding account
+     * (0 BIP44, 1 BIP32, 2 CoinJoin); [coreSignerHandle] is a
+     * `MnemonicResolverHandle`.
+     *
+     * Returns a big-endian BLOB decoded into a `SignedCoreTransaction`:
+     * `u64 token, u64 feeDuffs, u32 txidLen, txid utf8, u32 txBytesLen, txBytes`.
+     */
+    external fun coreWalletFinalizeSignedPayment(
+        builder: Long,
+        walletHandle: Long,
+        accountType: Int,
+        accountIndex: Int,
+        coreSignerHandle: Long,
+    ): ByteArray
+
+    /**
+     * `core_wallet_signed_payment_broadcast` — broadcast the payment behind
+     * [token], reconciling its reservation on failure and consuming the token.
+     * Rather than double-broadcasting, an unusable token throws one of three
+     * sibling codes — `ErrorStaleReservationToken` (34, aged out),
+     * `ErrorReservationTokenConsumed` (35, already consumed/unknown), or
+     * `ErrorReservationWalletMismatch` (36, different wallet generation).
+     * [coreHandle] must resolve to the wallet the token was minted against.
+     * Returns the txid as a lowercase hex string.
+     */
+    external fun coreWalletBroadcastSignedPayment(coreHandle: Long, token: Long): String
+
+    /**
+     * `core_wallet_signed_payment_release` — release the funding reservation
+     * behind [token] and drop it. Idempotent: releasing an unknown /
+     * already-consumed token is a silent no-op.
+     */
+    external fun coreWalletReleaseSignedPayment(token: Long)
 
     /**
      * Enumerate the wallet's Platform-payment addresses with cached credit
@@ -380,6 +470,15 @@ internal object WalletManagerNative {
     external fun identitySyncStart(managerHandle: Long)
     external fun identitySyncStop(managerHandle: Long)
     external fun identitySyncIsRunning(managerHandle: Long): Boolean
+
+    /**
+     * Whether the durable sync watermark has been frozen this session because
+     * a persistence store was rejected (the lossless channel cannot drop
+     * events) — the persisted
+     * `syncedHeight` is held behind the chain tip and a rescan is pending on
+     * the next launch. Latches for this manager instance's lifetime.
+     */
+    external fun syncFaultDetected(managerHandle: Long): Boolean
 
     /** Shielded loop — only present when the native library is built with shielded. */
     external fun shieldedSyncStart(managerHandle: Long)

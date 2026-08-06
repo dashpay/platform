@@ -19,6 +19,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V2: DriveDocumentMethodVersions =
             prove_document_history: 0,
             detect_count_mode: 0,
             detect_sum_mode: 0,
+            detect_ranked_mode: 0,
         },
         delete: DriveDocumentDeleteMethodVersions {
             add_estimation_costs_for_remove_document_to_primary_storage: 0,

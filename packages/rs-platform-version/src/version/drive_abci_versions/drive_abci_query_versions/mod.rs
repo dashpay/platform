@@ -1,5 +1,6 @@
 pub mod v0;
 pub mod v1;
+pub mod v2;
 
 use versioned_feature_core::{FeatureVersion, FeatureVersionBounds};
 

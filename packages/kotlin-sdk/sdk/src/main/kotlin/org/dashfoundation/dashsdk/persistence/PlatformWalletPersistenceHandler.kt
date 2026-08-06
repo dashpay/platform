@@ -44,6 +44,7 @@ import org.dashfoundation.dashsdk.persistence.entities.DashpayIgnoredSenderEntit
 import org.dashfoundation.dashsdk.persistence.entities.DashpayProfileEntity
 import org.dashfoundation.dashsdk.persistence.entities.DpnsNameEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
+import org.dashfoundation.dashsdk.persistence.entities.InvitationEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressesSyncStateEntity
 import org.dashfoundation.dashsdk.persistence.entities.PublicKeyEntity
@@ -127,6 +128,7 @@ class PlatformWalletPersistenceHandler(
 
     override fun persistenceCapabilitiesBits(): Long =
         CAPABILITY_ATOMIC_CHANGESETS or
+            CAPABILITY_INVITATIONS or
             CAPABILITY_ASSET_LOCK_FUNDING_INDICES or
             CAPABILITY_SHIELDED_VIEWING_KEYS or
             CAPABILITY_PROVIDER_TRANSACTIONS or
@@ -587,7 +589,34 @@ class PlatformWalletPersistenceHandler(
                 db, walletId, accountTypeTag.toInt() and 0xFF, accountIndex,
                 accountStandardTag.toInt() and 0xFF, accountRegistrationIndex,
                 accountKeyClass, accountUserIdentityId, accountFriendIdentityId,
-            ) ?: return@stage
+            ) ?: run {
+                // The IdentityInvitation pool write is load-bearing: Rust's
+                // pre-broadcast gate treats this round's success as "voucher
+                // funding index durably recorded" and only then broadcasts.
+                // Silently skipping on a missing parent account row would let
+                // the funding index reset on restart and re-export the same
+                // one-time bearer key. Create the account row (mirroring
+                // onWalletChangesetAccountBegin's upsert-on-missing); if it
+                // still can't be resolved (e.g. no wallet row), fail the
+                // round so create aborts before any funds move.
+                if ((accountTypeTag.toInt() and 0xFF) != ACCOUNT_TYPE_IDENTITY_INVITATION) {
+                    return@stage
+                }
+                upsertAccount(
+                    db, walletId, accountTypeTag.toInt() and 0xFF, accountIndex,
+                    accountStandardTag.toInt() and 0xFF, accountRegistrationIndex,
+                    accountKeyClass, accountUserIdentityId, accountFriendIdentityId,
+                    xpub = null,
+                )
+                fetchAccount(
+                    db, walletId, accountTypeTag.toInt() and 0xFF, accountIndex,
+                    accountStandardTag.toInt() and 0xFF, accountRegistrationIndex,
+                    accountKeyClass, accountUserIdentityId, accountFriendIdentityId,
+                ) ?: error(
+                    "invitation funding account row unresolvable; " +
+                        "failing round to keep the funding index durable",
+                )
+            }
             if ((accountTypeTag.toInt() and 0xFF) == ACCOUNT_TYPE_PLATFORM_PAYMENT) {
                 // DIP-17 PlatformPayment pool → PlatformAddressEntity
                 // (mirror of Swift `persistPlatformPaymentAddresses`). Rust
@@ -1500,6 +1529,50 @@ class PlatformWalletPersistenceHandler(
 
     override fun onPersistAssetLockRemoval(walletId: ByteArray, outPoint: ByteArray): Int = guarded {
         stage(walletId) { db -> db.assetLockDao().deleteByOutPointHex(encodeOutPointHex(outPoint)) }
+        0
+    }
+
+    // ── Invitations (DIP-13) ──────────────────────────────────────────
+
+    override fun onPersistInvitationUpsert(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        fundingIndex: Int,
+        amountDuffs: Long,
+        expiryUnix: Int,
+        createdAtSecs: Int,
+        hasInviter: Boolean,
+        status: Int,
+    ): Int = guarded {
+        stage(walletId) { db ->
+            val outPointHex = encodeOutPointHex(outPoint)
+            val existing = db.invitationDao().getByOutPointHex(outPointHex)
+            db.invitationDao().upsert(
+                InvitationEntity(
+                    outPointHex = outPointHex,
+                    rawOutPoint = outPoint,
+                    walletId = walletId,
+                    fundingIndexRaw = fundingIndex,
+                    amountDuffs = amountDuffs,
+                    expiryUnix = expiryUnix,
+                    createdAtSecs = createdAtSecs,
+                    hasInviter = hasInviter,
+                    // Claimed/Reclaimed and the reclaim marker are written
+                    // locally by the app (Rust emits only Created), so an
+                    // existing row keeps them — a Rust re-emit of the same
+                    // outpoint must never reset local status.
+                    statusRaw = existing?.statusRaw ?: status,
+                    reclaimInFlight = existing?.reclaimInFlight ?: false,
+                    createdAt = existing?.createdAt ?: java.util.Date(),
+                    updatedAt = now(),
+                ),
+            )
+        }
+        0
+    }
+
+    override fun onPersistInvitationRemoval(walletId: ByteArray, outPoint: ByteArray): Int = guarded {
+        stage(walletId) { db -> db.invitationDao().deleteByOutPointHex(encodeOutPointHex(outPoint)) }
         0
     }
 
@@ -2508,8 +2581,8 @@ class PlatformWalletPersistenceHandler(
      *  - identities (SET_NULL from wallet, Swift `.nullify`) + their
      *    SET_NULL `token_balances`;
      *  - the walletId-keyed tables with no wallet FK: txos, pending
-     *    inputs, asset locks, platform addresses + sync state, and the
-     *    five shielded (Orchard) tables.
+     *    inputs, asset locks, invitations, platform addresses + sync
+     *    state, and the five shielded (Orchard) tables.
      *
      * The platform-addresses network sync-state row is shared across a
      * network's wallets (keyed by [syncStateScopeId]); it is dropped only
@@ -2557,6 +2630,7 @@ class PlatformWalletPersistenceHandler(
             database.txoDao().deleteByWallet(walletId)
             database.documentDao().deletePendingInputsByWallet(walletId)
             database.assetLockDao().deleteByWallet(walletId)
+            database.invitationDao().deleteByWallet(walletId)
             database.platformAddressDao().deleteByWallet(walletId)
             database.shieldedDao().deleteNotesByWallet(walletId)
             database.shieldedDao().deleteOutgoingNotesByWallet(walletId)
@@ -3004,6 +3078,7 @@ class PlatformWalletPersistenceHandler(
     companion object {
         internal const val PERSISTENCE_CAPABILITIES_VERSION: Int = 1
         internal const val CAPABILITY_ATOMIC_CHANGESETS: Long = 0x01
+        internal const val CAPABILITY_INVITATIONS: Long = 0x02
         internal const val CAPABILITY_ASSET_LOCK_FUNDING_INDICES: Long = 0x04
         internal const val CAPABILITY_SHIELDED_VIEWING_KEYS: Long = 0x08
         internal const val CAPABILITY_PROVIDER_TRANSACTIONS: Long = 0x10
@@ -3020,6 +3095,9 @@ class PlatformWalletPersistenceHandler(
 
         /** DIP-17 PlatformPayment account type tag (`accountTypeName` 14). */
         private const val ACCOUNT_TYPE_PLATFORM_PAYMENT = 14
+
+        /** DIP-13 IdentityInvitation account type tag (`AccountTypeTagFFI` 5). */
+        private const val ACCOUNT_TYPE_IDENTITY_INVITATION = 5
 
         private val HEX = "0123456789abcdef".toCharArray()
     }

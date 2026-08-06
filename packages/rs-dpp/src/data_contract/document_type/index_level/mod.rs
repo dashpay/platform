@@ -79,6 +79,28 @@ pub struct IndexLevelTypeInfo {
     /// together promote the tree to a `ProvableCountSumTree`. Requires
     /// `summable.is_some()`.
     pub range_summable: bool,
+    /// Whether this index ranks its groups by **count**. When `true`, the
+    /// property-name level (the level *above* this terminating level, whose
+    /// keys are the terminator property's distinct values — one child tree per
+    /// group) is upgraded from `ProvableCountTree` / `ProvableCountSumTree` to
+    /// the matching *indexed* tree carrying an ordered secondary on the Count
+    /// axis, so "top / bottom K groups by count" is O(log n + k) with a proof.
+    ///
+    /// The indexed primary mirrors the tree it replaces byte for byte, so the
+    /// existing range-count reads are unaffected. Requires `range_countable`.
+    pub ranked_countable: bool,
+    /// Sum-axis counterpart of `ranked_countable`: the same property-name level
+    /// gains an ordered secondary keyed by each group's running sum. Requires
+    /// `range_summable`.
+    pub ranked_summable: bool,
+    /// Average-axis counterpart of `ranked_countable`: the same property-name
+    /// level gains an ordered secondary keyed by each group's (count, sum)
+    /// average. Requires both `range_countable` and `range_summable`.
+    ///
+    /// The three ranking axes are independent — this one does not imply the
+    /// other two. The set of axes declared here is what the rs-drive write path
+    /// turns into the indexed tree's axis list.
+    pub ranked_averageable: bool,
 }
 
 impl IndexType {
@@ -268,6 +290,17 @@ impl IndexLevel {
                         range_countable: index.range_countable,
                         summable: index.summable.clone(),
                         range_summable: index.range_summable,
+                        // The ranking axes live on the same terminating level
+                        // as the range axes they extend: this is the level
+                        // named after the index's LAST property, whose children
+                        // are that property's value trees (one per group). The
+                        // rs-drive write path reads them off the very same
+                        // `IndexLevelTypeInfo` it already consults for
+                        // `range_countable` / `range_summable` when it picks
+                        // the property-name tree variant.
+                        ranked_countable: index.ranked_countable,
+                        ranked_summable: index.ranked_summable,
+                        ranked_averageable: index.ranked_averageable,
                     });
                 }
             }
@@ -347,6 +380,25 @@ impl IndexLevel {
             );
         }
 
+        // Same check on the ranking surface (`ranked_countable` /
+        // `ranked_summable` / `ranked_averageable`). All three are checked
+        // together in one helper rather than folded into the count and sum
+        // helpers above because the Avg axis straddles both — it is neither a
+        // count-only nor a sum-only property — and because the set of ranking
+        // axes is what determines the indexed tree's axis list, which is
+        // committed into the parent hash at contract creation. Adding or
+        // removing an axis after the fact would require rebuilding the ordered
+        // secondaries for every existing group, so the whole set is immutable.
+        if let Some(ranked_change_path) = self.find_first_ranked_change(new_indices) {
+            return SimpleConsensusValidationResult::new_with_error(
+                DataContractInvalidIndexDefinitionUpdateError::new(
+                    document_type_name.to_string(),
+                    ranked_change_path,
+                )
+                .into(),
+            );
+        }
+
         SimpleConsensusValidationResult::new()
     }
 }
@@ -375,6 +427,9 @@ mod tests {
             range_countable: false,
             summable: None,
             range_summable: false,
+            ranked_countable: false,
+            ranked_summable: false,
+            ranked_averageable: false,
         }];
 
         let old_index_structure =
@@ -406,6 +461,9 @@ mod tests {
             range_countable: false,
             summable: None,
             range_summable: false,
+            ranked_countable: false,
+            ranked_summable: false,
+            ranked_averageable: false,
         }];
 
         let new_indices = vec![
@@ -422,6 +480,9 @@ mod tests {
                 range_countable: false,
                 summable: None,
                 range_summable: false,
+                ranked_countable: false,
+                ranked_summable: false,
+                ranked_averageable: false,
             },
             Index {
                 name: "test2".to_string(),
@@ -436,6 +497,9 @@ mod tests {
                 range_countable: false,
                 summable: None,
                 range_summable: false,
+                ranked_countable: false,
+                ranked_summable: false,
+                ranked_averageable: false,
             },
         ];
 
@@ -476,6 +540,9 @@ mod tests {
                 range_countable: false,
                 summable: None,
                 range_summable: false,
+                ranked_countable: false,
+                ranked_summable: false,
+                ranked_averageable: false,
             },
             Index {
                 name: "test2".to_string(),
@@ -490,6 +557,9 @@ mod tests {
                 range_countable: false,
                 summable: None,
                 range_summable: false,
+                ranked_countable: false,
+                ranked_summable: false,
+                ranked_averageable: false,
             },
         ];
 
@@ -506,6 +576,9 @@ mod tests {
             range_countable: false,
             summable: None,
             range_summable: false,
+            ranked_countable: false,
+            ranked_summable: false,
+            ranked_averageable: false,
         }];
 
         let old_index_structure =
@@ -544,6 +617,9 @@ mod tests {
             range_countable: false,
             summable: None,
             range_summable: false,
+            ranked_countable: false,
+            ranked_summable: false,
+            ranked_averageable: false,
         }];
 
         let new_indices = vec![Index {
@@ -565,6 +641,9 @@ mod tests {
             range_countable: false,
             summable: None,
             range_summable: false,
+            ranked_countable: false,
+            ranked_summable: false,
+            ranked_averageable: false,
         }];
 
         let old_index_structure =
@@ -609,6 +688,9 @@ mod tests {
             range_countable: false,
             summable: None,
             range_summable: false,
+            ranked_countable: false,
+            ranked_summable: false,
+            ranked_averageable: false,
         }];
 
         let new_indices = vec![Index {
@@ -624,6 +706,9 @@ mod tests {
             range_countable: false,
             summable: None,
             range_summable: false,
+            ranked_countable: false,
+            ranked_summable: false,
+            ranked_averageable: false,
         }];
 
         let old_index_structure =
@@ -662,6 +747,9 @@ mod tests {
             range_countable: false,
             summable: None,
             range_summable: false,
+            ranked_countable: false,
+            ranked_summable: false,
+            ranked_averageable: false,
         }];
 
         let new_indices = vec![Index {
@@ -677,6 +765,9 @@ mod tests {
             range_countable: false,
             summable: None,
             range_summable: false,
+            ranked_countable: false,
+            ranked_summable: false,
+            ranked_averageable: false,
         }];
 
         let old_index_structure =
@@ -715,6 +806,9 @@ mod tests {
             range_countable: false,
             summable: None,
             range_summable: false,
+            ranked_countable: false,
+            ranked_summable: false,
+            ranked_averageable: false,
         }];
 
         let new_indices = vec![Index {
@@ -730,6 +824,9 @@ mod tests {
             range_countable: false,
             summable: None,
             range_summable: false,
+            ranked_countable: false,
+            ranked_summable: false,
+            ranked_averageable: false,
         }];
 
         let old_index_structure =
@@ -768,6 +865,9 @@ mod tests {
             range_countable: false,
             summable: None,
             range_summable: false,
+            ranked_countable: false,
+            ranked_summable: false,
+            ranked_averageable: false,
         }];
 
         let old_index_structure =
@@ -806,6 +906,9 @@ mod tests {
             range_countable: false,
             summable: None,
             range_summable: false,
+            ranked_countable: false,
+            ranked_summable: false,
+            ranked_averageable: false,
         }];
 
         let new_indices = vec![Index {
@@ -821,6 +924,9 @@ mod tests {
             range_countable: true,
             summable: None,
             range_summable: false,
+            ranked_countable: false,
+            ranked_summable: false,
+            ranked_averageable: false,
         }];
 
         let old_index_structure =
@@ -859,6 +965,9 @@ mod tests {
             range_countable: true,
             summable: None,
             range_summable: false,
+            ranked_countable: false,
+            ranked_summable: false,
+            ranked_averageable: false,
         }];
 
         let new_indices = vec![Index {
@@ -874,6 +983,9 @@ mod tests {
             range_countable: false,
             summable: None,
             range_summable: false,
+            ranked_countable: false,
+            ranked_summable: false,
+            ranked_averageable: false,
         }];
 
         let old_index_structure =
@@ -918,6 +1030,9 @@ mod tests {
             range_countable: false,
             summable: None,
             range_summable: false,
+            ranked_countable: false,
+            ranked_summable: false,
+            ranked_averageable: false,
         }];
 
         let new_indices = vec![Index {
@@ -939,6 +1054,9 @@ mod tests {
             range_countable: true,
             summable: None,
             range_summable: false,
+            ranked_countable: false,
+            ranked_summable: false,
+            ranked_averageable: false,
         }];
 
         let old_index_structure =
@@ -983,6 +1101,9 @@ mod tests {
             range_countable: false,
             summable: None,
             range_summable: false,
+            ranked_countable: false,
+            ranked_summable: false,
+            ranked_averageable: false,
         }];
 
         let new_indices = vec![Index {
@@ -1004,6 +1125,9 @@ mod tests {
             range_countable: false,
             summable: None,
             range_summable: false,
+            ranked_countable: false,
+            ranked_summable: false,
+            ranked_averageable: false,
         }];
 
         let old_index_structure =
@@ -1021,6 +1145,219 @@ mod tests {
             [ConsensusError::BasicError(
                 BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
             )] if e.index_path() == "first -> second -> (countable: NotCountable -> Countable)"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Ranked aggregate axes (meta-schema v3 / PV14)
+    // -----------------------------------------------------------------------
+
+    /// Fully range-averageable index on `[first, second]` with the supplied
+    /// ranking axes. Compound on purpose: the ranking flags must land on the
+    /// level of the LAST property, which is where the value trees (one per
+    /// group) hang and therefore where rs-drive picks the indexed tree variant.
+    fn ranked_index(
+        ranked_countable: bool,
+        ranked_summable: bool,
+        ranked_averageable: bool,
+    ) -> Index {
+        Index {
+            name: "compound".to_string(),
+            properties: vec![
+                IndexProperty {
+                    name: "first".to_string(),
+                    ascending: true,
+                },
+                IndexProperty {
+                    name: "second".to_string(),
+                    ascending: true,
+                },
+            ],
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::Countable,
+            range_countable: true,
+            summable: Some("score".to_string()),
+            range_summable: true,
+            ranked_countable,
+            ranked_summable,
+            ranked_averageable,
+        }
+    }
+
+    /// The ranking flags must be carried onto the terminating level — the one
+    /// named after the index's LAST property — next to the range flags they
+    /// extend, because that is the `IndexLevelTypeInfo` the rs-drive write path
+    /// consults when it picks the property-name tree variant.
+    #[test]
+    fn ranked_flags_land_on_the_terminal_property_level() {
+        let platform_version = PlatformVersion::latest();
+        let indices = vec![ranked_index(true, false, true)];
+
+        let structure = IndexLevel::try_from_indices(&indices, "test", platform_version)
+            .expect("failed to create index level");
+
+        let first = structure
+            .sub_levels()
+            .get("first")
+            .expect("first level exists");
+        assert!(
+            first.has_index_with_type().is_none(),
+            "no index terminates at the prefix level, so it carries no type info"
+        );
+
+        let second = first
+            .sub_levels()
+            .get("second")
+            .expect("second (terminal) level exists");
+        let info = second
+            .has_index_with_type()
+            .expect("the index terminates at the last property level");
+        assert!(info.ranked_countable);
+        assert!(!info.ranked_summable);
+        assert!(info.ranked_averageable);
+        // The range axes the ranking extends live on the same info.
+        assert!(info.range_countable);
+        assert!(info.range_summable);
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_ranked_countable_changed_from_false_to_true() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let old_indices = vec![ranked_index(false, false, false)];
+        let new_indices = vec![ranked_index(true, false, false)];
+
+        let old_index_structure =
+            IndexLevel::try_from_indices(&old_indices, document_type_name, platform_version)
+                .expect("failed to create old index level");
+        let new_index_structure =
+            IndexLevel::try_from_indices(&new_indices, document_type_name, platform_version)
+                .expect("failed to create new index level");
+
+        let result = old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+            )] if e.index_path() == "first -> second -> (ranked_countable: false -> true)"
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_ranked_summable_changed_from_true_to_false() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let old_indices = vec![ranked_index(false, true, false)];
+        let new_indices = vec![ranked_index(false, false, false)];
+
+        let old_index_structure =
+            IndexLevel::try_from_indices(&old_indices, document_type_name, platform_version)
+                .expect("failed to create old index level");
+        let new_index_structure =
+            IndexLevel::try_from_indices(&new_indices, document_type_name, platform_version)
+                .expect("failed to create new index level");
+
+        let result = old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+            )] if e.index_path() == "first -> second -> (ranked_summable: true -> false)"
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_ranked_averageable_changed() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let old_indices = vec![ranked_index(false, false, false)];
+        let new_indices = vec![ranked_index(false, false, true)];
+
+        let old_index_structure =
+            IndexLevel::try_from_indices(&old_indices, document_type_name, platform_version)
+                .expect("failed to create old index level");
+        let new_index_structure =
+            IndexLevel::try_from_indices(&new_indices, document_type_name, platform_version)
+                .expect("failed to create new index level");
+
+        let result = old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+            )] if e.index_path() == "first -> second -> (ranked_averageable: false -> true)"
+        );
+    }
+
+    #[test]
+    fn should_pass_if_ranked_flags_unchanged_on_update() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let old_indices = vec![ranked_index(true, true, true)];
+
+        let old_index_structure =
+            IndexLevel::try_from_indices(&old_indices, document_type_name, platform_version)
+                .expect("failed to create old index level");
+        let new_index_structure = old_index_structure.clone();
+
+        let result = old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+        assert!(result.is_valid());
+    }
+
+    /// Adding a brand-new ranked index on update follows the same policy as
+    /// adding any other new index: rejected, because the new structure is not a
+    /// subset of the old one. Pinned here so the ranking work can't be read as
+    /// carving out an exception.
+    #[test]
+    fn should_return_invalid_result_if_new_ranked_index_is_added_on_update() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let old_indices = vec![Index {
+            name: "test".to_string(),
+            properties: vec![IndexProperty {
+                name: "test".to_string(),
+                ascending: false,
+            }],
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::NotCountable,
+            range_countable: false,
+            summable: None,
+            range_summable: false,
+            ranked_countable: false,
+            ranked_summable: false,
+            ranked_averageable: false,
+        }];
+
+        let mut new_indices = old_indices.clone();
+        new_indices.push(ranked_index(true, false, false));
+
+        let old_index_structure =
+            IndexLevel::try_from_indices(&old_indices, document_type_name, platform_version)
+                .expect("failed to create old index level");
+        let new_index_structure =
+            IndexLevel::try_from_indices(&new_indices, document_type_name, platform_version)
+                .expect("failed to create new index level");
+
+        let result = old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+            )] if e.index_path() == "first"
         );
     }
 }

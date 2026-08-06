@@ -3,7 +3,9 @@ use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
+mod common;
 mod v0;
+mod v1;
 
 impl DocumentTypeRef<'_> {
     /// Verify that the update to the document type is valid.
@@ -20,9 +22,10 @@ impl DocumentTypeRef<'_> {
             .validate_update
         {
             0 => self.validate_update_v0(new_document_type, platform_version),
+            1 => self.validate_update_v1(new_document_type, platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "validate_update".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }

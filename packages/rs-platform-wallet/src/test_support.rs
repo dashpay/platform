@@ -18,6 +18,11 @@ use dashcore::Txid;
 use dashcore::{Network, Transaction};
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::bip32::ExtendedPubKey;
+// Only the `#[cfg(test)]` CoinJoin fixture needs the trait (for
+// `next_address_with_info` on a non-standard account); gate it to match so a
+// `test-utils`-only build does not flag it unused.
+#[cfg(test)]
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::signer::{ExtendedPubKeySigner, Signer, SignerMethod};
 use key_wallet::test_utils::TestWalletContext;
 use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
@@ -27,7 +32,7 @@ use tokio::sync::RwLock;
 
 #[cfg(test)]
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
-use crate::wallet::core::WalletBalance;
+use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
@@ -178,7 +183,7 @@ pub(crate) async fn funded_wallet_manager(
 ) -> (
     Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     WalletId,
-    Arc<WalletBalance>,
+    Arc<WalletGeneration>,
     WalletSigner,
 ) {
     funded_wallet_manager_with_outputs(account_type, &[10_000_000]).await
@@ -193,7 +198,7 @@ pub(crate) async fn funded_wallet_manager_with_outputs(
 ) -> (
     Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     WalletId,
-    Arc<WalletBalance>,
+    Arc<WalletGeneration>,
     WalletSigner,
 ) {
     let mut ctx = TestWalletContext::new_random();
@@ -243,10 +248,10 @@ pub(crate) async fn funded_wallet_manager_with_outputs(
         wallet: ctx.wallet.clone(),
     };
 
-    let balance = Arc::new(WalletBalance::new());
+    let generation = Arc::new(WalletGeneration::new());
     let info = PlatformWalletInfo {
         core_wallet: ctx.managed_wallet,
-        balance: Arc::clone(&balance),
+        generation: Arc::clone(&generation),
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
     };
@@ -254,7 +259,78 @@ pub(crate) async fn funded_wallet_manager_with_outputs(
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
 
-    (Arc::new(RwLock::new(wm)), wallet_id, balance, signer)
+    (Arc::new(RwLock::new(wm)), wallet_id, generation, signer)
+}
+
+/// Like [`funded_wallet_manager`] but funds the wallet's CoinJoin account 0
+/// (created by `WalletAccountCreationOptions::Default`) with a single spendable
+/// UTXO. Lets the deferred-payment tests exercise a CoinJoin-funded reservation,
+/// which has no `StandardAccountType` yet must still be released immediately on
+/// rejection/abandon rather than stranded until the TTL backstop.
+///
+/// Only the crate's own `#[cfg(test)]` unit tests consume it, so it is gated on
+/// `cfg(test)` directly — under the `test-utils` feature alone (the FFI crate's
+/// build) it would compile with no user and trip `dead_code`.
+#[cfg(test)]
+pub(crate) async fn funded_coinjoin_wallet_manager() -> (
+    Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    WalletId,
+    Arc<WalletGeneration>,
+    WalletSigner,
+) {
+    let mut ctx = TestWalletContext::new_random();
+
+    let coinjoin_xpub = ctx
+        .wallet
+        .accounts
+        .coinjoin_accounts
+        .get(&0)
+        .expect("default wallet has CoinJoin account 0")
+        .account_xpub;
+    // CoinJoin is a non-standard account type: its addresses come from the
+    // single external pool via `next_address_with_info`, not the standard
+    // receive/change split that `next_receive_address` serves.
+    let receive_address = ctx
+        .managed_wallet
+        .first_coinjoin_managed_account_mut()
+        .expect("coinjoin managed account")
+        .next_address_with_info(Some(&coinjoin_xpub), true)
+        .expect("coinjoin receive address")
+        .address;
+
+    let funding_tx = Transaction::dummy(&receive_address, 0..1, &[10_000_000]);
+    let result = ctx
+        .check_transaction(
+            &funding_tx,
+            TransactionContext::InChainLockedBlock(BlockInfo::new(
+                1,
+                BlockHash::all_zeros(),
+                1_700_000_000,
+            )),
+        )
+        .await;
+    assert!(
+        result.is_relevant,
+        "funding tx should be relevant to the CoinJoin account"
+    );
+    assert!(result.is_new_transaction);
+
+    let signer = WalletSigner {
+        wallet: ctx.wallet.clone(),
+    };
+
+    let generation = Arc::new(WalletGeneration::new());
+    let info = PlatformWalletInfo {
+        core_wallet: ctx.managed_wallet,
+        generation: Arc::clone(&generation),
+        identity_manager: IdentityManager::new(),
+        tracked_asset_locks: BTreeMap::new(),
+    };
+
+    let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
+    let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
+
+    (Arc::new(RwLock::new(wm)), wallet_id, generation, signer)
 }
 
 /// Funded SPV-backed Core wallet for downstream FFI lifecycle tests. The SPV
@@ -265,7 +341,7 @@ pub async fn funded_spv_core_wallet(
     crate::CoreWallet<crate::broadcaster::SpvBroadcaster>,
     WalletSigner,
 ) {
-    let (manager, wallet_id, balance, signer) = funded_wallet_manager(account_type).await;
+    let (manager, wallet_id, generation, signer) = funded_wallet_manager(account_type).await;
     let spv = Arc::new(crate::spv::SpvRuntime::new(
         Arc::clone(&manager),
         Arc::new(crate::events::PlatformEventManager::new(Vec::new())),
@@ -273,7 +349,162 @@ pub async fn funded_spv_core_wallet(
     let broadcaster = Arc::new(crate::broadcaster::SpvBroadcaster::new(spv));
     let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
     (
-        crate::CoreWallet::new(sdk, manager, wallet_id, broadcaster, balance),
+        crate::CoreWallet::new(sdk, manager, wallet_id, broadcaster, generation),
         signer,
+    )
+}
+
+/// No-op persister satisfying [`PlatformWalletManager`] construction for tests
+/// that need a full [`PlatformWallet`] but no real persistence pipeline.
+pub struct NoopTestPersister;
+
+impl crate::changeset::PlatformWalletPersistence for NoopTestPersister {
+    fn store(
+        &self,
+        _wallet_id: WalletId,
+        _changeset: crate::changeset::PlatformWalletChangeSet,
+    ) -> Result<(), crate::changeset::PersistenceError> {
+        Ok(())
+    }
+
+    fn flush(&self, _wallet_id: WalletId) -> Result<(), crate::changeset::PersistenceError> {
+        Ok(())
+    }
+
+    fn load(
+        &self,
+    ) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError> {
+        Ok(crate::changeset::ClientStartState::default())
+    }
+}
+
+struct NoopTestEventHandler;
+impl crate::events::EventHandler for NoopTestEventHandler {}
+impl crate::events::PlatformEventHandler for NoopTestEventHandler {}
+
+/// Build a full [`PlatformWallet`] over a mock SDK and a no-op persister, wired
+/// through a real [`PlatformWalletManager`] so its `wallet_manager` `Arc` and
+/// `wallet_id` are production-shaped. Returns the manager (which the caller must
+/// keep alive — it owns the wallet-event adapter task and the registered
+/// `Arc<PlatformWallet>`) alongside the wallet id.
+///
+/// Used by FFI-layer tests that need genuine `PlatformWallet` aliases, e.g. the
+/// `platform_wallet_destroy` regression asserting that destroying wrapper
+/// aliases never sweeps an independently-owned deferred-payment token.
+pub async fn test_platform_wallet_manager() -> (
+    Arc<crate::PlatformWalletManager<NoopTestPersister>>,
+    WalletId,
+) {
+    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+
+    // Canonical all-`abandon` BIP-39 test vector.
+    const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+         abandon abandon abandon abandon abandon about";
+
+    let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+    let persister = Arc::new(NoopTestPersister);
+    let event_handler: Arc<dyn crate::events::PlatformEventHandler> =
+        Arc::new(NoopTestEventHandler);
+    let manager = Arc::new(crate::PlatformWalletManager::new(
+        sdk,
+        persister,
+        event_handler,
+    ));
+
+    let mnemonic =
+        Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
+    let seed_bytes = mnemonic.to_seed("");
+    // `Some(0)` skips the SPV birth-height lookup so the create never hits the
+    // network.
+    let wallet = manager
+        .create_wallet_from_seed_bytes(
+            Network::Testnet,
+            &seed_bytes,
+            WalletAccountCreationOptions::Default,
+            Some(0),
+        )
+        .await
+        .expect("create test wallet");
+    let wallet_id = wallet.wallet_id();
+    (manager, wallet_id)
+}
+
+/// Canonical all-`abandon` BIP-39 test vector. Fixed (not
+/// `TestWalletContext::new_random`) so every key it derives is a stable golden —
+/// which is what lets the signed-message tests pin an RFC6979-deterministic
+/// signature and cross-check it against dashj.
+#[cfg(test)]
+pub(crate) const MESSAGE_SIGNING_TEST_MNEMONIC: &str =
+    "abandon abandon abandon abandon abandon abandon \
+     abandon abandon abandon abandon abandon about";
+
+/// Builds a testnet wallet manager from a KNOWN mnemonic with one derived BIP44
+/// external address, and NO funding.
+///
+/// The unfunded counterpart of [`funded_wallet_manager`], for operations that
+/// prove key ownership rather than move value — signing a message needs a
+/// derivation path and a signer, never a UTXO. Returns the manager, the wallet
+/// id, a soft signer over the wallet's seed, and that first receive address.
+///
+/// `#[cfg(test)]` rather than `test-utils`-gated: only this crate's own unit
+/// tests consume it, so under the FFI crate's `test-utils` build it would
+/// compile with no user and trip `dead_code`.
+#[cfg(test)]
+pub(crate) async fn mnemonic_wallet_manager(
+    phrase: &str,
+) -> (
+    Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    WalletId,
+    WalletSigner,
+    dashcore::Address,
+) {
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::wallet::ManagedWalletInfo;
+    use key_wallet::{Language, Mnemonic};
+
+    let mnemonic = Mnemonic::from_phrase(phrase, Language::English).expect("valid test mnemonic");
+    let wallet = Wallet::from_mnemonic(
+        mnemonic,
+        Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .expect("wallet construction from a known mnemonic");
+    let mut managed_wallet =
+        ManagedWalletInfo::from_wallet_with_name(&wallet, "SignMessage".to_string(), 0);
+
+    let xpub = wallet
+        .accounts
+        .standard_bip44_accounts
+        .get(&0)
+        .expect("default options create BIP44 account 0")
+        .account_xpub;
+    // `true` registers the address in the external pool, which is what makes it
+    // findable by `address_derivation_path` — an unregistered gap-limit address
+    // is deliberately not signable.
+    let receive_address = managed_wallet
+        .first_bip44_managed_account_mut()
+        .expect("managed BIP44 account 0")
+        .next_receive_address(Some(&xpub), true)
+        .expect("first BIP44 receive address");
+
+    let signer = WalletSigner {
+        wallet: wallet.clone(),
+    };
+    let info = PlatformWalletInfo {
+        core_wallet: managed_wallet,
+        generation: Arc::new(WalletGeneration::new()),
+        identity_manager: IdentityManager::new(),
+        tracked_asset_locks: BTreeMap::new(),
+    };
+
+    let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
+    let wallet_id = wm.insert_wallet(wallet, info).expect("insert wallet");
+
+    (
+        Arc::new(RwLock::new(wm)),
+        wallet_id,
+        signer,
+        receive_address,
     )
 }

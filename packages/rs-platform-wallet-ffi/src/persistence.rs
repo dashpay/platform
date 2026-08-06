@@ -12,7 +12,9 @@ use key_wallet::bip32::DerivationPath;
 use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::derivation_bls_bip32::ExtendedBLSPubKey;
 use key_wallet::derivation_slip10::ExtendedEd25519PubKey;
-use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, PublicKeyType};
+use key_wallet::managed_account::address_pool::{
+    AddressPool, AddressPoolType, AddressState, PublicKeyType,
+};
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
@@ -3125,7 +3127,28 @@ fn build_core_address_entry_ffi(
         key_type_tag,
         pool_type_tag,
         address_index: info.index,
-        is_used: info.used,
+        // `CoreAddressEntryFFI` carries a single `is_used` bool with no
+        // slot for a reservation, so `Reserved` can only flatten to
+        // `false` and would reload as `Available` — silently returning a
+        // handed-out address to the pool. Nothing in platform reserves
+        // addresses (no caller of `next_receive_address_and_reserve` /
+        // `next_unused_and_reserve` in the workspace), so that arm is
+        // unreachable today. It is spelled out rather than folded into a
+        // catch-all so the first reserving caller shows up as an explicit
+        // schema decision instead of losing state on the next reload.
+        is_used: match info.state {
+            AddressState::Used => true,
+            AddressState::Available => false,
+            AddressState::Reserved { .. } => {
+                tracing::warn!(
+                    index = info.index,
+                    "persist: address pool entry is reserved, but the persisted \
+                     address schema cannot represent a reservation; it will \
+                     reload as available and may be handed out again"
+                );
+                false
+            }
+        },
         balance: info.balance,
         address_base58: address_ptr,
         derivation_path: path_ptr,
@@ -3221,9 +3244,14 @@ unsafe fn address_info_from_ffi(
         public_key,
         index: entry.address_index,
         path,
-        used: entry.is_used,
-        generated_at: 0,
-        used_at: if entry.is_used { Some(0) } else { None },
+        // The persisted entry only carries `is_used`, so state round-trips
+        // to `Used`/`Available`; a `Reserved` entry is not representable —
+        // see `build_core_address_entry_ffi`.
+        state: if entry.is_used {
+            AddressState::Used
+        } else {
+            AddressState::Available
+        },
         tx_count: 0,
         total_received: 0,
         total_sent: 0,
@@ -3270,7 +3298,7 @@ fn restore_address_pool(pool: &mut AddressPool, infos: Vec<AddressInfo>) {
         pool.script_pubkey_index
             .insert(info.script_pubkey.clone(), idx);
         pool.highest_generated = Some(pool.highest_generated.map_or(idx, |h| h.max(idx)));
-        if info.used {
+        if matches!(info.state, AddressState::Used) {
             pool.used_indices.insert(idx);
             pool.highest_used = Some(pool.highest_used.map_or(idx, |h| h.max(idx)));
         }
@@ -6248,9 +6276,7 @@ mod tests {
             index,
             path: DerivationPath::from_str(&format!("m/9'/1'/2'/{}", index))
                 .expect("static derivation path must parse"),
-            used: false,
-            generated_at: 0,
-            used_at: None,
+            state: AddressState::Available,
             tx_count: 0,
             total_received: 0,
             total_sent: 0,
@@ -6367,6 +6393,50 @@ mod tests {
                 "expected a typed ECDSA key after round-trip, got {:?}",
                 other
             ),
+        }
+    }
+
+    /// Pin what the persisted address row does to `AddressState`.
+    /// `CoreAddressEntryFFI` carries a single `is_used` bool, so only
+    /// `Used` and `Available` survive a save/load cycle intact;
+    /// `Reserved { .. }` has no representation and comes back
+    /// `Available`, i.e. a reload silently frees a handed-out address.
+    /// Nothing in platform reserves addresses today, so this records the
+    /// boundary rather than a live bug: if a reserving caller is ever
+    /// added, this test is where the schema decision (a dedicated
+    /// reservation field on the row) has to be made.
+    #[test]
+    fn address_state_round_trip_keeps_used_and_flattens_reserved() {
+        for (state, expected) in [
+            (AddressState::Available, AddressState::Available),
+            (AddressState::Used, AddressState::Used),
+            (
+                AddressState::Reserved { at: 1_700_000_000 },
+                AddressState::Available,
+            ),
+        ] {
+            let mut info = typed_key_test_address_info(11, None);
+            info.state = state;
+
+            let mut owned: Vec<CString> = Vec::new();
+            let entry = build_core_address_entry_ffi(
+                &info,
+                AddressPoolTypeTagFFI::AbsentHardened as u8,
+                false,
+                &mut owned,
+            )
+            .expect("build_core_address_entry_ffi must succeed");
+            // SAFETY: the address / path c-strings live in `owned`, kept
+            // alive until after this decode.
+            let restored = unsafe { address_info_from_ffi(&entry, Network::Testnet) }
+                .expect("address_info_from_ffi must decode the row");
+            drop(owned);
+
+            assert_eq!(
+                restored.state, expected,
+                "{:?} must restore as {:?} through the persisted row",
+                state, expected
+            );
         }
     }
 
@@ -7072,9 +7142,7 @@ mod tests {
                 public_key: Some(PublicKeyType::ECDSA(TEST_PUBKEY_G.to_vec())),
                 index,
                 path,
-                used: true,
-                generated_at: 0,
-                used_at: None,
+                state: AddressState::Used,
                 tx_count: 0,
                 total_received: 0,
                 total_sent: 0,
@@ -7124,7 +7192,7 @@ mod tests {
             entries
                 .iter()
                 .flat_map(|e| e.addresses.iter())
-                .all(|a| a.used),
+                .all(|a| matches!(a.state, AddressState::Used)),
             "every emitted marked-used address must carry used == true"
         );
     }
