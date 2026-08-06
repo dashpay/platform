@@ -392,12 +392,13 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// reports per-worker terminal status.
     pub(super) registry: Arc<ThreadRegistry<WalletWorker>>,
     /// Host-visible hard sync-fault latch (dashpay/platform#4069). Set
-    /// (and never cleared) by the wallet-event adapter the first time it
-    /// freezes a durable watermark after a persistence `store()` rejection
-    /// or a dropped-event broadcast lag. Poll via
-    /// [`Self::sync_fault_detected`] to surface a "verification failed /
-    /// rescan pending" state rather than re-freezing silently on the next
-    /// launch.
+    /// (and never cleared for this manager instance's lifetime) by the
+    /// wallet-event adapter the first time it freezes a durable watermark
+    /// after a persistence `store()` rejection — the one remaining fault
+    /// trigger; the lossless persistence channel cannot drop or lag events.
+    /// Poll via [`Self::sync_fault_detected`] to surface a "verification
+    /// failed / rescan pending" state rather than re-freezing silently on
+    /// the next launch.
     pub(super) sync_fault: Arc<std::sync::atomic::AtomicBool>,
 }
 
