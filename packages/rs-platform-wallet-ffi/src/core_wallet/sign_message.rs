@@ -14,7 +14,7 @@
 
 use crate::error::*;
 use crate::handle::{Handle, CORE_WALLET_STORAGE};
-use crate::runtime::runtime;
+use crate::runtime::block_on_worker;
 use crate::{check_ptr, unwrap_result_or_return};
 use platform_wallet::PlatformWalletError;
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle};
@@ -153,17 +153,26 @@ pub unsafe extern "C" fn core_wallet_sign_message(
         }
     }));
 
+    // Polled via `block_on_worker` so the work runs on a runtime worker with
+    // the 8 MB stack, not the caller's (possibly ~512 KB dispatch) thread. The
+    // signer is constructed INSIDE the future so it borrows nothing from this
+    // frame — the future is then `Send + 'static` outright (the signer itself
+    // is `Send + Sync` by its usize-field shape).
+    //
     // SAFETY: `signer_addr` came from `core_signer_handle`, which the caller
-    // pinned alive for this call; the `MnemonicResolverCoreSigner` lives only on
-    // this stack frame and is dropped before returning.
-    let signer = MnemonicResolverCoreSigner::new(
-        signer_addr as *mut MnemonicResolverHandle,
-        wallet.wallet_id(),
-        wallet.network(),
-    );
-    let signature = unwrap_result_or_return!(
-        runtime().block_on(wallet.sign_message(&address, &message, &signer))
-    );
+    // pinned alive for this call; the calling thread blocks here until the
+    // future completes, so the `MnemonicResolverCoreSigner` is dropped before
+    // this frame returns.
+    let wallet_id = wallet.wallet_id();
+    let network = wallet.network();
+    let signature = unwrap_result_or_return!(block_on_worker(async move {
+        let signer = MnemonicResolverCoreSigner::new(
+            signer_addr as *mut MnemonicResolverHandle,
+            wallet_id,
+            network,
+        );
+        wallet.sign_message(&address, &message, &signer).await
+    }));
 
     let c_str = unwrap_result_or_return!(CString::new(signature));
     *out_signature = c_str.into_raw();

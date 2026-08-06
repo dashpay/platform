@@ -1090,9 +1090,18 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
             .to_string_lossy()
             .into_owned();
         unsafe { platform_wallet_ffi::core_wallet_free_address(out_signature) };
-        env.new_string(signature)
-            .map(|s| s.into_raw())
-            .unwrap_or(ptr::null_mut())
+        // A `new_string` failure must throw like every other failure path:
+        // Kotlin declares a non-null return, so a bare null here would surface
+        // as an unexplained NullPointerException at the platform-type boundary
+        // instead of a DashSdkException.
+        match env.new_string(signature) {
+            Ok(s) => s.into_raw(),
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "failed to allocate the signature string");
+                ptr::null_mut()
+            }
+        }
     })
 }
 
