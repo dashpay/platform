@@ -307,9 +307,35 @@ class ManagedPlatformWallet internal constructor(
      * this call and [broadcastSigned] drops the reservation on restart (the
      * UTXOs become spendable again) — the same property dashj has.
      *
+     * ## MAYACHAIN-style deposits
+     *
+     * The optional builder controls ([opReturnData], [preserveOutputOrder],
+     * [changeToFirstInput]) exist for MAYACHAIN/THORChain-style swap deposits
+     * (see https://docs.mayaprotocol.com/mayachain-dev-docs/concepts/sending-transactions),
+     * where Swift consumers drive the public `CoreTransactionBuilder` directly
+     * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/CoreWallet/CoreTransactionBuilder.swift:
+     * `addOpReturn` / `preserveOutputOrder` / `changeToFirstInput`). On
+     * Android the builder is not public, so this is the supported path: pass
+     * the vault as the single recipient, the swap memo as [opReturnData], and
+     * enable both flags — the built transaction then has the vault at VOUT0,
+     * the memo at VOUT1, and change (paid back to the first input's address,
+     * which MAYAChain uses to identify the depositor and refund) at VOUT2.
+     * Assert that shape from [SignedCoreTransaction.rawTxBytes] before
+     * deciding: [broadcastSigned] to submit, or [releaseReservation] /
+     * [SignedCoreTransaction.close] to abandon without ever broadcasting.
+     *
      * @param network the wallet network — see [sendToAddresses].
      * @param coreSignerHandle the manager's `MnemonicResolverHandle` — see
      *   [sendToAddresses]. No private key crosses the boundary.
+     * @param opReturnData if non-null, append a zero-value OP_RETURN output
+     *   carrying these bytes after the recipient outputs. Size limits are
+     *   enforced Rust-side (the 80-byte standardness ceiling); an oversize
+     *   payload fails the build without reserving anything.
+     * @param preserveOutputOrder keep outputs in insertion order (skip the
+     *   default BIP-69 sort) — required when a protocol assigns meaning to
+     *   output indices, as MAYAChain does.
+     * @param changeToFirstInput route change back to the first selected
+     *   input's address (VIN0) instead of a fresh change address.
      */
     suspend fun buildSignedPayment(
         recipients: List<Pair<String, Long>>,
@@ -317,6 +343,9 @@ class ManagedPlatformWallet internal constructor(
         coreSignerHandle: Long,
         accountType: AccountType = AccountType.BIP44,
         accountIndex: Int = 0,
+        opReturnData: ByteArray? = null,
+        preserveOutputOrder: Boolean = false,
+        changeToFirstInput: Boolean = false,
     ): SignedCoreTransaction = gate.opWithCleanupOnCancellation(
         // Native finalization mints the token and transfers reservation ownership
         // to it before the blocking JNI call returns, so the token already exists
@@ -349,6 +378,16 @@ class ManagedPlatformWallet internal constructor(
             CoreTransactionBuilder(network).use { builder ->
                 for ((address, amount) in recipients) {
                     builder.addOutput(address, amount)
+                }
+                // Canonical MAYACHAIN sequence: memo after the recipient
+                // outputs, then the shape flags — with preserveOutputOrder the
+                // built transaction keeps vault=VOUT0 / memo=VOUT1 / change last.
+                opReturnData?.let { builder.addOpReturn(it) }
+                if (preserveOutputOrder) {
+                    builder.preserveOutputOrder()
+                }
+                if (changeToFirstInput) {
+                    builder.changeToFirstInput()
                 }
                 builder.finalizeSignedPayment(
                     this@ManagedPlatformWallet,
