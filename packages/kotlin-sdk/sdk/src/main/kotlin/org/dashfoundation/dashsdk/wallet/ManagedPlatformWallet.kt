@@ -156,8 +156,8 @@ class ManagedPlatformWallet internal constructor(
         }
         mapNativeErrors {
             val builder = CoreTransactionBuilder(network)
-            // `buildSigned` consumes the builder; `use` still safely destroys
-            // it on the pre-build failure paths (addOutput / setFunding throw).
+            // `finalizeAtomic` consumes the builder; `use` still safely
+            // destroys it on the pre-finalize failure paths (addOutput throws).
             val signedTx = builder.use {
                 for ((address, amount) in recipients) {
                     it.addOutput(address, amount)
@@ -287,8 +287,8 @@ class ManagedPlatformWallet internal constructor(
      * `new → addOutput* → finalizeSignedPayment` build runs under the same
      * per-wallet teardown gate ([gate]) as [sendToAddresses]. The single atomic
      * finalize does select + reserve + sign + register under the wallet-manager
-     * lock (closing the funding/signing selection race the old setFunding +
-     * buildSigned split had), so once this returns the reservation holds the
+     * lock (closing the funding/signing selection race the former split
+     * fund-then-sign path had), so once this returns the reservation holds the
      * inputs and [broadcastSigned] / [releaseReservation] operate on the token
      * later.
      *

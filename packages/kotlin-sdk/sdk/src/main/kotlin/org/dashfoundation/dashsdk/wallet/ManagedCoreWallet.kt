@@ -27,21 +27,6 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
             check(it != 0L) { "ManagedCoreWallet has been closed" }
         }
 
-    /**
-     * Broadcast a transaction built by [CoreTransactionBuilder.buildSigned].
-     * The funding account captured at build time is forwarded so a definitive
-     * broadcast rejection releases the UTXO reservation `buildSigned` took.
-     * Returns the txid as a lowercase hex string.
-     */
-    @Deprecated("Use the atomic FinalizedCoreTransaction send path")
-    fun broadcastTransaction(tx: CoreTransaction): String =
-        WalletManagerNative.coreWalletBroadcastTransaction(
-            handle,
-            tx.handle,
-            tx.accountType.ffiValue,
-            tx.accountIndex,
-        )
-
     /** Consume and broadcast a V2 finalized transaction. */
     fun broadcastTransaction(tx: FinalizedCoreTransaction): String =
         WalletManagerNative.coreWalletBroadcastSignedTransactionV2(
@@ -98,8 +83,8 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
      * The engine's next unused BIP-44 INTERNAL (change) address for
      * [accountIndex], base58-encoded — the change-side twin of
      * [nextReceiveAddress]; same used-set semantics and cold-start
-     * caveat. Builds pick change themselves (`setFunding`); this
-     * accessor exists for callers that must NAME a change address
+     * caveat. Builds pick change themselves during funding selection;
+     * this accessor exists for callers that must NAME a change address
      * up front (e.g. `CoreTransactionBuilder.setChangeAddress`).
      */
     fun nextChangeAddress(accountIndex: Int = 0): String {

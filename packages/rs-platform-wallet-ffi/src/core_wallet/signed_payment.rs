@@ -1,19 +1,19 @@
 //! FFI bindings for the deferred build → broadcast/release core-send lifecycle
 //! (BIP70 / BIP270 "sign now, submit on merchant ack").
 //!
-//! The one-shot [`core_wallet_broadcast_transaction`](super::broadcast) sends a
-//! just-built transaction immediately. BIP70-style flows must split that: build
-//! and sign now (reserving the funding UTXOs), hand the raw bytes to a merchant
-//! server, then broadcast only on ack — or release the reservation on a nack /
+//! The one-shot immediate send path (`core_wallet_tx_builder_finalize` +
+//! `core_wallet_broadcast_signed_transaction_v2`) sends a just-built
+//! transaction immediately. BIP70-style flows must split that: build and sign
+//! now (reserving the funding UTXOs), hand the raw bytes to a merchant server,
+//! then broadcast only on ack — or release the reservation on a nack /
 //! abandonment. These entry points wrap a single process-global
 //! [`SignedPaymentRegistry`] pinned to the production `SpvBroadcaster`; the
 //! registry owns the built transaction and its held reservation between build
 //! and submission and enforces the lifecycle invariants (no double-broadcast,
 //! idempotent release, tokens bound to their originating wallet instance).
 //!
-//! These are ADDITIVE to the existing `core_wallet_tx_builder_*` /
-//! `core_wallet_broadcast_transaction` surface — the immediate send path is
-//! unchanged.
+//! These are ADDITIVE to the `core_wallet_tx_builder_*` surface — the
+//! immediate send path is unchanged.
 
 use crate::error::*;
 use crate::handle::{Handle, CORE_WALLET_STORAGE};

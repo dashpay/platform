@@ -6,10 +6,8 @@ use crate::types::{FFINetwork, Network};
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
 use dashcore::hashes::Hash;
-use dashcore::{Address as DashAddress, OutPoint, Transaction, Txid};
-use key_wallet::account::account_type::StandardAccountType;
+use dashcore::{Address as DashAddress, OutPoint, Txid};
 use key_wallet::account::ManagedAccountCollection;
-use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::managed_account::ManagedCoreFundsAccount;
 use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
 use key_wallet::wallet::managed_wallet_info::fee::FeeRate;
@@ -17,7 +15,6 @@ use key_wallet::wallet::managed_wallet_info::transaction_builder::{
     TransactionBuilder, MAX_STANDARD_OP_RETURN_BYTES,
 };
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
-use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle};
 use std::ffi::CString;
 use std::os::raw::{c_char, c_void};
@@ -36,8 +33,9 @@ pub struct FFITransactionBuilder {
     network: FFINetwork,
 }
 
-/// Broadcast it with `core_wallet_broadcast_transaction`, then release it
-/// with `core_wallet_transaction_free`.
+/// Owned signed-transaction bytes handed across the C ABI as the `out_tx`
+/// of `core_wallet_signed_payment_finalize`; release it with
+/// `core_wallet_transaction_free`.
 #[repr(C)]
 pub struct FFICoreTransaction {
     tx_bytes: *mut u8,
@@ -55,16 +53,6 @@ pub struct FFICoreTransaction {
 pub struct FFICoreSignedTransactionV2 {
     pub(crate) wallet: platform_wallet::CoreWallet<platform_wallet::broadcaster::SpvBroadcaster>,
     pub(crate) transaction: platform_wallet::SignedCoreTransaction,
-}
-
-impl FFICoreTransaction {
-    pub(crate) fn bytes(&self) -> &[u8] {
-        if self.tx_bytes.is_null() || self.tx_len == 0 {
-            &[]
-        } else {
-            unsafe { std::slice::from_raw_parts(self.tx_bytes, self.tx_len) }
-        }
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -87,9 +75,8 @@ impl From<CoreAccountTypeFFI> for AccountTypePreference {
 
 /// Atomically fund, reserve and sign a configured builder.
 ///
-/// Unlike the deprecated `set_funding` + `build_signed` sequence, selection
-/// and insertion into the account ReservationSet cannot interleave with a
-/// competing finalizer. The wallet-manager lock is dropped before the host
+/// Selection and insertion into the account ReservationSet happen under one
+/// wallet-manager lock, so they cannot interleave with a competing finalizer. The wallet-manager lock is dropped before the host
 /// mnemonic resolver is invoked. This function consumes `builder` on every
 /// path after its pointer is accepted.
 ///
@@ -190,11 +177,11 @@ pub unsafe extern "C" fn core_wallet_tx_builder_finalize(
 /// runs the same atomic `finalize_transaction`, where selection and insertion
 /// into the account `ReservationSet` commit as a single unit under the
 /// wallet-manager lock (signing happens after the lock is dropped). Routing the
-/// deferred build through it closes the double-selection window that the
-/// deprecated `set_funding` + `build_signed` + `register` sequence reopened once
-/// the Kotlin per-wallet send mutex was removed: two concurrent deferred builds,
-/// or a deferred build racing an immediate send, can no longer select the same
-/// UTXO. Consumes `builder` on every path after its pointer is accepted.
+/// deferred build through it closes the double-selection window the former
+/// split fund-then-sign sequence reopened once the Kotlin per-wallet send mutex
+/// was removed: two concurrent deferred builds, or a deferred build racing an
+/// immediate send, can no longer select the same UTXO. Consumes `builder` on
+/// every path after its pointer is accepted.
 ///
 /// Writes `out_token` (the reservation token for a later
 /// `core_wallet_signed_payment_broadcast` / `core_wallet_signed_payment_release`),
@@ -374,28 +361,6 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
     PlatformWalletFFIResult::ok()
 }
 
-impl CoreAccountTypeFFI {
-    /// The `StandardAccountType` this maps to, or `None` for `CoinJoin`.
-    ///
-    /// A CoinJoin-funded build DOES end up with reserved UTXOs — `build_signed`
-    /// (via `assemble_unsigned`) reserves the selected inputs regardless of
-    /// account type, since `set_funding` attaches the shared `ReservationSet`
-    /// for every variant. But `reservations.rs`'s release-on-rejection is
-    /// defined only over `StandardAccountType` (BIP44/BIP32). Returning `None`
-    /// here routes CoinJoin through the plain broadcast, so a rejected CoinJoin
-    /// tx keeps its reservation until the TTL backstop. That is intentional: the
-    /// only CoinJoin funding path is a sweep — a single sender spending each
-    /// UTXO exactly once, with no concurrent build or retry to race — so there
-    /// is nothing to reconcile in practice.
-    pub(crate) fn as_standard_account_type(&self) -> Option<StandardAccountType> {
-        match self {
-            CoreAccountTypeFFI::BIP44 => Some(StandardAccountType::BIP44Account),
-            CoreAccountTypeFFI::BIP32 => Some(StandardAccountType::BIP32Account),
-            CoreAccountTypeFFI::CoinJoin => None,
-        }
-    }
-}
-
 #[repr(C)]
 pub enum CoreSelectionStrategyFFI {
     SmallestFirst,
@@ -433,18 +398,6 @@ fn managed_account(
     }
 }
 
-fn managed_account_mut(
-    accounts: &mut ManagedAccountCollection,
-    source: AccountTypePreference,
-    account_index: u32,
-) -> Option<&mut ManagedCoreFundsAccount> {
-    match source {
-        AccountTypePreference::BIP44 => accounts.standard_bip44_accounts.get_mut(&account_index),
-        AccountTypePreference::BIP32 => accounts.standard_bip32_accounts.get_mut(&account_index),
-        AccountTypePreference::CoinJoin => accounts.coinjoin_accounts.get_mut(&account_index),
-    }
-}
-
 impl FFITransactionBuilder {
     /// The inner builder taken out by value, leaving an empty one in its
     /// place. Pair with [`FFITransactionBuilder::store_builder`] to apply a
@@ -466,8 +419,8 @@ impl FFITransactionBuilder {
 }
 
 /// Create a new transaction builder for `network`. Free with
-/// `core_wallet_tx_builder_destroy` (or `core_wallet_tx_builder_build_signed`,
-/// which consumes it).
+/// `core_wallet_tx_builder_destroy` (or the consuming finalizers
+/// `core_wallet_tx_builder_finalize` / `core_wallet_signed_payment_finalize`).
 ///
 /// # Safety
 /// The returned pointer is owned by the caller.
@@ -660,10 +613,10 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_selection_strategy(
 /// Set the block height coin selection treats as the chain tip (used for
 /// coinbase maturity and locktime).
 ///
-/// This value is advisory: `core_wallet_tx_builder_set_funding` and
-/// `core_wallet_tx_builder_build_signed` both override it with the wallet's
-/// last processed height when they run, so the wallet height always wins for
-/// the funded/signed build. Use this only when building without a wallet.
+/// This value is advisory: the wallet-aware finalizers override it with the
+/// wallet's last processed height when they run, so the wallet height always
+/// wins for the funded/signed build. Use this only when building without a
+/// wallet.
 ///
 /// # Safety
 /// `builder` must be a valid, non-destroyed pointer.
@@ -724,82 +677,6 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_special_payload(
     PlatformWalletFFIResult::ok()
 }
 
-/// Fund the builder from the wallet account, setting inputs and change.
-///
-/// # Concurrency limitation (known, intentionally not fixed here)
-/// key-wallet's `set_funding` filters out UTXOs already recorded in the
-/// account's shared `ReservationSet`, but the reservation for *this* build is
-/// only taken at build time (`assemble_unsigned` inside `build_signed`).
-/// Because the FFI splits `set_funding` and `build_signed` across the C ABI —
-/// the wallet lock cannot be held across the boundary — two concurrent builds
-/// on the SAME account can both pass `set_funding` before either reserves and
-/// select the same UTXO, producing a double-spend at broadcast. Single-threaded
-/// callers (the SDK's send flow) are unaffected; concurrent same-account sends
-/// must serialize at the call site.
-///
-/// # Safety
-/// `builder` must be a valid, non-destroyed pointer; `wallet` a valid
-/// platform-wallet handle.
-#[no_mangle]
-pub unsafe extern "C" fn core_wallet_tx_builder_set_funding(
-    builder: *mut FFITransactionBuilder,
-    wallet: Handle,
-    account_type: CoreAccountTypeFFI,
-    account_index: u32,
-) -> PlatformWalletFFIResult {
-    check_ptr!(builder);
-
-    let wallet = unwrap_option_or_return!(PLATFORM_WALLET_STORAGE.with_item(wallet, |w| w.clone()));
-
-    // Reject a builder created for a different network than the wallet.
-    let builder_network: Network = (*builder).network.into();
-    if builder_network != wallet.network() {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            "builder network does not match wallet network".to_string(),
-        );
-    }
-
-    let wallet_id = wallet.wallet_id();
-    let source: AccountTypePreference = account_type.into();
-
-    let result = runtime().block_on(async {
-        let mut wm = wallet.wallet_manager().write().await;
-        let (w, info) = wm
-            .get_wallet_and_info_mut(&wallet_id)
-            .ok_or_else(|| "wallet not found".to_string())?;
-
-        let account = match source {
-            AccountTypePreference::BIP44 => w.get_bip44_account(account_index),
-            AccountTypePreference::BIP32 => w.get_bip32_account(account_index),
-            AccountTypePreference::CoinJoin => w.get_coinjoin_account(account_index),
-        }
-        .ok_or_else(|| format!("wallet account {source:?} #{account_index} not found"))?;
-
-        let height = info.core_wallet.last_processed_height();
-
-        let managed = managed_account_mut(&mut info.core_wallet.accounts, source, account_index)
-            .ok_or_else(|| format!("managed account {source:?} #{account_index} not found"))?;
-
-        // Resolution succeeded — only now consume the builder so a lookup
-        // failure above can never leave it emptied.
-        let taken = (*builder).take_builder();
-        let funded = taken
-            .set_current_height(height)
-            .set_funding(managed, account);
-        (*builder).store_builder(funded);
-        Ok::<_, String>(())
-    });
-
-    match result {
-        Ok(()) => PlatformWalletFFIResult::ok(),
-        Err(e) => PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("set_funding failed: {e}"),
-        ),
-    }
-}
-
 /// Add a caller-chosen subset of the account's UTXOs as inputs. `outpoints`
 /// are selected from the account's own UTXO set (the same ones
 /// `platform_wallet_account_utxos` returns). An outpoint not owned by the
@@ -822,8 +699,8 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_inputs_from_outpoints(
     let wallet = unwrap_option_or_return!(PLATFORM_WALLET_STORAGE.with_item(wallet, |w| w.clone()));
 
     // Reject a builder created for a different network than the wallet, matching
-    // `set_funding` / `build_signed` so all three wallet-aware entry points fail
-    // fast instead of mutating a foreign-network builder.
+    // the wallet-aware finalizers so every wallet-aware entry point fails fast
+    // instead of mutating a foreign-network builder.
     let builder_network: Network = (*builder).network.into();
     if builder_network != wallet.network() {
         return PlatformWalletFFIResult::err(
@@ -882,90 +759,6 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_inputs_from_outpoints(
     }
 }
 
-/// Build and sign, resolving signing paths from the wallet account. Returns
-/// consensus-serialized signed bytes and the fee.
-///
-/// This function also frees the builder
-///
-/// # Safety
-/// `builder` must be a valid, non-destroyed pointer; `wallet` a valid platform-wallet handle;
-/// `core_signer_handle` a valid, non-destroyed resolver handle; `out_tx` a
-/// writable pointer the caller later frees with `core_wallet_transaction_free`.
-#[no_mangle]
-#[allow(clippy::too_many_arguments)]
-pub unsafe extern "C" fn core_wallet_tx_builder_build_signed(
-    builder: *mut FFITransactionBuilder,
-    wallet: Handle,
-    account_type: CoreAccountTypeFFI,
-    account_index: u32,
-    core_signer_handle: *mut MnemonicResolverHandle,
-    out_tx: *mut FFICoreTransaction,
-) -> PlatformWalletFFIResult {
-    check_ptr!(builder);
-    // `build` consumes the builder: reclaim both heap boxes up front so they
-    // are freed on every return path below
-    let ffi = Box::from_raw(builder);
-    let inner = *Box::from_raw(ffi.inner as *mut TransactionBuilder);
-
-    check_ptr!(core_signer_handle);
-    check_ptr!(out_tx);
-
-    let wallet = unwrap_option_or_return!(PLATFORM_WALLET_STORAGE.with_item(wallet, |w| w.clone()));
-
-    // Backstop network check: reject a builder built for a different network
-    // than the wallet, even when `set_funding` already validated it.
-    let builder_network: Network = ffi.network.into();
-    if builder_network != wallet.network() {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            "builder network does not match wallet network".to_string(),
-        );
-    }
-
-    let wallet_id = wallet.wallet_id();
-    let source: AccountTypePreference = account_type.into();
-    let signer = MnemonicResolverCoreSigner::new(core_signer_handle, wallet_id, wallet.network());
-
-    let build = runtime().block_on(async {
-        let wm = wallet.wallet_manager().read().await;
-        let info = wm
-            .get_wallet_info(&wallet_id)
-            .ok_or_else(|| "wallet not found".to_string())?;
-
-        let height = info.core_wallet.last_processed_height();
-
-        let managed = managed_account(&info.core_wallet.accounts, source, account_index)
-            .ok_or_else(|| format!("managed account {source:?} #{account_index} not found"))?;
-
-        inner
-            .set_current_height(height)
-            .build_signed(&signer, |addr| managed.address_derivation_path(&addr))
-            .await
-            .map_err(|e| e.to_string())
-    });
-
-    let (tx, fee): (Transaction, u64) = match build {
-        Ok(v) => v,
-        Err(e) => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                format!("transaction build failed: {e}"),
-            );
-        }
-    };
-
-    let serialized = dashcore::consensus::serialize(&tx);
-    let len = serialized.len();
-
-    *out_tx = FFICoreTransaction {
-        tx_bytes: Box::into_raw(serialized.into_boxed_slice()) as *mut u8,
-        tx_len: len,
-        fee,
-    };
-
-    PlatformWalletFFIResult::ok()
-}
-
 /// Destroy a transaction builder created by `core_wallet_tx_builder_new`.
 ///
 /// # Safety
@@ -980,12 +773,12 @@ pub unsafe extern "C" fn core_wallet_tx_builder_destroy(builder: *mut FFITransac
     let _ = Box::from_raw(b.inner as *mut TransactionBuilder);
 }
 
-/// Free a transaction returned by `core_wallet_tx_builder_build_signed`.
+/// Free a transaction written by `core_wallet_signed_payment_finalize`.
 /// Idempotent: the fields are nulled, so a second call is a no-op.
 ///
 /// # Safety
 /// `tx` must be a valid pointer to an `FFICoreTransaction` from
-/// `core_wallet_tx_builder_build_signed` (or null).
+/// `core_wallet_signed_payment_finalize` (or null).
 #[no_mangle]
 pub unsafe extern "C" fn core_wallet_transaction_free(tx: *mut FFICoreTransaction) {
     if tx.is_null() {
