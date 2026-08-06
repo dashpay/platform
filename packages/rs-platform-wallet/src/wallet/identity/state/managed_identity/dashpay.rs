@@ -89,20 +89,26 @@ pub struct DashPayState {
     /// identity, with direction, amount, memo, and status.
     pub payments: BTreeMap<String, PaymentEntry>,
 
-    /// Contacts whose historical sent-payment reconstruction sweep has
-    /// already run in this process lifetime.
+    /// SPV scan height at which each contact's historical sent-payment
+    /// reconstruction sweep last completed.
     ///
-    /// `reconcile_sent_payments_from_tx_history` is a restore-time
-    /// recovery path for contacts whose local payment cache is still
-    /// empty. Once a contact has either been reconstructed or proven to
-    /// have nothing to reconstruct, re-running the full persisted-tx
-    /// scan every recurring sync pass is pure overhead. This guard
-    /// suppresses that steady-state rescan.
+    /// `reconcile_sent_payments_from_tx_history` is a restore-time recovery
+    /// path. Re-running its full persisted-tx scan every recurring sync pass
+    /// is pure overhead once a contact has been reconstructed — but "already
+    /// swept" is only a safe answer for the history that existed at the time.
     ///
-    /// In-memory only (never persisted): a relaunch retries the sweep
-    /// once for still-empty contacts, which is safe and far cheaper than
-    /// re-scanning every sync pass forever.
-    pub sent_payment_reconcile_attempted: BTreeSet<Identifier>,
+    /// Hence a height, not a flag. A sweep certifies the transaction table *as
+    /// of* `synced_height`; the contact becomes eligible again the moment that
+    /// height advances, because newly scanned blocks are exactly when new rows
+    /// can appear. Nothing has to know whether the host has "finished"
+    /// delivering history — an answer no callback provides — and no ordering
+    /// between this sweep and the rescan reconcile has to hold.
+    ///
+    /// In steady state the height stops moving and the sweep stops running.
+    ///
+    /// In-memory only (never persisted): a relaunch re-sweeps once per contact,
+    /// which is safe and far cheaper than re-scanning every pass forever.
+    pub sent_payment_reconcile_swept_at: BTreeMap<Identifier, u32>,
 
     /// Cached **contact** profiles keyed by the contact's identity id —
     /// established contacts, pending incoming-request senders, and (later)
@@ -126,23 +132,6 @@ pub struct DashPayState {
     /// re-downloaded), so it is cheap. A persisted breadcrumb could make the
     /// backfill durable across a crash if that ever becomes necessary.
     pub rescan_triggered: BTreeSet<Identifier>,
-
-    /// SPV scan tip captured immediately before a DashPay rescan lowered it —
-    /// the height the backfill has to climb back to before the wallet's
-    /// transaction history covers the rewound range again.
-    ///
-    /// Sent-payment reconstruction reads this as its completeness signal. A
-    /// non-empty enumeration is NOT proof that history is complete: the sweep
-    /// runs on a timer and can snapshot the transaction table while the
-    /// backfill is still delivering rows into it. Certifying that snapshot
-    /// would stamp the per-launch guard and ignore every row that arrives
-    /// afterwards. While `synced_height` is below this mark the scan is
-    /// treated as incomplete instead.
-    ///
-    /// In-memory only, same contract as [`Self::rescan_triggered`]: a relaunch
-    /// clears it, and `synced_height` is restored at its monotonic high-water,
-    /// so an interrupted backfill re-triggers and re-arms this mark.
-    pub rescan_backfill_target: Option<u32>,
 
     /// DashPay contact-crypto ops the unattended background sweep enqueued for
     /// THIS identity but could not perform because key material was unavailable

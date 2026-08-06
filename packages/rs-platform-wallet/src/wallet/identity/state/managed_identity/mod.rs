@@ -123,15 +123,15 @@ impl ManagedIdentity {
         &mut self.dashpay.payments
     }
 
-    /// Mutable access to the per-session sent-payment reconcile guard.
+    /// Mutable access to the per-contact sent-payment sweep heights.
     ///
     /// In-memory only — never persisted; see the field docs on
-    /// [`DashPayState::sent_payment_reconcile_attempted`] for the
-    /// relaunch contract.
-    pub fn dashpay_sent_payment_reconcile_attempted_mut(
+    /// [`DashPayState::sent_payment_reconcile_swept_at`] for why the guard is
+    /// a height rather than a flag.
+    pub fn dashpay_sent_payment_reconcile_swept_at_mut(
         &mut self,
-    ) -> &mut std::collections::BTreeSet<dpp::prelude::Identifier> {
-        &mut self.dashpay.sent_payment_reconcile_attempted
+    ) -> &mut std::collections::BTreeMap<dpp::prelude::Identifier, u32> {
+        &mut self.dashpay.sent_payment_reconcile_swept_at
     }
 
     /// Mutable access to the cached contact profiles.
@@ -156,14 +156,6 @@ impl ManagedIdentity {
         &mut self,
     ) -> &mut std::collections::BTreeSet<dpp::prelude::Identifier> {
         &mut self.dashpay.rescan_triggered
-    }
-
-    /// Mutable access to the rescan backfill high-water mark.
-    ///
-    /// In-memory only — see [`DashPayState::rescan_backfill_target`] for why
-    /// sent-payment reconstruction cannot certify a scan below it.
-    pub fn dashpay_rescan_backfill_target_mut(&mut self) -> &mut Option<u32> {
-        &mut self.dashpay.rescan_backfill_target
     }
 
     /// Mutable access to the deferred contact-crypto queue.

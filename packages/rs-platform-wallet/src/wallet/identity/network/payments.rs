@@ -182,16 +182,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         for (owner, contact) in to_mark {
             if let Some(managed) = info.identity_manager.managed_identity_mut(&owner) {
                 managed.dashpay_rescan_triggered_mut().insert(contact);
-                // Arm the completeness mark whenever the tip was actually
-                // rewound: until the backfill climbs back to `synced_height`
-                // as it stood a moment ago, the wallet's transaction table is
-                // still being filled and no snapshot of it is conclusive.
-                // Keep the highest target if several rescans overlap — the
-                // last one to finish is the one that matters.
-                if floor.is_some() {
-                    let target = managed.dashpay_rescan_backfill_target_mut();
-                    *target = Some(target.map_or(synced_height, |cur| cur.max(synced_height)));
-                }
             }
         }
         if let Some(floor) = floor {
@@ -238,6 +228,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
         use std::collections::{BTreeMap, BTreeSet};
 
+        /// How many gap limits wide to derive before the match-driven walk
+        /// starts, so a stretch of unused indices cannot stop it.
+        ///
+        /// Unused stretches come from sends that consumed an address and then
+        /// failed to build; five gap limits (100 addresses at the DIP-15 gap of
+        /// 20) covers far more consecutive failures than a contact realistically
+        /// accumulates, and the walk still extends past it whenever a match
+        /// lands near the frontier.
+        const HISTORICAL_SEED_GAP_MULTIPLE: u32 = 5;
+
         /// The `(owner identity, contact identity)` pair every reconstructed
         /// entry is attributed to.
         type OwnerContact = (Identifier, Identifier);
@@ -274,6 +274,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 Some(wallet) => wallet,
                 None => return Ok(0),
             };
+            // The scan height this pass will certify against. Read once so
+            // eligibility and the stamp below agree even if a concurrent SPV
+            // pass advances it mid-sweep — a later height simply makes the
+            // contact eligible again next time.
+            let synced_height = info.core_wallet.synced_height();
             let mut out = Vec::new();
             for (key, account) in &info.core_wallet.accounts.dashpay_external_accounts {
                 let owner = Identifier::from(key.user_identity_id);
@@ -281,10 +286,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 let Some(managed) = info.identity_manager.managed_identity(&owner) else {
                     continue;
                 };
+                // Swept already — but only for the history that existed at
+                // that height. Newly scanned blocks are exactly when new rows
+                // can appear, so any advance makes the contact eligible again.
                 if managed
                     .dashpay()
-                    .sent_payment_reconcile_attempted
-                    .contains(&contact)
+                    .sent_payment_reconcile_swept_at
+                    .get(&contact)
+                    .is_some_and(|swept_at| *swept_at >= synced_height)
                 {
                     continue;
                 }
@@ -404,21 +413,40 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .collect();
         let mut address_matches: ContactScriptIndex = BTreeMap::new();
         for window in &mut windows {
-            // A pool restored without any materialized addresses can't seed
-            // the range walk — generate the initial gap window first.
-            if window.pool.highest_generated.is_none() && window.key_source.can_derive() {
-                let initial = window.pool.gap_limit;
-                if let Err(e) = window
+            // Seed the walk with a window WIDER than one gap limit, and do it
+            // whether or not the pool already materialized addresses.
+            //
+            // The match-driven loop below only extends past an address it has
+            // already seen paid, so it cannot cross a stretch of unused
+            // indices. Those stretches are reachable in practice: `send_payment`
+            // marks the chosen contact address used before `build_signed`, and a
+            // failed build never rolls that back. After enough failures a later
+            // successful payment lands past a hole no on-chain output bridges,
+            // and on restore the recreated pool stops short of it — the sweep
+            // then finds nothing and stamps the contact as swept.
+            //
+            // Deriving a fixed bounded window first removes the dependency on an
+            // earlier match. Cost is one derivation per contact per launch.
+            if window.key_source.can_derive() {
+                let want = window
                     .pool
-                    .generate_addresses(initial, &window.key_source, true)
-                {
-                    incomplete_scan = true;
-                    tracing::warn!(
-                        error = %e,
-                        owner = %window.owner,
-                        contact = %window.contact,
-                        "reconcile_sent_payments_from_tx_history: initial address derivation failed; will retry next sweep"
-                    );
+                    .gap_limit
+                    .saturating_mul(HISTORICAL_SEED_GAP_MULTIPLE);
+                let have = window.pool.highest_generated.map_or(0, |i| i + 1);
+                if have < want {
+                    if let Err(e) =
+                        window
+                            .pool
+                            .generate_addresses(want - have, &window.key_source, true)
+                    {
+                        incomplete_scan = true;
+                        tracing::warn!(
+                            error = %e,
+                            owner = %window.owner,
+                            contact = %window.contact,
+                            "reconcile_sent_payments_from_tx_history: seed address derivation failed; will retry next sweep"
+                        );
+                    }
                 }
             }
             loop {
@@ -557,7 +585,18 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // stamp the guard and ignore every row that lands afterwards, which is
         // the same permanent-miss this pass exists to prevent, just narrower.
         // So refuse to certify while the backfill has not climbed back to the
-        // tip it rewound from.
+        // Record the height this pass certified, not a bare "done". The scan
+        // is conclusive for the transaction table as it stood at
+        // `synced_height`; it says nothing about rows that arrive with later
+        // blocks. Stamping a flag instead would end recovery on whatever
+        // prefix of history happened to be visible — and nothing in the
+        // persistence callbacks reports whether the host has finished
+        // delivering it.
+        //
+        // A height also removes any ordering requirement between this sweep
+        // and `reconcile_dashpay_rescan`: a rewind lowers `synced_height`, so
+        // the stamp stops matching and the contact is swept again on the way
+        // back up, whichever ran first.
         let synced_height = info.core_wallet.synced_height();
         if !incomplete_scan && txid_count > 0 {
             for window in &windows {
@@ -568,16 +607,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 else {
                     continue;
                 };
-                if managed
-                    .dashpay()
-                    .rescan_backfill_target
-                    .is_some_and(|target| synced_height < target)
-                {
-                    continue;
-                }
                 managed
-                    .dashpay_sent_payment_reconcile_attempted_mut()
-                    .insert(window.contact);
+                    .dashpay_sent_payment_reconcile_swept_at_mut()
+                    .insert(window.contact, synced_height);
             }
         }
         Ok(recorded)
@@ -3542,17 +3574,116 @@ mod tests {
         );
     }
 
-    /// Once a sweep has actually scanned transactions, repeating it is pure
-    /// overhead — the guard stops the full walk on every later pass.
-    /// A rescan still delivering rows must not let the sweep certify the scan.
+    /// A stretch of unused indices must not stop the walk.
     ///
-    /// `txid_count > 0` only says the snapshot was non-empty. The sweep runs
-    /// on a timer, so it can read the transaction table while the DashPay
-    /// backfill is mid-flight: one early row makes the count positive, the
-    /// guard gets stamped, and every row that arrives afterwards is ignored
-    /// for the rest of the process.
+    /// `send_payment` marks the chosen contact address used before
+    /// `build_signed` and never rolls that back when the build fails, so a
+    /// contact's real payment can sit past a hole no on-chain output bridges.
+    /// The match-driven extension alone cannot cross that hole — it only
+    /// extends past an address it has already seen paid — so the seed window
+    /// has to be wider than one gap limit.
     #[tokio::test]
-    async fn reconcile_sent_payments_from_tx_history_waits_for_the_rescan_backfill() {
+    async fn reconcile_sent_payments_from_tx_history_crosses_a_full_unused_gap() {
+        use dashcore::hashes::Hash;
+        use dashcore::BlockHash;
+        use key_wallet::managed_account::transaction_record::OutputRole;
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+
+        let persister = Arc::new(RecordStorePersister::default());
+        let (manager, wallet_id) = make_wallet_with(Arc::clone(&persister)).await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+        }
+
+        let _ = install_external_account(&manager, wallet_id, owner, contact).await;
+
+        // An address a full gap limit past the materialized frontier, with
+        // NOTHING paid in between — the hole a run of failed builds leaves.
+        let (beyond_gap, materialized_max) = {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            let key = DashpayAccountKey {
+                index: 0,
+                user_identity_id: owner.to_buffer(),
+                friend_identity_id: contact.to_buffer(),
+            };
+            let account = info
+                .core_wallet
+                .accounts
+                .dashpay_external_accounts
+                .get(&key)
+                .expect("external account");
+            let pools = account.managed_account_type().address_pools();
+            let pool = *pools.first().expect("pool");
+            let materialized_max = pool.addresses.keys().copied().max().unwrap_or(0);
+            let target = materialized_max + pool.gap_limit + 1;
+            let mut scan = pool.clone();
+            let key_source = key_wallet::KeySource::Public(test_receiving_xpub(&owner, &contact));
+            scan.generate_addresses(target + 1, &key_source, true)
+                .expect("derive past the hole");
+            (
+                scan.addresses
+                    .get(&target)
+                    .expect("target derived")
+                    .address
+                    .clone(),
+                materialized_max,
+            )
+        };
+
+        let record = tx_record_with_outputs(
+            TransactionContext::InBlock(BlockInfo::new(88, BlockHash::all_zeros(), 0)),
+            vec![(beyond_gap, 60_000, OutputRole::Sent)],
+        );
+        let txid = record.txid;
+        persister.records.lock().unwrap().insert(txid, record);
+
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_sent_payments_from_tx_history()
+                .await
+                .expect("reconcile"),
+            1,
+            "a payment past a full unused gap (materialized up to {materialized_max}) must still be found"
+        );
+        {
+            let wm = iw.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("info");
+            assert_eq!(
+                info.identity_manager
+                    .managed_identity(&owner)
+                    .expect("managed")
+                    .dashpay()
+                    .payments
+                    .get(&txid.to_string())
+                    .expect("reconstructed entry")
+                    .amount_duffs,
+                60_000
+            );
+        }
+    }
+
+    /// A sweep certifies only the history that existed at the height it ran
+    /// against, so the contact becomes eligible again as soon as the scan
+    /// advances.
+    ///
+    /// The alternative — a bare "already swept" flag — ends recovery on
+    /// whatever prefix of the transaction table happened to be visible. That
+    /// prefix is not under our control: `dashpay_sync` runs this sweep before
+    /// `reconcile_dashpay_rescan`, and on an initial or forward-only scan rows
+    /// keep arriving with every new block.
+    #[tokio::test]
+    async fn reconcile_sent_payments_from_tx_history_resweeps_when_the_scan_advances() {
         use dashcore::hashes::Hash;
         use dashcore::BlockHash;
         use key_wallet::managed_account::transaction_record::OutputRole;
@@ -3573,74 +3704,94 @@ mod tests {
             info.identity_manager
                 .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
                 .expect("add owner");
+            info.core_wallet.update_synced_height(500);
         }
 
-        let contact_address = install_external_account(&manager, wallet_id, owner, contact)
-            .await
-            .remove(0);
-        let record = tx_record_with_outputs(
-            TransactionContext::InBlock(BlockInfo::new(40, BlockHash::all_zeros(), 0)),
-            vec![(contact_address, 30_000, OutputRole::Sent)],
+        let addresses = install_external_account(&manager, wallet_id, owner, contact).await;
+        let own_address = first_standard_wallet_address(&manager, wallet_id).await;
+
+        // First pass at height 500: one unrelated transaction exists, so the
+        // scan is conclusive for what it saw and stamps that height.
+        let unrelated = tx_record_with_outputs(
+            TransactionContext::InBlock(BlockInfo::new(10, BlockHash::all_zeros(), 0)),
+            vec![(own_address, 1_000, OutputRole::Sent)],
         );
         persister
             .records
             .lock()
             .unwrap()
-            .insert(record.txid, record);
-
-        // Backfill in flight: the tip was rewound from 1000 and has only
-        // climbed back to 500.
-        {
-            let mut wm = iw.wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
-            info.core_wallet.update_synced_height(500);
-            *info
-                .identity_manager
-                .managed_identity_mut(&owner)
-                .expect("managed")
-                .dashpay_rescan_backfill_target_mut() = Some(1000);
-        }
-
+            .insert(unrelated.txid, unrelated);
         iw.dashpay()
             .reconcile_sent_payments_from_tx_history()
             .await
-            .expect("reconcile");
+            .expect("first sweep");
         {
             let wm = iw.wallet_manager.read().await;
             let info = wm.get_wallet_info(&wallet_id).expect("info");
-            assert!(
-                !info
-                    .identity_manager
-                    .managed_identity(&owner)
-                    .expect("managed")
-                    .dashpay()
-                    .sent_payment_reconcile_attempted
-                    .contains(&contact),
-                "a snapshot taken mid-backfill must not certify the contact"
-            );
-        }
-
-        // Backfill complete: the tip is back at the mark.
-        {
-            let mut wm = iw.wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
-            info.core_wallet.update_synced_height(1000);
-        }
-        iw.dashpay()
-            .reconcile_sent_payments_from_tx_history()
-            .await
-            .expect("reconcile");
-        {
-            let wm = iw.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&wallet_id).expect("info");
-            assert!(
+            assert_eq!(
                 info.identity_manager
                     .managed_identity(&owner)
                     .expect("managed")
                     .dashpay()
-                    .sent_payment_reconcile_attempted
-                    .contains(&contact),
-                "once the backfill reaches its mark the scan is conclusive"
+                    .sent_payment_reconcile_swept_at
+                    .get(&contact),
+                Some(&500),
+                "the sweep records the height it certified"
+            );
+        }
+
+        // A payment arrives with a later block — a row the first pass could
+        // not have seen.
+        let late = tx_record_with_outputs(
+            TransactionContext::InBlock(BlockInfo::new(700, BlockHash::all_zeros(), 0)),
+            vec![(addresses[0].clone(), 40_000, OutputRole::Sent)],
+        );
+        let late_txid = late.txid;
+        persister.records.lock().unwrap().insert(late_txid, late);
+
+        // Still at 500: the stamp holds, nothing re-runs.
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_sent_payments_from_tx_history()
+                .await
+                .expect("sweep at the same height"),
+            0,
+            "an unchanged scan height must not re-run the walk"
+        );
+
+        // The scan advances past it — eligibility returns and the payment is
+        // recovered. A flag-based guard would have lost it permanently.
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.core_wallet.update_synced_height(800);
+        }
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_sent_payments_from_tx_history()
+                .await
+                .expect("sweep after the scan advanced"),
+            1,
+            "a higher scan height must re-open the contact"
+        );
+        {
+            let wm = iw.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("info");
+            let managed = info
+                .identity_manager
+                .managed_identity(&owner)
+                .expect("managed");
+            assert!(managed
+                .dashpay()
+                .payments
+                .contains_key(&late_txid.to_string()));
+            assert_eq!(
+                managed
+                    .dashpay()
+                    .sent_payment_reconcile_swept_at
+                    .get(&contact),
+                Some(&800),
+                "the stamp moves to the newly certified height"
             );
         }
     }
