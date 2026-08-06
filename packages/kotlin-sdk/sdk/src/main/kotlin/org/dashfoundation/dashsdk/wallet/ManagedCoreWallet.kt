@@ -1,5 +1,6 @@
 package org.dashfoundation.dashsdk.wallet
 
+import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.NativeCleaner
 import org.dashfoundation.dashsdk.ffi.WalletManagerNative
 import java.util.concurrent.atomic.AtomicLong
@@ -11,9 +12,10 @@ import java.util.concurrent.atomic.AtomicLong
  *
  * Obtained via [ManagedPlatformWallet.coreWallet]. Owns the transient
  * core-wallet handle and destroys it (`core_wallet_destroy`) on [close] or a
- * [NativeCleaner] backstop, exactly like the Swift type's `deinit`. Balance /
- * address reads live on other Kotlin paths; this port carries only the
- * broadcast entry point the Core→Core send needs.
+ * [NativeCleaner] backstop, exactly like the Swift type's `deinit`.
+ * Balance reads live on other Kotlin paths; this port carries the
+ * broadcast entry points the Core→Core send needs plus the engine's
+ * next-unused address accessors ([nextReceiveAddress] / [nextChangeAddress]).
  */
 class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
 
@@ -53,6 +55,45 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
             handle,
             tx.takeForAbandon(),
         )
+    }
+
+    /**
+     * The engine's next unused BIP-44 EXTERNAL (receive) address for
+     * [accountIndex], base58-encoded — Android port of Swift's
+     * `ManagedCoreWallet.nextReceiveAddress(accountIndex:)`
+     * (`SwiftDashSDKReceiveAddressReader`'s source on iOS).
+     *
+     * Answered from the engine's in-memory used-set, so it is
+     * authoritative over the Room `core_addresses` mirror and needs no
+     * persistence read. "Unused" means never seen on-chain: the engine
+     * keeps no issued-marker, so repeated calls return the SAME address
+     * until it receives funds (current-address semantics, not
+     * per-invoice handout). Cold-start caveat (same as iOS documents):
+     * on a fresh install/post-wipe the used-set starts empty, so this
+     * answers index 0 until SPV replay catches the used-set up.
+     */
+    fun nextReceiveAddress(accountIndex: Int = 0): String {
+        require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
+        // Public boundary: map the JNI layer's DashSDKException into the
+        // typed DashSdkError hierarchy (the DashSdkError.kt contract).
+        return mapNativeErrors {
+            WalletManagerNative.coreWalletNextReceiveAddress(handle, accountIndex)
+        }
+    }
+
+    /**
+     * The engine's next unused BIP-44 INTERNAL (change) address for
+     * [accountIndex], base58-encoded — the change-side twin of
+     * [nextReceiveAddress]; same used-set semantics and cold-start
+     * caveat. Builds pick change themselves (`setFunding`); this
+     * accessor exists for callers that must NAME a change address
+     * up front (e.g. `CoreTransactionBuilder.setChangeAddress`).
+     */
+    fun nextChangeAddress(accountIndex: Int = 0): String {
+        require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
+        return mapNativeErrors {
+            WalletManagerNative.coreWalletNextChangeAddress(handle, accountIndex)
+        }
     }
 
     override fun close() {
