@@ -70,6 +70,87 @@ public final class FinalizedCoreTransaction {
     func takeForAbandon() throws -> Handle { try takeForBroadcast() }
 }
 
+/// A built, signed Core transaction whose funding UTXOs are reserved, awaiting
+/// a deferred `ManagedPlatformWallet.broadcastSigned` or
+/// `ManagedPlatformWallet.releaseReservation` — the split-out result of
+/// `ManagedPlatformWallet.buildSignedPayment` for BIP70/BIP270 (CTX/DashSpend)
+/// flows that must sign now, POST the raw bytes to a merchant server, and
+/// broadcast only on the server's ack.
+///
+/// **Owns the reservation token.** The native registration mints the token
+/// before this object exists, so a discarded payment would orphan the token —
+/// and with it the funding reservation — until key-wallet's TTL. `close()`
+/// releases it exactly once, and `deinit` is the backstop for a caller that
+/// never calls `close()`. Release is idempotent native-side and tokens are
+/// process-unique (never reused), so releasing a token already consumed by
+/// `broadcastSigned` / `releaseReservation` — or releasing twice — is a
+/// harmless no-op.
+///
+/// Process-death note: the reservation is in-memory only. An app crash between
+/// the build and the broadcast drops the registry entry and the reservation
+/// together on restart, and the UTXOs become spendable again.
+///
+/// Kotlin parity: `ManagedPlatformWallet.SignedCoreTransaction`
+/// (`ManagedPlatformWallet.kt`).
+public final class SignedCoreTransaction {
+    /// The transaction id (lowercase hex) the broadcast will return, computed
+    /// Rust-side from the signed bytes so it matches exactly.
+    public let txidHex: String
+    /// The consensus-serialized signed transaction, to hand to the merchant
+    /// server.
+    public let rawTxBytes: Data
+    /// The fee this build charged, in duffs.
+    public let feeDuffs: UInt64
+    /// The opaque token driving `broadcastSigned` / `releaseReservation`. Valid
+    /// only for the wallet generation it was minted against, and only until one
+    /// of those calls consumes it (or `close()` / `deinit` releases it).
+    public let reservationToken: UInt64
+
+    /// Non-atomic, matching `FinalizedCoreTransaction`'s single-owner handle
+    /// precedent: a payment is driven by one owner, and the native release is
+    /// itself idempotent.
+    private var tokenOwned = true
+    private let releaseToken: (UInt64) -> Void
+
+    /// - Parameter releaseToken: the release action, defaulting to the native
+    ///   one. Injectable so tests can count releases without reaching into the
+    ///   process-global registry.
+    init(
+        txidHex: String,
+        rawTxBytes: Data,
+        feeDuffs: UInt64,
+        reservationToken: UInt64,
+        releaseToken: @escaping (UInt64) -> Void = {
+            core_wallet_signed_payment_release($0).discard()
+        }
+    ) {
+        self.txidHex = txidHex
+        self.rawTxBytes = rawTxBytes
+        self.feeDuffs = feeDuffs
+        self.reservationToken = reservationToken
+        self.releaseToken = releaseToken
+    }
+
+    /// Release the funding reservation if this payment was neither broadcast
+    /// nor released, and drop the token. Idempotent: a second `close()` is a
+    /// no-op here, and calling it after `broadcastSigned` /
+    /// `releaseReservation` is safe because the native release of an
+    /// already-consumed token is a silent no-op.
+    public func close() {
+        guard tokenOwned else { return }
+        tokenOwned = false
+        releaseToken(reservationToken)
+    }
+
+    /// Backstop for an abandoned payment, so a caller that never calls
+    /// `close()` cannot strand its funding reservation until the TTL.
+    deinit {
+        if tokenOwned {
+            releaseToken(reservationToken)
+        }
+    }
+}
+
 /// key-wallet transaction builder over FFI. Add outputs and options, then call
 /// `finalizeAtomic` before broadcasting via `ManagedCoreWallet`.
 public final class CoreTransactionBuilder {
@@ -288,5 +369,99 @@ public final class CoreTransactionBuilder {
             throw PlatformWalletError.unknown("atomic finalizer returned an empty handle")
         }
         return try FinalizedCoreTransaction(handle: transactionHandle)
+    }
+
+    /// Consume this configured builder and, in ONE atomic native operation,
+    /// select + reserve + sign the inputs and register the built transaction
+    /// for deferred (BIP70/BIP270) submission. The deferred counterpart to
+    /// `finalizeAtomic`: selection and insertion into the account reservation
+    /// set commit as a single unit under the wallet-manager lock, so a
+    /// concurrent deferred build — or a deferred build racing an immediate
+    /// send — cannot double-select an input.
+    ///
+    /// Consumes the builder on every path, including failures; this instance
+    /// must not be reused afterwards.
+    ///
+    /// Kotlin parity: `CoreTransactionBuilder.finalizeSignedPayment`
+    /// (`CoreTransactionBuilder.kt`).
+    public func finalizeSignedPayment(
+        wallet: ManagedPlatformWallet,
+        accountType: AccountType,
+        accountIndex: UInt32
+    ) throws -> SignedCoreTransaction {
+        guard !consumed else {
+            throw PlatformWalletError.unknown("CoreTransactionBuilder already consumed")
+        }
+        var token: UInt64 = 0
+        var feeDuffs: UInt64 = 0
+        var txidPtr: UnsafeMutablePointer<CChar>? = nil
+        var tx = FFICoreTransaction(tx_bytes: nil, tx_len: 0, fee: 0)
+        var bytesPtr: UnsafePointer<UInt8>? = nil
+        var bytesLen: UInt = 0
+
+        let resolver = MnemonicResolver()
+        let result = withExtendedLifetime(resolver) {
+            core_wallet_signed_payment_finalize(
+                handle,
+                wallet.handle,
+                accountType.ffi,
+                accountIndex,
+                resolver.handle,
+                &token,
+                &feeDuffs,
+                &txidPtr,
+                &tx,
+                &bytesPtr,
+                &bytesLen
+            )
+        }
+        consumed = true
+        try result.check()
+
+        defer {
+            if let txidPtr {
+                core_wallet_free_address(txidPtr)
+            }
+            core_wallet_transaction_free(&tx)
+        }
+
+        // Every guard below trips after the native register already minted the
+        // token and transferred reservation ownership to it, so throwing without
+        // releasing would strand the reservation until key-wallet's TTL with no
+        // token left to release it. Release defensively first, mirroring the
+        // owner-guarded release on the rest of the deferred path
+        // (dashpay/platform#4185).
+        func releaseMintedToken() {
+            if token != 0 {
+                core_wallet_signed_payment_release(token).discard()
+            }
+        }
+
+        guard token != 0 else {
+            throw PlatformWalletError.unknown(
+                "deferred finalizer returned success with a zero reservation token"
+            )
+        }
+        guard let txidCString = txidPtr else {
+            releaseMintedToken()
+            throw PlatformWalletError.nullPointer(
+                "core_wallet_signed_payment_finalize returned a NULL txid pointer"
+            )
+        }
+        guard let rawBytes = bytesPtr, bytesLen > 0 else {
+            releaseMintedToken()
+            throw PlatformWalletError.unknown(
+                "deferred finalizer returned success but the tx buffer was empty"
+            )
+        }
+
+        // The borrowed view into `tx`'s buffer is copied here, before the
+        // deferred `core_wallet_transaction_free` frees it.
+        return SignedCoreTransaction(
+            txidHex: String(cString: txidCString),
+            rawTxBytes: Data(bytes: rawBytes, count: Int(bytesLen)),
+            feeDuffs: feeDuffs,
+            reservationToken: token
+        )
     }
 }

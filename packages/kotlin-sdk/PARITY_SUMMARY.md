@@ -2,23 +2,23 @@
 # Kotlin/Swift executable parity summary
 
 Audit baseline: `PR #3999 @ 6dbc72a54df72d26eb9c4a014b425d2b95134e4e`
-Capabilities tracked: **23**
+Capabilities tracked: **24**
 
 ## Status counts
 
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Swift | SDK | 13 | 8 | 1 | 1 |
-| Swift | Example app | 4 | 12 | 1 | 6 |
-| Kotlin | SDK | 11 | 12 | 0 | 0 |
-| Kotlin | Example app | 5 | 12 | 0 | 6 |
+| Swift | SDK | 14 | 8 | 1 | 1 |
+| Swift | Example app | 4 | 12 | 1 | 7 |
+| Kotlin | SDK | 12 | 12 | 0 | 0 |
+| Kotlin | Example app | 5 | 12 | 0 | 7 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
-| Swift | 0 | 7 | 16 |
-| Kotlin | 4 | 6 | 13 |
+| Swift | 0 | 7 | 17 |
+| Kotlin | 4 | 6 | 14 |
 
 ## Capability status
 
@@ -26,6 +26,7 @@ Capabilities tracked: **23**
 | --- | --- | --- |
 | `persistence.platform_address_identity` | partial / not-applicable / required | supported / not-applicable / tested |
 | `core.atomic_send` | supported / supported / not_applicable | supported / supported / not_applicable |
+| `core.deferred_signed_payment` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
 | `tokens.full_u64_domain` | partial / partial / required | supported / supported / tested |
 | `shielded.seedless_restart` | supported / partial / required | partial / partial / required |
 | `dashpay.invitations` | supported / partial / required | supported / partial / required |

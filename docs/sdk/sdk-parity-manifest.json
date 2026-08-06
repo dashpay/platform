@@ -16,6 +16,9 @@
     "core_wallet_abandon_signed_transaction_v2": "packages/rs-platform-wallet-ffi/src/core_wallet/broadcast.rs",
     "core_wallet_broadcast_signed_transaction_v2": "packages/rs-platform-wallet-ffi/src/core_wallet/broadcast.rs",
     "core_wallet_get_balance": "packages/rs-platform-wallet-ffi/src/core_wallet/wallet.rs",
+    "core_wallet_signed_payment_broadcast": "packages/rs-platform-wallet-ffi/src/core_wallet/signed_payment.rs",
+    "core_wallet_signed_payment_finalize": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
+    "core_wallet_signed_payment_release": "packages/rs-platform-wallet-ffi/src/core_wallet/signed_payment.rs",
     "core_wallet_tx_builder_finalize": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
     "dash_sdk_sign_async_completion": "packages/rs-sdk-ffi/src/signer.rs",
     "dpns_name_array_free": "packages/rs-platform-wallet-ffi/src/dpns.rs",
@@ -157,6 +160,97 @@
           "file": "packages/rs-platform-wallet-ffi/src/core_wallet/broadcast.rs",
           "id": "double_free_is_safe_and_releases_reservation",
           "command": "cargo test -p platform-wallet-ffi double_free_is_safe_and_releases_reservation",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "core.deferred_signed_payment",
+      "title": "Deferred BIP70/BIP270 send: sign now, broadcast or release on merchant ack",
+      "area": "correctness",
+      "shared_apis": [
+        "core_wallet_signed_payment_finalize",
+        "core_wallet_signed_payment_broadcast",
+        "core_wallet_signed_payment_release"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "not-applicable",
+          "restart": "not_applicable",
+          "reason": null
+        },
+        "kotlin": {
+          "sdk": "supported",
+          "example_app": "not-applicable",
+          "restart": "not_applicable",
+          "reason": null
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/SignedCoreTransactionTests.swift",
+          "id": "testShouldReleaseTokenOnceOnCloseAndIgnoreASecondClose",
+          "command": "swift test --package-path packages/swift-sdk --filter SignedCoreTransactionTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "integration",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKIntegrationTests/Core/DeferredSignedPaymentIntegrationTests.swift",
+          "id": "testBuildBroadcastConsumesTokenExactlyOnce",
+          "command": "RUN_INTEGRATION_TESTS=1 swift test --package-path packages/swift-sdk --filter DeferredSignedPaymentIntegrationTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "integration",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKIntegrationTests/Core/DeferredSignedPaymentIntegrationTests.swift",
+          "id": "testReleaseFreesTheReservedInputs",
+          "command": "RUN_INTEGRATION_TESTS=1 swift test --package-path packages/swift-sdk --filter DeferredSignedPaymentIntegrationTests",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/SignedCoreTransactionTest.kt",
+          "id": "fromRegisterBlobDecodesFieldsAndIsAnOwningCloseable",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/SignedCoreTransactionTest.kt",
+          "id": "cleanerBackstopRunsTheReleaseActionExactlyOnce",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/signed_payment_registry.rs",
+          "id": "build_then_broadcast_sends_registered_bytes",
+          "command": "cargo test -p platform-wallet build_then_broadcast_sends_registered_bytes",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/signed_payment_registry.rs",
+          "id": "build_then_release_frees_the_reservation",
+          "command": "cargo test -p platform-wallet build_then_release_frees_the_reservation",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/signed_payment_registry.rs",
+          "id": "double_broadcast_is_a_stale_token_error",
+          "command": "cargo test -p platform-wallet double_broadcast_is_a_stale_token_error",
           "covers_restart": false
         }
       ]

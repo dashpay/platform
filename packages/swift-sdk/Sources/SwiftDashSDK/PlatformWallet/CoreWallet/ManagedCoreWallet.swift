@@ -361,6 +361,33 @@ public class ManagedCoreWallet {
         }
     }
 
+    /// Broadcast the deferred (BIP70/BIP270) payment behind `token` and return
+    /// its txid. The token is consumed atomically before the send, so a repeated
+    /// or concurrent broadcast gets an error rather than a second send.
+    ///
+    /// An unusable token surfaces as one of three sibling errors instead:
+    /// `.staleReservationToken` (34) — the reservation may already have aged out
+    /// of key-wallet's TTL, rebuild the payment; `.reservationTokenConsumed`
+    /// (35) — unknown, already broadcast, or already released;
+    /// `.reservationWalletMismatch` (36) — minted against a different wallet
+    /// generation. `.notFound` (98) means the token's wallet was removed from
+    /// the manager entirely. None of them touched the network and none is
+    /// retryable in place.
+    ///
+    /// Kotlin parity: `ManagedCoreWallet.broadcastSignedPayment`
+    /// (`ManagedCoreWallet.kt`).
+    func broadcastSignedPayment(token: UInt64) throws -> String {
+        var txidPtr: UnsafeMutablePointer<CChar>? = nil
+        try core_wallet_signed_payment_broadcast(handle, token, &txidPtr).check()
+        guard let ptr = txidPtr else {
+            throw PlatformWalletError.nullPointer(
+                "core_wallet_signed_payment_broadcast returned a NULL txid pointer"
+            )
+        }
+        defer { core_wallet_free_address(ptr) }
+        return String(cString: ptr)
+    }
+
     /// Consume without sending and release its reservation immediately.
     public func abandonTransaction(_ tx: FinalizedCoreTransaction) throws {
         try core_wallet_abandon_signed_transaction_v2(
