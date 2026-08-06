@@ -1579,6 +1579,9 @@ where
 pub async fn identity_create_from_one_time_key<S, P, IS>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
+    // Claimer's wallet id — keys the durable pending-claim record (under the
+    // reserved `ONE_TIME_CLAIM_RECORDS_ACCOUNT` subwallet of this wallet).
+    wallet_id: WalletId,
     // Bearer spend authority: carried in a `Zeroizing` buffer so every wallet-layer
     // copy of the one-time spending key is scrubbed on drop (#4204 key-hygiene).
     one_time_sk: zeroize::Zeroizing<[u8; 32]>,
@@ -1652,6 +1655,52 @@ where
     // key (identity creation requires one, so this is defensive).
     let master_key_hash = master_auth_public_key_hash(&public_keys);
 
+    // Snapshot the submitted keys for the defensive empty-`public_keys` fill (the
+    // binding signature committed exactly these; same pattern as the pool op).
+    let submitted_public_keys: BTreeMap<u32, IdentityPublicKey> = public_keys
+        .iter()
+        .map(|(key, _)| (key.id(), key.clone()))
+        .collect();
+
+    // ---- Durable pending-claim resume (#4204 review finding c0781f9d387f) ----
+    //
+    // A claim that broadcast but never confirmed (process death, JNI
+    // cancellation, lost result wait) left a persisted record carrying the
+    // byte-exact transition and its declared identity id. Consult it BEFORE
+    // the transient scan: the record's id survives even for a padded
+    // single-note bundle (whose id embeds a random dummy nullifier and is
+    // otherwise unrecoverable), so a retry can reconcile or re-drive the
+    // byte-identical transition instead of rebuilding one whose preflight
+    // would misread the spent notes as a foreign claim
+    // (`ShieldedInviteAlreadyClaimed`).
+    let claim_records_id = SubwalletId::new(wallet_id, ONE_TIME_CLAIM_RECORDS_ACCOUNT);
+    let claim_record_key = one_time_claim_record_key(&fvk);
+    if let Some(record) =
+        find_one_time_claim_record(store, claim_records_id, claim_record_key).await?
+    {
+        match resume_one_time_claim(
+            sdk,
+            store,
+            claim_records_id,
+            &record,
+            master_key_hash,
+            submitted_public_keys.clone(),
+            denomination,
+        )
+        .await
+        {
+            OneTimeClaimResume::Resolved(result) => {
+                finalize_one_time_claim_record(store, claim_records_id, claim_record_key, &result)
+                    .await;
+                return result;
+            }
+            // The stored transition is unusable (corrupt, or definitively
+            // rejected while its notes are provably unspent) — the record has
+            // been cleared; build a fresh claim below.
+            OneTimeClaimResume::RecordUnusable => {}
+        }
+    }
+
     // Transient scan: re-derive the one-time key's note(s) from the network.
     let discovered = super::sync::scan_notes_for_foreign_key(sdk, &fvk, &ivk, denomination).await?;
     if discovered.is_empty() {
@@ -1677,14 +1726,7 @@ where
         "IdentityCreateFromOneTimeKey"
     );
 
-    // Snapshot the submitted keys for the defensive empty-`public_keys` fill (the
-    // binding signature committed exactly these; same pattern as the pool op).
-    let submitted_public_keys: BTreeMap<u32, IdentityPublicKey> = public_keys
-        .iter()
-        .map(|(key, _)| (key.id(), key.clone()))
-        .collect();
-
-    // Idempotent-retry preflight (no persisted record). If this one-time key's
+    // Idempotent-retry preflight (no persisted record for this key). If this one-time key's
     // selected note(s) are ALREADY spent on chain, a byte-identical claim already
     // executed — so we must NOT rebuild+rebroadcast (that would only earn a
     // `NullifierAlreadySpent` rejection). Everything checked here is re-derived
@@ -1720,11 +1762,15 @@ where
     // a Halo 2 proof. Hand off to the reconciler, which decides between "this
     // claim created that identity" (both bindings verified), "the invitation is
     // gone" (terminal), and "executed but not yet indexed" (retryable).
-    if any_nullifier_spent_on_chain(sdk, &selected_nullifiers).await {
+    // `Unknown` proceeds here — that is safe pre-broadcast: the idempotent
+    // broadcast path reconciles via the `NullifierAlreadySpent` verdict, so a
+    // transient query failure only costs a harmless rebuild.
+    if nullifier_spent_status(sdk, &selected_nullifiers).await == NullifierSpentStatus::Spent {
         return recover_executed_one_time_claim(
             sdk,
             master_key_hash,
             expected_identity_id,
+            false,
             "the selected note's nullifier is already spent on chain (pre-broadcast preflight)",
         )
         .await;
@@ -1733,6 +1779,7 @@ where
     // Witness the selected notes against a Platform-recorded anchor from the
     // shared, fully-marked commitment tree (identical probe to the pool op).
     let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
+    let anchor_bytes = anchor.to_bytes();
 
     let build = build_identity_create_from_shielded_pool_transition(
         public_keys,
@@ -1771,6 +1818,60 @@ where
         )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
+    // Persist the pending-claim record BEFORE the broadcast (#4204 review
+    // finding c0781f9d387f): once the transition leaves this process, the
+    // declared id — the only handle that recovers a padded single-note claim —
+    // must already be durable. Fail-closed: nothing has been consumed yet, so
+    // refusing to broadcast on a persistence failure is a clean, retryable
+    // stop; broadcasting without the record risks an unrecoverable
+    // `ShieldedInviteAlreadyClaimed` on the next attempt.
+    arm_one_time_claim_record(
+        store,
+        claim_records_id,
+        claim_record_key,
+        anchor_bytes,
+        &selected_nullifiers,
+        &st,
+    )
+    .await?;
+
+    let result = broadcast_and_confirm_one_time_claim(
+        sdk,
+        st,
+        identity_id,
+        expected_identity_id,
+        master_key_hash,
+        &selected_nullifiers,
+        submitted_public_keys,
+        denomination,
+    )
+    .await;
+    finalize_one_time_claim_record(store, claim_records_id, claim_record_key, &result).await;
+    result
+}
+
+/// Broadcast an assembled one-time-key claim transition and drive it to a
+/// classified outcome: proven success, idempotent recovery of an
+/// already-executed claim, terminal `ShieldedInviteAlreadyClaimed`, definitive
+/// `ShieldedBroadcastFailed`, or retryable `ShieldedBroadcastUnconfirmed`.
+///
+/// Shared by the fresh-build path and the pending-claim resume path
+/// (`resume_one_time_claim`), which re-broadcasts the persisted byte-identical
+/// transition. `identity_id` is the id the transition DECLARES;
+/// `expected_identity_id` is the pre-build re-derivable id (`None` for a
+/// padded single-note bundle on the fresh path; always `Some` on the resume
+/// path, where the declared id was recovered from the record).
+#[allow(clippy::too_many_arguments)]
+async fn broadcast_and_confirm_one_time_claim(
+    sdk: &Arc<dash_sdk::Sdk>,
+    st: StateTransition,
+    identity_id: Identifier,
+    expected_identity_id: Option<Identifier>,
+    master_key_hash: Option<[u8; 20]>,
+    claim_nullifiers: &[[u8; 32]],
+    submitted_public_keys: BTreeMap<u32, IdentityPublicKey>,
+    denomination: u64,
+) -> Result<(Identifier, Identity), PlatformWalletError> {
     match st.broadcast(sdk, None).await {
         Ok(()) => {}
         // A `NullifierAlreadySpent` verdict is NOT a failure on this path: it is
@@ -1793,6 +1894,7 @@ where
                 sdk,
                 master_key_hash,
                 Some(identity_id),
+                false,
                 &format!("broadcast returned NullifierAlreadySpent: {e}"),
             )
             .await;
@@ -1834,6 +1936,7 @@ where
                 sdk,
                 master_key_hash,
                 Some(identity_id),
+                false,
                 &format!("result wait returned NullifierAlreadySpent: {wait_err}"),
             )
             .await;
@@ -1856,19 +1959,48 @@ where
             // chargeable fallback / competing claim (terminal
             // `ShieldedInviteAlreadyClaimed`) (#4204 review finding
             // 8d020115b274).
-            if any_nullifier_spent_on_chain(sdk, &selected_nullifiers).await {
-                return recover_executed_one_time_claim(
-                    sdk,
-                    master_key_hash,
-                    Some(identity_id),
-                    &format!(
-                        "result wait returned an executed consensus verdict (the invitation \
-                         notes are spent — applied claim or chargeable fallback): {e}"
-                    ),
-                )
-                .await;
+            //
+            // The three spent-status outcomes diverge here and only `Unspent`
+            // may produce `ShieldedBroadcastFailed`: the host documents that
+            // code as definitive non-execution and safe to retry, so it
+            // requires PROOF the notes are unconsumed. `Unknown` (query
+            // failure / partial response) yields `ShieldedBroadcastUnconfirmed`
+            // instead — the armed pending-claim record lets a later retry
+            // reconcile with the exact id once the status is queryable.
+            match nullifier_spent_status(sdk, claim_nullifiers).await {
+                NullifierSpentStatus::Spent => {
+                    // `spend_finalized = true`: this claim's own wait returned a
+                    // definitive verdict AND the notes are proven consumed, so
+                    // "no identity carries our bindings" is the terminal
+                    // chargeable-fallback / competing-claim outcome — even when
+                    // the colliding unique key was not MASTER and no identity is
+                    // findable under either probe.
+                    return recover_executed_one_time_claim(
+                        sdk,
+                        master_key_hash,
+                        Some(identity_id),
+                        true,
+                        &format!(
+                            "result wait returned an executed consensus verdict (the invitation \
+                             notes are spent — applied claim or chargeable fallback): {e}"
+                        ),
+                    )
+                    .await;
+                }
+                NullifierSpentStatus::Unspent => {
+                    return Err(PlatformWalletError::ShieldedBroadcastFailed(e.to_string()));
+                }
+                NullifierSpentStatus::Unknown => {
+                    return Err(PlatformWalletError::ShieldedBroadcastUnconfirmed {
+                        identity_id,
+                        reason: format!(
+                            "consensus verdict received but the invitation notes' spent status \
+                             could not be established; not classifying as a definitive failure \
+                             (an applied chargeable fallback would be indistinguishable): {e}"
+                        ),
+                    });
+                }
             }
-            return Err(PlatformWalletError::ShieldedBroadcastFailed(e.to_string()));
         }
         Err(wait_err) => {
             warn!(
@@ -1969,6 +2101,232 @@ where
         "IdentityCreateFromOneTimeKey broadcast succeeded"
     );
     Ok((identity.id(), identity))
+}
+
+/// The synthetic ZIP-32 account index that keys durable one-time-claim records
+/// in the [`ShieldedStore`].
+///
+/// Claim records reuse the store's persisted [`PendingRedrive`] rows (byte-exact
+/// transition + nullifiers + anchor), but live under this reserved subwallet so
+/// the spend-redrive sync pass — which iterates REAL Orchard accounts — never
+/// re-broadcasts or prunes them; their lifecycle is owned entirely by
+/// [`identity_create_from_one_time_key`]. ZIP-32 account indices are hardened
+/// (`< 2^31`), so `u32::MAX` cannot collide with a real subwallet.
+pub(super) const ONE_TIME_CLAIM_RECORDS_ACCOUNT: u32 = u32::MAX;
+
+/// Deterministic record key for a one-time claim: every retry of the same
+/// invitation re-derives the same key from the one-time FVK, which is exactly
+/// what lets a retry find the record a crashed attempt left behind. Domain-
+/// separated so it can never collide with an activity-entry id (sha256 of
+/// visible output cmxs) sharing the `PendingRedrive.activity_id` keyspace.
+fn one_time_claim_record_key(fvk: &grovedb_commitment_tree::FullViewingKey) -> [u8; 32] {
+    use dashcore::hashes::{sha256, Hash};
+
+    let mut preimage = Vec::with_capacity(96 + 33);
+    preimage.extend_from_slice(b"platform-wallet:one-time-claim:v1");
+    preimage.extend_from_slice(&fvk.to_bytes());
+    sha256::Hash::hash(&preimage).to_byte_array()
+}
+
+/// Look up the persisted pending-claim record for `key`. Fail-closed on a
+/// store read error: proceeding to a fresh build while a record might exist
+/// is exactly the unrecoverable-padded-claim hazard the record prevents.
+async fn find_one_time_claim_record<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    key: [u8; 32],
+) -> Result<Option<PendingRedrive>, PlatformWalletError> {
+    store
+        .read()
+        .await
+        .pending_redrives(id)
+        .map(|records| records.into_iter().find(|r| r.activity_id == key))
+        .map_err(|e| {
+            PlatformWalletError::Persistence(format!(
+                "pending one-time-claim record lookup failed; refusing to build a fresh claim \
+                 while an earlier attempt's record may exist: {e}"
+            ))
+        })
+}
+
+/// Persist the pending-claim record. Called BEFORE the broadcast; a failure
+/// aborts the claim (fail-closed — see the call site).
+async fn arm_one_time_claim_record<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    key: [u8; 32],
+    anchor: [u8; 32],
+    nullifiers: &[[u8; 32]],
+    st: &StateTransition,
+) -> Result<(), PlatformWalletError> {
+    use dpp::serialization::PlatformSerializable;
+
+    let st_bytes = st
+        .serialize_to_bytes()
+        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+    store
+        .write()
+        .await
+        .arm_redrive(
+            id,
+            PendingRedrive {
+                activity_id: key,
+                anchor,
+                nullifiers: nullifiers.to_vec(),
+                st_bytes,
+                attempts: 0,
+            },
+        )
+        .map_err(|e| {
+            PlatformWalletError::Persistence(format!(
+                "failed to persist the pending one-time-claim record before broadcast: {e}"
+            ))
+        })
+}
+
+/// Drop the pending-claim record. Best-effort: a failure only means the next
+/// attempt resumes a settled record, which re-resolves to the same outcome.
+async fn clear_one_time_claim_record<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    key: [u8; 32],
+) {
+    if let Err(e) = store.write().await.clear_redrive(id, &key) {
+        warn!(
+            error = %e,
+            "one-time claim: failed to clear the pending-claim record"
+        );
+    }
+}
+
+/// Clear the pending-claim record when `result` settles the claim: a recovered
+/// or confirmed identity (`Ok`) and the terminal `ShieldedInviteAlreadyClaimed`
+/// both mean no future retry needs the record. Every other error keeps it —
+/// `ShieldedBroadcastUnconfirmed` (and unproven failures) are exactly the
+/// outcomes whose retry must find the declared id again.
+async fn finalize_one_time_claim_record<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    key: [u8; 32],
+    result: &Result<(Identifier, Identity), PlatformWalletError>,
+) {
+    if matches!(
+        result,
+        Ok(_) | Err(PlatformWalletError::ShieldedInviteAlreadyClaimed { .. })
+    ) {
+        clear_one_time_claim_record(store, id, key).await;
+    }
+}
+
+/// Outcome of attempting to resume a persisted pending claim.
+enum OneTimeClaimResume {
+    /// The record drove the claim to an outcome — return it to the caller.
+    Resolved(Result<(Identifier, Identity), PlatformWalletError>),
+    /// The record cannot drive an outcome (corrupt, wrong transition type, or
+    /// definitively rejected with its notes proven unspent). It has been
+    /// cleared; the caller builds a fresh claim.
+    RecordUnusable,
+}
+
+/// Resume a claim from its persisted record (#4204 review finding
+/// c0781f9d387f): recover by the DECLARED id when the notes are already
+/// consumed, otherwise re-broadcast the byte-identical stored transition —
+/// never rebuild while the record is live, because a rebuilt padded bundle
+/// derives a fresh random id and orphans the recorded one.
+async fn resume_one_time_claim<S: ShieldedStore>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    claim_records_id: SubwalletId,
+    record: &PendingRedrive,
+    master_key_hash: Option<[u8; 20]>,
+    submitted_public_keys: BTreeMap<u32, IdentityPublicKey>,
+    denomination: u64,
+) -> OneTimeClaimResume {
+    use dpp::serialization::PlatformDeserializable;
+    use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::accessors::IdentityCreateFromShieldedPoolTransitionAccessorsV0;
+
+    let st = match StateTransition::deserialize_from_bytes(&record.st_bytes) {
+        Ok(st) => st,
+        Err(e) => {
+            warn!(
+                error = %e,
+                "one-time claim resume: stored transition failed to deserialize; dropping the \
+                 record and rebuilding"
+            );
+            clear_one_time_claim_record(store, claim_records_id, record.activity_id).await;
+            return OneTimeClaimResume::RecordUnusable;
+        }
+    };
+    let declared_id = match &st {
+        StateTransition::IdentityCreateFromShieldedPool(t) => t.identity_id(),
+        other => {
+            warn!(
+                transition = %other.name(),
+                "one-time claim resume: stored record does not carry a shielded identity-create \
+                 transition; dropping the record and rebuilding"
+            );
+            clear_one_time_claim_record(store, claim_records_id, record.activity_id).await;
+            return OneTimeClaimResume::RecordUnusable;
+        }
+    };
+
+    info!(
+        declared_id = %declared_id,
+        nullifiers = record.nullifiers.len(),
+        "one-time claim: resuming from the persisted pending-claim record"
+    );
+
+    let status = nullifier_spent_status(sdk, &record.nullifiers).await;
+    if status == NullifierSpentStatus::Spent {
+        // The recorded claim (or a competitor) already consumed the notes.
+        // The DECLARED id — unrecoverable without the record for a padded
+        // bundle — lets the reconciler bind a created identity to this claim.
+        return OneTimeClaimResume::Resolved(
+            recover_executed_one_time_claim(
+                sdk,
+                master_key_hash,
+                Some(declared_id),
+                false,
+                "resume: the recorded pending claim's notes are already spent on chain",
+            )
+            .await,
+        );
+    }
+
+    // Unspent or Unknown: re-drive the byte-identical transition through the
+    // same broadcast/confirm classification as a fresh claim. Byte-identical
+    // re-broadcast is fund-safe (identical nullifiers cannot double-spend) and
+    // preserves the recorded id.
+    let result = broadcast_and_confirm_one_time_claim(
+        sdk,
+        st,
+        declared_id,
+        Some(declared_id),
+        master_key_hash,
+        &record.nullifiers,
+        submitted_public_keys,
+        denomination,
+    )
+    .await;
+
+    if status == NullifierSpentStatus::Unspent {
+        if let Err(PlatformWalletError::ShieldedBroadcastFailed(reason)) = &result {
+            // Definitive rejection of the STORED transition while its notes
+            // are proven unconsumed (e.g. its anchor aged out of Platform's
+            // recorded set): this record can never land. Clear it and build a
+            // fresh claim in this same call.
+            warn!(
+                declared_id = %declared_id,
+                reason,
+                "one-time claim resume: stored transition is definitively rejected and its notes \
+                 are unspent; dropping the record and rebuilding"
+            );
+            clear_one_time_claim_record(store, claim_records_id, record.activity_id).await;
+            return OneTimeClaimResume::RecordUnusable;
+        }
+    }
+
+    OneTimeClaimResume::Resolved(result)
 }
 
 /// Whether a failed identity-create should release the notes reserved for it.
@@ -2877,33 +3235,79 @@ fn broadcast_definitely_failed(e: &dash_sdk::Error) -> bool {
     }
 }
 
-/// Best-effort on-chain check: is any of `nullifiers` already recorded spent in
-/// Platform's shielded nullifier set? Reuses the proof-verified
+/// On-chain spent status of a claim's nullifier set, as far as a single
+/// query can establish it.
+///
+/// The three states matter because callers draw OPPOSITE conclusions from
+/// them: `Spent` proves the invitation notes are consumed (something
+/// executed), `Unspent` proves nothing has consumed them yet, and
+/// `Unknown` proves NOTHING — a transport failure or an absent response
+/// must never be read as either of the other two (#4204 review finding
+/// 8d020115b274).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NullifierSpentStatus {
+    /// At least one queried nullifier is proof-verified spent.
+    Spent,
+    /// The query succeeded and covered every queried nullifier; none is spent.
+    Unspent,
+    /// The query failed, returned no response, or covered only part of the
+    /// queried set — no conclusion can be drawn.
+    Unknown,
+}
+
+/// Classify a successful nullifier-status response against the queried set.
+///
+/// A response that omits some queried nullifiers proves nothing about the
+/// omitted ones, so it downgrades an all-unspent answer to `Unknown`.
+fn classify_nullifier_statuses(
+    statuses: &[dash_sdk::query_types::ShieldedNullifierStatus],
+    queried: &[[u8; 32]],
+) -> NullifierSpentStatus {
+    if statuses.iter().any(|s| s.is_spent) {
+        return NullifierSpentStatus::Spent;
+    }
+    let covered = queried
+        .iter()
+        .all(|q| statuses.iter().any(|s| &s.nullifier == q));
+    if covered {
+        NullifierSpentStatus::Unspent
+    } else {
+        NullifierSpentStatus::Unknown
+    }
+}
+
+/// On-chain check: are `nullifiers` already recorded spent in Platform's
+/// shielded nullifier set? Reuses the proof-verified
 /// [`ShieldedNullifierStatuses`](dash_sdk::query_types::ShieldedNullifierStatuses)
 /// fetch (query type [`ShieldedNullifiersQuery`](dash_sdk::query_types::ShieldedNullifiersQuery)).
 ///
-/// A query error (or an empty response) returns `false` — "unknown, proceed":
-/// the normal build+broadcast path then reconciles via the
-/// `NullifierAlreadySpent` broadcast verdict, so a transient query failure only
-/// costs a (harmless, idempotent) rebuild, never a wrong answer.
-async fn any_nullifier_spent_on_chain(sdk: &Arc<dash_sdk::Sdk>, nullifiers: &[[u8; 32]]) -> bool {
+/// A query error or an absent response is [`NullifierSpentStatus::Unknown`],
+/// never `Unspent`: the pre-broadcast preflight may treat unknown as
+/// "proceed" (the idempotent broadcast path reconciles via the
+/// `NullifierAlreadySpent` verdict, so that only costs a harmless rebuild),
+/// but the post-verdict classification must NOT — declaring a definitive
+/// non-execution on an unknown status would report an applied chargeable
+/// fallback as retryable.
+async fn nullifier_spent_status(
+    sdk: &Arc<dash_sdk::Sdk>,
+    nullifiers: &[[u8; 32]],
+) -> NullifierSpentStatus {
     use dash_sdk::platform::Fetch;
     use dash_sdk::query_types::{ShieldedNullifierStatuses, ShieldedNullifiersQuery};
 
     if nullifiers.is_empty() {
-        return false;
+        return NullifierSpentStatus::Unspent;
     }
     match ShieldedNullifierStatuses::fetch(sdk, ShieldedNullifiersQuery(nullifiers.to_vec())).await
     {
-        Ok(Some(statuses)) => statuses.0.iter().any(|s| s.is_spent),
-        Ok(None) => false,
+        Ok(Some(statuses)) => classify_nullifier_statuses(&statuses.0, nullifiers),
+        Ok(None) => NullifierSpentStatus::Unknown,
         Err(e) => {
             warn!(
                 error = %e,
-                "IdentityCreateFromOneTimeKey: nullifier spent-status query failed; treating as \
-                 unknown and proceeding to the idempotent broadcast path"
+                "IdentityCreateFromOneTimeKey: nullifier spent-status query failed; status unknown"
             );
-            false
+            NullifierSpentStatus::Unknown
         }
     }
 }
@@ -3063,10 +3467,22 @@ async fn fetch_identity_by_key_hash_with_retries(
 ///   yet, but the id *is* re-derivable, so a later retry can still reconcile once
 ///   indexing catches up. Only reachable when `expected_identity_id` is `Some`,
 ///   so the carried id is always the one this claim's nullifiers derive.
+///
+/// `spend_finalized` — the caller holds POSITIVE evidence that this claim's own
+/// broadcast reached a definitive consensus verdict AND the notes are proven
+/// consumed. Under that evidence, "no identity carries this claim's bindings"
+/// is not indexing lag: an applied Type-20 that returned an error verdict
+/// created no identity (the chargeable `UnshieldAction` fallback), and the
+/// colliding unique key need not be MASTER — a collision on any other submitted
+/// unique key leaves NOTHING findable under the MASTER-hash probe or the
+/// derived id. The nothing-found outcome is then the terminal
+/// `ShieldedInviteAlreadyClaimed`, not `ShieldedBroadcastUnconfirmed`
+/// (#4204 review finding 8d020115b274).
 async fn recover_executed_one_time_claim(
     sdk: &Arc<dash_sdk::Sdk>,
     master_key_hash: Option<[u8; 20]>,
     expected_identity_id: Option<Identifier>,
+    spend_finalized: bool,
     evidence: &str,
 ) -> Result<(Identifier, Identity), PlatformWalletError> {
     warn!(
@@ -3146,6 +3562,23 @@ async fn recover_executed_one_time_claim(
                 "identity {expected_id} was created from this invitation's notes but does not \
                  carry the submitted master authentication key, so it belongs to another holder \
                  of the one-time key: {evidence}"
+            ),
+        });
+    }
+
+    if spend_finalized {
+        // Both probes came up empty under a definitive verdict + proven-spent
+        // notes: the spend finalized without creating an identity that carries
+        // this claim's bindings. That is the chargeable-`UnshieldAction`
+        // fallback (the collision may have been on any submitted unique key,
+        // not just MASTER) or a competing claim — terminal either way; the
+        // value, if any, went to the creation-failure address.
+        return Err(PlatformWalletError::ShieldedInviteAlreadyClaimed {
+            reason: format!(
+                "the claim's consensus verdict is definitive and the invitation notes are spent, \
+                 but no identity carries this claim's bindings; the spend was finalized as a \
+                 chargeable failure (or a competing claim) and created no identity for this \
+                 wallet: {evidence}"
             ),
         });
     }
@@ -3385,6 +3818,171 @@ mod redrive_tests {
             Some(MAX_REDRIVE_ATTEMPTS),
             "no attempt counters were bumped — nothing touched the network"
         );
+    }
+}
+
+#[cfg(test)]
+mod nullifier_status_and_claim_record_tests {
+    use super::*;
+    use crate::wallet::shielded::store::InMemoryShieldedStore;
+    use dash_sdk::query_types::ShieldedNullifierStatus;
+
+    fn status(nullifier: [u8; 32], is_spent: bool) -> ShieldedNullifierStatus {
+        ShieldedNullifierStatus {
+            nullifier,
+            is_spent,
+        }
+    }
+
+    /// Any spent entry wins regardless of coverage: `Spent` is positive proof.
+    #[test]
+    fn classify_any_spent_is_spent() {
+        let queried = [[1u8; 32], [2u8; 32]];
+        let statuses = vec![status([1u8; 32], false), status([2u8; 32], true)];
+        assert_eq!(
+            classify_nullifier_statuses(&statuses, &queried),
+            NullifierSpentStatus::Spent
+        );
+    }
+
+    /// All queried nullifiers covered and none spent — proven unspent.
+    #[test]
+    fn classify_full_coverage_unspent_is_unspent() {
+        let queried = [[1u8; 32], [2u8; 32]];
+        let statuses = vec![status([1u8; 32], false), status([2u8; 32], false)];
+        assert_eq!(
+            classify_nullifier_statuses(&statuses, &queried),
+            NullifierSpentStatus::Unspent
+        );
+    }
+
+    /// A response that omits a queried nullifier proves nothing about it:
+    /// partial coverage must NOT read as `Unspent` — that is the path that
+    /// would misreport an applied chargeable fallback as a retryable
+    /// non-execution (#4204 review finding 8d020115b274).
+    #[test]
+    fn classify_partial_coverage_is_unknown() {
+        let queried = [[1u8; 32], [2u8; 32]];
+        let statuses = vec![status([1u8; 32], false)];
+        assert_eq!(
+            classify_nullifier_statuses(&statuses, &queried),
+            NullifierSpentStatus::Unknown
+        );
+        assert_eq!(
+            classify_nullifier_statuses(&[], &queried),
+            NullifierSpentStatus::Unknown
+        );
+    }
+
+    /// The record key is deterministic per one-time key (a retry must find the
+    /// record a crashed attempt armed) and distinct across keys.
+    #[test]
+    fn claim_record_key_is_deterministic_and_distinct() {
+        use grovedb_commitment_tree::{FullViewingKey, SpendingKey};
+
+        let fvk = |b: u8| {
+            let sk = Option::<SpendingKey>::from(SpendingKey::from_bytes([b; 32]))
+                .expect("test byte pattern must be a valid spending key");
+            FullViewingKey::from(&sk)
+        };
+        let a = fvk(1);
+        let b = fvk(2);
+        assert_eq!(one_time_claim_record_key(&a), one_time_claim_record_key(&a));
+        assert_ne!(one_time_claim_record_key(&a), one_time_claim_record_key(&b));
+    }
+
+    /// Arm → find → clear round-trip through the reserved claim-records
+    /// subwallet, and `finalize_one_time_claim_record`'s settlement rule:
+    /// terminal `ShieldedInviteAlreadyClaimed` clears the record, while
+    /// `ShieldedBroadcastUnconfirmed` — the outcome whose retry NEEDS the
+    /// record — keeps it (#4204 review finding c0781f9d387f).
+    #[tokio::test]
+    async fn claim_record_round_trip_and_finalize_rules() {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let wallet_id = [7u8; 32];
+        let id = SubwalletId::new(wallet_id, ONE_TIME_CLAIM_RECORDS_ACCOUNT);
+        let key = [0xA5u8; 32];
+
+        assert!(find_one_time_claim_record(&store, id, key)
+            .await
+            .expect("lookup must succeed")
+            .is_none());
+
+        {
+            let mut guard = store.write().await;
+            guard
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        activity_id: key,
+                        anchor: [9u8; 32],
+                        nullifiers: vec![[3u8; 32]],
+                        st_bytes: vec![1, 2, 3],
+                        attempts: 0,
+                    },
+                )
+                .expect("arm must succeed");
+        }
+        let found = find_one_time_claim_record(&store, id, key)
+            .await
+            .expect("lookup must succeed")
+            .expect("armed record must be found");
+        assert_eq!(found.nullifiers, vec![[3u8; 32]]);
+
+        // Unconfirmed keeps the record — its retry needs the declared id.
+        let unconfirmed: Result<(Identifier, Identity), PlatformWalletError> =
+            Err(PlatformWalletError::ShieldedBroadcastUnconfirmed {
+                identity_id: Identifier::new([1u8; 32]),
+                reason: "test".to_string(),
+            });
+        finalize_one_time_claim_record(&store, id, key, &unconfirmed).await;
+        assert!(find_one_time_claim_record(&store, id, key)
+            .await
+            .expect("lookup must succeed")
+            .is_some());
+
+        // Terminal AlreadyClaimed settles it.
+        let terminal: Result<(Identifier, Identity), PlatformWalletError> =
+            Err(PlatformWalletError::ShieldedInviteAlreadyClaimed {
+                reason: "test".to_string(),
+            });
+        finalize_one_time_claim_record(&store, id, key, &terminal).await;
+        assert!(find_one_time_claim_record(&store, id, key)
+            .await
+            .expect("lookup must succeed")
+            .is_none());
+    }
+
+    /// A corrupt stored transition must not wedge the claim: the resume path
+    /// drops the record (so the fresh build proceeds) without touching the
+    /// network (the mock SDK has no expectations — any fetch would error).
+    #[tokio::test]
+    async fn resume_drops_corrupt_record_and_rebuilds() {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let wallet_id = [8u8; 32];
+        let id = SubwalletId::new(wallet_id, ONE_TIME_CLAIM_RECORDS_ACCOUNT);
+        let key = [0x5Au8; 32];
+        let record = PendingRedrive {
+            activity_id: key,
+            anchor: [0u8; 32],
+            nullifiers: vec![[4u8; 32]],
+            st_bytes: vec![0xDE, 0xAD], // never deserializes
+            attempts: 0,
+        };
+        store
+            .write()
+            .await
+            .arm_redrive(id, record.clone())
+            .expect("arm must succeed");
+
+        let outcome =
+            resume_one_time_claim(&sdk, &store, id, &record, None, BTreeMap::new(), 100_000).await;
+        assert!(matches!(outcome, OneTimeClaimResume::RecordUnusable));
+        assert!(find_one_time_claim_record(&store, id, key)
+            .await
+            .expect("lookup must succeed")
+            .is_none());
     }
 }
 

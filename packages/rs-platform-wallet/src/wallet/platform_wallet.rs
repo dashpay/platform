@@ -1371,6 +1371,7 @@ impl PlatformWallet {
             super::shielded::operations::identity_create_from_one_time_key(
                 &self.sdk,
                 coordinator.store(),
+                self.wallet_id,
                 one_time_sk,
                 funding_birth_height,
                 &change_address,
