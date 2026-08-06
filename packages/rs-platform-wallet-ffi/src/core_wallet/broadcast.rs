@@ -173,6 +173,28 @@ pub unsafe extern "C" fn core_wallet_signed_transaction_v2_fee(
     PlatformWalletFFIResult::ok()
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn core_wallet_signed_transaction_v2_bytes(
+    transaction_handle: Handle,
+    out_bytes: *mut *mut u8,
+    out_len: *mut usize,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_bytes);
+    check_ptr!(out_len);
+    *out_bytes = std::ptr::null_mut();
+    *out_len = 0;
+
+    let bytes = unwrap_option_or_return!(CORE_SIGNED_TRANSACTION_V2_STORAGE
+        .with_item(transaction_handle, |tx| dashcore::consensus::serialize(
+            tx.transaction.transaction()
+        )));
+    let len = bytes.len();
+    let boxed = bytes.into_boxed_slice();
+    *out_bytes = Box::into_raw(boxed) as *mut u8;
+    *out_len = len;
+    PlatformWalletFFIResult::ok()
+}
+
 /// Broadcast a transaction built by `core_wallet_tx_builder_build_signed`.
 ///
 /// `account_type`/`account_index` identify the funding account handed to

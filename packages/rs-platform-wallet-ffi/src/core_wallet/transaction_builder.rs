@@ -13,7 +13,9 @@ use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::managed_account::ManagedCoreFundsAccount;
 use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
 use key_wallet::wallet::managed_wallet_info::fee::FeeRate;
-use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
+use key_wallet::wallet::managed_wallet_info::transaction_builder::{
+    TransactionBuilder, MAX_STANDARD_OP_RETURN_BYTES,
+};
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle};
@@ -508,6 +510,57 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_output(
     PlatformWalletFFIResult::ok()
 }
 
+/// Add a zero-value OP_RETURN output carrying `data`.
+///
+/// # Safety
+/// `builder` must be a valid, non-destroyed pointer; `data` must reference a
+/// readable buffer of `data_len` bytes when `data_len > 0`.
+#[no_mangle]
+pub unsafe extern "C" fn core_wallet_tx_builder_add_op_return(
+    builder: *mut FFITransactionBuilder,
+    data: *const u8,
+    data_len: usize,
+) -> PlatformWalletFFIResult {
+    check_ptr!(builder);
+    if data_len > 0 {
+        check_ptr!(data);
+    }
+
+    let bytes = if data_len == 0 {
+        &[]
+    } else {
+        std::slice::from_raw_parts(data, data_len)
+    };
+
+    // `add_op_return` takes the builder by value, so a rejected payload drops it and leaves
+    // `take_builder`'s `mem::take` default behind — silently discarding outputs and options
+    // the caller already configured. Reject an over-long payload *before* taking the builder
+    // so the slot keeps its real state. `add_op_return` re-checks; this is the same policy
+    // constant, not a second opinion.
+    if data_len > MAX_STANDARD_OP_RETURN_BYTES {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!(
+                "OP_RETURN payload too large: {data_len} bytes (max {MAX_STANDARD_OP_RETURN_BYTES})"
+            ),
+        );
+    }
+
+    let b = (*builder).take_builder();
+    let b = match b.add_op_return(bytes) {
+        Ok(b) => b,
+        Err(err) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                err.to_string(),
+            );
+        }
+    };
+    (*builder).store_builder(b);
+
+    PlatformWalletFFIResult::ok()
+}
+
 /// # Safety
 /// `builder` must be a valid, non-destroyed pointer; `address` a valid NUL-terminated C string.
 #[no_mangle]
@@ -533,6 +586,40 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_change_address(
 
     let b = (*builder).take_builder();
     let b = b.set_change_address(address);
+    (*builder).store_builder(b);
+
+    PlatformWalletFFIResult::ok()
+}
+
+/// Preserve outputs in the order they were added instead of applying BIP-69 sorting.
+///
+/// # Safety
+/// `builder` must be a valid, non-destroyed pointer.
+#[no_mangle]
+pub unsafe extern "C" fn core_wallet_tx_builder_preserve_output_order(
+    builder: *mut FFITransactionBuilder,
+) -> PlatformWalletFFIResult {
+    check_ptr!(builder);
+
+    let b = (*builder).take_builder();
+    let b = b.preserve_output_order();
+    (*builder).store_builder(b);
+
+    PlatformWalletFFIResult::ok()
+}
+
+/// Route change to the address of the first selected input (VIN0).
+///
+/// # Safety
+/// `builder` must be a valid, non-destroyed pointer.
+#[no_mangle]
+pub unsafe extern "C" fn core_wallet_tx_builder_change_to_first_input(
+    builder: *mut FFITransactionBuilder,
+) -> PlatformWalletFFIResult {
+    check_ptr!(builder);
+
+    let b = (*builder).take_builder();
+    let b = b.change_to_first_input();
     (*builder).store_builder(b);
 
     PlatformWalletFFIResult::ok()
