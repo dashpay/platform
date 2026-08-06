@@ -2793,11 +2793,15 @@ impl PlatformWalletPersistence for FFIPersister {
     fn list_wallet_core_txids(
         &self,
         wallet_id: WalletId,
-    ) -> Result<Vec<ListedCoreTxid>, PersistenceError> {
+    ) -> Result<Option<Vec<ListedCoreTxid>>, PersistenceError> {
         use dashcore::hashes::Hash;
 
+        // An unset callback means this host never wired wallet-scoped
+        // transaction enumeration (the Android vtable leaves both slots
+        // `None`). Report the capability as absent — NOT an empty table —
+        // so sent-payment reconstruction skips instead of retrying forever.
         let Some(list_cb) = self.callbacks.on_list_wallet_core_txids_fn else {
-            return Ok(Vec::new());
+            return Ok(None);
         };
 
         let mut txids_ptr: *const u8 = std::ptr::null();
@@ -2863,7 +2867,7 @@ impl PlatformWalletPersistence for FFIPersister {
         };
 
         if txids_ptr.is_null() || count == 0 {
-            return Ok(Vec::new());
+            return Ok(Some(Vec::new()));
         }
         // The flags buffer is not optional once rows exist: without the
         // per-txid ownership verdict the reconstruction sweep cannot tell a
@@ -2907,7 +2911,7 @@ impl PlatformWalletPersistence for FFIPersister {
                 spends_wallet_input: flag & 0x01 != 0,
             });
         }
-        Ok(out)
+        Ok(Some(out))
     }
 }
 
