@@ -69,6 +69,8 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
      */
     internal fun broadcastSignedPayment(token: Long): String =
         WalletManagerNative.coreWalletBroadcastSignedPayment(handle, token)
+
+    /**
      * The engine's next unused BIP-44 EXTERNAL (receive) address for
      * [accountIndex], base58-encoded — Android port of Swift's
      * `ManagedCoreWallet.nextReceiveAddress(accountIndex:)`

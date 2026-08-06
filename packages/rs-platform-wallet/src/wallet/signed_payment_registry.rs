@@ -681,6 +681,7 @@ mod tests {
         funded_wallet_manager, AlwaysMaybeSentBroadcaster, AlwaysRejectedBroadcaster, WalletSigner,
     };
     use crate::wallet::core::{CoreWallet, SignedCoreTransaction};
+    use crate::PlatformWalletError;
 
     /// The [`AccountTypePreference`] a `build_signed_tx` funding account maps to
     /// — the registry now retains the full account handle (CoinJoin included),
@@ -692,7 +693,6 @@ mod tests {
             StandardAccountType::BIP32Account => AccountTypePreference::BIP32,
         }
     }
-    use crate::PlatformWalletError;
 
     /// Broadcaster that records the exact bytes handed to it and succeeds,
     /// so a test can assert the broadcast tx is byte-identical to the one the
