@@ -1389,7 +1389,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
 /// 1 BIP32, 2 CoinJoin); [coreSignerHandle] is a `MnemonicResolverHandle`.
 ///
 /// Returns a big-endian BLOB decoded into a `SignedCoreTransaction`:
-/// `u64 token, u64 feeDuffs, u32 txidLen, txid utf8, u32 txBytesLen, txBytes`.
+/// `u64 token, u64 feeDuffs, u64 deliverableDuffs, u32 txidLen, txid utf8,
+/// u32 txBytesLen, txBytes`. `deliverableDuffs` is the value of the sole
+/// non-OP_RETURN output of the REGISTERED transaction (0 when the payment has
+/// no single destination) — computed Rust-side so the host never re-derives it
+/// from its own copy of the bytes.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletFinalizeSignedPayment(
@@ -1442,6 +1446,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
         let mut out_txid: *mut c_char = ptr::null_mut();
         let mut out_bytes_ptr: *const u8 = ptr::null();
         let mut out_bytes_len: usize = 0;
+        let mut deliverable: u64 = 0;
         let result = unsafe {
             platform_wallet_ffi::core_wallet_signed_payment_finalize(
                 builder as *mut platform_wallet_ffi::FFITransactionBuilder,
@@ -1455,6 +1460,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
                 out_tx,
                 &mut out_bytes_ptr as *mut *const u8,
                 &mut out_bytes_len as *mut usize,
+                &mut deliverable as *mut u64,
             )
         };
         if take_pwffi_error(env, result) {
@@ -1488,9 +1494,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
 
         // Assemble the big-endian BLOB (matches the register decoder).
         let txid_bytes = txid.into_bytes();
-        let mut blob = Vec::with_capacity(8 + 8 + 4 + txid_bytes.len() + 4 + tx_bytes.len());
+        let mut blob = Vec::with_capacity(8 + 8 + 8 + 4 + txid_bytes.len() + 4 + tx_bytes.len());
         blob.extend_from_slice(&token.to_be_bytes());
         blob.extend_from_slice(&fee.to_be_bytes());
+        blob.extend_from_slice(&deliverable.to_be_bytes());
         blob.extend_from_slice(&(txid_bytes.len() as u32).to_be_bytes());
         blob.extend_from_slice(&txid_bytes);
         blob.extend_from_slice(&(tx_bytes.len() as u32).to_be_bytes());

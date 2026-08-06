@@ -217,6 +217,26 @@ class ManagedPlatformWallet internal constructor(
         val rawTxBytes: ByteArray,
         val feeDuffs: Long,
         val reservationToken: Long,
+        /**
+         * Value in duffs of the sole non-OP_RETURN output of the REGISTERED
+         * transaction — the one [broadcastSigned] will send.
+         *
+         * Computed Rust-side during finalization and carried in the
+         * registration result, NOT re-derived here from [rawTxBytes]: those
+         * bytes are a mutable copy the host owns, while the broadcast uses the
+         * registered transaction referenced by [reservationToken]. Deriving it
+         * here could report a value the broadcast does not pay.
+         *
+         * Needed for a DRAIN ([CoreTransactionBuilder.SelectionStrategy.ALL]),
+         * where the ENGINE sets this output to `total inputs − fee` and the
+         * caller therefore never supplied it. A swap must quote from this and
+         * then broadcast THIS payment, so quote and payment cannot disagree.
+         *
+         * 0 when the payment has no single destination (multi-recipient, or an
+         * OP_RETURN-only build) — read that as "not applicable", not "pays
+         * nothing".
+         */
+        val deliverableAmountDuffs: Long = 0,
     ) : AutoCloseable {
 
         // GC backstop: releases the token if it was neither broadcast nor
@@ -233,24 +253,6 @@ class ManagedPlatformWallet internal constructor(
          */
         override fun close() = cleanable.clean()
 
-        /**
-         * Value in duffs of the single non-OP_RETURN output — what the
-         * recipient actually receives.
-         *
-         * Needed for a DRAIN
-         * ([CoreTransactionBuilder.SelectionStrategy.ALL]): there the ENGINE
-         * computes the deliverable amount (`total inputs − fee`, no change),
-         * so the caller never supplied it and has no other way to learn it.
-         * A swap deposit must quote from this exact figure and then broadcast
-         * THIS transaction, so the quote and the payment cannot disagree.
-         *
-         * Derived from [rawTxBytes] (already present — no extra native call).
-         * Throws [IllegalStateException] if the bytes are malformed or hold
-         * anything other than exactly one non-OP_RETURN output; under a drain
-         * the engine guarantees exactly one, and a plain multi-recipient
-         * payment has no single "deliverable" amount to report.
-         */
-        val deliverableAmountDuffs: Long by lazy { parseSoleDeliverableValue(rawTxBytes) }
 
         override fun equals(other: Any?): Boolean =
             other is SignedCoreTransaction &&
@@ -279,85 +281,19 @@ class ManagedPlatformWallet internal constructor(
         }
 
         internal companion object {
-            private const val OP_RETURN: Byte = 0x6a
-
-            /**
-             * Value of the sole non-OP_RETURN output in a consensus-serialized
-             * Dash transaction. Walks the outputs rather than trusting an
-             * index: [buildSignedPayment]'s `preserveOutputOrder` is optional,
-             * so the value carrier is not always VOUT0.
-             *
-             * Layout: `i32 version | varint vinCount | vin* | varint voutCount
-             * | vout* | u32 locktime [| special payload]`, all little-endian.
-             * A `vin` is `32B txid | u32 vout | varint scriptLen | script |
-             * u32 sequence`; a `vout` is `i64 value | varint scriptLen |
-             * script`. Special-transaction payloads follow the locktime and are
-             * never read here. Dash has no segwit marker/flag.
-             */
-            private fun parseSoleDeliverableValue(txBytes: ByteArray): Long {
-                val buf = java.nio.ByteBuffer.wrap(txBytes)
-                    .order(java.nio.ByteOrder.LITTLE_ENDIAN)
-                try {
-                    buf.int // version (+ 16-bit type for special transactions)
-                    repeat(readVarInt(buf).toIntExact("input count")) {
-                        buf.position(buf.position() + 36) // txid + prev vout
-                        // Read the length prefix BEFORE computing the new
-                        // position: readVarInt advances the buffer, and an
-                        // inline call would be evaluated after position() is
-                        // sampled, losing the prefix's own bytes.
-                        val scriptSigLen = readVarInt(buf).toIntExact("scriptSig length")
-                        buf.position(buf.position() + scriptSigLen)
-                        buf.position(buf.position() + 4) // sequence
-                    }
-                    var value: Long? = null
-                    repeat(readVarInt(buf).toIntExact("output count")) {
-                        val outValue = buf.long
-                        val script = ByteArray(readVarInt(buf).toIntExact("scriptPubKey length"))
-                        buf.get(script)
-                        if (script.isEmpty() || script[0] != OP_RETURN) {
-                            check(value == null) {
-                                "transaction has more than one non-OP_RETURN output; " +
-                                    "deliverableAmountDuffs is defined only for a single-" +
-                                    "destination payment (a drain always builds one)"
-                            }
-                            value = outValue
-                        }
-                    }
-                    return checkNotNull(value) {
-                        "transaction has no non-OP_RETURN output to deliver to"
-                    }
-                } catch (e: java.nio.BufferUnderflowException) {
-                    throw IllegalStateException("malformed signed transaction bytes", e)
-                } catch (e: IllegalArgumentException) {
-                    // ByteBuffer.position rejects an out-of-range index — a
-                    // length prefix pointing past the end of the buffer.
-                    throw IllegalStateException("malformed signed transaction bytes", e)
-                }
-            }
-
-            /** Bitcoin-style compact size: `<0xfd` inline, else 2/4/8 LE bytes. */
-            private fun readVarInt(buf: java.nio.ByteBuffer): Long =
-                when (val first = buf.get().toInt() and 0xff) {
-                    0xfd -> (buf.short.toInt() and 0xffff).toLong()
-                    0xfe -> buf.int.toLong() and 0xffffffffL
-                    0xff -> buf.long
-                    else -> first.toLong()
-                }
-
-            private fun Long.toIntExact(what: String): Int {
-                check(this in 0..Int.MAX_VALUE.toLong()) { "implausible $what: $this" }
-                return toInt()
-            }
-
             /**
              * Decode the big-endian native BLOB the atomic
              * finalize-and-register FFI returns: `u64 token, u64 feeDuffs,
-             * u32 txidLen, txid utf8, u32 txBytesLen, txBytes`.
+             * u64 deliverableDuffs, u32 txidLen, txid utf8, u32 txBytesLen,
+             * txBytes`. `deliverableDuffs` is computed from the REGISTERED
+             * transaction Rust-side (see
+             * [SignedCoreTransaction.deliverableAmountDuffs]).
              */
             internal fun fromRegisterBlob(blob: ByteArray): SignedCoreTransaction {
                 val buffer = java.nio.ByteBuffer.wrap(blob) // big-endian by default
                 val token = buffer.long
                 val feeDuffs = buffer.long
+                val deliverableDuffs = buffer.long
                 val txidLen = buffer.int
                 val txidBytes = ByteArray(txidLen)
                 buffer.get(txidBytes)
@@ -369,6 +305,7 @@ class ManagedPlatformWallet internal constructor(
                     rawTxBytes = rawTxBytes,
                     feeDuffs = feeDuffs,
                     reservationToken = token,
+                    deliverableAmountDuffs = deliverableDuffs,
                 )
             }
         }

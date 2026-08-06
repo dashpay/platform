@@ -215,6 +215,14 @@ pub unsafe extern "C" fn core_wallet_tx_builder_finalize(
 /// `core_wallet_transaction_free`). `out_bytes_ptr`/`out_bytes_len` borrow
 /// `out_tx`'s buffer — copy them out before freeing `out_tx`.
 ///
+/// Also writes `out_deliverable_duffs`: the value of the sole non-OP_RETURN
+/// output of the REGISTERED transaction — what a later broadcast actually
+/// pays out. Hosts need it for a drain (`SelectionStrategy::All`), where the
+/// engine, not the caller, sets that output to `total inputs - fee`; reading it
+/// from the registered transaction here keeps a quote and its payment from
+/// disagreeing. Writes 0 when there is no single such output (multi-recipient,
+/// or an OP_RETURN-only build) — "not applicable", not "pays nothing".
+///
 /// # Safety
 /// `builder` must be a valid, non-destroyed pointer; `wallet` a valid
 /// platform-wallet handle; `core_signer_handle` a valid resolver handle; every
@@ -234,6 +242,7 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
     out_tx: *mut FFICoreTransaction,
     out_bytes_ptr: *mut *const u8,
     out_bytes_len: *mut usize,
+    out_deliverable_duffs: *mut u64,
 ) -> PlatformWalletFFIResult {
     check_ptr!(builder);
     check_ptr!(core_signer_handle);
@@ -243,6 +252,7 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
     check_ptr!(out_tx);
     check_ptr!(out_bytes_ptr);
     check_ptr!(out_bytes_len);
+    check_ptr!(out_deliverable_duffs);
     // Publish sentinels into EVERY output before any fallible step (wallet
     // resolution, network validation, signing, registration), so an error
     // return never leaves caller-supplied garbage in an out param that a host
@@ -257,6 +267,7 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
     };
     *out_bytes_ptr = std::ptr::null();
     *out_bytes_len = 0;
+    *out_deliverable_duffs = 0;
 
     // `finalize_transaction` consumes the builder: reclaim both heap boxes up
     // front so they are freed on every return path below.
@@ -338,6 +349,27 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
             );
         }
     };
+
+    // The deliverable amount, taken from the transaction that will actually be
+    // broadcast — not re-derived by the host from a copy of the bytes. Under a
+    // drain the ENGINE sets this output (total inputs - fee), so the caller
+    // never supplied it and has no other authoritative source; a host that
+    // re-parsed its own byte array could quote a value the broadcast does not
+    // pay. Defined only for a single-destination payment: exactly one output
+    // that is not an OP_RETURN data carrier. Anything else reports 0, which the
+    // host reads as "not applicable" rather than "pays nothing".
+    let deliverable_duffs = {
+        let mut carriers = finalized
+            .transaction()
+            .output
+            .iter()
+            .filter(|out| !out.script_pubkey.is_op_return());
+        match (carriers.next(), carriers.next()) {
+            (Some(only), None) => only.value,
+            _ => 0,
+        }
+    };
+    unsafe { *out_deliverable_duffs = deliverable_duffs };
 
     let serialized = dashcore::consensus::serialize(finalized.transaction());
     let len = serialized.len();
