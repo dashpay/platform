@@ -173,6 +173,13 @@ pub(crate) fn build_vtable(context: *mut c_void) -> PersistenceCallbacks {
         on_get_core_tx_record_free_fn: Some(tramp_get_core_tx_record_free),
         on_persist_asset_locks_fn: Some(tramp_persist_asset_locks),
         on_persist_invitations_fn: Some(tramp_persist_invitations),
+        // Android hasn't wired transaction enumeration yet. `None` makes
+        // `list_wallet_core_txids` return an empty list, so the sent-payment
+        // reconstruction sweep finds nothing to match and records nothing —
+        // Android keeps today's behaviour (a restored wallet shows no
+        // pre-restore contact payments) rather than misreporting.
+        on_list_wallet_core_txids_fn: None,
+        on_list_wallet_core_txids_free_fn: None,
         release_fn: Some(release_persistence_ctx),
     }
 }

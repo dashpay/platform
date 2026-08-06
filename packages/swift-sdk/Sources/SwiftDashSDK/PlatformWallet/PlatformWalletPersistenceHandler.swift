@@ -27,6 +27,51 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    /// Wallet a TXO belongs to, resolved the way `loadWalletList` already
+    /// resolves it.
+    ///
+    /// `PersistentTxo.walletId` is a denormalized convenience field and is
+    /// **empty on rows written before it existed**. Comparing it raw makes
+    /// every legacy TXO look like it belongs to no wallet — which, for
+    /// sent-payment reconstruction, silently reclassifies a real spend as
+    /// "not ours" and drops the payment. Fall back to the owning account's
+    /// wallet for those rows.
+    ///
+    /// `account.wallet` is non-optional on the model but is a fault-loaded
+    /// relationship, so it is read through an Optional cast: a
+    /// relationship-store inconsistency would otherwise crash here.
+    static func resolvedWalletId(of txo: PersistentTxo) -> Data? {
+        if !txo.walletId.isEmpty {
+            return txo.walletId
+        }
+        let account: PersistentAccount? = txo.account
+        guard let account else { return nil }
+        let wallet: PersistentWallet? = account.wallet
+        return wallet?.walletId
+    }
+
+    static func walletOwnsTransaction(
+        walletId: Data,
+        transaction: PersistentTransaction
+    ) -> Bool {
+        if transaction.involvedAccounts.contains(where: {
+            let wallet: PersistentWallet? = $0.wallet
+            return wallet?.walletId == walletId
+        }) {
+            return true
+        }
+        if transaction.outputs.contains(where: { resolvedWalletId(of: $0) == walletId }) {
+            return true
+        }
+        if transaction.inputs.contains(where: { resolvedWalletId(of: $0) == walletId }) {
+            return true
+        }
+        // `PersistentPendingInput` carries no account relationship, so its
+        // denormalized `walletId` is the only thing to compare — it is also a
+        // newer row type, written only by the current send path.
+        return transaction.pendingInputs.contains(where: { $0.walletId == walletId })
+    }
+
     let modelContainer: ModelContainer
 
     /// Network this handler's owning `PlatformWalletManager` is bound
@@ -1260,6 +1305,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         cb.on_persist_invitations_fn = persistInvitationsCallback
         cb.on_get_core_tx_record_fn = getCoreTxRecordCallback
         cb.on_get_core_tx_record_free_fn = getCoreTxRecordFreeCallback
+        cb.on_list_wallet_core_txids_fn = listWalletCoreTxidsCallback
+        cb.on_list_wallet_core_txids_free_fn = listWalletCoreTxidsFreeCallback
         return cb
     }
 
@@ -5755,6 +5802,85 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    /// `AccountTypeTagFFI` discriminant for a watch-only DashPay external
+    /// (contact) account. TXOs tracked under it are the *contact's* coins,
+    /// mirrored locally so sends to the contact can be detected — they are
+    /// not spendable by this wallet.
+    static let dashpayExternalAccountTypeTag: UInt32 = 13
+
+    /// `true` when `transaction` spends at least one input funded by one of
+    /// this wallet's own spendable accounts.
+    ///
+    /// Pure row data: each entry in `transaction.inputs` is a `PersistentTxo`
+    /// this transaction spent, carrying the owning wallet denorm and the
+    /// account it was tracked under. A TXO tracked only by the watch-only
+    /// DashPay external account does NOT count — those are the contact's
+    /// coins, and counting them would tag a third party's transaction (the
+    /// contact spending their own money) as wallet-funded. A TXO whose
+    /// account link faulted to `nil` counts as owned: spendable-account rows
+    /// always carry the link, so `nil` is a relationship-store anomaly and
+    /// under-reporting would silently erase real sent history.
+    /// `pendingInputs` are deliberately ignored: a spend of our own coins
+    /// always has its funding TXO persisted (the wallet had to know the
+    /// output to spend it), while a pending row proves nothing about
+    /// ownership.
+    static func walletFundedTransaction(
+        walletId: Data,
+        transaction: PersistentTransaction
+    ) -> Bool {
+        transaction.inputs.contains { txo in
+            // Resolved, not raw: a legacy TXO with an empty denormalized
+            // `walletId` is still our coin, and reading it as "not ours" turns
+            // a real spend into an unfunded transaction — the sweep then skips
+            // it and can still stamp the contact, losing the payment for the
+            // process lifetime.
+            Self.resolvedWalletId(of: txo) == walletId
+                && txo.account.map { $0.accountType != dashpayExternalAccountTypeTag } ?? true
+        }
+    }
+
+    /// Enumerate the persisted txids scoped to `walletId`, each paired with
+    /// whether this wallet funded the transaction (see
+    /// [`walletFundedTransaction`]).
+    ///
+    /// Scope is the union of wallet-owned TXOs (`outputs`, `inputs`,
+    /// `pendingInputs`) and payload-only account involvement
+    /// (`involvedAccounts`).
+    /// Returns `errored: true` when the fetch itself failed, so the shim can
+    /// report a non-zero status. Collapsing a database fault to an empty list
+    /// would be indistinguishable from a wallet with no transactions, and the
+    /// Rust side treats those two very differently.
+    func walletCoreTxids(
+        walletId: Data
+    ) -> (txids: [(txid: Data, spendsWalletInput: Bool)], errored: Bool) {
+        onQueue {
+            let descriptor = FetchDescriptor<PersistentTransaction>()
+            let rows: [PersistentTransaction]
+            do {
+                rows = try backgroundContext.fetch(descriptor)
+            } catch {
+                NSLog(
+                    "[persistor-txids:swift] PersistentTransaction fetch failed: %@",
+                    String(describing: error)
+                )
+                return ([], true)
+            }
+            let txids = rows.compactMap { tx -> (txid: Data, spendsWalletInput: Bool)? in
+                guard Self.walletOwnsTransaction(walletId: walletId, transaction: tx) else {
+                    return nil
+                }
+                return (
+                    txid: tx.txid,
+                    spendsWalletInput: Self.walletFundedTransaction(
+                        walletId: walletId,
+                        transaction: tx
+                    )
+                )
+            }
+            return (txids, false)
+        }
+    }
+
     /// Look up the network for a wallet id by reading the owning
     /// `PersistentWallet` row. Returns `nil` if the wallet row
     /// doesn't exist or its network hasn't been resolved yet.
@@ -7464,4 +7590,80 @@ private func getCoreTxRecordFreeCallback(
     UnsafeMutablePointer(mutating: txBytes).deallocate()
     _ = context
     _ = txBytesLen
+}
+
+/// C shim for `on_list_wallet_core_txids_fn`. Returns a contiguous
+/// `count * 32` byte buffer of raw txids in wire order plus a parallel
+/// `count`-byte flags buffer (bit `0x01` = the wallet funded the
+/// transaction).
+private func listWalletCoreTxidsCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    outTxids: UnsafeMutablePointer<UnsafePointer<UInt8>?>?,
+    outFlags: UnsafeMutablePointer<UnsafePointer<UInt8>?>?,
+    outCount: UnsafeMutablePointer<UInt>?
+) -> Int32 {
+    // Non-zero on a missing argument: reporting success here would hand Rust
+    // an empty enumeration that it cannot tell apart from a wallet with no
+    // transactions.
+    guard let context = context,
+          let walletIdPtr = walletIdPtr,
+          let outTxids = outTxids,
+          let outFlags = outFlags,
+          let outCount = outCount else {
+        return -1
+    }
+
+    outTxids.pointee = nil
+    outFlags.pointee = nil
+    outCount.pointee = 0
+
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+    let (txids, errored) = handler.walletCoreTxids(walletId: walletId)
+    guard !errored else {
+        return -1
+    }
+    guard !txids.isEmpty else {
+        return 0
+    }
+
+    let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: txids.count * 32)
+    let flags = UnsafeMutablePointer<UInt8>.allocate(capacity: txids.count)
+    // Pack only well-formed txids and report how many were packed. Skipping a
+    // malformed one while still reporting `txids.count` would leave its slot
+    // uninitialized and hand Rust 32 bytes of garbage as a txid.
+    var packed = 0
+    for row in txids where row.txid.count == 32 {
+        row.txid.copyBytes(to: buffer.advanced(by: packed * 32), count: 32)
+        flags.advanced(by: packed).pointee = row.spendsWalletInput ? 0x01 : 0x00
+        packed += 1
+    }
+    guard packed > 0 else {
+        buffer.deallocate()
+        flags.deallocate()
+        return 0
+    }
+    outTxids.pointee = UnsafePointer(buffer)
+    outFlags.pointee = UnsafePointer(flags)
+    outCount.pointee = UInt(packed)
+    return 0
+}
+
+/// Paired free callback for `on_list_wallet_core_txids_free_fn`.
+private func listWalletCoreTxidsFreeCallback(
+    context: UnsafeMutableRawPointer?,
+    txids: UnsafePointer<UInt8>?,
+    flags: UnsafePointer<UInt8>?,
+    _ count: UInt
+) {
+    if let txids = txids {
+        UnsafeMutablePointer(mutating: txids).deallocate()
+    }
+    if let flags = flags {
+        UnsafeMutablePointer(mutating: flags).deallocate()
+    }
+    _ = context
 }

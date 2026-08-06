@@ -48,4 +48,6 @@ pub use platform_address_sync_start_state::PlatformAddressSyncStartState;
 pub use shielded_changeset::ShieldedChangeSet;
 #[cfg(feature = "shielded")]
 pub use shielded_sync_start_state::{ShieldedSubwalletStartState, ShieldedSyncStartState};
-pub use traits::{PersistenceError, PersistenceErrorKind, PlatformWalletPersistence};
+pub use traits::{
+    ListedCoreTxid, PersistenceError, PersistenceErrorKind, PlatformWalletPersistence,
+};

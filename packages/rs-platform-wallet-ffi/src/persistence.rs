@@ -25,7 +25,7 @@ use std::str::FromStr;
 use crate::types::{FFINetwork, Network};
 use platform_wallet::changeset::{
     AccountAddressPoolEntry, AccountRegistrationEntry, ClientStartState, ClientWalletStartState,
-    Merge, PersistenceCapabilities, PersistenceError, PlatformWalletChangeSet,
+    ListedCoreTxid, Merge, PersistenceCapabilities, PersistenceError, PlatformWalletChangeSet,
     PlatformWalletPersistence, ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
     PERSISTENCE_CAPABILITIES_VERSION,
 };
@@ -682,6 +682,61 @@ pub struct PersistenceCallbacks {
     /// callbacks memory-safe. A context needing no cleanup takes a no-op
     /// `release_fn`; `None` is valid only alongside a null `context`.
     pub release_fn: Option<unsafe extern "C" fn(context: *mut c_void)>,
+    /// Enumerate the persisted Core txids that belong to `wallet_id`,
+    /// each tagged with whether the wallet funded the transaction.
+    ///
+    /// Appended at the END so the struct layout stays stable — a host
+    /// built against the previous vtable keeps working, it simply never
+    /// sets these two slots.
+    ///
+    /// Used by DashPay sent-payment reconstruction to walk the local
+    /// transaction history without requiring the optional in-memory
+    /// `transactions()` map to retain finalized records.
+    ///
+    /// Output contract:
+    /// - Set `*out_txids` to a contiguous buffer of `32 * *out_count`
+    ///   bytes, one raw-wire txid per 32-byte chunk, and `*out_count`
+    ///   to the number of txids returned.
+    /// - Set `*out_flags` to a buffer of `*out_count` bytes, one per
+    ///   txid in the same order. Bit `0x01` means the transaction
+    ///   spends at least one input funded by this wallet's own
+    ///   spendable accounts. Inputs tracked only through a watch-only
+    ///   DashPay external (contact) account do NOT count — those are
+    ///   the contact's coins, and flagging them fabricates `Sent`
+    ///   history for third-party transactions. Remaining bits are
+    ///   reserved and must be zero.
+    /// - Set `*out_txids = null`, `*out_flags = null` and
+    ///   `*out_count = 0` when no rows exist for the wallet.
+    /// - Return `0` on success; non-zero values are treated as backend
+    ///   failures by the Rust side.
+    pub on_list_wallet_core_txids_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            out_txids: *mut *const u8,
+            out_flags: *mut *const u8,
+            out_count: *mut usize,
+        ) -> i32,
+    >,
+    /// Paired free callback for the txid + flags buffers returned by
+    /// [`Self::on_list_wallet_core_txids_fn`]. Rust invokes this with
+    /// the same pointers and txid count, exactly once per successful
+    /// hit.
+    ///
+    /// Ownership transfers on success ONLY: when the enumeration callback
+    /// returns non-zero, Rust does not call this and the host keeps
+    /// whatever it allocated (same contract as
+    /// [`Self::on_load_wallet_list_free_fn`]). On success it is called
+    /// whenever either output pointer is non-null, so a host that emits
+    /// only one of the two buffers still gets it released.
+    pub on_list_wallet_core_txids_free_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            txids: *const u8,
+            flags: *const u8,
+            count: usize,
+        ),
+    >,
 }
 
 // SAFETY: The context pointer is managed by the FFI caller who must ensure
@@ -713,6 +768,8 @@ impl Default for PersistenceCallbacks {
             on_persist_contacts_fn: None,
             on_get_core_tx_record_fn: None,
             on_get_core_tx_record_free_fn: None,
+            on_list_wallet_core_txids_fn: None,
+            on_list_wallet_core_txids_free_fn: None,
             #[cfg(feature = "shielded")]
             on_persist_shielded_notes_fn: None,
             #[cfg(feature = "shielded")]
@@ -2731,6 +2788,130 @@ impl PlatformWalletPersistence for FFIPersister {
             fee: None,
             label: String::new(),
         }))
+    }
+
+    fn list_wallet_core_txids(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<Option<Vec<ListedCoreTxid>>, PersistenceError> {
+        use dashcore::hashes::Hash;
+
+        // An unset callback means this host never wired wallet-scoped
+        // transaction enumeration (the Android vtable leaves both slots
+        // `None`). Report the capability as absent — NOT an empty table —
+        // so sent-payment reconstruction skips instead of retrying forever.
+        let Some(list_cb) = self.callbacks.on_list_wallet_core_txids_fn else {
+            return Ok(None);
+        };
+
+        let mut txids_ptr: *const u8 = std::ptr::null();
+        let mut flags_ptr: *const u8 = std::ptr::null();
+        let mut count: usize = 0;
+
+        let rc = unsafe {
+            list_cb(
+                self.callbacks.context,
+                wallet_id.as_ptr(),
+                &mut txids_ptr,
+                &mut flags_ptr,
+                &mut count,
+            )
+        };
+
+        struct TxidBytesGuard {
+            txids: *const u8,
+            flags: *const u8,
+            count: usize,
+            free_fn: Option<
+                unsafe extern "C" fn(
+                    context: *mut c_void,
+                    txids: *const u8,
+                    flags: *const u8,
+                    count: usize,
+                ),
+            >,
+            ctx: *mut c_void,
+        }
+        impl Drop for TxidBytesGuard {
+            fn drop(&mut self) {
+                // Either output pointer being non-null means the host handed
+                // over an allocation. Gating on `txids` alone would leak a
+                // flags-only buffer from a malformed but successful callback.
+                if let (Some(free), true) =
+                    (self.free_fn, !self.txids.is_null() || !self.flags.is_null())
+                {
+                    unsafe { free(self.ctx, self.txids, self.flags, self.count) };
+                }
+            }
+        }
+
+        // Ownership transfers on success only — the same contract
+        // `on_load_wallet_list_fn` documents and `load` implements by building
+        // its guard after the status check. Installing the guard first would
+        // free a buffer the host still owns on the failure path, which is a
+        // double free for any host that cleans up its own failed allocation.
+        if rc != 0 {
+            return Err(PersistenceError::backend(format!(
+                "on_list_wallet_core_txids_fn returned non-zero status {rc}"
+            )));
+        }
+
+        // Success: ownership is ours now, and every return below must release
+        // it — including the error paths that reject a malformed buffer.
+        let _txid_guard = TxidBytesGuard {
+            txids: txids_ptr,
+            flags: flags_ptr,
+            count,
+            free_fn: self.callbacks.on_list_wallet_core_txids_free_fn,
+            ctx: self.callbacks.context,
+        };
+
+        if txids_ptr.is_null() || count == 0 {
+            return Ok(Some(Vec::new()));
+        }
+        // The flags buffer is not optional once rows exist: without the
+        // per-txid ownership verdict the reconstruction sweep cannot tell a
+        // wallet-funded send from a third-party transaction that pays a
+        // watched contact address. Failing loud beats guessing either way.
+        if flags_ptr.is_null() {
+            return Err(PersistenceError::backend(
+                "on_list_wallet_core_txids_fn returned txids without a flags buffer",
+            ));
+        }
+
+        // Validate the byte length BEFORE building the slice: `from_raw_parts`
+        // requires it to fit in `isize::MAX`, and an implausible `count` from
+        // the host would otherwise be silently clamped into a slice that
+        // outruns the allocation.
+        let Some(byte_len) = count.checked_mul(32) else {
+            return Err(PersistenceError::backend(
+                "on_list_wallet_core_txids_fn reported a txid count whose byte length overflows",
+            ));
+        };
+        if byte_len > isize::MAX as usize {
+            return Err(PersistenceError::backend(
+                "on_list_wallet_core_txids_fn reported a txid buffer larger than isize::MAX",
+            ));
+        }
+
+        // SAFETY: the host guarantees `txids_ptr` points to `byte_len` valid
+        // bytes and `flags_ptr` to `count` valid bytes for the duration of
+        // the callback window — `_txid_guard` keeps that window open until
+        // this function returns — and both lengths are checked above to be
+        // valid slice lengths (`count <= byte_len`).
+        let raw = unsafe { slice::from_raw_parts(txids_ptr, byte_len) };
+        let flags = unsafe { slice::from_raw_parts(flags_ptr, count) };
+
+        let mut out = Vec::with_capacity(count);
+        for (chunk, flag) in raw.chunks_exact(32).zip(flags) {
+            let mut bytes = [0u8; 32];
+            bytes.copy_from_slice(chunk);
+            out.push(ListedCoreTxid {
+                txid: dashcore::Txid::from_byte_array(bytes),
+                spends_wallet_input: flag & 0x01 != 0,
+            });
+        }
+        Ok(Some(out))
     }
 }
 
@@ -5786,21 +5967,25 @@ mod tests {
         assert_eq!(ffi.bits, 0x81);
         assert_eq!(std::mem::size_of::<PersistenceCapabilitiesFFI>(), 16);
         // Capability negotiation is deliberately NOT appended to the legacy
-        // callback vtable. Pin the vtable size (invitations + the appended
-        // `release_fn` context destructor) and prove `release_fn` is the
-        // terminal field so old clients are never over-read past it.
+        // callback vtable. Pin the vtable size so a new slot has to be a
+        // deliberate, reviewed act, and prove the last-appended field really is
+        // terminal — growth is only safe while it happens at the end, where no
+        // previously-defined slot changes offset. The count moves with each
+        // append (invitations, then the `release_fn` context destructor, now
+        // the txid enumeration pair).
         #[cfg(not(feature = "shielded"))]
         assert_eq!(
             std::mem::size_of::<PersistenceCallbacks>(),
-            22 * std::mem::size_of::<usize>()
+            24 * std::mem::size_of::<usize>()
         );
         #[cfg(feature = "shielded")]
         assert_eq!(
             std::mem::size_of::<PersistenceCallbacks>(),
-            38 * std::mem::size_of::<usize>()
+            40 * std::mem::size_of::<usize>()
         );
         assert_eq!(
-            std::mem::offset_of!(PersistenceCallbacks, release_fn) + std::mem::size_of::<usize>(),
+            std::mem::offset_of!(PersistenceCallbacks, on_list_wallet_core_txids_free_fn)
+                + std::mem::size_of::<usize>(),
             std::mem::size_of::<PersistenceCallbacks>()
         );
         assert_eq!(
