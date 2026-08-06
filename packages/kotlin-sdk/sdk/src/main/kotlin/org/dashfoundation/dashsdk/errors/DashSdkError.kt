@@ -266,13 +266,23 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
-         * `ErrorStaleReservationToken` (native code 34). A deferred
-         * (BIP70/BIP270) [broadcastSigned][org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.broadcastSigned]
-         * token has outlived its funding reservation's lifetime: key-wallet's
-         * TTL may already have swept and re-selected the inputs, so acting on it
-         * could touch a newer, unrelated reservation. The call did NOT touch the
-         * network. NOT retryable in place — rebuild the payment with
-         * [buildSignedPayment][org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.buildSignedPayment].
+         * `ErrorStaleReservationToken` (native code 34). A payment's funding
+         * reservation has outlived its lifetime: key-wallet's TTL may already
+         * have swept and re-selected the inputs, so sending it could spend
+         * against a newer, unrelated reservation. The call did NOT touch the
+         * network, and it released the still-owned reservation on the way out
+         * (owner-guarded — a no-op if ownership had already transferred). NOT
+         * retryable in place — rebuild the payment, which can reselect the
+         * freed inputs immediately.
+         *
+         * The code is shared by BOTH deferred-payment surfaces (the messages
+         * distinguish them): a deferred (BIP70/BIP270)
+         * [broadcastSigned][org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.broadcastSigned]
+         * token, rebuilt with
+         * [buildSignedPayment][org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.buildSignedPayment];
+         * and a finalized handle whose
+         * [broadcastTransaction][org.dashfoundation.dashsdk.wallet.ManagedCoreWallet.broadcastTransaction]
+         * aged past the same reservation bound (abandon still works at any age).
          *
          * Sibling of the other two deferred-token failures this code used to
          * conflate: [ReservationTokenConsumed] (unknown / already broadcast /

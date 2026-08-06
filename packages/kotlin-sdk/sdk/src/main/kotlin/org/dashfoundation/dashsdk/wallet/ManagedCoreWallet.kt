@@ -27,14 +27,38 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
             check(it != 0L) { "ManagedCoreWallet has been closed" }
         }
 
-    /** Consume and broadcast a finalized transaction. */
+    /**
+     * Consume and broadcast a finalized transaction. A handle held past the
+     * reservation age bound throws the typed
+     * [StaleReservationToken][org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.StaleReservationToken]
+     * (native code 34, shared with the deferred-token surface) instead of
+     * broadcasting against inputs key-wallet's TTL may have re-selected.
+     *
+     * On that refusal the handle has **already been consumed** by this call and
+     * its funding reservation released owner-guarded (freed only while this
+     * build still owned it; a no-op once a TTL sweep or re-reservation
+     * transferred ownership), so a follow-up [abandonTransaction] is an
+     * invalid-handle error, not a recovery path — there is nothing left to
+     * release. Recover by rebuilding the transaction, which can reselect the
+     * freed inputs immediately.
+     */
     fun broadcastTransaction(tx: FinalizedCoreTransaction): String =
         WalletManagerNative.coreWalletBroadcastSignedTransaction(
             handle,
             tx.takeForBroadcast(),
         )
 
-    /** Consume without sending and release the selected inputs immediately. */
+    /**
+     * Consume a finalized transaction without sending. With the build's owner
+     * token present (the normal funded-finalize case) the release is
+     * owner-guarded and safe at any age: it frees the selected inputs while
+     * this build still owns them — so a rebuild can reselect them immediately —
+     * and no-ops once key-wallet's TTL sweep or a re-reservation transferred
+     * ownership. Only a token-less handle honours the reservation age bound and
+     * skips its unguarded by-outpoint release past it (releasing by outpoint
+     * could free a newer build's reservation), leaving the aged reservation for
+     * the TTL to reclaim. The handle is torn down either way.
+     */
     fun abandonTransaction(tx: FinalizedCoreTransaction) {
         WalletManagerNative.coreWalletAbandonSignedTransaction(
             handle,

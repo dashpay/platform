@@ -22,6 +22,78 @@ use tokio::sync::RwLock;
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
+/// Maximum age, in `last_processed_height` blocks, of a held funding
+/// reservation before an operation that would *consume* it (broadcast) is
+/// refused. Shared by the two deferred/split core-send surfaces so they bound a
+/// reservation's lifetime against the same TTL with one number:
+///
+/// * the deferred build → broadcast/release registry
+///   ([`SignedPaymentRegistry`](crate::SignedPaymentRegistry)), and
+/// * the atomic finalized-transaction handle path
+///   (`core_wallet_tx_builder_finalize` →
+///   `broadcast_finalized_transaction`).
+///
+/// Kept strictly below key-wallet's `RESERVATION_TTL_BLOCKS` (24, ~1h at the
+/// mainnet block target): a `build_signed` / `finalize_transaction` reservation
+/// is stamped at the wallet's `last_processed_height` (via `set_current_height`)
+/// and swept by a later `reserve`/`reserved` call — itself stamped with the same
+/// `last_processed_height` clock — once it is `RESERVATION_TTL_BLOCKS` old,
+/// silently returning the outpoint to the selectable pool where an unrelated
+/// build can re-select and re-reserve it. `ReservationSet::release` removes an
+/// outpoint unconditionally, with no ownership/generation check, so acting on a
+/// reservation that was already swept could free (or broadcast against) a newer,
+/// unrelated one. Refusing at this lower bound guarantees the guard always trips
+/// **before** the underlying reservation could have been swept, leaving a margin
+/// for `last_processed_height` to lag a few blocks behind the true tip.
+pub(crate) const RESERVATION_MAX_AGE_BLOCKS: u32 = 20;
+
+/// Whether a reservation stamped at `registered_height` is too old to act on at
+/// `current_height` (see [`RESERVATION_MAX_AGE_BLOCKS`]). The registration
+/// height is mandatory on both surfaces — it is derived from the finalized
+/// [`SignedCoreTransaction::reservation_height`](crate::SignedCoreTransaction)
+/// (captured inside the funding critical section, before the potentially-slow
+/// external signer ran), never sampled independently.
+///
+/// *Consuming* (broadcasting) a stale reservation is refused: once the outpoint
+/// may already have been swept by key-wallet's TTL and re-reserved by an
+/// unrelated build, broadcasting would spend against that newer reservation.
+/// The guarded broadcasts
+/// ([`broadcast_finalized_transaction`](crate::CoreWallet::broadcast_finalized_transaction)
+/// and the registry's [`broadcast`](crate::SignedPaymentRegistry::broadcast))
+/// refuse with their stale-reservation errors, reconciling the reservation on
+/// the way out. Cleanup (abandon/free, and that refusal-path reconciliation)
+/// distinguishes two cases by the build's owner token:
+///
+/// * **Owner token present** (every funded finalize): the release is
+///   owner-guarded (`release_reservation_if_owner`) and therefore safe at ANY
+///   age — it frees the inputs only while this build still owns them and no-ops
+///   once a TTL sweep or re-reservation transferred ownership — so aged cleanup
+///   still releases, letting an immediate rebuild reselect the inputs.
+/// * **Token-less** (a build that reserved nothing): the only release primitive
+///   is `ReservationSet::release`, which removes an outpoint unconditionally
+///   with no ownership check, so past the bound the by-outpoint release is
+///   skipped and the aged reservation is left for key-wallet's TTL to reclaim.
+///
+/// An unknown *current* height means the wallet is gone from the manager, which
+/// disables the guard (`None` → not expired). That is safe only because every
+/// caller establishes liveness first and so never reaches here with a removed
+/// wallet: the registry's
+/// [`broadcast`](crate::SignedPaymentRegistry::broadcast) refuses with
+/// `SignedPaymentError::WalletRemoved` before sampling the height, its
+/// `reconcile_removed_entry` release is itself generation-bound and no-ops on a
+/// missing wallet, and the finalized-transaction handle path runs after the
+/// FFI layer's generation-identity check. The earlier claim that "the
+/// wallet-mismatch / account-lookup paths already reject those cases" was wrong
+/// for the registry broadcast path — `is_same_generation` compares handles (a
+/// removed generation matches itself) and that path performs no account lookup
+/// at all (`dashpay/platform#4185`).
+pub(crate) fn reservation_expired(registered_height: u32, current_height: Option<u32>) -> bool {
+    match current_height {
+        Some(current) => current.saturating_sub(registered_height) >= RESERVATION_MAX_AGE_BLOCKS,
+        None => false,
+    }
+}
+
 /// Broadcast `tx` and reconcile the funding account's UTXO reservation on
 /// failure.
 ///
