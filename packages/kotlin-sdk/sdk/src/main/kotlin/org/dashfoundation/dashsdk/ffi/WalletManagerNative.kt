@@ -301,6 +301,45 @@ internal object WalletManagerNative {
     external fun coreTransactionFree(tx: Long)
 
     /**
+     * `core_wallet_signed_payment_finalize` — atomically fund, reserve, sign,
+     * AND register a builder for deferred (BIP70/BIP270) submission in one
+     * native call. Selection and reservation commit as a single unit under the
+     * wallet-manager lock, closing the double-selection window. CONSUMES
+     * [builder]. [accountType]/[accountIndex] identify the funding account
+     * (0 BIP44, 1 BIP32, 2 CoinJoin); [coreSignerHandle] is a
+     * `MnemonicResolverHandle`.
+     *
+     * Returns a big-endian BLOB decoded into a `SignedCoreTransaction`:
+     * `u64 token, u64 feeDuffs, u32 txidLen, txid utf8, u32 txBytesLen, txBytes`.
+     */
+    external fun coreWalletFinalizeSignedPayment(
+        builder: Long,
+        walletHandle: Long,
+        accountType: Int,
+        accountIndex: Int,
+        coreSignerHandle: Long,
+    ): ByteArray
+
+    /**
+     * `core_wallet_signed_payment_broadcast` — broadcast the payment behind
+     * [token], reconciling its reservation on failure and consuming the token.
+     * Rather than double-broadcasting, an unusable token throws one of three
+     * sibling codes — `ErrorStaleReservationToken` (34, aged out),
+     * `ErrorReservationTokenConsumed` (35, already consumed/unknown), or
+     * `ErrorReservationWalletMismatch` (36, different wallet generation).
+     * [coreHandle] must resolve to the wallet the token was minted against.
+     * Returns the txid as a lowercase hex string.
+     */
+    external fun coreWalletBroadcastSignedPayment(coreHandle: Long, token: Long): String
+
+    /**
+     * `core_wallet_signed_payment_release` — release the funding reservation
+     * behind [token] and drop it. Idempotent: releasing an unknown /
+     * already-consumed token is a silent no-op.
+     */
+    external fun coreWalletReleaseSignedPayment(token: Long)
+
+    /**
      * Enumerate the wallet's Platform-payment addresses with cached credit
      * balances, as a big-endian blob: `u32 rowCount` then per row
      * `u8 addressType (0 P2PKH / 1 P2SH), u8[20] hash, u64 balance`. Backs

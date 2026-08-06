@@ -306,8 +306,8 @@ mod tests {
     use crate::test_support::{
         mnemonic_wallet_manager, AlwaysRejectedBroadcaster, MESSAGE_SIGNING_TEST_MNEMONIC,
     };
-    use crate::wallet::core::balance::WalletBalance;
     use crate::wallet::core::CoreWallet;
+    use crate::wallet::core::WalletGeneration;
     use crate::wallet::platform_wallet::WalletId;
     use crate::PlatformWalletError;
 
@@ -334,7 +334,7 @@ mod tests {
             wallet_manager,
             wallet_id,
             Arc::new(AlwaysRejectedBroadcaster),
-            Arc::new(WalletBalance::new()),
+            Arc::new(WalletGeneration::new()),
         )
     }
 

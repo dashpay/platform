@@ -174,6 +174,193 @@ class ManagedPlatformWallet internal constructor(
     }
 
     /**
+     * A built, signed Core transaction whose funding UTXOs are reserved,
+     * awaiting a deferred [broadcastSigned] or [releaseReservation] — the
+     * split-out result of [buildSignedPayment] for BIP70/BIP270 (CTX/DashSpend)
+     * flows that must sign now, POST the raw bytes to a merchant server, and
+     * broadcast only on the server's ack.
+     *
+     * **Owns the reservation token.** The blocking native registration mints the
+     * token before this object exists, so if the object were then discarded —
+     * the caller drops it, or a coroutine cancellation is observed after
+     * [buildSignedPayment]'s native call returned — the token (and its funding
+     * reservation) would be orphaned until key-wallet's TTL. This type is
+     * therefore [AutoCloseable] with a [NativeCleaner] GC backstop: [close], or
+     * GC if you never call it, releases the token exactly once. Release is
+     * idempotent native-side and tokens are process-unique (never reused), so
+     * releasing a token already consumed by [broadcastSigned] /
+     * [releaseReservation] — or releasing twice — is a harmless no-op. A caller
+     * that broadcasts or releases can still `use`/close this object; a caller
+     * that abandons it is covered by GC.
+     *
+     * @property txidHex the transaction id (lowercase hex) the broadcast will
+     *   return — computed from the signed bytes Rust-side so it matches exactly.
+     * @property rawTxBytes the consensus-serialized signed transaction, to hand
+     *   to the merchant server.
+     * @property feeDuffs the fee the build charged, in duffs.
+     * @property reservationToken the opaque token for [broadcastSigned] /
+     *   [releaseReservation]. Valid only for this wallet instance and only until
+     *   consumed by one of those calls (or released by [close] / GC).
+     */
+    class SignedCoreTransaction internal constructor(
+        val txidHex: String,
+        val rawTxBytes: ByteArray,
+        val feeDuffs: Long,
+        val reservationToken: Long,
+    ) : AutoCloseable {
+
+        // GC backstop: releases the token if it was neither broadcast nor
+        // released. The action must not reference this object (it would never
+        // become phantom-reachable), so it captures the token by value.
+        private val cleanable = NativeCleaner.register(this, TokenRelease(reservationToken))
+
+        /**
+         * Release the funding reservation if this payment was neither broadcast
+         * nor released, and drop the token. Idempotent — safe to call after a
+         * [broadcastSigned] / [releaseReservation] (native no-op) and safe to
+         * call twice. The [NativeCleaner] backstop runs the same release on GC
+         * if you never call [close].
+         */
+        override fun close() = cleanable.clean()
+
+        override fun equals(other: Any?): Boolean =
+            other is SignedCoreTransaction &&
+                txidHex == other.txidHex &&
+                rawTxBytes.contentEquals(other.rawTxBytes) &&
+                feeDuffs == other.feeDuffs &&
+                reservationToken == other.reservationToken
+
+        override fun hashCode(): Int {
+            var result = txidHex.hashCode()
+            result = 31 * result + rawTxBytes.contentHashCode()
+            result = 31 * result + feeDuffs.hashCode()
+            result = 31 * result + reservationToken.hashCode()
+            return result
+        }
+
+        override fun toString(): String =
+            "SignedCoreTransaction(txidHex=$txidHex, feeDuffs=$feeDuffs, " +
+                "reservationToken=$reservationToken, rawTxBytes=${rawTxBytes.size} bytes)"
+
+        /** Releases the reservation token exactly once, on [close] or GC. */
+        private class TokenRelease(private val token: Long) : Runnable {
+            override fun run() {
+                WalletManagerNative.coreWalletReleaseSignedPayment(token)
+            }
+        }
+
+        internal companion object {
+            /**
+             * Decode the big-endian native BLOB the atomic
+             * finalize-and-register FFI returns: `u64 token, u64 feeDuffs,
+             * u32 txidLen, txid utf8, u32 txBytesLen, txBytes`.
+             */
+            internal fun fromRegisterBlob(blob: ByteArray): SignedCoreTransaction {
+                val buffer = java.nio.ByteBuffer.wrap(blob) // big-endian by default
+                val token = buffer.long
+                val feeDuffs = buffer.long
+                val txidLen = buffer.int
+                val txidBytes = ByteArray(txidLen)
+                buffer.get(txidBytes)
+                val txBytesLen = buffer.int
+                val rawTxBytes = ByteArray(txBytesLen)
+                buffer.get(rawTxBytes)
+                return SignedCoreTransaction(
+                    txidHex = String(txidBytes, Charsets.UTF_8),
+                    rawTxBytes = rawTxBytes,
+                    feeDuffs = feeDuffs,
+                    reservationToken = token,
+                )
+            }
+        }
+    }
+
+    /**
+     * Build and sign a Core payment to [recipients] WITHOUT broadcasting,
+     * reserving the funding UTXOs and returning a [SignedCoreTransaction] whose
+     * [SignedCoreTransaction.reservationToken] later drives [broadcastSigned]
+     * (server acked) or [releaseReservation] (abandoned / server nacked).
+     *
+     * The BIP70/BIP270 counterpart to [sendToAddresses]: those protocols sign,
+     * POST the raw bytes to a merchant server, and broadcast only on ack, which
+     * a single build-sign-broadcast call cannot express. The
+     * `new → addOutput* → finalizeSignedPayment` build runs under the same
+     * per-wallet teardown gate ([gate]) as [sendToAddresses]. The single atomic
+     * finalize does select + reserve + sign + register under the wallet-manager
+     * lock (closing the funding/signing selection race the old setFunding +
+     * buildSigned split had), so once this returns the reservation holds the
+     * inputs and [broadcastSigned] / [releaseReservation] operate on the token
+     * later.
+     *
+     * The returned [SignedCoreTransaction] OWNS the token: it is [AutoCloseable]
+     * with a GC/[NativeCleaner] backstop, so a token that is neither broadcast
+     * nor released is never orphaned. If a cancellation discards the result
+     * *after* the blocking native registration already minted the token, this
+     * call closes it deterministically on the way out (the gate's
+     * cancellation-cleanup handoff) rather than leaving the reservation to the
+     * GC backstop or the reservation TTL. Otherwise the backstop releases on GC,
+     * or the caller releases via an explicit [SignedCoreTransaction.close];
+     * consuming the token via [broadcastSigned] / [releaseReservation] makes
+     * that release a native no-op.
+     *
+     * Process-death note: the reservation is in-memory. An app crash between
+     * this call and [broadcastSigned] drops the reservation on restart (the
+     * UTXOs become spendable again) — the same property dashj has.
+     *
+     * @param network the wallet network — see [sendToAddresses].
+     * @param coreSignerHandle the manager's `MnemonicResolverHandle` — see
+     *   [sendToAddresses]. No private key crosses the boundary.
+     */
+    suspend fun buildSignedPayment(
+        recipients: List<Pair<String, Long>>,
+        network: org.dashfoundation.dashsdk.Network,
+        coreSignerHandle: Long,
+        accountType: AccountType = AccountType.BIP44,
+        accountIndex: Int = 0,
+    ): SignedCoreTransaction = gate.opWithCleanupOnCancellation(
+        // Native finalization mints the token and transfers reservation ownership
+        // to it before the blocking JNI call returns, so the token already exists
+        // by the time `withContext` dispatches back to the caller. That handoff is
+        // a prompt-cancellation point: if the caller was cancelled while JNI ran,
+        // the completed SignedCoreTransaction is discarded before anyone can hold
+        // it, leaving only the GC/NativeCleaner backstop — the reservation would
+        // then sit until an unpredictable GC cycle or the reservation TTL.
+        // Closing the discarded result releases the token deterministically.
+        cleanup = { payment: SignedCoreTransaction -> payment.close() },
+    ) {
+        require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
+        require(recipients.isNotEmpty()) { "recipients must not be empty" }
+        require(recipients.all { it.second > 0 }) {
+            "every recipient amount must be positive"
+        }
+        val builderAccountType = when (accountType) {
+            AccountType.BIP44 -> CoreTransactionBuilder.AccountType.BIP44
+            AccountType.BIP32 -> CoreTransactionBuilder.AccountType.BIP32
+        }
+        mapNativeErrors {
+            // One atomic native operation: select + reserve + sign + register.
+            // `finalizeSignedPayment` consumes the builder on every path, so
+            // `use` only needs to destroy it on the pre-finalize failure paths
+            // (adding outputs). Selection and reservation commit as a single unit
+            // under the wallet-manager lock, so a concurrent deferred build — or a
+            // deferred build racing an immediate send — can no longer double-
+            // select the same input, restoring the atomicity the removed Kotlin
+            // per-wallet send mutex used to provide.
+            CoreTransactionBuilder(network).use { builder ->
+                for ((address, amount) in recipients) {
+                    builder.addOutput(address, amount)
+                }
+                builder.finalizeSignedPayment(
+                    this@ManagedPlatformWallet,
+                    builderAccountType,
+                    accountIndex,
+                    coreSignerHandle,
+                )
+            }
+        }
+    }
+
+    /**
      * Sign [message] with the private key behind [address] and return the
      * signature as base64 — a **classic Dash signed message**, byte-for-byte
      * compatible with dashj's `ECKey.signMessage` and Dash Core's `signmessage`
@@ -266,6 +453,84 @@ class ManagedPlatformWallet internal constructor(
             coreWallet().use { core ->
                 core.signMessage(address, message, coreSignerHandle)
             }
+        }
+    }
+
+    /**
+     * Broadcast the deferred payment behind [token] (from [buildSignedPayment])
+     * and return its broadcast txid — the "merchant server acked" arm. Consumes
+     * the token. Rather than double-broadcasting, an unusable token throws one
+     * of three sibling errors: already consumed / unknown
+     * ([org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ReservationTokenConsumed],
+     * e.g. a second [broadcastSigned] with the same token), a different wallet
+     * generation
+     * ([org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ReservationWalletMismatch],
+     * e.g. a re-created wallet), or aged out
+     * ([org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.StaleReservationToken]).
+     * Operates on the token directly (the inputs are already reserved).
+     *
+     * Callers holding a [SignedCoreTransaction] should prefer the object
+     * overload: with the bare token, the source object must stay strongly
+     * reachable until this call returns, or its GC backstop can release the
+     * reservation mid-broadcast.
+     */
+    suspend fun broadcastSigned(token: Long): String = withContext(Dispatchers.IO) {
+        mapNativeErrors {
+            coreWallet().use { core -> core.broadcastSignedPayment(token) }
+        }
+    }
+
+    /**
+     * Broadcast [payment] and return its txid — the object-owning form of
+     * [broadcastSigned]. Prefer this over passing the bare
+     * [SignedCoreTransaction.reservationToken]: the token's lifetime is coupled
+     * to the object's GC-reachability (the [NativeCleaner] backstop releases the
+     * reservation when the object is collected), so a caller that extracts the
+     * `Long` and drops the object races GC and can find the reservation gone.
+     * This overload keeps the object reachable for the whole native call and
+     * disarms the backstop once the token is consumed.
+     */
+    suspend fun broadcastSigned(payment: SignedCoreTransaction): String {
+        try {
+            val txid = broadcastSigned(payment.reservationToken)
+            // Token consumed: close() disarms the GC backstop (the underlying
+            // native release is an idempotent no-op on a consumed token).
+            payment.close()
+            return txid
+        } finally {
+            // The object must stay reachable across the suspend/native call —
+            // without this, GC could run the backstop mid-broadcast and release
+            // the reservation out from under it.
+            java.lang.ref.Reference.reachabilityFence(payment)
+        }
+    }
+
+    /**
+     * Release the funding reservation behind [token] (from [buildSignedPayment])
+     * — the "payment abandoned / merchant server nacked" arm — returning the
+     * reserved UTXOs to spendable. Idempotent: releasing an unknown /
+     * already-broadcast / already-released token is a silent no-op, so it is
+     * always safe to call defensively.
+     */
+    suspend fun releaseReservation(token: Long) {
+        withContext(Dispatchers.IO) {
+            mapNativeErrors {
+                WalletManagerNative.coreWalletReleaseSignedPayment(token)
+            }
+        }
+    }
+
+    /**
+     * Release [payment]'s funding reservation — the object-owning form of
+     * [releaseReservation]; see [broadcastSigned] for why it is preferred over
+     * the bare-token form.
+     */
+    suspend fun releaseReservation(payment: SignedCoreTransaction) {
+        try {
+            releaseReservation(payment.reservationToken)
+            payment.close()
+        } finally {
+            java.lang.ref.Reference.reachabilityFence(payment)
         }
     }
 

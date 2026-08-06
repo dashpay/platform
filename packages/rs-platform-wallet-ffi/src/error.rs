@@ -215,13 +215,6 @@ pub enum PlatformWalletFFIResultCode {
     /// join instead of erroring. Swift mirror:
     /// `PlatformWalletResultCode.errorShutdownIncomplete`.
     ErrorShutdownIncomplete = 27,
-    // Codes 28-30 are NOT claimed here. 28 and 30 are reserved (vacated by the
-    // deferred-payment reservation-token trio on dashpay/platform#4185/#4256
-    // when it moved to 34-36) and 29 belongs to ErrorAssetLockInsufficientFunds
-    // on the asset-lock funding branch (dashpay/platform#4184). Allocating any
-    // of them here too would merge without a textual conflict and silently
-    // misclassify across hosts. See
-    // packages/rs-platform-wallet-ffi/ERROR_CODE_REGISTRY.md.
     /// A state transition could not be signed because the signer has no
     /// usable private key for the requested public key — the stored blob is
     /// missing, stranded, or written under a different Keystore/Keychain
@@ -243,7 +236,71 @@ pub enum PlatformWalletFFIResultCode {
     /// correction rather than to an opaque wallet-operation failure.
     ErrorSigningKeyUnavailable = 31,
 
-    NotFound = 98, // Used exclusively for all the Option that are retuned as errors
+    // Codes 27-33 are claimed outside this PR and MUST NOT be reused here.
+    // The deferred-token trio below therefore occupies the contiguous block
+    // 34-36. Current owners (see ERROR_CODE_REGISTRY.md, dashpay/platform#4261):
+    //
+    //   27  ErrorShutdownIncomplete         MERGED on v4.2-dev (dashpay/platform#4268)
+    //   28  (free — vacated by this PR)
+    //   29  ErrorAssetLockInsufficientFunds dashpay/platform#4184
+    //   30  (free — vacated by this PR)
+    //   31  ErrorSigningKeyUnavailable      dashpay/platform#4183, #4259
+    //   32  ErrorTransactionBuild           dashpay/platform#4247, #4256
+    //   33  ErrorTransactionSigning         dashpay/platform#4256
+    //
+    // This trio previously sat at 26-28, then 27/28/30. It moved to 34-36 after
+    // #4268 merged `ErrorShutdownIncomplete = 27` into the v4.2-dev ABI; the
+    // contiguous block above every current claim ends the renumbering churn.
+    /// Maps `SignedPaymentError::StaleReservationToken` from the deferred
+    /// build → broadcast/release core-send lifecycle (`core_wallet_signed_payment_*`):
+    /// the token has outlived the registry's `RESERVATION_MAX_AGE_BLOCKS` bound
+    /// and its funding reservation may already have been swept and re-selected by
+    /// key-wallet's TTL, so acting on it could touch a newer, unrelated
+    /// reservation. The operation did NOT touch the network. NOT retryable in
+    /// place — the host must rebuild the payment.
+    ///
+    /// Sibling codes split out the other two deferred-token failures that this
+    /// code used to conflate: [`Self::ErrorReservationTokenConsumed`] (35,
+    /// unknown / already broadcast / already released) and
+    /// [`Self::ErrorReservationWalletMismatch`] (36, minted against a different
+    /// wallet generation). All three are non-retryable-in-place and none touched
+    /// the network; they are distinct codes so a host can message each precisely.
+    ErrorStaleReservationToken = 34,
+
+    /// Maps `SignedPaymentError::StaleToken`. The deferred reservation token is
+    /// unknown, already broadcast, or already released — the guard that turns a
+    /// double-broadcast (or a broadcast after release) into a typed error
+    /// instead of a second send. Did NOT touch the network; NOT retryable
+    /// (rebuild the payment). Release is idempotent and never surfaces this.
+    ErrorReservationTokenConsumed = 35,
+
+    /// Maps `SignedPaymentError::WalletMismatch`. The deferred reservation token
+    /// was minted against a different wallet *generation* than the one it is
+    /// being broadcast through (e.g. a wallet re-created under the same id); its
+    /// reservation lives in that other generation's `ReservationSet`. Did NOT
+    /// touch the network and did NOT consume the rightful owner's token; NOT
+    /// retryable through this handle (rebuild the payment).
+    ///
+    ErrorReservationWalletMismatch = 36,
+
+    /// The named thing does not exist.
+    ///
+    /// Originally (and still mostly) the code for every `Option` returned as an
+    /// error — a handle that resolves to nothing, a lookup that came back empty.
+    ///
+    /// The deferred build → broadcast/release lifecycle also reports its
+    /// wallet-was-REMOVED case here rather than minting a fourth
+    /// deferred-token code, because it *is* that same "does not exist" case:
+    /// `core_wallet_signed_payment_broadcast` maps
+    /// `SignedPaymentError::WalletRemoved` (the token's wallet is no longer
+    /// registered in the manager), and `core_wallet_signed_payment_finalize`
+    /// refuses to register a payment whose wallet was removed while it was being
+    /// signed — reconciling that build's reservation before returning. Neither
+    /// touched the network. Contrast [`Self::ErrorReservationWalletMismatch`]
+    /// (36), where a DIFFERENT live generation answers to the same wallet id;
+    /// here there is no live generation at all, so there is nothing to retry
+    /// against (`dashpay/platform#4185`).
+    NotFound = 98,
     ErrorUnknown = 99,
 }
 
