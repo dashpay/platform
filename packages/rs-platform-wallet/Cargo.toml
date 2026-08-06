@@ -17,8 +17,15 @@ key-wallet = { workspace = true }
 key-wallet-manager = { workspace = true, features = [] }
 dash-spv = { workspace = true }
 
-# Core dependencies
-dashcore = { workspace = true }
+# Core dependencies.
+#
+# `base64` is NOT among dashcore's default features (those are `secp-recovery`
+# and `bincode`), but `MessageSignature::to_base64` / `from_base64` are gated on
+# it — and base64 is the only wire form a classic Dash signed message has, the
+# one CrowdNode and Dash Core's `verifymessage` RPC accept. `secp-recovery`
+# arrives by default and carries `secp256k1/recovery`, which
+# `RecoverableSignature` / `recover_ecdsa` need. See `wallet::core::sign_message`.
+dashcore = { workspace = true, features = ["base64"] }
 
 # Standard dependencies
 thiserror = "1.0"
