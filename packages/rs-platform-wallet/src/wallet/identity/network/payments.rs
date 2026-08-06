@@ -206,16 +206,21 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// every output that pays a contact's external-account address, and
     /// records a `Sent` entry per `(owner, contact, txid)`.
     ///
-    /// Each contact is swept at most once per launch. That keeps the
-    /// recovery path cheap in steady state: after the first sweep,
-    /// recurring `dashpay_sync()` passes stop full-scanning persisted
-    /// tx history every 15 seconds. Eligibility deliberately does NOT
-    /// consult the existing payment map: "the contact already has a
-    /// `Sent` entry" proves one write landed, not that the contact's
-    /// history is complete — using it as a completion marker
-    /// permanently stranded any sibling entry whose write failed after
-    /// the first one succeeded. The per-txid dedup guard below already
-    /// makes re-sweeping recorded entries a no-op.
+    /// Each contact is swept once per distinct state of the persisted
+    /// transaction table (see
+    /// [`DashPayState::sent_payment_reconcile_swept_table`](crate::wallet::identity::state::managed_identity::dashpay::DashPayState::sent_payment_reconcile_swept_table)):
+    /// a full scan certifies the exact enumeration it inspected, and
+    /// re-runs only when the table's digest changes. That keeps the
+    /// recovery path cheap in steady state — one txid enumeration per
+    /// recurring `dashpay_sync()` pass, no record reads — while any new
+    /// row (rescan backfill, asynchronous persistence, mempool) makes
+    /// the affected wallet's contacts eligible again. Eligibility
+    /// deliberately does NOT consult the existing payment map: "the
+    /// contact already has a `Sent` entry" proves one write landed, not
+    /// that the contact's history is complete — using it as a
+    /// completion marker permanently stranded any sibling entry whose
+    /// write failed after the first one succeeded. The per-txid dedup
+    /// guard below already makes re-sweeping recorded entries a no-op.
     ///
     /// Local-only and idempotent: an existing payment entry under the
     /// txid is never overwritten.
@@ -225,7 +230,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         use crate::wallet::identity::types::dashpay::payment::PaymentStatus;
         use dashcore::ScriptBuf;
         use key_wallet::managed_account::address_pool::{AddressPool, KeySource};
-        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
         use std::collections::{BTreeMap, BTreeSet};
 
         /// How many gap limits wide to derive before the match-driven walk
@@ -261,6 +265,65 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             key_source: KeySource,
         }
 
+        // Pass 1 (cheap, read lock): every external-account contact and the
+        // table digest it was last certified against. No pool clones yet —
+        // in steady state this pass plus one txid enumeration is the whole
+        // sweep.
+        let contact_digests: Vec<(Identifier, Identifier, Option<[u8; 32]>)> = {
+            let wm = self.wallet_manager.read().await;
+            let info = match wm.get_wallet_info(&self.wallet_id) {
+                Some(info) => info,
+                None => return Ok(0),
+            };
+            let mut out = Vec::new();
+            for key in info.core_wallet.accounts.dashpay_external_accounts.keys() {
+                let owner = Identifier::from(key.user_identity_id);
+                let contact = Identifier::from(key.friend_identity_id);
+                let Some(managed) = info.identity_manager.managed_identity(&owner) else {
+                    continue;
+                };
+                let stored = managed
+                    .dashpay()
+                    .sent_payment_reconcile_swept_table
+                    .get(&contact)
+                    .copied();
+                out.push((owner, contact, stored));
+            }
+            out
+        };
+        if contact_digests.is_empty() {
+            return Ok(0);
+        }
+
+        let listed = self.persister.list_wallet_core_txids().map_err(|e| {
+            PlatformWalletError::Persistence(format!("failed to enumerate wallet txids: {e}"))
+        })?;
+        // The digest this pass will certify. Computed from exactly the rows
+        // enumerated here, so the stamp below can never claim more than this
+        // pass inspected: rows that land after this enumeration — a rescan
+        // backfill filling the table back in, the wallet-event adapter
+        // committing asynchronously behind the in-memory chain height, a
+        // mempool transaction with no height advance at all — change the next
+        // enumeration's digest and make every stamped contact eligible again.
+        let table_digest = wallet_tx_table_digest(&listed);
+
+        let stale: BTreeSet<(Identifier, Identifier)> = contact_digests
+            .iter()
+            .filter(|(_, _, stored)| *stored != Some(table_digest))
+            .map(|(owner, contact, _)| (*owner, *contact))
+            .collect();
+        if stale.is_empty() {
+            // Steady state — every contact was certified against exactly this
+            // table. Silent on purpose: this runs on every `dashpay_sync`
+            // pass, and logging it would emit a line every 15 seconds for the
+            // life of the process.
+            return Ok(0);
+        }
+
+        // Pass 2 (read lock): derivation context for the stale contacts only —
+        // a private clone of each contact's external address pool plus its
+        // xpub, so the historical range walk below never mutates resident
+        // wallet state and runs outside the wallet-manager lock.
         let mut windows: Vec<ContactWindow> = {
             let wm = self.wallet_manager.read().await;
             let info = match wm.get_wallet_info(&self.wallet_id) {
@@ -274,27 +337,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 Some(wallet) => wallet,
                 None => return Ok(0),
             };
-            // The scan height this pass will certify against. Read once so
-            // eligibility and the stamp below agree even if a concurrent SPV
-            // pass advances it mid-sweep — a later height simply makes the
-            // contact eligible again next time.
-            let synced_height = info.core_wallet.synced_height();
             let mut out = Vec::new();
             for (key, account) in &info.core_wallet.accounts.dashpay_external_accounts {
                 let owner = Identifier::from(key.user_identity_id);
                 let contact = Identifier::from(key.friend_identity_id);
-                let Some(managed) = info.identity_manager.managed_identity(&owner) else {
-                    continue;
-                };
-                // Swept already — but only for the history that existed at
-                // that height. Newly scanned blocks are exactly when new rows
-                // can appear, so any advance makes the contact eligible again.
-                if managed
-                    .dashpay()
-                    .sent_payment_reconcile_swept_at
-                    .get(&contact)
-                    .is_some_and(|swept_at| *swept_at >= synced_height)
-                {
+                if !stale.contains(&(owner, contact)) {
                     continue;
                 }
                 let pools = account.managed_account_type().address_pools();
@@ -317,20 +364,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             out
         };
         if windows.is_empty() {
-            // Steady state — every contact was already swept this launch.
-            // Silent on purpose: this runs on every `dashpay_sync` pass, and
-            // logging it would emit a line every 15 seconds for the life of
-            // the process.
             return Ok(0);
         }
         tracing::info!(
             eligible_contacts = windows.len(),
             "reconcile_sent_payments_from_tx_history: candidate contacts selected"
         );
-
-        let listed = self.persister.list_wallet_core_txids().map_err(|e| {
-            PlatformWalletError::Persistence(format!("failed to enumerate wallet txids: {e}"))
-        })?;
 
         // Read every wallet-funded record up front. Transactions the wallet
         // did not fund (`spends_wallet_input == false`) can never be sent
@@ -567,37 +606,25 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             recorded += 1;
         }
 
-        // An enumeration that came back empty proves nothing: after a restore
-        // the recurring `dashpay_sync()` can fire before the host has finished
-        // repopulating its transaction table, and a zero-txid sweep is
-        // indistinguishable from a wallet that genuinely has nothing to
-        // reconstruct. Stamping the guard there would end recovery for the
-        // rest of the process — the exact symptom this pass exists to fix.
-        // Retrying costs one enumeration per sweep, without the per-record
-        // reads, until the wallet actually has transactions. The same logic
-        // gates on `incomplete_scan`: a pass that could not read every
-        // wallet-funded record (or could not derive a contact's historical
-        // address range) has not proven anything about the records it missed.
-        // A non-empty enumeration is not proof that history is complete. This
-        // sweep runs on a timer and can snapshot the transaction table while a
-        // DashPay rescan is still delivering rows into it — one early row is
-        // enough to make `txid_count > 0` true. Certifying that snapshot would
-        // stamp the guard and ignore every row that lands afterwards, which is
-        // the same permanent-miss this pass exists to prevent, just narrower.
-        // So refuse to certify while the backfill has not climbed back to the
-        // Record the height this pass certified, not a bare "done". The scan
-        // is conclusive for the transaction table as it stood at
-        // `synced_height`; it says nothing about rows that arrive with later
-        // blocks. Stamping a flag instead would end recovery on whatever
-        // prefix of history happened to be visible — and nothing in the
-        // persistence callbacks reports whether the host has finished
-        // delivering it.
+        // Stamp the digest of exactly the enumeration this pass scanned —
+        // never a bare "done". A pass is conclusive only for that snapshot of
+        // the table; any row that lands afterwards (rescan backfill,
+        // asynchronous wallet-event persistence at an unchanged height, a
+        // mempool transaction) changes the next enumeration's digest, so the
+        // contact is swept again whichever order this sweep and
+        // `reconcile_dashpay_rescan` ran in. A table that has not changed
+        // costs later passes one enumeration and no record reads.
         //
-        // A height also removes any ordering requirement between this sweep
-        // and `reconcile_dashpay_rescan`: a rewind lowers `synced_height`, so
-        // the stamp stops matching and the contact is swept again on the way
-        // back up, whichever ran first.
-        let synced_height = info.core_wallet.synced_height();
+        // An enumeration that came back empty still proves nothing: after a
+        // restore the recurring `dashpay_sync()` can fire before the host has
+        // repopulated any of its transaction table, and a zero-txid sweep is
+        // indistinguishable from a wallet that genuinely has nothing to
+        // reconstruct. Stamping there would end recovery until the digest
+        // next changes, so leave the guard unstamped until at least one row
+        // exists. The same logic gates on `incomplete_scan`: a pass that
+        // could not read every wallet-funded record (or could not derive a
+        // contact's historical address range) has not proven anything about
+        // the records it missed.
         if !incomplete_scan && txid_count > 0 {
             for window in &windows {
                 if write_failed_for.contains(&(window.owner, window.contact)) {
@@ -608,8 +635,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     continue;
                 };
                 managed
-                    .dashpay_sent_payment_reconcile_swept_at_mut()
-                    .insert(window.contact, synced_height);
+                    .dashpay_sent_payment_reconcile_swept_table_mut()
+                    .insert(window.contact, table_digest);
             }
         }
         Ok(recorded)
@@ -812,6 +839,31 @@ fn record_received_payment_totals(
         recorded += 1;
     }
     recorded
+}
+
+/// Order-independent digest of an enumerated wallet transaction table:
+/// SHA-256 over the sorted `(txid, spends_wallet_input)` rows.
+///
+/// This is what the sent-payment reconstruction sweep stamps per contact —
+/// the pass certifies exactly the rows it enumerated, nothing beyond them.
+/// The funded flag is part of the digest on purpose: a host correcting a
+/// row's wallet-funded attribution changes the table's meaning for the
+/// sweep without adding or removing a txid, and must re-trigger it.
+/// In-memory only, never persisted — no cross-version stability required.
+fn wallet_tx_table_digest(listed: &[crate::changeset::traits::ListedCoreTxid]) -> [u8; 32] {
+    use dashcore::hashes::{sha256, Hash, HashEngine};
+
+    let mut rows: Vec<([u8; 32], bool)> = listed
+        .iter()
+        .map(|entry| (*entry.txid.as_byte_array(), entry.spends_wallet_input))
+        .collect();
+    rows.sort_unstable();
+    let mut engine = sha256::Hash::engine();
+    for (txid, funded) in rows {
+        engine.input(&txid);
+        engine.input(&[funded as u8]);
+    }
+    sha256::Hash::from_engine(engine).to_byte_array()
 }
 
 fn sent_payment_status_for_record(
@@ -1145,12 +1197,53 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             // dropped sub-dust change remainder included — since
             // rust-dashcore#872 (pinned above). No caller-side
             // recomputation needed.
-            let (tx, fee) = builder
+            let (tx, fee) = match builder
                 .build_signed(signer, |addr| {
                     managed_account.address_derivation_path(&addr)
                 })
                 .await
-                .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
+            {
+                Ok(built) => built,
+                Err(e) => {
+                    // Return the consumed address to the pool. Nothing was
+                    // signed to completion, persisted (the used-flip store
+                    // below is unreachable from here) or broadcast, so the
+                    // mark exists only in this process's memory and the
+                    // address was never exposed on-chain — un-marking it
+                    // cannot break DIP-15 rotation. Leaving it consumed
+                    // would let every failed build (insufficient funds
+                    // retried by the user, a signer refusing) advance the
+                    // next index by one with no bound; enough failures
+                    // before one successful payment would put that payment
+                    // beyond any gap-limit walk a restore-from-seed can
+                    // perform, permanently hiding it from sent-payment
+                    // reconstruction. Used indices must chain within the
+                    // gap limit, so consumption is committed only once a
+                    // fully signed transaction exists.
+                    if let Some(external_account) = info
+                        .core_wallet
+                        .accounts
+                        .dashpay_external_accounts
+                        .get_mut(&key)
+                    {
+                        for pool in external_account
+                            .managed_account_type_mut()
+                            .address_pools_mut()
+                        {
+                            let Some(&index) = pool.address_index.get(&payment_address) else {
+                                continue;
+                            };
+                            pool.used_indices.remove(&index);
+                            if let Some(address_info) = pool.addresses.get_mut(&index) {
+                                address_info.state =
+                                    key_wallet::managed_account::address_pool::AddressState::Available;
+                            }
+                            pool.highest_used = pool.used_indices.iter().max().copied();
+                        }
+                    }
+                    return Err(PlatformWalletError::TransactionBuild(e.to_string()));
+                }
+            };
 
             (payment_address, used_flip_changeset, tx, fee)
         };
@@ -1164,10 +1257,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // payments on-chain. A store failure aborts the send pre-broadcast
         // (nothing has hit the network); the consumed in-memory address only
         // leaves a one-address gap that the pool's gap window absorbs on
-        // retry. A funding-build failure above returns before this point, so
-        // an address consumed for a send that never broadcasts is likewise
-        // left only in memory — safe to re-hand, since it was never exposed
-        // on-chain.
+        // retry — bounded, because a signed transaction exists here, unlike
+        // the unbounded build-failure case rolled back above.
         self.persister.store(used_flip_changeset).map_err(|e| {
             PlatformWalletError::Persistence(format!(
                 "failed to persist payment-address used flip: {e}"
@@ -3683,12 +3774,11 @@ mod tests {
     /// `reconcile_dashpay_rescan`, and on an initial or forward-only scan rows
     /// keep arriving with every new block.
     #[tokio::test]
-    async fn reconcile_sent_payments_from_tx_history_resweeps_when_the_scan_advances() {
+    async fn reconcile_sent_payments_from_tx_history_resweeps_when_the_table_changes() {
         use dashcore::hashes::Hash;
         use dashcore::BlockHash;
         use key_wallet::managed_account::transaction_record::OutputRole;
         use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
-        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
         let persister = Arc::new(RecordStorePersister::default());
         let (manager, wallet_id) = make_wallet_with(Arc::clone(&persister)).await;
@@ -3704,14 +3794,13 @@ mod tests {
             info.identity_manager
                 .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
                 .expect("add owner");
-            info.core_wallet.update_synced_height(500);
         }
 
         let addresses = install_external_account(&manager, wallet_id, owner, contact).await;
         let own_address = first_standard_wallet_address(&manager, wallet_id).await;
 
-        // First pass at height 500: one unrelated transaction exists, so the
-        // scan is conclusive for what it saw and stamps that height.
+        // First pass: one unrelated transaction exists, so the scan is
+        // conclusive for the table it enumerated and stamps its digest.
         let unrelated = tx_record_with_outputs(
             TransactionContext::InBlock(BlockInfo::new(10, BlockHash::all_zeros(), 0)),
             vec![(own_address, 1_000, OutputRole::Sent)],
@@ -3728,72 +3817,65 @@ mod tests {
         {
             let wm = iw.wallet_manager.read().await;
             let info = wm.get_wallet_info(&wallet_id).expect("info");
-            assert_eq!(
+            assert!(
                 info.identity_manager
                     .managed_identity(&owner)
                     .expect("managed")
                     .dashpay()
-                    .sent_payment_reconcile_swept_at
-                    .get(&contact),
-                Some(&500),
-                "the sweep records the height it certified"
+                    .sent_payment_reconcile_swept_table
+                    .contains_key(&contact),
+                "the sweep records the table digest it certified"
             );
         }
 
-        // A payment arrives with a later block — a row the first pass could
-        // not have seen.
+        // A payment row lands AFTER the certified pass — a rescan backfill
+        // delivering history, or the wallet-event adapter committing
+        // asynchronously. No chain-height advance is involved: the row's
+        // arrival alone changes the table digest, so the very next sweep
+        // recovers it. (The prior height-stamped guard ignored rows like
+        // this until another block happened to arrive.)
         let late = tx_record_with_outputs(
             TransactionContext::InBlock(BlockInfo::new(700, BlockHash::all_zeros(), 0)),
             vec![(addresses[0].clone(), 40_000, OutputRole::Sent)],
         );
         let late_txid = late.txid;
         persister.records.lock().unwrap().insert(late_txid, late);
-
-        // Still at 500: the stamp holds, nothing re-runs.
         assert_eq!(
             iw.dashpay()
                 .reconcile_sent_payments_from_tx_history()
                 .await
-                .expect("sweep at the same height"),
-            0,
-            "an unchanged scan height must not re-run the walk"
-        );
-
-        // The scan advances past it — eligibility returns and the payment is
-        // recovered. A flag-based guard would have lost it permanently.
-        {
-            let mut wm = iw.wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
-            info.core_wallet.update_synced_height(800);
-        }
-        assert_eq!(
-            iw.dashpay()
-                .reconcile_sent_payments_from_tx_history()
-                .await
-                .expect("sweep after the scan advanced"),
+                .expect("sweep after a new row"),
             1,
-            "a higher scan height must re-open the contact"
+            "a changed table must re-open the contact immediately"
         );
         {
             let wm = iw.wallet_manager.read().await;
             let info = wm.get_wallet_info(&wallet_id).expect("info");
-            let managed = info
+            assert!(info
                 .identity_manager
                 .managed_identity(&owner)
-                .expect("managed");
-            assert!(managed
+                .expect("managed")
                 .dashpay()
                 .payments
                 .contains_key(&late_txid.to_string()));
-            assert_eq!(
-                managed
-                    .dashpay()
-                    .sent_payment_reconcile_swept_at
-                    .get(&contact),
-                Some(&800),
-                "the stamp moves to the newly certified height"
-            );
         }
+
+        // Unchanged table: the new stamp holds — one enumeration, no record
+        // reads, nothing recorded.
+        let reads_before = *persister.get_core_tx_record_calls.lock().unwrap();
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_sent_payments_from_tx_history()
+                .await
+                .expect("sweep on the unchanged table"),
+            0,
+            "an unchanged table must not re-run the walk"
+        );
+        assert_eq!(
+            *persister.get_core_tx_record_calls.lock().unwrap(),
+            reads_before,
+            "an unchanged table must not re-read any records"
+        );
     }
 
     #[tokio::test]
@@ -3854,13 +3936,13 @@ mod tests {
         }
         assert_eq!(
             *persister.list_wallet_core_txids_calls.lock().unwrap(),
-            1,
-            "steady state must not keep re-enumerating txids every sweep"
+            2,
+            "every sweep pays exactly one txid enumeration to detect table changes"
         );
         assert_eq!(
             *persister.get_core_tx_record_calls.lock().unwrap(),
             1,
-            "the second pass must early-exit before any tx-record fetch"
+            "the second pass must early-exit on the digest before any tx-record fetch"
         );
     }
 
@@ -3943,7 +4025,9 @@ mod tests {
             assert!(payments.contains_key(&txid_b.to_string()));
         }
 
-        // Both recorded → the guard is stamped; steady state stops sweeping.
+        // Both recorded → the digest is stamped; an unchanged table costs
+        // later sweeps one enumeration and zero record reads.
+        let reads_after_success = *persister.get_core_tx_record_calls.lock().unwrap();
         assert_eq!(
             iw.dashpay()
                 .reconcile_sent_payments_from_tx_history()
@@ -3952,9 +4036,9 @@ mod tests {
             0
         );
         assert_eq!(
-            *persister.list_wallet_core_txids_calls.lock().unwrap(),
-            2,
-            "the third sweep must early-exit on the stamped guard"
+            *persister.get_core_tx_record_calls.lock().unwrap(),
+            reads_after_success,
+            "the third sweep must early-exit on the digest before any tx-record fetch"
         );
     }
 
@@ -4038,7 +4122,9 @@ mod tests {
             "an unavailable listed record must keep the sweep retrying"
         );
 
-        // Now conclusive: the guard is stamped and sweeping stops.
+        // Now conclusive: the digest is stamped and record reads stop while
+        // the table stays unchanged.
+        let reads_after_success = *persister.get_core_tx_record_calls.lock().unwrap();
         assert_eq!(
             iw.dashpay()
                 .reconcile_sent_payments_from_tx_history()
@@ -4047,9 +4133,9 @@ mod tests {
             0
         );
         assert_eq!(
-            *persister.list_wallet_core_txids_calls.lock().unwrap(),
-            2,
-            "the third sweep must early-exit on the stamped guard"
+            *persister.get_core_tx_record_calls.lock().unwrap(),
+            reads_after_success,
+            "the third sweep must early-exit on the digest before any tx-record fetch"
         );
     }
 
@@ -4231,9 +4317,9 @@ mod tests {
             0
         );
         assert_eq!(
-            *persister.list_wallet_core_txids_calls.lock().unwrap(),
-            1,
-            "the second sweep must early-exit on the stamped guard"
+            *persister.get_core_tx_record_calls.lock().unwrap(),
+            0,
+            "the second sweep must early-exit on the digest before any tx-record fetch"
         );
     }
 
@@ -5190,6 +5276,116 @@ mod tests {
                  the account is built, got: {msg}"
             );
         }
+    }
+
+    /// A failed `build_signed` must return the consumed payment address to
+    /// the pool. Without the rollback every failed build (insufficient
+    /// funds, a refusing signer) permanently advances the next index by one:
+    /// enough failures before one successful payment put that payment past
+    /// any gap-limit walk a restore-from-seed can perform, and sent-payment
+    /// reconstruction never finds it.
+    #[tokio::test]
+    async fn send_payment_failed_build_returns_the_address_to_the_pool() {
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+
+        let owner_id = Identifier::from([0x11; 32]);
+        let contact_id = Identifier::from([0x22; 32]);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(
+                    bare_identity([0x11; 32]),
+                    0,
+                    wallet_id,
+                    &WalletPersister::new(wallet_id, Arc::clone(&persister) as _),
+                )
+                .expect("add owner");
+        }
+
+        let shared_key = [0x55u8; 32];
+        let iv = [0x11u8; 16];
+        let compact = {
+            let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+                .expect("mnemonic")
+                .to_seed("");
+            let w = key_wallet::wallet::Wallet::from_seed_bytes(
+                seed,
+                Network::Testnet,
+                WalletAccountCreationOptions::None,
+            )
+            .expect("seed wallet");
+            crate::wallet::identity::crypto::dip14::derive_contact_xpub(
+                &w,
+                Network::Testnet,
+                0,
+                &owner_id,
+                &contact_id,
+            )
+            .expect("derive a valid compact xpub")
+            .compact
+            .to_bytes()
+        };
+        let encrypted =
+            platform_encryption::encrypt_extended_public_key(&shared_key, &iv, &compact);
+        let contact = bare_identity([0x22; 32]);
+        iw.dashpay()
+            .register_external_contact_account(
+                &owner_id,
+                &contact,
+                &encrypted,
+                zeroize::Zeroizing::new(shared_key),
+            )
+            .await
+            .expect("register external account");
+
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let signer = SeedSigner::new(seed, Network::Testnet);
+
+        // Two failed builds in a row: without rollback each one consumes an
+        // index and the pool's used range marches forward off-chain.
+        for attempt in 1..=2 {
+            iw.dashpay()
+                .send_payment(&owner_id, &contact_id, 10_000, None, &signer, &provider)
+                .await
+                .expect_err(
+                    "seedless test wallet has no UTXOs, so the build must fail \
+                     (attempt {attempt})",
+                );
+            let _ = attempt;
+        }
+
+        let wm = iw.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet_id).expect("info");
+        let key = DashpayAccountKey {
+            index: 0,
+            user_identity_id: owner_id.to_buffer(),
+            friend_identity_id: contact_id.to_buffer(),
+        };
+        let account = info
+            .core_wallet
+            .accounts
+            .dashpay_external_accounts
+            .get(&key)
+            .expect("external account present");
+        let pools = account.managed_account_type().address_pools();
+        let pool = pools.first().expect("external pool");
+        assert!(
+            pool.used_indices.is_empty(),
+            "a failed build must not leave any address consumed, found {:?}",
+            pool.used_indices
+        );
+        assert_eq!(
+            pool.highest_used, None,
+            "no on-chain use happened, so the pool's used high-water must stay unset"
+        );
     }
 
     /// The `send_payment` used-flag flip persist must run only AFTER the

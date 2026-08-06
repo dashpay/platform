@@ -89,26 +89,36 @@ pub struct DashPayState {
     /// identity, with direction, amount, memo, and status.
     pub payments: BTreeMap<String, PaymentEntry>,
 
-    /// SPV scan height at which each contact's historical sent-payment
-    /// reconstruction sweep last completed.
+    /// Digest of the persisted transaction table against which each
+    /// contact's historical sent-payment reconstruction sweep last completed.
     ///
     /// `reconcile_sent_payments_from_tx_history` is a restore-time recovery
     /// path. Re-running its full persisted-tx scan every recurring sync pass
     /// is pure overhead once a contact has been reconstructed — but "already
-    /// swept" is only a safe answer for the history that existed at the time.
+    /// swept" is only a safe answer for the table contents the sweep actually
+    /// inspected.
     ///
-    /// Hence a height, not a flag. A sweep certifies the transaction table *as
-    /// of* `synced_height`; the contact becomes eligible again the moment that
-    /// height advances, because newly scanned blocks are exactly when new rows
-    /// can appear. Nothing has to know whether the host has "finished"
-    /// delivering history — an answer no callback provides — and no ordering
-    /// between this sweep and the rescan reconcile has to hold.
+    /// Hence a digest of the enumerated `(txid, wallet-funded)` rows, not a
+    /// flag and not a chain height. The sweep stamps exactly the snapshot it
+    /// scanned, so any change to the table — a rescan backfill delivering
+    /// rows, the wallet-event adapter committing rows asynchronously behind
+    /// the in-memory height, a mempool transaction with no height advance, a
+    /// host fixing a row's funded attribution — changes the digest and makes
+    /// the contact eligible again. Nothing has to know whether the host has
+    /// "finished" delivering history (an answer no callback provides), no
+    /// ordering between this sweep and the rescan reconcile has to hold, and
+    /// a chain-height advance with no new wallet rows does NOT re-trigger the
+    /// scan. A height stamp had both failure modes: it certified rows the
+    /// pass never saw (committed later at the same height, or delivered by a
+    /// backfill running below an already-stamped height) and re-ran the full
+    /// scan on every block.
     ///
-    /// In steady state the height stops moving and the sweep stops running.
+    /// In steady state the table stops changing and the sweep stops at one
+    /// cheap txid enumeration per pass — no record reads, no derivations.
     ///
     /// In-memory only (never persisted): a relaunch re-sweeps once per contact,
     /// which is safe and far cheaper than re-scanning every pass forever.
-    pub sent_payment_reconcile_swept_at: BTreeMap<Identifier, u32>,
+    pub sent_payment_reconcile_swept_table: BTreeMap<Identifier, [u8; 32]>,
 
     /// Cached **contact** profiles keyed by the contact's identity id —
     /// established contacts, pending incoming-request senders, and (later)
