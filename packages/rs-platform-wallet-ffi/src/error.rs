@@ -228,12 +228,17 @@ pub enum PlatformWalletFFIResultCode {
     /// wallet-operation failure. Not retryable as-is — the key must be
     /// (re-)derived first.
     ///
-    /// Also produced WITHOUT the signer round-trip, by
-    /// [`CoreWallet::sign_message`](platform_wallet::CoreWallet::sign_message):
-    /// a message-signing address that belongs to no signable funds account of
-    /// this wallet means no key can exist for it, which is the same conclusion
-    /// this code exists to carry — hosts route both to key repair / address
-    /// correction rather than to an opaque wallet-operation failure.
+    /// Also produced by
+    /// [`CoreWallet::sign_message`](platform_wallet::CoreWallet::sign_message),
+    /// both without a signer round-trip (a message-signing address that
+    /// belongs to no signable funds account of this wallet, so no key can
+    /// exist for it) and from the signer itself (the resolver reported no
+    /// mnemonic stored — `MnemonicResolverCoreSigner::NotFound`, whose
+    /// rendering stamps the same machine prefix at position 0 and which
+    /// `sign_message` promotes to the typed
+    /// `MessageSigningKeyUnavailable` before adding context). Hosts route
+    /// all of these to key repair / address correction rather than to an
+    /// opaque wallet-operation failure.
     ErrorSigningKeyUnavailable = 31,
 
     // Codes 27-33 are claimed outside this PR and MUST NOT be reused here.
@@ -503,76 +508,35 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::MessageSigningMessageInvalid { .. } => {
                 PlatformWalletFFIResultCode::ErrorInvalidParameter
             }
-            // A second, signer-free producer of code 31 (the arm above is the
-            // first): a message-signing address that belongs to no signable
-            // funds account means no key can exist for it — the same conclusion
-            // the code carries — so hosts route it to key repair / address
-            // correction instead of an opaque wallet-operation failure.
+            // A second producer of code 31 (the arm above is the first),
+            // reached without any marker inspection at this layer: message
+            // signing found no signable account for the address, or the signer
+            // reported its key missing (the reserved marker at position 0 of
+            // its rendering, which `sign_message` promotes to this typed
+            // variant BEFORE composing any context string). Either way no key
+            // can sign as things stand, so hosts route it to key repair /
+            // address correction instead of an opaque failure.
             PlatformWalletError::MessageSigningKeyUnavailable { .. } => {
                 PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
             }
             // NOTE: `MessageSigningFailed` is deliberately NOT matched, so it
             // falls to the `ErrorUnknown` catch-all below. Its causes are
             // internal invariant breaks (a public key that does not own the
-            // address, no recovery id that recovers it) which should read as a
-            // bug rather than as a key-repair prompt, and it carries the
-            // signer's own `Display`, which reaches the host in the message
-            // either way.
+            // address, no recovery id that recovers it) or an unclassifiable
+            // signer failure, which should read as a bug rather than as a
+            // key-repair prompt; it carries the signer's own `Display`, which
+            // reaches the host in the message either way.
             //
-            // It is NOT promoted to code 31 by the key-unavailable arm above,
-            // and that is deliberate rather than an oversight. That arm matches
-            // STRUCTURALLY — `Sdk(Protocol(Generic(s)))` with the marker at
-            // position 0 — because #4183's review rejected sniffing the marker
-            // as a substring of the rendered error: a foreign signer can merely
-            // mention the token in human-readable text. `MessageSigningFailed`
-            // is a different variant, and `sign_message` composes its `reason`
-            // as "signer rejected the digest at {path}: {e}", so the marker
-            // could only ever appear mid-string. Matching it here would mean
-            // exactly the substring sniff that review ruled out.
-            //
-            // Consequence worth knowing: a signer-reported key-unavailable
-            // condition reaching `sign_message` surfaces as ErrorUnknown, not
-            // 31. That is NOT closable at this layer, and — having chased it —
-            // not closable at the producer either without an upstream change.
-            // The type chain is the whole story:
-            //
-            //   * `preserve_signer_key_unavailable_or` (platform-wallet's own
-            //     helper, #4183) takes a `dash_sdk::Error` and matches
-            //     `Protocol(Generic(s))` with the marker at position 0. It is
-            //     the right tool — for the STATE-TRANSITION signing paths
-            //     (document replace, DPNS, token transfer), whose failures ARE
-            //     `dash_sdk::Error`, which is where it is used.
-            //   * Message signing does not use that surface at all. It calls
-            //     key-wallet's `Signer::sign_ecdsa`, whose error is the
-            //     associated type `S::Error`, bounded only by
-            //     `Display + Send + Sync + 'static`. There is no enum to match:
-            //     no `dash_sdk::Error`, no `ProtocolError`, nothing structural.
-            //   * The one production impl, `MnemonicResolverCoreSigner`
-            //     (rs-sdk-ffi), has `Error = MnemonicResolverSignerError` — a
-            //     typed enum that never stamps the marker. Its `NotFound`
-            //     ("mnemonic not found in keychain") IS the key-unavailable
-            //     case, but nothing distinguishes it once it is `Display`ed.
-            //   * The marker is produced only in `rs-sdk-ffi`'s state-transition
-            //     completion callback (`SignResult = Result<Vec<u8>,
-            //     ProtocolError>`), never on a `Signer::sign_ecdsa` path.
-            //
-            // So a position-0 check on the signer's rendering would have zero
-            // producers today, and a `contains` check is the substring sniff
-            // #4183's review rejected. Note the marker constant IS visible here
-            // now (#4183 mirrored it as
-            // `platform_wallet::error::SIGNER_KEY_UNAVAILABLE_PREFIX`, pinned
-            // byte-identical by a compile-time assertion in this crate) — the
-            // blocker is the error TYPE, not the constant, which corrects an
-            // earlier note in this file's history.
-            //
-            // The fix belongs upstream, in ONE of:
-            //   (a) `MnemonicResolverCoreSigner` rendering its key-unavailable
-            //       variants with the marker at position 0, after which a
-            //       position-0 check in `sign_message` becomes principled; or
-            //   (b) key-wallet tightening `Signer::Error` so callers can match
-            //       a typed key-unavailable variant instead of a string.
-            // Both change shared, externally-consumed surfaces and want their
-            // own review; neither is in scope for message signing.
+            // The one signer failure with typed meaning never lands here:
+            // key-wallet's `Signer::Error` is bounded only by `Display`, so a
+            // key-unavailable backend stamps the reserved marker at position 0
+            // of its rendering (`MnemonicResolverCoreSigner::NotFound`), and
+            // `sign_message` recognizes exactly that — a position-0 check on
+            // the UNWRAPPED rendering, never a substring sniff of a composed
+            // reason (#4183 review) — and returns the typed
+            // `MessageSigningKeyUnavailable` mapped above. By the time a
+            // `MessageSigningFailed` reason exists, any marker in it sits
+            // mid-string and is deliberately not matched.
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
         PlatformWalletFFIResult::err(code, error.to_string())
@@ -1125,10 +1089,12 @@ mod tests {
         );
     }
 
-    /// A second producer of code 31, reached with no signer round-trip and no
-    /// marker sniffing at all: the wallet simply holds no key for the address.
-    /// Hosts branch on it to correct the address or repair the key, so it must
-    /// not flatten to ErrorUnknown.
+    /// A second producer of code 31, reached with no marker inspection at
+    /// this layer: message signing concluded no key can sign for the address
+    /// (no signable account owns it, or the signer reported the key missing
+    /// and `sign_message` promoted the position-0 marker to this typed
+    /// variant). Hosts branch on it to correct the address or repair the key,
+    /// so it must not flatten to ErrorUnknown.
     #[test]
     fn message_signing_key_unavailable_maps_to_code_31() {
         let err = PlatformWalletError::MessageSigningKeyUnavailable {
@@ -1237,12 +1203,14 @@ mod tests {
     /// `MessageSigningMessageInvalid` mapping to ErrorInvalidParameter. What
     /// remains here is genuinely internal.
     ///
-    /// #4183's key-unavailable promotion does NOT reach this variant, by
-    /// design: it matches `Sdk(Protocol(Generic(s)))` structurally with the
-    /// marker at position 0, because that review rejected sniffing the marker as
-    /// a substring. `sign_message` composes `reason` as
-    /// "signer rejected the digest at {path}: {e}", so a marker could only ever
-    /// sit mid-string here. See the NOTE on the mapping arm.
+    /// A signer-reported key-unavailable failure never lands on this variant:
+    /// `sign_message` checks the reserved marker at position 0 of the signer's
+    /// UNWRAPPED rendering and returns the typed
+    /// `MessageSigningKeyUnavailable` before composing `reason` as
+    /// "signer rejected the digest at {path}: {e}". Once a reason exists, any
+    /// marker in it sits mid-string, and matching it there would be the
+    /// substring sniff #4183's review rejected. See the NOTE on the mapping
+    /// arm.
     #[test]
     fn message_signing_failed_falls_through_to_unknown() {
         let internal = PlatformWalletError::MessageSigningFailed {
