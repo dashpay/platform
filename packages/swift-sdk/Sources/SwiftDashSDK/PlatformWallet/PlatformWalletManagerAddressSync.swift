@@ -192,7 +192,8 @@ extension PlatformWalletManager {
     /// hard "verification failed / rescan pending" state instead of leaving
     /// the fault visible only in the error logs.
     ///
-    /// The flag latches: once `true` it stays `true` for the process lifetime.
+    /// The flag latches for this native manager's lifetime: once `true` it stays
+    /// `true` until the manager is destroyed.
     public func syncFaultDetected() throws -> Bool {
         guard isConfigured, handle != NULL_HANDLE else {
             throw PlatformWalletError.invalidHandle(
