@@ -630,7 +630,7 @@
           "host": "swift",
           "kind": "unit",
           "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/CreateIdentityResumableTests.swift",
-          "id": "testInvitationVouchersAreExcludedFromResumableList",
+          "id": "testFundingTypeGateAcceptsOnlyGenericIdentityResumeTypes",
           "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp",
           "covers_restart": false
         },

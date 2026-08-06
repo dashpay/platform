@@ -147,13 +147,18 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                         ))
                     })?;
 
-            // `set_funding` observes ReservationSet and `build_unsigned`
-            // records its selection. There is no await between them and the
+            // `set_funding` observes ReservationSet and the build records
+            // its selection. There is no await between them and the
             // manager write guard prevents another finalizer interleaving.
-            let (unsigned, fee) = builder
+            //
+            // The `ReservationToken` is intentionally discarded: this path
+            // releases abandoned reservations via the unconditional
+            // `release_reservation(&unsigned)` below. Owner-guarded release
+            // via the token is threaded separately (dashpay/platform#4185).
+            let (unsigned, fee, _reservation) = builder
                 .set_current_height(height)
                 .set_funding(managed, &account)
-                .build_unsigned()
+                .build_unsigned_reserved()
                 .map_err(|error| map_builder_error(error, account_type, account_index))?;
 
             let selected: Vec<Utxo> = match unsigned
