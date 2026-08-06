@@ -1006,6 +1006,105 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
     })
 }
 
+/// `core_wallet_sign_message` — sign `message` with the private key behind
+/// `address` and return the base64 signature: a classic Dash signed message,
+/// verifiable by Dash Core's `verifymessage` RPC, dashj's
+/// `ECKey.verifyMessage`, and CrowdNode's server-side check.
+///
+/// `core_handle` is the transient core-wallet `Handle` from
+/// [platformWalletGetCore]. `address` must be a P2PKH address of THIS wallet on
+/// its network, belonging to a signable funds account — a foreign or watch-only
+/// address throws `ErrorSigningKeyUnavailable` (31), while an unparseable,
+/// wrong-network, or non-P2PKH address throws `ErrorInvalidParameter` (2).
+/// `message` is signed verbatim (it is length-prefixed into the digest, so
+/// trailing whitespace is significant). `core_signer_handle` is the manager's
+/// `MnemonicResolverHandle`.
+///
+/// Moves no value: nothing is selected, reserved, broadcast, or persisted.
+/// Returns the base64 signature as a `String`, or null after throwing.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletSignMessage(
+    mut env: JNIEnv,
+    _class: JClass,
+    core_handle: jlong,
+    address: JString,
+    message: JString,
+    core_signer_handle: jlong,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if core_handle == 0 {
+            throw_sdk_exception(env, 1, "core handle is 0");
+            return ptr::null_mut();
+        }
+        if core_signer_handle == 0 {
+            throw_sdk_exception(env, 1, "coreSignerHandle is 0");
+            return ptr::null_mut();
+        }
+        let Some(address) = read_cstring_required(env, &address, "address") else {
+            return ptr::null_mut();
+        };
+        // The message is read leniently on emptiness — unlike `address`, an empty
+        // string is a legitimate thing to sign (the digest length-prefixes it),
+        // so `read_cstring_required` (which rejects empty) is wrong here. A JNI
+        // read error still throws: silently signing the empty message when the
+        // caller supplied text would produce a signature that verifies for a
+        // message they never sent.
+        if message.is_null() {
+            throw_sdk_exception(env, 1, "message was null");
+            return ptr::null_mut();
+        }
+        let message: String = match env.get_string(&message) {
+            Ok(v) => v.into(),
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "message string was invalid");
+                return ptr::null_mut();
+            }
+        };
+
+        // Both cross as UTF-8 bytes + length (no trailing NUL), so an embedded
+        // NUL cannot truncate what actually gets signed.
+        let address_bytes = address.as_bytes();
+        let message_bytes = message.as_bytes();
+
+        let mut out_signature: *mut c_char = ptr::null_mut();
+        let result = unsafe {
+            platform_wallet_ffi::core_wallet_sign_message(
+                core_handle as Handle,
+                address_bytes.as_ptr(),
+                address_bytes.len(),
+                message_bytes.as_ptr(),
+                message_bytes.len(),
+                core_signer_handle as *mut rs_sdk_ffi::MnemonicResolverHandle,
+                &mut out_signature as *mut *mut c_char,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        if out_signature.is_null() {
+            throw_sdk_exception(env, 1, "sign_message returned a NULL signature");
+            return ptr::null_mut();
+        }
+        let signature = unsafe { CStr::from_ptr(out_signature) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { platform_wallet_ffi::core_wallet_free_address(out_signature) };
+        // A `new_string` failure must throw like every other failure path:
+        // Kotlin declares a non-null return, so a bare null here would surface
+        // as an unexplained NullPointerException at the platform-type boundary
+        // instead of a DashSdkException.
+        match env.new_string(signature) {
+            Ok(s) => s.into_raw(),
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "failed to allocate the signature string");
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
 /// `platform_wallet_get_core` — resolve the transient core-wallet `Handle`
 /// (as `jlong`) from a `PlatformWallet` handle, for [coreWalletBroadcastTransaction].
 /// Free with [coreWalletDestroy]. Returns 0 after throwing.

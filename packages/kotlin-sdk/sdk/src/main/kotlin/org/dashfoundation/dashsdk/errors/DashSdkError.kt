@@ -192,6 +192,13 @@ sealed class DashSdkError(
          * `PlatformWalletManager.repairIdentityKey`) instead of treating it
          * as an opaque [Generic] failure. Not retryable as-is — the key must
          * be (re-)derived first.
+         *
+         * Also raised WITHOUT any signer round-trip by
+         * [org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.signMessage],
+         * for a message-signing address this wallet does not own — or owns only
+         * watch-only, since a DashPay *external* account holds a contact's
+         * addresses whose private keys we never had. Same conclusion, same host
+         * response: correct the address or repair the keys, do not retry.
          */
         class SigningKeyUnavailable(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {

@@ -174,6 +174,126 @@ class ManagedPlatformWallet internal constructor(
     }
 
     /**
+     * Sign [message] with the private key behind [address] and return the
+     * signature as base64 — a **classic Dash signed message**, byte-for-byte
+     * compatible with dashj's `ECKey.signMessage` and Dash Core's `signmessage`
+     * RPC, and verifiable by `verifymessage`, `ECKey.verifyMessage`, and
+     * CrowdNode's server-side check. Android port of Swift's
+     * `ManagedCoreWallet.signMessage(address:message:)`
+     * (`ManagedCoreWallet.swift`), which takes no signer parameter because it
+     * builds a per-call `MnemonicResolver` internally; here the manager's
+     * resolver handle is passed explicitly, as on the send paths.
+     *
+     * **The format.** The signed digest is
+     * `SHA256d(prefix ‖ varint(bytes.size) ‖ bytes)` over
+     * `bytes = message.toByteArray(Charsets.UTF_8)`: the length prefix counts
+     * **UTF-8 bytes**, not `String.length`, which counts UTF-16 code units and
+     * diverges for any non-ASCII text. The prefix is
+     * the historical `"\x19DarkCoin Signed Message:\n"` — *not* `"Dash"`. Dash
+     * inherited that string from before the rename and every existing verifier
+     * depends on it, so it can never change. The returned signature is the
+     * 65-byte BIP-137-style recoverable form (`header ‖ r ‖ s`, with
+     * `header = 27 + recoveryId + 4`, the `+ 4` marking a compressed public
+     * key), base64-encoded. A verifier recovers the public key from the digest
+     * and compares its hash to [address] — which is why only P2PKH addresses
+     * can sign: no other payload has a defined recovery comparison.
+     *
+     * **The CrowdNode use case.** This is the primitive the Android wallet's
+     * CrowdNode integration needs: it signs short strings — a withdrawal amount,
+     * the account email — which CrowdNode verifies against the address that
+     * funded the account. It is a **proof of address ownership, not a spend**:
+     * no UTXO is selected, reserved, spent, or broadcast, no balance changes, and
+     * nothing is persisted. Calling it repeatedly is free and side-effect-free.
+     *
+     * **Which addresses can sign.** [address] must be a P2PKH address of *this*
+     * wallet, on this wallet's network, already derived into one of its address
+     * pools, and belonging to a **signable funds account** (BIP44 / BIP32 /
+     * CoinJoin / DashPay-*receiving*). A watch-only DashPay **external** account
+     * holds a contact's receiving addresses whose private keys we never had, so
+     * those are refused exactly like any other address the wallet does not own:
+     * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.SigningKeyUnavailable].
+     *
+     * An unparseable, wrong-network, or non-P2PKH address is caller input and
+     * surfaces natively as `ErrorInvalidParameter` (2), which has no dedicated
+     * Kotlin arm today and therefore arrives as
+     * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.Generic]
+     * with `code == 2`; the message names which of the three it was. Branch on
+     * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.SigningKeyUnavailable]
+     * to tell "wallet does not own this address" apart from "this is not a
+     * usable address".
+     *
+     * **Determinism.** Signing is RFC6979 deterministic and low-s normalized, so
+     * the same ([address], [message]) pair on the same seed always returns the
+     * same string. Two calls yielding different signatures means the key or the
+     * message differed.
+     *
+     * Runs through the manager's [TeardownGate] like every other native op.
+     *
+     * @param address the P2PKH address whose key signs; must be one this wallet
+     *   owns and has derived.
+     * @param message the string to sign, **verbatim** as UTF-8. It is
+     *   length-prefixed into the digest, so trailing whitespace and newlines are
+     *   significant and the verifier must receive the identical bytes. An empty
+     *   string is valid. Must be well-formed text: a string holding an unpaired
+     *   UTF-16 surrogate has no UTF-8 encoding and is rejected with
+     *   [IllegalArgumentException] rather than signed after a silent
+     *   substitution.
+     * @param coreSignerHandle the manager's `MnemonicResolverHandle`
+     *   (`PlatformWalletManager.mnemonicResolverHandle`); no private key crosses
+     *   the boundary.
+     * @return the base64 signature (88 characters for the 65-byte payload).
+     */
+    suspend fun signMessage(
+        address: String,
+        message: String,
+        coreSignerHandle: Long,
+    ): String = gate.op {
+        require(address.isNotEmpty()) { "address must not be empty" }
+        // The digest commits to the message's UTF-8 bytes, but a Kotlin String
+        // is an unvalidated UTF-16 sequence and may hold an unpaired surrogate,
+        // which has no UTF-8 encoding at all. Every conversion below is LENIENT
+        // and they do not even agree: the JNI bridge's String read substitutes
+        // U+FFFD, while `toByteArray(Charsets.UTF_8)` substitutes '?'. Either
+        // way the wallet would sign bytes the caller never wrote and hand back a
+        // signature that verifies for a different message — silently. Rejected
+        // here, the one layer that still has the exact UTF-16 and can say why.
+        require(message.hasNoUnpairedSurrogate()) {
+            "message must be well-formed text: it contains an unpaired UTF-16 surrogate, " +
+                "which has no UTF-8 encoding and would be silently substituted before signing"
+        }
+
+        mapNativeErrors {
+            coreWallet().use { core ->
+                core.signMessage(address, message, coreSignerHandle)
+            }
+        }
+    }
+
+    /**
+     * Whether every UTF-16 surrogate in this string is part of a well-formed
+     * high/low pair — i.e. whether the string has an exact UTF-8 encoding.
+     *
+     * Scanned directly rather than via a strict `CharsetEncoder` to keep the
+     * check allocation-free on the hot path; the two agree on exactly which
+     * strings are encodable.
+     */
+    private fun String.hasNoUnpairedSurrogate(): Boolean {
+        var i = 0
+        while (i < length) {
+            val c = this[i]
+            when {
+                c.isHighSurrogate() -> {
+                    if (i + 1 >= length || !this[i + 1].isLowSurrogate()) return false
+                    i += 2
+                }
+                c.isLowSurrogate() -> return false
+                else -> i++
+            }
+        }
+        return true
+    }
+
+    /**
      * The wallet's Platform-payment addresses that currently hold credits,
      * each as a [FundingInput] whose `credits` is the full cached balance —
      * the funding-input candidates for an identity top-up. Port of the
