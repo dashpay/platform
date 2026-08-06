@@ -123,14 +123,6 @@ jobs:
         run: |
           rustup target add aarch64-apple-ios aarch64-apple-ios-sim
 
-      - name: Install cbindgen (for header generation)
-        run: |
-          # brew returns non-zero for benign cases (already installed), so the
-          # install itself is tolerated — but a genuinely missing binary must
-          # fail here, not surface later as a broken header generation.
-          brew install cbindgen || true
-          command -v cbindgen >/dev/null || { echo "::error::cbindgen is not available after brew install."; exit 1; }
-
       - name: Install protoc (Protocol Buffers compiler)
         uses: arduino/setup-protoc@v3
         with:
