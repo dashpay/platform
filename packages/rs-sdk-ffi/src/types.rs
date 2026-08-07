@@ -1109,8 +1109,41 @@ pub unsafe extern "C" fn dash_sdk_contender_free(contender: *mut DashSDKContende
         return;
     }
 
-    let contender = Box::from_raw(contender);
-    dash_sdk_string_free(contender.identity_id);
+    let mut contender = Box::from_raw(contender);
+    free_contender_fields(&mut *contender);
+}
+
+/// Release the heap strings owned by one contender.
+///
+/// Every destructor that owns contenders funnels through this: the fields were
+/// duplicated across four free paths, and adding `label` to the struct without
+/// updating all of them leaked one allocation per decoded contender on three of
+/// them. A single helper makes the next added field a one-line change.
+///
+/// # Safety
+/// - `contender` must point to a live `DashSDKContender` whose strings were
+///   allocated by this SDK and not yet freed.
+unsafe fn free_contender_fields(contender: *mut DashSDKContender) {
+    dash_sdk_string_free((*contender).identity_id);
+    // Null whenever the contender document could not be decoded;
+    // `dash_sdk_string_free` is a no-op on null.
+    dash_sdk_string_free((*contender).label);
+}
+
+/// Free the contender array owned by a `DashSDKContestInfo`, including each
+/// contender's strings.
+///
+/// # Safety
+/// - `contenders` must be either null or a pointer obtained from
+///   `Box::into_raw` over a boxed slice of exactly `count` contenders.
+unsafe fn free_contender_array(contenders: *mut DashSDKContender, count: usize) {
+    if contenders.is_null() || count == 0 {
+        return;
+    }
+    for i in 0..count {
+        free_contender_fields(contenders.add(i));
+    }
+    let _ = Vec::from_raw_parts(contenders, count, count);
 }
 
 /// Free contest info structure
@@ -1126,13 +1159,7 @@ pub unsafe extern "C" fn dash_sdk_contest_info_free(info: *mut DashSDKContestInf
     }
 
     let info = Box::from_raw(info);
-    if !info.contenders.is_null() && info.contender_count > 0 {
-        for i in 0..info.contender_count {
-            let contender = info.contenders.add(i);
-            dash_sdk_string_free((*contender).identity_id);
-        }
-        let _ = Vec::from_raw_parts(info.contenders, info.contender_count, info.contender_count);
-    }
+    free_contender_array(info.contenders, info.contender_count);
 }
 
 /// Free a contested name structure
@@ -1151,17 +1178,10 @@ pub unsafe extern "C" fn dash_sdk_contested_name_free(name: *mut DashSDKConteste
     dash_sdk_string_free(name.name);
 
     // Free contest info contents (but not the struct itself as it's embedded)
-    if !name.contest_info.contenders.is_null() && name.contest_info.contender_count > 0 {
-        for i in 0..name.contest_info.contender_count {
-            let contender = name.contest_info.contenders.add(i);
-            dash_sdk_string_free((*contender).identity_id);
-        }
-        let _ = Vec::from_raw_parts(
-            name.contest_info.contenders,
-            name.contest_info.contender_count,
-            name.contest_info.contender_count,
-        );
-    }
+    free_contender_array(
+        name.contest_info.contenders,
+        name.contest_info.contender_count,
+    );
 }
 
 /// Free a contested names list
@@ -1183,22 +1203,10 @@ pub unsafe extern "C" fn dash_sdk_contested_names_list_free(list: *mut DashSDKCo
             dash_sdk_string_free((*name).name);
 
             // Free contest info contents
-            if !(*name).contest_info.contenders.is_null()
-                && (*name).contest_info.contender_count > 0
-            {
-                for j in 0..(*name).contest_info.contender_count {
-                    let contender = (*name).contest_info.contenders.add(j);
-                    dash_sdk_string_free((*contender).identity_id);
-                    // Null for contenders whose document could not be decoded;
-                    // `dash_sdk_string_free` tolerates null.
-                    dash_sdk_string_free((*contender).label);
-                }
-                let _ = Vec::from_raw_parts(
-                    (*name).contest_info.contenders,
-                    (*name).contest_info.contender_count,
-                    (*name).contest_info.contender_count,
-                );
-            }
+            free_contender_array(
+                (*name).contest_info.contenders,
+                (*name).contest_info.contender_count,
+            );
         }
         let _ = Vec::from_raw_parts(list.names, list.count, list.count);
     }
@@ -1681,6 +1689,114 @@ mod tests {
 
             assert!(result.error.is_null());
             assert!(result.data.is_null());
+        }
+    }
+
+    // MARK: contender destructors
+    //
+    // These run under Miri/ASan in CI if enabled, but even without a leak
+    // checker they pin the shape that regressed: `label` was added to
+    // `DashSDKContender` and only one of the four free paths was updated, so
+    // three public destructors leaked one allocation per decoded contender.
+    // Every destructor now funnels through `free_contender_fields`.
+
+    /// Build a heap contender the way the DPNS producers do.
+    unsafe fn make_contender(id: &str, label: Option<&str>) -> DashSDKContender {
+        DashSDKContender {
+            identity_id: CString::new(id).unwrap().into_raw(),
+            vote_count: 7,
+            label: match label {
+                Some(l) => CString::new(l).unwrap().into_raw(),
+                None => std::ptr::null_mut(),
+            },
+        }
+    }
+
+    unsafe fn make_contest_info(contenders: Vec<DashSDKContender>) -> DashSDKContestInfo {
+        let count = contenders.len();
+        let ptr = if count == 0 {
+            std::ptr::null_mut()
+        } else {
+            Box::into_raw(contenders.into_boxed_slice()) as *mut DashSDKContender
+        };
+        DashSDKContestInfo {
+            contenders: ptr,
+            contender_count: count,
+            abstain_votes: 1,
+            lock_votes: 2,
+            end_time: 1_700_000_000_000,
+            has_winner: false,
+        }
+    }
+
+    #[test]
+    fn contender_free_releases_label() {
+        unsafe {
+            let contender = Box::into_raw(Box::new(make_contender("Ab1", Some("pizza"))));
+            dash_sdk_contender_free(contender);
+        }
+    }
+
+    #[test]
+    fn contender_free_tolerates_absent_label() {
+        unsafe {
+            let contender = Box::into_raw(Box::new(make_contender("Ab1", None)));
+            dash_sdk_contender_free(contender);
+        }
+    }
+
+    #[test]
+    fn contender_free_is_null_safe() {
+        unsafe { dash_sdk_contender_free(std::ptr::null_mut()) };
+    }
+
+    #[test]
+    fn contest_info_free_releases_every_contender_label() {
+        unsafe {
+            let info = make_contest_info(vec![
+                make_contender("Ab1", Some("pizza")),
+                make_contender("Cd2", Some("p1zza")),
+                make_contender("Ef3", None),
+            ]);
+            dash_sdk_contest_info_free(Box::into_raw(Box::new(info)));
+        }
+    }
+
+    #[test]
+    fn contest_info_free_handles_no_contenders() {
+        unsafe {
+            let info = make_contest_info(vec![]);
+            dash_sdk_contest_info_free(Box::into_raw(Box::new(info)));
+        }
+    }
+
+    #[test]
+    fn contested_name_free_releases_labels() {
+        unsafe {
+            let name = DashSDKContestedName {
+                name: CString::new("p1zza").unwrap().into_raw(),
+                contest_info: make_contest_info(vec![
+                    make_contender("Ab1", Some("pizza")),
+                    make_contender("Cd2", None),
+                ]),
+            };
+            dash_sdk_contested_name_free(Box::into_raw(Box::new(name)));
+        }
+    }
+
+    #[test]
+    fn contested_names_list_free_releases_labels() {
+        unsafe {
+            let names = vec![DashSDKContestedName {
+                name: CString::new("p1zza").unwrap().into_raw(),
+                contest_info: make_contest_info(vec![make_contender("Ab1", Some("pizza"))]),
+            }];
+            let count = names.len();
+            let list = DashSDKContestedNamesList {
+                names: Box::into_raw(names.into_boxed_slice()) as *mut DashSDKContestedName,
+                count,
+            };
+            dash_sdk_contested_names_list_free(Box::into_raw(Box::new(list)));
         }
     }
 }

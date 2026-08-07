@@ -70,10 +70,44 @@ extension SDK {
     guard let handle = handle else {
       throw SDKError.invalidState("SDK not initialized")
     }
-
     guard let listPtr = dash_sdk_dpns_get_contested_non_resolved_usernames(handle, limit) else {
       throw SDKError.internalError("Failed to fetch contested DPNS usernames")
     }
+    return Self.consumeContestedNamesList(listPtr)
+  }
+
+  /// The open contests **this identity is contending in** — the "how are my
+  /// own username requests doing" view, where ``dpnsActiveContests(limit:)`` is
+  /// the network-wide one.
+  ///
+  /// - Parameters:
+  ///   - identityId: Base58 identity id.
+  ///   - limit: Maximum contests to return.
+  public func dpnsContestsForIdentity(
+    identityId: String,
+    limit: UInt32 = 100
+  ) throws -> [DPNSContest] {
+    guard let handle = handle else {
+      throw SDKError.invalidState("SDK not initialized")
+    }
+    guard let listPtr = identityId.withCString({ idPtr in
+      dash_sdk_dpns_get_non_resolved_contests_for_identity(handle, idPtr, limit)
+    }) else {
+      throw SDKError.internalError("Failed to fetch contested DPNS usernames for identity")
+    }
+    return Self.consumeContestedNamesList(listPtr)
+  }
+
+  /// Copy a `DashSDKContestedNamesList` into Swift values and free it.
+  ///
+  /// Shared by both list queries — they return the same C shape, and a second
+  /// hand-rolled reader would be one more place for the ownership rules and
+  /// the null-label handling to drift.
+  ///
+  /// Takes ownership: the list is freed before returning, on every path.
+  private static func consumeContestedNamesList(
+    _ listPtr: UnsafeMutablePointer<DashSDKContestedNamesList>
+  ) -> [DPNSContest] {
     defer { dash_sdk_contested_names_list_free(listPtr) }
 
     let list = listPtr.pointee
