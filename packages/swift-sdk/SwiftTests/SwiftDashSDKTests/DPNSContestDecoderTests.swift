@@ -16,8 +16,10 @@ final class DPNSContestDecoderTests: XCTestCase {
     SDK.decodeVoteState(json: json, normalizedLabel: label)
   }
 
-  private func contender(_ id: String, _ votes: Int) -> [String: Any] {
-    ["identity_id": id, "vote_count": votes, "document": NSNull()]
+  private func contender(_ id: String, _ votes: Int, label: String? = nil) -> [String: Any] {
+    var entry: [String: Any] = ["identity_id": id, "vote_count": votes, "document": NSNull()]
+    if let label { entry["label"] = label }
+    return entry
   }
 
   // MARK: - Outcome branches
@@ -223,6 +225,64 @@ final class DPNSContestDecoderTests: XCTestCase {
 
     XCTAssertNil(contest.leadingContender)
     XCTAssertEqual(contest.totalVotes, 0)
+  }
+
+  // MARK: - Display labels
+
+  func testContenderDisplayLabelIsDecoded() {
+    // The FFI decodes each contender's `domain` document and hands back the
+    // spelling they typed; the contest itself is keyed by the normalized form.
+    let state = decode([
+      "contenders": [contender("Ab1", 3, label: "pizza"), contender("Cd2", 1, label: "p1zza")],
+    ])
+
+    XCTAssertEqual(state.contenders.map(\.displayLabel), ["pizza", "p1zza"])
+  }
+
+  func testMissingLabelIsNilNotEmpty() {
+    // A contender whose document could not be decoded has no display name —
+    // callers fall back to the identity id rather than showing a blank.
+    let state = decode(["contenders": [contender("Ab1", 3)]])
+
+    XCTAssertNil(state.contenders.first?.displayLabel)
+  }
+
+  func testEmptyLabelIsTreatedAsAbsent() {
+    let state = decode(["contenders": [contender("Ab1", 3, label: "")]])
+
+    XCTAssertNil(state.contenders.first?.displayLabel)
+  }
+
+  func testRequestedLabelsAreCarriedVerbatim() {
+    // Ordering and de-duplication happen in Rust (see the `requested_labels`
+    // derivation and its tests in rs-sdk-ffi); Swift only carries the result,
+    // so this pins that the value survives the model boundary unchanged.
+    let contest = DPNSContest(
+      normalizedLabel: "p1zza",
+      endTime: nil,
+      hasWinner: false,
+      abstainVotes: 0,
+      lockVotes: 0,
+      contenders: [
+        DPNSContender(identityId: "Ab1", voteTally: 3, displayLabel: "pizza"),
+        DPNSContender(identityId: "Cd2", voteTally: 1, displayLabel: "p1zza"),
+      ],
+      requestedLabels: ["pizza", "p1zza"])
+
+    XCTAssertEqual(contest.requestedLabels, ["pizza", "p1zza"])
+  }
+
+  func testRequestedLabelsDefaultEmptyWhenNothingDecoded() {
+    let contest = DPNSContest(
+      normalizedLabel: "p1zza",
+      endTime: nil,
+      hasWinner: false,
+      abstainVotes: 0,
+      lockVotes: 0,
+      contenders: [DPNSContender(identityId: "Ab1", voteTally: 3)])
+
+    XCTAssertTrue(contest.requestedLabels.isEmpty,
+                  "callers must fall back to the normalized label, not guess one")
   }
 
   // MARK: - Vote poll coordinates

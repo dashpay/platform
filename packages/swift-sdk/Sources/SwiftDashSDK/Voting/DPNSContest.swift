@@ -50,6 +50,16 @@ public struct DPNSContest: Sendable, Identifiable, Equatable {
   public let lockVotes: UInt32
   /// Contenders and their tallies, in the order the FFI returned them.
   public let contenders: [DPNSContender]
+  /// The distinct spellings the contenders requested, in contender order —
+  /// `["pizza", "p1zza"]` for a contest normalized to `"p1zza"`.
+  ///
+  /// Ordered and de-duplicated **in Rust** and decoded here verbatim: which
+  /// spellings to show is display policy, and the SDK is a thin bridge, not a
+  /// place for policy loops.
+  ///
+  /// Empty when no contender document could be decoded; render
+  /// ``normalizedLabel`` in that case rather than inventing a spelling.
+  public let requestedLabels: [String]
 
   public var id: String { normalizedLabel }
 
@@ -59,7 +69,8 @@ public struct DPNSContest: Sendable, Identifiable, Equatable {
     hasWinner: Bool,
     abstainVotes: UInt32,
     lockVotes: UInt32,
-    contenders: [DPNSContender]
+    contenders: [DPNSContender],
+    requestedLabels: [String] = []
   ) {
     self.normalizedLabel = normalizedLabel
     self.endTime = endTime
@@ -67,6 +78,7 @@ public struct DPNSContest: Sendable, Identifiable, Equatable {
     self.abstainVotes = abstainVotes
     self.lockVotes = lockVotes
     self.contenders = contenders
+    self.requestedLabels = requestedLabels
   }
 
   /// Total masternode voting weight recorded so far across contenders,
@@ -86,24 +98,26 @@ public struct DPNSContest: Sendable, Identifiable, Equatable {
 }
 
 /// One contender for a contested DPNS label.
-///
-/// - Note: The contender's label exactly as *they* requested it is not
-///   exposed. Platform returns it only inside the serialized `domain`
-///   document, which the FFI hands over as opaque hex; decoding it needs the
-///   contract's document-type schema and is not done on the Swift side.
-///   Render ``identityId`` (truncated) alongside the contest's normalized
-///   label instead.
 public struct DPNSContender: Sendable, Identifiable, Equatable {
   /// Base58 identity id of the contender.
   public let identityId: String
   /// Masternode voting weight cast towards this contender.
   public let voteTally: UInt32
+  /// The label exactly as this contender typed it — `"pizza"`, where the
+  /// contest's normalized form is `"p1zza"`.
+  ///
+  /// Decoded by the FFI from the contender's `domain` document. `nil` when the
+  /// label data was unavailable or decoding that contender's document failed —
+  /// show ``identityId`` or the contest's normalized label rather than
+  /// inventing a spelling.
+  public let displayLabel: String?
 
   public var id: String { identityId }
 
-  public init(identityId: String, voteTally: UInt32) {
+  public init(identityId: String, voteTally: UInt32, displayLabel: String? = nil) {
     self.identityId = identityId
     self.voteTally = voteTally
+    self.displayLabel = displayLabel
   }
 }
 
