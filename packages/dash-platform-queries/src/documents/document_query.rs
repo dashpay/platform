@@ -400,6 +400,15 @@ impl DocumentQuery {
     /// `contract` must be the data contract the request targets — the
     /// request's `data_contract_id` is checked against `contract.id()`
     /// and the named document type must exist on it.
+    ///
+    /// Scope caveat: this mirrors the server's *wire-shape* decoding
+    /// (shared clause decoders), not its full `validate_and_route`
+    /// business rules — e.g. SUM/AVG requiring a non-empty field,
+    /// GROUP BY being illegal with SELECT DOCUMENTS, or HAVING being
+    /// unimplemented are enforced server-side only. A request violating
+    /// those decodes here but can never yield a provable response from
+    /// a real server, so this only matters for fabricated
+    /// request/response pairs.
     pub fn try_from_request(
         request: GetDocumentsRequest,
         contract: Arc<DataContract>,
@@ -653,6 +662,19 @@ pub fn verify_documents_response(
             error: format!("failed to decode GetDocumentsRequest into a DocumentQuery: {e}"),
         }
     })?;
+    // This entry point verifies plain document fetches only. An aggregate
+    // projection (COUNT/SUM/AVG) is proved with a different proof shape;
+    // handing it to the Documents verifier would surface as an opaque
+    // low-level proof error, so reject it up front instead.
+    if query.select != drive::query::SelectProjection::documents() {
+        return Err(drive_proof_verifier::Error::RequestError {
+            error: format!(
+                "verify_documents_response only verifies plain document fetches; the request \
+                 carries a {:?} projection — use the aggregate proof helpers instead",
+                query.select.function
+            ),
+        });
+    }
     <Documents as FromProof<DocumentQuery>>::maybe_from_proof_with_metadata(
         query,
         response,

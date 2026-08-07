@@ -33,7 +33,7 @@ fn hash_double(data: Vec<u8>) -> [u8; 32] {
 /// `salt`, whose double-SHA256 over `salt ‖ "<normalized label>.dash"`
 /// becomes the preorder's `saltedDomainHash`.
 ///
-/// The `label` must satisfy [`is_valid_username`]; the raw label is stored
+/// The `label` must satisfy [`is_consensus_valid_label`]; the raw label is stored
 /// in the domain document's `label` property while its
 /// [homograph-safe](convert_to_homograph_safe_chars) form is stored in
 /// `normalizedLabel`.
@@ -46,10 +46,10 @@ pub fn build_dpns_preorder_and_domain_documents(
     entropy: [u8; 32],
     salt: [u8; 32],
 ) -> Result<(Document, Document), Error> {
-    if !is_valid_username(label) {
+    if !is_consensus_valid_label(label) {
         return Err(Error::InvalidInput(format!(
             "Invalid DPNS label \"{label}\": must be 3-63 characters, alphanumeric and hyphens \
-             only, starting and ending with an alphanumeric character, without consecutive hyphens"
+             only, starting and ending with an alphanumeric character"
         )));
     }
 
@@ -161,15 +161,34 @@ pub fn convert_to_homograph_safe_chars(input: &str) -> String {
         .collect()
 }
 
-/// Check if a username is valid according to DPNS rules
-///
-/// A username is valid if:
-/// - It's between 3 and 63 characters long
-/// - It starts and ends with alphanumeric characters (a-zA-Z0-9)
-/// - It contains only alphanumeric characters and hyphens
-/// - It doesn't have consecutive hyphens (enforced by the pattern)
+/// Check whether a label satisfies the DPNS contract's `label` schema
+/// pattern — exactly what consensus enforces, nothing stricter.
 ///
 /// Pattern: `^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$`
+/// (3-63 characters, alphanumeric and hyphens, alphanumeric at both ends;
+/// consecutive hyphens ARE allowed by consensus).
+pub fn is_consensus_valid_label(label: &str) -> bool {
+    if label.len() < 3 || label.len() > 63 {
+        return false;
+    }
+    let chars: Vec<char> = label.chars().collect();
+    if !chars[0].is_ascii_alphanumeric() || !chars[chars.len() - 1].is_ascii_alphanumeric() {
+        return false;
+    }
+    chars[1..chars.len() - 1]
+        .iter()
+        .all(|&ch| ch.is_ascii_alphanumeric() || ch == '-')
+}
+
+/// Check if a username is valid according to this crate's recommended
+/// client-side policy: the consensus pattern plus a stricter rejection of
+/// consecutive hyphens.
+///
+/// This is deliberately narrower than [`is_consensus_valid_label`] — a name
+/// like `ab--cd` is consensus-valid but rejected here, matching the
+/// pre-existing policy of the mobile SDK FFI and wasm-sdk gates. Callers
+/// that must accept every consensus-valid label should use
+/// [`is_consensus_valid_label`] instead.
 ///
 /// # Arguments
 ///
@@ -179,38 +198,7 @@ pub fn convert_to_homograph_safe_chars(input: &str) -> String {
 ///
 /// Returns `true` if the username is valid, `false` otherwise
 pub fn is_valid_username(label: &str) -> bool {
-    // Check length
-    if label.len() < 3 || label.len() > 63 {
-        return false;
-    }
-
-    let chars: Vec<char> = label.chars().collect();
-
-    // Check first character (must be alphanumeric)
-    if !chars[0].is_ascii_alphanumeric() {
-        return false;
-    }
-
-    // Check last character (must be alphanumeric)
-    if !chars[chars.len() - 1].is_ascii_alphanumeric() {
-        return false;
-    }
-
-    // Check middle characters (can be alphanumeric or hyphen)
-    for &ch in &chars[1..chars.len() - 1] {
-        if !ch.is_ascii_alphanumeric() && ch != '-' {
-            return false;
-        }
-    }
-
-    // Additional check: no consecutive hyphens (good practice)
-    for i in 0..chars.len() - 1 {
-        if chars[i] == '-' && chars[i + 1] == '-' {
-            return false;
-        }
-    }
-
-    true
+    is_consensus_valid_label(label) && !label.contains("--")
 }
 
 /// Check if a username is contested (requires masternode voting)
@@ -367,7 +355,7 @@ mod tests {
         let contract = dpns_contract();
         let identity_id = Identifier::from([2u8; 32]);
 
-        for bad in ["", "ab", "-alice", "alice-", "alice--bob", "alice_bob"] {
+        for bad in ["", "ab", "-alice", "alice-", "alice_bob"] {
             let result = build_dpns_preorder_and_domain_documents(
                 &contract,
                 identity_id,
@@ -380,6 +368,27 @@ mod tests {
                 "label {bad:?} must be rejected"
             );
         }
+    }
+
+    /// Consecutive hyphens are consensus-valid (the DPNS contract pattern
+    /// `^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$` allows them), so the
+    /// builder must accept them even though the stricter client-side
+    /// [`is_valid_username`] policy rejects them.
+    #[test]
+    fn build_dpns_documents_accepts_consensus_valid_double_hyphen() {
+        let contract = dpns_contract();
+        let identity_id = Identifier::from([2u8; 32]);
+
+        assert!(is_consensus_valid_label("alice--bob"));
+        assert!(!is_valid_username("alice--bob"));
+        build_dpns_preorder_and_domain_documents(
+            &contract,
+            identity_id,
+            "alice--bob",
+            [3u8; 32],
+            [4u8; 32],
+        )
+        .expect("consensus-valid label with consecutive hyphens must build");
     }
 
     #[test]
