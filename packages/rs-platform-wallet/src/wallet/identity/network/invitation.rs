@@ -847,6 +847,51 @@ mod tests {
         assert!(matches!(proof, AssetLockProof::Chain(_)));
     }
 
+    /// The prospective identity id is derived from the *selected* credit
+    /// output's outpoint. Selection itself is pinned next to
+    /// `voucher_output_index`; what matters here is that the id follows it — a
+    /// voucher sitting behind a decoy must not yield the index-0 id, or the
+    /// "has this invitation been used?" check answers about a stranger's
+    /// identity and reports a perfectly good voucher as spent.
+    #[test]
+    fn prospective_id_follows_the_selected_credit_output() {
+        let key = voucher_secret();
+        let decoy = SecretKey::from_slice(&[0x22u8; 32]).unwrap();
+        let payload = AssetLockPayload {
+            version: 1,
+            credit_outputs: vec![
+                TxOut {
+                    value: 100_000,
+                    script_pubkey: voucher_credit_script(&decoy),
+                },
+                TxOut {
+                    value: 100_000,
+                    script_pubkey: voucher_credit_script(&key),
+                },
+            ],
+        };
+        let tx = Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(payload)),
+        };
+        let txid = tx.txid();
+        let inv = parsed(key, txid.to_string(), None);
+
+        let proof = assemble_asset_lock_proof(tx, true, 100, &inv).unwrap();
+        let id = proof.create_identifier().unwrap();
+
+        let from_index_0 =
+            ChainAssetLockProof::new(100, OutPoint::new(txid, 0).into()).create_identifier();
+        let from_index_1 =
+            ChainAssetLockProof::new(100, OutPoint::new(txid, 1).into()).create_identifier();
+
+        assert_ne!(id, from_index_0, "id must not come from credit output 0");
+        assert_eq!(id, from_index_1);
+    }
+
     /// An islock that locks a DIFFERENT tx than the funding tx is rejected (the
     /// txid-binding guard), so a link can't pair a valid islock with a foreign tx.
     #[test]
