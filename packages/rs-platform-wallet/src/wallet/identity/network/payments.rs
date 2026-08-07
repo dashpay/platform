@@ -1222,7 +1222,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             let builder = TransactionBuilder::new()
                 .set_current_height(current_height)
                 .set_selection_strategy(SelectionStrategy::LargestFirst)
-                .set_funding(managed_account, account)
+                .add_funding(managed_account, account)
                 .add_output(&payment_address, amount_duffs);
 
             // Sign through the injected signer (blanket

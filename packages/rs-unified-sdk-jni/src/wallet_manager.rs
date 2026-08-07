@@ -3111,15 +3111,22 @@ fn ffi_network(value: jni::sys::jint) -> dash_network::ffi::FFINetwork {
     }
 }
 
-/// Map the Kotlin core account-type int (0 BIP44, 1 BIP32, 2 CoinJoin) to
-/// `CoreAccountTypeFFI`. Returns `None` for an out-of-range / negative value
-/// so the caller can throw `ErrorInvalidParameter` rather than bit-casting
-/// into an undefined discriminant.
+/// Map the Kotlin core account-type int (0 BIP44, 1 BIP32, 2 CoinJoin,
+/// 3 AllSpendable) to `CoreAccountTypeFFI`. Returns `None` for an
+/// out-of-range / negative value so the caller can throw
+/// `ErrorInvalidParameter` rather than bit-casting into an undefined
+/// discriminant.
+///
+/// 3 is the pooled selector (BIP44 + BIP32 + every DashPay receiving account,
+/// change to BIP44) and is the default for sends; the single-account APIs
+/// (gap limits, per-account UTXO listing) reject it with
+/// `ErrorInvalidParameter` since they address exactly one account.
 fn core_account_type(value: jni::sys::jint) -> Option<platform_wallet_ffi::CoreAccountTypeFFI> {
     match value {
         0 => Some(platform_wallet_ffi::CoreAccountTypeFFI::BIP44),
         1 => Some(platform_wallet_ffi::CoreAccountTypeFFI::BIP32),
         2 => Some(platform_wallet_ffi::CoreAccountTypeFFI::CoinJoin),
+        3 => Some(platform_wallet_ffi::CoreAccountTypeFFI::AllSpendable),
         _ => None,
     }
 }

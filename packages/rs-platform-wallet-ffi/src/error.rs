@@ -456,7 +456,12 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::AddressNonceMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAddressNonceMismatch
             }
-            PlatformWalletError::CoreInsufficientFunds { .. } => {
+            // Both shapes are "the wallet cannot cover this payment"; hosts
+            // classify and retry them identically, so the pooled variant rides
+            // the same code rather than forcing every host to learn a second
+            // insufficient-funds value.
+            PlatformWalletError::CoreInsufficientFunds { .. }
+            | PlatformWalletError::CorePooledInsufficientFunds { .. } => {
                 PlatformWalletFFIResultCode::ErrorCoreInsufficientFunds
             }
             PlatformWalletError::AssetLockNotTracked(..) => {
@@ -506,6 +511,13 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // code. It previously fell through to ErrorUnknown, which told a
             // host "internal failure" about a malformed argument it could fix.
             PlatformWalletError::MessageSigningMessageInvalid { .. } => {
+                PlatformWalletFFIResultCode::ErrorInvalidParameter
+            }
+            // A caller-argument rejection raised below the FFI boundary — the
+            // same class the boundary itself rejects with this code, so both
+            // sides agree instead of one reporting a not-found or an internal
+            // failure for a bad argument.
+            PlatformWalletError::InvalidParameter(..) => {
                 PlatformWalletFFIResultCode::ErrorInvalidParameter
             }
             // A second producer of code 31 (the arm above is the first),
@@ -851,6 +863,42 @@ mod tests {
                 PlatformWalletFFIResultCode::ErrorCoreInsufficientFunds
             );
         }
+    }
+
+    /// A pooled shortfall is the same thing to a host as a single-account one —
+    /// "this wallet cannot cover the payment" — so it deliberately rides the
+    /// SAME code rather than making every host learn a second value. Pin that,
+    /// since splitting it later would silently reclassify the most common send
+    /// failure on the pooled (default) path.
+    #[test]
+    fn pooled_insufficient_funds_shares_the_single_account_code() {
+        let result: PlatformWalletFFIResult = PlatformWalletError::CorePooledInsufficientFunds {
+            sources: vec![
+                AccountTypePreference::BIP44,
+                AccountTypePreference::BIP32,
+                AccountTypePreference::AllDashpayReceivingFunds,
+            ],
+            available: Some(1_000),
+            required: Some(2_000),
+        }
+        .into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorCoreInsufficientFunds
+        );
+    }
+
+    /// A caller-argument rejection raised BELOW the FFI boundary must reach the
+    /// host as the same parameter error the boundary itself returns — not as a
+    /// not-found, and not through the `ErrorUnknown` catch-all.
+    #[test]
+    fn invalid_parameter_maps_to_the_parameter_code() {
+        let result: PlatformWalletFFIResult =
+            PlatformWalletError::InvalidParameter("names a set of accounts".to_string()).into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
     }
 
     #[test]
