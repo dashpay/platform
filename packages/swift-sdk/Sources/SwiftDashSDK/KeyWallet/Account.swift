@@ -20,16 +20,31 @@ public class Account {
 
     // MARK: - Derivation (account-based)
 
-    /// Derive a private key (WIF) using this account and a master xpriv derived from the given path.
+    /// Derive a private key (WIF) at `index` under this account.
+    ///
+    /// The account's own derivation path is applied by the FFI:
+    /// `account_derive_private_key_as_wif_at` → `derive_xpriv_from_master_xpriv`,
+    /// which resolves `Account::derivation_path()` — the FULL path from the
+    /// wallet master (e.g. `m/9'/5'/3'/1'` for provider voting keys). So this
+    /// hands it the wallet **master** and takes no path argument.
+    ///
+    /// It previously accepted a `masterPath` and pre-derived it, applying the
+    /// account path twice: a caller passing the account root got the key at
+    /// `m/9'/5'/3'/1'/9'/5'/3'/1'/index` instead of `m/9'/5'/3'/1'/index`.
+    /// Nothing failed locally — the key was well-formed and deterministic, just
+    /// not the account's key at that index. That is only detectable against
+    /// something holding the real one: a masternode vote signed with it is
+    /// rejected as having no voter identity, since the voter identity is
+    /// derived from the signing key's own hash160.
+    ///
     /// - Parameters:
-    ///   - wallet: The parent wallet used to derive the master extended private key
-    ///   - masterPath: The account root derivation path (e.g., "m/9'/5'/3'/1'")
+    ///   - wallet: The parent wallet, used for its master extended private key
     ///   - index: The child index to derive (e.g., 0 for the first key)
     /// - Returns: The private key encoded as WIF
-    public func derivePrivateKeyWIF(wallet: Wallet, masterPath: String, index: UInt32) throws -> String {
+    public func derivePrivateKeyWIF(wallet: Wallet, index: UInt32) throws -> String {
         var error = FFIError()
-        // Derive master extended private key for this account root
-        let masterPtr = masterPath.withCString { pathCStr in
+        // "m" parses to the empty derivation path — the master key itself.
+        let masterPtr = "m".withCString { pathCStr in
             wallet_derive_extended_private_key(wallet.ffiHandle, pathCStr, &error)
         }
 
