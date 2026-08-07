@@ -323,7 +323,10 @@ unsafe fn cast_vote_inner(
             .map_err(FFIError::from)?
             .ok_or_else(|| {
                 FFIError::InvalidParameter(format!(
-                    "No voting identity exists on Platform for masternode {} with this voting key                      (expected voter identity {}). Either the voting key does not match the                      masternode's registered voting address, or Platform has not created the                      voter identity yet.",
+                    "No voting identity exists on Platform for masternode {} with this voting key \
+                     (expected voter identity {}). Either the voting key does not match the \
+                     masternode's registered voting address, or Platform has not created the \
+                     voter identity yet.",
                     pro_tx_hash, voter_identifier
                 ))
             })?;
@@ -342,7 +345,8 @@ unsafe fn cast_vote_inner(
             .cloned()
             .ok_or_else(|| {
                 FFIError::InvalidParameter(format!(
-                    "Voter identity {} has no enabled ECDSA_HASH160 voting key matching this                      private key. The masternode's voting key may have been rotated.",
+                    "Voter identity {} has no enabled ECDSA_HASH160 voting key matching this \
+                     private key. The masternode's voting key may have been rotated.",
                     voter_identifier
                 ))
             })
