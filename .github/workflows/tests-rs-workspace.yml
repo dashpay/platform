@@ -5,11 +5,28 @@ on:
         description: Whether doc comments with code examples have changed
         type: boolean
         default: false
+      shielded-changed:
+        # Computed by the `changes` job in tests.yml (see the
+        # "Check for shielded-relevant changes" step there for the heuristic
+        # and its safety net). When false, the shielded test phase is skipped
+        # and no rust-shielded coverage is uploaded — codecov carries the
+        # base commit's rust-shielded flag forward (see .codecov.yml).
+        # Defaults to true so any caller that doesn't compute the heuristic
+        # gets the full suite.
+        description: Whether shielded code (or anything affecting the shielded suite) changed
+        type: boolean
+        default: true
 
 jobs:
-  test-mac:
-    name: Tests (macOS)
-    runs-on: [self-hosted, macOS, ARM64]
+  test:
+    name: Tests
+    # Scheduled onto whichever self-hosted runner is free — the macOS boxes or
+    # the Linux one. `rust-ci` is a custom label applied to exactly those
+    # runners; pairing it with `self-hosted` keeps the job off GitHub-hosted
+    # runners entirely, so untrusted code never reaches a hosted Linux VM by
+    # way of a label collision.
+    runs-on: [self-hosted, rust-ci]
+    # Fork PRs must not execute on any persistent runner, macOS or Linux.
     if: >-
       github.event_name != 'pull_request'
       || github.event.pull_request.head.repo.full_name == github.repository
@@ -21,30 +38,62 @@ jobs:
         with:
           clean: false
 
-      - name: Prune macOS runner disk before tests
+      - name: Fail on local rust-dashcore patch override
         run: |
-          for path in ../target-backup-before-*-clean-* target/llvm-cov-target; do
+          if grep -q '^\[patch\."https://github.com/dashpay/rust-dashcore"\]' Cargo.toml; then
+            echo "::error::Remove the local rust-dashcore [patch] override before merging"
+            exit 1
+          fi
+
+      # target/llvm-cov-target is deliberately NOT pruned here: it holds the
+      # coverage-instrumented build (~10GB) that makes the test step's compile
+      # incremental (~2.5 min saved per run). The size/free-disk guard below
+      # removes the whole target/ if it ever outgrows the caps.
+      - name: Prune runner disk before tests
+        run: |
+          for path in ../target-backup-before-*-clean-*; do
             if [ -e "$path" ]; then
               echo "Removing stale runner artifact: $path"
               rm -rf "$path"
             fi
           done
 
+          # Purge per-run profile data possibly left by a cancelled run whose
+          # end-of-job cleanup never executed — BEFORE measuring target/, so
+          # stale profraw can neither leak into this run's coverage report
+          # nor inflate the size check below and cost the whole instrumented
+          # build.
+          if [ -d target/llvm-cov-target ]; then
+            find target/llvm-cov-target \( -name '*.profraw' -o -name '*.profdata' \) -delete || true
+          fi
+
+          # Absolute caps tuned for the large macOS volumes, clamped to a share
+          # of the volume so a smaller runner doesn't purge target/ every run
+          # and force a cold rebuild on each job.
+          TOTAL=$(df -m . | awk 'NR == 2 {print $2}')
+          FREE=$(df -m . | awk 'NR == 2 {print $4}')
+          SIZE=$(du -sm target 2>/dev/null | awk '{print $1}' || echo 0)
+          TOTAL=${TOTAL:-0}
+          FREE=${FREE:-0}
+          SIZE=${SIZE:-0}
+
           TARGET_MAX_MB=120000
           MIN_FREE_MB=60000
-          SIZE=$(du -sm target 2>/dev/null | awk '{print $1}' || echo 0)
-          FREE=$(df -m . | awk 'NR == 2 {print $4}')
-          SIZE=${SIZE:-0}
-          FREE=${FREE:-0}
+          if [ "$TOTAL" -gt 0 ]; then
+            [ $((TOTAL / 3)) -lt "$TARGET_MAX_MB" ] && TARGET_MAX_MB=$((TOTAL / 3))
+            [ $((TOTAL / 5)) -lt "$MIN_FREE_MB" ] && MIN_FREE_MB=$((TOTAL / 5))
+          fi
 
-          echo "target/ size: ${SIZE}MB"
-          echo "available disk: ${FREE}MB"
+          echo "volume size: ${TOTAL}MB"
+          echo "target/ size: ${SIZE}MB (cap ${TARGET_MAX_MB}MB)"
+          echo "available disk: ${FREE}MB (floor ${MIN_FREE_MB}MB)"
           if [ "$SIZE" -gt "$TARGET_MAX_MB" ] || [ "$FREE" -lt "$MIN_FREE_MB" ]; then
             echo "target/ exceeds ${TARGET_MAX_MB}MB or disk is below ${MIN_FREE_MB}MB free; removing target/"
             rm -rf target
           fi
 
-      - name: Install build dependencies
+      - name: Install build dependencies (macOS)
+        if: runner.os == 'macOS'
         run: |
           echo "/opt/homebrew/bin" >> $GITHUB_PATH
           echo "/opt/homebrew/opt/llvm/bin" >> $GITHUB_PATH
@@ -53,14 +102,69 @@ jobs:
           brew list llvm &>/dev/null || brew install llvm
           brew list gnupg &>/dev/null || brew install gnupg
 
+      # clang, llvm and libsnappy are installed by ./.github/actions/rust on
+      # Linux; this covers what the rest of the job needs and what a bare
+      # self-hosted image doesn't ship. Every branch is a no-op once the
+      # persistent runner has been provisioned by the first run.
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+
+          MISSING=()
+          for pkg in build-essential cmake libgmp-dev libssl-dev pkg-config jq zip; do
+            dpkg -s "$pkg" >/dev/null 2>&1 || MISSING+=("$pkg")
+          done
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "Installing: ${MISSING[*]}"
+            sudo apt-get update -qq
+            sudo apt-get install -qq --yes "${MISSING[@]}"
+          fi
+
+          # Needed by the immutable-structure check below.
+          if ! command -v gh >/dev/null 2>&1; then
+            sudo apt-get install -qq --yes gh || {
+              curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+                | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+              echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+                | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+              sudo apt-get update -qq
+              sudo apt-get install -qq --yes gh
+            }
+          fi
+
+          # dtolnay/rust-toolchain drives rustup; it must already exist.
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+              | sh -s -- -y --no-modify-path --default-toolchain none
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          fi
+
       - name: Setup Rust
         uses: ./.github/actions/rust
         with:
           cache: false
-          components: llvm-tools
+          components: llvm-tools, rustfmt, clippy
 
+      # Both tools are required by the test steps below. Install only when
+      # missing, and fail HERE, loudly, if the tool still doesn't work
+      # afterwards — the previous `cargo install ... 2>/dev/null || true`
+      # silently swallowed a failed nextest install on a freshly provisioned
+      # runner, and the job then died 10 minutes later in the test step with
+      # "no such command: nextest".
       - name: Install cargo-llvm-cov
-        run: cargo install cargo-llvm-cov 2>/dev/null || true
+        run: |
+          if ! cargo llvm-cov --version >/dev/null 2>&1; then
+            cargo install cargo-llvm-cov --locked
+          fi
+          cargo llvm-cov --version
+
+      - name: Install cargo-nextest
+        run: |
+          if ! cargo nextest --version >/dev/null 2>&1; then
+            cargo install cargo-nextest --locked
+          fi
+          cargo nextest --version
 
       - name: Check formatting
         run: cargo fmt --check --all
@@ -87,10 +191,21 @@ jobs:
 
       - name: Detect immutable structure changes
         if: github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          CHANGED_RS=$(gh pr view ${{ github.event.pull_request.number }} --json files --jq '[.files[].path] | map(select(test("\\.rs$"))) | .[]')
+          # Work entirely over git transport: the pull_request checkout is
+          # the PR merge commit, whose first parent is the base-branch tip
+          # the merge was built on, so diffing against it yields exactly the
+          # PR's changes. The previous `gh pr view` call needed
+          # api.github.com, which has repeatedly been unreachable from a
+          # runner while git fetches to github.com kept working — and it
+          # failed the whole job before any test ran.
+          BASE_PARENT=$(git cat-file commit HEAD | awk '/^parent /{print $2; exit}')
+          if [ -z "$BASE_PARENT" ]; then
+            echo "::error::Could not determine the merge commit's base parent"
+            exit 1
+          fi
+          git fetch --depth=1 origin "$BASE_PARENT"
+          CHANGED_RS=$(git diff --no-renames --name-only "$BASE_PARENT" HEAD -- '*.rs')
           if [ -z "$CHANGED_RS" ]; then
             echo "No .rs files changed — skipping"
             exit 0
@@ -113,10 +228,9 @@ jobs:
             '
           }
 
-          git fetch origin ${{ github.event.pull_request.base.ref }} --depth=1
           for file in $CHANGED_RS; do
             if [ ! -f "$file" ]; then continue; fi
-            BASE_CONTENT=$(git show origin/${{ github.event.pull_request.base.ref }}:"$file" 2>/dev/null || true)
+            BASE_CONTENT=$(git show "$BASE_PARENT":"$file" 2>/dev/null || true)
             if [ -z "$BASE_CONTENT" ]; then continue; fi
 
             BASE_APPEND=$(echo "$BASE_CONTENT" | extract_tagged_block "@append_only")
@@ -149,7 +263,7 @@ jobs:
         run: |
           CURRENT_TREE=$(git rev-parse HEAD^{tree})
           CACHED_TREE=$(cat target/lcov-tree-hash 2>/dev/null || echo "none")
-          if [ "$CURRENT_TREE" = "$CACHED_TREE" ] && [ -f lcov.info ]; then
+          if [ "$CURRENT_TREE" = "$CACHED_TREE" ] && [ -f lcov-nonshielded.info ]; then
             echo "reuse=true" >> "$GITHUB_OUTPUT"
             echo "Tree hash matches ($CURRENT_TREE) — reusing coverage from previous run"
           else
@@ -157,10 +271,22 @@ jobs:
             echo "Tree hash changed ($CACHED_TREE -> $CURRENT_TREE) — running tests"
           fi
 
+      # Leftover profile data from a cancelled run is handled earlier, in
+      # "Prune runner disk before tests", unconditionally for every job.
       - name: Remove stale coverage data
         if: steps.coverage-cache.outputs.reuse == 'false'
-        run: rm -f lcov.info
+        run: rm -f lcov.info lcov-nonshielded.info lcov-strategy.info lcov-shielded.info
 
+      # The drive-abci chain-simulation suite (strategy_tests, ~90
+      # multi-second whole-chain simulations that dominate the test phase's
+      # wall time) is reduced here to the single comprehensive simulation —
+      # see the doc comment on
+      # run_chain_comprehensive_mixed_operations_with_epoch_change_and_quorum_rotation
+      # for what it covers. The remaining simulations run in their own phase
+      # below on push and nightly only, so a regression in one of them is
+      # caught minutes after merge — the same safety-net pattern as the
+      # shielded phase. Keeping this phase's filter identical across events
+      # keeps the `rust` codecov flag comparable between PR and push runs.
       - name: Run non-shielded tests with nextest (parallel, compiles all packages)
         if: steps.coverage-cache.outputs.reuse == 'false'
         run: |
@@ -189,14 +315,54 @@ jobs:
             --package keyword-search-contract \
             --all-features \
             --locked \
-            -E 'not test(~shield)'
+            -E 'not test(~shield) and (not binary_id(=drive-abci::strategy_tests) or test(~comprehensive_mixed_operations))'
         env:
           RUST_MIN_STACK: 4194304
           CARGO_PROFILE_DEV_DEBUG: "0"
           CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
 
-      - name: Run shielded tests with cargo test (shared process for VK reuse)
+      # Each phase gets its own lcov file (upload steps below tag each with
+      # its codecov flag), so profraw files are dropped between phases to
+      # keep the reports disjoint.
+      - name: Generate non-shielded coverage report
         if: steps.coverage-cache.outputs.reuse == 'false'
+        run: |
+          cargo llvm-cov report --lcov --output-path lcov-nonshielded.info
+          cargo llvm-cov clean --profraw-only
+
+      # The chain simulations excluded from the phase above. PR runs skip
+      # them (and upload no rust-strategy coverage — codecov carries the base
+      # commit's forward); push, nightly, and dispatch runs execute them all.
+      - name: Run full chain-simulation suite (push and nightly only)
+        id: strategy-tests
+        if: >-
+          steps.coverage-cache.outputs.reuse == 'false'
+          && github.event_name != 'pull_request'
+        run: |
+          cargo llvm-cov nextest --no-report \
+            --package drive-abci \
+            --all-features \
+            --locked \
+            -E 'binary_id(=drive-abci::strategy_tests) and not test(~comprehensive_mixed_operations) and not test(~shield)'
+        env:
+          RUST_MIN_STACK: 4194304
+          CARGO_PROFILE_DEV_DEBUG: "0"
+          CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
+
+      - name: Generate chain-simulation coverage report
+        if: steps.strategy-tests.outcome == 'success'
+        run: |
+          cargo llvm-cov report --lcov --output-path lcov-strategy.info
+          cargo llvm-cov clean --profraw-only
+
+      # When nothing shielded-relevant changed, the phase is skipped and no
+      # rust-shielded coverage is uploaded — codecov carries the base
+      # commit's forward (see .codecov.yml).
+      - name: Run shielded tests with cargo test (shared process for VK reuse)
+        id: shielded-tests
+        if: >-
+          steps.coverage-cache.outputs.reuse == 'false'
+          && inputs.shielded-changed
         run: |
           cargo llvm-cov test --no-report \
             --package dpp \
@@ -211,43 +377,80 @@ jobs:
           CARGO_PROFILE_DEV_DEBUG: "0"
           CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
 
-      - name: Generate combined coverage report
-        if: steps.coverage-cache.outputs.reuse == 'false'
-        run: |
-          cargo llvm-cov report --lcov --output-path lcov.info
-          git rev-parse HEAD^{tree} > target/lcov-tree-hash
+      - name: Generate shielded coverage report
+        if: steps.shielded-tests.outcome == 'success'
+        run: cargo llvm-cov report --lcov --output-path lcov-shielded.info
 
-      - name: Reset GPG state (fix stale keyboxd locks on self-hosted runners)
-        if: always()
+      # The marker means "this exact tree passed the COMPLETE suite", so it
+      # is written only when both skippable phases (chain simulations and
+      # shielded) actually ran and succeeded. A PR fast-path run must not
+      # write it: the post-merge push commonly has the same tree as the PR
+      # merge ref, and on the same runner the marker would let the reuse
+      # check skip the push run's full phases — the safety net for changes
+      # the PR-path gating misses.
+      - name: Record coverage tree hash
+        if: >-
+          steps.coverage-cache.outputs.reuse == 'false'
+          && steps.strategy-tests.outcome == 'success'
+          && steps.shielded-tests.outcome == 'success'
+        run: git rev-parse HEAD^{tree} > target/lcov-tree-hash
+
+      - name: Reset GPG state (fix stale keyboxd locks on the macOS runners)
+        if: always() && runner.os == 'macOS'
         run: |
           gpgconf --kill all 2>/dev/null || true
           rm -rf ~/.gnupg/public-keys.d/*.lock 2>/dev/null || true
           rm -rf ~/.gnupg/.#* 2>/dev/null || true
 
+      # One upload per codecov flag. A phase that didn't run produces no file
+      # and uploads nothing — its flag is carried forward from the base
+      # commit by codecov (see .codecov.yml), so PR reports don't show a
+      # spurious coverage drop for suites that intentionally didn't run.
+      # File-existence gating (rather than step-outcome gating) also covers
+      # the tree-hash reuse path, where the files persist from the previous
+      # run of the identical tree.
       - name: Upload coverage
-        if: always()
+        if: always() && hashFiles('lcov-nonshielded.info') != ''
         uses: codecov/codecov-action@v6
         with:
-          files: lcov.info
+          files: lcov-nonshielded.info
           flags: rust
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
 
-      - name: Remove cargo-llvm-cov build artifacts
+      - name: Upload chain-simulation coverage
+        if: always() && hashFiles('lcov-strategy.info') != ''
+        uses: codecov/codecov-action@v6
+        with:
+          files: lcov-strategy.info
+          flags: rust-strategy
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+      - name: Upload shielded coverage
+        if: always() && hashFiles('lcov-shielded.info') != ''
+        uses: codecov/codecov-action@v6
+        with:
+          files: lcov-shielded.info
+          flags: rust-shielded
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+      # Keep the coverage-instrumented build (target/llvm-cov-target) between
+      # runs so the test step's compile stays incremental — a full wipe forces
+      # a ~2.5 min cold rebuild of ~700 crates every job. Only per-run profile
+      # data is removed: profraw files (one per test process, regenerated by
+      # every run) and the merged profdata. Disk pressure is handled by the
+      # size/free-disk guard in "Prune runner disk before tests", which
+      # removes the whole target/ when it outgrows the caps. ("Prune runner
+      # disk before tests" purges profile data again at the start of the next
+      # run, covering cancelled jobs where this step never executes.)
+      - name: Remove per-run coverage profile data
         if: always()
         run: |
           if [ -d target/llvm-cov-target ]; then
-            du -sh target/llvm-cov-target || true
-            for attempt in 1 2 3; do
-              if rm -rf target/llvm-cov-target && [ ! -e target/llvm-cov-target ]; then
-                break
-              fi
-              echo "::warning::Coverage cleanup attempt ${attempt} failed; retrying"
-              sleep 2
-            done
-            if [ -d target/llvm-cov-target ]; then
-              echo "::warning::Coverage artifacts could not be fully removed"
-            fi
+            find target/llvm-cov-target \( -name '*.profraw' -o -name '*.profdata' \) -delete || true
+            du -sh target/llvm-cov-target 2>/dev/null || true
           fi
           du -sh target 2>/dev/null || true
 
@@ -262,311 +465,3 @@ jobs:
         env:
           CARGO_PROFILE_DEV_DEBUG: "0"
           CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
-
-  test-ubuntu:
-    name: "Tests backup (shard ${{ matrix.partition }}/4)"
-    if: vars.UBUNTU_BACKUP_ENABLED == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        partition: [1, 2, 3, 4]
-    steps:
-      - name: Wait and check if Mac runner is available
-        id: check-mac
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          sleep 15
-          MAC_JOB=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs \
-            --jq '.jobs[] | select(.name == "Rust workspace tests / Tests (macOS)")' 2>/dev/null || echo "{}")
-          MAC_STATUS=$(echo "$MAC_JOB" | jq -r '.status // "unknown"')
-          MAC_CONCLUSION=$(echo "$MAC_JOB" | jq -r '.conclusion // ""')
-          echo "mac-status=$MAC_STATUS" >> "$GITHUB_OUTPUT"
-          if [ "$MAC_STATUS" = "in_progress" ]; then
-            echo "Mac runner picked up the job — skipping Ubuntu fallback"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          elif [ "$MAC_STATUS" = "completed" ] && [ "$MAC_CONCLUSION" = "failure" ]; then
-            echo "Mac runner already failed — failing Ubuntu fallback too"
-            exit 1
-          else
-            echo "Mac runner not available (status: $MAC_STATUS) — running on Ubuntu"
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Free disk space
-        if: steps.check-mac.outputs.skip == 'false'
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell /usr/share/swift
-          df -h /
-
-      - name: Check out repo
-        if: steps.check-mac.outputs.skip == 'false'
-        uses: actions/checkout@v4
-
-      - name: Strip cdylib crate-types (incompatible with static rocksdb)
-        if: steps.check-mac.outputs.skip == 'false'
-        run: |
-          sed -i 's/\["cdylib", "rlib"\]/["rlib"]/' packages/rs-sdk/Cargo.toml packages/wasm-drive-verify/Cargo.toml
-          sed -i 's/\["cdylib", "lib"\]/["lib"]/' packages/wasm-dpp2/Cargo.toml
-          sed -i 's/\["cdylib"\]/["rlib"]/' packages/wasm-sdk/Cargo.toml
-          sed -i 's/\["staticlib", "cdylib", "rlib"\]/["staticlib", "rlib"]/g' packages/rs-sdk-ffi/Cargo.toml packages/rs-platform-wallet-ffi/Cargo.toml
-
-      - name: Setup Rust
-        if: steps.check-mac.outputs.skip == 'false'
-        uses: ./.github/actions/rust
-
-      - name: Setup sccache
-        if: steps.check-mac.outputs.skip == 'false'
-        uses: ./.github/actions/sccache
-        with:
-          bucket: ${{ vars.CACHE_S3_BUCKET }}
-          region: ${{ vars.CACHE_REGION }}
-          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
-          access_key_id: ${{ secrets.CACHE_KEY_ID }}
-          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
-
-      - name: Install librocksdb
-        if: steps.check-mac.outputs.skip == 'false'
-        uses: ./.github/actions/librocksdb
-
-      - uses: taiki-e/install-action@cargo-nextest
-        if: steps.check-mac.outputs.skip == 'false'
-
-      - name: Configure core dumps
-        if: steps.check-mac.outputs.skip == 'false'
-        run: |
-          sudo mkdir /cores
-          sudo chmod 777 /cores
-          sudo bash -c 'echo "/cores/%e.%p.%t" > /proc/sys/kernel/core_pattern'
-
-      - name: Run tests (shard ${{ matrix.partition }}/6)
-        if: steps.check-mac.outputs.skip == 'false'
-        run: |
-          ulimit -c unlimited
-          cargo nextest run \
-            --package drive \
-            --package dpp \
-            --package drive-abci \
-            --package dash-sdk \
-            --package platform-value \
-            --package rs-dapi \
-            --package platform-wallet \
-            --package platform-wallet-storage \
-            --package rs-sdk-ffi \
-            --package platform-wallet-ffi \
-            --package rs-dapi-client \
-            --package platform-serialization \
-            --package dapi-grpc \
-            --package json-schema-compatibility-validator \
-            --package dashpay-contract \
-            --package dpns-contract \
-            --package masternode-reward-shares-contract \
-            --package withdrawals-contract \
-            --package token-history-contract \
-            --package wallet-utils-contract \
-            --package keyword-search-contract \
-            --all-features \
-            --locked \
-            --partition count:${{ matrix.partition }}/4
-        env:
-          RUST_MIN_STACK: 4194304
-          CARGO_INCREMENTAL: "0"
-          CARGO_PROFILE_DEV_DEBUG: "0"
-          CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
-          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
-          ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
-          ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
-          SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
-          SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
-
-      - name: Collect crash artifacts
-        if: failure() && steps.check-mac.outputs.skip == 'false'
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-
-          if ! compgen -G "/cores/*" > /dev/null; then
-            echo "No core dumps were produced; skipping artifact archive."
-            exit 0
-          fi
-
-          ARTIFACT_DIR=crash-artifacts
-          rm -rf "${ARTIFACT_DIR}"
-          mkdir -p "${ARTIFACT_DIR}/cores" "${ARTIFACT_DIR}/binaries"
-
-          cp -a /cores/. "${ARTIFACT_DIR}/cores/"
-
-          for path in target/debug/deps/*; do
-            if [[ -f "$path" && -x "$path" && ! "$path" == *.d ]]; then
-              cp -a "$path" "${ARTIFACT_DIR}/binaries/"
-            fi
-          done
-
-          (cd "${ARTIFACT_DIR}" && zip -9 -r ../core-dumps.zip .)
-
-      - name: Upload core dumps
-        if: failure() && steps.check-mac.outputs.skip == 'false'
-        uses: actions/upload-artifact@v4
-        with:
-          name: core-dumps-shard-${{ matrix.partition }}-of-4
-          path: core-dumps.zip
-          if-no-files-found: ignore
-          retention-days: 3
-
-  lint-ubuntu:
-    name: "Formatting & Linting backup"
-    if: vars.UBUNTU_BACKUP_ENABLED == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - name: Wait and check if Mac runner is available
-        id: check-mac
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          sleep 15
-          MAC_JOB=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs \
-            --jq '.jobs[] | select(.name == "Rust workspace tests / Tests (macOS)")' 2>/dev/null || echo "{}")
-          MAC_STATUS=$(echo "$MAC_JOB" | jq -r '.status // "unknown"')
-          MAC_CONCLUSION=$(echo "$MAC_JOB" | jq -r '.conclusion // ""')
-          echo "mac-status=$MAC_STATUS" >> "$GITHUB_OUTPUT"
-          if [ "$MAC_STATUS" = "in_progress" ]; then
-            echo "Mac runner picked up the job — skipping Ubuntu fallback"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          elif [ "$MAC_STATUS" = "completed" ] && [ "$MAC_CONCLUSION" = "failure" ]; then
-            echo "Mac runner already failed — failing Ubuntu fallback too"
-            exit 1
-          else
-            echo "Mac runner not available (status: $MAC_STATUS) — running on Ubuntu"
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Check out repo
-        if: steps.check-mac.outputs.skip == 'false'
-        uses: actions/checkout@v4
-
-      - name: Strip cdylib crate-types (incompatible with static rocksdb)
-        if: steps.check-mac.outputs.skip == 'false'
-        run: |
-          sed -i 's/\["cdylib", "rlib"\]/["rlib"]/' packages/rs-sdk/Cargo.toml packages/wasm-drive-verify/Cargo.toml
-          sed -i 's/\["cdylib", "lib"\]/["lib"]/' packages/wasm-dpp2/Cargo.toml
-          sed -i 's/\["cdylib"\]/["rlib"]/' packages/wasm-sdk/Cargo.toml
-          sed -i 's/\["staticlib", "cdylib", "rlib"\]/["staticlib", "rlib"]/g' packages/rs-sdk-ffi/Cargo.toml packages/rs-platform-wallet-ffi/Cargo.toml
-
-      - name: Setup Rust
-        if: steps.check-mac.outputs.skip == 'false'
-        uses: ./.github/actions/rust
-        with:
-          components: rustfmt, clippy
-
-      - name: Setup sccache
-        if: steps.check-mac.outputs.skip == 'false'
-        uses: ./.github/actions/sccache
-        with:
-          bucket: ${{ vars.CACHE_S3_BUCKET }}
-          region: ${{ vars.CACHE_REGION }}
-          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
-          access_key_id: ${{ secrets.CACHE_KEY_ID }}
-          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
-
-      - name: Install librocksdb
-        if: steps.check-mac.outputs.skip == 'false'
-        uses: ./.github/actions/librocksdb
-
-      - name: Check formatting
-        if: steps.check-mac.outputs.skip == 'false'
-        run: cargo fmt --check --all
-
-      - name: Clippy lints
-        if: steps.check-mac.outputs.skip == 'false'
-        run: |
-          cargo clippy \
-            --workspace \
-            --all-features \
-            --locked \
-            -- --no-deps -D warnings
-        env:
-          CARGO_INCREMENTAL: "0"
-          CARGO_PROFILE_DEV_DEBUG: "0"
-          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
-          ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
-          ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
-          SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
-          SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
-
-      - name: Find unused dependencies
-        if: steps.check-mac.outputs.skip == 'false'
-        run: |
-          cargo install cargo-machete 2>/dev/null || true
-          cargo machete
-        env:
-          ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
-          ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
-          SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
-          SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
-
-      - name: Detect immutable structure changes
-        if: steps.check-mac.outputs.skip == 'false' && github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          CHANGED_RS=$(gh pr view ${{ github.event.pull_request.number }} --json files --jq '[.files[].path] | map(select(test("\\.rs$"))) | .[]')
-          if [ -z "$CHANGED_RS" ]; then
-            echo "No .rs files changed — skipping"
-            exit 0
-          fi
-
-          # Brace-aware extractor: captures from @tag through the matching closing brace
-          extract_tagged_block() {
-            local tag="$1"
-            awk -v tag="$tag" '
-              $0 ~ tag { found=1; depth=0 }
-              found {
-                for (i=1; i<=length($0); i++) {
-                  c = substr($0,i,1)
-                  if (c == "{") depth++
-                  if (c == "}") depth--
-                }
-                print
-                if (found && depth <= 0 && index($0, "}")) { found=0 }
-              }
-            '
-          }
-
-          git fetch origin ${{ github.event.pull_request.base.ref }} --depth=1
-          for file in $CHANGED_RS; do
-            if [ ! -f "$file" ]; then continue; fi
-            BASE_CONTENT=$(git show origin/${{ github.event.pull_request.base.ref }}:"$file" 2>/dev/null || true)
-            if [ -z "$BASE_CONTENT" ]; then continue; fi
-
-            BASE_APPEND=$(echo "$BASE_CONTENT" | extract_tagged_block "@append_only")
-            PR_APPEND=$(extract_tagged_block "@append_only" < "$file")
-            BASE_IMMUTABLE=$(echo "$BASE_CONTENT" | extract_tagged_block "@immutable")
-            PR_IMMUTABLE=$(extract_tagged_block "@immutable" < "$file")
-
-            if [ -n "$BASE_APPEND" ]; then
-              DELETIONS=$(diff <(echo "$BASE_APPEND") <(echo "$PR_APPEND") | grep "^<" | grep -v "@append_only" | grep -v "^< *$" | grep -v "^< *///" | grep -v "^< *//" || true)
-              if [ -n "$DELETIONS" ]; then
-                echo "Deletions detected in @append_only structures in $file"
-                echo "$DELETIONS"
-                exit 1
-              fi
-            fi
-            if [ -n "$BASE_IMMUTABLE" ]; then
-              CHANGES=$(diff <(echo "$BASE_IMMUTABLE") <(echo "$PR_IMMUTABLE") | grep -E "^[<>]" | grep -v "^[<>] *$" | grep -v "^[<>] *///" | grep -v "^[<>] *//" | grep -v "@immutable" || true)
-              if [ -n "$CHANGES" ]; then
-                echo "Code changes detected in @immutable structures in $file"
-                echo "$CHANGES"
-                exit 1
-              fi
-            fi
-          done
-          echo "No immutable/append_only structure violations found"

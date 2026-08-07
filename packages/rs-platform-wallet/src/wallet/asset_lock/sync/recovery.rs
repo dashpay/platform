@@ -86,11 +86,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             // it (no proof was provided). Otherwise the proof we
             // already have determines the status without a lookup.
             if proof.is_none() {
-                info.core_wallet
-                    .accounts
-                    .standard_bip44_accounts
-                    .get(&account_index)
-                    .and_then(|a| a.transactions().get(&out_point.txid).cloned())
+                super::proof::funding_tx_record(
+                    &info.core_wallet.accounts,
+                    account_index,
+                    &out_point.txid,
+                )
             } else {
                 None
             }
@@ -601,7 +601,7 @@ mod tests {
     use crate::test_support::{funded_wallet_manager, AlwaysRejectedBroadcaster};
     use crate::wallet::asset_lock::manager::AssetLockManager;
     use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
-    use crate::wallet::core::WalletBalance;
+    use crate::wallet::core::WalletGeneration;
     use crate::wallet::identity::IdentityManager;
     use crate::wallet::persister::WalletPersister;
     use crate::wallet::platform_wallet::PlatformWalletInfo;
@@ -874,7 +874,7 @@ mod tests {
         let restored_wallet = Wallet::new_external_signable(Network::Testnet, wallet_id, accounts);
         let mut restored_info = PlatformWalletInfo {
             core_wallet: ManagedWalletInfo::from_wallet(&restored_wallet, 0),
-            balance: Arc::new(WalletBalance::new()),
+            generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
         };

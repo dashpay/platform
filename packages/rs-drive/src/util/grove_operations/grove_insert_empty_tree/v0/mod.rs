@@ -1,4 +1,5 @@
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::push_drive_operation_result;
@@ -37,6 +38,23 @@ impl Drive {
             TreeType::BulkAppendTree(chunk_power) => Element::empty_bulk_append_tree(chunk_power)?,
             TreeType::DenseAppendOnlyFixedSizeTree(chunk_power) => {
                 Element::empty_dense_tree(chunk_power)
+            }
+            // Single-axis indexed trees carry no axis list on the element, so
+            // `TreeType` fully describes them. See the matching arms in
+            // `fees::op`'s `empty_tree_operation_for_known_path_key`.
+            TreeType::ProvableSumIndexedTree => Element::empty_provable_sum_indexed_tree(),
+            TreeType::ProvableCountIndexedTree => Element::empty_provable_count_indexed_tree(),
+            // The multi-axis variant's axes TLV is not carried by `TreeType`,
+            // so this generic path cannot describe the `Element` to insert.
+            // Ranked index creation uses the axis-taking helpers instead
+            // (`batch_insert_empty_provable_count_provable_sum_indexed_tree`).
+            TreeType::ProvableCountProvableSumIndexedTree => {
+                return Err(Error::Drive(DriveError::NotSupported(
+                    "grove_insert_empty_tree cannot create a \
+                     ProvableCountProvableSumIndexedTree — the ranked axis set is not carried \
+                     by TreeType; use \
+                     batch_insert_empty_provable_count_provable_sum_indexed_tree instead.",
+                )))
             }
         };
         let cost_context = self.grove.insert(

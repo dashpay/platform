@@ -64,6 +64,9 @@ impl Index {
             range_countable: false,
             summable: None,
             range_summable: false,
+            ranked_countable: false,
+            ranked_summable: false,
+            ranked_averageable: false,
         })
     }
 }

@@ -410,12 +410,13 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// reports per-worker terminal status.
     pub(super) registry: Arc<ThreadRegistry<WalletWorker>>,
     /// Host-visible hard sync-fault latch (dashpay/platform#4069). Set
-    /// (and never cleared) by the wallet-event adapter the first time it
-    /// freezes a durable watermark after a persistence `store()` rejection
-    /// or a dropped-event broadcast lag. Poll via
-    /// [`Self::sync_fault_detected`] to surface a "verification failed /
-    /// rescan pending" state rather than re-freezing silently on the next
-    /// launch.
+    /// (and never cleared for this manager instance's lifetime) by the
+    /// wallet-event adapter the first time it freezes a durable watermark
+    /// after a persistence `store()` rejection — the one remaining fault
+    /// trigger; the lossless persistence channel cannot drop or lag events.
+    /// Poll via [`Self::sync_fault_detected`] to surface a "verification
+    /// failed / rescan pending" state rather than re-freezing silently on
+    /// the next launch.
     pub(super) sync_fault: Arc<std::sync::atomic::AtomicBool>,
     /// Serializes whole-wallet **lifecycle transitions** — registration
     /// ([`register_wallet`](Self::register_wallet)), hydration
@@ -494,15 +495,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         persister: Arc<P>,
         app_handler: Arc<dyn PlatformEventHandler>,
     ) -> Self {
-        // Subscribe to the wallet-event broadcast BEFORE the manager is
-        // wrapped in the shared `Arc<RwLock>` and handed to any producer,
-        // so no event emitted during startup is lost without a `Lagged`
-        // marker (a `broadcast::Receiver` only sees messages sent after its
-        // `subscribe()` — see `run_wallet_event_adapter`'s
-        // subscribe-before-publish note). The receiver is created here,
-        // synchronously, and moved into the adapter task below.
-        let wallet_manager_inner = WalletManager::new(sdk.network);
-        let event_receiver = wallet_manager_inner.subscribe_events();
+        // Take the manager's lossless, unbounded persistence receiver BEFORE
+        // the manager is wrapped in the shared `Arc<RwLock>` and handed to any
+        // producer. Unlike the old broadcast subscription, an
+        // `mpsc::UnboundedReceiver` buffers events emitted during startup
+        // rather than dropping them, so there is no subscribe-before-publish
+        // race and — being unbounded — it can never `Lagged` and freeze the
+        // durable sync watermark (dashpay/platform#4069). The receiver is
+        // taken here, once, and moved into the adapter task below.
+        let mut wallet_manager_inner = WalletManager::new(sdk.network);
+        let event_receiver = wallet_manager_inner
+            .take_persistence_receiver()
+            .expect("persistence receiver is available exactly once on a fresh WalletManager");
         let wallet_manager = Arc::new(RwLock::new(wallet_manager_inner));
         let wallets = Arc::new(RwLock::new(std::collections::BTreeMap::new()));
         let lock_notify = Arc::new(Notify::new());
@@ -650,13 +654,16 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     }
 
     /// Whether the wallet-event adapter has frozen a durable sync
-    /// watermark this session (dashpay/platform#4069).
+    /// watermark this manager's lifetime (dashpay/platform#4069).
     ///
-    /// Returns `true` once — and stays `true` for the manager's lifetime
-    /// — after the adapter drops record-bearing events (a broadcast lag)
-    /// or a persistence `store()` is rejected, meaning the persisted
-    /// `syncedHeight` is deliberately held behind the chain tip and a
-    /// rescan is pending on the next launch. Integrators poll this to
+    /// Returns `true` once — and stays `true` for THIS manager instance's
+    /// lifetime (a destroyed-and-recreated manager starts unlatched) —
+    /// after a persistence `store()` was rejected, the one remaining fault
+    /// trigger: the lossless persistence channel cannot drop or lag events,
+    /// so the old broadcast-lag trigger no longer exists. A latch means the
+    /// persisted `syncedHeight` is deliberately held behind the chain tip
+    /// for the affected wallet and a rescan is pending on the next launch.
+    /// Integrators poll this to
     /// surface a hard "verification failed / rescan pending" state instead
     /// of the fault being visible only in error logs. It is intentionally
     /// a coarse, latch-once, all-or-nothing signal (the per-wallet vs.

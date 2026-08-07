@@ -227,6 +227,14 @@ import kotlinx.serialization.Serializable
 /** Hidden established-contacts list (← `HiddenContactsView.swift`). */
 @Serializable data class DashPayHidden(val ownerIdentityIdHex: String)
 
+/**
+ * Sent-invitations list (← `InvitationsView.swift`); hosts create/reclaim.
+ * [activeIdentityIdHex] carries the DashPay tab's active identity so the
+ * create sheet funds from — and advertises — the identity the user actually
+ * selected, not an arbitrary first row; null when the tab had none.
+ */
+@Serializable data class DashPayInvitations(val activeIdentityIdHex: String?)
+
 // ── Contracts graph ────────────────────────────────────────────────────
 
 /** Fetch-a-contract screen (← `LocalDataContractsView.swift`). */

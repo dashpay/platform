@@ -20,14 +20,23 @@ use crate::version::drive_versions::{
     DriveProveMethodVersions, DriveSavedBlockTransactionsMethodVersions,
     DriveSystemEstimationCostsMethodVersions, DriveVersion,
 };
-use grovedb_version::version::v3::GROVE_V3;
+use grovedb_version::version::v4::GROVE_V4;
 
 /// Drive version 9.
-/// Introduced in protocol v14 for the shared-prefix aggregate index fix:
-/// `DRIVE_DOCUMENT_METHOD_VERSIONS_V4` bumps the four index walkers to v2
-/// (and the document update walker to v1) so contracts that pair an
-/// aggregating (countable / summable) index with a compound index sharing
-/// its leading property can insert, update, and delete documents.
+/// Introduced in protocol v14, carrying both of v14's drive-side changes:
+///
+/// * **Shared-prefix aggregate index fix** —
+///   `DRIVE_DOCUMENT_METHOD_VERSIONS_V4` bumps the four index walkers to v2
+///   (and the document update walker to v1) so contracts that pair an
+///   aggregating (countable / summable) index with a compound index sharing
+///   its leading property can insert, update, and delete documents.
+/// * **Contract-level ranked aggregates** — the same V4 table adds the
+///   `detect_ranked_mode` routing slot, `grove_methods.batch` gains the
+///   three indexed-tree creation slots, and `methods.verify` gains
+///   `document_ranked.verify_ranked_top_k_proof`. All are 0 at
+///   introduction; the ranked grammar itself is gated one layer up by
+///   `CONTRACT_VERSIONS_V6`'s meta schema v3.
+///
 /// Everything else matches `DRIVE_VERSION_V8`.
 pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
     structure: DRIVE_STRUCTURE_V1,
@@ -57,7 +66,7 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
             remove_from_system_credits_operations: 0,
             calculate_total_credits_balance: 2, // ShieldedBalances root tree adds a fifth term to the equation
         },
-        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V4, // changed in v9: v2 index walkers + v1 update walker — shared-prefix aggregate indexes become insertable
+        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V4, // changed in v9: v2 index walkers + v1 update walker (shared-prefix aggregate indexes become insertable) and the detect_ranked_mode slot
         vote: DRIVE_VOTE_METHOD_VERSIONS_V2,
         contract: DRIVE_CONTRACT_METHOD_VERSIONS_V3, // changed in v8: count-tree-aware contract-insertion cost estimation (v12+ countable/range_countable doctypes)
         fees: DriveFeesMethodVersions { calculate_fee: 0 },
@@ -133,5 +142,11 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
         },
     },
     grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V1,
-    grove_version: GROVE_V3, // changed in v7: upgraded for shielded transaction support
+    // changed in v9: GROVE_V4 activates the indexed-tree batch cleanup
+    // gates (overwrite inspection + delete-tree actual-type cleanup).
+    // Indexed trees only exist from protocol v14, so activating the
+    // stricter cleanup with them costs older versions nothing; staying
+    // on V3 would let a batch overwrite of a ranked index orphan its
+    // per-axis secondary storage.
+    grove_version: GROVE_V4,
 };

@@ -55,9 +55,10 @@ class KeystoreSignerInstrumentedTest {
 
             // The DataStore entry still exists after a Keystore replacement,
             // but the replacement private key can never decrypt it. Capability
-            // must describe signability, not mere ciphertext presence.
+            // must describe signability, not mere ciphertext presence. The
+            // default-policy storage writes under KEYS_ALIAS_AUTH_GATED.
             val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-            keyStore.deleteEntry(KeystoreManager.KEYS_ALIAS)
+            keyStore.deleteEntry(KeystoreManager.KEYS_ALIAS_AUTH_GATED)
 
             assertFalse(signer.canSignWith(publicKey, keyType = 0))
         }

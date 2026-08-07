@@ -182,6 +182,24 @@ class PlatformWalletManager(
         require(network == sdk.network) {
             "PlatformWalletManager is network-locked: network=$network but sdk.network=${sdk.network}"
         }
+        // One-time honesty log for the lockless-device identity-key policy
+        // degradation (dashpay/platform#4060): if the requested AUTH_GATED
+        // policy is effectively DEVICE_BOUND (no secure lock screen), say so
+        // once, loudly, at manager construction. Best-effort — the probe
+        // touches KeyguardManager/AndroidKeyStore, which may be absent in
+        // JVM test fixtures.
+        runCatching {
+            val requested = walletStorage.keySecurityPolicy
+            val effective = walletStorage.effectiveKeySecurityPolicy()
+            if (effective != requested) {
+                android.util.Log.w(
+                    "PlatformWalletManager",
+                    "identity-key security policy degraded: requested=$requested " +
+                        "effective=$effective (no secure lock screen; new keys use the " +
+                        "device-bound alias — dashpay/platform#4060)",
+                )
+            }
+        }
     }
 
     // ── Reactive plumbing ─────────────────────────────────────────────
@@ -358,6 +376,50 @@ class PlatformWalletManager(
                 .also { mnemonicResolver = it }
             val keySigner = KeystoreSigner(
                 walletStorage, network, biometricGate, database.platformAddressDao(),
+                // Durable invalidation bookkeeping (#4060 round-2 finding 3):
+                // a sign-time KeyPermanentlyInvalidatedException nulls the
+                // Room rows' keychain identifier and re-seeds
+                // pendingIdentityKeys, making repair reachable even for
+                // legacy-alias keys the cheap capability check can never see
+                // as broken. `persistenceHandler` resolves through
+                // coreChildren AFTER construction completes — the lambda only
+                // runs on later sign attempts, never during this block.
+                onSigningKeyInvalidated = { pubkeyHex ->
+                    try {
+                        persistenceHandler.recordSigningKeyInvalidated(pubkeyHex) {
+                            walletStorage.isPrivateKeyDecryptable(it)
+                        }
+                    } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
+                        // NEVER swallow structured-concurrency cancellation —
+                        // rethrow so a teardown of the signer's IO scope
+                        // propagates instead of being masked as a benign
+                        // bookkeeping miss.
+                        throw cancellation
+                    } catch (t: Throwable) {
+                        // Do NOT fail open (dashpay/platform#4183 review): the
+                        // durable invalidation bookkeeping (null the row's
+                        // keychain identifier + re-seed pendingIdentityKeys)
+                        // did NOT complete, so the repair signal is not yet
+                        // persisted. The sign still fails with the typed code
+                        // 31, but swallowing this silently would leave the key
+                        // looking healthy on the next launch. Surface it loudly
+                        // and rethrow so the signer's own best-effort guard —
+                        // not this bookkeeping lambda — is the single place
+                        // that decides bookkeeping failure is non-fatal to the
+                        // completion; the repair stays retryable (the durable
+                        // rows were not cleared, and the next sign attempt / the
+                        // next loadPersistedWallets reconstruction re-runs it).
+                        android.util.Log.e(
+                            "PlatformWalletManager",
+                            "durable sign-time invalidation bookkeeping FAILED for key " +
+                                "${pubkeyHex.take(16)}… — the pending-repair signal is not yet " +
+                                "persisted; it will be retried on the next sign attempt or the " +
+                                "next launch's pending-key reconstruction",
+                            t,
+                        )
+                        throw t
+                    }
+                },
             ).also { signer = it }
             val deriver = IdentityKeyPrivateKeyDeriver(
                 network = network,
@@ -402,6 +464,17 @@ class PlatformWalletManager(
     private val identityKeyDeriver get() = coreChildren.identityKeyDeriver
     private val persistenceHandler get() = coreChildren.persistenceHandler
 
+    /**
+     * Identity keys whose private half could not be derived/stored during
+     * persistence (keyed by public-key hex) — the queryable "keys pending"
+     * state of dashpay/platform#4053. Such keys were persisted watch-only
+     * and cannot sign; repair via [repairIdentityKey]. Empty in the healthy
+     * case.
+     */
+    val pendingIdentityKeys:
+        kotlinx.coroutines.flow.StateFlow<Map<String, PlatformWalletPersistenceHandler.PendingIdentityKey>>
+        get() = persistenceHandler.pendingIdentityKeys
+
     /** `MnemonicResolverHandle` for FFI calls that derive from a stored mnemonic. */
     val mnemonicResolverHandle: Long get() = mnemonicResolver.nativeHandle
 
@@ -409,39 +482,75 @@ class PlatformWalletManager(
     val signerHandle: Long get() = signer.nativeHandle
 
     /**
-     * Re-derive the canonical identity-authentication private key at
-     * `(identityIndex, keyIndex)` from this wallet's mnemonic and re-encrypt
-     * it into [walletStorage] under [publicKeyData]'s hex — the repair action
-     * behind `WalletKeyHealthSheet` (port of the iOS re-derive path in
-     * `WalletKeyHealthSheet.swift`, which calls
-     * `deriveIdentityAuthKeyAtSlot`).
+     * Re-derive the canonical identity-authentication private key for
+     * [publicKeyData] from this wallet's mnemonic and re-encrypt it into
+     * [walletStorage] under its hex — the repair action behind
+     * `WalletKeyHealthSheet` (port of the iOS re-derive path in
+     * `WalletKeyHealthSheet.swift`, which calls `deriveIdentityAuthKeyAtSlot`).
      *
-     * The whole `mnemonic → seed → path → key` derivation runs in Rust via
-     * the resolver-keyed FFI ([IdentityKeyPrivateKeyDeriver], the CLAUDE.md
-     * "one allowed exception"); Kotlin only encrypts the returned scalar.
-     * Returns the recorded storage identifier (e.g. `privkey.<pubkeyHex>`),
-     * or throws on a derivation / storage failure.
+     * The derivation slot is read from the PERSISTED `public_keys` row's
+     * derivation breadcrumbs — NEVER from a caller-supplied key id
+     * (dashpay/platform#4060 blocker 1): a wrong index derives a DIFFERENT
+     * valid scalar that round-trips through encrypt/decrypt fine and would
+     * persist an unusable key. The whole `mnemonic → seed → path → key`
+     * derivation runs in Rust via the resolver-keyed FFI
+     * ([IdentityKeyPrivateKeyDeriver], the CLAUDE.md "one allowed exception");
+     * Kotlin only encrypts the returned scalar. Returns the recorded storage
+     * identifier (e.g. `privkey.<pubkeyHex>`), or throws on a
+     * derivation / verification failure.
+     *
+     * FORCE-replaces the stored entry (never trusts the shape+fingerprint
+     * usability short-circuit), but first VERIFIES the derived PUBLIC key
+     * equals [publicKeyData] BEFORE persisting — a mismatched slot fails the
+     * repair without storing anything or clearing pending. After the store it
+     * VERIFIES the blob with the real-decrypt probe
+     * ([WalletStorage.probeIdentityKeyRecoverability]); a blob that does not
+     * actually decrypt fails the repair with a typed
+     * [DashSdkError.PlatformWallet.SigningKeyUnavailable].
+     *
+     * Only after both verifications is the key dropped from
+     * [pendingIdentityKeys] and the Room rows' `privateKeyKeychainIdentifier`
+     * updated so the durable pending-repair reconstruction does not resurrect
+     * the key. The full orchestration lives in
+     * [PlatformWalletPersistenceHandler.repairIdentityKeyDurably] (this
+     * manager cannot be constructed on the JVM; the handler is unit-testable).
      */
     suspend fun repairIdentityKey(
         walletId: ByteArray,
         publicKeyData: ByteArray,
-        identityIndex: Int,
-        keyIndex: Int,
     ): String? = teardownGate.op {
-        require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
-        require(keyIndex >= 0) { "keyIndex must be non-negative, got $keyIndex" }
+        // The whole repair — read the PERSISTED derivation breadcrumbs,
+        // force-re-derive, verify the derived public key matches
+        // [publicKeyData] before persisting, verify the stored blob decrypts,
+        // durably record the identifier, and only then clear pending — lives
+        // in the persistence handler ([repairIdentityKeyDurably]) so it is
+        // unit-testable (this manager cannot be constructed on the JVM) and
+        // shares the handler's authoritative pending-key state. The manager
+        // only supplies the wallet-scoped collaborators: the resolver-keyed
+        // deriver (already wired into the handler) and the real-decrypt probe.
+        //
         // deriveAndStore is a synchronous JNI call keyed on the manager's
-        // resolver handle — the gate keeps teardown from freeing it
-        // mid-derive (callers run on their own Compose scopes). It only
-        // skips the actual re-derive when the stored scalar is already
-        // decryptable — exactly the case a health-sheet repair is invoked
-        // for (an undecryptable legacy blob) is NOT skipped.
-        identityKeyDeriver.deriveAndStore(
+        // resolver handle — the teardownGate keeps teardown from freeing it
+        // mid-derive (callers run on their own Compose scopes).
+        //
+        // NB (dashpay/platform#4060 blocker 1): the derivation indices are NOT
+        // caller-supplied — a caller passing the DPP key id would derive a
+        // different valid scalar that round-trips fine and persists an
+        // unusable key. They come from the row's derivation breadcrumbs, and
+        // the derived public key is checked against [publicKeyData] before any
+        // store.
+        persistenceHandler.repairIdentityKeyDurably(
             walletId = walletId,
             publicKeyData = publicKeyData,
-            identityIndex = identityIndex,
-            keyIndex = keyIndex,
-        )?.identifier
+            verifyRecoverable = { pubkeyHex ->
+                // UserNotAuthenticatedException counts as verified inside the
+                // probe (key present, opens after auth — this manager holds no
+                // BiometricGate on this path, and the just-written fingerprint
+                // rules out the wrong-key-behind-locked-gate ambiguity because
+                // the blob was written under the captured public key).
+                walletStorage.probeIdentityKeyRecoverability(pubkeyHex)
+            },
+        )
     }
 
     /**
@@ -914,6 +1023,32 @@ class PlatformWalletManager(
     suspend fun loadPersistedWallets(): List<ManagedPlatformWallet> = withContext(Dispatchers.IO) {
         mapNativeErrors { WalletManagerNative.loadFromPersistor(managerHandle) }
 
+        // Rebuild the durable "keys pending repair" state before the manager
+        // is handed to the host (dashpay/platform#4060 finding 5): rows with
+        // derivation breadcrumbs whose private half is missing or fails the
+        // CHEAP capability check re-seed pendingIdentityKeys, so a repair
+        // signal recorded before a process death (or a blob stranded by a
+        // Keystore keypair replacement) resurfaces on every launch.
+        try {
+            persistenceHandler.reconstructPendingIdentityKeysFromPersistence(
+                isPrivateKeyDecryptable = { walletStorage.isPrivateKeyDecryptable(it) },
+            )
+        } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
+            // NEVER swallow structured-concurrency cancellation from the
+            // suspend reconstruction — rethrow so a cancelled load propagates
+            // (dashpay/platform#4183 review). A best-effort reconstruction
+            // failure is fine to absorb (the repair signal reconstructs on the
+            // next launch), but cancellation must not be masked.
+            throw cancellation
+        } catch (t: Throwable) {
+            android.util.Log.w(
+                "PlatformWalletManager",
+                "pending-identity-key reconstruction failed on load; repair signals will be " +
+                    "rebuilt on the next launch",
+                t,
+            )
+        }
+
         // Room is the source of truth for the restorable id list — the same
         // rows the load callback just fed to Rust. Scope to THIS network so
         // a per-network manager only restores its own wallets (matching the
@@ -983,6 +1118,24 @@ class PlatformWalletManager(
 
     suspend fun isPlatformAddressSyncRunning(): Boolean = withContext(Dispatchers.IO) {
         mapNativeErrors { WalletManagerNative.platformAddressSyncIsRunning(managerHandle) }
+    }
+
+    /**
+     * Whether the native manager has frozen its durable sync watermark this
+     * session (dashpay/platform#4069). `true` means the wallet-event adapter
+     * had a persistence `store()` rejected — the one remaining fault trigger;
+     * the lossless persistence channel cannot drop or lag events —
+     * so the persisted `syncedHeight` is deliberately held behind the chain
+     * tip and a rescan is pending on the next launch. Poll this to surface a
+     * hard "verification failed / rescan pending" state instead of leaving
+     * the fault visible only in the error logs.
+     *
+     * The flag latches: once `true` it stays `true` for this manager
+     * instance's lifetime (a destroyed-and-recreated manager — e.g. a network
+     * switch through WalletManagerStore — starts unlatched).
+     */
+    suspend fun syncFaultDetected(): Boolean = withContext(Dispatchers.IO) {
+        mapNativeErrors { WalletManagerNative.syncFaultDetected(managerHandle) }
     }
 
     /**
@@ -1643,7 +1796,8 @@ class PlatformWalletManager(
      * its next tick; a stopped loop observes it on next start. Equal/forward
      * heights are harmless no-ops for scan purposes. If the process dies
      * before the loop consumes and persists progress, the user must reissue
-     * the request. Unknown wallets surface as typed [DashSdkError.NotFound].
+     * the request. Unknown wallets surface as typed
+     * [DashSdkError.PlatformWallet.NotFound] (native code 98).
      */
     suspend fun rescanSpvFilters(walletId: ByteArray, fromHeight: Int) =
         withContext(Dispatchers.IO) {

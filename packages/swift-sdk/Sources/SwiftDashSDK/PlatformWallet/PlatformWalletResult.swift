@@ -76,6 +76,61 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// (Not returned by `destroy`: Rust owns the callback contexts, so a
     /// straggling worker is memory-safe and merely logged there.)
     case errorShutdownIncomplete = 27
+    /// A state transition could not be signed because the signer has no
+    /// usable private key for the requested public key — restored from the
+    /// structured signer completion code (dashpay/platform#4060 finding 7).
+    /// Route to key repair; not retryable as-is.
+    ///
+    /// Also produced with no signer round-trip by
+    /// `ManagedCoreWallet.signMessage`, for a message-signing address this
+    /// wallet does not own — or owns only watch-only, a DashPay *external*
+    /// account holding a contact's addresses.
+    case errorSigningKeyUnavailable = 31
+    // Codes 27-33 are claimed outside this PR and must not be reused here:
+    // 27 errorShutdownIncomplete (dashpay/platform#4268, merged), 29
+    // errorAssetLockInsufficientFunds (#4184), 31 errorSigningKeyUnavailable
+    // (#4183/#4259), 32 errorTransactionBuild (#4247/#4256), 33
+    // errorTransactionSigning (#4256); 28 and 30 are free. The deferred-token
+    // trio therefore occupies the contiguous block 34-36. These raw values
+    // MUST match `PlatformWalletFFIResultCode` in
+    // packages/rs-platform-wallet-ffi/src/error.rs — there is no compile-time
+    // check across the ABI. See ERROR_CODE_REGISTRY.md (#4261).
+    /// A deferred (BIP70/BIP270) reservation token has outlived its funding
+    /// reservation's lifetime: key-wallet's TTL may already have swept and
+    /// re-selected the inputs, so acting on it could touch a newer, unrelated
+    /// reservation. The call did NOT touch the network. NOT retryable in place —
+    /// rebuild the payment.
+    case errorStaleReservationToken = 34
+    /// A deferred reservation token is unknown, already broadcast, or already
+    /// released — the guard that turns a double-broadcast (or a broadcast after
+    /// release) into a typed error instead of a second send. The call did NOT
+    /// touch the network. NOT retryable: rebuild the payment. (Release is
+    /// idempotent and never surfaces this.)
+    case errorReservationTokenConsumed = 35
+    /// A deferred reservation token was minted against a different wallet
+    /// *generation* than the one broadcasting it (e.g. a wallet re-created under
+    /// the same id); its reservation lives in that other generation's reservation
+    /// set. The call did NOT touch the network and did NOT consume the rightful
+    /// owner's token. NOT retryable through this handle: rebuild the payment.
+    case errorReservationWalletMismatch = 36
+    /// The named thing does not exist. Besides the handle/lookup failures this
+    /// has always covered, BOTH deferred-send paths report the
+    /// wallet-was-REMOVED case here.
+    ///
+    /// Deferred (BIP70/BIP270) *token* path: a signed-payment broadcast refuses
+    /// a token whose wallet is no longer registered in the manager, and a
+    /// signed-payment finalize refuses to register a payment whose wallet was
+    /// removed while it was being signed.
+    ///
+    /// Finalized-transaction *handle* path: `finalizeAtomic` publishes no
+    /// handle when the wallet was removed or re-created during signing, and
+    /// `broadcastTransactionWithOutcome(_: FinalizedCoreTransaction)` refuses a
+    /// handle whose generation is gone.
+    ///
+    /// Every one of these reconciles the build's UTXO reservation before
+    /// returning. Distinct from `errorReservationWalletMismatch` (36), where a
+    /// *different* live generation answers to the same id. The call did NOT touch
+    /// the network and is NOT retryable — the wallet is gone.
     case notFound = 98
     case errorUnknown = 99
 
@@ -137,6 +192,14 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorTransactionBroadcastRejected
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHUTDOWN_INCOMPLETE:
             self = .errorShutdownIncomplete
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SIGNING_KEY_UNAVAILABLE:
+            self = .errorSigningKeyUnavailable
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_STALE_RESERVATION_TOKEN:
+            self = .errorStaleReservationToken
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_RESERVATION_TOKEN_CONSUMED:
+            self = .errorReservationTokenConsumed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_RESERVATION_WALLET_MISMATCH:
+            self = .errorReservationWalletMismatch
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -263,6 +326,38 @@ public enum PlatformWalletError: LocalizedError {
     /// sync pass still in flight. The operation failed closed — retry once
     /// sync is idle.
     case shutdownIncomplete(String)
+    /// The signer has no usable private key for the requested public key
+    /// (missing / stranded scalar) — the operation itself did not fail.
+    /// Restored from the structured signer completion code
+    /// (dashpay/platform#4060 finding 7); route to key repair. Kotlin
+    /// parity: `DashSdkError.PlatformWallet.SigningKeyUnavailable`.
+    ///
+    /// `signMessage` also raises it for an address the wallet does not own.
+    /// Distinct from `invalidParameter`, which means the address itself is
+    /// unusable (unparseable, wrong network, or not P2PKH).
+    case signingKeyUnavailable(String)
+    /// A deferred (BIP70/BIP270) reservation token has outlived its funding
+    /// reservation's lifetime — key-wallet's TTL may already have swept and
+    /// re-selected the inputs. Nothing was broadcast. NOT retryable in place;
+    /// rebuild the payment. Sibling of `reservationTokenConsumed` and
+    /// `reservationWalletMismatch`, which this code used to conflate.
+    case staleReservationToken(String)
+    /// A deferred reservation token is unknown, already broadcast, or already
+    /// released — the double-broadcast guard. Nothing was broadcast. NOT
+    /// retryable; rebuild the payment.
+    case reservationTokenConsumed(String)
+    /// A deferred reservation token was minted against a different wallet
+    /// generation than the one broadcasting it (e.g. a wallet re-created under
+    /// the same id). Nothing was broadcast and the rightful owner's token was
+    /// not consumed. NOT retryable through this handle; rebuild the payment.
+    case reservationWalletMismatch(String)
+    /// The named thing does not exist. For the deferred payment calls this is
+    /// the wallet-was-REMOVED case: the token's wallet (or the wallet a payment
+    /// was just signed against) is no longer registered in the manager, so there
+    /// is no live generation to act through. Nothing was broadcast; the
+    /// finalize path reconciles the build's reservation before returning. NOT
+    /// retryable — unlike `reservationWalletMismatch`, no other generation holds
+    /// this payment either.
     case notFound(String)
     case unknown(String)
 
@@ -286,6 +381,9 @@ public enum PlatformWalletError: LocalizedError {
              .transactionBroadcastRejected(let m),
              .addressNonceMismatch(let m),
              .shutdownIncomplete(let m),
+             .signingKeyUnavailable(let m),
+             .staleReservationToken(let m), .reservationTokenConsumed(let m),
+             .reservationWalletMismatch(let m),
              .notFound(let m), .unknown(let m):
             return m
         }
@@ -329,6 +427,14 @@ public enum PlatformWalletError: LocalizedError {
             self = .addressNonceMismatch(detail)
         case .errorShutdownIncomplete:
             self = .shutdownIncomplete(detail)
+        case .errorSigningKeyUnavailable:
+            self = .signingKeyUnavailable(detail)
+        case .errorStaleReservationToken:
+            self = .staleReservationToken(detail)
+        case .errorReservationTokenConsumed:
+            self = .reservationTokenConsumed(detail)
+        case .errorReservationWalletMismatch:
+            self = .reservationWalletMismatch(detail)
         case .notFound:               self = .notFound(detail)
         case .errorUnknown:           self = .unknown(detail)
         }

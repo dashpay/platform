@@ -390,6 +390,133 @@ pub unsafe extern "C" fn platform_wallet_manager_masternode_withdraw(
 /// Destroy a PlatformWallet handle.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_destroy(handle: Handle) -> PlatformWalletFFIResult {
-    PLATFORM_WALLET_STORAGE.remove(handle);
+    // Destroying a wrapper alias must NOT touch the deferred-payment registry.
+    //
+    // `platform_wallet_manager_get_wallet` hands out an independent handle for
+    // each alias of a wallet *generation*, but none of those wrappers OWN the
+    // logical wallet — the manager still owns it and can hand out another alias,
+    // `platform_wallet_get_core` yields independently-owned core handles, and
+    // each registry entry pins its own `CoreWallet` (keeping the reservation
+    // live). A registered deferred-payment token is owned by the payment flow
+    // that minted it, NOT by any wrapper handle, so closing or garbage-collecting
+    // the last wrapper must leave the token intact: a later merchant ack has to
+    // remain broadcastable through a retained core handle or a re-acquired alias.
+    //
+    // Token cleanup therefore follows the payment owner (an explicit
+    // broadcast/release) or actual wallet-generation removal
+    // (`platform_wallet_manager_remove_wallet`, which drops the entries because
+    // the reservation ceases to exist with the generation) — never a transient
+    // wrapper-alias count. Dropping this handle just releases its `Arc`s; the
+    // registry entry's own `CoreWallet` clone keeps the generation alive as long
+    // as a token references it. (`dashpay/platform#4185`, blocker 2.)
+    let _ = PLATFORM_WALLET_STORAGE.remove(handle);
     PlatformWalletFFIResult::ok()
+}
+
+#[cfg(test)]
+mod destroy_tests {
+    use super::*;
+    use crate::core_wallet::signed_payment::SIGNED_PAYMENT_REGISTRY;
+    use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
+    use platform_wallet::test_support::test_platform_wallet_manager;
+    use platform_wallet::SignedCoreTransaction;
+
+    fn dummy_tx() -> dashcore::Transaction {
+        dashcore::Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: None,
+        }
+    }
+
+    /// Destroying wrapper alias handles must NEVER invalidate a deferred-payment
+    /// token — not even when the FINAL alias is destroyed. A wrapper handle does
+    /// not own the logical wallet or the registered payment; the token is owned
+    /// by the payment flow that minted it and stays live and actionable until its
+    /// owner broadcasts/releases it or the generation is actually removed
+    /// (`platform_wallet_manager_remove_wallet`). Regression for
+    /// `dashpay/platform#4185` blocker 2: the old final-alias sweep consumed
+    /// independently-owned payments.
+    #[test]
+    fn destroying_wrapper_aliases_never_sweeps_tokens() {
+        // Asserts `outstanding()` DELTAS against a captured baseline, so it must
+        // not run while a sibling test mints or consumes tokens in the same
+        // process-global registry.
+        let _registry = crate::core_wallet::signed_payment::registry_test_guard();
+
+        // Async setup only. `platform_wallet_destroy` and the final `release`
+        // each do their own `runtime().block_on(...)`, exactly as the JNI /
+        // NativeCleaner threads do (never from inside a tokio runtime). Calling
+        // them from within an outer `block_on` would nest runtimes and abort, so
+        // they run on the plain test thread below.
+        let (manager, handle_a, handle_b, token, baseline) = runtime().block_on(async {
+            let (manager, wallet_id) = test_platform_wallet_manager().await;
+
+            // Two independent handles for the SAME logical wallet, exactly as two
+            // `platform_wallet_manager_get_wallet` calls would hand out.
+            let alias_a = manager.get_wallet(&wallet_id).await.expect("alias a");
+            let alias_b = manager.get_wallet(&wallet_id).await.expect("alias b");
+            let core = alias_a.core().clone();
+            let handle_a = PLATFORM_WALLET_STORAGE.insert(alias_a);
+            let handle_b = PLATFORM_WALLET_STORAGE.insert(alias_b);
+
+            // Register a deferred-payment token (the process-global registry is
+            // shared, so reason about deltas against a captured baseline). The
+            // dummy tx reserved nothing (reservation height 0, no funding token) —
+            // this test exercises destroy/ownership, not the age or owner guard.
+            let baseline = SIGNED_PAYMENT_REGISTRY.outstanding();
+            let token = SIGNED_PAYMENT_REGISTRY
+                .register(
+                    core.clone(),
+                    SignedCoreTransaction::new_for_test(
+                        dummy_tx(),
+                        0,
+                        AccountTypePreference::BIP44,
+                        0,
+                        0,
+                        None,
+                        // Bind the finalized payment to this exact wallet
+                        // generation so `register` accepts it (it now validates
+                        // the wallet against the finalizing generation).
+                        core.test_generation_marker(),
+                    ),
+                )
+                .expect("register with the same generation");
+            assert_eq!(SIGNED_PAYMENT_REGISTRY.outstanding(), baseline + 1);
+            (manager, handle_a, handle_b, token, baseline)
+        });
+
+        // Destroy alias A while B is still live → token must survive.
+        let result = unsafe { platform_wallet_destroy(handle_a) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(
+            SIGNED_PAYMENT_REGISTRY.outstanding(),
+            baseline + 1,
+            "a sibling alias's token must survive destroying another alias"
+        );
+
+        // Destroy the FINAL alias B → the token STILL survives: a wrapper alias
+        // does not own the payment, so its destruction must not consume the token.
+        let result = unsafe { platform_wallet_destroy(handle_b) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(
+            SIGNED_PAYMENT_REGISTRY.outstanding(),
+            baseline + 1,
+            "destroying the final wrapper alias must NOT sweep an independently-owned token"
+        );
+
+        // The token is still fully live: its owner can release it even after both
+        // wrappers are gone (the registry entry pinned its own `CoreWallet`).
+        runtime().block_on(SIGNED_PAYMENT_REGISTRY.release(token));
+        assert_eq!(
+            SIGNED_PAYMENT_REGISTRY.outstanding(),
+            baseline,
+            "the payment owner can still release the surviving token"
+        );
+
+        // Keep the manager alive until the end (owns the wallet + adapter).
+        drop(manager);
+    }
 }

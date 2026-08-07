@@ -13,7 +13,7 @@ use key_wallet::bip32::DerivationPath;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::signer::ExtendedPubKeySigner;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::{
-    AssetLockFundingType, CreditOutputFunding,
+    AssetLockFundingAccount, AssetLockFundingType, CreditOutputFunding,
 };
 use key_wallet::wallet::managed_wallet_info::managed_account_operations::ManagedAccountOperations;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -31,6 +31,28 @@ use super::tracked::{AssetLockStatus, TrackedAssetLock};
 // Asset lock transaction building
 // ---------------------------------------------------------------------------
 
+/// Amount semantics of a funded asset-lock build.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AssetLockBuildAmount {
+    /// Lock exactly this many duffs; funding UTXOs are coin-selected and
+    /// change returns to the funding account.
+    Exact(u64),
+    /// Drain the funding account: every final UTXO is consumed and the
+    /// lock value is `Σ inputs − fee`, computed by the key-wallet builder
+    /// (see `build_asset_lock_with_signer`'s drain mode). Required for
+    /// CoinJoin funding, whose accounts have no change semantics.
+    DrainAll {
+        /// Authoritative floor on the drained lock value, checked against
+        /// the BUILT payload before anything is tracked or broadcast — the
+        /// only sound place to enforce it, since the drained value is
+        /// unknowable beforehand (a pre-build balance estimate races
+        /// concurrent reservations and coin-selection filters). An
+        /// undersized build is abandoned with an owner-guarded reservation
+        /// release and nothing reaches the wire. `None` skips the check.
+        minimum_lock_duffs: Option<u64>,
+    },
+}
+
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Build an asset lock transaction using the key-wallet builder.
     ///
@@ -39,6 +61,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// never sees a raw credit-output private key — the returned
     /// `DerivationPath` is what the caller hands back to the same
     /// `signer` when the credit output is later consumed on Platform.
+    ///
+    /// Exact-amount BIP44 form — the historical entry point; the
+    /// funding-parameterized form is
+    /// [`Self::build_asset_lock_transaction_with_funding`].
     ///
     /// # Arguments
     ///
@@ -56,11 +82,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ///   boundary.
     ///
     /// Serialized on [`build_persist_serial`] and refuses on a retired
-    /// manager — see [`build_asset_lock_transaction_locked`] for why the
-    /// check has to happen under that mutex.
+    /// manager — see [`build_asset_lock_transaction_with_funding_locked`]
+    /// for why the check has to happen under that mutex.
     ///
     /// [`build_persist_serial`]: AssetLockManager::build_persist_serial
-    /// [`build_asset_lock_transaction_locked`]: AssetLockManager::build_asset_lock_transaction_locked
+    /// [`build_asset_lock_transaction_with_funding_locked`]:
+    /// AssetLockManager::build_asset_lock_transaction_with_funding_locked
     pub async fn build_asset_lock_transaction<S: ExtendedPubKeySigner>(
         &self,
         amount_duffs: u64,
@@ -69,14 +96,53 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         identity_index: u32,
         signer: &S,
     ) -> Result<(Transaction, DerivationPath), PlatformWalletError> {
+        self.build_asset_lock_transaction_with_funding(
+            AssetLockBuildAmount::Exact(amount_duffs),
+            AssetLockFundingAccount::Bip44 { account_index },
+            funding_type,
+            identity_index,
+            signer,
+        )
+        .await
+        // Historical callers never had the reservation token; the funded
+        // pipeline (`broadcast_funded_asset_lock_with_funding`) threads it.
+        .map(|(tx, path, _token)| (tx, path))
+    }
+
+    /// Funding-parameterized form of [`Self::build_asset_lock_transaction`]:
+    /// `funding_account` picks the account family supplying (and signing)
+    /// the funding UTXOs, and `amount` picks exact-amount vs whole-balance
+    /// drain semantics (see [`AssetLockBuildAmount`]). CoinJoin funding is
+    /// drain-only — the key-wallet builder rejects a non-drain CoinJoin
+    /// build.
+    ///
+    /// Serialized on [`build_persist_serial`](Self::build_persist_serial)
+    /// and refuses on a retired manager. Callers that already hold the
+    /// mutex (the funded broadcast path) must use
+    /// [`build_asset_lock_transaction_with_funding_locked`](Self::build_asset_lock_transaction_with_funding_locked).
+    pub async fn build_asset_lock_transaction_with_funding<S: ExtendedPubKeySigner>(
+        &self,
+        amount: AssetLockBuildAmount,
+        funding_account: AssetLockFundingAccount,
+        funding_type: AssetLockFundingType,
+        identity_index: u32,
+        signer: &S,
+    ) -> Result<
+        (
+            Transaction,
+            DerivationPath,
+            Option<key_wallet::ReservationToken>,
+        ),
+        PlatformWalletError,
+    > {
         // Cheap early-out so an obviously-stale handle fails without
         // queueing behind an unrelated in-flight build.
         self.ensure_active()?;
 
         let build_serial = self.lock_build_persist_serial().await;
-        self.build_asset_lock_transaction_locked(
-            amount_duffs,
-            account_index,
+        self.build_asset_lock_transaction_with_funding_locked(
+            amount,
+            funding_account,
             funding_type,
             identity_index,
             signer,
@@ -85,10 +151,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         .await
     }
 
-    /// [`build_asset_lock_transaction`](Self::build_asset_lock_transaction)
+    /// [`build_asset_lock_transaction_with_funding`](Self::build_asset_lock_transaction_with_funding)
     /// for callers that already hold
     /// [`build_persist_serial`](Self::build_persist_serial) — namely
-    /// [`broadcast_funded_asset_lock`](Self::broadcast_funded_asset_lock),
+    /// [`broadcast_funded_asset_lock_with_funding`](Self::broadcast_funded_asset_lock_with_funding),
     /// which holds it across build→pool-persist so a funding index can
     /// never be allocated and lost. Taking it again here would
     /// self-deadlock, hence the split.
@@ -105,16 +171,33 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// behalf of a wallet the user deleted. Because
     /// [`deactivate`](Self::deactivate) must take this same mutex to
     /// flip the flag, a pass here holds for the whole critical section.
-    pub(super) async fn build_asset_lock_transaction_locked<S: ExtendedPubKeySigner>(
+    pub(super) async fn build_asset_lock_transaction_with_funding_locked<
+        S: ExtendedPubKeySigner,
+    >(
         &self,
-        amount_duffs: u64,
-        account_index: u32,
+        amount: AssetLockBuildAmount,
+        funding_account: AssetLockFundingAccount,
         funding_type: AssetLockFundingType,
         identity_index: u32,
         signer: &S,
         build_serial: &tokio::sync::MutexGuard<'_, ()>,
-    ) -> Result<(Transaction, DerivationPath), PlatformWalletError> {
-        if amount_duffs == 0 {
+    ) -> Result<
+        (
+            Transaction,
+            DerivationPath,
+            Option<key_wallet::ReservationToken>,
+        ),
+        PlatformWalletError,
+    > {
+        let (amount_duffs, drain) = match amount {
+            AssetLockBuildAmount::Exact(v) => (v, false),
+            // The credit-output value is a placeholder — the key-wallet
+            // drain build rewrites it to Σ inputs − fee. The minimum is
+            // enforced by `broadcast_funded_asset_lock_with_funding`
+            // against the built payload.
+            AssetLockBuildAmount::DrainAll { .. } => (0, true),
+        };
+        if amount_duffs == 0 && !drain {
             return Err(PlatformWalletError::AssetLockTransaction(
                 "Amount must be greater than zero".to_string(),
             ));
@@ -164,14 +247,17 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             identity_index,
         };
 
-        // 3. Delegate to the key-wallet signer-driven builder.
+        // 3. Delegate to the key-wallet signer-driven builder with the
+        // caller's funding account + drain semantics (the key-wallet side
+        // enforces that CoinJoin funding is drain-only).
         let result = info
             .core_wallet
             .build_asset_lock_with_signer(
                 wallet,
-                account_index,
+                funding_account,
                 vec![funding],
                 DEFAULT_FEE_PER_KB,
+                drain,
                 signer,
             )
             .await
@@ -205,7 +291,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             }
         };
 
-        Ok((result.transaction, path))
+        Ok((result.transaction, path, result.reservation_token))
     }
 
     /// Peek at the next unused address from a funding account without
@@ -633,17 +719,38 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         identity_index: u32,
         signer: &S,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
+        self.create_funded_asset_lock_proof_with_funding(
+            AssetLockBuildAmount::Exact(amount_duffs),
+            AssetLockFundingAccount::Bip44 { account_index },
+            funding_type,
+            identity_index,
+            signer,
+        )
+        .await
+    }
+
+    /// Funding-parameterized form of [`Self::create_funded_asset_lock_proof`]
+    /// — same build → broadcast → proof pipeline with the account family and
+    /// amount semantics of [`Self::build_asset_lock_transaction_with_funding`].
+    pub async fn create_funded_asset_lock_proof_with_funding<S: ExtendedPubKeySigner>(
+        &self,
+        amount: AssetLockBuildAmount,
+        funding_account: AssetLockFundingAccount,
+        funding_type: AssetLockFundingType,
+        identity_index: u32,
+        signer: &S,
+    ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
         let (path, out_point) = self
-            .broadcast_funded_asset_lock(
-                amount_duffs,
-                account_index,
+            .broadcast_funded_asset_lock_with_funding(
+                amount,
+                funding_account,
                 funding_type,
                 identity_index,
                 signer,
             )
             .await?;
         let proof = self
-            .wait_for_funded_asset_lock_proof(&out_point, account_index)
+            .wait_for_funded_asset_lock_proof(&out_point, funding_account.account_index())
             .await?;
         Ok((proof, path, out_point))
     }
@@ -664,6 +771,25 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         identity_index: u32,
         signer: &S,
     ) -> Result<(DerivationPath, OutPoint), PlatformWalletError> {
+        self.broadcast_funded_asset_lock_with_funding(
+            AssetLockBuildAmount::Exact(amount_duffs),
+            AssetLockFundingAccount::Bip44 { account_index },
+            funding_type,
+            identity_index,
+            signer,
+        )
+        .await
+    }
+
+    /// Funding-parameterized form of [`Self::broadcast_funded_asset_lock`].
+    pub(crate) async fn broadcast_funded_asset_lock_with_funding<S: ExtendedPubKeySigner>(
+        &self,
+        amount: AssetLockBuildAmount,
+        funding_account: AssetLockFundingAccount,
+        funding_type: AssetLockFundingType,
+        identity_index: u32,
+        signer: &S,
+    ) -> Result<(DerivationPath, OutPoint), PlatformWalletError> {
         // Serialize build→persist so a concurrent build cannot interleave its
         // pool snapshot with ours. The snapshot is collected from live wallet
         // state at persist time; without this guard, build A's snapshot
@@ -678,7 +804,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // funding index and reserves inputs) on a wallet that is gone.
         // Advisory only — the authoritative refusals are the same check
         // under `build_persist_serial` inside
-        // `build_asset_lock_transaction_locked` and under
+        // `build_asset_lock_transaction_with_funding_locked` and under
         // `status_persist_serial` inside `track_asset_lock` and
         // `promote_built_to_broadcast`, since a removal can land during
         // the queue below, the build, or the broadcast await.
@@ -707,10 +833,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         //    already hold `build_persist_serial`; it re-checks activity
         //    under that guard, which is the authoritative refusal for a
         //    removal that landed while we were queued above.
-        let (tx, path) = self
-            .build_asset_lock_transaction_locked(
-                amount_duffs,
-                account_index,
+        let (tx, path, reservation_token) = self
+            .build_asset_lock_transaction_with_funding_locked(
+                amount,
+                funding_account,
                 funding_type,
                 identity_index,
                 signer,
@@ -720,6 +846,58 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
         let txid = tx.txid();
         let out_point = OutPoint::new(txid, 0);
+
+        // The tracked/logged amount is read back from the built payload —
+        // for `Exact` it equals the requested value; for `DrainAll` the
+        // builder computed it (Σ inputs − fee) and this is the only place
+        // it is known.
+        let locked_amount_duffs: u64 = match &tx.special_transaction_payload {
+            Some(
+                dashcore::blockdata::transaction::special_transaction::TransactionPayload::AssetLockPayloadType(p),
+            ) => p.credit_outputs.iter().map(|o| o.value).sum(),
+            _ => 0,
+        };
+
+        // Authoritative drain floor: judged on the BUILT payload, before the
+        // lock is tracked or broadcast. An undersized drain (its consumers
+        // derive `shield_amount = lock_value − pool_fee`, so a lock at or
+        // below the fee is unconsumable) is abandoned: owner-guarded
+        // reservation release (the build `.await`ed, so the reservation may
+        // have been swept and re-owned) and no transaction reaches the wire.
+        // The funding key index consumed by the build is the same residue any
+        // discarded build leaves and is reclaimed by the gap-limit scan.
+        if let AssetLockBuildAmount::DrainAll {
+            minimum_lock_duffs: Some(minimum),
+        } = amount
+        {
+            if locked_amount_duffs < minimum {
+                drop(build_persist_guard);
+                let reserved_account = match funding_account {
+                    AssetLockFundingAccount::Bip44 { account_index } => {
+                        crate::wallet::reservations::ReservedFundingAccount::Standard(
+                            key_wallet::account::account_type::StandardAccountType::BIP44Account,
+                            account_index,
+                        )
+                    }
+                    AssetLockFundingAccount::CoinJoin { account_index } => {
+                        crate::wallet::reservations::ReservedFundingAccount::CoinJoin(account_index)
+                    }
+                };
+                crate::wallet::reservations::release_reservation_after_rejected_broadcast(
+                    &self.wallet_manager,
+                    &self.wallet_id,
+                    reserved_account,
+                    &tx,
+                    reservation_token,
+                )
+                .await;
+                return Err(PlatformWalletError::AssetLockTransaction(format!(
+                    "drained asset lock of {locked_amount_duffs} duffs is below the required \
+                     minimum of {minimum} duffs (the balance cannot clear the shield pool fee); \
+                     nothing was broadcast"
+                )));
+            }
+        }
 
         // Persist the funding account's address pool now that the build marked
         // its index used. These asset-lock accounts fund OP_RETURN-payload
@@ -767,10 +945,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .track_asset_lock(TrackedAssetLock {
                 out_point,
                 transaction: tx.clone(),
-                account_index,
+                account_index: funding_account.account_index(),
                 funding_type,
                 identity_index,
-                amount: amount_duffs,
+                amount: locked_amount_duffs,
                 status: AssetLockStatus::Built,
                 proof: None,
             })
@@ -802,14 +980,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // whatever replacement was registered under the same
                 // deterministic id — releasing there would free inputs the
                 // replacement never reserved.
-                let removed_row = match self.untrack_asset_lock(&out_point).await {
+                let removed_built_row = match self.untrack_asset_lock(&out_point).await {
                     Ok(cs_untrack) => cs_untrack.removed.contains(&out_point),
                     Err(untrack_err) => {
                         tracing::warn!(
                             %txid,
                             error = %untrack_err,
-                            "rejected broadcast could not untrack the Built row; \
-                             leaving the funding reservation alone"
+                            "rejected broadcast could not untrack the Built row;                              leaving the funding reservation alone"
                         );
                         false
                     }
@@ -821,13 +998,26 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // the inputs must stay reserved exactly like a `MaybeSent`
                 // outcome, or the still-tracked row would be resumable while
                 // its inputs are re-spendable.
-                if removed_row {
+                if removed_built_row {
+                    let reserved_account = match funding_account {
+                        AssetLockFundingAccount::Bip44 {
+                            account_index,
+                        } => crate::wallet::reservations::ReservedFundingAccount::Standard(
+                            key_wallet::account::account_type::StandardAccountType::BIP44Account,
+                            account_index,
+                        ),
+                        AssetLockFundingAccount::CoinJoin {
+                            account_index,
+                        } => crate::wallet::reservations::ReservedFundingAccount::CoinJoin(
+                            account_index,
+                        ),
+                    };
                     crate::wallet::reservations::release_reservation_after_rejected_broadcast(
                         &self.wallet_manager,
                         &self.wallet_id,
-                        key_wallet::account::account_type::StandardAccountType::BIP44Account,
-                        account_index,
+                        reserved_account,
                         &tx,
+                        reservation_token,
                     )
                     .await;
                 }
@@ -871,9 +1061,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     outpoint = %out_point,
                     status = ?current_status,
                     has_proof = current_proof.is_some(),
-                    "broadcast_funded_asset_lock: row advanced past Built \
-                     concurrently during the broadcast — keeping its current \
-                     state instead of downgrading it to Broadcast"
+                    "broadcast_funded_asset_lock: row advanced past Built                      concurrently during the broadcast — keeping its current                      state instead of downgrading it to Broadcast"
                 );
             }
         }
@@ -1078,6 +1266,133 @@ mod tests {
         (manager, signer)
     }
 
+    /// Broadcaster that succeeds and counts its calls, so a test can assert
+    /// an abandoned build never reached the wire.
+    #[derive(Default)]
+    struct CountingOkBroadcaster {
+        calls: std::sync::atomic::AtomicUsize,
+    }
+
+    impl CountingOkBroadcaster {
+        fn calls(&self) -> usize {
+            self.calls.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl TransactionBroadcaster for CountingOkBroadcaster {
+        async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError> {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(transaction.txid())
+        }
+    }
+
+    /// Builds an `AssetLockManager` over the CoinJoin-funded fixture
+    /// (CoinJoin account 0 holds a single 10_000_000-duff spendable UTXO).
+    async fn coinjoin_funded_asset_lock_manager<B: TransactionBroadcaster>(
+        broadcaster: Arc<B>,
+    ) -> (
+        Arc<AssetLockManager<B>>,
+        crate::test_support::WalletSigner,
+        Arc<CapturingPersistence>,
+    ) {
+        let persistence = Arc::new(CapturingPersistence::default());
+        let (wallet_manager, wallet_id, _generation, signer) =
+            crate::test_support::funded_coinjoin_wallet_manager().await;
+
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let manager = Arc::new(AssetLockManager::new(
+            sdk,
+            wallet_manager,
+            wallet_id,
+            Arc::new(Notify::new()),
+            broadcaster,
+            WalletPersister::new(
+                wallet_id,
+                Arc::clone(&persistence) as Arc<dyn PlatformWalletPersistence>,
+            ),
+        ));
+
+        (manager, signer, persistence)
+    }
+
+    /// An undersized drain is abandoned BEFORE tracking or broadcast — the
+    /// floor is judged on the BUILT payload (the fixture's 10_000_000-duff
+    /// CoinJoin balance minus L1 fee), nothing reaches the wire, no row is
+    /// tracked, and the owner-guarded reservation release frees the inputs
+    /// so an immediate follow-up drain over the SAME single-UTXO account
+    /// can select them and succeed.
+    #[tokio::test]
+    async fn undersized_drain_abandoned_before_broadcast() {
+        let broadcaster = Arc::new(CountingOkBroadcaster::default());
+        let (manager, signer, persistence) =
+            coinjoin_funded_asset_lock_manager(Arc::clone(&broadcaster)).await;
+
+        let result = manager
+            .broadcast_funded_asset_lock_with_funding(
+                super::AssetLockBuildAmount::DrainAll {
+                    // Far above the fixture balance: the built lock value
+                    // (Σ inputs − fee < 10_000_000) must fail the floor.
+                    minimum_lock_duffs: Some(u64::MAX),
+                },
+                key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingAccount::CoinJoin {
+                    account_index: 0,
+                },
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                &signer,
+            )
+            .await;
+        let err = result.expect_err("undersized drain must be refused");
+        assert!(
+            err.to_string().contains("below the required minimum"),
+            "unexpected error for undersized drain: {err}"
+        );
+        assert_eq!(
+            broadcaster.calls(),
+            0,
+            "an abandoned drain must never reach the broadcaster"
+        );
+        {
+            let wm = manager.wallet_manager.read().await;
+            let (_, info) = wm
+                .get_wallet_and_info(&manager.wallet_id)
+                .expect("wallet still present");
+            assert!(
+                info.tracked_asset_locks.is_empty(),
+                "an abandoned drain must not leave a tracked row, got {:?}",
+                info.tracked_asset_locks
+            );
+        }
+        assert!(
+            persistence.removed_outpoints().is_empty(),
+            "nothing was tracked, so nothing should be queued for removal"
+        );
+
+        // The reservation was released through the owner token: a follow-up
+        // drain over the same single-UTXO CoinJoin account must be able to
+        // select the inputs immediately and broadcast.
+        manager
+            .broadcast_funded_asset_lock_with_funding(
+                super::AssetLockBuildAmount::DrainAll {
+                    minimum_lock_duffs: Some(1),
+                },
+                key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingAccount::CoinJoin {
+                    account_index: 0,
+                },
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                &signer,
+            )
+            .await
+            .expect("follow-up drain must reselect the released inputs");
+        assert_eq!(
+            broadcaster.calls(),
+            1,
+            "the follow-up drain should broadcast exactly once"
+        );
+    }
+
     /// Regression: a build must persist the funding account's address-pool
     /// snapshot with the newly-used index. The asset-lock funding accounts fund
     /// OP_RETURN-payload credit outputs that never appear as on-chain UTXOs, so
@@ -1111,7 +1426,12 @@ mod tests {
         let persisted_invitation_used = stored.iter().any(|cs| {
             cs.account_address_pools.iter().any(|entry| {
                 matches!(entry.account_type, AccountType::IdentityInvitation)
-                    && entry.addresses.iter().any(|a| a.used)
+                    && entry.addresses.iter().any(|a| {
+                        matches!(
+                            a.state,
+                            key_wallet::managed_account::address_pool::AddressState::Used
+                        )
+                    })
             })
         });
         assert!(
@@ -1517,7 +1837,16 @@ mod tests {
                 .iter()
                 .filter(|e| matches!(e.account_type, AccountType::IdentityInvitation))
             {
-                let used = entry.addresses.iter().filter(|a| a.used).count();
+                let used = entry
+                    .addresses
+                    .iter()
+                    .filter(|a| {
+                        matches!(
+                            a.state,
+                            key_wallet::managed_account::address_pool::AddressState::Used
+                        )
+                    })
+                    .count();
                 assert!(
                     used >= last_used,
                     "invitation pool snapshot rolled back: {used} used after {last_used}"

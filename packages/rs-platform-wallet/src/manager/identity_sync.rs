@@ -261,6 +261,15 @@ where
         state.remove(identity_id);
     }
 
+    /// Whether `identity_id` currently has a registry row. Test-only
+    /// observability for the teardown-ordering regression: a row a same-id
+    /// recreation registers mid-removal must survive the old generation's
+    /// id-keyed unregisters.
+    #[cfg(test)]
+    pub(crate) async fn is_identity_registered(&self, identity_id: &Identifier) -> bool {
+        self.state.read().await.contains_key(identity_id)
+    }
+
     /// Replace the watched-token list for an already-registered
     /// identity.
     ///

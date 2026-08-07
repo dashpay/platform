@@ -1,6 +1,5 @@
 //! FFI bindings for CoreWallet transaction broadcasting.
 
-use super::transaction_builder::{CoreAccountTypeFFI, FFICoreTransaction};
 use crate::error::*;
 use crate::handle::*;
 use crate::runtime::runtime;
@@ -22,13 +21,18 @@ fn classify_broadcast_result(
     }
 }
 
-/// Consume and broadcast an atomically finalized V2 transaction.
+/// Consume and broadcast an atomically finalized transaction.
 ///
 /// Success and `MaybeSent` both permanently consume the handle. A definitive
 /// rejection also consumes it after releasing the reservation. This prevents
 /// accidental rebroadcast through the same ownership token.
+///
+/// A handle whose wallet generation is no longer registered in the manager
+/// (removed, or re-created under the same id) is refused with `NotFound` (98)
+/// **before** the network is touched; the handle is consumed and its reservation
+/// reconciled. This mirrors the deferred-token path's `WalletRemoved` → 98.
 #[no_mangle]
-pub unsafe extern "C" fn core_wallet_broadcast_signed_transaction_v2(
+pub unsafe extern "C" fn core_wallet_broadcast_signed_transaction(
     handle: Handle,
     transaction_handle: Handle,
     out_txid: *mut *mut c_char,
@@ -39,7 +43,7 @@ pub unsafe extern "C" fn core_wallet_broadcast_signed_transaction_v2(
     // Ownership crosses into this call. Consume first; every later validation
     // failure explicitly abandons through the embedded originating wallet.
     let finalized =
-        unwrap_option_or_return!(CORE_SIGNED_TRANSACTION_V2_STORAGE.remove(transaction_handle));
+        unwrap_option_or_return!(CORE_SIGNED_TRANSACTION_STORAGE.remove(transaction_handle));
     let Some(wallet) = CORE_WALLET_STORAGE.with_item(handle, Clone::clone) else {
         runtime().block_on(finalized.wallet.abandon_transaction(&finalized.transaction));
         return PlatformWalletFFIResult::err(
@@ -47,14 +51,46 @@ pub unsafe extern "C" fn core_wallet_broadcast_signed_transaction_v2(
             "invalid core wallet handle".to_string(),
         );
     };
-    if wallet.wallet_id() != finalized.wallet.wallet_id() {
+    // Same generation identity the registry-token path uses: reject a caller
+    // handle that names a different wallet generation (e.g. a re-created wallet
+    // under the same id) before acting through the embedded originating wallet.
+    if !wallet.is_same_generation(&finalized.wallet) {
         runtime().block_on(finalized.wallet.abandon_transaction(&finalized.transaction));
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            "transaction was finalized by a different wallet".to_string(),
+            "transaction was finalized by a different wallet generation".to_string(),
         );
     }
     let local_txid = finalized.transaction.transaction().txid();
+
+    // Hold this generation's lifecycle gate across BOTH the liveness check and
+    // the send. The `is_same_generation` check above compares two HANDLES, so it
+    // passes for a removed generation — both sides name the same removed wallet —
+    // and nothing further down re-checks: `broadcast_finalized_transaction` goes
+    // straight to the broadcaster with no manager lookup. Without this, two
+    // retained handles push a deleted wallet's transaction onto the network,
+    // where it can conflict with inputs a re-created generation has since
+    // selected (`dashpay/platform#4185`).
+    //
+    // The gate makes this atomic rather than check-then-act: a teardown takes the
+    // exclusive side, so it cannot interleave between the check and the send.
+    // Scoped per generation, so this send — up to the broadcaster's timeout —
+    // blocks only THIS wallet's teardown, never an unrelated wallet's.
+    let (_lifecycle, wallet_is_live) = runtime().block_on(async {
+        let gate = wallet.generation_payment_guard().await;
+        let live = wallet.is_current_generation().await;
+        (gate, live)
+    });
+    if !wallet_is_live {
+        runtime().block_on(finalized.wallet.abandon_transaction(&finalized.transaction));
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::NotFound,
+            "wallet is no longer registered in the manager (removed or re-created); the \
+             transaction was NOT broadcast and its reservation was reconciled"
+                .to_string(),
+        );
+    }
+
     let result = runtime().block_on(
         finalized
             .wallet
@@ -73,12 +109,12 @@ pub unsafe extern "C" fn core_wallet_broadcast_signed_transaction_v2(
 /// reservation immediately. Repeating abandon/free for the same handle is a
 /// safe invalid-handle error; no freed pointer is dereferenced.
 #[no_mangle]
-pub unsafe extern "C" fn core_wallet_abandon_signed_transaction_v2(
+pub unsafe extern "C" fn core_wallet_abandon_signed_transaction(
     handle: Handle,
     transaction_handle: Handle,
 ) -> PlatformWalletFFIResult {
     let transaction =
-        unwrap_option_or_return!(CORE_SIGNED_TRANSACTION_V2_STORAGE.remove(transaction_handle));
+        unwrap_option_or_return!(CORE_SIGNED_TRANSACTION_STORAGE.remove(transaction_handle));
     let Some(wallet) = CORE_WALLET_STORAGE.with_item(handle, Clone::clone) else {
         runtime().block_on(
             transaction
@@ -90,7 +126,8 @@ pub unsafe extern "C" fn core_wallet_abandon_signed_transaction_v2(
             "invalid core wallet handle".to_string(),
         );
     };
-    if wallet.wallet_id() != transaction.wallet.wallet_id() {
+    // Same generation identity as the broadcast path / registry-token path.
+    if !wallet.is_same_generation(&transaction.wallet) {
         runtime().block_on(
             transaction
                 .wallet
@@ -98,7 +135,7 @@ pub unsafe extern "C" fn core_wallet_abandon_signed_transaction_v2(
         );
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            "transaction was finalized by a different wallet".to_string(),
+            "transaction was finalized by a different wallet generation".to_string(),
         );
     }
     runtime().block_on(
@@ -109,11 +146,11 @@ pub unsafe extern "C" fn core_wallet_abandon_signed_transaction_v2(
     PlatformWalletFFIResult::ok()
 }
 
-/// Idempotent ownership cleanup for a V2 handle when no transient wallet handle
+/// Idempotent ownership cleanup for a finalized handle when no transient wallet handle
 /// is available. It abandons the transaction and releases its reservation.
 #[no_mangle]
-pub extern "C" fn core_wallet_signed_transaction_v2_free(transaction_handle: Handle) {
-    if let Some(transaction) = CORE_SIGNED_TRANSACTION_V2_STORAGE.remove(transaction_handle) {
+pub extern "C" fn core_wallet_signed_transaction_free(transaction_handle: Handle) {
+    if let Some(transaction) = CORE_SIGNED_TRANSACTION_STORAGE.remove(transaction_handle) {
         runtime().block_on(
             transaction
                 .wallet
@@ -123,76 +160,38 @@ pub extern "C" fn core_wallet_signed_transaction_v2_free(transaction_handle: Han
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn core_wallet_signed_transaction_v2_fee(
+pub unsafe extern "C" fn core_wallet_signed_transaction_fee(
     transaction_handle: Handle,
     out_fee: *mut u64,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_fee);
     let fee =
-        unwrap_option_or_return!(CORE_SIGNED_TRANSACTION_V2_STORAGE
+        unwrap_option_or_return!(CORE_SIGNED_TRANSACTION_STORAGE
             .with_item(transaction_handle, |tx| tx.transaction.fee()));
     *out_fee = fee;
     PlatformWalletFFIResult::ok()
 }
 
-/// Broadcast a transaction built by `core_wallet_tx_builder_build_signed`.
-///
-/// `account_type`/`account_index` identify the funding account handed to
-/// `core_wallet_tx_builder_set_funding` when the transaction was built: on a
-/// definitive broadcast rejection its UTXO reservation is released so an
-/// immediate retry can reselect the inputs; an ambiguous failure keeps it.
-/// `CoinJoin` funding has no standard-account reservation to reconcile and is
-/// broadcast plainly.
-///
-/// # Safety
-/// `handle` must be a valid core-wallet handle; `tx` must be a valid,
-/// non-null pointer to an `FFICoreTransaction`; `out_txid` must be writable.
-/// On accepted, rejected, and unknown network outcomes `out_txid` receives a
-/// Rust-owned C string that the caller frees with
-/// `platform_wallet_string_free`. Operational errors leave it null.
 #[no_mangle]
-pub unsafe extern "C" fn core_wallet_broadcast_transaction(
-    handle: Handle,
-    tx: *const FFICoreTransaction,
-    account_type: CoreAccountTypeFFI,
-    account_index: u32,
-    out_txid: *mut *mut c_char,
+pub unsafe extern "C" fn core_wallet_signed_transaction_bytes(
+    transaction_handle: Handle,
+    out_bytes: *mut *mut u8,
+    out_len: *mut usize,
 ) -> PlatformWalletFFIResult {
-    check_ptr!(out_txid);
-    *out_txid = std::ptr::null_mut();
-    check_ptr!(tx);
+    check_ptr!(out_bytes);
+    check_ptr!(out_len);
+    *out_bytes = std::ptr::null_mut();
+    *out_len = 0;
 
-    let tx: dashcore::Transaction =
-        unwrap_result_or_return!(dashcore::consensus::deserialize((*tx).bytes()));
-    let local_txid = tx.txid();
-
-    let option = CORE_WALLET_STORAGE.with_item(handle, |wallet| {
-        runtime().block_on(async {
-            match account_type.as_standard_account_type() {
-                Some(account_type) => {
-                    wallet
-                        .broadcast_transaction_releasing_reservation(
-                            account_type,
-                            account_index,
-                            &tx,
-                        )
-                        .await
-                }
-                None => wallet.broadcast_transaction(&tx).await,
-            }
-        })
-    });
-
-    let result = unwrap_option_or_return!(option);
-
-    let (txid, ffi_result) = classify_broadcast_result(result, local_txid);
-    let Some(txid) = txid else {
-        return ffi_result;
-    };
-    let c_str = unwrap_result_or_return!(std::ffi::CString::new(txid.to_string()));
-    *out_txid = c_str.into_raw();
-
-    ffi_result
+    let bytes = unwrap_option_or_return!(CORE_SIGNED_TRANSACTION_STORAGE
+        .with_item(transaction_handle, |tx| dashcore::consensus::serialize(
+            tx.transaction.transaction()
+        )));
+    let len = bytes.len();
+    let boxed = bytes.into_boxed_slice();
+    *out_bytes = Box::into_raw(boxed) as *mut u8;
+    *out_len = len;
+    PlatformWalletFFIResult::ok()
 }
 
 #[cfg(test)]
@@ -259,7 +258,7 @@ mod tests {
     use platform_wallet::{CoreWallet, SignedCoreTransaction};
 
     use super::*;
-    use crate::core_wallet::FFICoreSignedTransactionV2;
+    use crate::core_wallet::FFICoreSignedTransaction;
 
     type TestCore = CoreWallet<platform_wallet::broadcaster::SpvBroadcaster>;
 
@@ -278,7 +277,7 @@ mod tests {
     }
 
     fn insert(core: &TestCore, transaction: SignedCoreTransaction) -> Handle {
-        CORE_SIGNED_TRANSACTION_V2_STORAGE.insert(FFICoreSignedTransactionV2 {
+        CORE_SIGNED_TRANSACTION_STORAGE.insert(FFICoreSignedTransaction {
             wallet: core.clone(),
             transaction,
         })
@@ -295,8 +294,8 @@ mod tests {
             runtime().block_on(funded_spv_core_wallet(StandardAccountType::BIP44Account));
         let transaction_handle = insert(&core, finalize(&core, &signer, 40));
 
-        core_wallet_signed_transaction_v2_free(transaction_handle);
-        core_wallet_signed_transaction_v2_free(transaction_handle);
+        core_wallet_signed_transaction_free(transaction_handle);
+        core_wallet_signed_transaction_free(transaction_handle);
 
         assert_released(&core, &signer, 41);
     }
@@ -307,7 +306,7 @@ mod tests {
             runtime().block_on(funded_spv_core_wallet(StandardAccountType::BIP44Account));
         let invalid_transaction = insert(&origin, finalize(&origin, &origin_signer, 42));
         let invalid =
-            unsafe { core_wallet_abandon_signed_transaction_v2(u64::MAX, invalid_transaction) };
+            unsafe { core_wallet_abandon_signed_transaction(u64::MAX, invalid_transaction) };
         assert_eq!(
             invalid.code,
             PlatformWalletFFIResultCode::ErrorInvalidHandle
@@ -319,7 +318,7 @@ mod tests {
         let other_handle = CORE_WALLET_STORAGE.insert(other);
         let wrong_transaction = insert(&origin, finalize(&origin, &origin_signer, 44));
         let wrong =
-            unsafe { core_wallet_abandon_signed_transaction_v2(other_handle, wrong_transaction) };
+            unsafe { core_wallet_abandon_signed_transaction(other_handle, wrong_transaction) };
         assert_eq!(
             wrong.code,
             PlatformWalletFFIResultCode::ErrorInvalidParameter
@@ -336,13 +335,13 @@ mod tests {
         let transaction_handle = insert(&core, finalize(&core, &signer, 46));
 
         let abandoned =
-            unsafe { core_wallet_abandon_signed_transaction_v2(core_handle, transaction_handle) };
+            unsafe { core_wallet_abandon_signed_transaction(core_handle, transaction_handle) };
         assert_eq!(abandoned.code, PlatformWalletFFIResultCode::Success);
-        core_wallet_signed_transaction_v2_free(transaction_handle);
+        core_wallet_signed_transaction_free(transaction_handle);
 
         let mut txid = ptr::null_mut();
         let rebroadcast = unsafe {
-            core_wallet_broadcast_signed_transaction_v2(core_handle, transaction_handle, &mut txid)
+            core_wallet_broadcast_signed_transaction(core_handle, transaction_handle, &mut txid)
         };
         assert_eq!(rebroadcast.code, PlatformWalletFFIResultCode::NotFound);
         assert!(txid.is_null());
