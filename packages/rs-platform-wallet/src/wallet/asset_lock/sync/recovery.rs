@@ -59,11 +59,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             // it (no proof was provided). Otherwise the proof we
             // already have determines the status without a lookup.
             if proof.is_none() {
-                info.core_wallet
-                    .accounts
-                    .standard_bip44_accounts
-                    .get(&account_index)
-                    .and_then(|a| a.transactions().get(&out_point.txid).cloned())
+                super::proof::funding_tx_record(
+                    &info.core_wallet.accounts,
+                    account_index,
+                    &out_point.txid,
+                )
             } else {
                 None
             }
