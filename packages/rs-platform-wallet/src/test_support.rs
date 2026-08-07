@@ -329,6 +329,113 @@ pub(crate) async fn funded_wallet_manager_dual_standard(
     (Arc::new(RwLock::new(wm)), wallet_id, generation, signer)
 }
 
+/// Funds BIP44 account 0 and a real `DashpayReceivingFunds` contact account,
+/// so the pooled-send tests can prove that contact funds are actually SPENT —
+/// the point of pulling `AllDashpayReceivingFunds` into `SEND_FUNDING_SOURCES`.
+///
+/// The contact account is built exactly as `DashPayView::register_contact_account`
+/// builds it (DIP-15 xpub, `Account` in the key collection, funds-bearing managed
+/// account in the managed collection) minus the persistence round, which needs a
+/// full manager the fixture does not have. Returns the contact's `AccountType`
+/// so the test can assert on the recorded funding accounts by identity.
+#[cfg(test)]
+pub(crate) async fn funded_wallet_manager_with_contact(
+    bip44_outputs: &[u64],
+    contact_outputs: &[u64],
+) -> (
+    Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    WalletId,
+    Arc<WalletGeneration>,
+    WalletSigner,
+    key_wallet::account::AccountType,
+) {
+    use dpp::identifier::Identifier;
+    use key_wallet::account::AccountType;
+    use key_wallet::managed_account::ManagedCoreFundsAccount;
+
+    let mut ctx = TestWalletContext::new_random();
+    let bip44_address = ctx.receive_address.clone();
+
+    let owner = Identifier::from([0xAA; 32]);
+    let contact = Identifier::from([0xBB; 32]);
+    let account_type = AccountType::DashpayReceivingFunds {
+        index: 0,
+        user_identity_id: owner.to_buffer(),
+        friend_identity_id: contact.to_buffer(),
+    };
+    let account_xpub = crate::wallet::identity::crypto::dip14::derive_contact_xpub(
+        &ctx.wallet,
+        Network::Testnet,
+        0,
+        &owner,
+        &contact,
+    )
+    .expect("derive contact xpub")
+    .xpub;
+
+    let mut managed = ManagedCoreFundsAccount::from_account(&key_wallet::Account {
+        parent_wallet_id: Some(ctx.wallet.wallet_id),
+        account_type,
+        network: Network::Testnet,
+        account_xpub,
+        is_watch_only: false,
+    });
+    // DashPay accounts are non-standard: one external pool via
+    // `next_address_with_info`, not the standard receive/change split.
+    let contact_address = managed
+        .next_address_with_info(Some(&account_xpub), true)
+        .expect("contact receive address")
+        .address;
+    ctx.wallet
+        .add_account(account_type, Some(account_xpub))
+        .expect("add contact account to key collection");
+    ctx.managed_wallet
+        .accounts
+        .insert_funds_bearing_account(managed)
+        .expect("insert managed contact account");
+
+    for (address, outputs, tag) in [
+        (&bip44_address, bip44_outputs, 0..1),
+        (&contact_address, contact_outputs, 1..2),
+    ] {
+        let funding_tx = Transaction::dummy(address, tag, outputs);
+        let result = ctx
+            .check_transaction(
+                &funding_tx,
+                TransactionContext::InChainLockedBlock(BlockInfo::new(
+                    1,
+                    BlockHash::all_zeros(),
+                    1_700_000_000,
+                )),
+            )
+            .await;
+        assert!(
+            result.is_relevant,
+            "funding tx should be relevant (the contact account's pool must be monitored)"
+        );
+    }
+
+    let signer = WalletSigner {
+        wallet: ctx.wallet.clone(),
+    };
+    let generation = Arc::new(WalletGeneration::new());
+    let info = PlatformWalletInfo {
+        core_wallet: ctx.managed_wallet,
+        generation: Arc::clone(&generation),
+        identity_manager: IdentityManager::new(),
+        tracked_asset_locks: BTreeMap::new(),
+    };
+    let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
+    let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
+    (
+        Arc::new(RwLock::new(wm)),
+        wallet_id,
+        generation,
+        signer,
+        account_type,
+    )
+}
+
 /// Like [`funded_wallet_manager`] but funds the wallet's CoinJoin account 0
 /// (created by `WalletAccountCreationOptions::Default`) with a single spendable
 /// UTXO. Lets the deferred-payment tests exercise a CoinJoin-funded reservation,

@@ -564,8 +564,9 @@ mod tests {
 
     use crate::broadcaster::TransactionBroadcaster;
     use crate::test_support::{
-        funded_wallet_manager, funded_wallet_manager_dual_standard, AlwaysMaybeSentBroadcaster,
-        AlwaysOkBroadcaster, AlwaysRejectedBroadcaster, WalletSigner,
+        funded_wallet_manager, funded_wallet_manager_dual_standard,
+        funded_wallet_manager_with_contact, AlwaysMaybeSentBroadcaster, AlwaysOkBroadcaster,
+        AlwaysRejectedBroadcaster, WalletSigner,
     };
     use crate::wallet::core::CoreWallet;
     use crate::PlatformWalletError;
@@ -641,6 +642,62 @@ mod tests {
             )
             .await
             .expect("abandon must release every contributing account's reservation");
+        core.abandon_transaction(&rebuilt).await;
+    }
+
+    /// The DashPay half of `SEND_FUNDING_SOURCES`, end to end: a payment larger
+    /// than BIP44 alone holds must reach into a real `DashpayReceivingFunds`
+    /// contact account, sign its inputs (DIP-15 `Normal256` derivation path),
+    /// and record that account for release. Without this, every lookup in the
+    /// pooled path could resolve `None` for contact accounts and the feature
+    /// would silently degrade to a BIP44+BIP32 send.
+    #[tokio::test]
+    async fn pooled_send_spends_dashpay_contact_funds() {
+        let (manager, wallet_id, generation, signer, contact_account) =
+            funded_wallet_manager_with_contact(&[700_000], &[700_000]).await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let core = CoreWallet::new(
+            sdk,
+            manager,
+            wallet_id,
+            Arc::new(AlwaysOkBroadcaster),
+            generation,
+        );
+
+        let finalized = core
+            .finalize_transaction(
+                payment_builder(60),
+                &crate::SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
+            .await
+            .expect("pooled finalize must reach contact funds");
+        assert!(
+            finalized.funding_accounts().contains(&contact_account),
+            "the contact account must be recorded as a contributor, got {:?}",
+            finalized.funding_accounts()
+        );
+        assert!(
+            finalized
+                .transaction()
+                .input
+                .iter()
+                .all(|input| !input.script_sig.is_empty()),
+            "every pooled input must be signed, including the DIP-15 contact input"
+        );
+
+        // And releasing must reach the contact account too.
+        core.abandon_transaction(&finalized).await;
+        let rebuilt = core
+            .finalize_transaction(
+                payment_builder(61),
+                &crate::SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
+            .await
+            .expect("abandon must release the contact account's reservation");
         core.abandon_transaction(&rebuilt).await;
     }
 
