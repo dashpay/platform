@@ -12,6 +12,7 @@
 #![allow(clippy::result_large_err)]
 
 pub mod block_info_from_metadata;
+pub mod dashpay;
 pub mod documents;
 pub mod dpns_usernames;
 pub mod error;

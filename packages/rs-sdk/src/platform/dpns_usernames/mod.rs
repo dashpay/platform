@@ -3,7 +3,8 @@ mod queries;
 
 pub use contested_queries::ContestedDpnsUsername;
 pub use dash_platform_queries::dpns_usernames::{
-    convert_to_homograph_safe_chars, is_contested_username, is_valid_username,
+    build_dpns_preorder_and_domain_documents, convert_to_homograph_safe_chars,
+    is_contested_username, is_valid_username,
 };
 pub use queries::DpnsUsername;
 
@@ -14,14 +15,12 @@ use dash_context_provider::ContextProvider;
 use dpp::dashcore::secp256k1::rand::rngs::StdRng;
 use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::document::{DocumentV0, DocumentV0Getters};
+use dpp::document::DocumentV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::platform_value::{Bytes32, Value};
 use dpp::prelude::Identifier;
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 fn extract_dpns_label(name: &str) -> &str {
@@ -43,14 +42,6 @@ fn extract_dpns_label(name: &str) -> &str {
 /// (e.g. `"a11ce"`).
 fn normalize_dpns_label(input: &str) -> String {
     convert_to_homograph_safe_chars(extract_dpns_label(input))
-}
-
-/// Hash a buffer twice using SHA256 (double SHA256)
-fn hash_double(data: Vec<u8>) -> [u8; 32] {
-    use dpp::dashcore::hashes::{sha256d, Hash};
-    // sha256d already does double SHA256
-    let hash = sha256d::Hash::hash(&data);
-    hash.to_byte_array()
 }
 
 /// Callback type for preorder document
@@ -164,95 +155,17 @@ impl Sdk {
         let entropy = Bytes32::random_with_rng(&mut rng);
         let salt: [u8; 32] = rng.gen();
 
-        // Generate document IDs
-        let identity_id = input.identity.id().to_owned();
-        let preorder_id = Document::generate_document_id_v0(
-            &dpns_contract.id(),
-            &identity_id,
-            preorder_document_type.name(),
-            entropy.as_slice(),
-        );
-        let domain_id = Document::generate_document_id_v0(
-            &dpns_contract.id(),
-            &identity_id,
-            domain_document_type.name(),
-            entropy.as_slice(),
-        );
+        // Assemble both documents in the shared transport-free builder, so
+        // networked and embedder flows produce byte-identical documents.
+        let (preorder_document, domain_document) = build_dpns_preorder_and_domain_documents(
+            &dpns_contract,
+            input.identity.id().to_owned(),
+            &input.label,
+            entropy.0,
+            salt,
+        )?;
 
-        // Create salted domain hash for preorder
         let normalized_label = convert_to_homograph_safe_chars(&input.label);
-        let mut salted_domain_buffer: Vec<u8> = vec![];
-        salted_domain_buffer.extend(salt);
-        salted_domain_buffer.extend((normalized_label.clone() + ".dash").as_bytes());
-        let salted_domain_hash = hash_double(salted_domain_buffer);
-
-        // Create preorder document
-        let preorder_document = Document::V0(DocumentV0 {
-            id: preorder_id,
-            owner_id: identity_id,
-            properties: BTreeMap::from([(
-                "saltedDomainHash".to_string(),
-                Value::Bytes32(salted_domain_hash),
-            )]),
-            revision: None,
-            created_at: None,
-            updated_at: None,
-            transferred_at: None,
-            created_at_block_height: None,
-            updated_at_block_height: None,
-            transferred_at_block_height: None,
-            created_at_core_block_height: None,
-            updated_at_core_block_height: None,
-            transferred_at_core_block_height: None,
-            creator_id: None,
-        });
-
-        // Create domain document
-        let domain_document = Document::V0(DocumentV0 {
-            id: domain_id,
-            owner_id: identity_id,
-            properties: BTreeMap::from([
-                (
-                    "parentDomainName".to_string(),
-                    Value::Text("dash".to_string()),
-                ),
-                (
-                    "normalizedParentDomainName".to_string(),
-                    Value::Text("dash".to_string()),
-                ),
-                ("label".to_string(), Value::Text(input.label.clone())),
-                (
-                    "normalizedLabel".to_string(),
-                    Value::Text(normalized_label.clone()),
-                ),
-                ("preorderSalt".to_string(), Value::Bytes32(salt)),
-                (
-                    "records".to_string(),
-                    Value::Map(vec![(
-                        Value::Text("identity".to_string()),
-                        Value::Identifier(identity_id.to_buffer()),
-                    )]),
-                ),
-                (
-                    "subdomainRules".to_string(),
-                    Value::Map(vec![(
-                        Value::Text("allowSubdomains".to_string()),
-                        Value::Bool(false),
-                    )]),
-                ),
-            ]),
-            revision: None,
-            created_at: None,
-            updated_at: None,
-            transferred_at: None,
-            created_at_block_height: None,
-            updated_at_block_height: None,
-            transferred_at_block_height: None,
-            created_at_core_block_height: None,
-            updated_at_core_block_height: None,
-            transferred_at_core_block_height: None,
-            creator_id: None,
-        });
 
         // Submit preorder document first
         let platform_preorder_document = preorder_document

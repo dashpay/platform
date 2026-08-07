@@ -11,6 +11,9 @@ pub use contact_request::{
     RecipientIdentity, SendContactRequestInput, SendContactRequestResult,
 };
 pub use contact_request_queries::ContactRequestDocuments;
+pub use dash_platform_queries::dashpay::{
+    build_contact_request_document, validate_auto_accept_proof, ContactRequestDocumentParams,
+};
 
 use crate::platform::Fetch;
 use crate::{Error, Sdk};
