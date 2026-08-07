@@ -24,10 +24,20 @@
 //!     identity (`create_voter_identifier`) and the key on it.
 //!
 //! The voting [`IdentityPublicKey`] is then **fetched from the voter
-//! identity**, not fabricated: its key id is only 0 for an identity Platform
-//! created and never rotated, so assuming 0 fails with an opaque
-//! "Public key 0 doesn't exist" whenever the identity is absent or the key
-//! moved. Looking it up also lets a mismatched key be reported as such.
+//! identity** rather than fabricated. Platform does always assign the voting
+//! key id 0 (`create_voter_identity_v0` passes 0, and a rotation creates a
+//! *different* identity — the identifier includes the voting address — whose
+//! key is likewise 0), so the id itself was never the problem. Fabricating a
+//! key meant never checking the two things that do fail:
+//!
+//!   * the voter identity may not exist for this `(pro_tx_hash, voting
+//!     address)` pair at all, and
+//!   * after a rotation `update_voter_identity_v0` **disables** the old
+//!     identity's keys, so key 0 can exist but be unusable.
+//!
+//! Both surfaced as Platform's opaque "Public key 0 doesn't exist" at
+//! broadcast time. Fetching the identity and matching on the key's own data
+//! (purpose, key type, `data`, not-disabled) reports each case for what it is.
 //!
 //! The `SingleKeySigner::can_sign_with` check for `ECDSA_HASH160` recomputes
 //! `hash160(pubkey)` from the same private key, so the fetched key and the
@@ -311,45 +321,17 @@ unsafe fn cast_vote_inner(
     let voter_identifier = Identifier::create_voter_identifier(&pro_tx_hash_arr, &voting_address);
 
     let masternode_voting_key: IdentityPublicKey = wrapper.runtime.block_on(async {
-        // The key id is NOT reliably 0. Platform assigns 0 when it *creates* a
-        // voter identity, but a voting-key rotation disables the old
-        // identity's keys and creates a fresh identity for the new address
-        // (`update_voter_identity_v0`), and nothing guarantees the caller's key
-        // matches the identity that actually exists. Fabricating id 0 turned
-        // every one of those cases into Platform's opaque
-        // "Public key 0 doesn't exist" at broadcast time.
+        // Platform assigns the voting key id 0, but that was never what
+        // failed: the identity may not exist for this (pro_tx_hash, voting
+        // address) pair, or a rotation may have disabled its keys. Fabricating
+        // id 0 turned both into Platform's opaque "Public key 0 doesn't exist"
+        // at broadcast time.
         let identity = Identity::fetch(sdk, voter_identifier)
             .await
             .map_err(FFIError::from)?
-            .ok_or_else(|| {
-                FFIError::InvalidParameter(format!(
-                    "No voting identity exists on Platform for masternode {} with this voting key \
-                     (expected voter identity {}). Either the voting key does not match the \
-                     masternode's registered voting address, or Platform has not created the \
-                     voter identity yet.",
-                    pro_tx_hash, voter_identifier
-                ))
-            })?;
+            .ok_or_else(|| missing_voter_identity(&pro_tx_hash, &voter_identifier))?;
 
-        // Match on the key's own data, not on position: that is what the
-        // signer can actually sign with.
-        identity
-            .public_keys()
-            .values()
-            .find(|key| {
-                key.purpose() == Purpose::VOTING
-                    && key.key_type() == KeyType::ECDSA_HASH160
-                    && key.data().as_slice() == voting_address
-                    && key.disabled_at().is_none()
-            })
-            .cloned()
-            .ok_or_else(|| {
-                FFIError::InvalidParameter(format!(
-                    "Voter identity {} has no enabled ECDSA_HASH160 voting key matching this \
-                     private key. The masternode's voting key may have been rotated.",
-                    voter_identifier
-                ))
-            })
+        select_voting_key(&identity, &voting_address, &voter_identifier)
     })?;
 
     // ---- Broadcast ----------------------------------------------------------
@@ -370,6 +352,49 @@ unsafe fn cast_vote_inner(
 
 fn invalid(message: &str) -> FFIError {
     FFIError::InvalidParameter(message.to_string())
+}
+
+/// Platform holds no voter identity for this `(pro_tx_hash, voting address)`.
+fn missing_voter_identity(pro_tx_hash: &Identifier, voter_identifier: &Identifier) -> FFIError {
+    FFIError::InvalidParameter(format!(
+        "No voting identity exists on Platform for masternode {} with this voting key \
+         (expected voter identity {}). Either the voting key does not match the \
+         masternode's registered voting address, or Platform has not created the \
+         voter identity yet.",
+        pro_tx_hash, voter_identifier
+    ))
+}
+
+/// Pick the voting key the caller's private key can actually sign with.
+///
+/// Matches on the key's own data rather than its position. Platform does
+/// assign the voting key id 0, so position would usually work — but it
+/// silently picks the wrong key on an identity carrying other keys, and it
+/// cannot tell a usable key from one `update_voter_identity_v0` disabled
+/// during a rotation. `disabled_at` is therefore part of the match, not an
+/// afterthought: a disabled key exists and would be selected by id.
+fn select_voting_key(
+    identity: &Identity,
+    voting_address: &[u8; 20],
+    voter_identifier: &Identifier,
+) -> Result<IdentityPublicKey, FFIError> {
+    identity
+        .public_keys()
+        .values()
+        .find(|key| {
+            key.purpose() == Purpose::VOTING
+                && key.key_type() == KeyType::ECDSA_HASH160
+                && key.data().as_slice() == voting_address
+                && key.disabled_at().is_none()
+        })
+        .cloned()
+        .ok_or_else(|| {
+            FFIError::InvalidParameter(format!(
+                "Voter identity {} has no enabled ECDSA_HASH160 voting key matching this \
+                 private key. The masternode's voting key may have been rotated.",
+                voter_identifier
+            ))
+        })
 }
 
 unsafe fn cstr<'a>(ptr: *const c_char, field: &str) -> Result<&'a str, FFIError> {
@@ -495,5 +520,153 @@ mod tests {
             dash_sdk_error_free(result.error);
             crate::test_utils::test_utils::destroy_mock_sdk_handle(handle);
         }
+    }
+
+    // ---- select_voting_key --------------------------------------------------
+    //
+    // `Identity::fetch` needs a live SDK, so the identity *lookup* stays
+    // integration-shaped. Key *selection* is the part that decides whether a
+    // vote can be signed, and it is pure — these cover it directly.
+
+    use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dash_sdk::dpp::identity::v0::IdentityV0;
+    use dash_sdk::dpp::identity::SecurityLevel;
+    use dash_sdk::dpp::platform_value::BinaryData;
+    use std::collections::BTreeMap;
+
+    const VOTING_ADDRESS: [u8; 20] = [7u8; 20];
+    const OTHER_ADDRESS: [u8; 20] = [9u8; 20];
+
+    fn voter_id() -> Identifier {
+        Identifier::new([3u8; 32])
+    }
+
+    fn key(
+        id: u32,
+        purpose: Purpose,
+        key_type: KeyType,
+        data: [u8; 20],
+        disabled_at: Option<u64>,
+    ) -> IdentityPublicKey {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id,
+            purpose,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type,
+            read_only: false,
+            data: BinaryData::new(data.to_vec()),
+            disabled_at,
+        })
+    }
+
+    fn identity_with(keys: Vec<IdentityPublicKey>) -> Identity {
+        let mut public_keys = BTreeMap::new();
+        for k in keys {
+            public_keys.insert(k.id(), k);
+        }
+        Identity::V0(IdentityV0 {
+            id: voter_id(),
+            public_keys,
+            balance: 0,
+            revision: 0,
+        })
+    }
+
+    #[test]
+    fn selects_the_enabled_voting_key_matching_the_private_key() {
+        let identity = identity_with(vec![key(
+            0,
+            Purpose::VOTING,
+            KeyType::ECDSA_HASH160,
+            VOTING_ADDRESS,
+            None,
+        )]);
+        let selected = select_voting_key(&identity, &VOTING_ADDRESS, &voter_id())
+            .expect("the matching enabled key should be selected");
+        assert_eq!(selected.data().as_slice(), &VOTING_ADDRESS);
+    }
+
+    #[test]
+    fn selects_by_data_not_by_position() {
+        // The real id is not 0 here. Selecting by position would take the
+        // AUTHENTICATION key and sign with something the signer cannot back.
+        let identity = identity_with(vec![
+            key(
+                0,
+                Purpose::AUTHENTICATION,
+                KeyType::ECDSA_HASH160,
+                OTHER_ADDRESS,
+                None,
+            ),
+            key(
+                4,
+                Purpose::VOTING,
+                KeyType::ECDSA_HASH160,
+                VOTING_ADDRESS,
+                None,
+            ),
+        ]);
+        let selected = select_voting_key(&identity, &VOTING_ADDRESS, &voter_id())
+            .expect("the voting key should be found at a non-zero id");
+        assert_eq!(selected.id(), 4);
+        assert_eq!(selected.purpose(), Purpose::VOTING);
+    }
+
+    #[test]
+    fn rejects_a_disabled_voting_key() {
+        // What a rotation leaves behind: `update_voter_identity_v0` disables
+        // the old identity's keys rather than removing them, so the key exists
+        // and would be picked by id.
+        let identity = identity_with(vec![key(
+            0,
+            Purpose::VOTING,
+            KeyType::ECDSA_HASH160,
+            VOTING_ADDRESS,
+            Some(1_700_000_000),
+        )]);
+        let err = select_voting_key(&identity, &VOTING_ADDRESS, &voter_id())
+            .expect_err("a disabled key must not be selected");
+        assert!(
+            format!("{:?}", err).contains("may have been rotated"),
+            "expected the rotation diagnostic, got: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn rejects_a_voting_key_for_a_different_address() {
+        let identity = identity_with(vec![key(
+            0,
+            Purpose::VOTING,
+            KeyType::ECDSA_HASH160,
+            OTHER_ADDRESS,
+            None,
+        )]);
+        assert!(select_voting_key(&identity, &VOTING_ADDRESS, &voter_id()).is_err());
+    }
+
+    #[test]
+    fn rejects_a_matching_address_under_the_wrong_key_type() {
+        // Same 20 bytes, but not a key this signer can sign with.
+        let identity = identity_with(vec![key(
+            0,
+            Purpose::VOTING,
+            KeyType::BIP13_SCRIPT_HASH,
+            VOTING_ADDRESS,
+            None,
+        )]);
+        assert!(select_voting_key(&identity, &VOTING_ADDRESS, &voter_id()).is_err());
+    }
+
+    #[test]
+    fn missing_voter_identity_names_both_identifiers() {
+        let pro_tx = Identifier::new([1u8; 32]);
+        let msg = format!("{:?}", missing_voter_identity(&pro_tx, &voter_id()));
+        assert!(msg.contains(&format!("{}", pro_tx)));
+        assert!(msg.contains(&format!("{}", voter_id())));
+        // The diagnostic must read as prose — it crosses the FFI boundary and
+        // is shown verbatim to users.
+        assert!(!msg.contains("  "), "message has whitespace runs: {}", msg);
     }
 }
