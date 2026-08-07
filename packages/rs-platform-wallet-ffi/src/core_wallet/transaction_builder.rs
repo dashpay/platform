@@ -6,7 +6,7 @@ use crate::types::{FFINetwork, Network};
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
 use dashcore::hashes::Hash;
-use dashcore::{Address as DashAddress, OutPoint, Txid};
+use dashcore::{Address as DashAddress, OutPoint, TxOut, Txid};
 use key_wallet::account::ManagedAccountCollection;
 use key_wallet::managed_account::ManagedCoreFundsAccount;
 use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
@@ -215,6 +215,24 @@ pub unsafe extern "C" fn core_wallet_tx_builder_finalize(
 /// `core_wallet_transaction_free`). `out_bytes_ptr`/`out_bytes_len` borrow
 /// `out_tx`'s buffer — copy them out before freeing `out_tx`.
 ///
+/// Value of the sole non-OP_RETURN output: what a broadcast of this
+/// transaction actually pays out.
+///
+/// Returns 0 when there is no single such output. A multi-recipient build has
+/// no one deliverable amount, and an OP_RETURN-only build pays no one — hosts
+/// read the 0 as "not applicable" rather than "pays nothing", so the two cases
+/// need not be told apart here.
+///
+/// Output ORDER is deliberately irrelevant: a MAYAChain deposit carries its
+/// memo at VOUT1, while other layouts put the data carrier first.
+fn sole_deliverable_value(outputs: &[TxOut]) -> u64 {
+    let mut carriers = outputs.iter().filter(|out| !out.script_pubkey.is_op_return());
+    match (carriers.next(), carriers.next()) {
+        (Some(only), None) => only.value,
+        _ => 0,
+    }
+}
+
 /// Also writes `out_deliverable_duffs`: the value of the sole non-OP_RETURN
 /// output of the REGISTERED transaction — what a later broadcast actually
 /// pays out. Hosts need it for a drain (`SelectionStrategy::All`), where the
@@ -358,17 +376,7 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
     // pay. Defined only for a single-destination payment: exactly one output
     // that is not an OP_RETURN data carrier. Anything else reports 0, which the
     // host reads as "not applicable" rather than "pays nothing".
-    let deliverable_duffs = {
-        let mut carriers = finalized
-            .transaction()
-            .output
-            .iter()
-            .filter(|out| !out.script_pubkey.is_op_return());
-        match (carriers.next(), carriers.next()) {
-            (Some(only), None) => only.value,
-            _ => 0,
-        }
-    };
+    let deliverable_duffs = sole_deliverable_value(&finalized.transaction().output);
     unsafe { *out_deliverable_duffs = deliverable_duffs };
 
     let serialized = dashcore::consensus::serialize(finalized.transaction());
@@ -851,4 +859,84 @@ pub unsafe extern "C" fn core_wallet_transaction_free(tx: *mut FFICoreTransactio
 
     tx.tx_bytes = std::ptr::null_mut();
     tx.tx_len = 0;
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::sole_deliverable_value;
+    use dashcore::blockdata::script::ScriptBuf;
+    use dashcore::TxOut;
+
+    /// A spendable output. The script only has to NOT be an OP_RETURN.
+    fn destination(value: u64) -> TxOut {
+        TxOut {
+            value,
+            script_pubkey: ScriptBuf::from(vec![0x76, 0xa9, 0x14]),
+        }
+    }
+
+    fn op_return(payload: &[u8]) -> TxOut {
+        let data = dashcore::script::PushBytesBuf::try_from(payload.to_vec())
+            .expect("test payload is within push limits");
+        TxOut {
+            value: 0,
+            script_pubkey: ScriptBuf::new_op_return(&data),
+        }
+    }
+
+    #[test]
+    fn a_lone_destination_is_the_deliverable_amount() {
+        assert_eq!(sole_deliverable_value(&[destination(27_442_985)]), 27_442_985);
+    }
+
+    /// The MAYAChain shape: vault output plus a zero-value memo. The memo must
+    /// not be mistaken for a second recipient, in EITHER order — Maya puts the
+    /// memo at VOUT1, but nothing in the calculation may depend on that.
+    #[test]
+    fn a_data_carrier_beside_the_destination_is_ignored_in_both_orders() {
+        let memo = op_return(b"=:MAYA.CACAO:maya1abc");
+        assert_eq!(
+            sole_deliverable_value(&[destination(27_442_985), memo.clone()]),
+            27_442_985,
+            "memo after the destination (the Maya layout)"
+        );
+        assert_eq!(
+            sole_deliverable_value(&[memo, destination(27_442_985)]),
+            27_442_985,
+            "memo before the destination"
+        );
+    }
+
+    /// Two recipients have no single deliverable amount. Reporting either one
+    /// would let a host quote a number the payment does not pay.
+    #[test]
+    fn two_spendable_outputs_report_zero() {
+        assert_eq!(sole_deliverable_value(&[destination(1_000), destination(2_000)]), 0);
+    }
+
+    #[test]
+    fn two_spendable_outputs_report_zero_even_beside_a_data_carrier() {
+        assert_eq!(
+            sole_deliverable_value(&[destination(1_000), op_return(b"x"), destination(2_000)]),
+            0
+        );
+    }
+
+    /// An OP_RETURN-only build pays no one; so does an empty output set.
+    #[test]
+    fn a_transaction_with_no_spendable_output_reports_zero() {
+        assert_eq!(sole_deliverable_value(&[op_return(b"data only")]), 0);
+        assert_eq!(sole_deliverable_value(&[]), 0);
+    }
+
+    /// An asset lock's single output IS an OP_RETURN, so it reports 0 rather
+    /// than its burn value. That is the intended reading: the credits go to an
+    /// identity, not to a payee a host would quote.
+    #[test]
+    fn an_op_return_carrying_value_still_reports_zero() {
+        let mut burn = op_return(b"credits");
+        burn.value = 500_000;
+        assert_eq!(sole_deliverable_value(&[burn]), 0);
+    }
 }
