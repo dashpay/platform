@@ -13,9 +13,8 @@
 //! queried-but-absent branch) contribute 0 to the sum via
 //! `filter_map(|e| e.count)`.
 
-use crate::platform::documents::count_proof_helpers::{assert_select_is_count, verify_count_query};
-use crate::platform::documents::document_query::DocumentQuery;
-use crate::platform::Fetch;
+use crate::documents::count_proof_helpers::{assert_select_is_count, verify_count_query};
+use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dash_context_provider::ContextProvider;
 use dpp::dashcore::Network;
@@ -46,9 +45,4 @@ impl FromProof<DocumentQuery> for DocumentCount {
             .map(DocumentCount);
         Ok((count, mtd, proof))
     }
-}
-
-impl Fetch for DocumentCount {
-    type Query = DocumentQuery;
-    type Request = dapi_grpc::platform::v0::GetDocumentsRequest;
 }
