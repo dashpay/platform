@@ -194,6 +194,27 @@ pub enum PlatformWalletError {
         required: Option<u64>,
     },
 
+    /// Atomic Core finalization could not select enough unreserved funds for a
+    /// POOLED build (more than one funding source offered).
+    ///
+    /// Separate from [`CoreInsufficientFunds`] because `available`/`required`
+    /// describe the UNION of every offered source: attributing them to one
+    /// account would misreport the figures and could name a source that
+    /// contributed nothing — or that the wallet does not even have. FFI maps
+    /// both variants to the same host-facing insufficient-funds code, so hosts
+    /// classify a shortfall identically either way.
+    ///
+    /// [`CoreInsufficientFunds`]: Self::CoreInsufficientFunds
+    #[error(
+        "insufficient unreserved Core funds across the pooled funding sources \
+         {sources:?}: available {available:?}, required {required:?}"
+    )]
+    CorePooledInsufficientFunds {
+        sources: Vec<AccountTypePreference>,
+        available: Option<u64>,
+        required: Option<u64>,
+    },
+
     #[error("no spendable inputs available on {account_type} account {account_index}: {context}")]
     NoSpendableInputs {
         account_type: StandardAccountType,

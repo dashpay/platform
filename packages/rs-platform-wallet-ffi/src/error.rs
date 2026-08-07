@@ -456,7 +456,12 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::AddressNonceMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAddressNonceMismatch
             }
-            PlatformWalletError::CoreInsufficientFunds { .. } => {
+            // Both shapes are "the wallet cannot cover this payment"; hosts
+            // classify and retry them identically, so the pooled variant rides
+            // the same code rather than forcing every host to learn a second
+            // insufficient-funds value.
+            PlatformWalletError::CoreInsufficientFunds { .. }
+            | PlatformWalletError::CorePooledInsufficientFunds { .. } => {
                 PlatformWalletFFIResultCode::ErrorCoreInsufficientFunds
             }
             PlatformWalletError::AssetLockNotTracked(..) => {

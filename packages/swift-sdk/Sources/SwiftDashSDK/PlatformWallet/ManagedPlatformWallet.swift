@@ -4219,12 +4219,16 @@ extension ManagedPlatformWallet {
     /// this call and `broadcastSigned` drops it on restart and the UTXOs become
     /// spendable again.
     ///
+    /// Funding defaults to `.allSpendable`: BIP44 + BIP32 + every DashPay
+    /// contact-receiving account, change returning to BIP44. Pass an explicit
+    /// `accountType` to restrict the payment to one family.
+    ///
     /// Kotlin parity: `ManagedPlatformWallet.buildSignedPayment`
     /// (`ManagedPlatformWallet.kt`).
     public func buildSignedPayment(
         recipients: [(address: String, amountDuffs: UInt64)],
         network: Network,
-        accountType: CoreTransactionBuilder.AccountType = .bip44,
+        accountType: CoreTransactionBuilder.AccountType = .allSpendable,
         accountIndex: UInt32 = 0
     ) throws -> SignedCoreTransaction {
         guard !recipients.isEmpty else {

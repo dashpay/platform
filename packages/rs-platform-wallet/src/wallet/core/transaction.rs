@@ -5,10 +5,10 @@
 //! lock is dropped, so an external signer may call back into a host mnemonic
 //! resolver without pinning wallet state.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use dashcore::{Address, Transaction};
+use dashcore::{Address, OutPoint, Transaction};
 use key_wallet::account::AccountType;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionError;
@@ -23,14 +23,21 @@ use super::{CoreWallet, WalletGeneration};
 use crate::broadcaster::TransactionBroadcaster;
 use crate::PlatformWalletError;
 
-fn map_builder_error(
-    error: BuilderError,
-    // Representative source for the typed insufficient-funds error: the FIRST
-    // preference of the pooled list (BIP44 for a plain send), whose account
-    // also supplies the change address.
-    account_type: AccountTypePreference,
-    account_index: u32,
-) -> PlatformWalletError {
+/// What funded (or failed to fund) a build, for attributing a shortfall.
+///
+/// A single-source build can name its account. A pooled build cannot: the
+/// builder's `available`/`required` describe the UNION of every offered source,
+/// so naming one of them would misreport the figures and could point at a
+/// source that contributed nothing.
+enum FundingContext<'a> {
+    Single {
+        preference: AccountTypePreference,
+        index: u32,
+    },
+    Pooled(&'a [AccountTypePreference]),
+}
+
+fn map_builder_error(error: BuilderError, context: FundingContext<'_>) -> PlatformWalletError {
     let funds = match error {
         BuilderError::InsufficientFunds {
             available,
@@ -44,11 +51,20 @@ fn map_builder_error(
         _ => None,
     };
     if let Some((available, required)) = funds {
-        return PlatformWalletError::CoreInsufficientFunds {
-            account_type,
-            account_index,
-            available,
-            required,
+        return match context {
+            FundingContext::Single { preference, index } => {
+                PlatformWalletError::CoreInsufficientFunds {
+                    account_type: preference,
+                    account_index: index,
+                    available,
+                    required,
+                }
+            }
+            FundingContext::Pooled(sources) => PlatformWalletError::CorePooledInsufficientFunds {
+                sources: sources.to_vec(),
+                available,
+                required,
+            },
         };
     }
     PlatformWalletError::TransactionBuild(error.to_string())
@@ -310,13 +326,19 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // this build still owns, even if a TTL sweep re-reserved them under
             // a new token meanwhile (`dashpay/platform#4185`).
             let mut builder = builder.set_current_height(height);
-            let mut funding_accounts: Vec<AccountType> = Vec::new();
+            // Accounts whose UTXOs were OFFERED to selection, in funding order.
+            // Not the same as the accounts that end up contributing inputs —
+            // selection may take nothing from most of them — so this drives
+            // build-time cleanup only, and the contributor list stored on the
+            // transaction is derived from the selected inputs below.
+            let mut offered_accounts: Vec<AccountType> = Vec::new();
+            let mut offered_seen: HashSet<AccountType> = HashSet::new();
             let mut paths: HashMap<Address, DerivationPath> = HashMap::new();
             for &preference in sources {
                 for at in
                     resolve_source_accounts(&info.core_wallet.accounts, preference, source_index)
                 {
-                    if funding_accounts.contains(&at) {
+                    if !offered_seen.insert(at) {
                         continue;
                     }
                     let (Some(account), Some(managed)) = (
@@ -336,26 +358,34 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                         }
                     }
                     builder = builder.add_funding(managed, account);
-                    funding_accounts.push(at);
+                    offered_accounts.push(at);
                 }
                 // A strict single-source SET selector (a DashPay preference
                 // naming zero accounts) also errors — the caller asked for
                 // exactly those funds.
-                if strict && funding_accounts.is_empty() {
+                if strict && offered_accounts.is_empty() {
                     return Err(PlatformWalletError::WalletNotFound(format!(
                         "wallet account {preference:?} #{source_index} not found"
                     )));
                 }
             }
-            if funding_accounts.is_empty() {
+            if offered_accounts.is_empty() {
                 return Err(PlatformWalletError::WalletNotFound(format!(
                     "no funding account of any named source at index {source_index}"
                 )));
             }
 
+            let funding_context = if strict {
+                FundingContext::Single {
+                    preference: primary,
+                    index: source_index,
+                }
+            } else {
+                FundingContext::Pooled(sources)
+            };
             let (unsigned, fee, reservation_token) = builder
                 .build_unsigned_reserved()
-                .map_err(|error| map_builder_error(error, primary, source_index))?;
+                .map_err(|error| map_builder_error(error, funding_context))?;
 
             // Release across every contributing account on the error paths
             // below: the pooled reservation lives per account under the one
@@ -371,19 +401,32 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 };
             }
 
+            // Map every selected input back to the account that owns it. That
+            // mapping — not the offered list — is what the transaction carries:
+            // selection routinely takes nothing from most offered sources, and
+            // a `funding_accounts` naming every contact would make release and
+            // registry bookkeeping scale with the address book while claiming
+            // contributions that never happened.
+            let mut contributors: Vec<AccountType> = Vec::new();
             let selected: Vec<Utxo> = match unsigned
                 .input
                 .iter()
                 .map(|input| {
-                    funding_accounts
+                    offered_accounts
                         .iter()
                         .find_map(|at| {
-                            info.core_wallet
-                                .accounts
-                                .funds_account(at)
-                                .and_then(|managed| managed.utxos.get(&input.previous_output))
+                            let utxo =
+                                info.core_wallet.accounts.funds_account(at).and_then(
+                                    |managed| managed.utxos.get(&input.previous_output),
+                                )?;
+                            Some((*at, utxo.clone()))
                         })
-                        .cloned()
+                        .map(|(at, utxo)| {
+                            if !contributors.contains(&at) {
+                                contributors.push(at);
+                            }
+                            utxo
+                        })
                         .ok_or_else(|| {
                             PlatformWalletError::TransactionBuild(format!(
                                 "selected input {} is no longer in any funding account",
@@ -395,10 +438,29 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             {
                 Ok(selected) => selected,
                 Err(error) => {
-                    release_all!(funding_accounts, info.core_wallet.accounts, &unsigned);
+                    release_all!(offered_accounts, info.core_wallet.accounts, &unsigned);
                     return Err(error);
                 }
             };
+            // Duplicate prevouts make a transaction invalid (Core rejects it),
+            // and additive funding is the shape that can produce them — an
+            // outpoint seeded by `add_inputs` that a funding account also
+            // offers. `add_funding` filters those (rust-dashcore#931); this
+            // asserts the invariant here too rather than handing a signer, and
+            // then the network, a transaction that cannot confirm.
+            let mut prevouts: HashSet<OutPoint> = HashSet::new();
+            if let Some(duplicate) = unsigned
+                .input
+                .iter()
+                .find(|input| !prevouts.insert(input.previous_output))
+            {
+                let error = PlatformWalletError::TransactionBuild(format!(
+                    "built transaction spends {} twice",
+                    duplicate.previous_output
+                ));
+                release_all!(offered_accounts, info.core_wallet.accounts, &unsigned);
+                return Err(error);
+            }
             // The per-account path collection above covered every UTXO offered
             // to selection, so every selected input's address must be present.
             if let Some(missing) = selected
@@ -409,7 +471,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                     "no derivation path for selected input address {}",
                     missing.address
                 ));
-                release_all!(funding_accounts, info.core_wallet.accounts, &unsigned);
+                release_all!(offered_accounts, info.core_wallet.accounts, &unsigned);
                 return Err(error);
             }
 
@@ -420,7 +482,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 paths,
                 height,
                 reservation_token,
-                funding_accounts,
+                contributors,
             )
         };
 
@@ -685,6 +747,21 @@ mod tests {
                 .iter()
                 .all(|input| !input.script_sig.is_empty()),
             "every pooled input must be signed, including the DIP-15 contact input"
+        );
+        // BIP32 account 0 exists on the test wallet but holds nothing, so it is
+        // OFFERED to selection and contributes no input. Contributors are
+        // derived from the selected prevouts, so it must not be recorded —
+        // otherwise release and registry bookkeeping would claim accounts that
+        // never funded anything and scale with the address book.
+        assert!(
+            !finalized
+                .funding_accounts()
+                .contains(&key_wallet::account::AccountType::Standard {
+                    index: 0,
+                    standard_account_type: StandardAccountType::BIP32Account,
+                }),
+            "an offered-but-unselected account must not be recorded as a contributor, got {:?}",
+            finalized.funding_accounts()
         );
 
         // And releasing must reach the contact account too.
