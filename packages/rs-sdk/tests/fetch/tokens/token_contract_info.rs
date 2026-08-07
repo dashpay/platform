@@ -4,7 +4,6 @@ use dash_sdk::platform::{Fetch, Identifier, Query, QuerySettings};
 use dash_sdk::Sdk;
 use dpp::tokens::contract_info::TokenContractInfo;
 use dpp::version::PlatformVersion;
-use rs_dapi_client::RequestSettings;
 
 #[tokio::test]
 async fn test_token_contract_info_fetch_by_identifier() {
@@ -51,9 +50,7 @@ async fn test_token_contract_info_query_prove_true() {
     let token_id = Identifier::from_bytes(&[3u8; 32]).unwrap();
     let query = TokenContractInfoQuery { token_id };
 
-    let request_settings = RequestSettings::default();
     let settings = QuerySettings {
-        request_settings: &request_settings,
         protocol_version: PlatformVersion::latest(),
         prove: true,
     };
@@ -72,9 +69,7 @@ async fn test_token_contract_info_query_prove_false() {
     let token_id = Identifier::from_bytes(&[4u8; 32]).unwrap();
     let query = TokenContractInfoQuery { token_id };
 
-    let request_settings = RequestSettings::default();
     let settings = QuerySettings {
-        request_settings: &request_settings,
         protocol_version: PlatformVersion::latest(),
         prove: false,
     };

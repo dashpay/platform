@@ -581,15 +581,14 @@ impl Sdk {
         self.proofs
     }
 
-    /// Build a [`QuerySettings`] borrowing this SDK's protocol version,
-    /// request settings, and `prove` flag.
+    /// Build a [`QuerySettings`] borrowing this SDK's protocol version
+    /// and `prove` flag.
     ///
     /// Hand the resulting context to [`crate::platform::Query::query`] when
     /// you need to encode a user-facing query into a wire `TransportRequest`
     /// without taking a full `&Sdk` dependency through the encoder layer.
     pub fn query_settings(&self) -> crate::platform::QuerySettings<'_> {
         crate::platform::QuerySettings {
-            request_settings: &self.dapi_client_settings,
             protocol_version: self.version(),
             prove: self.prove(),
         }

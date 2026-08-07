@@ -249,11 +249,9 @@ mod tests {
     use super::*;
     use dapi_grpc::platform::v0::get_epochs_info_request;
     use dpp::block::epoch::EPOCH_KEY_OFFSET;
-    use rs_dapi_client::RequestSettings;
 
-    fn query_settings(request_settings: &RequestSettings) -> crate::platform::QuerySettings<'_> {
+    fn query_settings() -> crate::platform::QuerySettings<'static> {
         crate::platform::QuerySettings {
-            request_settings,
             protocol_version: dpp::version::PlatformVersion::latest(),
             prove: true,
         }
@@ -270,8 +268,7 @@ mod tests {
     /// returning elements.
     #[test]
     fn should_build_current_epoch_queries_verifiable_without_metadata() {
-        let request_settings = RequestSettings::default();
-        let settings = query_settings(&request_settings);
+        let settings = query_settings();
 
         // Step 1: the probe is ascending with an explicit genesis start.
         let probe = current_epoch_probe_query()

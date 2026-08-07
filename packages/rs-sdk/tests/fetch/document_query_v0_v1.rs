@@ -140,9 +140,10 @@ fn v0_wire_shape_with_forced_v0_platform_version() {
 #[test]
 fn v0_rejects_count_star_projection() {
     let q = build_basic_document_query().with_select(SelectProjection::count_star());
-    let err = q
-        .try_into_request_for_version(v0_dispatch_version())
-        .expect_err("count_star on v0 must reject");
+    let err = SdkError::from(
+        q.try_into_request_for_version(v0_dispatch_version())
+            .expect_err("count_star on v0 must reject"),
+    );
     match err {
         SdkError::Config(msg) => assert!(
             msg.contains("v3.1+"),
@@ -155,9 +156,10 @@ fn v0_rejects_count_star_projection() {
 #[test]
 fn v0_rejects_group_by() {
     let q = build_basic_document_query().with_group_by("a");
-    let err = q
-        .try_into_request_for_version(v0_dispatch_version())
-        .expect_err("group_by on v0 must reject");
+    let err = SdkError::from(
+        q.try_into_request_for_version(v0_dispatch_version())
+            .expect_err("group_by on v0 must reject"),
+    );
     assert!(matches!(err, SdkError::Config(_)));
 }
 
@@ -174,25 +176,23 @@ fn v0_rejects_having() {
         operator: HavingOperator::GreaterThan,
         right: HavingRightOperand::Value(Value::U64(0)),
     }]);
-    let err = q
-        .try_into_request_for_version(v0_dispatch_version())
-        .expect_err("having on v0 must reject");
+    let err = SdkError::from(
+        q.try_into_request_for_version(v0_dispatch_version())
+            .expect_err("having on v0 must reject"),
+    );
     assert!(matches!(err, SdkError::Config(_)));
 }
 
 #[test]
 fn encoder_dispatches_v0_via_query_settings_without_sdk() {
     use dash_sdk::platform::{Query, QuerySettings};
-    use rs_dapi_client::RequestSettings;
 
     // The whole point of QuerySettings: encoder is testable without
     // `Sdk::new_mock()`. Construct the context directly from a
     // PlatformVersion whose document_query is pinned to V0 dispatch
     // and assert the wire shape comes out V0.
     let v0_pv = v0_dispatch_version();
-    let request_settings = RequestSettings::default();
     let settings = QuerySettings {
-        request_settings: &request_settings,
         protocol_version: v0_pv,
         prove: true,
     };
@@ -206,7 +206,6 @@ fn encoder_dispatches_v0_via_query_settings_without_sdk() {
     // Same query, latest PlatformVersion (V1 dispatch) — should now
     // emit V1 wire bytes through the same code path.
     let latest_settings = QuerySettings {
-        request_settings: &request_settings,
         protocol_version: PlatformVersion::latest(),
         prove: true,
     };
@@ -261,12 +260,9 @@ fn protocol_version_for_v3_1_dev_keeps_document_query_v1() {
 #[test]
 fn document_query_dispatches_v0_when_sdk_initial_version_is_v3_0_pv() {
     use dash_sdk::platform::{Query, QuerySettings};
-    use rs_dapi_client::RequestSettings;
 
     let pv_v3_0 = PlatformVersion::get(11).expect("PROTOCOL_VERSION_11 exists");
-    let request_settings = RequestSettings::default();
     let settings = QuerySettings {
-        request_settings: &request_settings,
         protocol_version: pv_v3_0,
         prove: true,
     };

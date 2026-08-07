@@ -31,9 +31,8 @@
 //!   ranges are simply absent — the range itself is unbounded so
 //!   there's no enumerable key set to ever-emit.
 
-use crate::platform::documents::count_proof_helpers::{assert_select_is_count, verify_count_query};
-use crate::platform::documents::document_query::DocumentQuery;
-use crate::platform::Fetch;
+use crate::documents::count_proof_helpers::{assert_select_is_count, verify_count_query};
+use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dash_context_provider::ContextProvider;
 use dpp::dashcore::Network;
@@ -61,9 +60,4 @@ impl FromProof<DocumentQuery> for DocumentSplitCounts {
             verify_count_query(request, response, platform_version, provider)?;
         Ok((entries.map(DocumentSplitCounts::from_verified), mtd, proof))
     }
-}
-
-impl Fetch for DocumentSplitCounts {
-    type Query = DocumentQuery;
-    type Request = dapi_grpc::platform::v0::GetDocumentsRequest;
 }

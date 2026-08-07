@@ -6,7 +6,7 @@
 // and while it will change the substance, the API structure will remain the same.
 
 pub mod address_sync;
-pub mod block_info_from_metadata;
+pub use dash_platform_queries::block_info_from_metadata;
 pub mod dashpay;
 mod delegate;
 pub mod documents;
@@ -18,7 +18,7 @@ mod fetch_unproved;
 pub mod group_actions;
 pub mod identities_contract_keys_query;
 pub mod query;
-pub mod query_settings;
+pub use dash_platform_queries::query_settings;
 #[cfg(feature = "shielded")]
 pub mod shielded;
 pub mod tokens;
