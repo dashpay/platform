@@ -1,3 +1,22 @@
+//! Protobuf message types and generated gRPC stubs for DAPI.
+//!
+//! # Feature flags
+//!
+//! | feature | meaning |
+//! |---|---|
+//! | `core` / `platform` / `drive` | which proto surfaces are generated |
+//! | `client` | generate client stubs (generic over the transport) |
+//! | `transport` | tonic's opt-in native transport: `connect()` on generated clients and TLS roots. Pulls the hyper/rustls transport stack. |
+//! | `server` | generate server stubs; implies `client`, `drive`, `transport` |
+//! | `serde` / `mocks` | serde derives / dump-and-replay support |
+//!
+//! Types-only consumers (proof verification, embedders with their own
+//! transport) build with `default-features = false, features = ["platform",
+//! "client"]` and get message types plus transport-generic client stubs with
+//! no native networking stack in the dependency tree. The default feature set
+//! is also wasm32-safe; native consumers that call generated `connect()`
+//! methods must enable `transport` explicitly.
+
 pub use prost::Message;
 
 #[cfg(feature = "core")]
