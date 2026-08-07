@@ -1044,6 +1044,133 @@ mod tests {
         }
     }
 
+    /// Broadcaster that succeeds and counts its calls, so a test can assert
+    /// an abandoned build never reached the wire.
+    #[derive(Default)]
+    struct CountingOkBroadcaster {
+        calls: std::sync::atomic::AtomicUsize,
+    }
+
+    impl CountingOkBroadcaster {
+        fn calls(&self) -> usize {
+            self.calls.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl TransactionBroadcaster for CountingOkBroadcaster {
+        async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError> {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(transaction.txid())
+        }
+    }
+
+    /// Builds an `AssetLockManager` over the CoinJoin-funded fixture
+    /// (CoinJoin account 0 holds a single 10_000_000-duff spendable UTXO).
+    async fn coinjoin_funded_asset_lock_manager<B: TransactionBroadcaster>(
+        broadcaster: Arc<B>,
+    ) -> (
+        Arc<AssetLockManager<B>>,
+        crate::test_support::WalletSigner,
+        Arc<CapturingPersistence>,
+    ) {
+        let persistence = Arc::new(CapturingPersistence::default());
+        let (wallet_manager, wallet_id, _generation, signer) =
+            crate::test_support::funded_coinjoin_wallet_manager().await;
+
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let manager = Arc::new(AssetLockManager::new(
+            sdk,
+            wallet_manager,
+            wallet_id,
+            Arc::new(Notify::new()),
+            broadcaster,
+            WalletPersister::new(
+                wallet_id,
+                Arc::clone(&persistence) as Arc<dyn PlatformWalletPersistence>,
+            ),
+        ));
+
+        (manager, signer, persistence)
+    }
+
+    /// An undersized drain is abandoned BEFORE tracking or broadcast — the
+    /// floor is judged on the BUILT payload (the fixture's 10_000_000-duff
+    /// CoinJoin balance minus L1 fee), nothing reaches the wire, no row is
+    /// tracked, and the owner-guarded reservation release frees the inputs
+    /// so an immediate follow-up drain over the SAME single-UTXO account
+    /// can select them and succeed.
+    #[tokio::test]
+    async fn undersized_drain_abandoned_before_broadcast() {
+        let broadcaster = Arc::new(CountingOkBroadcaster::default());
+        let (manager, signer, persistence) =
+            coinjoin_funded_asset_lock_manager(Arc::clone(&broadcaster)).await;
+
+        let result = manager
+            .broadcast_funded_asset_lock_with_funding(
+                super::AssetLockBuildAmount::DrainAll {
+                    // Far above the fixture balance: the built lock value
+                    // (Σ inputs − fee < 10_000_000) must fail the floor.
+                    minimum_lock_duffs: Some(u64::MAX),
+                },
+                key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingAccount::CoinJoin {
+                    account_index: 0,
+                },
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                &signer,
+            )
+            .await;
+        let err = result.expect_err("undersized drain must be refused");
+        assert!(
+            err.to_string().contains("below the required minimum"),
+            "unexpected error for undersized drain: {err}"
+        );
+        assert_eq!(
+            broadcaster.calls(),
+            0,
+            "an abandoned drain must never reach the broadcaster"
+        );
+        {
+            let wm = manager.wallet_manager.read().await;
+            let (_, info) = wm
+                .get_wallet_and_info(&manager.wallet_id)
+                .expect("wallet still present");
+            assert!(
+                info.tracked_asset_locks.is_empty(),
+                "an abandoned drain must not leave a tracked row, got {:?}",
+                info.tracked_asset_locks
+            );
+        }
+        assert!(
+            persistence.removed_outpoints().is_empty(),
+            "nothing was tracked, so nothing should be queued for removal"
+        );
+
+        // The reservation was released through the owner token: a follow-up
+        // drain over the same single-UTXO CoinJoin account must be able to
+        // select the inputs immediately and broadcast.
+        manager
+            .broadcast_funded_asset_lock_with_funding(
+                super::AssetLockBuildAmount::DrainAll {
+                    minimum_lock_duffs: Some(1),
+                },
+                key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingAccount::CoinJoin {
+                    account_index: 0,
+                },
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                &signer,
+            )
+            .await
+            .expect("follow-up drain must reselect the released inputs");
+        assert_eq!(
+            broadcaster.calls(),
+            1,
+            "the follow-up drain should broadcast exactly once"
+        );
+    }
+
     /// Builds an `AssetLockManager` over the shared BIP44-funded fixture.
     async fn funded_asset_lock_manager<B: TransactionBroadcaster>(
         broadcaster: Arc<B>,

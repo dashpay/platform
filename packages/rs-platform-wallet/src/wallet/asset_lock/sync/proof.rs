@@ -595,6 +595,80 @@ mod tests {
     use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
     use crate::wallet::platform_wallet::WalletId;
 
+    /// CoinJoin-family regression for [`funding_tx_record`]: a record filed
+    /// only under `coinjoin_accounts` (how key-wallet records a tx spending
+    /// CoinJoin inputs, e.g. a whole-balance drain asset lock) must be
+    /// visible — the pre-fix BIP44-only lookups missed it and burned the
+    /// full proof-wait timeout under `NoPlatformPersistence`.
+    #[test]
+    fn funding_tx_record_finds_coinjoin_only_record() {
+        use key_wallet::test_utils::TestWalletContext;
+
+        let mut ctx = TestWalletContext::new_random();
+        let record = coinjoin_record_with_txid(0x77);
+        let txid = record.txid;
+        ctx.managed_wallet
+            .first_coinjoin_managed_account_mut()
+            .expect("default wallet has CoinJoin account 0")
+            .transactions_mut()
+            .insert(txid, record);
+
+        let found = funding_tx_record(&ctx.managed_wallet.accounts, 0, &txid)
+            .expect("CoinJoin-family record must be found by the shared lookup");
+        assert_eq!(found.txid, txid);
+
+        // Unknown txid and unknown account index are clean misses.
+        assert!(
+            funding_tx_record(&ctx.managed_wallet.accounts, 0, &Txid::from([0x01; 32])).is_none()
+        );
+        assert!(funding_tx_record(&ctx.managed_wallet.accounts, 9, &txid).is_none());
+    }
+
+    /// The historical BIP44 path through [`funding_tx_record`] still resolves.
+    #[test]
+    fn funding_tx_record_finds_bip44_record() {
+        use key_wallet::test_utils::TestWalletContext;
+
+        let mut ctx = TestWalletContext::new_random();
+        let record = record_with_txid(0x42);
+        let txid = record.txid;
+        ctx.managed_wallet
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .expect("default wallet has BIP44 account 0")
+            .transactions_mut()
+            .insert(txid, record);
+
+        let found = funding_tx_record(&ctx.managed_wallet.accounts, 0, &txid)
+            .expect("BIP44-family record must be found by the shared lookup");
+        assert_eq!(found.txid, txid);
+    }
+
+    /// [`record_with_txid`] sibling filed as a CoinJoin-account record.
+    fn coinjoin_record_with_txid(seed: u8) -> TransactionRecord {
+        let tx = Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: dashcore::OutPoint::new(Txid::from([seed; 32]), 0),
+                ..Default::default()
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        TransactionRecord::new(
+            tx,
+            AccountType::CoinJoin { index: 0 },
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            Vec::new(),
+            Vec::new(),
+            0,
+        )
+    }
+
     fn record_with_txid(seed: u8) -> TransactionRecord {
         // A unique txid per `seed` falls out of the (different) input
         // outpoint; the actual transaction body doesn't matter for the
