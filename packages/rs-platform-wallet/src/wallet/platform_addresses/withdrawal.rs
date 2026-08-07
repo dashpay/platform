@@ -1570,6 +1570,7 @@ mod plan_withdrawal_seam_tests {
             Arc::clone(&sdk),
             Arc::clone(&wallet_manager),
             wallet_id,
+            Arc::new(crate::wallet::core::WalletGeneration::new()),
             Arc::new(Notify::new()),
             broadcaster,
             persister.clone(),

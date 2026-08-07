@@ -12,6 +12,7 @@ use tokio::sync::{Notify, RwLock};
 use crate::broadcaster::TransactionBroadcaster;
 use crate::changeset::changeset::AssetLockChangeSet;
 use crate::error::PlatformWalletError;
+use crate::wallet::core::WalletGeneration;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
@@ -84,6 +85,19 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     pub(super) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     /// Identifies which wallet within the manager this manager operates on.
     pub(super) wallet_id: WalletId,
+    /// The wallet *generation* this manager was built for.
+    ///
+    /// Wallet ids are deterministic in (seed, network), so removing a wallet
+    /// and re-importing the same mnemonic reuses the same id under a *fresh*
+    /// [`WalletGeneration`]. This `Arc` is the unforgeable generation
+    /// identity (`Arc::ptr_eq` against `PlatformWalletInfo.generation`) and
+    /// also owns that generation's lifecycle gate — held shared across every
+    /// network broadcast so removal's exclusive teardown cannot interleave
+    /// between the liveness check and the send. Same object
+    /// [`CoreWallet`](crate::CoreWallet) and
+    /// [`PlatformWallet`](crate::PlatformWallet) hold; see
+    /// [`WalletGeneration`].
+    pub(super) generation: Arc<WalletGeneration>,
     /// Notified on InstantLock / ChainLock events by SpvEventForwarder.
     /// Used by `wait_for_proof()` and `wait_for_chain_lock()`.
     pub(super) lock_notify: Arc<Notify>,
@@ -303,6 +317,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         sdk: Arc<dash_sdk::Sdk>,
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
         wallet_id: WalletId,
+        generation: Arc<WalletGeneration>,
         lock_notify: Arc<Notify>,
         broadcaster: Arc<B>,
         persister: WalletPersister,
@@ -311,6 +326,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             sdk,
             wallet_manager,
             wallet_id,
+            generation,
             lock_notify,
             broadcaster,
             persister,
@@ -330,6 +346,76 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             #[cfg(test)]
             advance_pre_lock_gate: std::sync::Mutex::new(None),
         }
+    }
+
+    /// This manager's owning [`WalletGeneration`] — generation identity and
+    /// lifecycle gate. See the field docs on [`Self::generation`].
+    pub(crate) fn generation(&self) -> &Arc<WalletGeneration> {
+        &self.generation
+    }
+
+    /// Enter this generation's lifecycle gate as a payment/broadcast
+    /// operation — see [`WalletGeneration::payment_guard`].
+    ///
+    /// Held across the
+    /// [`is_current_generation`](Self::is_current_generation) check and
+    /// every network send so removal cannot interleave between them and
+    /// complete while an asset-lock transaction is still about to hit the
+    /// wire. Lock order: this BEFORE `wallet_manager` (and before either
+    /// ordering mutex that is itself taken before `wallet_manager`).
+    pub(super) async fn generation_payment_guard(&self) -> tokio::sync::RwLockReadGuard<'_, ()> {
+        self.generation.payment_guard().await
+    }
+
+    /// Whether the generation this manager names is still the one
+    /// registered under `wallet_id` in the shared `WalletManager`.
+    ///
+    /// Same identity as
+    /// [`CoreWallet::is_current_generation`](crate::CoreWallet::is_current_generation):
+    /// `Arc::ptr_eq` on the per-generation marker. A removed generation
+    /// (or a same-id replacement) returns `false`.
+    ///
+    /// Callers that act on a `true` result must already hold
+    /// [`generation_payment_guard`](Self::generation_payment_guard) —
+    /// without it a removal can land between the check and the action.
+    pub(super) async fn is_current_generation(&self) -> bool {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id)
+            .is_some_and(|info| Arc::ptr_eq(&info.generation, &self.generation))
+    }
+
+    /// Authoritative pre-broadcast admission: take this generation's
+    /// shared lifecycle gate, then refuse if the generation is no longer
+    /// current (or the manager has been retired).
+    ///
+    /// The returned guard MUST be held for the entire subsequent
+    /// `broadcaster.broadcast(...)` call. Dropping it re-opens the
+    /// window for removal's exclusive teardown to complete while the
+    /// transaction is still on the wire.
+    ///
+    /// Returns [`PlatformWalletError::AssetLockManagerInactive`] when the
+    /// generation is gone or the manager was deactivated — the same
+    /// stale-handle signal the mutate→enqueue paths use, so FFI hosts
+    /// re-acquire from the current wallet.
+    pub(super) async fn admit_broadcast(
+        &self,
+    ) -> Result<tokio::sync::RwLockReadGuard<'_, ()>, PlatformWalletError> {
+        // Gate first, then the manager read for the generation check.
+        // Teardown takes the exclusive side and then the manager write
+        // lock, so this order cannot deadlock against removal.
+        let lifecycle = self.generation_payment_guard().await;
+        if !self.is_current_generation().await {
+            return Err(PlatformWalletError::AssetLockManagerInactive(hex::encode(
+                self.wallet_id,
+            )));
+        }
+        // Defense in depth: a manager can be deactivated without the map
+        // entry vanishing only if a future path retires it in place. The
+        // production remover always deactivates under the exclusive gate
+        // it already holds, so a live generation implies active — but the
+        // check is cheap and keeps the inactive signal uniform.
+        self.ensure_active()?;
+        Ok(lifecycle)
     }
 
     /// Acquire [`status_persist_serial`](Self::status_persist_serial).

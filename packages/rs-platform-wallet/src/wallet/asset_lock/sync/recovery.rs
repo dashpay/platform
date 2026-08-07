@@ -375,8 +375,17 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             AssetLockStatus::Built => {
                 // Promoted to `Broadcast` in step 1b — this arm owns that
                 // promotion, so it is the one that re-broadcasts.
+                //
+                // Hold the generation lifecycle gate across the liveness
+                // check and the network send so wallet removal cannot
+                // complete while this re-broadcast is still in flight
+                // (host teardown would otherwise delete recovery material
+                // for a transaction that can still reach the network).
+                let _lifecycle = self.admit_broadcast().await?;
                 match self.broadcaster.broadcast(&tx).await {
-                    Ok(_) => {}
+                    Ok(_) => {
+                        drop(_lifecycle);
+                    }
                     Err(e @ BroadcastError::Rejected { .. }) => {
                         // Keep `Broadcast`: a concurrent successful resume
                         // may own that status, and the `Broadcast` arm
@@ -415,15 +424,22 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // rather than failing the resume on a tx that is actually
                 // fine. If the tx really was mined, `wait_for_proof`
                 // resolves immediately from the SPV/persisted record.
-                if let Err(e) = self.broadcaster.broadcast(&tx).await {
-                    tracing::debug!(
-                        outpoint = %out_point,
-                        error = %e,
-                        "resume_asset_lock: defensive re-broadcast of a \
-                         Broadcast-status lock returned an error (likely \
-                         already in a mempool or mined); proceeding to wait \
-                         for proof"
-                    );
+                //
+                // Same generation barrier as the `Built` arm: a defensive
+                // re-broadcast is still a network send for this generation
+                // and must not race wallet teardown.
+                {
+                    let _lifecycle = self.admit_broadcast().await?;
+                    if let Err(e) = self.broadcaster.broadcast(&tx).await {
+                        tracing::debug!(
+                            outpoint = %out_point,
+                            error = %e,
+                            "resume_asset_lock: defensive re-broadcast of a \
+                             Broadcast-status lock returned an error (likely \
+                             already in a mempool or mined); proceeding to wait \
+                             for proof"
+                        );
+                    }
                 }
                 let proof = self.wait_for_proof(out_point, timeout).await?;
                 self.validate_or_upgrade_proof(proof, account_index, out_point)
@@ -659,7 +675,7 @@ mod tests {
 
     #[tokio::test]
     async fn built_resume_rebroadcasts_original_and_typed_failures_do_not_broadcast() {
-        let (wallet_manager, wallet_id, _balance, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let persistence = Arc::new(RecordingPersistence::default());
         let broadcaster = Arc::new(RecordingBroadcaster::default());
@@ -673,6 +689,7 @@ mod tests {
             sdk,
             Arc::clone(&wallet_manager),
             wallet_id,
+            Arc::clone(&generation),
             Arc::new(Notify::new()),
             Arc::clone(&broadcaster),
             WalletPersister::new(wallet_id, persistence),
@@ -795,7 +812,7 @@ mod tests {
 
         // --- Session 1: build a top-up asset lock. This lazily creates
         // the IdentityTopUp{7} account and must persist its registration.
-        let (wallet_manager, wallet_id, _balance, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let persistence = Arc::new(RecordingPersistence::default());
         // The mock SDK network must match the testnet wallet fixture:
@@ -811,6 +828,7 @@ mod tests {
             Arc::clone(&sdk),
             wallet_manager,
             wallet_id,
+            Arc::clone(&generation),
             Arc::new(Notify::new()),
             Arc::new(AlwaysRejectedBroadcaster),
             WalletPersister::new(
@@ -872,9 +890,10 @@ mod tests {
             accounts.insert(account).expect("insert restored account");
         }
         let restored_wallet = Wallet::new_external_signable(Network::Testnet, wallet_id, accounts);
+        let generation = Arc::new(WalletGeneration::new());
         let mut restored_info = PlatformWalletInfo {
             core_wallet: ManagedWalletInfo::from_wallet(&restored_wallet, 0),
-            generation: Arc::new(WalletGeneration::new()),
+            generation: Arc::clone(&generation),
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
         };
@@ -906,6 +925,7 @@ mod tests {
             sdk,
             Arc::new(RwLock::new(wm)),
             wallet_id,
+            generation,
             Arc::new(Notify::new()),
             Arc::new(AlwaysRejectedBroadcaster),
             WalletPersister::new(wallet_id, persistence as Arc<dyn PlatformWalletPersistence>),

@@ -1937,6 +1937,7 @@ mod auto_select_tests {
             Arc::clone(&sdk),
             Arc::clone(&wallet_manager),
             [0u8; 32],
+            Arc::new(crate::wallet::core::WalletGeneration::new()),
             Arc::new(Notify::new()),
             broadcaster,
             persister.clone(),

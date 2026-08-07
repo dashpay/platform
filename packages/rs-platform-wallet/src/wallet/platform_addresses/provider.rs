@@ -1681,6 +1681,7 @@ mod tests {
             Arc::clone(&sdk),
             Arc::clone(&wallet_manager),
             WALLET,
+            Arc::new(crate::wallet::core::WalletGeneration::new()),
             Arc::new(Notify::new()),
             broadcaster,
             persister.clone(),

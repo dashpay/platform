@@ -883,9 +883,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         crate::wallet::reservations::ReservedFundingAccount::CoinJoin(account_index)
                     }
                 };
+                // Bound to THIS manager's generation: after dropping
+                // `build_persist_serial`, a remove/re-import can install a
+                // replacement under the same deterministic id. The release
+                // refuses to touch a different generation's ReservationSet.
                 crate::wallet::reservations::release_reservation_after_rejected_broadcast(
                     &self.wallet_manager,
                     &self.wallet_id,
+                    self.generation(),
                     reserved_account,
                     &tx,
                     reservation_token,
@@ -968,7 +973,24 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         //    transaction — so at no point is the row resumable while its
         //    inputs are re-spendable. A `MaybeSent` failure keeps both the
         //    reservation and the resumable row.
+        //
+        // The generation lifecycle gate is held across the liveness check
+        // AND the network send. Without it, `remove_wallet_with_teardown`
+        // can take the exclusive gate, deactivate this manager, drop the
+        // wallet, run host teardown, and return while this call is still
+        // about to enter (or is still inside) `broadcast` — putting a
+        // transaction on the wire after the host deleted the wallet and its
+        // recovery material. Same barrier the deferred-payment path uses
+        // (`WalletGeneration::payment_guard` + `is_current_generation`).
+        let _lifecycle = self.admit_broadcast().await?;
         if let Err(e) = self.broadcaster.broadcast(&tx).await {
+            // Drop the lifecycle gate before rejection cleanup: untrack takes
+            // `status_persist_serial` then `wallet_manager`, and the release
+            // is generation-bound under a manager read lock. Holding the
+            // shared payment gate across those steps would only stall
+            // teardown without protecting anything the generation check
+            // does not already cover.
+            drop(_lifecycle);
             if matches!(e, crate::broadcaster::BroadcastError::Rejected { .. }) {
                 // `untrack_asset_lock` queues the changeset itself, as one
                 // serialized unit with the in-memory removal.
@@ -998,6 +1020,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // the inputs must stay reserved exactly like a `MaybeSent`
                 // outcome, or the still-tracked row would be resumable while
                 // its inputs are re-spendable.
+                //
+                // The release is generation-bound: `untrack` releases
+                // `status_persist_serial` before we get here, so a
+                // remove/re-import can install a replacement generation in
+                // that window. `release_reservation_after_rejected_broadcast`
+                // refuses unless `wallet_id` still resolves to THIS manager's
+                // generation under one manager-lock hold — matching
+                // `CoreWallet::release_transaction_reservation`.
                 if removed_built_row {
                     let reserved_account = match funding_account {
                         AssetLockFundingAccount::Bip44 {
@@ -1015,6 +1045,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     crate::wallet::reservations::release_reservation_after_rejected_broadcast(
                         &self.wallet_manager,
                         &self.wallet_id,
+                        self.generation(),
                         reserved_account,
                         &tx,
                         reservation_token,
@@ -1024,6 +1055,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             }
             return Err(e.into());
         }
+        // Successful send: drop the gate before the post-broadcast promote.
+        // The transaction is already on the wire; the promote is a local
+        // mutate→enqueue unit protected by `status_persist_serial` and the
+        // activity check, not by the network exclusion barrier.
+        drop(_lifecycle);
 
         // 4. Transition to Broadcast and queue the changeset.
         //
@@ -1137,7 +1173,7 @@ mod tests {
     use crate::wallet::asset_lock::manager::{
         AssetLockManager, PromotePostCasGate, ResumePrePromoteGate,
     };
-    use crate::wallet::asset_lock::tracked::AssetLockStatus;
+    use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
     use crate::wallet::persister::WalletPersister;
     use crate::wallet::platform_wallet::PlatformWalletInfo;
     use crate::wallet::platform_wallet::WalletId;
@@ -1250,7 +1286,7 @@ mod tests {
         broadcaster: Arc<B>,
         persistence: Arc<CapturingPersistence>,
     ) -> (Arc<AssetLockManager<B>>, WalletSigner) {
-        let (wallet_manager, wallet_id, _balance, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
 
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
@@ -1258,6 +1294,7 @@ mod tests {
             sdk,
             wallet_manager,
             wallet_id,
+            generation,
             Arc::new(Notify::new()),
             broadcaster,
             WalletPersister::new(wallet_id, persistence as Arc<dyn PlatformWalletPersistence>),
@@ -1297,7 +1334,7 @@ mod tests {
         Arc<CapturingPersistence>,
     ) {
         let persistence = Arc::new(CapturingPersistence::default());
-        let (wallet_manager, wallet_id, _generation, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             crate::test_support::funded_coinjoin_wallet_manager().await;
 
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
@@ -1305,6 +1342,7 @@ mod tests {
             sdk,
             wallet_manager,
             wallet_id,
+            generation,
             Arc::new(Notify::new()),
             broadcaster,
             WalletPersister::new(
@@ -1599,7 +1637,7 @@ mod tests {
     /// would be resumable while its inputs are re-spendable.
     #[tokio::test]
     async fn rejected_broadcast_racing_concurrent_resume_keeps_row_and_reservation() {
-        let (wallet_manager, wallet_id, _balance, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
 
         let broadcaster = Arc::new(RejectAfterConcurrentResumeBroadcaster {
@@ -1612,6 +1650,7 @@ mod tests {
             sdk,
             Arc::clone(&wallet_manager),
             wallet_id,
+            Arc::clone(&generation),
             Arc::new(Notify::new()),
             broadcaster,
             WalletPersister::new(
@@ -1734,7 +1773,7 @@ mod tests {
     async fn concurrent_invitation_builds_cannot_roll_back_the_used_index_snapshot() {
         use key_wallet::account::AccountType;
 
-        let (wallet_manager, wallet_id, _balance, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             crate::test_support::funded_wallet_manager_with_outputs(
                 StandardAccountType::BIP44Account,
                 &[10_000_000, 10_000_000],
@@ -1753,6 +1792,7 @@ mod tests {
             sdk,
             wallet_manager,
             wallet_id,
+            Arc::clone(&generation),
             Arc::new(Notify::new()),
             Arc::new(AlwaysOkBroadcaster),
             WalletPersister::new(
@@ -2116,7 +2156,7 @@ mod tests {
     /// guard then preserves the row and its reservation.
     #[tokio::test]
     async fn rejected_broadcast_racing_resume_read_before_broadcast_keeps_row_and_reservation() {
-        let (wallet_manager, wallet_id, _balance, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
 
         let create_entered = Arc::new(Notify::new());
@@ -2137,6 +2177,7 @@ mod tests {
             sdk,
             Arc::clone(&wallet_manager),
             wallet_id,
+            Arc::clone(&generation),
             Arc::new(Notify::new()),
             Arc::clone(&broadcaster),
             WalletPersister::new(
@@ -2674,7 +2715,7 @@ mod tests {
     /// `wait_for_funded_asset_lock_proof`.
     #[tokio::test]
     async fn create_broadcast_does_not_downgrade_a_row_finalized_during_the_broadcast() {
-        let (wallet_manager, wallet_id, _balance, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
 
         let broadcaster = Arc::new(FinalizeDuringBroadcastBroadcaster {
@@ -2689,6 +2730,7 @@ mod tests {
             sdk,
             Arc::clone(&wallet_manager),
             wallet_id,
+            Arc::clone(&generation),
             Arc::new(Notify::new()),
             Arc::clone(&broadcaster),
             WalletPersister::new(
@@ -3899,6 +3941,255 @@ mod tests {
             queued_before,
             "the refused build must not have queued anything to the shared \
              persister"
+        );
+    }
+
+    /// Wallet removal must wait for an in-flight create-side asset-lock
+    /// broadcast that has already passed its liveness check.
+    ///
+    /// The retirement barrier only covers `build_persist_serial` /
+    /// `status_persist_serial`. Without the generation lifecycle gate
+    /// across `admit_broadcast` + `broadcast`, removal can deactivate the
+    /// manager, drop the wallet, and return while the create path is still
+    /// inside the network send — putting a transaction on the wire after
+    /// host teardown deleted the wallet's recovery material.
+    #[tokio::test]
+    async fn create_broadcast_holds_generation_gate_against_teardown() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct ParkingBroadcaster {
+            entered: Arc<Notify>,
+            release: Arc<Notify>,
+            calls: AtomicUsize,
+        }
+
+        #[async_trait]
+        impl TransactionBroadcaster for ParkingBroadcaster {
+            async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError> {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                self.entered.notify_one();
+                self.release.notified().await;
+                Ok(transaction.txid())
+            }
+        }
+
+        let entered = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        let broadcaster = Arc::new(ParkingBroadcaster {
+            entered: Arc::clone(&entered),
+            release: Arc::clone(&release),
+            calls: AtomicUsize::new(0),
+        });
+        let (manager, signer, _persistence) =
+            funded_asset_lock_manager(Arc::clone(&broadcaster)).await;
+
+        let generation = Arc::clone(manager.generation());
+        let manager_create = Arc::clone(&manager);
+        let create = tokio::spawn(async move {
+            manager_create
+                .broadcast_funded_asset_lock(
+                    1_000_000,
+                    0,
+                    AssetLockFundingType::IdentityRegistration,
+                    0,
+                    &signer,
+                )
+                .await
+        });
+        entered.notified().await;
+        assert_eq!(
+            broadcaster.calls.load(Ordering::SeqCst),
+            1,
+            "create must have entered the network send"
+        );
+
+        let teardown = tokio::spawn(async move { generation.teardown_guard().await });
+        // If create forgot to hold the shared gate, exclusive teardown
+        // would finish while the send is still parked.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(
+            !teardown.is_finished(),
+            "teardown must block on the create broadcast's generation payment gate"
+        );
+
+        release.notify_one();
+        create
+            .await
+            .expect("create task joined")
+            .expect("create broadcast should succeed once released");
+        let _guard = teardown.await.expect("teardown task joined");
+    }
+
+    /// Resume re-broadcast must hold the same generation payment gate as
+    /// the create path, or wallet removal can complete while a defensive
+    /// re-broadcast is still in flight.
+    #[tokio::test]
+    async fn resume_broadcast_holds_generation_gate_against_teardown() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct ParkingBroadcaster {
+            entered: Arc<Notify>,
+            release: Arc<Notify>,
+            calls: AtomicUsize,
+        }
+
+        #[async_trait]
+        impl TransactionBroadcaster for ParkingBroadcaster {
+            async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError> {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                self.entered.notify_one();
+                self.release.notified().await;
+                Ok(transaction.txid())
+            }
+        }
+
+        let entered = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        let broadcaster = Arc::new(ParkingBroadcaster {
+            entered: Arc::clone(&entered),
+            release: Arc::clone(&release),
+            calls: AtomicUsize::new(0),
+        });
+        let (manager, signer, _persistence) =
+            funded_asset_lock_manager(Arc::clone(&broadcaster)).await;
+
+        let (tx, _path) = manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await
+            .expect("build");
+        let out_point = OutPoint::new(tx.txid(), 0);
+        manager
+            .track_asset_lock(TrackedAssetLock {
+                out_point,
+                transaction: tx,
+                account_index: 0,
+                funding_type: AssetLockFundingType::IdentityRegistration,
+                identity_index: 0,
+                amount: 1_000_000,
+                status: AssetLockStatus::Built,
+                proof: None,
+            })
+            .await
+            .expect("track");
+
+        let generation = Arc::clone(manager.generation());
+        let manager_resume = Arc::clone(&manager);
+        let resume = tokio::spawn(async move {
+            manager_resume
+                .resume_asset_lock(&out_point, Some(std::time::Duration::from_millis(10)))
+                .await
+        });
+        entered.notified().await;
+        assert_eq!(
+            broadcaster.calls.load(Ordering::SeqCst),
+            1,
+            "resume must have entered the re-broadcast"
+        );
+
+        let teardown = tokio::spawn(async move { generation.teardown_guard().await });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(
+            !teardown.is_finished(),
+            "teardown must block on the resume broadcast's generation payment gate"
+        );
+
+        release.notify_one();
+        let _ = resume.await.expect("resume task joined");
+        let _guard = teardown.await.expect("teardown task joined");
+    }
+
+    /// Rejected-broadcast cleanup must not free a replacement generation's
+    /// reservation under the same deterministic wallet id.
+    ///
+    /// After untrack releases its ordering mutex, a remove/re-import can
+    /// install a replacement whose per-account `ReservationSet` restarts
+    /// its token counter at zero — so the old build's token can equal a
+    /// live replacement token. The release validates generation identity
+    /// under one manager-lock hold before touching the ReservationSet.
+    #[tokio::test]
+    async fn rejected_cleanup_does_not_release_replacement_generation_reservation() {
+        use crate::wallet::core::WalletGeneration;
+        use crate::wallet::reservations::{
+            release_reservation_after_rejected_broadcast, ReservedFundingAccount,
+        };
+        use key_wallet::account::account_type::StandardAccountType;
+
+        let (manager, signer, _persistence) =
+            funded_asset_lock_manager(Arc::new(AlwaysOkBroadcaster)).await;
+        let origin_generation = Arc::clone(manager.generation());
+        let wallet_id = manager.wallet_id;
+
+        let build_serial = manager.lock_build_persist_serial().await;
+        let (tx, _path, token) = manager
+            .build_asset_lock_transaction_with_funding_locked(
+                crate::wallet::asset_lock::build::AssetLockBuildAmount::Exact(1_000_000),
+                crate::wallet::asset_lock::build::AssetLockFundingAccount::Bip44 {
+                    account_index: 0,
+                },
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+                &build_serial,
+            )
+            .await
+            .expect("build original");
+        drop(build_serial);
+        let original_token = token.expect("build must stamp a reservation token");
+
+        // Simulate a same-id re-import: the map entry under `wallet_id`
+        // now carries a *different* WalletGeneration Arc (replacement
+        // identity) while still holding the live ReservationSet the
+        // original build stamped. A generation-blind release would free
+        // those inputs via the recycled token.
+        {
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&wallet_id)
+                .expect("wallet still present");
+            info.generation = Arc::new(WalletGeneration::new());
+            assert!(
+                !std::sync::Arc::ptr_eq(&info.generation, &origin_generation),
+                "replacement generation marker must differ from the origin"
+            );
+        }
+
+        release_reservation_after_rejected_broadcast(
+            &manager.wallet_manager,
+            &wallet_id,
+            &origin_generation,
+            ReservedFundingAccount::Standard(StandardAccountType::BIP44Account, 0),
+            &tx,
+            Some(original_token),
+        )
+        .await;
+
+        // Reservation must still be held: a rebuild over the single-UTXO
+        // wallet fails at input selection instead of reselecting released
+        // inputs.
+        let rebuild = manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(
+                rebuild,
+                Err(PlatformWalletError::CoreInsufficientFunds { .. })
+                    | Err(PlatformWalletError::AssetLockTransaction(_))
+                    | Err(PlatformWalletError::NoSpendableInputs { .. })
+            ),
+            "replacement generation's reservation must remain held after a \
+             stale-generation cleanup, got {rebuild:?}"
         );
     }
 }

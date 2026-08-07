@@ -1291,10 +1291,21 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
         // --- 3. Broadcast the transaction, releasing the build's UTXO
         // reservation if the broadcast is definitively rejected pre-send. ---
+        // DashPay payments ride the identity wallet's shared manager Arc; the
+        // funding reservation was minted against the *wallet generation* that
+        // owns this identity. Resolve it under a read lock so a remove/re-import
+        // under the same deterministic id cannot free a replacement's inputs.
+        let origin_generation = {
+            let wm = self.wallet_manager.read().await;
+            wm.get_wallet_info(&self.wallet_id)
+                .map(|info| Arc::clone(&info.generation))
+                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?
+        };
         let txid = match crate::wallet::reservations::broadcast_releasing_on_rejection(
             self.broadcaster.as_ref(),
             &self.wallet_manager,
             &self.wallet_id,
+            &origin_generation,
             key_wallet::account::account_type::StandardAccountType::BIP44Account,
             0,
             &tx,
