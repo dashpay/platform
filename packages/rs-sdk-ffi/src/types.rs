@@ -1047,6 +1047,14 @@ pub struct DashSDKContestInfo {
     pub contenders: *mut DashSDKContender,
     /// Number of contenders
     pub contender_count: usize,
+    /// The distinct labels the contenders requested, in contender order and
+    /// already de-duplicated — `["pizza", "p1zza"]` for a contest normalized to
+    /// `"p1zza"`. Derived here rather than by the caller so display policy has
+    /// one home. Null/zero when no contender document could be decoded; callers
+    /// fall back to the normalized contest name.
+    pub requested_labels: *mut *mut c_char,
+    /// Number of entries in `requested_labels`.
+    pub requested_label_count: usize,
     /// Abstain vote tally (0 if none)
     pub abstain_votes: u32,
     /// Lock vote tally (0 if none)
@@ -1146,6 +1154,34 @@ unsafe fn free_contender_array(contenders: *mut DashSDKContender, count: usize) 
     let _ = Vec::from_raw_parts(contenders, count, count);
 }
 
+/// Release a heap array of C strings allocated by this SDK.
+///
+/// # Safety
+/// - `strings` must be null, or a pointer from `Box::into_raw` over a boxed
+///   slice of exactly `count` `CString::into_raw` pointers.
+unsafe fn free_string_array(strings: *mut *mut c_char, count: usize) {
+    if strings.is_null() || count == 0 {
+        return;
+    }
+    for i in 0..count {
+        dash_sdk_string_free(*strings.add(i));
+    }
+    let _ = Vec::from_raw_parts(strings, count, count);
+}
+
+/// Release everything a `DashSDKContestInfo` owns, without freeing the struct
+/// itself — it is embedded in `DashSDKContestedName` in some paths and boxed in
+/// others. Single home for "what does a contest info own", so a new field is
+/// one edit rather than one per destructor.
+///
+/// # Safety
+/// - `info` must point to a live `DashSDKContestInfo` whose buffers were
+///   allocated by this SDK and not yet freed.
+unsafe fn free_contest_info_fields(info: *mut DashSDKContestInfo) {
+    free_contender_array((*info).contenders, (*info).contender_count);
+    free_string_array((*info).requested_labels, (*info).requested_label_count);
+}
+
 /// Free contest info structure
 ///
 /// # Safety
@@ -1158,8 +1194,8 @@ pub unsafe extern "C" fn dash_sdk_contest_info_free(info: *mut DashSDKContestInf
         return;
     }
 
-    let info = Box::from_raw(info);
-    free_contender_array(info.contenders, info.contender_count);
+    let mut info = Box::from_raw(info);
+    free_contest_info_fields(&mut *info);
 }
 
 /// Free a contested name structure
@@ -1174,14 +1210,11 @@ pub unsafe extern "C" fn dash_sdk_contested_name_free(name: *mut DashSDKConteste
         return;
     }
 
-    let name = Box::from_raw(name);
+    let mut name = Box::from_raw(name);
     dash_sdk_string_free(name.name);
 
     // Free contest info contents (but not the struct itself as it's embedded)
-    free_contender_array(
-        name.contest_info.contenders,
-        name.contest_info.contender_count,
-    );
+    free_contest_info_fields(&mut name.contest_info);
 }
 
 /// Free a contested names list
@@ -1203,10 +1236,7 @@ pub unsafe extern "C" fn dash_sdk_contested_names_list_free(list: *mut DashSDKCo
             dash_sdk_string_free((*name).name);
 
             // Free contest info contents
-            free_contender_array(
-                (*name).contest_info.contenders,
-                (*name).contest_info.contender_count,
-            );
+            free_contest_info_fields(&mut (*name).contest_info);
         }
         let _ = Vec::from_raw_parts(list.names, list.count, list.count);
     }
@@ -1455,7 +1485,7 @@ unsafe fn dash_sdk_public_key_destroy_ptr(handle: *mut IdentityPublicKeyHandle) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ffi::CString;
+    use std::ffi::{CStr, CString};
 
     /// Verifies that `DashSDKResult::success_binary` now correctly shrinks
     /// Vec capacity to match len via `into_boxed_slice()`, so that the free
@@ -1713,6 +1743,28 @@ mod tests {
     }
 
     unsafe fn make_contest_info(contenders: Vec<DashSDKContender>) -> DashSDKContestInfo {
+        // Mirror the producers: the ordered-unique labels are a separate
+        // allocation the destructors must also release.
+        let mut labels: Vec<*mut c_char> = Vec::new();
+        let mut seen: Vec<String> = Vec::new();
+        for c in &contenders {
+            if c.label.is_null() {
+                continue;
+            }
+            let l = CStr::from_ptr(c.label).to_string_lossy().into_owned();
+            if l.is_empty() || seen.contains(&l) {
+                continue;
+            }
+            seen.push(l.clone());
+            labels.push(CString::new(l).unwrap().into_raw());
+        }
+        let label_count = labels.len();
+        let labels_ptr = if labels.is_empty() {
+            std::ptr::null_mut()
+        } else {
+            Box::into_raw(labels.into_boxed_slice()) as *mut *mut c_char
+        };
+
         let count = contenders.len();
         let ptr = if count == 0 {
             std::ptr::null_mut()
@@ -1722,6 +1774,8 @@ mod tests {
         DashSDKContestInfo {
             contenders: ptr,
             contender_count: count,
+            requested_labels: labels_ptr,
+            requested_label_count: label_count,
             abstain_votes: 1,
             lock_votes: 2,
             end_time: 1_700_000_000_000,
@@ -1781,6 +1835,33 @@ mod tests {
                 ]),
             };
             dash_sdk_contested_name_free(Box::into_raw(Box::new(name)));
+        }
+    }
+
+    #[test]
+    fn contest_info_free_releases_requested_labels() {
+        unsafe {
+            // Two distinct spellings plus a repeat and an undecodable row:
+            // the ordered-unique array holds two entries, all of which the
+            // destructor must release.
+            let info = make_contest_info(vec![
+                make_contender("Ab1", Some("pizza")),
+                make_contender("Cd2", Some("p1zza")),
+                make_contender("Ef3", Some("pizza")),
+                make_contender("Gh4", None),
+            ]);
+            assert_eq!(info.requested_label_count, 2);
+            dash_sdk_contest_info_free(Box::into_raw(Box::new(info)));
+        }
+    }
+
+    #[test]
+    fn contest_info_has_no_labels_when_nothing_decoded() {
+        unsafe {
+            let info = make_contest_info(vec![make_contender("Ab1", None)]);
+            assert_eq!(info.requested_label_count, 0);
+            assert!(info.requested_labels.is_null());
+            dash_sdk_contest_info_free(Box::into_raw(Box::new(info)));
         }
     }
 

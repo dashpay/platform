@@ -139,6 +139,16 @@ extension SDK {
         }
       }
 
+      // Ordered and de-duplicated on the Rust side; copied verbatim.
+      var requestedLabels: [String] = []
+      if info.requested_label_count > 0, let labelsPtr = info.requested_labels {
+        requestedLabels.reserveCapacity(Int(info.requested_label_count))
+        for labelIndex in 0..<Int(info.requested_label_count) {
+          guard let labelPtr = labelsPtr[labelIndex] else { continue }
+          requestedLabels.append(String(cString: labelPtr))
+        }
+      }
+
       contests.append(
         DPNSContest(
           normalizedLabel: normalizedLabel,
@@ -150,7 +160,8 @@ extension SDK {
           hasWinner: info.has_winner,
           abstainVotes: info.abstain_votes,
           lockVotes: info.lock_votes,
-          contenders: contenders))
+          contenders: contenders,
+          requestedLabels: requestedLabels))
     }
 
     return contests.sorted { $0.normalizedLabel < $1.normalizedLabel }

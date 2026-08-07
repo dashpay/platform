@@ -545,6 +545,33 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_non_resolved_contests_for_identity(
                     });
                 }
 
+                // Ordered, de-duplicated requested labels. Derived here so the
+                // display policy lives in one place rather than being
+                // re-implemented by each language binding.
+                let mut requested_labels: Vec<*mut c_char> = Vec::new();
+                let mut seen_labels: Vec<String> = Vec::new();
+                for contender in &contenders {
+                    if contender.label.is_null() {
+                        continue;
+                    }
+                    let label = CStr::from_ptr(contender.label)
+                        .to_string_lossy()
+                        .into_owned();
+                    if label.is_empty() || seen_labels.contains(&label) {
+                        continue;
+                    }
+                    if let Ok(c_label) = CString::new(label.clone()) {
+                        seen_labels.push(label);
+                        requested_labels.push(c_label.into_raw());
+                    }
+                }
+                let requested_label_count = requested_labels.len();
+                let requested_labels_ptr = if requested_labels.is_empty() {
+                    std::ptr::null_mut()
+                } else {
+                    Box::into_raw(requested_labels.into_boxed_slice()) as *mut *mut c_char
+                };
+
                 let contender_count = contenders.len();
                 let contenders_ptr = if contenders.is_empty() {
                     std::ptr::null_mut()
@@ -556,6 +583,8 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_non_resolved_contests_for_identity(
                 let contest_info_c = DashSDKContestInfo {
                     contenders: contenders_ptr,
                     contender_count,
+                    requested_labels: requested_labels_ptr,
+                    requested_label_count,
                     abstain_votes: contest_info.contenders.abstain_vote_tally.unwrap_or(0),
                     lock_votes: contest_info.contenders.lock_vote_tally.unwrap_or(0),
                     end_time: contest_info.end_time,
@@ -668,6 +697,33 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_contested_non_resolved_usernames(
                     });
                 }
 
+                // Ordered, de-duplicated requested labels. Derived here so the
+                // display policy lives in one place rather than being
+                // re-implemented by each language binding.
+                let mut requested_labels: Vec<*mut c_char> = Vec::new();
+                let mut seen_labels: Vec<String> = Vec::new();
+                for contender in &contenders {
+                    if contender.label.is_null() {
+                        continue;
+                    }
+                    let label = CStr::from_ptr(contender.label)
+                        .to_string_lossy()
+                        .into_owned();
+                    if label.is_empty() || seen_labels.contains(&label) {
+                        continue;
+                    }
+                    if let Ok(c_label) = CString::new(label.clone()) {
+                        seen_labels.push(label);
+                        requested_labels.push(c_label.into_raw());
+                    }
+                }
+                let requested_label_count = requested_labels.len();
+                let requested_labels_ptr = if requested_labels.is_empty() {
+                    std::ptr::null_mut()
+                } else {
+                    Box::into_raw(requested_labels.into_boxed_slice()) as *mut *mut c_char
+                };
+
                 let contender_count = contenders.len();
                 let contenders_ptr = if contenders.is_empty() {
                     std::ptr::null_mut()
@@ -679,6 +735,8 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_contested_non_resolved_usernames(
                 let contest_info_c = DashSDKContestInfo {
                     contenders: contenders_ptr,
                     contender_count,
+                    requested_labels: requested_labels_ptr,
+                    requested_label_count,
                     abstain_votes: contest_info.contenders.abstain_vote_tally.unwrap_or(0),
                     lock_votes: contest_info.contenders.lock_vote_tally.unwrap_or(0),
                     end_time: contest_info.end_time,

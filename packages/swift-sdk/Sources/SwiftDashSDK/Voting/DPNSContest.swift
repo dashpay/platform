@@ -50,6 +50,16 @@ public struct DPNSContest: Sendable, Identifiable, Equatable {
   public let lockVotes: UInt32
   /// Contenders and their tallies, in the order the FFI returned them.
   public let contenders: [DPNSContender]
+  /// The distinct spellings the contenders requested, in contender order —
+  /// `["pizza", "p1zza"]` for a contest normalized to `"p1zza"`.
+  ///
+  /// Ordered and de-duplicated **in Rust** and decoded here verbatim: which
+  /// spellings to show is display policy, and the SDK is a thin bridge, not a
+  /// place for policy loops.
+  ///
+  /// Empty when no contender document could be decoded; render
+  /// ``normalizedLabel`` in that case rather than inventing a spelling.
+  public let requestedLabels: [String]
 
   public var id: String { normalizedLabel }
 
@@ -59,7 +69,8 @@ public struct DPNSContest: Sendable, Identifiable, Equatable {
     hasWinner: Bool,
     abstainVotes: UInt32,
     lockVotes: UInt32,
-    contenders: [DPNSContender]
+    contenders: [DPNSContender],
+    requestedLabels: [String] = []
   ) {
     self.normalizedLabel = normalizedLabel
     self.endTime = endTime
@@ -67,6 +78,7 @@ public struct DPNSContest: Sendable, Identifiable, Equatable {
     self.abstainVotes = abstainVotes
     self.lockVotes = lockVotes
     self.contenders = contenders
+    self.requestedLabels = requestedLabels
   }
 
   /// Total masternode voting weight recorded so far across contenders,
@@ -75,20 +87,6 @@ public struct DPNSContest: Sendable, Identifiable, Equatable {
   /// count of nodes.
   public var totalVotes: UInt32 {
     contenders.reduce(UInt32(0)) { $0 &+ $1.voteTally } &+ abstainVotes &+ lockVotes
-  }
-
-  /// The spellings the contenders actually requested, de-duplicated and in
-  /// contender order — `["pizza", "p1zza"]` for a contest normalized to
-  /// `"p1zza"`.
-  ///
-  /// Empty when no contender document could be decoded; render
-  /// ``normalizedLabel`` in that case rather than inventing a spelling.
-  public var requestedLabels: [String] {
-    var seen = Set<String>()
-    return contenders.compactMap { contender in
-      guard let label = contender.displayLabel, seen.insert(label).inserted else { return nil }
-      return label
-    }
   }
 
   /// The contender with the highest tally, or `nil` when there are none.
@@ -109,9 +107,9 @@ public struct DPNSContender: Sendable, Identifiable, Equatable {
   /// contest's normalized form is `"p1zza"`.
   ///
   /// Decoded by the FFI from the contender's `domain` document. `nil` when the
-  /// query did not carry documents (the active-contest listing does not), or
-  /// when that document could not be decoded — show ``identityId`` or the
-  /// contest's normalized label rather than inventing a spelling.
+  /// label data was unavailable or decoding that contender's document failed —
+  /// show ``identityId`` or the contest's normalized label rather than
+  /// inventing a spelling.
   public let displayLabel: String?
 
   public var id: String { identityId }

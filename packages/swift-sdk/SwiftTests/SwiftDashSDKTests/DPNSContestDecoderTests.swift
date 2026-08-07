@@ -253,7 +253,10 @@ final class DPNSContestDecoderTests: XCTestCase {
     XCTAssertNil(state.contenders.first?.displayLabel)
   }
 
-  func testRequestedLabelsDedupeAndPreserveOrder() {
+  func testRequestedLabelsAreCarriedVerbatim() {
+    // Ordering and de-duplication happen in Rust (see the `requested_labels`
+    // derivation and its tests in rs-sdk-ffi); Swift only carries the result,
+    // so this pins that the value survives the model boundary unchanged.
     let contest = DPNSContest(
       normalizedLabel: "p1zza",
       endTime: nil,
@@ -263,13 +266,13 @@ final class DPNSContestDecoderTests: XCTestCase {
       contenders: [
         DPNSContender(identityId: "Ab1", voteTally: 3, displayLabel: "pizza"),
         DPNSContender(identityId: "Cd2", voteTally: 1, displayLabel: "p1zza"),
-        DPNSContender(identityId: "Ef3", voteTally: 1, displayLabel: "pizza"),
-      ])
+      ],
+      requestedLabels: ["pizza", "p1zza"])
 
     XCTAssertEqual(contest.requestedLabels, ["pizza", "p1zza"])
   }
 
-  func testRequestedLabelsEmptyWhenNothingDecoded() {
+  func testRequestedLabelsDefaultEmptyWhenNothingDecoded() {
     let contest = DPNSContest(
       normalizedLabel: "p1zza",
       endTime: nil,
