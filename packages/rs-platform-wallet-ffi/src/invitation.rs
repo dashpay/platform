@@ -314,6 +314,60 @@ pub unsafe extern "C" fn platform_wallet_claim_invitation(
     PlatformWalletFFIResult::ok()
 }
 
+/// The identity id this invitation WOULD create — a read-only probe that lets
+/// the UI reject an already-claimed voucher up front.
+///
+/// Platform derives a created identity's id from the asset-lock outpoint, so
+/// the caller can ask "does an identity already exist under this id?" (a plain
+/// identity fetch) and answer "has this invitation been used?" without
+/// attempting the claim. Without it, a spent voucher only surfaces at the very
+/// end of registration as a raw "asset lock … already completely used", after
+/// the invitee has chosen a username and entered their PIN.
+///
+/// Unlike [`platform_wallet_parse_invitation`] this DOES hit the network: the
+/// funding transaction has to be refetched to locate the credit output the
+/// voucher controls (it need not be output 0). It still claims nothing and
+/// mutates no wallet state.
+///
+/// A failure here is genuinely undetermined — a wrong-network link, a tx that
+/// has not propagated, a transport error — so callers must treat any error as
+/// "proceed", never as "unclaimed" or "claimed".
+///
+/// # Safety
+/// - `uri` must be a valid NUL-terminated UTF-8 C string.
+/// - `out_identity_id` must be a valid `*mut [u8; 32]`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_invitation_prospective_identity_id(
+    wallet_handle: Handle,
+    uri: *const c_char,
+    out_identity_id: *mut [u8; 32],
+) -> PlatformWalletFFIResult {
+    check_ptr!(uri);
+    check_ptr!(out_identity_id);
+    // Sentinel before any fallible work, matching the claim/parse siblings.
+    unsafe {
+        *out_identity_id = [0u8; 32];
+    }
+
+    let uri = unwrap_result_or_return!(unsafe { CStr::from_ptr(uri) }.to_str());
+    let invitation = unwrap_result_or_return!(parse_invitation_uri(uri));
+
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity_wallet = wallet.identity().clone();
+        block_on_worker(async move {
+            identity_wallet
+                .invitation_prospective_identity_id(&invitation)
+                .await
+        })
+    });
+    let result = unwrap_option_or_return!(option);
+    let identifier = unwrap_result_or_return!(result);
+    unsafe {
+        *out_identity_id = identifier.to_buffer();
+    }
+    PlatformWalletFFIResult::ok()
+}
+
 /// Read-only preview of a `dashpay://invite` link — decode + surface the
 /// invitation's metadata WITHOUT claiming it (no wallet handle, no network, no
 /// side effects). The claim UI uses this to show the amount, sender, and expiry

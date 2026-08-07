@@ -2208,6 +2208,41 @@ extension ManagedPlatformWallet {
     ///
     /// A malformed link is reported as `structurallyValid == false` rather than
     /// throwing, so the UI can render a clean "invalid link" state.
+    /// The identity id this invitation WOULD create, without claiming it.
+    ///
+    /// Platform derives a created identity's id from the asset-lock outpoint,
+    /// so fetching an identity under the returned id answers "has this
+    /// invitation already been used?" before the invitee picks a username and
+    /// enters their PIN — the only other way to find out is the claim itself,
+    /// which reports it as a raw "asset lock … already completely used".
+    ///
+    /// Unlike ``parseInvitation(uri:)`` this hits the network: the funding
+    /// transaction is refetched to locate the credit output the voucher
+    /// controls. It claims nothing and mutates no wallet state.
+    ///
+    /// Throws on anything undetermined — wrong network, a funding tx that has
+    /// not propagated, transport failure. Callers must treat a throw as
+    /// "proceed", never as an answer either way.
+    public func invitationProspectiveIdentityId(uri: String) async throws -> Data {
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) { () -> Data in
+            var idTuple: (
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+            ) = (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            )
+            let result = uri.withCString { uriPtr in
+                platform_wallet_invitation_prospective_identity_id(handle, uriPtr, &idTuple)
+            }
+            try result.check()
+            return withUnsafeBytes(of: idTuple) { Data($0) }
+        }.value
+    }
+
     public func parseInvitation(uri: String) throws -> InvitationPreview {
         var out = InvitationPreviewFFI()
         let result = uri.withCString { uriPtr in

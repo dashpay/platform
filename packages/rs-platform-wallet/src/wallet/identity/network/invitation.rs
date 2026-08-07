@@ -403,6 +403,39 @@ impl IdentityWallet {
     /// The contact-bootstrap is a separate step: on success the UI asks the
     /// invitee whether to establish contact with the sender and, if so, calls
     /// the existing contact-request path.
+    /// The identity id this invitation WOULD create, without claiming it.
+    ///
+    /// Platform derives a created identity's id from the asset-lock outpoint,
+    /// so the id is knowable before the claim — and an identity already
+    /// existing under it is exactly the "this voucher has been spent" signal.
+    /// The claim itself is the only other way to learn that, which is why a
+    /// used invitation otherwise surfaces as a raw "asset lock … already
+    /// completely used" after the invitee has picked a username and entered
+    /// their PIN.
+    ///
+    /// Costs one funding-tx fetch: the outpoint is not in the link (the credit
+    /// output is selected by pk↔script match, not by index), so the tx has to
+    /// be refetched exactly as the claim does. Same wrong-network fail-fast as
+    /// [`Self::claim_invitation`], so a testnet link on mainnet reports the
+    /// network mismatch rather than a confusing fetch miss.
+    pub async fn invitation_prospective_identity_id(
+        &self,
+        invitation: &ParsedInvitation,
+    ) -> Result<Identifier, PlatformWalletError> {
+        if !wif_network_matches(invitation.voucher_key_network, self.sdk.network) {
+            return Err(PlatformWalletError::InvalidIdentityData(format!(
+                "invitation is for the {:?} network but this wallet is on {:?}",
+                invitation.voucher_key_network, self.sdk.network
+            )));
+        }
+        let proof = self.reconstruct_asset_lock_proof(invitation).await?;
+        proof.create_identifier().map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "invitation asset lock proof yielded no identity id: {e}"
+            ))
+        })
+    }
+
     pub async fn claim_invitation<S>(
         &self,
         invitation: ParsedInvitation,
