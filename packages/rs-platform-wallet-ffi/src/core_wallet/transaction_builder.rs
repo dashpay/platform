@@ -70,9 +70,6 @@ pub enum CoreAccountTypeFFI {
 }
 
 impl CoreAccountTypeFFI {
-    /// The funding sources this selector pools, in funding order — handed to
-    /// [`CoreWallet::finalize_transaction`]'s multi-source API. Single-family
-    /// selectors keep their strict one-account semantics.
     /// The single account family this selector names, or `None` for the
     /// pooled [`AllSpendable`](Self::AllSpendable) — used by APIs that address
     /// exactly one account (gap limits, per-account UTXO listing), which must
@@ -86,6 +83,10 @@ impl CoreAccountTypeFFI {
         }
     }
 
+    /// The funding sources this selector pools, in funding order — handed to
+    /// [`CoreWallet::finalize_transaction`]'s multi-source API, whose first
+    /// source supplies the change address. A single-family selector yields a
+    /// one-element list, which keeps that API's strict one-account semantics.
     pub(crate) fn funding_sources(self) -> &'static [AccountTypePreference] {
         match self {
             CoreAccountTypeFFI::BIP44 => &[AccountTypePreference::BIP44],

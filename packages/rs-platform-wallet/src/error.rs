@@ -277,6 +277,16 @@ pub enum PlatformWalletError {
     #[error("Address operation failed: {0}")]
     AddressOperation(String),
 
+    /// A caller passed an argument this API cannot act on — as opposed to a
+    /// lookup that found nothing. Kept distinct from [`WalletNotFound`] so a
+    /// host is told to fix its input rather than that the wallet is missing;
+    /// FFI maps it to the existing invalid-parameter code, which is what the
+    /// FFI boundary already returns for the same class of rejection.
+    ///
+    /// [`WalletNotFound`]: Self::WalletNotFound
+    #[error("Invalid parameter: {0}")]
+    InvalidParameter(String),
+
     #[error(
         "no selectable inputs: only funded addresses appear as destinations \
          (funded_outputs={funded_outputs:?}, sub_min_count={sub_min_count}, \

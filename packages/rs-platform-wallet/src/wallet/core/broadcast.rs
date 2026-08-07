@@ -122,9 +122,11 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// under a new token is a real risk; the owner guard closes the
     /// `dashpay/platform#4185` release/re-reserve race.
     ///
-    /// `account_type`/`account_index` identify the funding account handed to the
-    /// builder when the transaction was finalized; `token` is the
-    /// [`ReservationToken`] that build stamped
+    /// `accounts` are the concrete accounts that contributed the transaction's
+    /// inputs (`SignedCoreTransaction::funding_accounts`) — a pooled send spans
+    /// several, and key-wallet reserves per account, so a rejection must
+    /// release on EVERY one of them. `token` is the [`ReservationToken`] that
+    /// build stamped across all of them
     /// (`SignedCoreTransaction::reservation_token`), `None` only when the build
     /// reserved nothing.
     pub(crate) async fn broadcast_payment_releasing_reservation(

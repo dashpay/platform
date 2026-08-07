@@ -152,8 +152,11 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
 
         // Gap limits are a per-account setting, so a set-naming DashPay
         // selector (identity-wide / all) has no single target here.
+        // A caller-argument error, not a lookup miss — the FFI boundary rejects
+        // the same class with its invalid-parameter code, so classify it the
+        // same way here rather than telling a host the wallet is missing.
         let concrete = account_type.account_type(account_index).ok_or_else(|| {
-            PlatformWalletError::WalletNotFound(format!(
+            PlatformWalletError::InvalidParameter(format!(
                 "{account_type:?} names a set of accounts; set a gap limit per account"
             ))
         })?;

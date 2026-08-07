@@ -513,6 +513,13 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::MessageSigningMessageInvalid { .. } => {
                 PlatformWalletFFIResultCode::ErrorInvalidParameter
             }
+            // A caller-argument rejection raised below the FFI boundary — the
+            // same class the boundary itself rejects with this code, so both
+            // sides agree instead of one reporting a not-found or an internal
+            // failure for a bad argument.
+            PlatformWalletError::InvalidParameter(..) => {
+                PlatformWalletFFIResultCode::ErrorInvalidParameter
+            }
             // A second producer of code 31 (the arm above is the first),
             // reached without any marker inspection at this layer: message
             // signing found no signable account for the address, or the signer
