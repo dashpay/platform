@@ -5936,33 +5936,41 @@ mod tests {
     /// callback without its registration callback must not attest pools.
     #[test]
     fn partially_wired_persister_attests_only_complete_pairs() {
-        let mut cb = PersistenceCallbacks::default();
-        cb.on_changeset_begin_fn = Some(noop_begin);
+        let cb = PersistenceCallbacks {
+            on_changeset_begin_fn: Some(noop_begin),
+            ..Default::default()
+        };
         assert_eq!(
             declared_persister(cb, PersistenceCapabilities::ATOMIC_CHANGESETS)
                 .persistence_capabilities(),
             PersistenceCapabilities::NONE
         );
 
-        let mut cb = PersistenceCallbacks::default();
-        cb.on_changeset_begin_fn = Some(noop_begin);
-        cb.on_changeset_end_fn = Some(noop_end);
+        let cb = PersistenceCallbacks {
+            on_changeset_begin_fn: Some(noop_begin),
+            on_changeset_end_fn: Some(noop_end),
+            ..Default::default()
+        };
         let capabilities = declared_persister(cb, PersistenceCapabilities::ATOMIC_CHANGESETS)
             .persistence_capabilities();
         assert_eq!(capabilities, PersistenceCapabilities::ATOMIC_CHANGESETS);
         assert!(!capabilities.contains(PersistenceCapabilities::INVITATION_CREATION));
 
-        let mut cb = PersistenceCallbacks::default();
         let declaration = PersistenceCapabilities::INVITATIONS
             .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES);
-        cb.on_persist_invitations_fn = Some(noop_invitations);
-        cb.on_persist_account_address_pools_fn = Some(noop_pools);
+        let cb = PersistenceCallbacks {
+            on_persist_invitations_fn: Some(noop_invitations),
+            on_persist_account_address_pools_fn: Some(noop_pools),
+            ..Default::default()
+        };
         let capabilities = declared_persister(cb, declaration).persistence_capabilities();
         assert_eq!(capabilities, PersistenceCapabilities::INVITATIONS);
 
-        let mut cb = PersistenceCallbacks::default();
-        cb.on_persist_account_registrations_fn = Some(noop_registrations);
-        cb.on_persist_account_address_pools_fn = Some(noop_pools);
+        let cb = PersistenceCallbacks {
+            on_persist_account_registrations_fn: Some(noop_registrations),
+            on_persist_account_address_pools_fn: Some(noop_pools),
+            ..Default::default()
+        };
         let capabilities =
             declared_persister(cb, PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
                 .persistence_capabilities();
@@ -6003,14 +6011,16 @@ mod tests {
 
     #[test]
     fn complete_callbacks_without_declaration_attest_nothing() {
-        let mut cb = PersistenceCallbacks::default();
-        cb.on_changeset_begin_fn = Some(noop_begin);
-        cb.on_changeset_end_fn = Some(noop_end);
-        cb.on_persist_invitations_fn = Some(noop_invitations);
-        cb.on_persist_account_registrations_fn = Some(noop_registrations);
-        cb.on_persist_account_address_pools_fn = Some(noop_pools);
-        cb.on_load_wallet_list_fn = Some(noop_load_wallets);
-        cb.on_load_wallet_list_free_fn = Some(noop_free_wallets);
+        let cb = PersistenceCallbacks {
+            on_changeset_begin_fn: Some(noop_begin),
+            on_changeset_end_fn: Some(noop_end),
+            on_persist_invitations_fn: Some(noop_invitations),
+            on_persist_account_registrations_fn: Some(noop_registrations),
+            on_persist_account_address_pools_fn: Some(noop_pools),
+            on_load_wallet_list_fn: Some(noop_load_wallets),
+            on_load_wallet_list_free_fn: Some(noop_free_wallets),
+            ..Default::default()
+        };
         assert_eq!(
             FFIPersister::new(cb).persistence_capabilities(),
             PersistenceCapabilities::NONE
@@ -6019,9 +6029,11 @@ mod tests {
 
     #[test]
     fn declaration_is_intersected_with_callback_structure() {
-        let mut cb = PersistenceCallbacks::default();
-        cb.on_changeset_begin_fn = Some(noop_begin);
-        cb.on_changeset_end_fn = Some(noop_end);
+        let cb = PersistenceCallbacks {
+            on_changeset_begin_fn: Some(noop_begin),
+            on_changeset_end_fn: Some(noop_end),
+            ..Default::default()
+        };
         assert_eq!(
             declared_persister(cb, PersistenceCapabilities::INVITATION_CREATION)
                 .persistence_capabilities(),
@@ -6274,19 +6286,23 @@ mod tests {
     #[cfg(feature = "shielded")]
     #[test]
     fn shielded_viewing_key_capability_requires_complete_callback_triplet() {
-        let mut cb = PersistenceCallbacks::default();
-        cb.on_persist_shielded_viewing_keys_fn = Some(noop_persist_viewing_keys);
-        cb.on_load_shielded_viewing_keys_fn = Some(noop_load_viewing_keys);
+        let cb = PersistenceCallbacks {
+            on_persist_shielded_viewing_keys_fn: Some(noop_persist_viewing_keys),
+            on_load_shielded_viewing_keys_fn: Some(noop_load_viewing_keys),
+            ..Default::default()
+        };
         assert!(
             !declared_persister(cb, PersistenceCapabilities::SHIELDED_VIEWING_KEYS)
                 .persistence_capabilities()
                 .contains(PersistenceCapabilities::SHIELDED_VIEWING_KEYS)
         );
 
-        let mut cb = PersistenceCallbacks::default();
-        cb.on_persist_shielded_viewing_keys_fn = Some(noop_persist_viewing_keys);
-        cb.on_load_shielded_viewing_keys_fn = Some(noop_load_viewing_keys);
-        cb.on_load_shielded_viewing_keys_free_fn = Some(noop_free_viewing_keys);
+        let cb = PersistenceCallbacks {
+            on_persist_shielded_viewing_keys_fn: Some(noop_persist_viewing_keys),
+            on_load_shielded_viewing_keys_fn: Some(noop_load_viewing_keys),
+            on_load_shielded_viewing_keys_free_fn: Some(noop_free_viewing_keys),
+            ..Default::default()
+        };
         assert!(
             declared_persister(cb, PersistenceCapabilities::SHIELDED_VIEWING_KEYS)
                 .persistence_capabilities()
@@ -6595,7 +6611,7 @@ mod tests {
         assert!(
             restored
                 .highest_generated
-                .map_or(false, |h| h >= RESTORED_INDEX),
+                .is_some_and(|h| h >= RESTORED_INDEX),
             "highest_generated must advance past the pre-derived gap window"
         );
 
@@ -6772,7 +6788,7 @@ mod tests {
         const ECDSA_IDX: u32 = 502;
         for idx in [BLS_IDX, EDDSA_IDX, ECDSA_IDX] {
             assert!(
-                pool.addresses.get(&idx).is_none(),
+                !pool.addresses.contains_key(&idx),
                 "index {idx} must start with no pre-seeded entry"
             );
         }
