@@ -582,13 +582,14 @@ mod tests {
             timed_out,
             PlatformWalletError::FinalityTimeout(actual) if actual == out_point
         ));
-        let broadcast = broadcaster
-            .transactions
-            .lock()
-            .expect("recording broadcaster mutex");
-        assert_eq!(broadcast.as_slice(), std::slice::from_ref(&transaction));
-        assert_eq!(broadcast[0].txid(), out_point.txid);
-        drop(broadcast);
+        {
+            let broadcast = broadcaster
+                .transactions
+                .lock()
+                .expect("recording broadcaster mutex");
+            assert_eq!(broadcast.as_slice(), std::slice::from_ref(&transaction));
+            assert_eq!(broadcast[0].txid(), out_point.txid);
+        }
 
         // The real consume path leaves a terminal tombstone. That gives a
         // same-process retry a truthful typed error, while a foreign outpoint

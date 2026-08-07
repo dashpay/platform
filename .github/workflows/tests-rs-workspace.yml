@@ -176,10 +176,14 @@ jobs:
       - name: Verify wallet reverse-dependency closure
         run: python3 .github/scripts/check-wallet-closure.py
 
+      # `--all-targets` keeps test/bench/example code in scope. Without it
+      # clippy only sees the lib/bin targets, so lints in `#[cfg(test)]` code
+      # merge unnoticed and only surface for whoever runs clippy locally.
       - name: Clippy lints
         run: |
           cargo clippy \
             --workspace \
+            --all-targets \
             --all-features \
             --locked \
             -- --no-deps -D warnings

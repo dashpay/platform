@@ -232,7 +232,7 @@ mod masternode_withdrawal_tests {
     fn selects_the_matching_owner_hash160_key_over_decoys() {
         let owner_hash = [0x11u8; 20];
         let other_hash = [0x22u8; 20];
-        let keys = vec![
+        let keys = [
             // Right hash, wrong purpose.
             make_key(
                 0,
@@ -271,7 +271,7 @@ mod masternode_withdrawal_tests {
     #[test]
     fn returns_none_when_no_owner_key_matches() {
         let owner_hash = [0x11u8; 20];
-        let keys = vec![
+        let keys = [
             make_key(
                 0,
                 Purpose::TRANSFER,
