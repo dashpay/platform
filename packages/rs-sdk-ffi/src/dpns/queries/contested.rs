@@ -494,9 +494,10 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_non_resolved_contests_for_identity(
             // Baked-in system contract: no network round trip, and it is the
             // schema these documents were written against.
             let platform_version = sdk.version();
-            let dpns_domain_type = load_system_data_contract(SystemDataContract::DPNS, platform_version)
-                .ok()
-                .and_then(|contract| contract.document_type_cloned_for_name("domain").ok());
+            let dpns_domain_type =
+                load_system_data_contract(SystemDataContract::DPNS, platform_version)
+                    .ok()
+                    .and_then(|contract| contract.document_type_cloned_for_name("domain").ok());
 
             let count = names_with_contest_info.len();
             let mut names = Vec::with_capacity(count);
@@ -616,9 +617,10 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_contested_non_resolved_usernames(
             // Baked-in system contract: no network round trip, and it is the
             // schema these documents were written against.
             let platform_version = sdk.version();
-            let dpns_domain_type = load_system_data_contract(SystemDataContract::DPNS, platform_version)
-                .ok()
-                .and_then(|contract| contract.document_type_cloned_for_name("domain").ok());
+            let dpns_domain_type =
+                load_system_data_contract(SystemDataContract::DPNS, platform_version)
+                    .ok()
+                    .and_then(|contract| contract.document_type_cloned_for_name("domain").ok());
 
             let count = names_with_contest_info.len();
             let mut names = Vec::with_capacity(count);

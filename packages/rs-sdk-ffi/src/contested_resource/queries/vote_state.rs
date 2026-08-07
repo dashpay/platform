@@ -4,11 +4,11 @@ use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::document::DocumentV0Getters;
 use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::voting::contender_structs::ContenderWithSerializedDocument;
-use dash_sdk::platform::{DataContract, Fetch};
 use dash_sdk::dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use dash_sdk::dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dash_sdk::drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
 use dash_sdk::platform::FetchMany;
+use dash_sdk::platform::{DataContract, Fetch};
 use dash_sdk::query_types::Contenders;
 use std::ffi::{c_char, c_void, CStr, CString};
 
