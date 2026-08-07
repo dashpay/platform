@@ -20,12 +20,18 @@
 //! This FFI therefore takes the raw 32-byte **voting private key** plus the
 //! 32-byte `pro_tx_hash`. From the private key it derives:
 //!   * a [`SingleKeySigner`] that signs the transition, and
-//!   * the matching `ECDSA_HASH160` [`IdentityPublicKey`] (the masternode
-//!     voting key) whose `data` is `hash160(pubkey)`.
+//!   * `hash160(pubkey)` — the voting address, which identifies both the voter
+//!     identity (`create_voter_identifier`) and the key on it.
+//!
+//! The voting [`IdentityPublicKey`] is then **fetched from the voter
+//! identity**, not fabricated: its key id is only 0 for an identity Platform
+//! created and never rotated, so assuming 0 fails with an opaque
+//! "Public key 0 doesn't exist" whenever the identity is absent or the key
+//! moved. Looking it up also lets a mismatched key be reported as such.
 //!
 //! The `SingleKeySigner::can_sign_with` check for `ECDSA_HASH160` recomputes
-//! `hash160(pubkey)` from the same private key, so the derived key and signer
-//! always agree.
+//! `hash160(pubkey)` from the same private key, so the fetched key and the
+//! signer agree.
 //!
 //! A regular wallet is **not** a masternode and has no voting key, so a vote
 //! broadcast from such a wallet reaches a deterministic *authorization*
@@ -39,9 +45,11 @@ use crate::types::{FFINetwork, Network, SDKHandle};
 use crate::{DashSDKResult, FFIError};
 use dash_sdk::dpp::dashcore::hashes::{hash160, Hash};
 use dash_sdk::dpp::dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
-use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use dash_sdk::dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
-use dash_sdk::dpp::platform_value::{BinaryData, Identifier, Value};
+use dash_sdk::dpp::identifier::MasternodeIdentifiers;
+use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
+use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dash_sdk::dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose};
+use dash_sdk::dpp::platform_value::{Identifier, Value};
 use dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dash_sdk::dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dash_sdk::dpp::voting::vote_polls::VotePoll;
@@ -49,6 +57,7 @@ use dash_sdk::dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
 use dash_sdk::dpp::voting::votes::resource_vote::ResourceVote;
 use dash_sdk::dpp::voting::votes::Vote;
 use dash_sdk::platform::transition::vote::PutVote;
+use dash_sdk::platform::Fetch;
 use simple_signer::SingleKeySigner;
 use std::ffi::{c_char, CStr};
 use zeroize::Zeroizing;
@@ -285,9 +294,7 @@ unsafe fn cast_vote_inner(
         .map_err(|e| invalid(&format!("Invalid voting private key: {}", e)))?;
 
     // The masternode voting key is the 20-byte hash160 of the (compressed)
-    // public key, packaged as an ECDSA_HASH160 / VOTING / HIGH key with id 0 —
-    // exactly the shape Platform assigns to voter identities
-    // (`get_voter_identity_key_v0`). `MasternodeVoteTransition` calls
+    // public key. `MasternodeVoteTransition` calls
     // `masternode_voting_key.public_key_hash()` to derive the voter
     // identifier, and `SingleKeySigner::can_sign_with` recomputes the same
     // hash160 from the private key, so the two agree by construction.
@@ -297,22 +304,51 @@ unsafe fn cast_vote_inner(
     let public_key = PublicKey::from_secret_key(&secp, &secret_key);
     let voting_address = hash160::Hash::hash(&public_key.serialize()).to_byte_array();
 
-    let masternode_voting_key: IdentityPublicKey = IdentityPublicKeyV0 {
-        id: 0,
-        purpose: Purpose::VOTING,
-        security_level: SecurityLevel::HIGH,
-        key_type: KeyType::ECDSA_HASH160,
-        read_only: true,
-        data: BinaryData::new(voting_address.to_vec()),
-        disabled_at: None,
-        contract_bounds: None,
-    }
-    .into();
-
-    // ---- Broadcast ----------------------------------------------------------
+    // ---- Resolve the real voting key off the voter identity -----------------
     let wrapper = &*(sdk_handle as *const SDKWrapper);
     let sdk = &wrapper.sdk;
 
+    let voter_identifier = Identifier::create_voter_identifier(&pro_tx_hash_arr, &voting_address);
+
+    let masternode_voting_key: IdentityPublicKey = wrapper.runtime.block_on(async {
+        // The key id is NOT reliably 0. Platform assigns 0 when it *creates* a
+        // voter identity, but a voting-key rotation disables the old
+        // identity's keys and creates a fresh identity for the new address
+        // (`update_voter_identity_v0`), and nothing guarantees the caller's key
+        // matches the identity that actually exists. Fabricating id 0 turned
+        // every one of those cases into Platform's opaque
+        // "Public key 0 doesn't exist" at broadcast time.
+        let identity = Identity::fetch(sdk, voter_identifier)
+            .await
+            .map_err(FFIError::from)?
+            .ok_or_else(|| {
+                FFIError::InvalidParameter(format!(
+                    "No voting identity exists on Platform for masternode {} with this voting key                      (expected voter identity {}). Either the voting key does not match the                      masternode's registered voting address, or Platform has not created the                      voter identity yet.",
+                    pro_tx_hash, voter_identifier
+                ))
+            })?;
+
+        // Match on the key's own data, not on position: that is what the
+        // signer can actually sign with.
+        identity
+            .public_keys()
+            .values()
+            .find(|key| {
+                key.purpose() == Purpose::VOTING
+                    && key.key_type() == KeyType::ECDSA_HASH160
+                    && key.data().as_slice() == voting_address
+                    && key.disabled_at().is_none()
+            })
+            .cloned()
+            .ok_or_else(|| {
+                FFIError::InvalidParameter(format!(
+                    "Voter identity {} has no enabled ECDSA_HASH160 voting key matching this                      private key. The masternode's voting key may have been rotated.",
+                    voter_identifier
+                ))
+            })
+    })?;
+
+    // ---- Broadcast ----------------------------------------------------------
     wrapper.runtime.block_on(async {
         vote.put_to_platform_and_wait_for_response(
             pro_tx_hash,
