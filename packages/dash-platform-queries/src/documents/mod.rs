@@ -22,5 +22,10 @@ pub mod document_split_sums;
 /// `FromProof` impl for the sum-side aggregate result. Mirrors
 /// `document_count`. Lights up alongside grovedb PR 670.
 pub mod document_sum;
+/// Shared wire-proto → drive-type decoders for `getDocuments`,
+/// used by both rs-drive-abci (server request decode) and
+/// [`document_query::DocumentQuery::try_from_request`] (client
+/// verification) so the two directions cannot drift.
+pub mod proto_conversions;
 pub(crate) mod ranked_proof_helpers;
 pub(crate) mod sum_proof_helpers;

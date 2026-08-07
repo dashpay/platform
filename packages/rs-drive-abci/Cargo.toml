@@ -42,6 +42,7 @@ dapi-grpc = { path = "../dapi-grpc", default-features = false, features = [
   "server",
   "platform",
 ] }
+dash-platform-queries = { path = "../dash-platform-queries", default-features = false }
 tracing-subscriber = { version = "0.3.22", default-features = false, features = [
   "env-filter",
   "ansi",
