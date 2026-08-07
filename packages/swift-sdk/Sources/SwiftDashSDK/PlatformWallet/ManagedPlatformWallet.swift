@@ -2200,14 +2200,6 @@ extension ManagedPlatformWallet {
         }.value
     }
 
-    /// Read-only preview of a DashPay invitation link (DIP-13): decode a
-    /// `dashpay://invite` URI and surface its metadata WITHOUT claiming it — no
-    /// network, no identity registered. The claim UI uses this to show the
-    /// amount, sender, and expiry before the user commits, and to decide whether
-    /// to offer the "establish contact with <sender>?" bootstrap.
-    ///
-    /// A malformed link is reported as `structurallyValid == false` rather than
-    /// throwing, so the UI can render a clean "invalid link" state.
     /// The identity id this invitation WOULD create, without claiming it.
     ///
     /// Platform derives a created identity's id from the asset-lock outpoint,
@@ -2243,6 +2235,14 @@ extension ManagedPlatformWallet {
         }.value
     }
 
+    /// Read-only preview of a DashPay invitation link (DIP-13): decode a
+    /// `dashpay://invite` URI and surface its metadata WITHOUT claiming it — no
+    /// network, no identity registered. The claim UI uses this to show the
+    /// amount, sender, and expiry before the user commits, and to decide whether
+    /// to offer the "establish contact with <sender>?" bootstrap.
+    ///
+    /// A malformed link is reported as `structurallyValid == false` rather than
+    /// throwing, so the UI can render a clean "invalid link" state.
     public func parseInvitation(uri: String) throws -> InvitationPreview {
         var out = InvitationPreviewFFI()
         let result = uri.withCString { uriPtr in

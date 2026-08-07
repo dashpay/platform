@@ -378,31 +378,6 @@ impl IdentityWallet {
         })
     }
 
-    /// Claim a DashPay invitation: register a NEW identity for the invitee,
-    /// funded by the imported voucher.
-    ///
-    /// The link carries only the voucher key + funding txid (+ optional islock),
-    /// not the funding proof — so this **refetches** the funding transaction
-    /// from Core and reconstructs the asset-lock proof, mirroring the legacy
-    /// Android claim (`TopUpRepository.obtainAssetLockTransaction`):
-    /// 1. Fetch the tx by `funding_txid`; retry byte-reversed on a miss (old iOS
-    ///    links are little-endian).
-    /// 2. Fail-fast that the fetched tx is really the funding tx, and (if an
-    ///    islock is present) that the islock locks it.
-    /// 3. Select the funded credit output by pk↔script match (not index 0).
-    /// 4. Build an `InstantAssetLockProof` when an islock is present, else a
-    ///    `ChainAssetLockProof` once the funding tx is chain-locked.
-    ///
-    /// The invitee's own identity keys (`keys_map`, derived from the invitee's
-    /// seed) are signed by `identity_signer`; the asset-lock's outer
-    /// state-transition signature is produced from the **imported voucher key**
-    /// (`invitation.voucher_key`) via the SDK's in-process raw-key path. The
-    /// invitee owns neither the lock's inputs nor its tracking, so this bypasses
-    /// the wallet's `AssetLockFunding` machinery entirely.
-    ///
-    /// The contact-bootstrap is a separate step: on success the UI asks the
-    /// invitee whether to establish contact with the sender and, if so, calls
-    /// the existing contact-request path.
     /// The identity id this invitation WOULD create, without claiming it.
     ///
     /// Platform derives a created identity's id from the asset-lock outpoint,
@@ -436,6 +411,31 @@ impl IdentityWallet {
         })
     }
 
+    /// Claim a DashPay invitation: register a NEW identity for the invitee,
+    /// funded by the imported voucher.
+    ///
+    /// The link carries only the voucher key + funding txid (+ optional islock),
+    /// not the funding proof — so this **refetches** the funding transaction
+    /// from Core and reconstructs the asset-lock proof, mirroring the legacy
+    /// Android claim (`TopUpRepository.obtainAssetLockTransaction`):
+    /// 1. Fetch the tx by `funding_txid`; retry byte-reversed on a miss (old iOS
+    ///    links are little-endian).
+    /// 2. Fail-fast that the fetched tx is really the funding tx, and (if an
+    ///    islock is present) that the islock locks it.
+    /// 3. Select the funded credit output by pk↔script match (not index 0).
+    /// 4. Build an `InstantAssetLockProof` when an islock is present, else a
+    ///    `ChainAssetLockProof` once the funding tx is chain-locked.
+    ///
+    /// The invitee's own identity keys (`keys_map`, derived from the invitee's
+    /// seed) are signed by `identity_signer`; the asset-lock's outer
+    /// state-transition signature is produced from the **imported voucher key**
+    /// (`invitation.voucher_key`) via the SDK's in-process raw-key path. The
+    /// invitee owns neither the lock's inputs nor its tracking, so this bypasses
+    /// the wallet's `AssetLockFunding` machinery entirely.
+    ///
+    /// The contact-bootstrap is a separate step: on success the UI asks the
+    /// invitee whether to establish contact with the sender and, if so, calls
+    /// the existing contact-request path.
     pub async fn claim_invitation<S>(
         &self,
         invitation: ParsedInvitation,
