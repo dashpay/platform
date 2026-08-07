@@ -1,7 +1,10 @@
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
+use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dash_sdk::dpp::document::DocumentV0Getters;
 use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::voting::contender_structs::ContenderWithSerializedDocument;
+use dash_sdk::platform::{DataContract, Fetch};
 use dash_sdk::dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use dash_sdk::dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dash_sdk::drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
@@ -235,6 +238,19 @@ fn get_contested_resource_vote_state(
                 }
                 // Add contenders
                 if result_type.has_documents() {
+                    // Decode each contender's document so callers get the
+                    // label the requester actually typed ("pizza") next to the
+                    // homograph-normalized index value ("p1zza"). Without this
+                    // a UI can only show the normalized form, which reads as a
+                    // typo to the person who submitted it.
+                    //
+                    // Best-effort: the contract fetch or a single decode
+                    // failing must not fail the whole query, so `label` is
+                    // simply absent for rows that could not be decoded and the
+                    // caller falls back to the normalized value.
+                    let contract: Option<DataContract> =
+                        DataContract::fetch(&sdk, contract_id).await.ok().flatten();
+
                     let contenders_json: Vec<String> = contenders.contenders
                         .iter()
                         .map(|(id, contender)| {
@@ -245,13 +261,36 @@ fn get_contested_resource_vote_state(
                                 r#""document":null"#.to_string()
                             };
 
+                            let label_json = contract
+                                .as_ref()
+                                .and_then(|contract| {
+                                    let doc_type = contract
+                                        .document_type_for_name(document_type_name_str)
+                                        .ok()?;
+                                    let decoded = contender
+                                        .try_to_contender(doc_type, sdk.version())
+                                        .ok()?;
+                                    let label = decoded
+                                        .document()
+                                        .as_ref()?
+                                        .get("label")?
+                                        .as_str()?
+                                        .to_string();
+                                    Some(format!(
+                                        r#","label":{}"#,
+                                        serde_json::to_string(&label).ok()?
+                                    ))
+                                })
+                                .unwrap_or_default();
+
                             let vote_count = contender.vote_tally().unwrap_or(0);
 
                             format!(
-                                r#"{{"identity_id":"{}","vote_count":{},{}}}"#,
+                                r#"{{"identity_id":"{}","vote_count":{},{}{}}}"#,
                                 bs58::encode(id.as_bytes()).into_string(),
                                 vote_count,
-                                document_json
+                                document_json,
+                                label_json
                             )
                         })
                         .collect();

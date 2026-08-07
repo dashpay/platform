@@ -94,10 +94,14 @@ extension SDK {
         for contenderIndex in 0..<Int(info.contender_count) {
           let contender = contendersPtr[contenderIndex]
           guard let idPtr = contender.identity_id else { continue }
+          // `label` is null when the FFI could not decode that contender's
+          // document — a missing display name, not a reason to drop the row.
+          let displayLabel = contender.label.map { String(cString: $0) }
           contenders.append(
             DPNSContender(
               identityId: String(cString: idPtr),
-              voteTally: contender.vote_count))
+              voteTally: contender.vote_count,
+              displayLabel: displayLabel?.isEmpty == false ? displayLabel : nil))
         }
       }
 
@@ -182,7 +186,11 @@ extension SDK {
   /// `{"abstain_vote_tally":N,"lock_vote_tally":N,
   ///   "winner_info":"NoWinner"|"Locked"|{"type":"WonByIdentity","identity_id":"…"},
   ///   "block_info":{"height":…,"core_height":…,"timestamp":…},
-  ///   "contenders":[{"identity_id":"…","vote_count":N,"document":"hex"|null}]}`
+  ///   "contenders":[{"identity_id":"…","vote_count":N,"document":"hex"|null,
+  ///                  "label":"pizza"}]}`
+  ///
+  /// `label` is the requester's own spelling, decoded FFI-side from the
+  /// contender document; it is omitted when that decode was not possible.
   ///
   /// `winner_info` and `block_info` are absent while voting is open; when
   /// either is present the poll has finished (see ``DPNSContestOutcome``).
@@ -197,7 +205,10 @@ extension SDK {
       .compactMap { entry in
         guard let identityId = entry["identity_id"] as? String else { return nil }
         let tally = (entry["vote_count"] as? NSNumber)?.uint32Value ?? 0
-        return DPNSContender(identityId: identityId, voteTally: tally)
+        // `label` is absent when the FFI could not decode the document; that
+        // is a missing display name, not a reason to drop the contender.
+        let label = (entry["label"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        return DPNSContender(identityId: identityId, voteTally: tally, displayLabel: label)
       }
 
     let outcome: DPNSContestOutcome = {

@@ -1032,6 +1032,12 @@ pub struct DashSDKContender {
     pub identity_id: *mut c_char,
     /// Vote count for this contender
     pub vote_count: u32,
+    /// The label this contender actually requested ("pizza"), decoded from
+    /// their `domain` document — the contest itself is keyed by the
+    /// homograph-normalized form ("p1zza"). Null when the document could not
+    /// be decoded; callers fall back to the normalized name rather than
+    /// guessing a spelling.
+    pub label: *mut c_char,
 }
 
 /// Represents contest information for a DPNS name
@@ -1183,6 +1189,9 @@ pub unsafe extern "C" fn dash_sdk_contested_names_list_free(list: *mut DashSDKCo
                 for j in 0..(*name).contest_info.contender_count {
                     let contender = (*name).contest_info.contenders.add(j);
                     dash_sdk_string_free((*contender).identity_id);
+                    // Null for contenders whose document could not be decoded;
+                    // `dash_sdk_string_free` tolerates null.
+                    dash_sdk_string_free((*contender).label);
                 }
                 let _ = Vec::from_raw_parts(
                     (*name).contest_info.contenders,

@@ -77,6 +77,20 @@ public struct DPNSContest: Sendable, Identifiable, Equatable {
     contenders.reduce(UInt32(0)) { $0 &+ $1.voteTally } &+ abstainVotes &+ lockVotes
   }
 
+  /// The spellings the contenders actually requested, de-duplicated and in
+  /// contender order — `["pizza", "p1zza"]` for a contest normalized to
+  /// `"p1zza"`.
+  ///
+  /// Empty when no contender document could be decoded; render
+  /// ``normalizedLabel`` in that case rather than inventing a spelling.
+  public var requestedLabels: [String] {
+    var seen = Set<String>()
+    return contenders.compactMap { contender in
+      guard let label = contender.displayLabel, seen.insert(label).inserted else { return nil }
+      return label
+    }
+  }
+
   /// The contender with the highest tally, or `nil` when there are none.
   /// Ties resolve to the first in FFI order — callers that care about tie
   /// display should inspect ``contenders`` directly.
@@ -86,24 +100,26 @@ public struct DPNSContest: Sendable, Identifiable, Equatable {
 }
 
 /// One contender for a contested DPNS label.
-///
-/// - Note: The contender's label exactly as *they* requested it is not
-///   exposed. Platform returns it only inside the serialized `domain`
-///   document, which the FFI hands over as opaque hex; decoding it needs the
-///   contract's document-type schema and is not done on the Swift side.
-///   Render ``identityId`` (truncated) alongside the contest's normalized
-///   label instead.
 public struct DPNSContender: Sendable, Identifiable, Equatable {
   /// Base58 identity id of the contender.
   public let identityId: String
   /// Masternode voting weight cast towards this contender.
   public let voteTally: UInt32
+  /// The label exactly as this contender typed it — `"pizza"`, where the
+  /// contest's normalized form is `"p1zza"`.
+  ///
+  /// Decoded by the FFI from the contender's `domain` document. `nil` when the
+  /// query did not carry documents (the active-contest listing does not), or
+  /// when that document could not be decoded — show ``identityId`` or the
+  /// contest's normalized label rather than inventing a spelling.
+  public let displayLabel: String?
 
   public var id: String { identityId }
 
-  public init(identityId: String, voteTally: UInt32) {
+  public init(identityId: String, voteTally: UInt32, displayLabel: String? = nil) {
     self.identityId = identityId
     self.voteTally = voteTally
+    self.displayLabel = displayLabel
   }
 }
 

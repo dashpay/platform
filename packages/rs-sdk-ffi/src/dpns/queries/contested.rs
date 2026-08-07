@@ -1,5 +1,8 @@
 //! FFI bindings for contested DPNS username queries
 
+use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dash_sdk::dpp::document::DocumentV0Getters;
+use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
@@ -488,6 +491,13 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_non_resolved_contests_for_identity(
 
     match result {
         Ok(names_with_contest_info) => {
+            // Baked-in system contract: no network round trip, and it is the
+            // schema these documents were written against.
+            let platform_version = sdk.version();
+            let dpns_domain_type = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+                .ok()
+                .and_then(|contract| contract.document_type_cloned_for_name("domain").ok());
+
             let count = names_with_contest_info.len();
             let mut names = Vec::with_capacity(count);
 
@@ -512,9 +522,25 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_non_resolved_contests_for_identity(
                     // Extract actual vote tally from ContenderWithSerializedDocument
                     let vote_count = votes.vote_tally().unwrap_or(0);
 
+                    // The requester's own spelling ("pizza"), which the
+                    // normalized contest name ("p1zza") does not preserve.
+                    // Null when the document can't be decoded — callers fall
+                    // back to the normalized name rather than guessing.
+                    let c_label = dpns_domain_type
+                        .as_ref()
+                        .and_then(|doc_type| {
+                            let decoded = votes
+                                .try_to_contender(doc_type.as_ref(), platform_version)
+                                .ok()?;
+                            let label = decoded.document().as_ref()?.get("label")?.as_str()?;
+                            CString::new(label).ok().map(|s| s.into_raw())
+                        })
+                        .unwrap_or(std::ptr::null_mut());
+
                     contenders.push(DashSDKContender {
                         identity_id: c_id,
                         vote_count,
+                        label: c_label,
                     });
                 }
 
@@ -587,6 +613,13 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_contested_non_resolved_usernames(
 
     match result {
         Ok(names_with_contest_info) => {
+            // Baked-in system contract: no network round trip, and it is the
+            // schema these documents were written against.
+            let platform_version = sdk.version();
+            let dpns_domain_type = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+                .ok()
+                .and_then(|contract| contract.document_type_cloned_for_name("domain").ok());
+
             let count = names_with_contest_info.len();
             let mut names = Vec::with_capacity(count);
 
@@ -611,9 +644,25 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_contested_non_resolved_usernames(
                     // Extract actual vote tally from ContenderWithSerializedDocument
                     let vote_count = votes.vote_tally().unwrap_or(0);
 
+                    // The requester's own spelling ("pizza"), which the
+                    // normalized contest name ("p1zza") does not preserve.
+                    // Null when the document can't be decoded — callers fall
+                    // back to the normalized name rather than guessing.
+                    let c_label = dpns_domain_type
+                        .as_ref()
+                        .and_then(|doc_type| {
+                            let decoded = votes
+                                .try_to_contender(doc_type.as_ref(), platform_version)
+                                .ok()?;
+                            let label = decoded.document().as_ref()?.get("label")?.as_str()?;
+                            CString::new(label).ok().map(|s| s.into_raw())
+                        })
+                        .unwrap_or(std::ptr::null_mut());
+
                     contenders.push(DashSDKContender {
                         identity_id: c_id,
                         vote_count,
+                        label: c_label,
                     });
                 }
 
