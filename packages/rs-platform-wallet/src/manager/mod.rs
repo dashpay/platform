@@ -418,68 +418,39 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// failed / rescan pending" state rather than re-freezing silently on
     /// the next launch.
     pub(super) sync_fault: Arc<std::sync::atomic::AtomicBool>,
-    /// Serializes whole-wallet **lifecycle transitions** — registration
-    /// ([`register_wallet`](Self::register_wallet)), hydration
-    /// ([`load_from_persistor`](Self::load_from_persistor)) and removal
-    /// ([`remove_wallet`](Self::remove_wallet)) — over the
-    /// `wallet_manager` + `wallets` pair.
+    /// Serializes whole-wallet **registration and hydration** —
+    /// [`register_wallet`](Self::register_wallet) /
+    /// [`create_wallet_from_seed_bytes`](Self::create_wallet_from_seed_bytes)
+    /// and [`load_from_persistor`](Self::load_from_persistor) — over the
+    /// multi-step `wallet_manager` + `wallets` rewrite those paths perform.
     ///
-    /// Neither of those two locks can do this job. Each transition is a
-    /// *multi-step* rewrite that takes them one at a time and releases
-    /// each before taking the next: registration inserts into
-    /// `wallet_manager`, persists, builds the handle, and only then
-    /// publishes into `wallets`; removal retires the asset-lock manager,
-    /// drops the `wallet_manager` entry, and only then detaches from
-    /// `wallets`. Interleaved, the two produce a torn result even though
-    /// every individual lock was held correctly.
+    /// Registration inserts into `wallet_manager`, persists, builds the
+    /// handle, and only then publishes into `wallets`. Hydration walks the
+    /// same maps in the opposite direction. Without an outer serial, two
+    /// concurrent creates (or a create racing a load) can interleave those
+    /// steps even though every individual map lock was held correctly.
     ///
-    /// The concrete hazard is a same-mnemonic re-import racing a removal.
-    /// `wallet_id` is deterministic in (seed, network), so once removal
-    /// has dropped the `wallet_manager` entry the id is free and a
-    /// concurrent `register_wallet` legitimately succeeds — publishing a
-    /// *replacement generation* into `wallets` before the removal reaches
-    /// its own `wallets.remove(wallet_id)`. That removal then detaches
-    /// the live replacement (whose `AssetLockManager` was never retired,
-    /// since `deactivate` ran against the previous generation) and hands
-    /// it back to the caller as the thing it removed. The manager is left
-    /// with a wallet registered in `wallet_manager` but absent from
-    /// `wallets` — invisible to the balance handler and every sync
-    /// coordinator, and un-removable, because a later `remove_wallet`
-    /// takes the `WalletNotFound` arm.
+    /// Removal does **not** take this mutex. Same-id re-import is allowed
+    /// in the free-id window after a removal has dropped the inner
+    /// `WalletManager` entry; the replacement is protected by
+    /// generation-aware detach (`Arc::ptr_eq` on the retired generation)
+    /// and by each generation's own lifecycle gate
+    /// ([`WalletGeneration::teardown_guard`](crate::wallet::core::WalletGeneration::teardown_guard)),
+    /// not by serializing registration against removal. See
+    /// [`remove_wallet_with_teardown`](Self::remove_wallet_with_teardown).
     ///
-    /// [`AssetLockManager::deactivate`](crate::AssetLockManager::deactivate)
-    /// cannot close this: it is per-*instance* by construction, and the
-    /// replacement's manager is a different instance with its own
-    /// `status_persist_serial`. Retirement makes a stale handle harmless;
-    /// it says nothing about which generation owns the map entry.
-    ///
-    /// Lock ordering: this is the OUTERMOST lock. Acquire it before
-    /// `status_persist_serial` (via `deactivate`), before
-    /// `wallet_manager`, and before `wallets` — never the reverse, and
-    /// never from code already holding any of them. Nothing reachable
-    /// from inside a lifecycle transition re-enters one, so no cycle
-    /// exists.
+    /// Lock ordering: when held, this is the OUTERMOST lock of a
+    /// registration/hydration transition. Acquire it before
+    /// `wallet_manager` and before `wallets` — never the reverse, and
+    /// never from code already holding either. Nothing reachable from
+    /// inside a registration/hydration transition re-enters one, so no
+    /// cycle exists.
     pub(super) wallet_lifecycle_serial: tokio::sync::Mutex<()>,
-    /// Test-only gauge of tasks currently BLOCKED on
-    /// [`wallet_lifecycle_serial`](Self::wallet_lifecycle_serial):
-    /// incremented before the `lock().await` and RAII-decremented the
-    /// moment it is acquired (see
-    /// [`lock_wallet_lifecycle_serial`](Self::lock_wallet_lifecycle_serial)).
-    ///
-    /// The arrival signal the lifecycle-ordering test rendezvous on, for
-    /// the same reason
-    /// [`status_serial_waiters`](crate::AssetLockManager) exists: a sleep
-    /// cannot distinguish "the competing registration is queued at the
-    /// boundary" from "it has not been scheduled yet", so a test that
-    /// released its parked removal after a delay would grade an
-    /// unserialized implementation as passing whenever the scheduler
-    /// happened to run things in the non-regressing order.
-    #[cfg(test)]
-    pub(super) wallet_lifecycle_waiters: std::sync::atomic::AtomicUsize,
     /// Test-only pause point inside
-    /// [`remove_wallet`](Self::remove_wallet), between dropping the
-    /// shared `WalletManager` entry and detaching the handle from
-    /// `wallets`. `None` (the default) makes the hook a no-op.
+    /// [`remove_wallet_with_teardown`](Self::remove_wallet_with_teardown),
+    /// between dropping the shared `WalletManager` entry and detaching
+    /// the handle from `wallets`. `None` (the default) makes the hook a
+    /// no-op. Used by the generation-aware detach regression test.
     #[cfg(test)]
     pub(super) remove_pre_detach_gate: std::sync::Mutex<Option<RemovePreDetachGate>>,
 }
@@ -607,50 +578,16 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             sync_fault,
             wallet_lifecycle_serial: tokio::sync::Mutex::new(()),
             #[cfg(test)]
-            wallet_lifecycle_waiters: std::sync::atomic::AtomicUsize::new(0),
-            #[cfg(test)]
             remove_pre_detach_gate: std::sync::Mutex::new(None),
         }
     }
 
     /// Acquire
-    /// [`wallet_lifecycle_serial`](Self::wallet_lifecycle_serial).
-    ///
-    /// Every lifecycle transition goes through here rather than locking
-    /// the field directly, so the test-only
-    /// [`wallet_lifecycle_waiters`](Self::wallet_lifecycle_waiters) gauge
-    /// sees every arrival at the boundary. In non-test builds this
-    /// compiles to the bare `lock().await`.
+    /// [`wallet_lifecycle_serial`](Self::wallet_lifecycle_serial) for a
+    /// registration or hydration transition. Removal does not take this
+    /// lock — see the field docs.
     pub(super) async fn lock_wallet_lifecycle_serial(&self) -> tokio::sync::MutexGuard<'_, ()> {
-        // RAII rather than a bare decrement after the await: if the
-        // caller's future is dropped while still queued, the count must
-        // come back down, or a cancelled registration would leave the
-        // gauge permanently non-zero and every later wait would return
-        // instantly on a phantom arrival.
-        #[cfg(test)]
-        struct WaiterGauge<'a>(&'a std::sync::atomic::AtomicUsize);
-        #[cfg(test)]
-        impl Drop for WaiterGauge<'_> {
-            fn drop(&mut self) {
-                self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-            }
-        }
-        #[cfg(test)]
-        let waiting = {
-            self.wallet_lifecycle_waiters
-                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            WaiterGauge(&self.wallet_lifecycle_waiters)
-        };
-
-        let guard = self.wallet_lifecycle_serial.lock().await;
-
-        // Dropped on acquisition, not on release: the gauge answers "who
-        // is still queued at the boundary", so the holder must not count
-        // itself.
-        #[cfg(test)]
-        drop(waiting);
-
-        guard
+        self.wallet_lifecycle_serial.lock().await
     }
 
     /// Whether the wallet-event adapter has frozen a durable sync
