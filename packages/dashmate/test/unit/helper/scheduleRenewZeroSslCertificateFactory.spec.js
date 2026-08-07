@@ -38,6 +38,11 @@ describe('scheduleRenewZeroSslCertificateFactory', () => {
     writeConfigTemplates = this.sinon.stub();
     config.get.withArgs('platform.gateway.ssl.enabled').returns(true);
     config.get.withArgs('platform.gateway.ssl.provider').returns('zerossl');
+    config.get.withArgs('externalIp').returns('127.0.0.1');
+    config.get.withArgs('platform.gateway.ssl.providerConfigs.zerossl.apiKey')
+      .returns('api-key');
+    config.get.withArgs('platform.gateway.ssl.providerConfigs.zerossl.id')
+      .returns('certificate-id');
 
     scheduleRenewZeroSslCertificate = scheduleRenewZeroSslCertificateFactory(
       getCertificate,
@@ -98,16 +103,19 @@ describe('scheduleRenewZeroSslCertificateFactory', () => {
   });
 
   describe('configuration refresh', () => {
-    it('should stop scheduling when the config was removed', async function it() {
+    it('should hand off when the config was removed before scheduling completed', async function it() {
       const setTimeoutStub = this.sinon.stub(global, 'setTimeout');
+      const onConfigurationChanged = this.sinon.stub().resolves();
       configFileRepository.read.returns({
         getConfig: this.sinon.stub().throws(new ConfigIsNotPresentError('base')),
       });
 
-      await expect(scheduleRenewZeroSslCertificate(config)).to.not.be.rejected();
+      await expect(scheduleRenewZeroSslCertificate(config, onConfigurationChanged))
+        .to.not.be.rejected();
 
       expect(getCertificate).to.not.have.been.called();
       expect(setTimeoutStub).to.not.have.been.called();
+      expect(onConfigurationChanged).to.have.been.calledOnceWith(null);
     });
 
     it('should retry when the current config cannot be read', async function it() {
@@ -181,6 +189,93 @@ describe('scheduleRenewZeroSslCertificateFactory', () => {
       expect(onConfigurationChanged).to.have.been.calledTwice();
       expect(onConfigurationChanged.firstCall).to.have.been.calledWith(config);
       expect(onConfigurationChanged.secondCall).to.have.been.calledWith(config);
+    });
+
+    it('should keep watching after removal and schedule a recreated config', async function it() {
+      const clock = this.sinon.useFakeTimers({
+        now: new Date('2026-07-31T00:00:00.000Z'),
+      });
+      const onConfigurationChanged = this.sinon.stub().resolves(true);
+      const removedConfigFile = {
+        getConfig: this.sinon.stub().throws(new ConfigIsNotPresentError('base')),
+      };
+      const recreatedConfig = {
+        getName: this.sinon.stub().returns('base'),
+        get: this.sinon.stub(),
+      };
+      recreatedConfig.get.withArgs('platform.gateway.ssl.enabled').returns(true);
+      recreatedConfig.get.withArgs('platform.gateway.ssl.provider').returns('zerossl');
+      recreatedConfig.get.withArgs('externalIp').returns('127.0.0.1');
+      recreatedConfig.get.withArgs('platform.gateway.ssl.providerConfigs.zerossl.apiKey')
+        .returns('api-key');
+      recreatedConfig.get.withArgs('platform.gateway.ssl.providerConfigs.zerossl.id')
+        .returns('recreated-certificate-id');
+      configFileRepository.read.onCall(1).returns(removedConfigFile);
+      configFileRepository.read.onCall(2).returns({
+        getConfig: this.sinon.stub().returns(recreatedConfig),
+      });
+      getCertificate.resolves({
+        id: 'certificate-id',
+        status: 'issued',
+        expires: new Date('2026-10-01T00:00:00.000Z'),
+        isExpiredInDays: this.sinon.stub().returns(false),
+      });
+
+      await scheduleRenewZeroSslCertificate(config, onConfigurationChanged);
+      await clock.tickAsync(CONFIG_REFRESH_INTERVAL_MS);
+
+      expect(onConfigurationChanged).to.not.have.been.called();
+
+      await clock.tickAsync(CONFIG_REFRESH_INTERVAL_MS);
+
+      expect(onConfigurationChanged).to.have.been.calledOnceWith(recreatedConfig);
+    });
+
+    [
+      ['external IP', 'externalIp', '127.0.0.2'],
+      [
+        'API key',
+        'platform.gateway.ssl.providerConfigs.zerossl.apiKey',
+        'new-api-key',
+      ],
+      [
+        'certificate ID',
+        'platform.gateway.ssl.providerConfigs.zerossl.id',
+        'new-certificate-id',
+      ],
+    ].forEach(([name, path, value]) => {
+      it(`should reschedule when the ZeroSSL ${name} changes`, async function it() {
+        const clock = this.sinon.useFakeTimers({
+          now: new Date('2026-07-31T00:00:00.000Z'),
+        });
+        const onConfigurationChanged = this.sinon.stub().resolves(true);
+        const changedConfig = {
+          getName: this.sinon.stub().returns('base'),
+          get: this.sinon.stub(),
+        };
+        changedConfig.get.withArgs('platform.gateway.ssl.enabled').returns(true);
+        changedConfig.get.withArgs('platform.gateway.ssl.provider').returns('zerossl');
+        changedConfig.get.withArgs('externalIp').returns('127.0.0.1');
+        changedConfig.get.withArgs('platform.gateway.ssl.providerConfigs.zerossl.apiKey')
+          .returns('api-key');
+        changedConfig.get.withArgs('platform.gateway.ssl.providerConfigs.zerossl.id')
+          .returns('certificate-id');
+        changedConfig.get.withArgs(path).returns(value);
+        getCertificate.resolves({
+          id: 'certificate-id',
+          status: 'issued',
+          expires: new Date('2026-10-01T00:00:00.000Z'),
+          isExpiredInDays: this.sinon.stub().returns(false),
+        });
+
+        await scheduleRenewZeroSslCertificate(config, onConfigurationChanged);
+        configFileRepository.read.returns({
+          getConfig: this.sinon.stub().returns(changedConfig),
+        });
+        await clock.tickAsync(CONFIG_REFRESH_INTERVAL_MS);
+
+        expect(onConfigurationChanged).to.have.been.calledOnceWith(changedConfig);
+      });
     });
   });
 

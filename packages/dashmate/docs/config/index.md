@@ -188,19 +188,21 @@ Dashmate keeps all configuration in a single `config.json` inside its home direc
 Commands that change a configuration option — `dashmate config set` and friends — read,
 change and save that file as one locked step. Two of them running at once cannot lose each
 other's work: if one sets a Core RPC port while another pins a Drive image, both settings
-survive. A command that has to wait for the lock waits milliseconds, since the lock is only
-held for a read and a write.
+survive. When no long-running operation owns the lock, a command waits only for the locked
+read and write.
 
 Read-only commands such as `dashmate config get`, `dashmate status` and `dashmate core cli`
-never write configuration at all, so they are always safe to run alongside anything else.
+normally do not write configuration. The first command after an upgrade may migrate and save
+`config.json`; that migration needs the same lock and can time out behind a long-running
+configuration change.
 
 ### While a node is being reconfigured
 
-`dashmate setup`, `dashmate reset` and `dashmate ssl obtain` change configuration
-repeatedly while doing long work, so they take the lock for their whole run. Another
-command that changes configuration waits briefly and then reports that something else is
-modifying it — nothing is lost, and running it again once the first command finishes
-works normally.
+`dashmate setup`, `dashmate reset`, `dashmate group reset`, `dashmate ssl obtain`,
+`dashmate core reindex` and `dashmate group core reindex` change or render configuration
+while doing long work, so they take the lock for their whole run. Another command that
+needs the lock waits briefly and then reports that something else is modifying it — nothing
+is lost, and running it again once the first command finishes works normally.
 
 The Dashmate helper uses the same whole-operation lock while renewing an SSL certificate.
 For ZeroSSL this includes HTTP validation and may take minutes. A configuration-changing
@@ -210,8 +212,9 @@ finishes. Keeping the lock for issuance is intentional: releasing it earlier wou
 replaying selected renewal fields later, which could undo an operator's provider switch or
 SSL disable.
 
-Reading is never affected: `dashmate status`, `dashmate config get` and `dashmate core cli`
-do not take the lock at all, so a node can still be inspected while it is being set up.
+Ordinary reads remain available: `dashmate status`, `dashmate config get` and
+`dashmate core cli` do not take the lock unless loading the configuration discovers a
+migration that must be saved.
 
-If a command holding the lock is killed, the lock is released. If the machine loses power
-mid-command, the next writer takes over after about a minute.
+Graceful termination releases the lock. After `SIGKILL` or a power loss, the next writer
+takes over after about a minute.

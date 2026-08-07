@@ -3,6 +3,7 @@ import path from 'path';
 import LegoCertificate from '../../../src/ssl/letsencrypt/LegoCertificate.js';
 import scheduleRenewLetsEncryptCertificateFactory from '../../../src/helper/scheduleRenewLetsEncryptCertificateFactory.js';
 import HomeDir from '../../../src/config/HomeDir.js';
+import ConfigIsNotPresentError from '../../../src/config/errors/ConfigIsNotPresentError.js';
 
 describe('scheduleRenewLetsEncryptCertificateFactory', () => {
   let config;
@@ -77,6 +78,18 @@ describe('scheduleRenewLetsEncryptCertificateFactory', () => {
     expect(configFileRepository.release).to.have.been.calledOnce();
     expect(dockerCompose.execCommand)
       .to.have.been.calledOnceWith(config, 'gateway', 'kill -SIGHUP 1');
+  });
+
+  it('should hand off when the config was removed before scheduling completed', async function it() {
+    const onConfigurationChanged = this.sinon.stub().resolves();
+    configFileRepository.read.returns({
+      getConfig: this.sinon.stub().throws(new ConfigIsNotPresentError('base')),
+    });
+
+    await scheduleRenewLetsEncryptCertificate(config, onConfigurationChanged);
+
+    expect(onConfigurationChanged).to.have.been.calledOnceWith(null);
+    expect(obtainLetsEncryptCertificateTask).to.not.have.been.called();
   });
 
   it('should retry an incomplete gateway installation instead of waiting for expiry', async function it() {

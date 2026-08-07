@@ -36,7 +36,9 @@ export default async function renewCertificate({
       return { config, renewed: false };
     }
 
-    const tasks = obtainCertificateTask(config);
+    const tasks = obtainCertificateTask(config, {
+      onCertificateCreated: () => configFileRepository.write(configFile),
+    });
 
     try {
       await tasks.run({
@@ -45,9 +47,7 @@ export default async function renewCertificate({
       });
     } catch (e) {
       if (config.isChanged()) {
-        // Failed renewal currently persists only a ZeroSSL certificate ID, which
-        // is not consumed by templates. If partial renewal state ever affects a
-        // template, render that state here before releasing the lock.
+        // Preserve recoverable provider state before propagating a failed renewal.
         configFileRepository.write(configFile);
       }
 

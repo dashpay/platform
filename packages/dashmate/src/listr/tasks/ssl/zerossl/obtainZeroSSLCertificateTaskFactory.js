@@ -36,12 +36,19 @@ export default function obtainZeroSSLCertificateTaskFactory(
   /**
    * @typedef {obtainZeroSSLCertificateTask}
    * @param {Config} config
-   * @param {Object} [options]
-   * @param {function(): void} [options.onCertificateCreated]
+   * @param {Object} options
+   * @param {function(): void} options.onCertificateCreated
    * @return {Listr}
    */
   function obtainZeroSSLCertificateTask(config, options = {}) {
     const { onCertificateCreated } = options;
+
+    if (typeof onCertificateCreated !== 'function') {
+      throw new TypeError('onCertificateCreated callback is required');
+    }
+
+    const configurationUpdateRequired = !config.get('platform.gateway.ssl.enabled')
+      || config.get('platform.gateway.ssl.provider') !== 'zerossl';
 
     const tasks = new Listr([
       {
@@ -144,9 +151,7 @@ export default function obtainZeroSSLCertificateTaskFactory(
           ctx.createdCertificate = true;
           config.set('platform.gateway.ssl.providerConfigs.zerossl.id', ctx.certificate.id);
 
-          if (onCertificateCreated) {
-            onCertificateCreated();
-          }
+          onCertificateCreated();
         },
       },
       {
@@ -271,7 +276,11 @@ and all Dash service ports listed above.`);
         title: 'Save certificate private key file',
         enabled: (ctx) => !ctx.isPrivateKeyFilePresent,
         task: async (ctx, task) => {
-          fs.writeFileSync(ctx.privateKeyFilePath, ctx.privateKeyFile, 'utf8');
+          fs.writeFileSync(ctx.privateKeyFilePath, ctx.privateKeyFile, {
+            encoding: 'utf8',
+            mode: 0o600,
+          });
+          fs.chmodSync(ctx.privateKeyFilePath, 0o600);
 
           // eslint-disable-next-line no-param-reassign
           task.output = ctx.privateKeyFilePath;
@@ -307,7 +316,7 @@ and all Dash service ports listed above.`);
       },
       {
         title: 'Update configuration',
-        enabled: (ctx) => ctx.createdCertificate,
+        enabled: (ctx) => ctx.createdCertificate || configurationUpdateRequired,
         task: async () => {
           config.set('platform.gateway.ssl.enabled', true);
           config.set('platform.gateway.ssl.provider', 'zerossl');

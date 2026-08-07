@@ -21,6 +21,14 @@ export default class BaseCommand extends Command {
     }),
   };
 
+  /**
+   * @param {Object} options
+   * @return {Promise<AwilixContainer>}
+   */
+  async createContainer(options) {
+    return createDIContainer(options);
+  }
+
   async init() {
     // Read environment variables from .env file
     dotenv.config();
@@ -30,7 +38,7 @@ export default class BaseCommand extends Command {
     this.parsedArgs = args;
     this.parsedFlags = flags;
 
-    this.container = await createDIContainer(process.env);
+    this.container = await this.createContainer(process.env);
 
     // Load configs
     /**
@@ -99,12 +107,6 @@ export default class BaseCommand extends Command {
 
       // stop and remove all started containers
       await stopAllContainers(startedContainers.getContainers());
-
-      // A lock held across this command would otherwise survive until it goes
-      // stale, blocking the next writer for no reason.
-      if (this.constructor.mutatesConfig) {
-        this.container.resolve('configFileRepository').release();
-      }
     });
   }
 
@@ -140,53 +142,67 @@ export default class BaseCommand extends Command {
   async saveConfigAndStopContainers(err) {
     // Save configs collection
     if (this.container) {
+      let saveError;
+
       /**
        * @var {ConfigFileJsonRepository} configFileRepository
        */
       const configFileRepository = this.container.resolve('configFileRepository');
 
-      // Only a command that held the lock for its whole run may save the config
-      // file it loaded - it read inside the lock, so its state is current. Any
-      // other command changes configuration through update(), and saving its
-      // startup copy here would write a snapshot from before the command ran.
-      if (this.constructor.mutatesConfig
-        && this.container.has('configFile') && err === undefined) {
-        /**
-         * @var {ConfigFile} configFile
-         */
-        const configFile = this.container.resolve('configFile');
-
-        if (configFile.isChanged()) {
-          // Captured before rendering, which clears each flag only after its
-          // service files have been written successfully.
-          const changedConfigs = configFile.getAllConfigs()
-            .filter((config) => config.isChanged());
-
-          configFileRepository.write(configFile);
-
+      try {
+        // Only a command that held the lock for its whole run may save the config
+        // file it loaded - it read inside the lock, so its state is current. Any
+        // other command changes configuration through update(), and saving its
+        // startup copy here would write a snapshot from before the command ran.
+        if (this.constructor.mutatesConfig
+          && this.container.has('configFile') && err === undefined) {
           /**
-           * @var {writeConfigTemplates} writeConfigTemplates
+           * @var {ConfigFile} configFile
            */
-          const writeConfigTemplates = this.container.resolve('writeConfigTemplates');
+          const configFile = this.container.resolve('configFile');
 
-          // Re-rendering only what changed is safe because upgrading Dashmate
-          // stamps the new version into the config file even when no migration
-          // applies, which marks every config changed - so a release that edits
-          // a template still reaches every node on its next command.
-          changedConfigs.forEach(writeConfigTemplates);
+          if (configFile.isChanged()) {
+            const changedConfigs = configFile.getAllConfigs()
+              .filter((config) => config.isChanged());
+
+            /**
+             * @var {writeConfigTemplates} writeConfigTemplates
+             */
+            const writeConfigTemplates = this.container.resolve('writeConfigTemplates');
+
+            changedConfigs.forEach(writeConfigTemplates);
+
+            // Persist only after every generated file is current. If rendering
+            // fails, the unchanged format version makes the next command retry it.
+            configFileRepository.write(configFile);
+          }
         }
+      } catch (e) {
+        saveError = e;
       }
 
       // Stop all running containers
       const stopAllContainers = this.container.resolve('stopAllContainers');
       const startedContainers = this.container.resolve('startedContainers');
 
-      await stopAllContainers(
-        startedContainers.getContainers(),
-        {
-          remove: !settings.debug,
-        },
-      );
+      try {
+        await stopAllContainers(
+          startedContainers.getContainers(),
+          {
+            remove: !settings.debug,
+          },
+        );
+      } catch (cleanupError) {
+        if (!saveError) {
+          throw cleanupError;
+        }
+
+        saveError.cleanupError = cleanupError;
+      }
+
+      if (saveError) {
+        throw saveError;
+      }
     }
   }
 }

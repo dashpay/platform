@@ -118,7 +118,7 @@ async function removeOrphanedSslContainers(docker) {
   const scheduleRenewZeroSslCertificate = container.resolve('scheduleRenewZeroSslCertificate');
   const scheduleRenewLetsEncryptCertificate = container.resolve('scheduleRenewLetsEncryptCertificate');
   const watchInactiveConfig = (inactiveConfig, onActivated) => watchCertificateConfig(
-    inactiveConfig.getName(),
+    inactiveConfig,
     null,
     configFileRepository,
     async (currentConfig) => {

@@ -53,6 +53,13 @@ export default class ConfigFileJsonRepository {
   #heldRelease = null;
 
   /**
+   * Number of matching acquire() calls for the current process-held lease.
+   *
+   * @type {number}
+   */
+  #leaseDepth = 0;
+
+  /**
    * Set when the lock was lost while we believed we still held it. Continuing
    * would mean writing without exclusivity, which is the lost update this exists
    * to prevent, so the next save refuses instead.
@@ -65,8 +72,7 @@ export default class ConfigFileJsonRepository {
    * @param {migrateConfigFile} migrateConfigFile
    * @param {HomeDir} homeDir
    * @param {createConfigFile} createConfigFile
-   * @param {Object} [configFileLockOptions={}] - overrides for the lock timings,
-   *   so the paths that only happen after seconds of waiting can be exercised
+   * @param {Object} [configFileLockOptions={}] - lock timing overrides
    * @param {number} [configFileLockOptions.stale]
    * @param {number} [configFileLockOptions.acquireTimeout]
    */
@@ -153,28 +159,26 @@ export default class ConfigFileJsonRepository {
    * Everything happens while the file is locked, and the state handed to the
    * mutator is read after taking the lock - so a change made by another process
    * in between cannot be reverted, and two commands editing different options
-   * both survive. Reading in one place and saving in another is what allowed a
-   * command to write a snapshot that was already out of date.
+   * both survive. The locked read ensures the mutator never receives a stale
+   * snapshot from an earlier operation.
    *
    * The lock is held for a read, a mutation and a rename - milliseconds - so it
    * is not a meaningful serialization point for commands that only edit config.
    *
    * @param {function(ConfigFile): void} mutate
-   * @param {Object} [options={}] - passed through to read()
+   * @param {Object} [options={}]
    * @param {function(ConfigFile): void} [options.onSaved] - runs after the save
    *   and before the lock is released, for effects that must not be reordered
    *   against it: rendering service files, removing a config's directory
-   * @returns {ConfigFile} the state that was saved
+   * @returns {void}
    */
-  update(mutate, options = {}) {
-    const { onSaved, ...readOptions } = options;
-
-    return this.#locked(() => {
+  update(mutate, { onSaved } = {}) {
+    this.#locked(() => {
       // First run has nothing to read yet, and creating the defaults here rather
       // than separately keeps that on the same locked path as every other change
       // - two nodes being set up at once cannot both create the file.
       const configFile = fs.existsSync(this.configFilePath)
-        ? this.read(readOptions)
+        ? this.read()
         : this.createConfigFile();
 
       mutate(configFile);
@@ -184,8 +188,6 @@ export default class ConfigFileJsonRepository {
       if (onSaved) {
         onSaved(configFile);
       }
-
-      return configFile;
     });
   }
 
@@ -193,8 +195,7 @@ export default class ConfigFileJsonRepository {
    * Read the config file, saving the result when reading migrated it.
    *
    * Migrating produces a new shape that has to reach disk. Doing both under one
-   * lock is what keeps it from reverting anything saved between the read and the
-   * save - the same split that made a command's startup copy dangerous.
+   * lock keeps it from reverting anything saved between the read and the save.
    *
    * Clean reads do not acquire the lock. When the first read discovers a
    * migration, the file is read again and migrated under the lock before it is
@@ -203,10 +204,9 @@ export default class ConfigFileJsonRepository {
    * write.
    *
    * @param {Object} [options={}] - passed through to read()
-   * @param {function(Config[]): void} [onMigrated] - runs after the migrated
-   *   config file is saved and before the lock is released
-   * @returns {{configFile: ConfigFile, migrated: Config[]}} migrated is the
-   *   configs whose shape changed, so their service files can be re-rendered
+   * @param {function(Config[]): void} [onMigrated] - runs before the migrated
+   *   config file is saved and while the lock is held
+   * @returns {{configFile: ConfigFile}}
    */
   readAndMigrate(options = {}, onMigrated = undefined) {
     const readResult = () => {
@@ -219,7 +219,7 @@ export default class ConfigFileJsonRepository {
     const initialResult = readResult();
 
     if (!initialResult.configFile.isChanged()) {
-      return initialResult;
+      return { configFile: initialResult.configFile };
     }
 
     return this.#locked(() => {
@@ -230,14 +230,14 @@ export default class ConfigFileJsonRepository {
       const { configFile, migrated } = result;
 
       if (configFile.isChanged()) {
-        this.#save(configFile);
-
         if (onMigrated) {
           onMigrated(migrated);
         }
+
+        this.#save(configFile);
       }
 
-      return result;
+      return { configFile };
     });
   }
 
@@ -249,18 +249,20 @@ export default class ConfigFileJsonRepository {
    * and saving for another process to write into. Short changes should use
    * update() instead - this blocks every other writer until release() is called.
    *
-   * Calling it again while already held does nothing, so a command holding the
-   * lock can still call update() and write() normally.
+   * Every acquire adds a lease level that needs a matching release. Locked
+   * repository operations reuse the held lease without adding another level.
    *
    * @returns {void}
    */
   acquire() {
     if (this.#heldRelease !== null) {
+      this.#leaseDepth += 1;
       return;
     }
 
     this.#compromised = false;
     this.#heldRelease = this.#acquireLock();
+    this.#leaseDepth = 1;
   }
 
   /**
@@ -274,9 +276,15 @@ export default class ConfigFileJsonRepository {
       return;
     }
 
+    if (this.#leaseDepth > 1) {
+      this.#leaseDepth -= 1;
+      return;
+    }
+
     const release = this.#heldRelease;
 
     this.#heldRelease = null;
+    this.#leaseDepth = 0;
 
     this.#release(release);
   }
@@ -297,11 +305,15 @@ export default class ConfigFileJsonRepository {
     // acquisition restores exclusivity and must not inherit that failure.
     this.#compromised = false;
     const release = this.#acquireLock();
+    this.#heldRelease = release;
+    this.#leaseDepth = 1;
 
     try {
       return fn();
     } finally {
-      this.#release(release);
+      if (this.#heldRelease === release) {
+        this.release();
+      }
     }
   }
 
@@ -333,13 +345,29 @@ export default class ConfigFileJsonRepository {
    * @param {ConfigFile} configFile
    */
   #save(configFile) {
-    if (this.#compromised) {
-      throw new Error(`Lost the lock on '${this.configFilePath}' while changing it,`
-        + ' so saving now could overwrite another process. Nothing was written -'
-        + ' re-run the command.');
-    }
-
     const configFileJSON = `${JSON.stringify(configFile.toObject(), undefined, 2)}\n`;
+
+    if (this.#compromised) {
+      const rescuePath = `${this.configFilePath}.rescue`;
+
+      try {
+        writeFileAtomic.sync(rescuePath, configFileJSON, {
+          encoding: 'utf8',
+          mode: 0o600,
+        });
+        fs.chmodSync(rescuePath, 0o600);
+      } catch (e) {
+        throw new Error(
+          `Lost the lock on '${this.configFilePath}' while changing it,`
+            + ` and could not preserve the pending configuration at '${rescuePath}': ${e.message}`,
+          { cause: e },
+        );
+      }
+
+      throw new Error(`Lost the lock on '${this.configFilePath}' while changing it,`
+        + ` so saving now could overwrite another process. The pending configuration was saved`
+        + ` to '${rescuePath}'. Review it before re-running the command.`);
+    }
 
     writeFileAtomic.sync(this.configFilePath, configFileJSON, 'utf8');
 
@@ -398,9 +426,11 @@ export default class ConfigFileJsonRepository {
         }
 
         if (Date.now() >= deadline) {
-          throw new Error(`Timed out waiting to change '${this.configFilePath}'.`
-            + ' Another dashmate command is modifying configuration - wait for it'
-            + ' to finish and run this again.');
+          throw new Error(`Timed out waiting for configuration lock '${this.lockFilePath}'.`
+            + ' It may be held by a Dashmate command, the dashmate helper during certificate'
+            + ' renewal, or a running reindex. An abandoned lock after SIGKILL or power loss'
+            + ' clears itself after about a minute; do not remove it manually while another'
+            + ' process may still be running.');
         }
 
         sleepSync(LOCK_RETRY_INTERVAL_MS);

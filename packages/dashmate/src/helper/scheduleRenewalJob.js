@@ -17,7 +17,7 @@ const RETRY_INTERVAL_MS = 60 * 60 * 1000;
  * @param {ConfigFileJsonRepository} options.configFileRepository
  * @param {writeConfigTemplates} options.writeConfigTemplates
  * @param {DockerCompose} options.dockerCompose
- * @param {function(Config): Promise<boolean>} [options.onConfigurationChanged]
+ * @param {function(Config): Promise<boolean>} options.onConfigurationChanged
  * @param {function(Config): Promise<void>} options.reschedule
  */
 export default function scheduleRenewalJob({
@@ -54,9 +54,7 @@ export default function scheduleRenewalJob({
       nextConfig = renewal.config;
 
       if (!renewal.renewed) {
-        if (onConfigurationChanged) {
-          await onConfigurationChanged(renewal.config);
-        }
+        await onConfigurationChanged(renewal.config);
 
         completion = 'stop';
       } else {
@@ -92,18 +90,18 @@ export default function scheduleRenewalJob({
   });
 
   stopWatchingConfig = watchCertificateConfig(
-    configName,
+    currentConfig,
     provider,
     configFileRepository,
     async (changedConfig) => {
       completion = 'stop';
       job.stop();
 
-      if (changedConfig && onConfigurationChanged) {
+      if (changedConfig) {
         return onConfigurationChanged(changedConfig);
       }
 
-      return true;
+      return false;
     },
     (e) => {
       // eslint-disable-next-line no-console

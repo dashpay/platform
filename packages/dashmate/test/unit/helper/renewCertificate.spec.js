@@ -140,12 +140,20 @@ describe('renewCertificate', () => {
   });
 
   it('should checkpoint produced certificate state when obtain fails', async function it() {
-    const obtainCertificateTask = this.sinon.stub().callsFake((config) => ({
+    const obtainCertificateTask = this.sinon.stub().callsFake((config, {
+      onCertificateCreated,
+    }) => ({
       run: this.sinon.stub().callsFake(async () => {
         config.set(
           'platform.gateway.ssl.providerConfigs.zerossl.id',
           'pending-certificate-id-00000000000',
         );
+        onCertificateCreated();
+
+        expect(repository.read().getConfig(configName)
+          .get('platform.gateway.ssl.providerConfigs.zerossl.id'))
+          .to.equal('pending-certificate-id-00000000000');
+
         throw new Error('verification failed');
       }),
     }));

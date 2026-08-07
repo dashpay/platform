@@ -177,22 +177,49 @@ describe('ConfigFileJsonRepository', () => {
   });
 
   describe('#update', () => {
-    it('should save and render a migration while holding the lock', () => {
+    it('should render and save a migration while holding the lock', () => {
       seedConfigFile();
 
       const migration = (data) => ({ ...data, configFormatVersion: '9.9.9' });
       const repository = new ConfigFileJsonRepository(migration, homeDir, createDefaults);
       let renderedWhileLocked = false;
 
-      const { configFile, migrated } = repository.readAndMigrate({}, () => {
+      let migrated;
+      const result = repository.readAndMigrate({}, (migratedConfigs) => {
+        migrated = migratedConfigs;
         renderedWhileLocked = fs.existsSync(homeDir.joinPath('config.json.lock'));
         expect(JSON.parse(fs.readFileSync(configFilePath, 'utf8')).configFormatVersion)
-          .to.equal('9.9.9');
+          .to.equal(CURRENT_FORMAT_VERSION);
       });
+      const { configFile } = result;
 
       expect(configFile.getConfigFormatVersion()).to.equal('9.9.9');
       expect(migrated).to.have.length(1);
+      expect(result).to.not.have.property('migrated');
       expect(renderedWhileLocked).to.be.true();
+      expect(JSON.parse(fs.readFileSync(configFilePath, 'utf8')).configFormatVersion)
+        .to.equal('9.9.9');
+    });
+
+    it('should retry migration rendering when the first render fails', () => {
+      seedConfigFile();
+
+      const migration = (data) => ({ ...data, configFormatVersion: '9.9.9' });
+      const repository = new ConfigFileJsonRepository(migration, homeDir, createDefaults);
+
+      expect(() => repository.readAndMigrate({}, () => {
+        throw new Error('template write failed');
+      })).to.throw('template write failed');
+
+      expect(JSON.parse(fs.readFileSync(configFilePath, 'utf8')).configFormatVersion)
+        .to.equal(CURRENT_FORMAT_VERSION);
+
+      let retried = false;
+      repository.readAndMigrate({}, () => {
+        retried = true;
+      });
+
+      expect(retried).to.be.true();
       expect(JSON.parse(fs.readFileSync(configFilePath, 'utf8')).configFormatVersion)
         .to.equal('9.9.9');
     });
@@ -344,18 +371,21 @@ describe('ConfigFileJsonRepository', () => {
       expect(seen).to.equal('written-by-someone-else');
     });
 
-    it('should return the state it saved with template work still marked pending', () => {
+    it('should save the state with template work still marked pending', () => {
       seedConfigFile();
 
       const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
+      let savedConfigFile;
 
-      const configFile = repository.update((freshConfigFile) => {
+      const result = repository.update((freshConfigFile) => {
         freshConfigFile.getConfig('base').set('description', 'returned');
+        savedConfigFile = freshConfigFile;
       });
 
-      expect(configFile.getConfig('base').get('description')).to.equal('returned');
-      expect(configFile.changed).to.be.false();
-      expect(configFile.getConfig('base').isChanged()).to.be.true();
+      expect(result).to.be.undefined();
+      expect(savedConfigFile.getConfig('base').get('description')).to.equal('returned');
+      expect(savedConfigFile.changed).to.be.false();
+      expect(savedConfigFile.getConfig('base').isChanged()).to.be.true();
     });
 
     it('should not write when the mutator throws', () => {
@@ -400,6 +430,45 @@ describe('ConfigFileJsonRepository', () => {
       expect(reread.getConfig('base').get('description')).to.equal('via-write');
     });
 
+    it('should let onSaved re-enter a repository lock taken by update', () => {
+      seedConfigFile();
+
+      const repository = new ConfigFileJsonRepository(
+        identityMigration,
+        homeDir,
+        createDefaults,
+        { acquireTimeout: 50 },
+      );
+
+      expect(() => repository.update((configFile) => {
+        configFile.getConfig('base').set('description', 'outer-save');
+      }, {
+        onSaved: (configFile) => {
+          configFile.getConfig('base').set('description', 'nested-save');
+          repository.write(configFile);
+        },
+      })).to.not.throw();
+
+      expect(repository.read().getConfig('base').get('description')).to.equal('nested-save');
+    });
+
+    it('should preserve an explicit lease acquired inside a locked callback', () => {
+      seedConfigFile();
+
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
+      const lockPath = homeDir.joinPath('config.json.lock');
+
+      repository.update(() => {}, {
+        onSaved: () => repository.acquire(),
+      });
+
+      expect(fs.existsSync(lockPath)).to.be.true();
+
+      repository.release();
+
+      expect(fs.existsSync(lockPath)).to.be.false();
+    });
+
     it('should hold the lock between acquire and release, and free it after', () => {
       seedConfigFile();
 
@@ -407,6 +476,23 @@ describe('ConfigFileJsonRepository', () => {
       const lockPath = homeDir.joinPath('config.json.lock');
 
       repository.acquire();
+
+      expect(fs.existsSync(lockPath)).to.be.true();
+
+      repository.release();
+
+      expect(fs.existsSync(lockPath)).to.be.false();
+    });
+
+    it('should keep an outer lease held until every acquire is released', () => {
+      seedConfigFile();
+
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
+      const lockPath = homeDir.joinPath('config.json.lock');
+
+      repository.acquire();
+      repository.acquire();
+      repository.release();
 
       expect(fs.existsSync(lockPath)).to.be.true();
 
@@ -452,9 +538,18 @@ describe('ConfigFileJsonRepository', () => {
 
         await new Promise((resolve) => { setTimeout(resolve, 1500); });
 
-        expect(() => repository.update((configFile) => {
-          configFile.getConfig('base').set('description', 'must-not-be-saved');
-        })).to.throw('Lost the lock');
+        let error;
+        try {
+          repository.update((configFile) => {
+            configFile.getConfig('base').set('description', 'must-not-be-saved');
+          });
+        } catch (e) {
+          error = e;
+        }
+
+        expect(error).to.be.instanceOf(Error);
+        expect(error.message).to.include('Lost the lock');
+        expect(error.message).to.include(`${configFilePath}.rescue`);
       } finally {
         repository.release();
       }
@@ -462,6 +557,12 @@ describe('ConfigFileJsonRepository', () => {
       const reread = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults).read();
 
       expect(reread.getConfig('base').get('description')).to.not.equal('must-not-be-saved');
+
+      const rescuePath = `${configFilePath}.rescue`;
+      expect(JSON.parse(fs.readFileSync(rescuePath, 'utf8'))
+        .configs.base.description).to.equal('must-not-be-saved');
+      // eslint-disable-next-line no-bitwise
+      expect(fs.statSync(rescuePath).mode & 0o777).to.equal(0o600);
 
       repository.update((configFile) => {
         configFile.getConfig('base').set('description', 'saved-after-new-lock');
@@ -485,9 +586,20 @@ describe('ConfigFileJsonRepository', () => {
 
       const startedAt = Date.now();
 
-      expect(() => repository.update((configFile) => {
-        configFile.getConfig('base').set('description', 'never-applied');
-      })).to.throw('Another dashmate command is modifying configuration');
+      let error;
+      try {
+        repository.update((configFile) => {
+          configFile.getConfig('base').set('description', 'never-applied');
+        });
+      } catch (e) {
+        error = e;
+      }
+
+      expect(error).to.be.instanceOf(Error);
+      expect(error.message).to.include(homeDir.joinPath('config.json.lock'));
+      expect(error.message).to.include('dashmate helper');
+      expect(error.message).to.include('reindex');
+      expect(error.message).to.include('about a minute');
 
       expect(Date.now() - startedAt).to.be.at.least(600);
 
@@ -505,11 +617,22 @@ describe('ConfigFileJsonRepository', () => {
       const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
       const lockPath = homeDir.joinPath('config.json.lock');
       const holdMs = 700;
+      const childScript = `
+        const fs = require('fs');
+        const lockPath = ${JSON.stringify(lockPath)};
+        const configFilePath = ${JSON.stringify(configFilePath)};
+        fs.mkdirSync(lockPath);
+        setTimeout(() => {
+          const data = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
+          data.configs.base.description = 'written-by-lock-holder';
+          fs.writeFileSync(configFilePath, JSON.stringify(data, undefined, 2) + '\\n');
+          fs.rmdirSync(lockPath);
+        }, ${holdMs});
+      `;
 
       lockHolder = spawn(
         process.execPath,
-        ['-e', `require('fs').mkdirSync(${JSON.stringify(lockPath)});`
-          + `setTimeout(() => require('fs').rmdirSync(${JSON.stringify(lockPath)}), ${holdMs});`],
+        ['-e', childScript],
         { stdio: 'ignore' },
       );
 
@@ -525,14 +648,15 @@ describe('ConfigFileJsonRepository', () => {
       const startedAt = Date.now();
 
       repository.update((configFile) => {
-        configFile.getConfig('base').set('description', 'written-after-waiting');
+        configFile.getConfig('base').set('core.rpc.port', 30000);
       });
 
       expect(Date.now() - startedAt).to.be.at.least(holdMs / 2);
 
       const reread = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults).read();
 
-      expect(reread.getConfig('base').get('description')).to.equal('written-after-waiting');
+      expect(reread.getConfig('base').get('description')).to.equal('written-by-lock-holder');
+      expect(reread.getConfig('base').get('core.rpc.port')).to.equal(30000);
 
       lockHolder.on('exit', () => done());
     });

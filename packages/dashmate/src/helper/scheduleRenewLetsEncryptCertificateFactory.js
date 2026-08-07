@@ -24,10 +24,10 @@ export default function scheduleRenewLetsEncryptCertificateFactory(
   /**
    * @typedef scheduleRenewLetsEncryptCertificate
    * @param {Config} config
-   * @param {function(Config): Promise<boolean>} [onConfigurationChanged]
+   * @param {function(Config|null): Promise<boolean|void>} onConfigurationChanged
    * @return {Promise<void>}
    */
-  async function scheduleRenewLetsEncryptCertificate(config, onConfigurationChanged = undefined) {
+  async function scheduleRenewLetsEncryptCertificate(config, onConfigurationChanged) {
     const configName = config.getName();
     let currentConfig;
 
@@ -35,6 +35,7 @@ export default function scheduleRenewLetsEncryptCertificateFactory(
       currentConfig = configFileRepository.read().getConfig(configName);
     } catch (e) {
       if (e instanceof ConfigIsNotPresentError) {
+        await onConfigurationChanged(null);
         return;
       }
 
@@ -51,9 +52,7 @@ export default function scheduleRenewLetsEncryptCertificateFactory(
 
     if (!currentConfig.get('platform.gateway.ssl.enabled')
       || currentConfig.get('platform.gateway.ssl.provider') !== 'letsencrypt') {
-      if (onConfigurationChanged) {
-        await onConfigurationChanged(currentConfig);
-      }
+      await onConfigurationChanged(currentConfig);
 
       return;
     }

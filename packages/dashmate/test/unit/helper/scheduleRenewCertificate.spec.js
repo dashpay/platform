@@ -20,11 +20,13 @@ describe('scheduleRenewCertificate', () => {
         configurationChanged = onConfigurationChanged;
       });
     const scheduleRenewLetsEncryptCertificate = this.sinon.stub().resolves();
+    const watchInactiveConfig = this.sinon.stub();
 
     await scheduleRenewCertificate(
       zeroSslConfig,
       scheduleRenewZeroSslCertificate,
       scheduleRenewLetsEncryptCertificate,
+      watchInactiveConfig,
     );
     await configurationChanged(letsEncryptConfig);
 
@@ -38,23 +40,26 @@ describe('scheduleRenewCertificate', () => {
     );
   });
 
-  it('should stop scheduling for a disabled provider', async function it() {
+  it('should watch a disabled provider', async function it() {
     const config = {
       get: this.sinon.stub(),
     };
     config.get.withArgs('platform.gateway.ssl.enabled').returns(false);
     const scheduleRenewZeroSslCertificate = this.sinon.stub();
     const scheduleRenewLetsEncryptCertificate = this.sinon.stub();
+    const watchInactiveConfig = this.sinon.stub();
 
-    const scheduled = await scheduleRenewCertificate(
+    const result = await scheduleRenewCertificate(
       config,
       scheduleRenewZeroSslCertificate,
       scheduleRenewLetsEncryptCertificate,
+      watchInactiveConfig,
     );
 
-    expect(scheduled).to.be.false();
+    expect(result).to.be.undefined();
     expect(scheduleRenewZeroSslCertificate).to.not.have.been.called();
     expect(scheduleRenewLetsEncryptCertificate).to.not.have.been.called();
+    expect(watchInactiveConfig).to.have.been.calledOnceWith(config, this.sinon.match.func);
   });
 
   it('should watch an initially disabled config and schedule it when enabled', async function it() {
@@ -79,7 +84,7 @@ describe('scheduleRenewCertificate', () => {
     const scheduleRenewZeroSslCertificate = this.sinon.stub().resolves();
     const scheduleRenewLetsEncryptCertificate = this.sinon.stub();
 
-    const scheduled = await scheduleRenewCertificate(
+    const result = await scheduleRenewCertificate(
       disabledConfig,
       scheduleRenewZeroSslCertificate,
       scheduleRenewLetsEncryptCertificate,
@@ -87,7 +92,7 @@ describe('scheduleRenewCertificate', () => {
     );
     await onActivated(enabledConfig);
 
-    expect(scheduled).to.be.true();
+    expect(result).to.be.undefined();
     expect(watchInactiveConfig).to.have.been.calledOnceWith(
       disabledConfig,
       this.sinon.match.func,
@@ -96,5 +101,29 @@ describe('scheduleRenewCertificate', () => {
       enabledConfig,
       this.sinon.match.func,
     );
+  });
+
+  it('should watch for recreation when a config disappears during provider handoff', async function it() {
+    const config = {
+      get: this.sinon.stub(),
+      getName: this.sinon.stub().returns('base'),
+    };
+    config.get.withArgs('platform.gateway.ssl.enabled').returns(true);
+    config.get.withArgs('platform.gateway.ssl.provider').returns('zerossl');
+    const scheduleRenewZeroSslCertificate = this.sinon.stub()
+      .callsFake(async (scheduledConfig, onConfigurationChanged) => {
+        await onConfigurationChanged(null);
+      });
+    const scheduleRenewLetsEncryptCertificate = this.sinon.stub();
+    const watchInactiveConfig = this.sinon.stub();
+
+    await scheduleRenewCertificate(
+      config,
+      scheduleRenewZeroSslCertificate,
+      scheduleRenewLetsEncryptCertificate,
+      watchInactiveConfig,
+    );
+
+    expect(watchInactiveConfig).to.have.been.calledOnceWith(config, this.sinon.match.func);
   });
 });

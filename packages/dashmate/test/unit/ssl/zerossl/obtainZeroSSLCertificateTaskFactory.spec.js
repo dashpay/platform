@@ -46,8 +46,10 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
     );
   });
 
-  it('should stop and destroy the verification server when the pipeline fails', async () => {
-    const tasks = obtainZeroSSLCertificateTask(config);
+  it('should stop and destroy the verification server when the pipeline fails', async function it() {
+    const tasks = obtainZeroSSLCertificateTask(config, {
+      onCertificateCreated: this.sinon.stub(),
+    });
 
     let thrownError;
     try {
@@ -124,7 +126,9 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
         verificationServer,
         homeDir,
         validate,
-      )(realConfig);
+      )(realConfig, {
+        onCertificateCreated: this.sinon.stub(),
+      });
 
       await task.run({ expirationDays: 30 });
 
@@ -196,7 +200,9 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
         verificationServer,
         homeDir,
         validate,
-      )(realConfig);
+      )(realConfig, {
+        onCertificateCreated: this.sinon.stub(),
+      });
 
       await expect(task.run({ expirationDays: 30, noRetry: true }))
         .to.be.rejectedWith('verification failed');
@@ -206,6 +212,108 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
         .to.equal('certificate-id-000000000000000000');
       expect(repository.read().getConfig(realConfig.getName())
         .get('platform.gateway.ssl.enabled')).to.be.false();
+    } finally {
+      homeDir.remove();
+    }
+  });
+
+  it('should require a certificate-created persistence callback', () => {
+    expect(() => obtainZeroSSLCertificateTask(config))
+      .to.throw('onCertificateCreated callback is required');
+  });
+
+  it('should activate a resumed issued certificate', async function it() {
+    const homeDir = HomeDir.createTemp();
+
+    try {
+      const realConfig = getBaseConfigFactory(homeDir)();
+      realConfig.set('platform.gateway.ssl.provider', 'self-signed');
+      const validate = this.sinon.stub().resolves({
+        data: {
+          apiKey: 'api-key',
+          bundleFilePath: homeDir.joinPath('bundle.crt'),
+          certificate: {
+            expires: new Date('2026-10-01T00:00:00.000Z'),
+            status: 'issued',
+          },
+          csrFilePath: homeDir.joinPath('certificate.csr'),
+          externalIp: '127.0.0.1',
+          isBundleFilePresent: true,
+          isCsrFilePresent: true,
+          isPrivateKeyFilePresent: true,
+          privateKeyFilePath: homeDir.joinPath('private.key'),
+          sslConfigDir: homeDir.joinPath('ssl'),
+        },
+      });
+      const task = obtainZeroSSLCertificateTaskFactory(
+        this.sinon.stub(),
+        this.sinon.stub(),
+        this.sinon.stub(),
+        this.sinon.stub(),
+        this.sinon.stub(),
+        this.sinon.stub(),
+        this.sinon.stub(),
+        this.sinon.stub(),
+        verificationServer,
+        homeDir,
+        validate,
+      )(realConfig, {
+        onCertificateCreated: this.sinon.stub(),
+      });
+
+      await task.run({ expirationDays: 30 });
+
+      expect(realConfig.get('platform.gateway.ssl.enabled')).to.be.true();
+      expect(realConfig.get('platform.gateway.ssl.provider')).to.equal('zerossl');
+    } finally {
+      homeDir.remove();
+    }
+  });
+
+  it('should create the ZeroSSL private key with mode 0600', async function it() {
+    const homeDir = HomeDir.createTemp();
+
+    try {
+      const realConfig = getBaseConfigFactory(homeDir)();
+      const privateKeyFilePath = homeDir.joinPath('ssl', 'private.key');
+      const validate = this.sinon.stub().resolves({
+        error: ERRORS.CERTIFICATE_ID_IS_NOT_SET,
+        data: {
+          apiKey: 'api-key',
+          bundleFilePath: homeDir.joinPath('ssl', 'bundle.crt'),
+          certificate: null,
+          csrFilePath: homeDir.joinPath('ssl', 'certificate.csr'),
+          externalIp: '127.0.0.1',
+          isBundleFilePresent: true,
+          isCsrFilePresent: false,
+          isPrivateKeyFilePresent: false,
+          privateKeyFilePath,
+          sslConfigDir: homeDir.joinPath('ssl'),
+        },
+      });
+      const task = obtainZeroSSLCertificateTaskFactory(
+        this.sinon.stub().resolves('certificate-request'),
+        this.sinon.stub().resolves({ privateKey: 'private-key' }),
+        this.sinon.stub().resolves({
+          id: 'certificate-id-000000000000000000',
+          status: 'issued',
+        }),
+        this.sinon.stub(),
+        this.sinon.stub(),
+        this.sinon.stub(),
+        this.sinon.stub(),
+        this.sinon.stub(),
+        verificationServer,
+        homeDir,
+        validate,
+      )(realConfig, {
+        onCertificateCreated: this.sinon.stub(),
+      });
+
+      await task.run({ expirationDays: 30 });
+
+      // eslint-disable-next-line no-bitwise
+      expect(fs.statSync(privateKeyFilePath).mode & 0o777).to.equal(0o600);
     } finally {
       homeDir.remove();
     }
