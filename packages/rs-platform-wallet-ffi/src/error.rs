@@ -865,6 +865,42 @@ mod tests {
         }
     }
 
+    /// A pooled shortfall is the same thing to a host as a single-account one —
+    /// "this wallet cannot cover the payment" — so it deliberately rides the
+    /// SAME code rather than making every host learn a second value. Pin that,
+    /// since splitting it later would silently reclassify the most common send
+    /// failure on the pooled (default) path.
+    #[test]
+    fn pooled_insufficient_funds_shares_the_single_account_code() {
+        let result: PlatformWalletFFIResult = PlatformWalletError::CorePooledInsufficientFunds {
+            sources: vec![
+                AccountTypePreference::BIP44,
+                AccountTypePreference::BIP32,
+                AccountTypePreference::AllDashpayReceivingFunds,
+            ],
+            available: Some(1_000),
+            required: Some(2_000),
+        }
+        .into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorCoreInsufficientFunds
+        );
+    }
+
+    /// A caller-argument rejection raised BELOW the FFI boundary must reach the
+    /// host as the same parameter error the boundary itself returns — not as a
+    /// not-found, and not through the `ErrorUnknown` catch-all.
+    #[test]
+    fn invalid_parameter_maps_to_the_parameter_code() {
+        let result: PlatformWalletFFIResult =
+            PlatformWalletError::InvalidParameter("names a set of accounts".to_string()).into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+    }
+
     #[test]
     fn asset_lock_recovery_failures_map_to_stable_codes() {
         use dashcore::OutPoint;
