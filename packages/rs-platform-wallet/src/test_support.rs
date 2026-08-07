@@ -262,6 +262,73 @@ pub(crate) async fn funded_wallet_manager_with_outputs(
     (Arc::new(RwLock::new(wm)), wallet_id, generation, signer)
 }
 
+/// Funds BOTH standard families — BIP44 account 0 and BIP32 account 0 — each
+/// with its own chain-locked UTXO set, for the pooled-send tests: a spend
+/// larger than either family's balance must draw from both.
+///
+/// `cfg(test)`-gated like [`RejectFirstBroadcaster`]: only this crate's own
+/// unit tests consume it, so a `test-utils`-only build would flag it unused.
+#[cfg(test)]
+pub(crate) async fn funded_wallet_manager_dual_standard(
+    bip44_outputs: &[u64],
+    bip32_outputs: &[u64],
+) -> (
+    Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    WalletId,
+    Arc<WalletGeneration>,
+    WalletSigner,
+) {
+    let mut ctx = TestWalletContext::new_random();
+
+    let bip44_address = ctx.receive_address.clone();
+    let bip32_address = {
+        let xpub = ctx
+            .wallet
+            .accounts
+            .standard_bip32_accounts
+            .get(&0)
+            .expect("bip32 account")
+            .account_xpub;
+        ctx.managed_wallet
+            .first_bip32_managed_account_mut()
+            .expect("bip32 managed account")
+            .next_receive_address(Some(&xpub), true)
+            .expect("bip32 receive address")
+    };
+
+    for (address, outputs, tag) in [
+        (&bip44_address, bip44_outputs, 0..1),
+        (&bip32_address, bip32_outputs, 1..2),
+    ] {
+        let funding_tx = Transaction::dummy(address, tag, outputs);
+        let result = ctx
+            .check_transaction(
+                &funding_tx,
+                TransactionContext::InChainLockedBlock(BlockInfo::new(
+                    1,
+                    BlockHash::all_zeros(),
+                    1_700_000_000,
+                )),
+            )
+            .await;
+        assert!(result.is_relevant, "funding tx should be relevant");
+    }
+
+    let signer = WalletSigner {
+        wallet: ctx.wallet.clone(),
+    };
+    let generation = Arc::new(WalletGeneration::new());
+    let info = PlatformWalletInfo {
+        core_wallet: ctx.managed_wallet,
+        generation: Arc::clone(&generation),
+        identity_manager: IdentityManager::new(),
+        tracked_asset_locks: BTreeMap::new(),
+    };
+    let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
+    let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
+    (Arc::new(RwLock::new(wm)), wallet_id, generation, signer)
+}
+
 /// Like [`funded_wallet_manager`] but funds the wallet's CoinJoin account 0
 /// (created by `WalletAccountCreationOptions::Default`) with a single spendable
 /// UTXO. Lets the deferred-payment tests exercise a CoinJoin-funded reservation,

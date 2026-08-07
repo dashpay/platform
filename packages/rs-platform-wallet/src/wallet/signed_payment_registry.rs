@@ -71,7 +71,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use dashcore::{Transaction, Txid};
-use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 // key-wallet's UTXO-reservation token, distinct from this registry's own
 // `ReservationToken` (the u64 payment handle below). Aliased so the two never
 // blur: the funding token identifies the reserved *inputs* for an owner-guarded
@@ -249,16 +248,13 @@ struct RegisteredPayment<B: TransactionBroadcaster + ?Sized> {
     core: CoreWallet<B>,
     /// The signed transaction to broadcast.
     tx: Transaction,
-    /// The releasable funding-account handle — the account whose reservation
-    /// `finalize` took and which a rejected broadcast or an explicit release
-    /// must reconcile. An [`AccountTypePreference`] (not the narrower
-    /// `StandardAccountType`) so CoinJoin-funded deferred payments retain a
-    /// releasable handle too: `finalize` reserves the selected inputs for EVERY
-    /// account variant, so a CoinJoin token must be able to release them
-    /// immediately on rejection/abandon rather than stranding them until the
-    /// key-wallet TTL backstop.
-    account_type: AccountTypePreference,
-    account_index: u32,
+    /// Every account whose reservation `finalize` took — a pooled build spans
+    /// the standard families and DashPay receiving accounts, and a rejected
+    /// broadcast or an explicit release must reconcile EACH of them (the one
+    /// build token stamps every account's reserved inputs). Concrete
+    /// [`AccountType`]s so CoinJoin- and DashPay-funded deferred payments
+    /// retain releasable handles too.
+    funding_accounts: Vec<key_wallet::account::AccountType>,
     /// Wallet `last_processed_height` captured inside the funding critical
     /// section — the exact clock `finalize_transaction` stamps the funding
     /// reservation with (`SignedCoreTransaction::reservation_height`). Compared
@@ -404,8 +400,7 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
             RegisteredPayment {
                 core,
                 tx: parts.transaction,
-                account_type: parts.funding_account_type,
-                account_index: parts.funding_account_index,
+                funding_accounts: parts.funding_accounts,
                 registered_height: parts.reservation_height,
                 funding_reservation_token: parts.reservation_token,
             },
@@ -530,8 +525,7 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
         let txid = entry
             .core
             .broadcast_payment_releasing_reservation(
-                entry.account_type,
-                entry.account_index,
+                &entry.funding_accounts,
                 &entry.tx,
                 entry.funding_reservation_token,
             )
@@ -566,8 +560,7 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
         entry
             .core
             .release_transaction_reservation(
-                entry.account_type,
-                entry.account_index,
+                &entry.funding_accounts,
                 &entry.tx,
                 entry.funding_reservation_token,
             )
@@ -824,7 +817,7 @@ mod tests {
         let mut builder = TransactionBuilder::new()
             .set_current_height(current_height)
             .set_selection_strategy(SelectionStrategy::LargestFirst)
-            .set_funding(managed_account, account);
+            .add_funding(managed_account, account);
         for (addr, amount) in outputs {
             builder = builder.add_output(addr, *amount);
         }
@@ -837,8 +830,9 @@ mod tests {
         Ok(SignedCoreTransaction::new_for_test(
             tx,
             fee,
-            preference(account_type),
-            account_index,
+            vec![preference(account_type)
+                .account_type(account_index)
+                .expect("standard preference resolves to one account")],
             current_height,
             reservation_token,
             // Stamp the finalizing generation so registering through this same
@@ -961,7 +955,7 @@ mod tests {
         let finalized = core
             .finalize_transaction(
                 sweep_builder(&recipient),
-                AccountTypePreference::CoinJoin,
+                &[AccountTypePreference::CoinJoin],
                 0,
                 &signer,
             )
@@ -976,7 +970,7 @@ mod tests {
         let blocked = core
             .finalize_transaction(
                 sweep_builder(&recipient),
-                AccountTypePreference::CoinJoin,
+                &[AccountTypePreference::CoinJoin],
                 0,
                 &signer,
             )
@@ -997,7 +991,7 @@ mod tests {
         let rebuilt = core
             .finalize_transaction(
                 sweep_builder(&recipient),
-                AccountTypePreference::CoinJoin,
+                &[AccountTypePreference::CoinJoin],
                 0,
                 &signer,
             )
@@ -1878,7 +1872,7 @@ mod tests {
         let finalized = core
             .finalize_transaction(
                 payment_builder(&outputs),
-                AccountTypePreference::BIP44,
+                &[AccountTypePreference::BIP44],
                 0,
                 &signer,
             )
@@ -1900,7 +1894,7 @@ mod tests {
         let retaken = core
             .finalize_transaction(
                 payment_builder(&outputs),
-                AccountTypePreference::BIP44,
+                &[AccountTypePreference::BIP44],
                 0,
                 &signer,
             )
@@ -1926,7 +1920,7 @@ mod tests {
         let third = core
             .finalize_transaction(
                 payment_builder(&outputs),
-                AccountTypePreference::BIP44,
+                &[AccountTypePreference::BIP44],
                 0,
                 &signer,
             )

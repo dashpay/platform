@@ -150,40 +150,32 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             PlatformWalletError::WalletNotFound("Wallet not found in wallet manager".to_string())
         })?;
 
-        let xpub = match account_type {
-            AccountTypePreference::BIP44 => wallet.get_bip44_account(account_index),
-            AccountTypePreference::BIP32 => wallet.get_bip32_account(account_index),
-            AccountTypePreference::CoinJoin => wallet.get_coinjoin_account(account_index),
-        }
-        .map(|a| a.account_xpub)
-        .ok_or_else(|| {
+        // Gap limits are a per-account setting, so a set-naming DashPay
+        // selector (identity-wide / all) has no single target here.
+        let concrete = account_type.account_type(account_index).ok_or_else(|| {
             PlatformWalletError::WalletNotFound(format!(
-                "wallet account {account_type:?} #{account_index} not found"
+                "{account_type:?} names a set of accounts; set a gap limit per account"
             ))
         })?;
+        let xpub = wallet
+            .accounts
+            .account_of_type(concrete)
+            .map(|a| a.account_xpub)
+            .ok_or_else(|| {
+                PlatformWalletError::WalletNotFound(format!(
+                    "wallet account {account_type:?} #{account_index} not found"
+                ))
+            })?;
 
-        let account = match account_type {
-            AccountTypePreference::BIP44 => info
-                .core_wallet
-                .accounts
-                .standard_bip44_accounts
-                .get_mut(&account_index),
-            AccountTypePreference::BIP32 => info
-                .core_wallet
-                .accounts
-                .standard_bip32_accounts
-                .get_mut(&account_index),
-            AccountTypePreference::CoinJoin => info
-                .core_wallet
-                .accounts
-                .coinjoin_accounts
-                .get_mut(&account_index),
-        }
-        .ok_or_else(|| {
-            PlatformWalletError::WalletNotFound(format!(
-                "managed account {account_type:?} #{account_index} not found"
-            ))
-        })?;
+        let account = info
+            .core_wallet
+            .accounts
+            .funds_account_mut(&concrete)
+            .ok_or_else(|| {
+                PlatformWalletError::WalletNotFound(format!(
+                    "managed account {account_type:?} #{account_index} not found"
+                ))
+            })?;
 
         account
             .set_gap_limit(gap_limit, &KeySource::Public(xpub))

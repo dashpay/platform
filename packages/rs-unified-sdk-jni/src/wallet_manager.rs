@@ -3120,6 +3120,7 @@ fn core_account_type(value: jni::sys::jint) -> Option<platform_wallet_ffi::CoreA
         0 => Some(platform_wallet_ffi::CoreAccountTypeFFI::BIP44),
         1 => Some(platform_wallet_ffi::CoreAccountTypeFFI::BIP32),
         2 => Some(platform_wallet_ffi::CoreAccountTypeFFI::CoinJoin),
+        3 => Some(platform_wallet_ffi::CoreAccountTypeFFI::AllSpendable),
         _ => None,
     }
 }

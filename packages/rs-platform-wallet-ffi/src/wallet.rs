@@ -473,8 +473,9 @@ mod destroy_tests {
                     SignedCoreTransaction::new_for_test(
                         dummy_tx(),
                         0,
-                        AccountTypePreference::BIP44,
-                        0,
+                        vec![AccountTypePreference::BIP44
+                            .account_type(0)
+                            .expect("single account")],
                         0,
                         None,
                         // Bind the finalized payment to this exact wallet

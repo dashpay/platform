@@ -1,6 +1,5 @@
 use dashcore::Transaction;
 use key_wallet::account::account_type::StandardAccountType;
-use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::ReservationToken;
 
 use super::SignedCoreTransaction;
@@ -28,8 +27,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             Err(error) => {
                 if matches!(error, crate::broadcaster::BroadcastError::Rejected { .. }) {
                     self.release_transaction_reservation(
-                        transaction.funding_account_type(),
-                        transaction.funding_account_index(),
+                        transaction.funding_accounts(),
                         transaction.transaction(),
                         transaction.reservation_token(),
                     )
@@ -131,8 +129,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// reserved nothing.
     pub(crate) async fn broadcast_payment_releasing_reservation(
         &self,
-        account_type: AccountTypePreference,
-        account_index: u32,
+        accounts: &[key_wallet::account::AccountType],
         transaction: &Transaction,
         token: Option<ReservationToken>,
     ) -> Result<dashcore::Txid, PlatformWalletError> {
@@ -140,13 +137,8 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             Ok(txid) => Ok(txid),
             Err(error) => {
                 if matches!(error, BroadcastError::Rejected { .. }) {
-                    self.release_transaction_reservation(
-                        account_type,
-                        account_index,
-                        transaction,
-                        token,
-                    )
-                    .await;
+                    self.release_transaction_reservation(accounts, transaction, token)
+                        .await;
                 }
                 Err(error.into())
             }
@@ -239,7 +231,7 @@ mod tests {
         let mut builder = TransactionBuilder::new()
             .set_current_height(current_height)
             .set_selection_strategy(SelectionStrategy::LargestFirst)
-            .set_funding(managed_account, account);
+            .add_funding(managed_account, account);
         for (addr, amount) in outputs {
             builder = builder.add_output(addr, *amount);
         }

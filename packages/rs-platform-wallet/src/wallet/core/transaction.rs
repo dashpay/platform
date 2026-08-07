@@ -9,15 +9,15 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use dashcore::{Address, Transaction};
+use key_wallet::account::AccountType;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-use key_wallet::managed_account::ManagedCoreFundsAccount;
 use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionError;
 use key_wallet::wallet::managed_wallet_info::transaction_builder::{
     BuilderError, TransactionBuilder, TransactionSigner,
 };
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
-use key_wallet::{Account, DerivationPath, ReservationToken, Utxo};
+use key_wallet::{DerivationPath, ReservationToken, Utxo};
 
 use super::{CoreWallet, WalletGeneration};
 use crate::broadcaster::TransactionBroadcaster;
@@ -25,6 +25,9 @@ use crate::PlatformWalletError;
 
 fn map_builder_error(
     error: BuilderError,
+    // Representative source for the typed insufficient-funds error: the FIRST
+    // preference of the pooled list (BIP44 for a plain send), whose account
+    // also supplies the change address.
     account_type: AccountTypePreference,
     account_index: u32,
 ) -> PlatformWalletError {
@@ -58,8 +61,12 @@ fn map_builder_error(
 pub struct SignedCoreTransaction {
     transaction: Transaction,
     fee: u64,
-    funding_account_type: AccountTypePreference,
-    funding_account_index: u32,
+    /// Every concrete account that contributed funding inputs, in funding
+    /// order (first supplies the change address). A pooled send spans the
+    /// standard families and any DashPay receiving accounts, so the
+    /// release/abandon paths must reconcile the reservation on EACH of them —
+    /// key-wallet reserves per account, all stamped with the one build token.
+    funding_accounts: Vec<AccountType>,
     /// The wallet's `last_processed_height` captured **inside** the funding
     /// critical section — the exact clock `set_current_height` stamped the
     /// selected inputs' reservation with, sampled *before* the (potentially
@@ -107,12 +114,11 @@ impl SignedCoreTransaction {
         self.fee
     }
 
-    pub fn funding_account_type(&self) -> AccountTypePreference {
-        self.funding_account_type
-    }
-
-    pub fn funding_account_index(&self) -> u32 {
-        self.funding_account_index
+    /// Every account that contributed funding inputs (funding order; the
+    /// first supplied the change address). The release/abandon paths iterate
+    /// these — the build's reservation lives per-account under one token.
+    pub fn funding_accounts(&self) -> &[AccountType] {
+        &self.funding_accounts
     }
 
     /// The `last_processed_height` the funding reservation was stamped with,
@@ -155,8 +161,7 @@ impl SignedCoreTransaction {
     pub(crate) fn into_registered_parts(self) -> RegisteredPaymentParts {
         RegisteredPaymentParts {
             transaction: self.transaction,
-            funding_account_type: self.funding_account_type,
-            funding_account_index: self.funding_account_index,
+            funding_accounts: self.funding_accounts,
             reservation_height: self.reservation_height,
             reservation_token: self.reservation_token,
         }
@@ -169,8 +174,7 @@ impl SignedCoreTransaction {
 /// non-`Clone` ownership object exactly once.
 pub(crate) struct RegisteredPaymentParts {
     pub(crate) transaction: Transaction,
-    pub(crate) funding_account_type: AccountTypePreference,
-    pub(crate) funding_account_index: u32,
+    pub(crate) funding_accounts: Vec<AccountType>,
     pub(crate) reservation_height: u32,
     pub(crate) reservation_token: Option<ReservationToken>,
 }
@@ -189,8 +193,7 @@ impl SignedCoreTransaction {
     pub fn new_for_test(
         transaction: Transaction,
         fee: u64,
-        funding_account_type: AccountTypePreference,
-        funding_account_index: u32,
+        funding_accounts: Vec<AccountType>,
         reservation_height: u32,
         reservation_token: Option<ReservationToken>,
         origin_generation: Arc<WalletGeneration>,
@@ -198,8 +201,7 @@ impl SignedCoreTransaction {
         Self {
             transaction,
             fee,
-            funding_account_type,
-            funding_account_index,
+            funding_accounts,
             reservation_height,
             reservation_token,
             origin_generation,
@@ -207,40 +209,57 @@ impl SignedCoreTransaction {
     }
 }
 
-fn account(
-    wallet: &key_wallet::Wallet,
-    account_type: AccountTypePreference,
-    account_index: u32,
-) -> Option<&Account> {
-    match account_type {
-        AccountTypePreference::BIP44 => wallet.get_bip44_account(account_index),
-        AccountTypePreference::BIP32 => wallet.get_bip32_account(account_index),
-        AccountTypePreference::CoinJoin => wallet.get_coinjoin_account(account_index),
-    }
-}
+/// The funding sources a plain send pools by default: both standard families
+/// plus every DashPay contact-receiving account, in this order — the FIRST
+/// source (BIP44) supplies the change address, so change from a pooled send
+/// always returns to the transparent primary account.
+///
+/// CoinJoin is deliberately absent (spending mixed outputs alongside
+/// transparent ones links them and undoes the mixing — the same reasoning as
+/// upstream `AccountTypePreference::DEFAULT`), and so are a contact's
+/// watch-only `DashpayExternalAccount` coins, which
+/// `AllDashpayReceivingFunds` excludes by construction upstream (it selects
+/// only the receiving side the local seed can sign).
+pub const SEND_FUNDING_SOURCES: [AccountTypePreference; 3] = [
+    AccountTypePreference::BIP44,
+    AccountTypePreference::BIP32,
+    AccountTypePreference::AllDashpayReceivingFunds,
+];
 
-fn managed_account(
+/// The concrete accounts `preference` resolves to at `source_index` — the
+/// platform mirror of key-wallet's private `account_types_for`: the single
+/// account at `source_index` for the standard families, and every DashPay
+/// receiving account the selector picks (which span their own indices) for a
+/// DashPay source. A set selector matching nothing resolves to an empty list,
+/// not an error — a wallet with no contacts still sends from its standard
+/// accounts.
+fn resolve_source_accounts(
     accounts: &key_wallet::account::ManagedAccountCollection,
-    account_type: AccountTypePreference,
-    account_index: u32,
-) -> Option<&ManagedCoreFundsAccount> {
-    match account_type {
-        AccountTypePreference::BIP44 => accounts.standard_bip44_accounts.get(&account_index),
-        AccountTypePreference::BIP32 => accounts.standard_bip32_accounts.get(&account_index),
-        AccountTypePreference::CoinJoin => accounts.coinjoin_accounts.get(&account_index),
-    }
-}
-
-fn managed_account_mut(
-    accounts: &mut key_wallet::account::ManagedAccountCollection,
-    account_type: AccountTypePreference,
-    account_index: u32,
-) -> Option<&mut ManagedCoreFundsAccount> {
-    match account_type {
-        AccountTypePreference::BIP44 => accounts.standard_bip44_accounts.get_mut(&account_index),
-        AccountTypePreference::BIP32 => accounts.standard_bip32_accounts.get_mut(&account_index),
-        AccountTypePreference::CoinJoin => accounts.coinjoin_accounts.get_mut(&account_index),
-    }
+    preference: AccountTypePreference,
+    source_index: u32,
+) -> Vec<AccountType> {
+    let (identity, friend) = match preference {
+        AccountTypePreference::AllDashpayReceivingFunds => (None, None),
+        AccountTypePreference::DashpayIdentityReceivingFunds { user_identity_id } => {
+            (Some(user_identity_id), None)
+        }
+        AccountTypePreference::DashpayFriendshipReceivingFunds {
+            user_identity_id,
+            friend_identity_id,
+        } => (Some(user_identity_id), Some(friend_identity_id)),
+        _ => return preference.account_type(source_index).into_iter().collect(),
+    };
+    accounts
+        .dashpay_receival_accounts
+        .keys()
+        .filter(|key| identity.is_none_or(|id| key.user_identity_id == id))
+        .filter(|key| friend.is_none_or(|id| key.friend_identity_id == id))
+        .map(|key| AccountType::DashpayReceivingFunds {
+            index: key.index,
+            user_identity_id: key.user_identity_id,
+            friend_identity_id: key.friend_identity_id,
+        })
+        .collect()
 }
 
 impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
@@ -249,57 +268,125 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     pub async fn finalize_transaction<S: TransactionSigner + ?Sized + Sync>(
         &self,
         builder: TransactionBuilder,
-        account_type: AccountTypePreference,
-        account_index: u32,
+        // The funding sources to POOL, in order — the first supplies the
+        // change address. A plain send passes [`SEND_FUNDING_SOURCES`]
+        // (BIP44 + BIP32 + every DashPay receiving account); a single-element
+        // list reproduces the old one-account behavior, including its strict
+        // account-not-found error. `source_index` addresses the standard
+        // families; DashPay set selectors span their own indices.
+        sources: &[AccountTypePreference],
+        source_index: u32,
         signer: &S,
     ) -> Result<SignedCoreTransaction, PlatformWalletError> {
-        let (unsigned, fee, selected, paths, height, reservation_token) = {
+        let primary = *sources.first().ok_or_else(|| {
+            PlatformWalletError::TransactionBuild("no funding sources named".into())
+        })?;
+        // A single-source call is an explicit request for THAT account: keep
+        // the strict not-found error the one-account API had. A pooled call
+        // skips missing sources (a wallet without a BIP32 account or without
+        // DashPay contacts still sends) and errors only if NOTHING funds.
+        let strict = sources.len() == 1;
+
+        let (unsigned, fee, selected, paths, height, reservation_token, funding_accounts) = {
             let mut manager = self.wallet_manager.write().await;
             let (wallet, info) = manager
                 .get_wallet_and_info_mut(&self.wallet_id)
                 .ok_or_else(|| PlatformWalletError::WalletNotFound("wallet not found".into()))?;
 
-            let account = account(wallet, account_type, account_index)
-                .cloned()
-                .ok_or_else(|| {
-                    PlatformWalletError::WalletNotFound(format!(
-                        "wallet account {account_type:?} #{account_index} not found"
-                    ))
-                })?;
             let height = info.core_wallet.last_processed_height();
-            let managed =
-                managed_account_mut(&mut info.core_wallet.accounts, account_type, account_index)
-                    .ok_or_else(|| {
-                        PlatformWalletError::WalletNotFound(format!(
-                            "managed account {account_type:?} #{account_index} not found"
-                        ))
-                    })?;
 
-            // `set_funding` observes ReservationSet and `build_unsigned_reserved`
-            // records its selection AND returns the token stamped onto the
-            // reserved inputs. There is no await between them and the manager
-            // write guard prevents another finalizer interleaving. The token
-            // rides in `SignedCoreTransaction` so a later abandon or rejected
-            // broadcast releases *only* the inputs this build still owns, even
-            // if a TTL sweep re-reserved them under a new token meanwhile
-            // (`dashpay/platform#4185`).
+            // Fund from every resolved account, mirroring key-wallet's own
+            // multi-source fold (`transaction_building::fund`): dedup overlapping
+            // sources (funding an account twice would offer its UTXOs to
+            // selection twice), collect the address→path map per contributing
+            // account for the external signer, and let the FIRST source's first
+            // account supply the change address. `add_funding` observes each
+            // account's ReservationSet and `build_unsigned_reserved` records the
+            // pooled selection AND returns the ONE token stamped onto every
+            // reserved input across accounts. There is no await in this section
+            // and the manager write guard prevents another finalizer
+            // interleaving. The token rides in `SignedCoreTransaction` so a
+            // later abandon or rejected broadcast releases *only* the inputs
+            // this build still owns, even if a TTL sweep re-reserved them under
+            // a new token meanwhile (`dashpay/platform#4185`).
+            let mut builder = builder.set_current_height(height);
+            let mut funding_accounts: Vec<AccountType> = Vec::new();
+            let mut paths: HashMap<Address, DerivationPath> = HashMap::new();
+            for &preference in sources {
+                for at in
+                    resolve_source_accounts(&info.core_wallet.accounts, preference, source_index)
+                {
+                    if funding_accounts.contains(&at) {
+                        continue;
+                    }
+                    let (Some(account), Some(managed)) = (
+                        wallet.accounts.account_of_type(at),
+                        info.core_wallet.accounts.funds_account_mut(&at),
+                    ) else {
+                        if strict {
+                            return Err(PlatformWalletError::WalletNotFound(format!(
+                                "wallet account {preference:?} #{source_index} not found"
+                            )));
+                        }
+                        continue;
+                    };
+                    for utxo in managed.utxos.values() {
+                        if let Some(path) = managed.address_derivation_path(&utxo.address) {
+                            paths.insert(utxo.address.clone(), path);
+                        }
+                    }
+                    builder = builder.add_funding(managed, account);
+                    funding_accounts.push(at);
+                }
+                // A strict single-source SET selector (a DashPay preference
+                // naming zero accounts) also errors — the caller asked for
+                // exactly those funds.
+                if strict && funding_accounts.is_empty() {
+                    return Err(PlatformWalletError::WalletNotFound(format!(
+                        "wallet account {preference:?} #{source_index} not found"
+                    )));
+                }
+            }
+            if funding_accounts.is_empty() {
+                return Err(PlatformWalletError::WalletNotFound(format!(
+                    "no funding account of any named source at index {source_index}"
+                )));
+            }
+
             let (unsigned, fee, reservation_token) = builder
-                .set_current_height(height)
-                .set_funding(managed, &account)
                 .build_unsigned_reserved()
-                .map_err(|error| map_builder_error(error, account_type, account_index))?;
+                .map_err(|error| map_builder_error(error, primary, source_index))?;
+
+            // Release across every contributing account on the error paths
+            // below: the pooled reservation lives per account under the one
+            // token, and we are still inside the write guard (no sweep can
+            // interleave), so the plain by-outpoint release is exact.
+            macro_rules! release_all {
+                ($accounts:expr, $collection:expr, $unsigned:expr) => {
+                    for at in $accounts.iter() {
+                        if let Some(managed) = $collection.funds_account_mut(at) {
+                            managed.release_reservation($unsigned);
+                        }
+                    }
+                };
+            }
 
             let selected: Vec<Utxo> = match unsigned
                 .input
                 .iter()
                 .map(|input| {
-                    managed
-                        .utxos
-                        .get(&input.previous_output)
+                    funding_accounts
+                        .iter()
+                        .find_map(|at| {
+                            info.core_wallet
+                                .accounts
+                                .funds_account(at)
+                                .and_then(|managed| managed.utxos.get(&input.previous_output))
+                        })
                         .cloned()
                         .ok_or_else(|| {
                             PlatformWalletError::TransactionBuild(format!(
-                                "selected input {} is no longer in the funding account",
+                                "selected input {} is no longer in any funding account",
                                 input.previous_output
                             ))
                         })
@@ -308,33 +395,33 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             {
                 Ok(selected) => selected,
                 Err(error) => {
-                    managed.release_reservation(&unsigned);
+                    release_all!(funding_accounts, info.core_wallet.accounts, &unsigned);
                     return Err(error);
                 }
             };
-            let paths: HashMap<Address, DerivationPath> = match selected
+            // The per-account path collection above covered every UTXO offered
+            // to selection, so every selected input's address must be present.
+            if let Some(missing) = selected
                 .iter()
-                .map(|utxo| {
-                    managed
-                        .address_derivation_path(&utxo.address)
-                        .map(|path| (utxo.address.clone(), path))
-                        .ok_or_else(|| {
-                            PlatformWalletError::TransactionBuild(format!(
-                                "no derivation path for selected input address {}",
-                                utxo.address
-                            ))
-                        })
-                })
-                .collect::<Result<_, _>>()
+                .find(|utxo| !paths.contains_key(&utxo.address))
             {
-                Ok(paths) => paths,
-                Err(error) => {
-                    managed.release_reservation(&unsigned);
-                    return Err(error);
-                }
-            };
+                let error = PlatformWalletError::TransactionBuild(format!(
+                    "no derivation path for selected input address {}",
+                    missing.address
+                ));
+                release_all!(funding_accounts, info.core_wallet.accounts, &unsigned);
+                return Err(error);
+            }
 
-            (unsigned, fee, selected, paths, height, reservation_token)
+            (
+                unsigned,
+                fee,
+                selected,
+                paths,
+                height,
+                reservation_token,
+                funding_accounts,
+            )
         };
 
         let signed = match signer
@@ -351,8 +438,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 // inputs under a new token. Release owner-guarded so we free
                 // only what this build still owns.
                 self.release_transaction_reservation(
-                    account_type,
-                    account_index,
+                    &funding_accounts,
                     &unsigned,
                     reservation_token,
                 )
@@ -364,8 +450,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         Ok(SignedCoreTransaction {
             transaction: signed,
             fee,
-            funding_account_type: account_type,
-            funding_account_index: account_index,
+            funding_accounts,
             reservation_height: height,
             reservation_token,
             // Capture the finalizing wallet's generation identity so the
@@ -378,8 +463,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// Release a finalized transaction that the caller has chosen not to send.
     pub async fn abandon_transaction(&self, transaction: &SignedCoreTransaction) {
         self.release_transaction_reservation(
-            transaction.funding_account_type,
-            transaction.funding_account_index,
+            &transaction.funding_accounts,
             &transaction.transaction,
             transaction.reservation_token,
         )
@@ -398,8 +482,9 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// path is never reached for a funded finalize, which always reserves.
     pub(crate) async fn release_transaction_reservation(
         &self,
-        account_type: AccountTypePreference,
-        account_index: u32,
+        // Every account the build funded from — the pooled reservation lives
+        // per account under the one `token`, so each must reconcile.
+        accounts: &[AccountType],
         transaction: &Transaction,
         token: Option<ReservationToken>,
     ) {
@@ -423,8 +508,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         let Some(info) = manager.get_wallet_info(&self.wallet_id) else {
             tracing::warn!(
                 wallet_id = %hex::encode(self.wallet_id),
-                ?account_type,
-                account_index,
+                ?accounts,
                 "could not release finalized Core transaction reservation: wallet not found"
             );
             return;
@@ -435,30 +519,31 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // original generation's reservation ceased to exist with it.
             tracing::warn!(
                 wallet_id = %hex::encode(self.wallet_id),
-                ?account_type,
-                account_index,
+                ?accounts,
                 "skipping reservation release: wallet was re-created under the same id \
                  (different generation) since the token was minted"
             );
             return;
         }
-        match managed_account(&info.core_wallet.accounts, account_type, account_index) {
-            // Owner-guarded when the build stamped a token: even within this
-            // generation, a TTL sweep between build and release could have
-            // re-reserved the same outpoints under a new token, and an
-            // unconditional release would free that newer reservation. With the
-            // token key-wallet frees only inputs this build still owns. `None`
-            // (no reservation taken) falls back to the unconditional release.
-            Some(managed) => match token {
-                Some(token) => managed.release_reservation_if_owner(transaction, token),
-                None => managed.release_reservation(transaction),
-            },
-            None => tracing::warn!(
-                wallet_id = %hex::encode(self.wallet_id),
-                ?account_type,
-                account_index,
-                "could not release finalized Core transaction reservation: account not found"
-            ),
+        for at in accounts {
+            match info.core_wallet.accounts.funds_account(at) {
+                // Owner-guarded when the build stamped a token: even within this
+                // generation, a TTL sweep between build and release could have
+                // re-reserved the same outpoints under a new token, and an
+                // unconditional release would free that newer reservation. With
+                // the token key-wallet frees only inputs this build still owns
+                // in THIS account's set. `None` (no reservation taken) falls
+                // back to the unconditional release.
+                Some(managed) => match token {
+                    Some(token) => managed.release_reservation_if_owner(transaction, token),
+                    None => managed.release_reservation(transaction),
+                },
+                None => tracing::warn!(
+                    wallet_id = %hex::encode(self.wallet_id),
+                    account = %at,
+                    "could not release finalized Core transaction reservation: account not found"
+                ),
+            }
         }
     }
 }
@@ -479,8 +564,8 @@ mod tests {
 
     use crate::broadcaster::TransactionBroadcaster;
     use crate::test_support::{
-        funded_wallet_manager, AlwaysMaybeSentBroadcaster, AlwaysOkBroadcaster,
-        AlwaysRejectedBroadcaster, WalletSigner,
+        funded_wallet_manager, funded_wallet_manager_dual_standard, AlwaysMaybeSentBroadcaster,
+        AlwaysOkBroadcaster, AlwaysRejectedBroadcaster, WalletSigner,
     };
     use crate::wallet::core::CoreWallet;
     use crate::PlatformWalletError;
@@ -502,6 +587,85 @@ mod tests {
             CoreWallet::new(sdk, manager, wallet_id, broadcaster, balance),
             signer,
         )
+    }
+
+    /// THE POOLED SEND (rust-dashcore#925/#929): `SEND_FUNDING_SOURCES` draws
+    /// from BOTH standard families when neither alone covers the payment,
+    /// records every contributing account on the ownership object, tolerates
+    /// the wallet having no DashPay accounts (the `AllDashpayReceivingFunds`
+    /// selector contributes nothing rather than erroring), and an abandon
+    /// releases the reservation on EVERY contributing account so an immediate
+    /// identical rebuild succeeds.
+    #[tokio::test]
+    async fn pooled_send_spans_families_and_abandon_releases_all() {
+        let (manager, wallet_id, generation, signer) =
+            funded_wallet_manager_dual_standard(&[700_000], &[700_000]).await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let core = CoreWallet::new(
+            sdk,
+            manager,
+            wallet_id,
+            Arc::new(AlwaysOkBroadcaster),
+            generation,
+        );
+
+        // 1_000_000 exceeds either family's 700_000, so selection must pool.
+        let finalized = core
+            .finalize_transaction(
+                payment_builder(40),
+                &crate::SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
+            .await
+            .expect("pooled finalize must fund from both standard families");
+        assert_eq!(
+            finalized.funding_accounts().len(),
+            2,
+            "both standard families must contribute (and be recorded for release)"
+        );
+        assert!(
+            finalized.transaction().input.len() >= 2,
+            "a payment above either family's balance needs inputs from both"
+        );
+
+        // Abandon must release BOTH accounts' reservations: an identical
+        // rebuild can only succeed if every pooled input returned to the pool.
+        core.abandon_transaction(&finalized).await;
+        let rebuilt = core
+            .finalize_transaction(
+                payment_builder(41),
+                &crate::SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
+            .await
+            .expect("abandon must release every contributing account's reservation");
+        core.abandon_transaction(&rebuilt).await;
+    }
+
+    /// A single-source call keeps the strict one-account contract: naming a
+    /// family with no funded account at the index errors instead of silently
+    /// funding from elsewhere.
+    #[tokio::test]
+    async fn single_source_missing_account_still_errors() {
+        let (core, signer) = core(
+            StandardAccountType::BIP44Account,
+            Arc::new(AlwaysOkBroadcaster),
+        )
+        .await;
+        let result = core
+            .finalize_transaction(
+                payment_builder(50),
+                &[AccountTypePreference::BIP44],
+                7, // no account at index 7
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(result, Err(PlatformWalletError::WalletNotFound(_))),
+            "explicit single-source misses must stay strict, got {result:?}"
+        );
     }
 
     fn payment_builder(tag: u8) -> TransactionBuilder {
@@ -526,7 +690,7 @@ mod tests {
                 barrier.wait().await;
                 core.finalize_transaction(
                     payment_builder(tag),
-                    preference(account_type),
+                    &[preference(account_type)],
                     0,
                     &signer,
                 )
@@ -585,7 +749,7 @@ mod tests {
         let validation = core
             .finalize_transaction(
                 TransactionBuilder::new(),
-                preference(account_type),
+                &[preference(account_type)],
                 0,
                 &signer,
             )
@@ -598,7 +762,7 @@ mod tests {
         let signing = core
             .finalize_transaction(
                 payment_builder(20),
-                preference(account_type),
+                &[preference(account_type)],
                 0,
                 &FailingSigner,
             )
@@ -609,7 +773,7 @@ mod tests {
         ));
 
         assert!(core
-            .finalize_transaction(payment_builder(21), preference(account_type), 0, &signer)
+            .finalize_transaction(payment_builder(21), &[preference(account_type)], 0, &signer)
             .await
             .is_ok());
     }
@@ -620,13 +784,13 @@ mod tests {
         let (rejection_core, signer) =
             core(account_type, Arc::new(AlwaysRejectedBroadcaster)).await;
         let abandoned = rejection_core
-            .finalize_transaction(payment_builder(30), preference(account_type), 0, &signer)
+            .finalize_transaction(payment_builder(30), &[preference(account_type)], 0, &signer)
             .await
             .expect("finalize for abandon");
         rejection_core.abandon_transaction(&abandoned).await;
 
         let rejected = rejection_core
-            .finalize_transaction(payment_builder(31), preference(account_type), 0, &signer)
+            .finalize_transaction(payment_builder(31), &[preference(account_type)], 0, &signer)
             .await
             .expect("reservation released by abandon");
         assert!(matches!(
@@ -636,7 +800,7 @@ mod tests {
             Err(PlatformWalletError::TransactionBroadcast(_))
         ));
         assert!(rejection_core
-            .finalize_transaction(payment_builder(32), preference(account_type), 0, &signer)
+            .finalize_transaction(payment_builder(32), &[preference(account_type)], 0, &signer)
             .await
             .is_ok());
 
@@ -645,7 +809,7 @@ mod tests {
         let ambiguous = ambiguous_core
             .finalize_transaction(
                 payment_builder(33),
-                preference(account_type),
+                &[preference(account_type)],
                 0,
                 &ambiguous_signer,
             )
@@ -661,7 +825,7 @@ mod tests {
             ambiguous_core
                 .finalize_transaction(
                     payment_builder(34),
-                    preference(account_type),
+                    &[preference(account_type)],
                     0,
                     &ambiguous_signer,
                 )

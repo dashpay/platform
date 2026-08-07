@@ -269,7 +269,7 @@ mod tests {
                     &Address::dummy(Network::Testnet, usize::from(tag)),
                     1_000_000,
                 ),
-                AccountTypePreference::BIP44,
+                &[AccountTypePreference::BIP44],
                 0,
                 signer,
             ))
