@@ -2274,6 +2274,7 @@ dependencies = [
  "platform-serialization",
  "platform-serialization-derive",
  "serde",
+ "serde_json",
  "tenderdash-abci",
  "thiserror 2.0.18",
  "tracing",
