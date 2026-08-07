@@ -70,10 +70,44 @@ extension SDK {
     guard let handle = handle else {
       throw SDKError.invalidState("SDK not initialized")
     }
-
     guard let listPtr = dash_sdk_dpns_get_contested_non_resolved_usernames(handle, limit) else {
       throw SDKError.internalError("Failed to fetch contested DPNS usernames")
     }
+    return Self.consumeContestedNamesList(listPtr)
+  }
+
+  /// The open contests **this identity is contending in** — the "how are my
+  /// own username requests doing" view, where ``dpnsActiveContests(limit:)`` is
+  /// the network-wide one.
+  ///
+  /// - Parameters:
+  ///   - identityId: Base58 identity id.
+  ///   - limit: Maximum contests to return.
+  public func dpnsContestsForIdentity(
+    identityId: String,
+    limit: UInt32 = 100
+  ) throws -> [DPNSContest] {
+    guard let handle = handle else {
+      throw SDKError.invalidState("SDK not initialized")
+    }
+    guard let listPtr = identityId.withCString({ idPtr in
+      dash_sdk_dpns_get_non_resolved_contests_for_identity(handle, idPtr, limit)
+    }) else {
+      throw SDKError.internalError("Failed to fetch contested DPNS usernames for identity")
+    }
+    return Self.consumeContestedNamesList(listPtr)
+  }
+
+  /// Copy a `DashSDKContestedNamesList` into Swift values and free it.
+  ///
+  /// Shared by both list queries — they return the same C shape, and a second
+  /// hand-rolled reader would be one more place for the ownership rules and
+  /// the null-label handling to drift.
+  ///
+  /// Takes ownership: the list is freed before returning, on every path.
+  private static func consumeContestedNamesList(
+    _ listPtr: UnsafeMutablePointer<DashSDKContestedNamesList>
+  ) -> [DPNSContest] {
     defer { dash_sdk_contested_names_list_free(listPtr) }
 
     let list = listPtr.pointee
@@ -94,10 +128,24 @@ extension SDK {
         for contenderIndex in 0..<Int(info.contender_count) {
           let contender = contendersPtr[contenderIndex]
           guard let idPtr = contender.identity_id else { continue }
+          // `label` is null when the FFI could not decode that contender's
+          // document — a missing display name, not a reason to drop the row.
+          let displayLabel = contender.label.map { String(cString: $0) }
           contenders.append(
             DPNSContender(
               identityId: String(cString: idPtr),
-              voteTally: contender.vote_count))
+              voteTally: contender.vote_count,
+              displayLabel: displayLabel?.isEmpty == false ? displayLabel : nil))
+        }
+      }
+
+      // Ordered and de-duplicated on the Rust side; copied verbatim.
+      var requestedLabels: [String] = []
+      if info.requested_label_count > 0, let labelsPtr = info.requested_labels {
+        requestedLabels.reserveCapacity(Int(info.requested_label_count))
+        for labelIndex in 0..<Int(info.requested_label_count) {
+          guard let labelPtr = labelsPtr[labelIndex] else { continue }
+          requestedLabels.append(String(cString: labelPtr))
         }
       }
 
@@ -112,7 +160,8 @@ extension SDK {
           hasWinner: info.has_winner,
           abstainVotes: info.abstain_votes,
           lockVotes: info.lock_votes,
-          contenders: contenders))
+          contenders: contenders,
+          requestedLabels: requestedLabels))
     }
 
     return contests.sorted { $0.normalizedLabel < $1.normalizedLabel }
@@ -182,7 +231,11 @@ extension SDK {
   /// `{"abstain_vote_tally":N,"lock_vote_tally":N,
   ///   "winner_info":"NoWinner"|"Locked"|{"type":"WonByIdentity","identity_id":"…"},
   ///   "block_info":{"height":…,"core_height":…,"timestamp":…},
-  ///   "contenders":[{"identity_id":"…","vote_count":N,"document":"hex"|null}]}`
+  ///   "contenders":[{"identity_id":"…","vote_count":N,"document":"hex"|null,
+  ///                  "label":"pizza"}]}`
+  ///
+  /// `label` is the requester's own spelling, decoded FFI-side from the
+  /// contender document; it is omitted when that decode was not possible.
   ///
   /// `winner_info` and `block_info` are absent while voting is open; when
   /// either is present the poll has finished (see ``DPNSContestOutcome``).
@@ -197,7 +250,10 @@ extension SDK {
       .compactMap { entry in
         guard let identityId = entry["identity_id"] as? String else { return nil }
         let tally = (entry["vote_count"] as? NSNumber)?.uint32Value ?? 0
-        return DPNSContender(identityId: identityId, voteTally: tally)
+        // `label` is absent when the FFI could not decode the document; that
+        // is a missing display name, not a reason to drop the contender.
+        let label = (entry["label"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        return DPNSContender(identityId: identityId, voteTally: tally, displayLabel: label)
       }
 
     let outcome: DPNSContestOutcome = {
