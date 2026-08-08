@@ -1380,9 +1380,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
 // nack/abandonment. Backed by the process-global registry in `platform_wallet_ffi`
 // (`core_wallet_signed_payment_*`). See `SignedPaymentRegistry`.
 
-/// `core_wallet_signed_payment_finalize` — atomically fund, reserve, sign, and
-/// register a builder for deferred (BIP70/BIP270) submission in ONE native
-/// operation. Selection and reservation commit as a single unit under the
+/// `core_wallet_signed_payment_finalize_with_deliverable` — atomically fund,
+/// reserve, sign, and register a builder for deferred (BIP70/BIP270) submission
+/// in ONE native operation. Selection and reservation commit as a single unit under the
 /// wallet-manager lock, so concurrent deferred builds (or a deferred build
 /// racing an immediate send) can no longer double-select an input. CONSUMES
 /// [builder]. `accountType`/`accountIndex` are the funding account (0 BIP44,
@@ -1448,7 +1448,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
         let mut out_bytes_len: usize = 0;
         let mut deliverable: u64 = 0;
         let result = unsafe {
-            platform_wallet_ffi::core_wallet_signed_payment_finalize(
+            platform_wallet_ffi::core_wallet_signed_payment_finalize_with_deliverable(
                 builder as *mut platform_wallet_ffi::FFITransactionBuilder,
                 wallet_handle as Handle,
                 account_type,

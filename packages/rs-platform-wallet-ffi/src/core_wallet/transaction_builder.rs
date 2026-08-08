@@ -193,6 +193,24 @@ pub unsafe extern "C" fn core_wallet_tx_builder_finalize(
     PlatformWalletFFIResult::ok()
 }
 
+/// Value of the sole non-OP_RETURN output: what a broadcast of this
+/// transaction actually pays out.
+///
+/// Returns 0 when there is no single such output. A multi-recipient build has
+/// no one deliverable amount, and an OP_RETURN-only build pays no one — hosts
+/// read the 0 as "not applicable" rather than "pays nothing", so the two cases
+/// need not be told apart here.
+///
+/// Output ORDER is deliberately irrelevant: a MAYAChain deposit carries its
+/// memo at VOUT1, while other layouts put the data carrier first.
+fn sole_deliverable_value(outputs: &[TxOut]) -> u64 {
+    let mut carriers = outputs.iter().filter(|out| !out.script_pubkey.is_op_return());
+    match (carriers.next(), carriers.next()) {
+        (Some(only), None) => only.value,
+        _ => 0,
+    }
+}
+
 /// Atomically fund, reserve, and sign a configured builder for DEFERRED
 /// (BIP70/BIP270) submission, then register the built transaction — holding its
 /// UTXO reservation — in one native operation.
@@ -215,24 +233,6 @@ pub unsafe extern "C" fn core_wallet_tx_builder_finalize(
 /// `core_wallet_transaction_free`). `out_bytes_ptr`/`out_bytes_len` borrow
 /// `out_tx`'s buffer — copy them out before freeing `out_tx`.
 ///
-/// Value of the sole non-OP_RETURN output: what a broadcast of this
-/// transaction actually pays out.
-///
-/// Returns 0 when there is no single such output. A multi-recipient build has
-/// no one deliverable amount, and an OP_RETURN-only build pays no one — hosts
-/// read the 0 as "not applicable" rather than "pays nothing", so the two cases
-/// need not be told apart here.
-///
-/// Output ORDER is deliberately irrelevant: a MAYAChain deposit carries its
-/// memo at VOUT1, while other layouts put the data carrier first.
-fn sole_deliverable_value(outputs: &[TxOut]) -> u64 {
-    let mut carriers = outputs.iter().filter(|out| !out.script_pubkey.is_op_return());
-    match (carriers.next(), carriers.next()) {
-        (Some(only), None) => only.value,
-        _ => 0,
-    }
-}
-
 /// Also writes `out_deliverable_duffs`: the value of the sole non-OP_RETURN
 /// output of the REGISTERED transaction — what a later broadcast actually
 /// pays out. Hosts need it for a drain (`SelectionStrategy::All`), where the
@@ -241,6 +241,10 @@ fn sole_deliverable_value(outputs: &[TxOut]) -> u64 {
 /// disagreeing. Writes 0 when there is no single such output (multi-recipient,
 /// or an OP_RETURN-only build) — "not applicable", not "pays nothing".
 ///
+/// This is the CURRENT entry point. `core_wallet_signed_payment_finalize` is
+/// the pre-existing eleven-argument symbol, kept so already-compiled callers
+/// keep linking; it forwards here and discards the amount.
+///
 /// # Safety
 /// `builder` must be a valid, non-destroyed pointer; `wallet` a valid
 /// platform-wallet handle; `core_signer_handle` a valid resolver handle; every
@@ -248,7 +252,7 @@ fn sole_deliverable_value(outputs: &[TxOut]) -> u64 {
 /// `FFICoreTransaction` (typically zeroed).
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
-pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
+pub unsafe extern "C" fn core_wallet_signed_payment_finalize_with_deliverable(
     builder: *mut FFITransactionBuilder,
     wallet: Handle,
     account_type: CoreAccountTypeFFI,
@@ -423,6 +427,61 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
     *out_bytes_ptr = (*out_tx).tx_bytes as *const u8;
     *out_bytes_len = len;
     PlatformWalletFFIResult::ok()
+}
+
+/// The pre-existing ELEVEN-argument finalize, preserved byte-for-byte in its
+/// C signature. Forwards to
+/// [`core_wallet_signed_payment_finalize_with_deliverable`] and discards the
+/// deliverable amount; behaviour is otherwise identical.
+///
+/// Kept because this symbol is exported across a BINARY boundary: the Swift SDK
+/// consumes `DashSDKFFI.xcframework` as a `binaryTarget`, so a host's compiled
+/// Swift and this library are built and shipped separately and can meet at
+/// different versions. Adding the twelfth out-parameter to this symbol in place
+/// would make the callee write eight bytes through a pointer an eleven-argument
+/// caller never passed — reading whatever occupied that argument slot and
+/// treating it as an address. That corrupts silently rather than failing, so the
+/// old shape stays, and callers that want the amount move to the new symbol.
+///
+/// Do not "simplify" this away by deleting it and updating the in-tree callers:
+/// the callers that matter here are already-compiled binaries, which no
+/// source-tree edit can reach.
+///
+/// # Safety
+/// Identical to [`core_wallet_signed_payment_finalize_with_deliverable`], minus
+/// `out_deliverable_duffs` (supplied internally).
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
+    builder: *mut FFITransactionBuilder,
+    wallet: Handle,
+    account_type: CoreAccountTypeFFI,
+    account_index: u32,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_token: *mut u64,
+    out_fee: *mut u64,
+    out_txid: *mut *mut c_char,
+    out_tx: *mut FFICoreTransaction,
+    out_bytes_ptr: *mut *const u8,
+    out_bytes_len: *mut usize,
+) -> PlatformWalletFFIResult {
+    // A real local, never null: the callee null-checks every out-pointer and
+    // would reject the call outright.
+    let mut discarded_deliverable_duffs: u64 = 0;
+    core_wallet_signed_payment_finalize_with_deliverable(
+        builder,
+        wallet,
+        account_type,
+        account_index,
+        core_signer_handle,
+        out_token,
+        out_fee,
+        out_txid,
+        out_tx,
+        out_bytes_ptr,
+        out_bytes_len,
+        &mut discarded_deliverable_duffs,
+    )
 }
 
 #[repr(C)]

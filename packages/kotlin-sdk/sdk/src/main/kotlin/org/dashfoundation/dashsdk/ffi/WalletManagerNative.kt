@@ -285,9 +285,9 @@ internal object WalletManagerNative {
     external fun coreWalletDestroy(coreHandle: Long)
 
     /**
-     * `core_wallet_signed_payment_finalize` — atomically fund, reserve, sign,
-     * AND register a builder for deferred (BIP70/BIP270) submission in one
-     * native call. Selection and reservation commit as a single unit under the
+     * `core_wallet_signed_payment_finalize_with_deliverable` — atomically fund,
+     * reserve, sign, AND register a builder for deferred (BIP70/BIP270)
+     * submission in one native call. Selection and reservation commit as a single unit under the
      * wallet-manager lock, closing the double-selection window. CONSUMES
      * [builder]. [accountType]/[accountIndex] identify the funding account
      * (0 BIP44, 1 BIP32, 2 CoinJoin); [coreSignerHandle] is a
