@@ -2284,6 +2284,23 @@ class PlatformWalletPersistenceHandler(
             if (spendingTxid != null) {
                 val spending = database.transactionDao().getByTxid(spendingTxid)
                 if (spending != null && spending.context >= CONTEXT_IN_BLOCK) continue
+                // Asset-lock spender: the lock tx burns its value into the
+                // special-tx payload and often has no wallet-owned standard
+                // output, so SPV block matching can miss it and its row sits
+                // at mempool context FOREVER — the guard above never fires,
+                // and every relaunch resurrects the consumed output into the
+                // engine's balance. The tracked lock's own status is the
+                // finality signal that provably arrives; from
+                // InstantSendLocked on this output is gone. Skip it, and
+                // heal the flag so isSpent-based readers stop counting it.
+                val lockKey = encodeOutPointHex(spendingTxid + ByteArray(4))
+                val lock = database.assetLockDao().getByOutPointHex(lockKey)
+                if (lock != null && lock.statusRaw >= ASSET_LOCK_STATUS_INSTANT_SEND_LOCKED) {
+                    if (!txo.isSpent) {
+                        database.txoDao().upsert(txo.copy(isSpent = true, lastUpdated = now()))
+                    }
+                    continue
+                }
             }
             val account = txo.accountId?.let { database.accountDao().getById(it) }
                 ?: accountByAddress.getOrPut(txo.address) {
