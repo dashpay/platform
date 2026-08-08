@@ -163,8 +163,10 @@ pub unsafe extern "C" fn platform_wallet_provider_key_at_index(
             return PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorInvalidParameter,
                 format!(
-                    "unknown provider key kind {other} (expected {PROVIDER_KEY_KIND_OPERATOR} \
-                     operator or {PROVIDER_KEY_KIND_PLATFORM_NODE} platform node)"
+                    "unknown provider key kind {other} (expected \
+                     {PROVIDER_KEY_KIND_VOTING} voting, {PROVIDER_KEY_KIND_OWNER} owner, \
+                     {PROVIDER_KEY_KIND_OPERATOR} operator or \
+                     {PROVIDER_KEY_KIND_PLATFORM_NODE} platform node)"
                 ),
             );
         }

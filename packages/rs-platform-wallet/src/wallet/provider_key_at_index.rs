@@ -631,7 +631,14 @@ impl PlatformWallet {
                                 ))
                             })?;
                         let secp = dashcore::key::Secp256k1::new();
-                        let account_path = account_type.derivation_path(network).map_err(|e| {
+                        // The ACCOUNT's own path, not `account_type.derivation_path(network)`.
+                        // The public side above comes off `account.account_xpub`, built from
+                        // this path using the ACCOUNT's network; resolving it again from the
+                        // type plus the wallet's network makes the coin type an independent
+                        // input, and the two disagree the moment those networks differ.
+                        // Taking it from the account is agreement by construction, so the
+                        // cross-check below verifies the seed rather than the path.
+                        let account_path = account.derivation_path().map_err(|e| {
                             PlatformWalletError::KeyDerivation(format!(
                                 "failed to resolve the provider account path: {e}"
                             ))
@@ -641,7 +648,7 @@ impl PlatformWallet {
                                 "invalid provider key index {index}: {e}"
                             ))
                         })?;
-                        let private = master
+                        let mut child_xpriv = master
                             .derive_priv(&secp, &account_path)
                             .and_then(|acct| {
                                 let child_path: key_wallet::bip32::DerivationPath =
@@ -652,19 +659,35 @@ impl PlatformWallet {
                                 PlatformWalletError::KeyDerivation(format!(
                                     "failed to derive provider private key at index {index}: {e}"
                                 ))
-                            })?
-                            .to_priv();
-                        let derived_public = private.public_key(&dashcore::key::Secp256k1::new());
-                        if derived_public != public_key {
+                            })?;
+                        let mut private = child_xpriv.to_priv();
+                        let derived_public = private.public_key(&secp);
+
+                        // Produce every output while the scalar is still live,
+                        // then erase it. `dashcore::PrivateKey` is `Copy` and
+                        // has no `Drop`, so unlike the `Zeroizing` outputs below
+                        // nothing scrubs it on the way out — the raw scalar
+                        // would otherwise be left behind in this frame. Both
+                        // copies are erased: the extended key it came from, and
+                        // the `PrivateKey` itself.
+                        let outputs = if derived_public == public_key {
+                            Some((
+                                Zeroizing::new(private.inner.secret_bytes().to_vec()),
+                                Zeroizing::new(private.to_wif()),
+                            ))
+                        } else {
+                            None
+                        };
+                        private.inner.non_secure_erase();
+                        child_xpriv.private_key.non_secure_erase();
+
+                        let Some((scalar, wif)) = outputs else {
                             return Err(PlatformWalletError::KeyDerivation(format!(
                                 "provider key at index {index} is inconsistent: the seed-derived \
                                  private key's public key does not match the account xpub's"
                             )));
-                        }
-                        (
-                            Some(Zeroizing::new(private.inner.secret_bytes().to_vec())),
-                            Some(Zeroizing::new(private.to_wif())),
-                        )
+                        };
+                        (Some(scalar), Some(wif))
                     }
                     None => (None, None),
                 };
