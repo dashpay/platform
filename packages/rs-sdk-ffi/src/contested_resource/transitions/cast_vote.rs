@@ -134,7 +134,17 @@ pub enum ContestedResourceVoteChoiceFFI {
 ///   `InvalidParameter`.
 /// * `contender_identity_id` — base58-encoded contender identity; required
 ///   (and only used) when `vote_choice == 0`, otherwise ignored / may be null.
-/// * `voter_pro_tx_hash` — pointer to the masternode's 32-byte pro_tx_hash.
+/// * `voter_pro_tx_hash` — pointer to the masternode's 32-byte pro_tx_hash in
+///   **wire order**: the orientation `Txid` stores, which is what a parsed
+///   ProRegTx yields (`reg.txid()`) and what a wallet holds internally. This is
+///   NOT the byte order of the hex Core displays, which is its reverse.
+///
+///   The two are not interchangeable. Platform identifies masternodes by the
+///   opposite orientation — `ProTxHash` is declared `#[hash_newtype(forward)]`
+///   while `Txid` is not — so this function reverses these bytes before
+///   deriving the voter identity and building the transition. Passing display
+///   order asks Platform for an identity that has never existed, and the vote
+///   is rejected as having no voter identity.
 /// * `voting_private_key` — pointer to the 32-byte masternode voting private
 ///   key. Both the signer and the matching `ECDSA_HASH160` voting public key
 ///   are derived from this; the key never leaves this call as raw bytes.
@@ -707,6 +717,25 @@ mod tests {
             Purpose::VOTING,
             KeyType::ECDSA_HASH160,
             OTHER_ADDRESS,
+            None,
+        )]);
+        assert!(select_voting_key(&identity, &VOTING_ADDRESS, &voter_id()).is_err());
+    }
+
+    /// The purpose predicate must be load-bearing on its own.
+    ///
+    /// The only other AUTHENTICATION fixture also uses a different address, so
+    /// it is already rejected by the address check — deleting
+    /// `purpose() == VOTING` would leave every other test passing. This pins it
+    /// with an AUTHENTICATION key at the CORRECT address and key type, where
+    /// purpose is the only thing that can reject it.
+    #[test]
+    fn rejects_a_matching_address_under_the_wrong_purpose() {
+        let identity = identity_with(vec![key(
+            0,
+            Purpose::AUTHENTICATION,
+            KeyType::ECDSA_HASH160,
+            VOTING_ADDRESS,
             None,
         )]);
         assert!(select_voting_key(&identity, &VOTING_ADDRESS, &voter_id()).is_err());
