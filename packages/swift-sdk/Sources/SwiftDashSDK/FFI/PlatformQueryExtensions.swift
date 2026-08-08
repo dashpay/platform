@@ -1453,7 +1453,17 @@ extension SDK {
     ///   - indexValues: Index values identifying the contested resource
     ///     (e.g. `["dash", "alice"]`).
     ///   - choice: TowardsIdentity / Abstain / Lock.
-    ///   - proTxHash: The masternode's 32-byte pro_tx_hash.
+    ///   - proTxHash: The masternode's 32-byte pro_tx_hash in **WIRE order** — the
+    ///     orientation `Txid` stores, which is what a parsed ProRegTx yields
+    ///     (`reg.txid()`) and what a wallet holds internally. NOT the byte
+    ///     order of the hex Core displays, which is its reverse.
+    ///
+    ///     This matters and is not interchangeable: Platform identifies
+    ///     masternodes by the opposite orientation (`ProTxHash` is declared
+    ///     `#[hash_newtype(forward)]`, `Txid` is not), so the Rust side
+    ///     reverses these bytes before deriving the voter identity. Passing
+    ///     display order here asks Platform for an identity that has never
+    ///     existed, and the vote is rejected as having no voter identity.
     ///   - votingPrivateKey: The masternode's 32-byte voting private key. The
     ///     matching `ECDSA_HASH160` voting public key and the signer are
     ///     derived from this on the Rust side; the key bytes are not retained.
