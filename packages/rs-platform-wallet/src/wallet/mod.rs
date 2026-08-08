@@ -7,6 +7,8 @@ pub mod persister;
 pub mod platform_addresses;
 pub mod platform_wallet;
 mod platform_wallet_traits;
+#[cfg(test)]
+mod provider_ecdsa_key_tests;
 pub mod provider_key_at_index;
 pub(crate) mod reservations;
 #[cfg(feature = "shielded")]

@@ -932,6 +932,10 @@ extension ManagedPlatformWallet {
         case operatorBLS = 10
         /// Ed25519 platform-node keys (`ProviderPlatformKeys`, tag 11).
         case platformNodeEdDSA = 11
+        /// secp256k1 masternode voting keys (`ProviderVotingKeys`, tag 8).
+        case votingECDSA = 8
+        /// secp256k1 masternode owner keys (`ProviderOwnerKeys`, tag 9).
+        case ownerECDSA = 9
     }
 
     /// One provider key derived at a single index, in the hex forms the
@@ -955,8 +959,17 @@ extension ManagedPlatformWallet {
         public let nodeIdHex: String?
         /// Lowercase hex of the raw 32-byte private scalar, present only
         /// when the reveal requested it. BLS / Ed25519 keys have no WIF,
-        /// so this is the only private form.
+        /// so for those this is the only private form.
         public let privateKeyHex: String?
+        /// P2PKH address of the key. Non-nil only for the secp256k1
+        /// families (``ProviderKeyKind/votingECDSA`` /
+        /// ``ProviderKeyKind/ownerECDSA``), whose keys appear on-chain as
+        /// the ProRegTx voting / owner addresses.
+        public let address: String?
+        /// WIF encoding of the private key, on the same terms as
+        /// ``privateKeyHex``. Encoded on the Rust side so the network byte
+        /// and compression flag have one home.
+        public let privateKeyWIF: String?
 
         /// Public memberwise init so hosts can build display rows from the
         /// persisted platform-node core-address rows (typed
@@ -968,13 +981,17 @@ extension ManagedPlatformWallet {
             publicKeyHex: String,
             legacyPublicKeyHex: String?,
             nodeIdHex: String?,
-            privateKeyHex: String?
+            privateKeyHex: String?,
+            address: String? = nil,
+            privateKeyWIF: String? = nil
         ) {
             self.index = index
             self.publicKeyHex = publicKeyHex
             self.legacyPublicKeyHex = legacyPublicKeyHex
             self.nodeIdHex = nodeIdHex
             self.privateKeyHex = privateKeyHex
+            self.address = address
+            self.privateKeyWIF = privateKeyWIF
         }
     }
 
@@ -1035,12 +1052,16 @@ extension ManagedPlatformWallet {
             let legacyPublicKeyHex = out.legacy_public_key_hex.map { String(cString: $0) }
             let nodeIdHex = out.node_id_hex.map { String(cString: $0) }
             let privateKeyHex = out.private_key_hex.map { String(cString: $0) }
+            let address = out.address.map { String(cString: $0) }
+            let privateKeyWIF = out.private_key_wif.map { String(cString: $0) }
             return ProviderDerivedKey(
                 index: out.index,
                 publicKeyHex: publicKeyHex,
                 legacyPublicKeyHex: legacyPublicKeyHex,
                 nodeIdHex: nodeIdHex,
-                privateKeyHex: privateKeyHex
+                privateKeyHex: privateKeyHex,
+                address: address,
+                privateKeyWIF: privateKeyWIF
             )
         }
     }
