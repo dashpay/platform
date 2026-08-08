@@ -247,24 +247,21 @@ mod tests {
     /// checksummed by Refinery, so widening the domain means APPENDING
     /// a new table-rebuild migration (V005+) with the new frozen list
     /// and updating this pin, never editing V001/V004 in place.
+    ///
+    /// IF THIS FAILS: do NOT edit a shipped migration (its Refinery
+    /// checksum would diverge on already-migrated databases). Append a
+    /// new migration that rebuilds `asset_locks` with the widened
+    /// CHECK, then update this pin to the new migration's list.
     #[test]
     fn asset_lock_status_labels_frozen_in_latest_migration() {
-        assert_eq!(
-            ASSET_LOCK_STATUS_LABELS,
-            &[
-                "built",
-                "broadcast",
-                "is_locked",
-                "chain_locked",
-                "consumed",
-                "recovered_from_chain",
-            ],
-            "ASSET_LOCK_STATUS_LABELS no longer matches the CHECK domain \
-             frozen in V004__asset_lock_recovered_status.rs. Do NOT edit a \
-             shipped migration (its Refinery checksum would diverge on \
-             already-migrated databases): append a new migration that \
-             rebuilds asset_locks with the widened CHECK, then update this \
-             pin to the new migration's list."
-        );
+        let frozen_in_v004 = [
+            "built",
+            "broadcast",
+            "is_locked",
+            "chain_locked",
+            "consumed",
+            "recovered_from_chain",
+        ];
+        assert_eq!(ASSET_LOCK_STATUS_LABELS, &frozen_in_v004);
     }
 }
