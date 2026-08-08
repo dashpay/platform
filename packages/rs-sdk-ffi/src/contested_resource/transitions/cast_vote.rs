@@ -287,9 +287,26 @@ unsafe fn cast_vote_inner(
     }));
 
     // ---- pro_tx_hash ---------------------------------------------------------
+    // Callers pass WIRE order — the orientation `Txid` stores, which is what a
+    // parsed ProRegTx yields (`reg.txid()`) and what the iOS wallet holds.
+    //
+    // Platform identifies masternodes by the OTHER orientation. `ProTxHash` is
+    // declared `#[hash_newtype(forward)]` while `Txid` is not, so
+    // `ProTxHash::to_byte_array()` is display order — the reverse of a `Txid`'s
+    // bytes for the same transaction. `rpc-json`'s `MasternodeListItem` holds
+    // both conventions side by side (`pro_tx_hash: ProTxHash`,
+    // `collateral_hash: Txid`), and drive-abci builds the voter identity from
+    // `masternode.pro_tx_hash.to_byte_array()`.
+    //
+    // Feeding wire order to `create_voter_identifier` therefore asks Platform
+    // for an identity that has never existed, and the vote is rejected as
+    // having no voter identity — with the real one sitting under the reversed
+    // hash. Reverse once, here, and use the corrected value for both the
+    // identifier and the transition so they cannot drift apart.
     let pro_tx_hash_slice = std::slice::from_raw_parts(voter_pro_tx_hash, 32);
     let mut pro_tx_hash_arr = [0u8; 32];
     pro_tx_hash_arr.copy_from_slice(pro_tx_hash_slice);
+    pro_tx_hash_arr.reverse();
     let pro_tx_hash = Identifier::new(pro_tx_hash_arr);
 
     // ---- Derive the masternode voting key + signer --------------------------
