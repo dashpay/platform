@@ -454,6 +454,74 @@ fn tc010_asset_lock_roundtrip() {
     drop(tmp);
 }
 
+/// TC-010b: a `RecoveredFromChain` lock — the restore-scan
+/// reconstruction's status, admitted by the V004 CHECK widening —
+/// round-trips through the writer's TEXT status mapping and the
+/// lifecycle blob, chain proof included.
+#[test]
+fn tc010b_recovered_from_chain_lock_roundtrip() {
+    use dashcore::hashes::Hash;
+    use dashcore::{OutPoint, Transaction, Txid};
+    use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+    use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+    use platform_wallet::changeset::{AssetLockChangeSet, AssetLockEntry};
+    use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
+
+    let txid = Txid::from_byte_array([0x43; 32]);
+    let outpoint = OutPoint { txid, vout: 0 };
+    let entry = AssetLockEntry {
+        out_point: outpoint,
+        transaction: Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: None,
+        },
+        account_index: 0,
+        funding_type: AssetLockFundingType::AssetLockShieldedAddressTopUp,
+        identity_index: 0,
+        amount_duffs: 500_000,
+        status: AssetLockStatus::RecoveredFromChain,
+        proof: Some(dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 411_495,
+            out_point: outpoint,
+        })),
+    };
+    let mut locks = AssetLockChangeSet::default();
+    locks.asset_locks.insert(outpoint, entry.clone());
+
+    let (persister, tmp, path) = fresh_persister();
+    let w = wid(0xFB);
+    ensure_wallet_meta(&persister, &w);
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                asset_locks: Some(locks),
+                ..Default::default()
+            },
+        )
+        .expect("recovered_from_chain must satisfy the widened CHECK");
+    drop(persister);
+
+    let p2 = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+    let bucketed = platform_wallet_storage::sqlite::schema::asset_locks::load_state(
+        &p2.lock_conn_for_test(),
+        &w,
+    )
+    .unwrap();
+    let tracked = &bucketed[&0][&outpoint];
+    assert_eq!(tracked.status, AssetLockStatus::RecoveredFromChain);
+    match &tracked.proof {
+        Some(dpp::prelude::AssetLockProof::Chain(chain)) => {
+            assert_eq!(chain.core_chain_locked_height, 411_495);
+        }
+        other => panic!("chain proof must survive the roundtrip, got {other:?}"),
+    }
+    drop(tmp);
+}
+
 /// TC-012: DashPay profile + payment overlay round-trip through the
 /// dashpay_* tables via bincode-serde blobs.
 #[test]

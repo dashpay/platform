@@ -93,3 +93,51 @@ pub mod address_funds {
         })
     }
 }
+
+/// Adapter for `Option<AssetLockProof>`.
+///
+/// `AssetLockProof`'s own serde impl is not self-describing-format
+/// agnostic (deserializing it requires `deserialize_any`, which
+/// bincode-serde rejects with `AnyNotSupported`), so a proof-carrying
+/// `AssetLockEntry` written to the SQLite `lifecycle_blob` could never
+/// be read back. Encode the proof as opaque bytes via dpp's own
+/// bincode `Encode`/`Decode` instead — the exact encoding the FFI
+/// layer already uses for proof round-trips (swift-sdk
+/// `PersistentAssetLock.proofBytes`), so every persistence surface
+/// speaks one proof wire format.
+///
+/// Blob compatibility: `None` encodes identically to the old derive
+/// (`Option` tag byte 0). Old `Some` blobs were unreadable to begin
+/// with (the decode failed before this adapter existed), so no
+/// decodable data changes meaning.
+pub mod optional_asset_lock_proof {
+    use super::*;
+    use dpp::prelude::AssetLockProof;
+
+    pub fn serialize<S: Serializer>(
+        value: &Option<AssetLockProof>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let bytes: Option<Vec<u8>> = match value {
+            Some(proof) => Some(
+                dpp::bincode::encode_to_vec(proof, dpp::bincode::config::standard())
+                    .map_err(serde::ser::Error::custom)?,
+            ),
+            None => None,
+        };
+        bytes.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<AssetLockProof>, D::Error> {
+        let bytes = Option::<Vec<u8>>::deserialize(deserializer)?;
+        bytes
+            .map(|b| {
+                dpp::bincode::decode_from_slice(&b, dpp::bincode::config::standard())
+                    .map(|(proof, _)| proof)
+                    .map_err(serde::de::Error::custom)
+            })
+            .transpose()
+    }
+}

@@ -944,6 +944,10 @@ pub struct AssetLockEntry {
     /// Current status on Core chain.
     pub status: AssetLockStatus,
     /// The asset lock proof, available once IS-locked or ChainLocked.
+    #[cfg_attr(
+        feature = "serde",
+        serde(with = "crate::changeset::serde_adapters::optional_asset_lock_proof")
+    )]
     pub proof: Option<AssetLockProof>,
 }
 
