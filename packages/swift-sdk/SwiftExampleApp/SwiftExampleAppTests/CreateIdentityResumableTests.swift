@@ -9,23 +9,30 @@ import SwiftDashSDK
 /// so without the SwiftData-backed cross-wallet filter the user
 /// would have no signal that an orphan asset lock is waiting.
 ///
-/// The filter has four pieces of business logic that can silently
+/// The filter has five pieces of business logic that can silently
 /// regress:
 ///
-///   1. `statusRaw >= 1` floor — Built (0) is rejected (tight
-///      crash window with no useful UX action), Broadcast (1) and
-///      every later status are accepted. The row's *trailing
-///      affordance* — spinner vs. Resume button — is staged on
-///      `statusRaw >= 2` separately inside `ResumableRegistrationRow`,
-///      not at the filter level.
-///   2. Anti-join on `(walletId, identityIndex)` — a slot taken
+///   1. `fundingTypeRaw` in `0...2` — only generic identity-resume
+///      variants (IdentityRegistration / IdentityTopUp /
+///      IdentityTopUpNotBound) reach this surface. IdentityInvitation
+///      (3) is a bearer voucher restricted to the invitation reclaim
+///      flow; address and shielded-address top-ups (4 / 5) have their
+///      own surfaces; every other discriminator is rejected fail-closed.
+///   2. `statusRaw` in `1...3` — Built (0) is rejected (tight
+///      crash window with no useful UX action), Broadcast (1),
+///      InstantSendLocked (2), and ChainLocked (3) are accepted.
+///      Since PR #4010 every row now renders a Resume button; the
+///      Broadcast row's Resume tap re-enters the finality wait via
+///      `resume_asset_lock`. Consumed (4) is rejected — see
+///      `testConsumedLocksAreHiddenFromResumableList`.
+///   3. Anti-join on `(walletId, identityIndex)` — a slot taken
 ///      by a `PersistentIdentity` row removes its lock from the
 ///      surface even if the lock's own status would otherwise
 ///      qualify. This is what makes the filter "orphan-only".
-///   3. The anti-join is **per-wallet**: slot 0 used on wallet A
+///   4. The anti-join is **per-wallet**: slot 0 used on wallet A
 ///      must not block slot 0 on wallet B. The `UsedSlot` value
 ///      key (walletId + slot) carries that scoping.
-///   4. `identityIndexRaw` is stored as `Int32` but compared as
+///   5. `identityIndexRaw` is stored as `Int32` but compared as
 ///      `UInt32` via `UInt32(bitPattern:)`. A future cast change
 ///      (e.g. `UInt32(lockIdentityIndexRaw)` — which would trap on
 ///      negative inputs) must fail loudly here, not in production.
@@ -38,9 +45,9 @@ final class CreateIdentityResumableTests: XCTestCase {
         let walletId: Data
         let statusRaw: Int
         let identityIndexRaw: Int32
-        /// Defaults to 0 (IdentityRegistration) so the pre-existing cases
-        /// exercise the non-invitation path unchanged; the invitation
-        /// exclusion tests pass 3 (IdentityInvitation) explicitly.
+        /// Defaults to `0` (IdentityRegistration) so existing status /
+        /// anti-join / bridge tests stay focused on their invariant.
+        /// Funding-type coverage lives in its own MARK block below.
         var fundingTypeRaw: Int = 0
     }
 
@@ -63,10 +70,13 @@ final class CreateIdentityResumableTests: XCTestCase {
         XCTAssertTrue(result.isEmpty)
     }
 
-    /// Broadcast (1) must surface even though it's not actionable —
-    /// the row renders a spinner ("Waiting for InstantSendLock…")
-    /// until SPV delivers the IS lock and the persister flips it
-    /// to (2). Hiding (1) would create the UX asymmetry where a
+    /// Broadcast (1) must surface. Since PR #4010 the trailing
+    /// affordance is a Resume button for every row — tapping it
+    /// on a Broadcast lock re-enters the finality wait via
+    /// `resume_asset_lock` (re-broadcast + await ChainLock), which
+    /// is what unstrands broadcast-but-interrupted locks (app
+    /// killed mid-wait, or an aged lock whose IS quorum has
+    /// rotated). Hiding (1) would create the UX asymmetry where a
     /// just-broadcast lock vanishes from the UI for ~10-30 seconds
     /// and then reappears at (2) — confusing rather than reassuring.
     func testAcceptsBroadcastForVisibility() {
@@ -97,7 +107,7 @@ final class CreateIdentityResumableTests: XCTestCase {
     /// delete-identity action removes the identity row WITHOUT the
     /// asset-lock row, which frees the slot in the anti-join. Without
     /// the upper bound (`<= 3`) on the filter, a Consumed lock would
-    /// re-surface as a perpetual-spinner row that can't be advanced
+    /// re-surface as a Resume row that can't advance
     /// (`resume_asset_lock` rejects Consumed entries with
     /// "already Consumed — nothing to resume").
     func testConsumedLocksAreHiddenFromResumableList() {
@@ -109,50 +119,45 @@ final class CreateIdentityResumableTests: XCTestCase {
         XCTAssertEqual(result, [])
     }
 
-    // MARK: - invitation-voucher exclusion
+    // MARK: - funding-type filter
 
-    /// An `IdentityInvitation` (fundingTypeRaw 3) lock is a shared bearer
-    /// voucher — it must NEVER surface as a resumable registration, even at
-    /// a fully actionable status with its nominal slot 0 unused (the exact
-    /// state of every unclaimed voucher). Resuming it would consume the
-    /// voucher into an unrelated local identity and kill the invitee's claim;
-    /// vouchers are recovered only via the Invitations screen's reclaim flow.
-    func testInvitationVouchersAreExcludedFromResumableList() {
-        for status in 1...3 {
-            let voucher = FakeAssetLockRow(
-                walletId: walletA,
-                statusRaw: status,
-                identityIndexRaw: 0,
-                fundingTypeRaw: 3
-            )
-            let result = IdentitiesContentView.crossWalletResumableLocks(
-                in: [voucher],
-                usedSlots: []
-            )
-            XCTAssertEqual(
-                result, [],
-                "unclaimed invitation voucher at status \(status) must not be resumable"
-            )
-        }
-    }
+    /// The generic Resume surface is a strict whitelist. Invitation (3)
+    /// is tested at every otherwise-resumable status because it is a
+    /// shared bearer voucher: only the invitation reclaim flow may opt in
+    /// to consuming it. Address variants (4 / 5) and unknown values must
+    /// also fail closed rather than reaching IdentityCreate.
+    func testFundingTypeGateAcceptsOnlyGenericIdentityResumeTypes() {
+        let cases: [(fundingType: Int, statuses: [Int], shouldSurface: Bool)] = [
+            (0, [2], true),
+            (1, [2], true),
+            (2, [2], true),
+            (3, Array(1...3), false), // IdentityInvitation
+            (4, [2], false),          // AssetLockAddressTopUp
+            (5, [2], false),          // AssetLockShieldedAddressTopUp
+            (-1, [2], false),
+            (6, [2], false),
+            (99, [2], false),
+        ]
 
-    /// The exclusion is invitation-specific: the other identity funding
-    /// types (0 registration / 1 top-up / 2 top-up-not-bound) keep
-    /// surfacing exactly as before.
-    func testNonInvitationFundingTypesStillSurface() {
-        let locks = (0...2).map { fundingType in
-            FakeAssetLockRow(
-                walletId: walletA,
-                statusRaw: 2,
-                identityIndexRaw: Int32(fundingType), // distinct free slots
-                fundingTypeRaw: fundingType
-            )
+        for testCase in cases {
+            for status in testCase.statuses {
+                let lock = FakeAssetLockRow(
+                    walletId: walletA,
+                    statusRaw: status,
+                    identityIndexRaw: 0,
+                    fundingTypeRaw: testCase.fundingType
+                )
+                let result = IdentitiesContentView.crossWalletResumableLocks(
+                    in: [lock],
+                    usedSlots: []
+                )
+                XCTAssertEqual(
+                    result,
+                    testCase.shouldSurface ? [lock] : [],
+                    "fundingTypeRaw \(testCase.fundingType) at status \(status)"
+                )
+            }
         }
-        let result = IdentitiesContentView.crossWalletResumableLocks(
-            in: locks,
-            usedSlots: []
-        )
-        XCTAssertEqual(result, locks)
     }
 
     // MARK: - anti-join

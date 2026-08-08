@@ -94,6 +94,16 @@ impl Drive {
     ///   inserted them unwrapped, which would let a continuation's own
     ///   aggregates leak into the per-value count/sum.
     ///
+    /// The same helper resolves the property-name tree through
+    /// [`crate::drive::document::ranked_index_tree_type`], so a branch
+    /// materialized here for a ranked (meta schema v3) index comes back
+    /// as the matching *indexed* tree with its ranking axes, not as a
+    /// plain tree whose secondaries nothing would maintain. A
+    /// key-changing update can be the operation that re-materializes a
+    /// property-name tree an earlier delete drained away, so it has to
+    /// reproduce that layout exactly. `ranked_axes` is empty for every
+    /// pre-v14 contract.
+    ///
     /// The `[0]` reference-bucket dispatch and everything else match v0.
     pub(in crate::drive::document::update) fn update_document_for_contract_operations_v1(
         &self,
@@ -354,7 +364,7 @@ impl Drive {
             // materialization below still needs to know what it hangs
             // under.
             let top_level_tree_types =
-                index_level_tree_types_with_continuation_demotion(current_index_level);
+                index_level_tree_types_with_continuation_demotion(current_index_level)?;
             let mut parent_value_tree_type = top_level_tree_types.value_tree_type;
 
             if change_occurred_on_index {
@@ -421,7 +431,7 @@ impl Drive {
                     ))))?;
 
                 let sub_level_tree_types =
-                    index_level_tree_types_with_continuation_demotion(current_index_level);
+                    index_level_tree_types_with_continuation_demotion(current_index_level)?;
 
                 let document_index_field = document
                     .get_raw_for_document_type(
@@ -468,15 +478,23 @@ impl Drive {
                         // aggregated axis, exactly as on the insert
                         // path; v0 inserted it unwrapped, letting the
                         // continuation's aggregates leak into the
-                        // per-value count/sum.
+                        // per-value count/sum. A ranked level resolves
+                        // to an indexed tree here, which the
+                        // non-aggregating branch creates with its axes
+                        // and the aggregating branch rejects (an
+                        // indexed tree cannot live inside an
+                        // aggregating value tree — see
+                        // `INDEXED_INNER_UNWRAPPABLE` in `fees::op`).
                         let property_name_tree_type = sub_level_tree_types.property_name_tree_type;
+                        let ranked_axes = sub_level_tree_types.ranked_axes.as_slice();
                         let inserted = if matches!(parent_value_tree_type, TreeType::NormalTree) {
-                            self.batch_insert_empty_tree_if_not_exists(
+                            self.batch_insert_empty_index_tree_if_not_exists(
                                 PathKeyInfo::PathKeyRef::<0>((
                                     index_path.clone(),
                                     index_property.name.as_bytes(),
                                 )),
                                 property_name_tree_type,
+                                ranked_axes,
                                 storage_flags,
                                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
                                 transaction,
@@ -492,6 +510,7 @@ impl Drive {
                                 )),
                                 parent_value_tree_type,
                                 property_name_tree_type,
+                                ranked_axes,
                                 storage_flags,
                                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
                                 transaction,

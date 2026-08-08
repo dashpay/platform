@@ -44,6 +44,31 @@ pub(super) fn record_or_persister(
     persister.get_core_tx_record(txid)
 }
 
+/// Family-aware in-memory funding-tx record lookup, shared by EVERY proof,
+/// ChainLock-wait, and recovery path. `TrackedAssetLock.account_index` is
+/// family-less (it doesn't record whether the lock was BIP44- or
+/// CoinJoin-funded), and key-wallet files a transaction that spends CoinJoin
+/// inputs under `coinjoin_accounts` — so a BIP44-only lookup leaves a
+/// whole-balance drain lock's IS/CL record invisible (fatal on hosts running
+/// `NoPlatformPersistence`, whose persister fallback always returns `None`).
+/// BIP44 is checked first (every historical lock), then CoinJoin.
+pub(in crate::wallet::asset_lock) fn funding_tx_record(
+    accounts: &key_wallet::account::ManagedAccountCollection,
+    account_index: u32,
+    txid: &Txid,
+) -> Option<TransactionRecord> {
+    accounts
+        .standard_bip44_accounts
+        .get(&account_index)
+        .and_then(|a| a.transactions().get(txid).cloned())
+        .or_else(|| {
+            accounts
+                .coinjoin_accounts
+                .get(&account_index)
+                .and_then(|a| a.transactions().get(txid).cloned())
+        })
+}
+
 /// Variant of [`record_or_persister`] that swallows persister errors
 /// as `None` after a `warn`-level log. Use this from poll loops where
 /// the next iteration retries — a hard error from a single tick would
@@ -98,11 +123,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             let info = wm
                 .get_wallet_info(&self.wallet_id)
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-            info.core_wallet
-                .accounts
-                .standard_bip44_accounts
-                .get(&account_index)
-                .and_then(|a| a.transactions().get(&out_point.txid).cloned())
+            funding_tx_record(&info.core_wallet.accounts, account_index, &out_point.txid)
             // wm dropped at end of block — release before persister + DAPI calls.
         };
 
@@ -192,11 +213,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             let info = wm
                 .get_wallet_info(&self.wallet_id)
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-            info.core_wallet
-                .accounts
-                .standard_bip44_accounts
-                .get(&account_index)
-                .and_then(|a| a.transactions().get(&txid).cloned())
+            funding_tx_record(&info.core_wallet.accounts, account_index, &txid)
         };
 
         let record = record_or_persister(in_memory, &self.persister, &txid).map_err(|e| {
@@ -298,11 +315,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             let in_memory = {
                 let wm = self.wallet_manager.read().await;
                 wm.get_wallet_info(&self.wallet_id).and_then(|info| {
-                    info.core_wallet
-                        .accounts
-                        .standard_bip44_accounts
-                        .get(&account_index)
-                        .and_then(|a| a.transactions().get(&out_point.txid).cloned())
+                    funding_tx_record(&info.core_wallet.accounts, account_index, &out_point.txid)
                 })
             };
             if let Some(record) =
@@ -409,14 +422,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     .and_then(|i| i.core_wallet.metadata.last_applied_chain_lock.as_ref())
                     .map(|cl| cl.block_height);
                 let rec = info.as_ref().and_then(|i| {
-                    i.core_wallet
-                        .accounts
-                        .standard_bip44_accounts
-                        .get(&account_index)
-                        .and_then(|a| a.transactions().get(&out_point.txid))
+                    funding_tx_record(&i.core_wallet.accounts, account_index, &out_point.txid)
                 });
-                let ctx = rec.map(|r| format!("{:?}", r.context));
-                let h = rec.and_then(|r| r.height());
+                let ctx = rec.as_ref().map(|r| format!("{:?}", r.context));
+                let h = rec.as_ref().and_then(|r| r.height());
                 (cl_h, ctx, h)
             };
             tracing::debug!(
@@ -433,11 +442,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             let in_memory = {
                 let wm = self.wallet_manager.read().await;
                 wm.get_wallet_info(&self.wallet_id).and_then(|info| {
-                    info.core_wallet
-                        .accounts
-                        .standard_bip44_accounts
-                        .get(&account_index)
-                        .and_then(|a| a.transactions().get(&out_point.txid).cloned())
+                    funding_tx_record(&info.core_wallet.accounts, account_index, &out_point.txid)
                 })
             };
             if let Some(record) =
@@ -589,6 +594,80 @@ mod tests {
     };
     use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
     use crate::wallet::platform_wallet::WalletId;
+
+    /// CoinJoin-family regression for [`funding_tx_record`]: a record filed
+    /// only under `coinjoin_accounts` (how key-wallet records a tx spending
+    /// CoinJoin inputs, e.g. a whole-balance drain asset lock) must be
+    /// visible — the pre-fix BIP44-only lookups missed it and burned the
+    /// full proof-wait timeout under `NoPlatformPersistence`.
+    #[test]
+    fn funding_tx_record_finds_coinjoin_only_record() {
+        use key_wallet::test_utils::TestWalletContext;
+
+        let mut ctx = TestWalletContext::new_random();
+        let record = coinjoin_record_with_txid(0x77);
+        let txid = record.txid;
+        ctx.managed_wallet
+            .first_coinjoin_managed_account_mut()
+            .expect("default wallet has CoinJoin account 0")
+            .transactions_mut()
+            .insert(txid, record);
+
+        let found = funding_tx_record(&ctx.managed_wallet.accounts, 0, &txid)
+            .expect("CoinJoin-family record must be found by the shared lookup");
+        assert_eq!(found.txid, txid);
+
+        // Unknown txid and unknown account index are clean misses.
+        assert!(
+            funding_tx_record(&ctx.managed_wallet.accounts, 0, &Txid::from([0x01; 32])).is_none()
+        );
+        assert!(funding_tx_record(&ctx.managed_wallet.accounts, 9, &txid).is_none());
+    }
+
+    /// The historical BIP44 path through [`funding_tx_record`] still resolves.
+    #[test]
+    fn funding_tx_record_finds_bip44_record() {
+        use key_wallet::test_utils::TestWalletContext;
+
+        let mut ctx = TestWalletContext::new_random();
+        let record = record_with_txid(0x42);
+        let txid = record.txid;
+        ctx.managed_wallet
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .expect("default wallet has BIP44 account 0")
+            .transactions_mut()
+            .insert(txid, record);
+
+        let found = funding_tx_record(&ctx.managed_wallet.accounts, 0, &txid)
+            .expect("BIP44-family record must be found by the shared lookup");
+        assert_eq!(found.txid, txid);
+    }
+
+    /// [`record_with_txid`] sibling filed as a CoinJoin-account record.
+    fn coinjoin_record_with_txid(seed: u8) -> TransactionRecord {
+        let tx = Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: dashcore::OutPoint::new(Txid::from([seed; 32]), 0),
+                ..Default::default()
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        TransactionRecord::new(
+            tx,
+            AccountType::CoinJoin { index: 0 },
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            Vec::new(),
+            Vec::new(),
+            0,
+        )
+    }
 
     fn record_with_txid(seed: u8) -> TransactionRecord {
         // A unique txid per `seed` falls out of the (different) input

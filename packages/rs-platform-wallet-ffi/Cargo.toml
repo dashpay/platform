@@ -56,10 +56,6 @@ anyhow = { version = "1.0.81" }
 # Swift decodes via Codable. See `tokens/group_queries.rs`.
 serde_json = "1.0"
 bs58 = "0.5"
-# Base64-encode the decrypted (opaque) txMetadata payload in the fetch JSON,
-# matching the codebase's binary-in-JSON convention. See `document.rs`
-# `platform_wallet_fetch_encrypted_documents`.
-base64 = "0.22.1"
 
 # Zeroize intermediate key material crossing the FFI boundary.
 zeroize = { version = "1", features = ["derive"] }

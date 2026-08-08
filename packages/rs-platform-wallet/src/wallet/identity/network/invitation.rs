@@ -378,6 +378,58 @@ impl IdentityWallet {
         })
     }
 
+    /// The identity id this invitation WOULD create, without claiming it.
+    ///
+    /// Platform derives a created identity's id from the asset-lock outpoint,
+    /// so the id is knowable before the claim. The claim is otherwise the only
+    /// way to learn a voucher is spent, which is why a used invitation surfaces
+    /// as a raw "asset lock … already completely used" after the invitee has
+    /// picked a username and entered their PIN.
+    ///
+    /// # Detects claims, not consumption — the signal is ONE-WAY
+    ///
+    /// An identity existing under the returned id means the voucher was
+    /// **definitely** claimed. Its absence does **not** mean the voucher is
+    /// usable.
+    ///
+    /// The lock can also be consumed by `IdentityTopUp` — the reclaim path
+    /// behind `platform_wallet_topup_identity_with_existing_asset_lock_signer`
+    /// with `consume_invitation_voucher: true` — which credits an EXISTING
+    /// identity rather than creating the derived one. Afterwards no identity
+    /// exists at this id, yet a claim still fails deterministically because the
+    /// asset-lock output is already spent.
+    ///
+    /// Platform exposes no client query for spent asset locks (drive tracks
+    /// them under `SpentAssetLockTransactions`, but no DAPI endpoint surfaces
+    /// it), so consumption cannot be checked from here. Callers must therefore
+    /// treat this as a fast-fail for the common case only: reject the
+    /// invitation when an identity exists, and otherwise proceed WITHOUT
+    /// concluding the voucher is usable. It narrows when the late failure
+    /// happens; it does not remove it.
+    ///
+    /// Costs one funding-tx fetch: the outpoint is not in the link (the credit
+    /// output is selected by pk↔script match, not by index), so the tx has to
+    /// be refetched exactly as the claim does. Same wrong-network fail-fast as
+    /// [`Self::claim_invitation`], so a testnet link on mainnet reports the
+    /// network mismatch rather than a confusing fetch miss.
+    pub async fn invitation_prospective_identity_id(
+        &self,
+        invitation: &ParsedInvitation,
+    ) -> Result<Identifier, PlatformWalletError> {
+        if !wif_network_matches(invitation.voucher_key_network, self.sdk.network) {
+            return Err(PlatformWalletError::InvalidIdentityData(format!(
+                "invitation is for the {:?} network but this wallet is on {:?}",
+                invitation.voucher_key_network, self.sdk.network
+            )));
+        }
+        let proof = self.reconstruct_asset_lock_proof(invitation).await?;
+        proof.create_identifier().map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "invitation asset lock proof yielded no identity id: {e}"
+            ))
+        })
+    }
+
     /// Claim a DashPay invitation: register a NEW identity for the invitee,
     /// funded by the imported voucher.
     ///
@@ -812,6 +864,101 @@ mod tests {
         let inv = parsed(key, txid, None);
         let proof = assemble_asset_lock_proof(tx, true, 100, &inv).unwrap();
         assert!(matches!(proof, AssetLockProof::Chain(_)));
+    }
+
+    /// The prospective identity id is derived from the *selected* credit
+    /// output's outpoint. Selection itself is pinned next to
+    /// `voucher_output_index`; what matters here is that the id follows it — a
+    /// voucher sitting behind a decoy must not yield the index-0 id, or the
+    /// "has this invitation been used?" check answers about a stranger's
+    /// identity and reports a perfectly good voucher as spent.
+    #[test]
+    fn prospective_id_follows_the_selected_credit_output() {
+        let key = voucher_secret();
+        let decoy = SecretKey::from_slice(&[0x22u8; 32]).unwrap();
+        let payload = AssetLockPayload {
+            version: 1,
+            credit_outputs: vec![
+                TxOut {
+                    value: 100_000,
+                    script_pubkey: voucher_credit_script(&decoy),
+                },
+                TxOut {
+                    value: 100_000,
+                    script_pubkey: voucher_credit_script(&key),
+                },
+            ],
+        };
+        let tx = Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(payload)),
+        };
+        let txid = tx.txid();
+        let inv = parsed(key, txid.to_string(), None);
+
+        let proof = assemble_asset_lock_proof(tx, true, 100, &inv).unwrap();
+        let id = proof.create_identifier().unwrap();
+
+        let from_index_0 =
+            ChainAssetLockProof::new(100, OutPoint::new(txid, 0).into()).create_identifier();
+        let from_index_1 =
+            ChainAssetLockProof::new(100, OutPoint::new(txid, 1).into()).create_identifier();
+
+        assert_ne!(id, from_index_0, "id must not come from credit output 0");
+        assert_eq!(id, from_index_1);
+    }
+
+    /// The prospective id is a pure function of the asset-lock OUTPOINT, so it
+    /// carries no information about whether that lock has been consumed.
+    ///
+    /// This is why the claimed-check is one-way. A voucher claimed normally
+    /// creates the identity at this id, and the check sees it. A voucher
+    /// RECLAIMED into an existing identity — `IdentityTopUp` via
+    /// `platform_wallet_topup_identity_with_existing_asset_lock_signer` with
+    /// `consume_invitation_voucher: true` — spends the very same outpoint but
+    /// creates nothing here, so the check still finds no identity while a claim
+    /// would fail deterministically.
+    ///
+    /// Pinned as an executable fact because the id derivation is what a reader
+    /// would otherwise assume encodes "spent": it does not, and Platform
+    /// exposes no client query for spent asset locks to fill the gap.
+    #[test]
+    fn prospective_id_is_outpoint_derived_and_says_nothing_about_consumption() {
+        let key = voucher_secret();
+        let payload = AssetLockPayload {
+            version: 1,
+            credit_outputs: vec![TxOut {
+                value: 100_000,
+                script_pubkey: voucher_credit_script(&key),
+            }],
+        };
+        let tx = Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(payload)),
+        };
+        let txid = tx.txid();
+        let inv = parsed(key, txid.to_string(), None);
+
+        let id = assemble_asset_lock_proof(tx, true, 100, &inv)
+            .unwrap()
+            .create_identifier()
+            .unwrap();
+
+        // Nothing but (txid, vout) feeds it — the same value a reclaim would
+        // leave behind untouched.
+        let from_outpoint =
+            ChainAssetLockProof::new(100, OutPoint::new(txid, 0).into()).create_identifier();
+        assert_eq!(
+            id, from_outpoint,
+            "the id must be derivable from the outpoint alone, which is exactly \
+             why its absence cannot prove the lock is unspent"
+        );
     }
 
     /// An islock that locks a DIFFERENT tx than the funding tx is rejected (the

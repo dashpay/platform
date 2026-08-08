@@ -4,10 +4,14 @@
 
 mod addresses;
 mod broadcast;
+mod sign_message;
+pub(crate) mod signed_payment;
 mod transaction_builder;
 mod wallet;
 
 pub use addresses::*;
 pub use broadcast::*;
+pub use sign_message::*;
+pub use signed_payment::*;
 pub use transaction_builder::*;
 pub use wallet::*;

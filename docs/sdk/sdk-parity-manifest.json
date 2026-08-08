@@ -13,16 +13,25 @@
     "wallet_restore"
   ],
   "shared_symbols": {
-    "core_wallet_abandon_signed_transaction_v2": "packages/rs-platform-wallet-ffi/src/core_wallet/broadcast.rs",
-    "core_wallet_broadcast_signed_transaction_v2": "packages/rs-platform-wallet-ffi/src/core_wallet/broadcast.rs",
+    "core_wallet_abandon_signed_transaction": "packages/rs-platform-wallet-ffi/src/core_wallet/broadcast.rs",
+    "core_wallet_broadcast_signed_transaction": "packages/rs-platform-wallet-ffi/src/core_wallet/broadcast.rs",
     "core_wallet_get_balance": "packages/rs-platform-wallet-ffi/src/core_wallet/wallet.rs",
+    "core_wallet_signed_payment_broadcast": "packages/rs-platform-wallet-ffi/src/core_wallet/signed_payment.rs",
+    "core_wallet_signed_payment_finalize": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
+    "core_wallet_signed_payment_release": "packages/rs-platform-wallet-ffi/src/core_wallet/signed_payment.rs",
+    "core_wallet_signed_transaction_bytes": "packages/rs-platform-wallet-ffi/src/core_wallet/broadcast.rs",
+    "core_wallet_tx_builder_add_op_return": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
+    "core_wallet_tx_builder_change_to_first_input": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
     "core_wallet_tx_builder_finalize": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
+    "core_wallet_tx_builder_preserve_output_order": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
     "dash_sdk_sign_async_completion": "packages/rs-sdk-ffi/src/signer.rs",
     "dpns_name_array_free": "packages/rs-platform-wallet-ffi/src/dpns.rs",
     "managed_identity_get_contested_dpns_names": "packages/rs-platform-wallet-ffi/src/dpns.rs",
+    "managed_identity_get_dashpay_payments": "packages/rs-platform-wallet-ffi/src/dashpay_payment.rs",
     "on_load_shielded_viewing_keys_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "on_load_shielded_viewing_keys_free_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "on_persist_address_balances_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
+    "on_persist_dashpay_payments_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "on_persist_shielded_viewing_keys_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "platform_address_wallet_addresses_with_balances": "packages/rs-platform-wallet-ffi/src/platform_addresses/wallet.rs",
     "platform_wallet_claim_invitation": "packages/rs-platform-wallet-ffi/src/invitation.rs",
@@ -32,6 +41,7 @@
     "platform_wallet_manager_create_with_persistence_capabilities": "packages/rs-platform-wallet-ffi/src/manager.rs",
     "platform_wallet_manager_persistence_capabilities": "packages/rs-platform-wallet-ffi/src/manager.rs",
     "platform_wallet_manager_spv_rescan_filters": "packages/rs-platform-wallet-ffi/src/spv.rs",
+    "platform_wallet_manager_sync_fault_detected": "packages/rs-platform-wallet-ffi/src/manager.rs",
     "platform_wallet_resume_identity_with_existing_asset_lock_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
     "platform_wallet_sync_contested_dpns_names": "packages/rs-platform-wallet-ffi/src/dpns.rs",
     "platform_wallet_token_purchase": "packages/rs-platform-wallet-ffi/src/tokens/purchase.rs",
@@ -93,8 +103,8 @@
       "area": "correctness",
       "shared_apis": [
         "core_wallet_tx_builder_finalize",
-        "core_wallet_broadcast_signed_transaction_v2",
-        "core_wallet_abandon_signed_transaction_v2"
+        "core_wallet_broadcast_signed_transaction",
+        "core_wallet_abandon_signed_transaction"
       ],
       "required_persistence_capabilities": [],
       "hosts": {
@@ -156,6 +166,165 @@
           "file": "packages/rs-platform-wallet-ffi/src/core_wallet/broadcast.rs",
           "id": "double_free_is_safe_and_releases_reservation",
           "command": "cargo test -p platform-wallet-ffi double_free_is_safe_and_releases_reservation",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "core.deferred_signed_payment",
+      "title": "Deferred BIP70/BIP270 send: sign now, broadcast or release on merchant ack",
+      "area": "correctness",
+      "shared_apis": [
+        "core_wallet_signed_payment_finalize",
+        "core_wallet_signed_payment_broadcast",
+        "core_wallet_signed_payment_release"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "not-applicable",
+          "restart": "not_applicable",
+          "reason": null
+        },
+        "kotlin": {
+          "sdk": "supported",
+          "example_app": "not-applicable",
+          "restart": "not_applicable",
+          "reason": null
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/SignedCoreTransactionTests.swift",
+          "id": "testShouldReleaseTokenOnceOnCloseAndIgnoreASecondClose",
+          "command": "swift test --package-path packages/swift-sdk --filter SignedCoreTransactionTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "integration",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKIntegrationTests/Core/DeferredSignedPaymentIntegrationTests.swift",
+          "id": "testBuildBroadcastConsumesTokenExactlyOnce",
+          "command": "RUN_INTEGRATION_TESTS=1 swift test --package-path packages/swift-sdk --filter DeferredSignedPaymentIntegrationTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "integration",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKIntegrationTests/Core/DeferredSignedPaymentIntegrationTests.swift",
+          "id": "testReleaseFreesTheReservedInputs",
+          "command": "RUN_INTEGRATION_TESTS=1 swift test --package-path packages/swift-sdk --filter DeferredSignedPaymentIntegrationTests",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/SignedCoreTransactionTest.kt",
+          "id": "fromRegisterBlobDecodesFieldsAndIsAnOwningCloseable",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/SignedCoreTransactionTest.kt",
+          "id": "cleanerBackstopRunsTheReleaseActionExactlyOnce",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/signed_payment_registry.rs",
+          "id": "build_then_broadcast_sends_registered_bytes",
+          "command": "cargo test -p platform-wallet build_then_broadcast_sends_registered_bytes",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/signed_payment_registry.rs",
+          "id": "build_then_release_frees_the_reservation",
+          "command": "cargo test -p platform-wallet build_then_release_frees_the_reservation",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/signed_payment_registry.rs",
+          "id": "double_broadcast_is_a_stale_token_error",
+          "command": "cargo test -p platform-wallet double_broadcast_is_a_stale_token_error",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "core.maya_op_return_deposit",
+      "title": "MAYACHAIN-shaped deposit build: OP_RETURN memo, preserved output order, change to VIN0, pre-broadcast bytes",
+      "area": "correctness",
+      "shared_apis": [
+        "core_wallet_tx_builder_add_op_return",
+        "core_wallet_tx_builder_preserve_output_order",
+        "core_wallet_tx_builder_change_to_first_input",
+        "core_wallet_signed_transaction_bytes"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "not-applicable",
+          "restart": "not_applicable",
+          "reason": null
+        },
+        "kotlin": {
+          "sdk": "supported",
+          "example_app": "not-applicable",
+          "restart": "not_applicable",
+          "reason": null
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "integration",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKIntegrationTests/Core/MayaDepositVerificationIntegrationTests.swift",
+          "id": "testPrompt04StaticProofAndLegacyFeeParity",
+          "command": "RUN_INTEGRATION_TESTS=1 swift test --package-path packages/swift-sdk --filter MayaDepositVerificationIntegrationTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "integration",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKIntegrationTests/Core/MayaDepositVerificationIntegrationTests.swift",
+          "id": "testOpReturnCeilingBoundaryAndRejectionPreservesBuilder",
+          "command": "RUN_INTEGRATION_TESTS=1 swift test --package-path packages/swift-sdk --filter MayaDepositVerificationIntegrationTests",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/wallet/CoreTxBuilderOpReturnBindingTest.kt",
+          "id": "mayaShapeOptionsBindAndAccept",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/wallet/BuildSignedPaymentMayaOptionsTest.kt",
+          "id": "mayaOptionsThreadThroughThePublicBuildSignedPayment",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/wallet/BuildSignedPaymentMayaOptionsTest.kt",
+          "id": "oversizeMemoFailsBeforeSelectionAndWalletSurvives",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
           "covers_restart": false
         }
       ]
@@ -406,10 +575,10 @@
           "reason": "Shared/Swift implementation and focused tests exist, but the manual plan still marks DP-12 through DP-19 bridge-only and lacks executed restart evidence."
         },
         "kotlin": {
-          "sdk": "unsupported",
-          "example_app": "unsupported",
+          "sdk": "supported",
+          "example_app": "partial",
           "restart": "required",
-          "reason": "Android has no invitation callback, wrappers, screens, or DP-12 through DP-19 gates."
+          "reason": "Invitation callback (Room v8 + CAPABILITY_INVITATIONS), parse/create/claim/reclaim wrappers, and the four screens shipped; funded testnet e2e executed 2026-07-23 (create, claim, already-consumed classifier, reclaim-as-top-up, malformed reject). DP-14 two-wallet bootstrap and DP-18 reclaim-as-register remain manual, and executed restart evidence is lacking."
         }
       },
       "verification": [
@@ -425,6 +594,45 @@
           "host": "swift",
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DP-19",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/PlatformWalletPersistenceHandlerTest.kt",
+          "id": "invitationPersistRoundTripsEveryField",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*PlatformWalletPersistenceHandlerTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/dashpay/InvitationReclaimLogicTest.kt",
+          "id": "consensusConsumedWithMarkerIsExplicitlyAmbiguousNeverReclaimed",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*InvitationReclaimLogicTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/persistence/DashDatabaseMigrationTest.kt",
+          "id": "migrate8To9AddsInvitationsTable",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "persistenceBridgeDescriptorsAllResolve",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
           "id": "DP-19",
           "covers_restart": false
         }
@@ -591,7 +799,7 @@
           "host": "swift",
           "kind": "unit",
           "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/CreateIdentityResumableTests.swift",
-          "id": "testInvitationVouchersAreExcludedFromResumableList",
+          "id": "testFundingTypeGateAcceptsOnlyGenericIdentityResumeTypes",
           "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp",
           "covers_restart": false
         },
@@ -655,14 +863,6 @@
           "file": "packages/rs-platform-wallet/src/wallet/asset_lock/build.rs",
           "id": "generic_resume_refuses_invitation_voucher_locks",
           "command": "cargo test -p platform-wallet generic_resume_refuses_invitation_voucher_locks",
-          "covers_restart": false
-        },
-        {
-          "host": "kotlin",
-          "kind": "unit",
-          "file": "packages/rs-unified-sdk-jni/src/support.rs",
-          "id": "generic_asset_lock_recovery_rejects_invitation_authority",
-          "command": "cargo test -p rs-unified-sdk-jni --lib generic_asset_lock_recovery_rejects_invitation_authority",
           "covers_restart": false
         }
       ]
@@ -776,6 +976,124 @@
           "file": "packages/rs-platform-wallet/src/wallet/identity/state/manager/apply.rs",
           "id": "contested_dpns_apply_replaces_canonical_snapshot_and_allows_empty",
           "command": "cargo test -p platform-wallet contested_dpns_apply_replaces_canonical_snapshot_and_allows_empty",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "persistence.sync_fault_latch",
+      "title": "Watermark-freeze sync fault latch is host-visible",
+      "area": "recovery",
+      "shared_apis": [
+        "platform_wallet_manager_sync_fault_detected"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "not-applicable",
+          "restart": "not_applicable",
+          "reason": null
+        },
+        "kotlin": {
+          "sdk": "supported",
+          "example_app": "not-applicable",
+          "restart": "not_applicable",
+          "reason": null
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/SyncFaultDetectedTests.swift",
+          "id": "testSyncFaultDetectedRequiresConfiguredManager",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/SyncFaultDetectedTests",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "syncFaultDetectedSymbolBindsAndRejectsInvalidHandle",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/changeset/core_bridge.rs",
+          "id": "watermark_is_still_stripped_after_a_fault",
+          "command": "cargo test -p platform-wallet watermark_is_still_stripped_after_a_fault",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/changeset/core_bridge.rs",
+          "id": "rejected_store_freezes_wallet_and_strips_watermark",
+          "command": "cargo test -p platform-wallet rejected_store_freezes_wallet_and_strips_watermark",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "persistence.dashpay_payment_history",
+      "title": "DashPay payment history persists event-driven through the persister callback",
+      "area": "persistence",
+      "shared_apis": [
+        "managed_identity_get_dashpay_payments",
+        "on_persist_dashpay_payments_fn"
+      ],
+      "required_persistence_capabilities": [
+        "atomic_changesets",
+        "wallet_restore"
+      ],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "not-applicable",
+          "restart": "required",
+          "reason": "The on_persist_dashpay_payments_fn vtable slot lands PersistentDashpayPayment rows on every Rust store() round (live sends with memos, pending-to-confirmed sweep flips, reconstruction upserts), and the identity restore buffer's payments array feeds them back at load; the getter-backed refreshDashPayPayments path remains as a reconciler. Remains partial pending a process-death restart gate: the loadWalletList() round-trip test exercises the write-then-restore loop in-process against an in-memory container, which does not validate survival across a real app kill and relaunch."
+        },
+        "kotlin": {
+          "sdk": "not-applicable",
+          "example_app": "not-applicable",
+          "restart": "not_applicable",
+          "reason": null
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/DashPayPersistenceTests.swift",
+          "id": "testChangesetRoundPersistsSentEntryAndRestoreBufferRoundTripsIt",
+          "command": "swift test --package-path packages/swift-sdk --filter DashPayPaymentPersistenceTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/DashPayPersistenceTests.swift",
+          "id": "testChangesetRoundStatusFlipRepersistsTheSameRow",
+          "command": "swift test --package-path packages/swift-sdk --filter DashPayPaymentPersistenceTests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/persistence.rs",
+          "id": "store_projects_dashpay_payments_overlay_only",
+          "command": "cargo test -p platform-wallet-ffi --lib store_projects_dashpay_payments_overlay_only",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/state/managed_identity/identity_ops.rs",
+          "id": "record_dashpay_payment_emits_single_row_overlay",
+          "command": "cargo test -p platform-wallet record_dashpay_payment_emits_single_row_overlay",
           "covers_restart": false
         }
       ]

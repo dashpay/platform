@@ -1094,6 +1094,16 @@ extension SDK {
                             contenderDict["identifier"] = String(cString: idPtr)
                         }
                         contenderDict["votes"] = "ResourceVote { vote_choice: TowardsIdentity, strength: \(contender.vote_count) }"
+                        // The spelling this contender actually requested
+                        // ("pizza"), where the contest key is the normalized
+                        // form ("p1zza"). Absent when the FFI could not decode
+                        // their document. Prefer the typed
+                        // `dpnsActiveContests` / `dpnsContestsForIdentity`,
+                        // which also give the tally as an integer.
+                        if let labelPtr = contender.label {
+                            let label = String(cString: labelPtr)
+                            if !label.isEmpty { contenderDict["label"] = label }
+                        }
 
                         contenders.append(contenderDict)
                     }
@@ -1225,6 +1235,16 @@ extension SDK {
                             contenderDict["identifier"] = String(cString: idPtr)
                         }
                         contenderDict["votes"] = "ResourceVote { vote_choice: TowardsIdentity, strength: \(contender.vote_count) }"
+                        // The spelling this contender actually requested
+                        // ("pizza"), where the contest key is the normalized
+                        // form ("p1zza"). Absent when the FFI could not decode
+                        // their document. Prefer the typed
+                        // `dpnsActiveContests` / `dpnsContestsForIdentity`,
+                        // which also give the tally as an integer.
+                        if let labelPtr = contender.label {
+                            let label = String(cString: labelPtr)
+                            if !label.isEmpty { contenderDict["label"] = label }
+                        }
 
                         contenders.append(contenderDict)
                     }

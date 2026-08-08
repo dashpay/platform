@@ -54,15 +54,30 @@ pub(crate) async fn broadcast_releasing_on_rejection<B: TransactionBroadcaster +
                 release_reservation_after_rejected_broadcast(
                     wallet_manager,
                     wallet_id,
-                    account_type,
-                    account_index,
+                    ReservedFundingAccount::Standard(account_type, account_index),
                     tx,
+                    // The generic send path doesn't thread the build's
+                    // reservation token yet; keep its historical
+                    // unconditional release.
+                    None,
                 )
                 .await;
             }
             Err(e)
         }
     }
+}
+
+/// The funding account whose `ReservationSet` holds a transaction's inputs —
+/// the same account handed to `set_funding` when the transaction was built.
+/// Asset locks can be funded from a CoinJoin account (the whole-balance
+/// drain flow), so the release path must address that family too.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ReservedFundingAccount {
+    /// A standard (BIP44/BIP32) account at the given index.
+    Standard(StandardAccountType, u32),
+    /// A CoinJoin account at the given index.
+    CoinJoin(u32),
 }
 
 /// Release the funding account's UTXO reservation for `tx` after its
@@ -76,9 +91,9 @@ pub(crate) async fn broadcast_releasing_on_rejection<B: TransactionBroadcaster +
 pub(crate) async fn release_reservation_after_rejected_broadcast(
     wallet_manager: &RwLock<WalletManager<PlatformWalletInfo>>,
     wallet_id: &WalletId,
-    account_type: StandardAccountType,
-    account_index: u32,
+    funding_account: ReservedFundingAccount,
     tx: &Transaction,
+    reservation_token: Option<key_wallet::ReservationToken>,
 ) {
     // `release_reservation` takes `&self` and the manager map is
     // untouched, so a read lock suffices — this cleanup does not
@@ -86,20 +101,36 @@ pub(crate) async fn release_reservation_after_rejected_broadcast(
     let wm = wallet_manager.read().await;
     let account = wm
         .get_wallet_and_info(wallet_id)
-        .and_then(|(_, info)| match account_type {
-            StandardAccountType::BIP44Account => info
+        .and_then(|(_, info)| match funding_account {
+            ReservedFundingAccount::Standard(StandardAccountType::BIP44Account, account_index) => {
+                info.core_wallet
+                    .bip44_managed_account_at_index(account_index)
+            }
+            ReservedFundingAccount::Standard(StandardAccountType::BIP32Account, account_index) => {
+                info.core_wallet
+                    .bip32_managed_account_at_index(account_index)
+            }
+            ReservedFundingAccount::CoinJoin(account_index) => info
                 .core_wallet
-                .bip44_managed_account_at_index(account_index),
-            StandardAccountType::BIP32Account => info
-                .core_wallet
-                .bip32_managed_account_at_index(account_index),
+                .accounts
+                .coinjoin_accounts
+                .get(&account_index),
         });
     match account {
-        Some(account) => account.release_reservation(tx),
+        // Owner-guarded when the build's `ReservationToken` is available:
+        // this cleanup always runs after `.await`s (build → broadcast), so
+        // the original reservation may have been swept and the same
+        // outpoints re-reserved by a NEWER build — an unconditional release
+        // would clobber that newer owner and make its inputs re-selectable
+        // by a conflicting transaction. Callers without a token (paths that
+        // predate token plumbing) keep the historical unconditional release.
+        Some(account) => match reservation_token {
+            Some(token) => account.release_reservation_if_owner(tx, token),
+            None => account.release_reservation(tx),
+        },
         None => tracing::warn!(
             wallet_id = %hex::encode(wallet_id),
-            ?account_type,
-            account_index,
+            ?funding_account,
             "could not release UTXO reservation after rejected broadcast: \
              wallet or funds account not found"
         ),

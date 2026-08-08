@@ -65,10 +65,9 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(0L, noOpBridge.persistenceCapabilitiesBits())
 
         assertEquals(1, handler.persistenceCapabilitiesVersion())
-        assertEquals(0xbdL, handler.persistenceCapabilitiesBits())
-        // Android has no invitation or pending-contact-crypto callback, so it
-        // must not attest either semantic contract.
-        assertEquals(0L, handler.persistenceCapabilitiesBits() and 0x02L)
+        assertEquals(0xbfL, handler.persistenceCapabilitiesBits())
+        // Android has no pending-contact-crypto callback, so it must not
+        // attest that semantic contract.
         assertEquals(0L, handler.persistenceCapabilitiesBits() and 0x40L)
 
         val diagnostic = PlatformWalletPersistenceCapabilities(
@@ -76,7 +75,7 @@ class PlatformWalletPersistenceHandlerTest {
             handler.persistenceCapabilitiesBits(),
         )
         assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.ATOMIC_CHANGESETS))
-        assertFalse(diagnostic.contains(PlatformWalletPersistenceCapabilities.INVITATIONS))
+        assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.INVITATIONS))
     }
 
     // ── Standalone (non-bracketed) writes ─────────────────────────────
@@ -2610,5 +2609,157 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(100_000L, row!!.amountDuffs)
         assertEquals(1, row.statusRaw)
         assertFalse(row.proofBytes != null)
+    }
+
+    // ── Invitations (DIP-13) ──────────────────────────────────────────
+
+    @Test
+    fun invitationPersistRoundTripsEveryField() = runTest {
+        val outpoint = makeOutpoint(ByteArray(32) { 50 }, 2)
+        handler.onChangesetBegin(walletId)
+        assertEquals(
+            0,
+            handler.onPersistInvitationUpsert(
+                walletId = walletId,
+                outPoint = outpoint,
+                fundingIndex = 3,
+                amountDuffs = 3_000_000,
+                expiryUnix = 1_800_086_400,
+                createdAtSecs = 1_800_000_000,
+                hasInviter = true,
+                status = 0, // Created
+            ),
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val row = db.invitationDao().getByOutPointHex(encodeOutPointHex(outpoint))
+        assertNotNull(row)
+        assertTrue(outpoint.contentEquals(row!!.rawOutPoint))
+        assertTrue(walletId.contentEquals(row.walletId))
+        assertEquals(3, row.fundingIndexRaw)
+        assertEquals(3_000_000L, row.amountDuffs)
+        assertEquals(1_800_086_400, row.expiryUnix)
+        assertEquals(1_800_000_000, row.createdAtSecs)
+        assertTrue(row.hasInviter)
+        assertEquals(0, row.statusRaw)
+        assertFalse(row.reclaimInFlight)
+    }
+
+    @Test
+    fun invitationUpsertPreservesClientWrittenStatusAndMarker() = runTest {
+        val outpoint = makeOutpoint(ByteArray(32) { 51 }, 0)
+        val hex = encodeOutPointHex(outpoint)
+        handler.onPersistInvitationUpsert(
+            walletId, outpoint,
+            fundingIndex = 0, amountDuffs = 300_000, expiryUnix = 10,
+            createdAtSecs = 5, hasInviter = false, status = 0,
+        )
+        // The app writes the terminal status + marker locally (Rust never
+        // emits transitions); a Rust re-emit of the same outpoint with the
+        // original Created status must not reset them.
+        db.invitationDao().setStatusAndMarker(hex, 2, true, 99L)
+
+        handler.onPersistInvitationUpsert(
+            walletId, outpoint,
+            fundingIndex = 0, amountDuffs = 300_000, expiryUnix = 10,
+            createdAtSecs = 5, hasInviter = false, status = 0,
+        )
+
+        val row = db.invitationDao().getByOutPointHex(hex)
+        assertEquals(2, row!!.statusRaw)
+        assertTrue(row.reclaimInFlight)
+    }
+
+    @Test
+    fun invitationRemovalDeletesTheRowByTheSameKey() = runTest {
+        val outpoint = makeOutpoint(ByteArray(32) { 52 }, 7)
+        handler.onPersistInvitationUpsert(
+            walletId, outpoint,
+            fundingIndex = 1, amountDuffs = 300_000, expiryUnix = 1,
+            createdAtSecs = 1, hasInviter = false, status = 0,
+        )
+        assertNotNull(db.invitationDao().getByOutPointHex(encodeOutPointHex(outpoint)))
+
+        assertEquals(0, handler.onPersistInvitationRemoval(walletId, outpoint))
+        assertNull(db.invitationDao().getByOutPointHex(encodeOutPointHex(outpoint)))
+    }
+
+    @Test
+    fun invitationWriteInRolledBackRoundNeverLands() = runTest {
+        val outpoint = makeOutpoint(ByteArray(32) { 53 }, 0)
+        handler.onChangesetBegin(walletId)
+        handler.onPersistInvitationUpsert(
+            walletId, outpoint,
+            fundingIndex = 0, amountDuffs = 300_000, expiryUnix = 1,
+            createdAtSecs = 1, hasInviter = false, status = 0,
+        )
+        handler.onChangesetEnd(walletId, success = false)
+
+        assertNull(db.invitationDao().getByOutPointHex(encodeOutPointHex(outpoint)))
+    }
+
+    // ── Invitation funding-index pool durability ──────────────────────
+
+    private fun poolEntry(accountTypeTag: Byte): Int =
+        handler.onPersistAccountAddressPoolEntry(
+            walletId = walletId,
+            accountTypeTag = accountTypeTag,
+            accountStandardTag = 0,
+            accountIndex = 0,
+            accountRegistrationIndex = 0,
+            accountKeyClass = 0,
+            accountUserIdentityId = ByteArray(0),
+            accountFriendIdentityId = ByteArray(0),
+            poolTypeTag = 3, // AbsentHardened
+            publicKey = ByteArray(33) { 9 },
+            hasPublicKey = true,
+            addressPoolTypeTag = 3,
+            addressIndex = 0,
+            isUsed = true,
+            balance = 0,
+            addressBase58 = "yTestInvitationPoolAddress000000",
+            derivationPath = "m/9'/1'/5'/3'/0'",
+        )
+
+    @Test
+    fun invitationPoolEntryCreatesTheMissingAccountRow() = runTest {
+        // Wallet exists, but the IdentityInvitation account row was never
+        // registered (e.g. an install predating invitation support). The
+        // pool write is the funding-index durability record, so it must
+        // create the account row instead of silently skipping.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+
+        handler.onChangesetBegin(walletId)
+        assertEquals(0, poolEntry(accountTypeTag = 5))
+        assertEquals(0, handler.onChangesetEnd(walletId, success = true))
+
+        val accounts = db.accountDao().observeByWallet(walletId).first()
+        assertEquals(1, accounts.size)
+        assertEquals(5, accounts[0].accountType)
+        val addresses = db.coreAddressDao().observeByAccount(accounts[0].id).first()
+        assertEquals(1, addresses.size)
+    }
+
+    @Test
+    fun invitationPoolEntryWithoutWalletFailsTheRound() = runTest {
+        // No wallet row at all: the account row cannot be created (FK), so
+        // the round must FAIL — a silently-skipped write here would let
+        // Rust broadcast a voucher whose funding index never became
+        // durable (the voucher-key-reuse defect class).
+        handler.onChangesetBegin(walletId)
+        assertEquals(0, poolEntry(accountTypeTag = 5)) // staged, not yet run
+        assertEquals(1, handler.onChangesetEnd(walletId, success = true))
+    }
+
+    @Test
+    fun nonInvitationPoolEntryWithMissingAccountStillSkipsSilently() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+
+        handler.onChangesetBegin(walletId)
+        assertEquals(0, poolEntry(accountTypeTag = 0)) // Standard
+        assertEquals(0, handler.onChangesetEnd(walletId, success = true))
+
+        // Unchanged pre-invitation behavior: no account row conjured.
+        assertTrue(db.accountDao().observeByWallet(walletId).first().isEmpty())
     }
 }

@@ -1121,6 +1121,24 @@ class PlatformWalletManager(
     }
 
     /**
+     * Whether the native manager has frozen its durable sync watermark this
+     * session (dashpay/platform#4069). `true` means the wallet-event adapter
+     * had a persistence `store()` rejected — the one remaining fault trigger;
+     * the lossless persistence channel cannot drop or lag events —
+     * so the persisted `syncedHeight` is deliberately held behind the chain
+     * tip and a rescan is pending on the next launch. Poll this to surface a
+     * hard "verification failed / rescan pending" state instead of leaving
+     * the fault visible only in the error logs.
+     *
+     * The flag latches: once `true` it stays `true` for this manager
+     * instance's lifetime (a destroyed-and-recreated manager — e.g. a network
+     * switch through WalletManagerStore — starts unlatched).
+     */
+    suspend fun syncFaultDetected(): Boolean = withContext(Dispatchers.IO) {
+        mapNativeErrors { WalletManagerNative.syncFaultDetected(managerHandle) }
+    }
+
+    /**
      * Reset the platform-address (BLAST) sync state — the native side of the
      * Sync tab's "Clear" action (#3959), port of Swift
      * `resetPlatformAddressSyncState()`. Quiesces the loop (leaves it
