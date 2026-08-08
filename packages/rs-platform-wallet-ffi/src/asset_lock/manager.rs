@@ -21,7 +21,9 @@ pub struct TrackedAssetLockFFI {
     pub identity_index: u32,
     /// Amount in duffs.
     pub amount: u64,
-    /// Status (0=Built, 1=Broadcast, 2=InstantSendLocked, 3=ChainLocked).
+    /// Status (0=Built, 1=Broadcast, 2=InstantSendLocked, 3=ChainLocked,
+    /// 4=Consumed, 5=RecoveredFromChain — finality proven by the restore
+    /// scan, Platform-side consumption unknown).
     pub status: u32,
     /// Whether a proof is attached.
     pub has_proof: bool,
@@ -76,6 +78,7 @@ pub unsafe extern "C" fn asset_lock_manager_list_tracked_locks(
                         AssetLockStatus::InstantSendLocked => 2,
                         AssetLockStatus::ChainLocked => 3,
                         AssetLockStatus::Consumed => 4,
+                        AssetLockStatus::RecoveredFromChain => 5,
                     },
                     has_proof: lock.proof.is_some(),
                 }

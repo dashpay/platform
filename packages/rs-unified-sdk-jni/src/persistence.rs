@@ -3705,6 +3705,14 @@ unsafe extern "C" fn tramp_load_shielded_activity(
                             block_height,
                             has_block_height,
                             created_at_ms,
+                            // TODO(kotlin-shielded-chain-order): the Kotlin
+                            // store doesn't persist the scan deriver's
+                            // chain-order key yet (the persist bridge doesn't
+                            // carry it either), so "absent" is the honest
+                            // restore value — the Rust sort falls back to the
+                            // deterministic id order for these rows.
+                            min_note_position: 0,
+                            has_min_note_position: 0,
                             identity_id,
                             has_identity_id,
                             counterparty_ptr: ptr::null(),
