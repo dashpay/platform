@@ -387,11 +387,20 @@ unsafe fn cast_vote_inner(
         return Ok(());
     };
 
-    // The failure modes here are indistinguishable from Platform's side: a
-    // missing voter identity and a rotated (disabled) key both surface as
-    // "Public key 0 doesn't exist". Fetching the identity says which — but only
-    // now, on the failure path. Doing it before every cast would spend a round
-    // trip per (node, contest) on runs that are overwhelmingly going to succeed.
+    // Only a signature failure about the voting key is worth explaining. A
+    // closed poll, a fee failure or a transport error says nothing about the
+    // identity, and diagnosing those would let an absent voter identity
+    // masquerade as their cause — reporting "no voting identity" for a vote
+    // that actually arrived too late.
+    if !is_voter_key_failure(&broadcast_error) {
+        return Err(FFIError::from(broadcast_error));
+    }
+
+    // A missing voter identity and a rotated (disabled) key are
+    // indistinguishable from Platform's side — both surface as
+    // "Public key 0 doesn't exist". Fetching the identity says which, but only
+    // here: doing it before every cast would spend a round trip per
+    // (node, contest) on runs that overwhelmingly succeed.
     let voter_identifier = Identifier::create_voter_identifier(&pro_tx_hash_arr, &voting_address);
     let diagnosis = wrapper.runtime.block_on(diagnose_vote_failure(
         sdk,
@@ -400,10 +409,44 @@ unsafe fn cast_vote_inner(
         &voting_address,
     ));
 
-    // A diagnosis replaces the opaque error; anything else (network, fees,
-    // an already-closed poll) must survive unchanged rather than be recast as
-    // a key problem.
+    // Still fall back to the original when the identity and key both check out
+    // — the signature failure was about something else on the key path.
     Err(diagnosis.unwrap_or_else(|| FFIError::from(broadcast_error)))
+}
+
+/// Whether a broadcast failure is Platform rejecting the VOTING KEY, as opposed
+/// to anything else that can fail a vote.
+///
+/// Matched on the typed consensus error rather than its rendered text: the
+/// three signature variants below are exactly the ones the identity fetch can
+/// explain, and a message match would silently start diagnosing unrelated
+/// failures the first time a string changed.
+fn is_voter_key_failure(error: &dash_sdk::Error) -> bool {
+    use dash_sdk::dpp::consensus::signature::SignatureError;
+    use dash_sdk::dpp::consensus::ConsensusError;
+
+    fn is_key_signature_error(consensus: &ConsensusError) -> bool {
+        matches!(
+            consensus,
+            ConsensusError::SignatureError(
+                SignatureError::IdentityNotFoundError(_)
+                    | SignatureError::MissingPublicKeyError(_)
+                    | SignatureError::PublicKeyIsDisabledError(_)
+            )
+        )
+    }
+
+    match error {
+        // Rejected at broadcast: the consensus error rides on the response.
+        dash_sdk::Error::StateTransitionBroadcastError(e) => {
+            e.cause.as_ref().is_some_and(is_key_signature_error)
+        }
+        // Rejected locally / surfaced as a protocol error.
+        dash_sdk::Error::Protocol(dash_sdk::dpp::ProtocolError::ConsensusError(e)) => {
+            is_key_signature_error(e)
+        }
+        _ => false,
+    }
 }
 
 /// Explain a failed vote broadcast, or `None` when the voter identity and its
@@ -720,6 +763,74 @@ mod tests {
             None,
         )]);
         assert!(select_voting_key(&identity, &VOTING_ADDRESS, &voter_id()).is_err());
+    }
+
+    // ---- is_voter_key_failure -----------------------------------------------
+    //
+    // The gate deciding whether a failed broadcast gets a key diagnosis. Its
+    // absence was a real defect: diagnosis ran on EVERY failure, so a vote that
+    // arrived after the poll closed, cast by a node with no voter identity,
+    // was reported as "no voting identity exists" — replacing the true cause
+    // with a plausible-looking wrong one.
+
+    use dash_sdk::dpp::consensus::signature::{
+        BasicECDSAError, IdentityNotFoundError, MissingPublicKeyError, PublicKeyIsDisabledError,
+        SignatureError,
+    };
+    use dash_sdk::dpp::consensus::ConsensusError;
+
+    fn broadcast_error_with(cause: ConsensusError) -> dash_sdk::Error {
+        dash_sdk::Error::StateTransitionBroadcastError(
+            dash_sdk::error::StateTransitionBroadcastError {
+                code: 1,
+                message: "rejected".to_string(),
+                cause: Some(cause),
+            },
+        )
+    }
+
+    #[test]
+    fn key_failures_are_diagnosable() {
+        for cause in [
+            ConsensusError::SignatureError(SignatureError::MissingPublicKeyError(
+                MissingPublicKeyError::new(0),
+            )),
+            ConsensusError::SignatureError(SignatureError::PublicKeyIsDisabledError(
+                PublicKeyIsDisabledError::new(0),
+            )),
+            ConsensusError::SignatureError(SignatureError::IdentityNotFoundError(
+                IdentityNotFoundError::new(Identifier::new([3u8; 32])),
+            )),
+        ] {
+            assert!(
+                is_voter_key_failure(&broadcast_error_with(cause.clone())),
+                "{cause:?} is exactly what the identity fetch explains"
+            );
+        }
+    }
+
+    /// The regression this gate exists for: a failure unrelated to the key must
+    /// keep its own error even though the identity may well be absent.
+    #[test]
+    fn unrelated_failures_are_not_diagnosed() {
+        // A signature failure that is NOT about the key's existence or state.
+        // The identity fetch cannot explain it, so it must keep its own error —
+        // this is the discrimination the gate exists for, not merely
+        // "signature vs not signature".
+        let other_signature_failure = broadcast_error_with(ConsensusError::SignatureError(
+            SignatureError::BasicECDSAError(BasicECDSAError::new("bad signature".to_string())),
+        ));
+        assert!(!is_voter_key_failure(&other_signature_failure));
+
+        // A transport failure carries no consensus cause at all.
+        let transport = dash_sdk::Error::StateTransitionBroadcastError(
+            dash_sdk::error::StateTransitionBroadcastError {
+                code: 2,
+                message: "connection reset".to_string(),
+                cause: None,
+            },
+        );
+        assert!(!is_voter_key_failure(&transport));
     }
 
     /// The purpose predicate must be load-bearing on its own.
