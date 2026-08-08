@@ -61,10 +61,13 @@ pub enum AssetLockStatus {
     /// (`wallet::asset_lock::sync::reconstruction`) emits this for
     /// finalized asset-lock transactions whose credit outputs pay this
     /// wallet's funding accounts. Non-final detections (mempool /
-    /// unconfirmed-block sightings) never get this status; they enter
-    /// as [`Broadcast`](Self::Broadcast) /
+    /// unconfirmed-block sightings) enter as
+    /// [`Broadcast`](Self::Broadcast) /
     /// [`InstantSendLocked`](Self::InstantSendLocked) like any other
-    /// pre-finality lock.
+    /// pre-finality lock, and are upgraded to this status when a later
+    /// record — or the chainlock promotion that buries their block —
+    /// proves finality while nothing live is completing them
+    /// (`enrich_from_record`).
     ///
     /// Core-side finality is therefore guaranteed (a
     /// `ChainAssetLockProof` from the record's height is attached at

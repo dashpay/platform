@@ -569,6 +569,27 @@ async fn reconstruct_asset_locks_for_event(
                 .filter(|r| reconstruction::is_reconstruction_candidate(r))
                 .collect(),
         ),
+        // A chainlock's bulk promotion (`InBlock` →
+        // `InChainLockedBlock`) surfaces ONLY here — the promoted
+        // records never re-flow as `TransactionDetected` /
+        // `BlockProcessed`. Without this arm, entries a restore scan
+        // inserted at pre-finality statuses stayed there for the whole
+        // session (the scan detects historical funding txs before any
+        // chainlock is applied); see
+        // `enrich_tracked_asset_locks_from_chain_lock`.
+        WalletEvent::ChainLockProcessed {
+            wallet_id,
+            chain_lock,
+            locked_transactions,
+        } => {
+            return reconstruction::enrich_tracked_asset_locks_from_chain_lock(
+                wallet_manager,
+                wallet_id,
+                chain_lock.block_height,
+                locked_transactions,
+            )
+            .await;
+        }
         _ => return AssetLockChangeSet::default(),
     };
     if candidates.is_empty() {
@@ -1880,6 +1901,167 @@ mod tests {
                 .expect("reconstructed in-memory entry");
             assert_eq!(lock.status, AssetLockStatus::RecoveredFromChain);
             assert_eq!(lock.amount, 1_000_000);
+        }
+
+        cancel.cancel();
+        handle.await.expect("adapter task joins");
+    }
+
+    /// The `ChainLockProcessed` arm end to end: a lock the scan
+    /// reconstructed at a pre-finality status (its block wasn't
+    /// chain-locked yet — the restore-scan norm) upgrades to
+    /// `RecoveredFromChain` + chain proof when the chainlock
+    /// promotion names its txid, in the same session, with the
+    /// upgraded row riding the drained batch to the store. Before the
+    /// arm existed, the promotion surfaced only as metadata and the
+    /// entry stayed pre-finality until an app restart re-emitted its
+    /// record.
+    #[tokio::test]
+    async fn chain_lock_processed_event_upgrades_reconstructed_lock() {
+        use std::sync::atomic::AtomicBool;
+        use std::sync::Arc;
+
+        use dashcore::ephemerealdata::chain_lock::ChainLock;
+        use dashcore::hashes::Hash as _;
+        use key_wallet::account::account_type::StandardAccountType;
+        use key_wallet::account::AccountType;
+        use key_wallet::managed_account::transaction_record::{
+            TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::transaction_router::TransactionType;
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+        use tokio::sync::Notify;
+
+        use super::spawn_wallet_event_adapter;
+        use crate::test_support::{
+            funded_wallet_manager, AlwaysRejectedBroadcaster, NoopTestPersister,
+        };
+        use crate::wallet::asset_lock::manager::AssetLockManager;
+        use crate::wallet::asset_lock::tracked::AssetLockStatus;
+        use crate::wallet::persister::WalletPersister;
+
+        let (wallet_manager, wallet_id, _generation, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_network(dashcore::Network::Testnet)
+                .build()
+                .expect("mock sdk"),
+        );
+        let asset_lock_manager = AssetLockManager::new(
+            sdk,
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::new(AlwaysRejectedBroadcaster),
+            WalletPersister::new(
+                wallet_id,
+                Arc::new(NoopTestPersister) as Arc<dyn crate::changeset::PlatformWalletPersistence>,
+            ),
+        );
+        let (tx, _path) = asset_lock_manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await
+            .expect("build asset lock");
+
+        let record_with = |context: TransactionContext| {
+            TransactionRecord::new(
+                tx.clone(),
+                AccountType::IdentityRegistration,
+                context,
+                TransactionType::AssetLock,
+                TransactionDirection::Internal,
+                vec![],
+                vec![],
+                0,
+            )
+        };
+
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        let (event_tx, event_rx) = unbounded_channel();
+        let cancel = CancellationToken::new();
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let handle = spawn_wallet_event_adapter(
+            Arc::clone(&wallet_manager),
+            Arc::clone(&persister),
+            event_rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
+        );
+
+        // Scan sighting in a not-yet-chain-locked block → tracked at
+        // the pre-finality Broadcast status, no proof.
+        event_tx
+            .send(WalletEvent::BlockProcessed {
+                wallet_id,
+                height: 4321,
+                chain_lock: None,
+                inserted: vec![record_with(TransactionContext::InBlock(BlockInfo::new(
+                    4321,
+                    dashcore::BlockHash::all_zeros(),
+                    1_650_000_000,
+                )))],
+                updated: vec![],
+                matured: vec![],
+                balance: WalletCoreBalance::default(),
+                account_balances: BTreeMap::new(),
+                addresses_derived: vec![],
+            })
+            .expect("send block event");
+        let observed = obs_rx.recv().await.expect("first batch stored");
+        assert_eq!(observed.n_asset_locks, 1, "pre-finality reconstruction");
+
+        let out_point = dashcore::OutPoint::new(tx.txid(), 0);
+        {
+            let wm = wallet_manager.read().await;
+            let lock = wm
+                .get_wallet_info(&wallet_id)
+                .expect("wallet")
+                .tracked_asset_locks
+                .get(&out_point)
+                .expect("tracked entry");
+            assert_eq!(lock.status, AssetLockStatus::Broadcast);
+            assert!(lock.proof.is_none());
+        }
+
+        // The chainlock promotion names the txid under its funding
+        // account. No record accompanies it — under the default
+        // `keep-finalized-transactions=OFF` feature the promotion
+        // evicted it, which is exactly why the arm must not need one.
+        event_tx
+            .send(WalletEvent::ChainLockProcessed {
+                wallet_id,
+                chain_lock: ChainLock::dummy(4321),
+                locked_transactions: BTreeMap::from([(
+                    AccountType::IdentityRegistration,
+                    vec![tx.txid()],
+                )]),
+            })
+            .expect("send chainlock event");
+
+        let observed = obs_rx.recv().await.expect("second batch stored");
+        assert_eq!(
+            observed.n_asset_locks, 1,
+            "the upgraded row must ride the chainlock drain"
+        );
+        {
+            let wm = wallet_manager.read().await;
+            let lock = wm
+                .get_wallet_info(&wallet_id)
+                .expect("wallet")
+                .tracked_asset_locks
+                .get(&out_point)
+                .expect("tracked entry");
+            assert_eq!(lock.status, AssetLockStatus::RecoveredFromChain);
+            assert!(lock.proof.is_some(), "chain proof attached");
         }
 
         cancel.cancel();
