@@ -47,6 +47,7 @@ import waitForConfirmations from './core/waitForConfirmations.js';
 import generateBlsKeys from './core/generateBlsKeys.js';
 import activateCoreSpork from './core/activateCoreSpork.js';
 import waitForCorePeersConnected from './core/waitForCorePeersConnected.js';
+import waitForNodesToHaveTheSameHeight from './core/waitForNodesToHaveTheSameHeight.js';
 
 import createNewAddress from './core/wallet/createNewAddress.js';
 import generateBlocks from './core/wallet/generateBlocks.js';
@@ -263,6 +264,7 @@ export default async function createDIContainer(options = {}) {
     generateBlsKeys: asValue(generateBlsKeys),
     activateCoreSpork: asValue(activateCoreSpork),
     waitForCorePeersConnected: asValue(waitForCorePeersConnected),
+    waitForNodesToHaveTheSameHeight: asValue(waitForNodesToHaveTheSameHeight),
   });
 
   /**

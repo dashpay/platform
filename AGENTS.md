@@ -93,6 +93,12 @@ Platform uses data contracts to define application data schemas:
 - Keep PRs focused, link issues, include tests, and fill the PR template (`.github/PULL_REQUEST_TEMPLATE.md`).
 - Branching: bugfixes and new features to the current `vX-dev` branch.
 
+## Specs are working artifacts — never commit them
+A design doc / spec / plan written to drive a change (the problem, chosen approach, alternatives rejected, failure modes, test plan) exists to guide the work, not to ship. It goes stale the moment the code lands.
+- Keep it in the working tree but **never stage or commit it**. Enforce this by discipline, not git plumbing: stage with explicit paths (`git add <file> …`), never a blind `git add -A`/`git add .`. Do NOT edit `.git/info/exclude`, add a `.gitignore` entry, or use any other git trick to hide it — just don't add it.
+- Delete it once the task ships. If a branch already committed one, `git rm --cached <path>` before merge; the file stays on disk for the life of the task.
+- Only commit documentation the project keeps long-term: user/developer guides, architecture references, runbooks, API docs. A fact worth keeping after merge goes in a code comment, a test name, the commit message, or the PR description — not a design doc.
+
 ## Agent-Specific Instructions
 
 **Always use the `swift-rust-ffi-engineer` agent for:**

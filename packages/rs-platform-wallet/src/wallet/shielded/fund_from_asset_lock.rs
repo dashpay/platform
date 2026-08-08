@@ -188,6 +188,31 @@ impl PlatformWallet {
             }
         }
 
+        // Drain path: stamp the authoritative lock-value floor into the
+        // funding request. The drained value is only knowable from the BUILT
+        // payload (a pre-build balance estimate races concurrent
+        // reservations and the builder's own selection filters), so the
+        // asset-lock pipeline enforces this floor post-build / pre-broadcast
+        // and abandons an undersized build with an owner-guarded reservation
+        // release — a single-use L1 outpoint that could never clear the
+        // Type 18 pool fee is never created. The floor is the smallest
+        // whole-duff value STRICTLY above the pool fee, mirroring the
+        // `lock_value − pool_fee > 0` consumability requirement in Step 3.
+        let funding = match funding {
+            AssetLockFunding::DrainAccountBalance {
+                account,
+                minimum_lock_duffs: _,
+            } => {
+                let pool_fee_credits = self.shield_from_asset_lock_pool_fee(num_actions)?;
+                let minimum_lock_duffs = pool_fee_credits / CREDITS_PER_DUFF + 1;
+                AssetLockFunding::DrainAccountBalance {
+                    account,
+                    minimum_lock_duffs: Some(minimum_lock_duffs),
+                }
+            }
+            other => other,
+        };
+
         // Single-flight: serialise shield-class operations on this
         // wallet so two concurrent calls can't race the asset-lock
         // tracker into a half-consumed state.

@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.dashfoundation.dashsdk.Network
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.wallet.PlatformWalletPersistenceCapabilities
 import org.dashfoundation.dashsdk.persistence.entities.CoreAddressEntity
@@ -64,10 +65,9 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(0L, noOpBridge.persistenceCapabilitiesBits())
 
         assertEquals(1, handler.persistenceCapabilitiesVersion())
-        assertEquals(0xbdL, handler.persistenceCapabilitiesBits())
-        // Android has no invitation or pending-contact-crypto callback, so it
-        // must not attest either semantic contract.
-        assertEquals(0L, handler.persistenceCapabilitiesBits() and 0x02L)
+        assertEquals(0xbfL, handler.persistenceCapabilitiesBits())
+        // Android has no pending-contact-crypto callback, so it must not
+        // attest that semantic contract.
         assertEquals(0L, handler.persistenceCapabilitiesBits() and 0x40L)
 
         val diagnostic = PlatformWalletPersistenceCapabilities(
@@ -75,7 +75,7 @@ class PlatformWalletPersistenceHandlerTest {
             handler.persistenceCapabilitiesBits(),
         )
         assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.ATOMIC_CHANGESETS))
-        assertFalse(diagnostic.contains(PlatformWalletPersistenceCapabilities.INVITATIONS))
+        assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.INVITATIONS))
     }
 
     // ── Standalone (non-bracketed) writes ─────────────────────────────
@@ -778,6 +778,8 @@ class PlatformWalletPersistenceHandlerTest {
             publicKeyData: ByteArray,
             identityIndex: Int,
             keyIndex: Int,
+            keyType: Int,
+            force: Boolean,
         ): DerivedKeyStoreResult? {
             calls.add(Triple(walletId, identityIndex, keyIndex))
             lastPublicKey = publicKeyData
@@ -1008,6 +1010,689 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(handler.pendingAliasesFor(walletId).isEmpty())
         val row = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0)
         assertEquals("privkey.deadbeef", row!!.privateKeyKeychainIdentifier)
+    }
+
+    // ── Pending identity keys (dashpay/platform#4053: no silent skip) ──
+
+    /** Deriver that always throws — the derive/storage-failure path. */
+    private class ThrowingDeriver : PrivateKeyDeriver {
+        override fun deriveAndStore(
+            walletId: ByteArray,
+            publicKeyData: ByteArray,
+            identityIndex: Int,
+            keyIndex: Int,
+            keyType: Int,
+            force: Boolean,
+        ): DerivedKeyStoreResult = throw IllegalStateException("keystore unavailable")
+
+        override fun deleteUnownedStored(
+            pubkeyHexes: Collection<String>,
+            excludingWalletId: ByteArray,
+        ): Set<String> = emptySet()
+    }
+
+    private fun upsertIdentityKey(pubkey: ByteArray, identityId: ByteArray) {
+        upsertIdentityKeyWithKeyId(pubkey, identityId, keyId = 0)
+    }
+
+    private fun upsertIdentityKeyWithKeyId(pubkey: ByteArray, identityId: ByteArray, keyId: Int) {
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityKeyUpsert(
+            walletId, identityId, keyId, 0, 0, 0, false, false, 0,
+            pubkey, ByteArray(20), true, walletId,
+            true, 3, 5, 0, ByteArray(32), null,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+    }
+
+    @Test
+    fun derivationFailureIsRecordedAsAPendingIdentityKey() = runTest {
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, ThrowingDeriver())
+
+        val identityId = ByteArray(32) { 15 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 10 }
+        upsertIdentityKey(pubkey, identityId)
+
+        // The key row persists watch-only (no identifier) — same as before…
+        val row = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0)
+        assertNotNull(row)
+        assertNull(row!!.privateKeyKeychainIdentifier)
+
+        // …but the failure is now queryable instead of silent.
+        val pending = handler.pendingIdentityKeys.value
+        val entry = pending[pubkey.toHex()]
+        assertNotNull("expected a pending entry for the failed key", entry)
+        assertEquals(walletId.toHex(), entry!!.walletIdHex)
+        assertEquals(identityId.toBase58String(), entry.identityIdBase58)
+        assertEquals(0, entry.keyId)
+        assertEquals(3, entry.identityIndex)
+        assertEquals(5, entry.keyIndex)
+        assertEquals("keystore unavailable", entry.reason)
+    }
+
+    @Test
+    fun deriverReturningNullIsAlsoRecordedAsPending() = runTest {
+        handler = PlatformWalletPersistenceHandler(
+            db, Dispatchers.Unconfined, FakeDeriver(id = null),
+        )
+
+        val identityId = ByteArray(32) { 16 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 11 }
+        upsertIdentityKey(pubkey, identityId)
+
+        val entry = handler.pendingIdentityKeys.value[pubkey.toHex()]
+        assertNotNull(entry)
+        assertEquals("deriver returned no storage identifier", entry!!.reason)
+    }
+
+    @Test
+    fun laterSuccessfulDeriveClearsThePendingEntry() = runTest {
+        // First round fails…
+        var boom = true
+        val flaky = object : PrivateKeyDeriver {
+            override fun deriveAndStore(
+                walletId: ByteArray,
+                publicKeyData: ByteArray,
+                identityIndex: Int,
+                keyIndex: Int,
+                keyType: Int,
+                force: Boolean,
+            ): DerivedKeyStoreResult =
+                if (boom) {
+                    throw IllegalStateException("transient")
+                } else {
+                    DerivedKeyStoreResult("privkey.cafebabe", wasNewlyCreated = true)
+                }
+
+            override fun deleteUnownedStored(
+                pubkeyHexes: Collection<String>,
+                excludingWalletId: ByteArray,
+            ): Set<String> = emptySet()
+        }
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, flaky)
+
+        val identityId = ByteArray(32) { 17 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 12 }
+        upsertIdentityKey(pubkey, identityId)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        // …a re-persist (e.g. the next sync round) succeeds and clears it.
+        boom = false
+        upsertIdentityKey(pubkey, identityId)
+        assertNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+        val row = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0)
+        assertEquals("privkey.cafebabe", row!!.privateKeyKeychainIdentifier)
+    }
+
+    @Test
+    fun markIdentityKeyRepairedClearsThePendingEntry() = runTest {
+        // A derive failure records the key as pending…
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, ThrowingDeriver())
+        val identityId = ByteArray(32) { 18 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 13 }
+        upsertIdentityKey(pubkey, identityId)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        // …and a successful out-of-band repair (PlatformWalletManager.repairIdentityKey
+        // stores directly through the deriver, never re-firing onPersistIdentityKeyUpsert)
+        // clears it via this hook.
+        handler.markIdentityKeyRepaired(pubkey.toHex())
+        assertNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        // Idempotent: a second clear (or one for an unknown key) is a no-op.
+        handler.markIdentityKeyRepaired(pubkey.toHex())
+        handler.markIdentityKeyRepaired(ByteArray(33) { 99 }.toHex())
+        assertTrue(handler.pendingIdentityKeys.value.isEmpty())
+    }
+
+    @Test
+    fun identityKeyRemovalClearsThePendingEntry() = runTest {
+        // dashpay/platform#4183 review: a pending-repair entry must not outlive
+        // the key it describes. A derive failure records the key as pending;
+        // removing that key (onPersistIdentityKeyRemoval) must drop the now-
+        // phantom entry — a repair could never re-derive a key into an identity
+        // that no longer carries it.
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, ThrowingDeriver())
+        val identityId = ByteArray(32) { 20 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 15 }
+        upsertIdentityKey(pubkey, identityId)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        // A committed removal round deletes the row AND clears the pending entry.
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityKeyRemoval(walletId, identityId, 0)
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertNull(db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0))
+        assertTrue(handler.pendingIdentityKeys.value.isEmpty())
+    }
+
+    @Test
+    fun rolledBackIdentityKeyRemovalKeepsThePendingEntry() = runTest {
+        // The removal's pending-clear is staged with the round (mirroring the
+        // upsert path): an aborted round discards both the row deletion and the
+        // pending-clear, so the pre-round pending entry survives untouched.
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, ThrowingDeriver())
+        val identityId = ByteArray(32) { 21 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 16 }
+        upsertIdentityKey(pubkey, identityId)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityKeyRemoval(walletId, identityId, 0)
+        handler.onChangesetEnd(walletId, success = false)
+
+        assertNotNull(db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0))
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+    }
+
+    @Test
+    fun identityRemovalClearsEveryPendingEntryForThatIdentity() = runTest {
+        // dashpay/platform#4183 review: deleting an identity cascades away ALL
+        // of its public-key rows, so every pending-repair entry for that
+        // identity is a phantom afterwards — a repair could never re-derive a
+        // key into an identity that no longer exists. All of them must clear
+        // (not just one keyId, as onPersistIdentityKeyRemoval handles).
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, ThrowingDeriver())
+        val identityId = ByteArray(32) { 22 }
+        seedIdentity(identityId)
+        // Two watch-only keys under the same identity, different keyIds.
+        val pubkey0 = ByteArray(33) { 17 }
+        val pubkey1 = ByteArray(33) { 18 }
+        upsertIdentityKeyWithKeyId(pubkey0, identityId, keyId = 0)
+        upsertIdentityKeyWithKeyId(pubkey1, identityId, keyId = 1)
+        assertEquals(2, handler.pendingIdentityKeys.value.size)
+
+        // A committed identity-removal round deletes the rows AND clears every
+        // pending entry for the identity.
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityRemoval(walletId, identityId)
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertTrue(handler.pendingIdentityKeys.value.isEmpty())
+    }
+
+    @Test
+    fun rolledBackIdentityRemovalKeepsThePendingEntries() = runTest {
+        // The identity-removal pending-clear is staged with the round: an
+        // aborted round discards both the identity deletion and the clear, so
+        // the pre-round pending entry survives untouched.
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, ThrowingDeriver())
+        val identityId = ByteArray(32) { 23 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 19 }
+        upsertIdentityKey(pubkey, identityId)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityRemoval(walletId, identityId)
+        handler.onChangesetEnd(walletId, success = false)
+
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+    }
+
+    @Test
+    fun walletDeletionClearsWalletScopedPendingEntries() = runTest {
+        // dashpay/platform#4183 review: a wallet wipe cascades away all of its
+        // identities and their public-key rows, so every pending-repair entry
+        // scoped to that wallet is a phantom afterwards. deleteWalletData must
+        // prune them (Room's cascade cannot mutate the process-local
+        // StateFlow).
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, ThrowingDeriver())
+        val identityId = ByteArray(32) { 24 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 20 }
+        upsertIdentityKey(pubkey, identityId)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        handler.deleteWalletData(walletId)
+
+        assertTrue(handler.pendingIdentityKeys.value.isEmpty())
+    }
+
+    /**
+     * Regression (dashpay/platform#4060, finding de3cf44a71fc): the pending
+     * record is staged with the round, not published mid-round — the
+     * watch-only row it describes is only buffered until [onChangesetEnd],
+     * so an aborted round (which discards that row) must leave no phantom
+     * pending entry behind.
+     */
+    @Test
+    fun abortedRoundLeavesNoPhantomPendingKeyState() = runTest {
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, ThrowingDeriver())
+
+        val identityId = ByteArray(32) { 19 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 14 }
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityKeyUpsert(
+            walletId, identityId, 0, 0, 0, 0, false, false, 0,
+            pubkey, ByteArray(20), true, walletId,
+            true, 3, 5, 0, ByteArray(32), null,
+        )
+        // Mid-round the record is only STAGED: the watch-only row it
+        // describes has not committed yet.
+        assertTrue(handler.pendingIdentityKeys.value.isEmpty())
+
+        handler.onChangesetEnd(walletId, success = false)
+
+        // The aborted round discarded the watch-only row — its staged
+        // pending entry must vanish with it, not survive as a phantom.
+        assertTrue(handler.pendingIdentityKeys.value.isEmpty())
+        assertNull(db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0))
+
+        // The same failure in a round that COMMITS still publishes.
+        upsertIdentityKey(pubkey, identityId)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+    }
+
+    /**
+     * Regression (dashpay/platform#4060, finding de3cf44a71fc), the converse
+     * flow: an earlier watch-only key is pending; a retry round derives
+     * successfully (staging the clear) but then ABORTS. Rollback's alias
+     * cleanup deletes the newly stored scalar, so the old watch-only row —
+     * still the persisted truth — must keep its repair signal instead of
+     * losing it to a mid-round clear.
+     */
+    @Test
+    fun abortedRetryRoundPreservesThePendingRepairSignal() = runTest {
+        var boom = true
+        val flaky = object : PrivateKeyDeriver {
+            val deletedAliases = mutableListOf<String>()
+
+            override fun deriveAndStore(
+                walletId: ByteArray,
+                publicKeyData: ByteArray,
+                identityIndex: Int,
+                keyIndex: Int,
+                keyType: Int,
+                force: Boolean,
+            ): DerivedKeyStoreResult =
+                if (boom) {
+                    throw IllegalStateException("transient")
+                } else {
+                    DerivedKeyStoreResult("privkey.cafebabe", wasNewlyCreated = true)
+                }
+
+            override fun deleteUnownedStored(
+                pubkeyHexes: Collection<String>,
+                excludingWalletId: ByteArray,
+            ): Set<String> {
+                deletedAliases.addAll(pubkeyHexes)
+                return pubkeyHexes.toSet()
+            }
+        }
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, flaky)
+
+        val identityId = ByteArray(32) { 20 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 15 }
+
+        // A committed failing round records the watch-only key as pending.
+        upsertIdentityKey(pubkey, identityId)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        // The retry round derives + stores successfully (the clear is
+        // staged)… and then the round rolls back.
+        boom = false
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityKeyUpsert(
+            walletId, identityId, 0, 0, 0, 0, false, false, 0,
+            pubkey, ByteArray(20), true, walletId,
+            true, 3, 5, 0, ByteArray(32), null,
+        )
+        handler.onChangesetEnd(walletId, success = false)
+
+        // Rollback scrubbed the round's newly stored scalar; the old
+        // watch-only row is still the persisted truth, so the repair signal
+        // must survive the aborted round's staged clear.
+        assertEquals(listOf(pubkey.toHex()), flaky.deletedAliases)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+    }
+
+    // ── Pending-key reconstruction after restart (#4060 finding 5) ─────
+
+    @Test
+    fun reconstructionSeedsPendingFromBreadcrumbRowsWithNullIdentifier() = runTest {
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, ThrowingDeriver())
+        val identityId = ByteArray(32) { 21 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 12 }
+        upsertIdentityKey(pubkey, identityId) // derive fails → watch-only + breadcrumbs
+
+        // Model a process restart: a fresh handler starts with an empty
+        // in-memory map, then rebuilds it from the durable rows.
+        val restarted = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)
+        assertTrue(restarted.pendingIdentityKeys.value.isEmpty())
+        restarted.reconstructPendingIdentityKeysFromPersistence(
+            isPrivateKeyDecryptable = { false },
+            nowMs = 42L,
+        )
+
+        val entry = restarted.pendingIdentityKeys.value[pubkey.toHex()]
+        assertNotNull("breadcrumb row with null identifier must re-seed", entry)
+        assertEquals(walletId.toHex(), entry!!.walletIdHex)
+        assertEquals(identityId.toBase58String(), entry.identityIdBase58)
+        assertEquals(0, entry.keyId)
+        assertEquals(3, entry.identityIndex)
+        assertEquals(5, entry.keyIndex)
+        assertEquals("reconstructed from persistence after restart", entry.reason)
+        assertEquals(42L, entry.failedAtMs)
+    }
+
+    @Test
+    fun reconstructionSeedsStrandedBlobRowsDespiteRecordedIdentifier() = runTest {
+        // The derive SUCCEEDED at persist time (identifier recorded), but the
+        // stored blob no longer passes the cheap capability check — e.g. the
+        // Keystore keypair was replaced. The repair slot must resurface.
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, FakeDeriver())
+        val identityId = ByteArray(32) { 22 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 13 }
+        upsertIdentityKey(pubkey, identityId)
+        assertTrue(handler.pendingIdentityKeys.value.isEmpty()) // healthy at persist time
+
+        val restarted = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)
+        restarted.reconstructPendingIdentityKeysFromPersistence(
+            isPrivateKeyDecryptable = { false }, // blob stranded
+        )
+        assertNotNull(restarted.pendingIdentityKeys.value[pubkey.toHex()])
+    }
+
+    @Test
+    fun reconstructionSkipsHealthyRows() = runTest {
+        // Identifier recorded AND the blob still decrypts: nothing to repair,
+        // so a restart must not fabricate pending state.
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, FakeDeriver())
+        val identityId = ByteArray(32) { 23 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 14 }
+        upsertIdentityKey(pubkey, identityId)
+
+        val restarted = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)
+        restarted.reconstructPendingIdentityKeysFromPersistence(
+            isPrivateKeyDecryptable = { true },
+        )
+        assertTrue(restarted.pendingIdentityKeys.value.isEmpty())
+    }
+
+    @Test
+    fun repairedRowUpdatePreventsReseeding() = runTest {
+        // A failed derive leaves a pending row; the repair path later records
+        // the identifier on the Room row (and the blob decrypts). The next
+        // restart's reconstruction must NOT resurrect the repaired key.
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, ThrowingDeriver())
+        val identityId = ByteArray(32) { 24 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 16 }
+        upsertIdentityKey(pubkey, identityId)
+
+        val row = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0)!!
+        assertNull(row.privateKeyKeychainIdentifier)
+        db.publicKeyDao().update(
+            row.copy(privateKeyKeychainIdentifier = "privkey." + pubkey.toHex()),
+        )
+
+        val restarted = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)
+        restarted.reconstructPendingIdentityKeysFromPersistence(
+            isPrivateKeyDecryptable = { true },
+        )
+        assertTrue(restarted.pendingIdentityKeys.value.isEmpty())
+    }
+
+    /**
+     * #4060 round-2 finding 3: a KeyPermanentlyInvalidatedException on a
+     * LEGACY-alias-backed key is invisible to the cheap capability check —
+     * the legacy aliases are read-only (no deletion boundary), so
+     * `hasLegacyKeysKey()` / `isPrivateKeyDecryptable` stay true forever and
+     * neither canSignWith nor the restart reconstruction ever notices. The
+     * sign path's invalidation hook must write the durable signal (null the
+     * Room identifier) and seed pendingIdentityKeys immediately, EVEN while
+     * the cheap check still claims the key is usable.
+     */
+    @Test
+    fun signingKeyInvalidationSeedsPendingDespiteAUsableCheapCheck() = runTest {
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, FakeDeriver())
+        val identityId = ByteArray(32) { 26 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 18 }
+        upsertIdentityKey(pubkey, identityId) // healthy: identifier + breadcrumbs
+        assertTrue(handler.pendingIdentityKeys.value.isEmpty())
+
+        // Legacy-alias KPIE: the cheap check KEEPS reporting usable (true).
+        handler.recordSigningKeyInvalidated(pubkey.toHex()) { true }
+
+        // Durable: the Room identifier is nulled…
+        val row = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0)!!
+        assertNull(row.privateKeyKeychainIdentifier)
+        // …and the pending state seeds NOW, with the invalidation reason.
+        val entry = handler.pendingIdentityKeys.value[pubkey.toHex()]
+        assertNotNull("invalidation must seed a pending entry", entry)
+        assertEquals("signing key permanently invalidated", entry!!.reason)
+        assertEquals(3, entry.identityIndex)
+        assertEquals(5, entry.keyIndex)
+
+        // And the SAME durable path re-seeds after a restart, still despite
+        // the cheap check claiming usable.
+        val restarted = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)
+        restarted.reconstructPendingIdentityKeysFromPersistence(
+            isPrivateKeyDecryptable = { true },
+        )
+        assertNotNull(restarted.pendingIdentityKeys.value[pubkey.toHex()])
+    }
+
+    @Test
+    fun reconstructionNeverOverwritesALiveEntry() = runTest {
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, ThrowingDeriver())
+        val identityId = ByteArray(32) { 25 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 17 }
+        upsertIdentityKey(pubkey, identityId)
+
+        // The live entry (fresh reason/timestamp) must win over the
+        // reconstructed placeholder.
+        val liveReason = handler.pendingIdentityKeys.value[pubkey.toHex()]!!.reason
+        handler.reconstructPendingIdentityKeysFromPersistence(
+            isPrivateKeyDecryptable = { false },
+        )
+        assertEquals(liveReason, handler.pendingIdentityKeys.value[pubkey.toHex()]!!.reason)
+    }
+
+    // ── Durable, pubkey-verified repair (#4060 blockers 1 & 3) ─────────
+
+    /**
+     * Models the production [org.dashfoundation.dashsdk.security.IdentityKeyPrivateKeyDeriver]:
+     * a persist-time derive fails (returns null → the key seeds as pending),
+     * while a repair (`force`) derives the KEYPAIR and verifies the derived
+     * PUBLIC key equals `publicKeyData` BEFORE storing — a wrong slot throws
+     * [IdentityKeyDerivationMismatchException] without persisting anything.
+     */
+    private class VerifyingRepairDeriver : PrivateKeyDeriver {
+        var lastForceCall: Triple<ByteArray, Int, Int>? = null
+        val storedFor = mutableSetOf<String>()
+
+        override fun deriveAndStore(
+            walletId: ByteArray,
+            publicKeyData: ByteArray,
+            identityIndex: Int,
+            keyIndex: Int,
+            keyType: Int,
+            force: Boolean,
+        ): DerivedKeyStoreResult? {
+            if (!force) {
+                // Persist-time failure → the key is recorded watch-only +
+                // pending (breadcrumbs still land on the row).
+                return null
+            }
+            lastForceCall = Triple(walletId, identityIndex, keyIndex)
+            val derivedPublic = fakePubkeyFor(identityIndex, keyIndex)
+            // BLOCKER 1: verify BEFORE persistence; wrong slot → no store.
+            if (!derivedPublic.contentEquals(publicKeyData)) {
+                throw org.dashfoundation.dashsdk.security.IdentityKeyDerivationMismatchException(
+                    "derived pubkey for slot $identityIndex/$keyIndex does not match request",
+                )
+            }
+            storedFor.add(publicKeyData.toHex())
+            return DerivedKeyStoreResult("privkey." + publicKeyData.toHex(), wasNewlyCreated = true)
+        }
+
+        override fun deleteUnownedStored(
+            pubkeyHexes: Collection<String>,
+            excludingWalletId: ByteArray,
+        ): Set<String> = emptySet()
+
+        companion object {
+            /** Deterministic stand-in for the Rust keypair public half. */
+            fun fakePubkeyFor(identityIndex: Int, keyIndex: Int): ByteArray =
+                ByteArray(33).also { it[0] = identityIndex.toByte(); it[1] = keyIndex.toByte() }
+        }
+    }
+
+    @Test
+    fun repairWithCorrectBreadcrumbsDerivesVerifiesAndClearsPending() = runTest {
+        val deriver = VerifyingRepairDeriver()
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, deriver)
+        val identityId = ByteArray(32) { 30 }
+        seedIdentity(identityId)
+
+        // upsertIdentityKey records breadcrumbs 3/5; the pubkey MUST be the
+        // one those breadcrumbs derive, so the repair verification passes.
+        val pubkey = VerifyingRepairDeriver.fakePubkeyFor(3, 5)
+        upsertIdentityKey(pubkey, identityId)
+        assertNotNull("persist-time failure seeds pending", handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        var probed = false
+        val id = handler.repairIdentityKeyDurably(
+            walletId = walletId,
+            publicKeyData = pubkey,
+            verifyRecoverable = { probed = true; true },
+        )
+
+        assertEquals("privkey." + pubkey.toHex(), id)
+        // Derived from the PERSISTED breadcrumbs (3/5), not any caller index.
+        assertEquals(Triple(walletId.toHex(), 3, 5), deriver.lastForceCall!!.let {
+            Triple(it.first.toHex(), it.second, it.third)
+        })
+        assertTrue("blob decrypt verified", probed)
+        // Pending cleared and the row now carries the durable identifier.
+        assertNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+        val row = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0)
+        assertEquals("privkey." + pubkey.toHex(), row!!.privateKeyKeychainIdentifier)
+    }
+
+    @Test
+    fun repairWithMismatchedBreadcrumbsIsRejectedAndLeavesPending() = runTest {
+        val deriver = VerifyingRepairDeriver()
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, deriver)
+        val identityId = ByteArray(32) { 31 }
+        seedIdentity(identityId)
+
+        // The row's breadcrumbs (3/5) derive fakePubkeyFor(3,5), which is NOT
+        // this pubkey — modelling wrong/corrupt breadcrumbs. The repair must
+        // reject rather than persist a different, unusable key.
+        val pubkey = ByteArray(33) { 77 }
+        upsertIdentityKey(pubkey, identityId)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        var probed = false
+        var thrown: Throwable? = null
+        try {
+            handler.repairIdentityKeyDurably(
+                walletId = walletId,
+                publicKeyData = pubkey,
+                verifyRecoverable = { probed = true; true },
+            )
+        } catch (t: Throwable) {
+            thrown = t
+        }
+        assertTrue(
+            "wrong-slot repair must throw IdentityKeyDerivationMismatchException, got $thrown",
+            thrown is org.dashfoundation.dashsdk.security.IdentityKeyDerivationMismatchException,
+        )
+
+        // Nothing persisted, blob never even probed, pending intact.
+        assertFalse("verification must not run after a derive-mismatch", probed)
+        assertTrue(deriver.storedFor.isEmpty())
+        assertNotNull(
+            "a rejected repair must NOT clear pending",
+            handler.pendingIdentityKeys.value[pubkey.toHex()],
+        )
+        val row = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0)
+        assertNull(row!!.privateKeyKeychainIdentifier)
+    }
+
+    @Test
+    fun repairWithoutPersistedBreadcrumbsFailsAndLeavesPending() = runTest {
+        val deriver = VerifyingRepairDeriver()
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, deriver)
+        val identityId = ByteArray(32) { 32 }
+        seedIdentity(identityId)
+
+        // A key persisted WITHOUT derivation breadcrumbs (derivationIndicesIsSome
+        // = false) — the correct slot is unknown, so repair must fail closed.
+        val pubkey = ByteArray(33) { 44 }
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityKeyUpsert(
+            walletId, identityId, 0, 0, 0, 0, false, false, 0,
+            pubkey, ByteArray(20), true, walletId,
+            false, 0, 0, 0, ByteArray(32), null,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        var thrown: Throwable? = null
+        try {
+            handler.repairIdentityKeyDurably(
+                walletId = walletId,
+                publicKeyData = pubkey,
+                verifyRecoverable = { true },
+            )
+        } catch (t: Throwable) {
+            thrown = t
+        }
+        assertTrue(
+            "repair without breadcrumbs must fail with SigningKeyUnavailable, got $thrown",
+            thrown is DashSdkError.PlatformWallet.SigningKeyUnavailable,
+        )
+        assertNull(deriver.lastForceCall)
+    }
+
+    @Test
+    fun repairWithFailedDurableWriteLeavesPendingIntact() = runTest {
+        val deriver = VerifyingRepairDeriver()
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, deriver)
+        val identityId = ByteArray(32) { 33 }
+        seedIdentity(identityId)
+
+        val pubkey = VerifyingRepairDeriver.fakePubkeyFor(3, 5)
+        upsertIdentityKey(pubkey, identityId)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        // BLOCKER 3: derive + verify succeed, but the durable Room write fails.
+        // Pending MUST stay so a restart and this session agree the repair is
+        // still outstanding — a swallowed failure would resurrect it after
+        // restart while the session believed it was done.
+        var thrown: Throwable? = null
+        try {
+            handler.repairIdentityKeyDurably(
+                walletId = walletId,
+                publicKeyData = pubkey,
+                verifyRecoverable = { true },
+                persistDurableIdentifier = { throw java.io.IOException("durable write failed") },
+            )
+        } catch (t: Throwable) {
+            thrown = t
+        }
+        assertTrue("durable-write failure must propagate, got $thrown", thrown is java.io.IOException)
+        assertNotNull(
+            "a failed durable write must NOT clear pending",
+            handler.pendingIdentityKeys.value[pubkey.toHex()],
+        )
     }
 
     // ── Shielded load round-trip ──────────────────────────────────────
@@ -1924,5 +2609,157 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(100_000L, row!!.amountDuffs)
         assertEquals(1, row.statusRaw)
         assertFalse(row.proofBytes != null)
+    }
+
+    // ── Invitations (DIP-13) ──────────────────────────────────────────
+
+    @Test
+    fun invitationPersistRoundTripsEveryField() = runTest {
+        val outpoint = makeOutpoint(ByteArray(32) { 50 }, 2)
+        handler.onChangesetBegin(walletId)
+        assertEquals(
+            0,
+            handler.onPersistInvitationUpsert(
+                walletId = walletId,
+                outPoint = outpoint,
+                fundingIndex = 3,
+                amountDuffs = 3_000_000,
+                expiryUnix = 1_800_086_400,
+                createdAtSecs = 1_800_000_000,
+                hasInviter = true,
+                status = 0, // Created
+            ),
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val row = db.invitationDao().getByOutPointHex(encodeOutPointHex(outpoint))
+        assertNotNull(row)
+        assertTrue(outpoint.contentEquals(row!!.rawOutPoint))
+        assertTrue(walletId.contentEquals(row.walletId))
+        assertEquals(3, row.fundingIndexRaw)
+        assertEquals(3_000_000L, row.amountDuffs)
+        assertEquals(1_800_086_400, row.expiryUnix)
+        assertEquals(1_800_000_000, row.createdAtSecs)
+        assertTrue(row.hasInviter)
+        assertEquals(0, row.statusRaw)
+        assertFalse(row.reclaimInFlight)
+    }
+
+    @Test
+    fun invitationUpsertPreservesClientWrittenStatusAndMarker() = runTest {
+        val outpoint = makeOutpoint(ByteArray(32) { 51 }, 0)
+        val hex = encodeOutPointHex(outpoint)
+        handler.onPersistInvitationUpsert(
+            walletId, outpoint,
+            fundingIndex = 0, amountDuffs = 300_000, expiryUnix = 10,
+            createdAtSecs = 5, hasInviter = false, status = 0,
+        )
+        // The app writes the terminal status + marker locally (Rust never
+        // emits transitions); a Rust re-emit of the same outpoint with the
+        // original Created status must not reset them.
+        db.invitationDao().setStatusAndMarker(hex, 2, true, 99L)
+
+        handler.onPersistInvitationUpsert(
+            walletId, outpoint,
+            fundingIndex = 0, amountDuffs = 300_000, expiryUnix = 10,
+            createdAtSecs = 5, hasInviter = false, status = 0,
+        )
+
+        val row = db.invitationDao().getByOutPointHex(hex)
+        assertEquals(2, row!!.statusRaw)
+        assertTrue(row.reclaimInFlight)
+    }
+
+    @Test
+    fun invitationRemovalDeletesTheRowByTheSameKey() = runTest {
+        val outpoint = makeOutpoint(ByteArray(32) { 52 }, 7)
+        handler.onPersistInvitationUpsert(
+            walletId, outpoint,
+            fundingIndex = 1, amountDuffs = 300_000, expiryUnix = 1,
+            createdAtSecs = 1, hasInviter = false, status = 0,
+        )
+        assertNotNull(db.invitationDao().getByOutPointHex(encodeOutPointHex(outpoint)))
+
+        assertEquals(0, handler.onPersistInvitationRemoval(walletId, outpoint))
+        assertNull(db.invitationDao().getByOutPointHex(encodeOutPointHex(outpoint)))
+    }
+
+    @Test
+    fun invitationWriteInRolledBackRoundNeverLands() = runTest {
+        val outpoint = makeOutpoint(ByteArray(32) { 53 }, 0)
+        handler.onChangesetBegin(walletId)
+        handler.onPersistInvitationUpsert(
+            walletId, outpoint,
+            fundingIndex = 0, amountDuffs = 300_000, expiryUnix = 1,
+            createdAtSecs = 1, hasInviter = false, status = 0,
+        )
+        handler.onChangesetEnd(walletId, success = false)
+
+        assertNull(db.invitationDao().getByOutPointHex(encodeOutPointHex(outpoint)))
+    }
+
+    // ── Invitation funding-index pool durability ──────────────────────
+
+    private fun poolEntry(accountTypeTag: Byte): Int =
+        handler.onPersistAccountAddressPoolEntry(
+            walletId = walletId,
+            accountTypeTag = accountTypeTag,
+            accountStandardTag = 0,
+            accountIndex = 0,
+            accountRegistrationIndex = 0,
+            accountKeyClass = 0,
+            accountUserIdentityId = ByteArray(0),
+            accountFriendIdentityId = ByteArray(0),
+            poolTypeTag = 3, // AbsentHardened
+            publicKey = ByteArray(33) { 9 },
+            hasPublicKey = true,
+            addressPoolTypeTag = 3,
+            addressIndex = 0,
+            isUsed = true,
+            balance = 0,
+            addressBase58 = "yTestInvitationPoolAddress000000",
+            derivationPath = "m/9'/1'/5'/3'/0'",
+        )
+
+    @Test
+    fun invitationPoolEntryCreatesTheMissingAccountRow() = runTest {
+        // Wallet exists, but the IdentityInvitation account row was never
+        // registered (e.g. an install predating invitation support). The
+        // pool write is the funding-index durability record, so it must
+        // create the account row instead of silently skipping.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+
+        handler.onChangesetBegin(walletId)
+        assertEquals(0, poolEntry(accountTypeTag = 5))
+        assertEquals(0, handler.onChangesetEnd(walletId, success = true))
+
+        val accounts = db.accountDao().observeByWallet(walletId).first()
+        assertEquals(1, accounts.size)
+        assertEquals(5, accounts[0].accountType)
+        val addresses = db.coreAddressDao().observeByAccount(accounts[0].id).first()
+        assertEquals(1, addresses.size)
+    }
+
+    @Test
+    fun invitationPoolEntryWithoutWalletFailsTheRound() = runTest {
+        // No wallet row at all: the account row cannot be created (FK), so
+        // the round must FAIL — a silently-skipped write here would let
+        // Rust broadcast a voucher whose funding index never became
+        // durable (the voucher-key-reuse defect class).
+        handler.onChangesetBegin(walletId)
+        assertEquals(0, poolEntry(accountTypeTag = 5)) // staged, not yet run
+        assertEquals(1, handler.onChangesetEnd(walletId, success = true))
+    }
+
+    @Test
+    fun nonInvitationPoolEntryWithMissingAccountStillSkipsSilently() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+
+        handler.onChangesetBegin(walletId)
+        assertEquals(0, poolEntry(accountTypeTag = 0)) // Standard
+        assertEquals(0, handler.onChangesetEnd(walletId, success = true))
+
+        // Unchanged pre-invitation behavior: no account row conjured.
+        assertTrue(db.accountDao().observeByWallet(walletId).first().isEmpty())
     }
 }

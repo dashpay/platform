@@ -27,6 +27,51 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    /// Wallet a TXO belongs to, resolved the way `loadWalletList` already
+    /// resolves it.
+    ///
+    /// `PersistentTxo.walletId` is a denormalized convenience field and is
+    /// **empty on rows written before it existed**. Comparing it raw makes
+    /// every legacy TXO look like it belongs to no wallet — which, for
+    /// sent-payment reconstruction, silently reclassifies a real spend as
+    /// "not ours" and drops the payment. Fall back to the owning account's
+    /// wallet for those rows.
+    ///
+    /// `account.wallet` is non-optional on the model but is a fault-loaded
+    /// relationship, so it is read through an Optional cast: a
+    /// relationship-store inconsistency would otherwise crash here.
+    static func resolvedWalletId(of txo: PersistentTxo) -> Data? {
+        if !txo.walletId.isEmpty {
+            return txo.walletId
+        }
+        let account: PersistentAccount? = txo.account
+        guard let account else { return nil }
+        let wallet: PersistentWallet? = account.wallet
+        return wallet?.walletId
+    }
+
+    static func walletOwnsTransaction(
+        walletId: Data,
+        transaction: PersistentTransaction
+    ) -> Bool {
+        if transaction.involvedAccounts.contains(where: {
+            let wallet: PersistentWallet? = $0.wallet
+            return wallet?.walletId == walletId
+        }) {
+            return true
+        }
+        if transaction.outputs.contains(where: { resolvedWalletId(of: $0) == walletId }) {
+            return true
+        }
+        if transaction.inputs.contains(where: { resolvedWalletId(of: $0) == walletId }) {
+            return true
+        }
+        // `PersistentPendingInput` carries no account relationship, so its
+        // denormalized `walletId` is the only thing to compare — it is also a
+        // newer row type, written only by the current send path.
+        return transaction.pendingInputs.contains(where: { $0.walletId == walletId })
+    }
+
     let modelContainer: ModelContainer
 
     /// Network this handler's owning `PlatformWalletManager` is bound
@@ -75,6 +120,24 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// backfill still completes, just cleanly outside any open round.
     /// Confined to `serialQueue` like all other mutable handler state.
     private var deferredBackfills: [(walletId: Data, items: [KeychainManager.IdentityPrivateKeyMetadata])] = []
+
+    /// DashPay payment rows the persister callback could not stage
+    /// because the owner `PersistentIdentity` row wasn't resolvable
+    /// mid-round. Normally the owner is visible — the identities
+    /// callback fires before the payments callback in the same Rust
+    /// `store()` round, and `FetchDescriptor` sees the round's pending
+    /// inserts — so this only holds rows whose owner is in neither the
+    /// current round (yet) nor the store. Drained by `endChangeset`
+    /// BEFORE the round's single `save()`, so parked rows commit
+    /// atomically with everything else; a group whose owner is still
+    /// unresolvable at that point fails the whole round (rollback +
+    /// failure reported to Rust) rather than committing a lossy
+    /// persist. Cleared without staging on a failed round: the Rust
+    /// side rolled its in-memory entries back too, so persisting them
+    /// later would fabricate history. Never survives a round either
+    /// way, so it cannot grow across rounds. Confined to `serialQueue`
+    /// like all other mutable handler state.
+    private var deferredPaymentUpserts: [(ownerIdentityId: Data, payments: [DashPayPayment])] = []
 
     public init(modelContainer: ModelContainer, network: Network? = nil) {
         self.modelContainer = modelContainer
@@ -1204,11 +1267,24 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
     /// Build `PersistenceCallbacks` that point to this handler.
     ///
-    /// The returned struct must not outlive `self`.
+    /// **Transfers ownership of a strong reference to Rust**: the context
+    /// is `passRetained`, and `release_fn` balances that retain exactly
+    /// once — when the Rust manager and every background worker holding
+    /// its persister have dropped their references (possibly on a Rust
+    /// thread, possibly after `destroy` returns if a worker straggles).
+    /// ARC therefore cannot free this handler while any Rust worker can
+    /// still call back into it, no matter how teardown went.
+    ///
+    /// If manager creation fails, Rust never took the reference — the
+    /// caller must balance the retain itself (see `configure`).
     func makeCallbacks() -> PersistenceCallbacks {
-        let contextPtr = Unmanaged.passUnretained(self).toOpaque()
+        let contextPtr = Unmanaged.passRetained(self).toOpaque()
         var cb = PersistenceCallbacks()
         cb.context = contextPtr
+        cb.release_fn = { context in
+            guard let context else { return }
+            Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).release()
+        }
         cb.on_changeset_begin_fn = changesetBeginCallback
         cb.on_changeset_end_fn = changesetEndCallback
         cb.on_persist_address_balances_fn = persistAddressBalancesCallback
@@ -1247,6 +1323,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         cb.on_persist_invitations_fn = persistInvitationsCallback
         cb.on_get_core_tx_record_fn = getCoreTxRecordCallback
         cb.on_get_core_tx_record_free_fn = getCoreTxRecordFreeCallback
+        cb.on_list_wallet_core_txids_fn = listWalletCoreTxidsCallback
+        cb.on_list_wallet_core_txids_free_fn = listWalletCoreTxidsFreeCallback
+        cb.on_persist_dashpay_payments_fn = persistDashpayPaymentsCallback
         return cb
     }
 
@@ -1298,6 +1377,32 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 self.drainDeferredBackfills()
             }
             if success {
+                // Stage payment groups parked on a mid-round missing owner
+                // BEFORE the round's single save — by now every identity
+                // insert the round staged is visible to the fetch. A group
+                // whose owner is STILL unresolvable fails the whole round:
+                // committing the rest while dropping payment rows would
+                // report success for a lossy persist, and Rust would keep
+                // in-memory payment state that never reached disk — the
+                // exact invariant `record_dashpay_payment`'s rollback
+                // protects. No second save after the commit: the round
+                // stays one atomic transaction.
+                let parked = deferredPaymentUpserts
+                deferredPaymentUpserts.removeAll()
+                for entry in parked where !stageDashpayPaymentUpserts(
+                    ownerIdentityId: entry.ownerIdentityId,
+                    payments: entry.payments
+                ) {
+                    print(
+                        "⚠️ endChangeset: no PersistentIdentity for owner "
+                            + "\(entry.ownerIdentityId.prefix(8).toHexString())… after the "
+                            + "round's identity applies; failing the round so Rust rolls "
+                            + "back \(entry.payments.count) payment row(s) instead of "
+                            + "losing them"
+                    )
+                    backgroundContext.rollback()
+                    return false
+                }
                 do {
                     try backgroundContext.save()
                     return true
@@ -1314,6 +1419,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
             } else {
                 backgroundContext.rollback()
+                // Parked rows from the failed round die with it: the Rust
+                // side rolled its in-memory entries back too, so persisting
+                // them later would fabricate history.
+                deferredPaymentUpserts.removeAll()
                 return false
             }
         }
@@ -2339,19 +2448,18 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
     // MARK: - DashPay payment-history persistence
 
-    /// Upsert DashPay payment-history rows for one owner identity.
-    ///
-    /// NOT a persister-callback path — the Rust persister doesn't
-    /// project payment history. Called by
+    /// Upsert DashPay payment-history rows for one owner identity —
+    /// the reconciler half of the payment durability loop. Called by
     /// `PlatformWalletManager.refreshDashPayPayments` after reading
     /// the `managed_identity_get_dashpay_payments` getter, so the UI
-    /// can `@Query` `PersistentDashpayPayment` rows reactively.
+    /// can `@Query` `PersistentDashpayPayment` rows reactively. The
+    /// authoritative event-driven half is the
+    /// `on_persist_dashpay_payments_fn` persister callback
+    /// (`persistDashpayPayments(walletId:entriesByOwner:)` below);
+    /// this refresh path reconciles anything the callback era predates
+    /// or a parked-row drop lost.
     ///
-    /// Upsert-only: the Rust `dashpay_payments` map is append-only
-    /// history (keyed by txid), so a refresh never has to delete
-    /// rows; cascade from the owner identity handles wallet wipes.
-    /// Rows are keyed `(networkRaw, ownerIdentityId, txid)`. Skips
-    /// silently when the owner identity row doesn't exist yet —
+    /// Skips silently when the owner identity row doesn't exist yet —
     /// the next refresh after the identity flush replays it.
     ///
     /// Saves immediately when no changeset round is open — same
@@ -2362,64 +2470,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         payments: [DashPayPayment]
     ) {
         onQueue {
-            let ownerId = ownerIdentityId
-            let ownerDescriptor = FetchDescriptor<PersistentIdentity>(
-                predicate: #Predicate { $0.identityId == ownerId }
-            )
-            guard let owner = try? backgroundContext.fetch(ownerDescriptor).first else {
-                return
-            }
-            let networkRaw = owner.networkRaw
-
-            for payment in payments {
-                guard !payment.txid.isEmpty else { continue }
-                let txid = payment.txid
-                let descriptor = FetchDescriptor<PersistentDashpayPayment>(
-                    predicate: #Predicate {
-                        $0.networkRaw == networkRaw
-                            && $0.ownerIdentityId == ownerId
-                            && $0.txid == txid
-                    }
-                )
-                if let existing = try? backgroundContext.fetch(descriptor).first {
-                    // Refresh in place only when a field actually changed.
-                    // The FFI snapshot is authoritative, and `status` is the
-                    // field that moves (Pending → Confirmed / Failed). A
-                    // no-op rewrite would still dirty the row and re-fire
-                    // every `@Query` observer on each refresh pass — and the
-                    // recurring DashPay-sync falling edge calls this even on
-                    // a quiescent channel, so skipping unchanged rows keeps
-                    // an open payment list from re-rendering every sync.
-                    let changed = existing.counterpartyIdentityId != payment.counterpartyId
-                        || existing.amountDuffs != payment.amountDuffs
-                        || existing.directionRaw != payment.direction.rawValue
-                        || existing.statusRaw != payment.status.rawValue
-                        || existing.memo != payment.memo
-                        || existing.owner !== owner
-                    if changed {
-                        existing.counterpartyIdentityId = payment.counterpartyId
-                        existing.amountDuffs = payment.amountDuffs
-                        existing.directionRaw = payment.direction.rawValue
-                        existing.statusRaw = payment.status.rawValue
-                        existing.memo = payment.memo
-                        if existing.owner !== owner {
-                            existing.owner = owner
-                        }
-                        existing.lastUpdated = Date()
-                    }
-                } else {
-                    let row = PersistentDashpayPayment(
-                        owner: owner,
-                        counterpartyIdentityId: payment.counterpartyId,
-                        amountDuffs: payment.amountDuffs,
-                        direction: payment.direction,
-                        status: payment.status,
-                        txid: payment.txid,
-                        memo: payment.memo
-                    )
-                    backgroundContext.insert(row)
-                }
-            }
+            guard stageDashpayPaymentUpserts(
+                ownerIdentityId: ownerIdentityId,
+                payments: payments
+            ) else { return }
             // Same guard as the other app-facing writers
             // (`setWalletName`, …): a refresh landing while a Rust
             // persister round is open must ride that round's
@@ -2438,6 +2492,118 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
             }
         }
+    }
+
+    /// Apply one `on_persist_dashpay_payments_fn` persister-callback
+    /// batch — payment rows flattened out of a Rust `store()` round,
+    /// grouped by owner identity. This is the event-driven write half
+    /// of the payment durability loop: it fires on every round whose
+    /// changeset carries payment rows (a live `send_payment`, a
+    /// pending→confirmed sweep flip, a reconstruction upsert), so
+    /// Sent entries + memos are durable without any UI surface ever
+    /// appearing.
+    ///
+    /// Runs mid-round: rows are staged on `backgroundContext` and ride
+    /// the round's `endChangeset` commit/rollback. A group whose owner
+    /// `PersistentIdentity` row isn't resolvable — not even as a
+    /// pending insert staged by this round's identities callback,
+    /// which fires first — is parked on `deferredPaymentUpserts`;
+    /// `endChangeset` stages parked groups before the round's single
+    /// save and fails the round if an owner is still unresolvable (see
+    /// that field's doc).
+    func persistDashpayPayments(
+        walletId: Data,
+        entriesByOwner: [Data: [DashPayPayment]]
+    ) {
+        onQueue {
+            _ = walletId
+            for (ownerId, payments) in entriesByOwner {
+                if !stageDashpayPaymentUpserts(ownerIdentityId: ownerId, payments: payments) {
+                    deferredPaymentUpserts.append((ownerId, payments))
+                }
+            }
+            // No save here even outside a round: the Rust store() round
+            // that invoked this callback brackets it with begin/end, so
+            // `inChangeset` is set in practice; if a host ever fires it
+            // without a bracket, autosave/next round flushes the stage.
+        }
+    }
+
+    /// Stage upserts for one owner's payment rows on
+    /// `backgroundContext` — shared core of the persister callback,
+    /// the post-commit replay, and the refresh reconciler. No
+    /// `save()`; each caller owns its own commit point. Returns
+    /// `false` (nothing staged) when the owner `PersistentIdentity`
+    /// row doesn't exist — not even as a pending insert in the open
+    /// round. Must run on `serialQueue`.
+    ///
+    /// Upsert-only: the Rust `dashpay_payments` map is append-only
+    /// history (keyed by txid), so this never has to delete rows;
+    /// cascade from the owner identity handles wallet wipes. Rows are
+    /// keyed `(networkRaw, ownerIdentityId, txid)`.
+    private func stageDashpayPaymentUpserts(
+        ownerIdentityId: Data,
+        payments: [DashPayPayment]
+    ) -> Bool {
+        let ownerId = ownerIdentityId
+        let ownerDescriptor = FetchDescriptor<PersistentIdentity>(
+            predicate: #Predicate { $0.identityId == ownerId }
+        )
+        guard let owner = try? backgroundContext.fetch(ownerDescriptor).first else {
+            return false
+        }
+        let networkRaw = owner.networkRaw
+
+        for payment in payments {
+            guard !payment.txid.isEmpty else { continue }
+            let txid = payment.txid
+            let descriptor = FetchDescriptor<PersistentDashpayPayment>(
+                predicate: #Predicate {
+                    $0.networkRaw == networkRaw
+                        && $0.ownerIdentityId == ownerId
+                        && $0.txid == txid
+                }
+            )
+            if let existing = try? backgroundContext.fetch(descriptor).first {
+                // Refresh in place only when a field actually changed.
+                // The FFI snapshot is authoritative, and `status` is the
+                // field that moves (Pending → Confirmed / Failed). A
+                // no-op rewrite would still dirty the row and re-fire
+                // every `@Query` observer on each refresh pass — and the
+                // recurring DashPay-sync falling edge calls this even on
+                // a quiescent channel, so skipping unchanged rows keeps
+                // an open payment list from re-rendering every sync.
+                let changed = existing.counterpartyIdentityId != payment.counterpartyId
+                    || existing.amountDuffs != payment.amountDuffs
+                    || existing.directionRaw != payment.direction.rawValue
+                    || existing.statusRaw != payment.status.rawValue
+                    || existing.memo != payment.memo
+                    || existing.owner !== owner
+                if changed {
+                    existing.counterpartyIdentityId = payment.counterpartyId
+                    existing.amountDuffs = payment.amountDuffs
+                    existing.directionRaw = payment.direction.rawValue
+                    existing.statusRaw = payment.status.rawValue
+                    existing.memo = payment.memo
+                    if existing.owner !== owner {
+                        existing.owner = owner
+                    }
+                    existing.lastUpdated = Date()
+                }
+            } else {
+                let row = PersistentDashpayPayment(
+                    owner: owner,
+                    counterpartyIdentityId: payment.counterpartyId,
+                    amountDuffs: payment.amountDuffs,
+                    direction: payment.direction,
+                    status: payment.status,
+                    txid: payment.txid,
+                    memo: payment.memo
+                )
+                backgroundContext.insert(row)
+            }
+        }
+        return true
     }
 
     // MARK: - Identity key derivation-path helpers
@@ -5742,6 +5908,85 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    /// `AccountTypeTagFFI` discriminant for a watch-only DashPay external
+    /// (contact) account. TXOs tracked under it are the *contact's* coins,
+    /// mirrored locally so sends to the contact can be detected — they are
+    /// not spendable by this wallet.
+    static let dashpayExternalAccountTypeTag: UInt32 = 13
+
+    /// `true` when `transaction` spends at least one input funded by one of
+    /// this wallet's own spendable accounts.
+    ///
+    /// Pure row data: each entry in `transaction.inputs` is a `PersistentTxo`
+    /// this transaction spent, carrying the owning wallet denorm and the
+    /// account it was tracked under. A TXO tracked only by the watch-only
+    /// DashPay external account does NOT count — those are the contact's
+    /// coins, and counting them would tag a third party's transaction (the
+    /// contact spending their own money) as wallet-funded. A TXO whose
+    /// account link faulted to `nil` counts as owned: spendable-account rows
+    /// always carry the link, so `nil` is a relationship-store anomaly and
+    /// under-reporting would silently erase real sent history.
+    /// `pendingInputs` are deliberately ignored: a spend of our own coins
+    /// always has its funding TXO persisted (the wallet had to know the
+    /// output to spend it), while a pending row proves nothing about
+    /// ownership.
+    static func walletFundedTransaction(
+        walletId: Data,
+        transaction: PersistentTransaction
+    ) -> Bool {
+        transaction.inputs.contains { txo in
+            // Resolved, not raw: a legacy TXO with an empty denormalized
+            // `walletId` is still our coin, and reading it as "not ours" turns
+            // a real spend into an unfunded transaction — the sweep then skips
+            // it and can still stamp the contact, losing the payment for the
+            // process lifetime.
+            Self.resolvedWalletId(of: txo) == walletId
+                && txo.account.map { $0.accountType != dashpayExternalAccountTypeTag } ?? true
+        }
+    }
+
+    /// Enumerate the persisted txids scoped to `walletId`, each paired with
+    /// whether this wallet funded the transaction (see
+    /// [`walletFundedTransaction`]).
+    ///
+    /// Scope is the union of wallet-owned TXOs (`outputs`, `inputs`,
+    /// `pendingInputs`) and payload-only account involvement
+    /// (`involvedAccounts`).
+    /// Returns `errored: true` when the fetch itself failed, so the shim can
+    /// report a non-zero status. Collapsing a database fault to an empty list
+    /// would be indistinguishable from a wallet with no transactions, and the
+    /// Rust side treats those two very differently.
+    func walletCoreTxids(
+        walletId: Data
+    ) -> (txids: [(txid: Data, spendsWalletInput: Bool)], errored: Bool) {
+        onQueue {
+            let descriptor = FetchDescriptor<PersistentTransaction>()
+            let rows: [PersistentTransaction]
+            do {
+                rows = try backgroundContext.fetch(descriptor)
+            } catch {
+                NSLog(
+                    "[persistor-txids:swift] PersistentTransaction fetch failed: %@",
+                    String(describing: error)
+                )
+                return ([], true)
+            }
+            let txids = rows.compactMap { tx -> (txid: Data, spendsWalletInput: Bool)? in
+                guard Self.walletOwnsTransaction(walletId: walletId, transaction: tx) else {
+                    return nil
+                }
+                return (
+                    txid: tx.txid,
+                    spendsWalletInput: Self.walletFundedTransaction(
+                        walletId: walletId,
+                        transaction: tx
+                    )
+                )
+            }
+            return (txids, false)
+        }
+    }
+
     /// Look up the network for a wallet id by reading the owning
     /// `PersistentWallet` row. Returns `nil` if the wallet row
     /// doesn't exist or its network hasn't been resolved yet.
@@ -7451,4 +7696,136 @@ private func getCoreTxRecordFreeCallback(
     UnsafeMutablePointer(mutating: txBytes).deallocate()
     _ = context
     _ = txBytesLen
+}
+
+/// C shim for `on_list_wallet_core_txids_fn`. Returns a contiguous
+/// `count * 32` byte buffer of raw txids in wire order plus a parallel
+/// `count`-byte flags buffer (bit `0x01` = the wallet funded the
+/// transaction).
+private func listWalletCoreTxidsCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    outTxids: UnsafeMutablePointer<UnsafePointer<UInt8>?>?,
+    outFlags: UnsafeMutablePointer<UnsafePointer<UInt8>?>?,
+    outCount: UnsafeMutablePointer<UInt>?
+) -> Int32 {
+    // Non-zero on a missing argument: reporting success here would hand Rust
+    // an empty enumeration that it cannot tell apart from a wallet with no
+    // transactions.
+    guard let context = context,
+          let walletIdPtr = walletIdPtr,
+          let outTxids = outTxids,
+          let outFlags = outFlags,
+          let outCount = outCount else {
+        return -1
+    }
+
+    outTxids.pointee = nil
+    outFlags.pointee = nil
+    outCount.pointee = 0
+
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+    let (txids, errored) = handler.walletCoreTxids(walletId: walletId)
+    guard !errored else {
+        return -1
+    }
+    guard !txids.isEmpty else {
+        return 0
+    }
+
+    let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: txids.count * 32)
+    let flags = UnsafeMutablePointer<UInt8>.allocate(capacity: txids.count)
+    // Pack only well-formed txids and report how many were packed. Skipping a
+    // malformed one while still reporting `txids.count` would leave its slot
+    // uninitialized and hand Rust 32 bytes of garbage as a txid.
+    var packed = 0
+    for row in txids where row.txid.count == 32 {
+        row.txid.copyBytes(to: buffer.advanced(by: packed * 32), count: 32)
+        flags.advanced(by: packed).pointee = row.spendsWalletInput ? 0x01 : 0x00
+        packed += 1
+    }
+    guard packed > 0 else {
+        buffer.deallocate()
+        flags.deallocate()
+        return 0
+    }
+    outTxids.pointee = UnsafePointer(buffer)
+    outFlags.pointee = UnsafePointer(flags)
+    outCount.pointee = UInt(packed)
+    return 0
+}
+
+/// Paired free callback for `on_list_wallet_core_txids_free_fn`.
+private func listWalletCoreTxidsFreeCallback(
+    context: UnsafeMutableRawPointer?,
+    txids: UnsafePointer<UInt8>?,
+    flags: UnsafePointer<UInt8>?,
+    _ count: UInt
+) {
+    if let txids = txids {
+        UnsafeMutablePointer(mutating: txids).deallocate()
+    }
+    if let flags = flags {
+        UnsafeMutablePointer(mutating: flags).deallocate()
+    }
+    _ = context
+}
+
+/// C shim for `on_persist_dashpay_payments_fn`. Copies every
+/// `DashpayPaymentPersistEntryFFI` row into a Swift-owned
+/// `DashPayPayment` (grouped by owner identity) before invoking the
+/// handler, so the Rust side can drop its backing strings the moment
+/// we return. Rows without a txid pointer are skipped defensively —
+/// the Rust builder documents `txid` as always non-null.
+///
+/// Always returns 0: a missing owner identity parks the group on
+/// `deferredPaymentUpserts` — staged before the round's single save,
+/// with a still-unresolvable owner failing the round — and a commit
+/// failure is reported through the round's `on_changeset_end_fn`
+/// return, so per-batch failure signaling here would be redundant.
+private func persistDashpayPaymentsCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    entriesPtr: UnsafePointer<DashpayPaymentPersistEntryFFI>?,
+    count: UInt
+) -> Int32 {
+    guard let context = context,
+          let walletIdPtr = walletIdPtr else {
+        return 0
+    }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+
+    var entriesByOwner: [Data: [DashPayPayment]] = [:]
+    if count > 0, let entriesPtr = entriesPtr {
+        for i in 0..<Int(count) {
+            let e = entriesPtr[i]
+            guard let txidPtr = e.txid else { continue }
+            var ownerRaw = e.owner_identity_id
+            let ownerId = Swift.withUnsafeBytes(of: &ownerRaw) { Data($0) }
+            var counterpartyRaw = e.counterparty_id
+            let counterpartyId = Swift.withUnsafeBytes(of: &counterpartyRaw) { Data($0) }
+            // Unknown discriminants fall back to `.sent` / `.pending`
+            // rather than dropping the row — same forward-compat
+            // posture as `DashPayPayment.init(ffi:)`.
+            let payment = DashPayPayment(
+                counterpartyId: counterpartyId,
+                amountDuffs: e.amount_duffs,
+                direction: DashPayPaymentDirection(rawValue: e.direction_raw) ?? .sent,
+                status: DashPayPaymentStatus(rawValue: e.status_raw) ?? .pending,
+                txid: String(cString: txidPtr),
+                memo: e.memo.map { String(cString: $0) }
+            )
+            entriesByOwner[ownerId, default: []].append(payment)
+        }
+    }
+    guard !entriesByOwner.isEmpty else { return 0 }
+
+    handler.persistDashpayPayments(walletId: walletId, entriesByOwner: entriesByOwner)
+    return 0
 }

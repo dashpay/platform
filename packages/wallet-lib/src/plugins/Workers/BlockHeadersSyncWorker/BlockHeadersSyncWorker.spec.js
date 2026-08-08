@@ -87,6 +87,9 @@ describe('BlockHeadersSyncWorker', () => {
             state: {
               chainHeight,
               lastSyncedHeaderHeight: -1,
+              blockHeaders: [],
+              headersMetadata: new Map(),
+              hashesByHeight: new Map(),
             },
             updateLastSyncedHeaderHeight: sinon.spy(),
             updateChainHeight: sinon.spy(),
@@ -112,7 +115,7 @@ describe('BlockHeadersSyncWorker', () => {
       expect(startBlockHeight).to.equal(1);
     });
 
-    it('should return bestBlockHeight - N in case `skipSynchronization` option is present', () => {
+    it('should start at genesis for a new wallet without resumable headers', () => {
       /**
        * Mock options
        */
@@ -130,19 +133,41 @@ describe('BlockHeadersSyncWorker', () => {
 
       storage.getDefaultChainStore().state.chainHeight = 3000;
       startBlockHeight = blockHeadersSyncWorker.getStartBlockHeight();
-      expect(startBlockHeight).to.equal(1000);
+      expect(startBlockHeight).to.equal(1);
     });
 
-    it('should return last synced header height if present', () => {
+    it('should start at genesis for one stored header with a stale positive height', () => {
       const { storage } = blockHeadersSyncWorker;
-      storage.getDefaultChainStore().state.lastSyncedHeaderHeight = 1200;
+      const { state } = storage.getDefaultChainStore();
+      state.blockHeaders = [spvChainHeaders[0]];
+      state.lastSyncedHeaderHeight = 1200;
+
+      const startBlockHeight = blockHeadersSyncWorker.getStartBlockHeight();
+
+      expect(startBlockHeight).to.equal(1);
+    });
+
+    it('should start at genesis for no stored headers with a stale positive height', () => {
+      const { state } = blockHeadersSyncWorker.storage.getDefaultChainStore();
+      state.lastSyncedHeaderHeight = 1200;
+
+      const startBlockHeight = blockHeadersSyncWorker.getStartBlockHeight();
+
+      expect(startBlockHeight).to.equal(1);
+    });
+
+    it('should return last synced header height for a resumable context', () => {
+      const { storage } = blockHeadersSyncWorker;
+      const { state } = storage.getDefaultChainStore();
+      state.blockHeaders = spvChainHeaders.slice(0, 2);
+      state.lastSyncedHeaderHeight = 1200;
 
       const startBlockHeight = blockHeadersSyncWorker.getStartBlockHeight();
 
       expect(startBlockHeight).to.equal(1200);
     });
 
-    it('should return `skipSynchronizationBeforeHeight` value', () => {
+    it('should start at genesis instead of `skipSynchronizationBeforeHeight`', () => {
       const { storage } = blockHeadersSyncWorker;
       storage.application.syncOptions = {
         skipSynchronizationBeforeHeight: 1300,
@@ -150,12 +175,14 @@ describe('BlockHeadersSyncWorker', () => {
 
       const startBlockHeight = blockHeadersSyncWorker.getStartBlockHeight();
 
-      expect(startBlockHeight).to.equal(1300);
+      expect(startBlockHeight).to.equal(1);
     });
 
-    it('should return last synced header if it\'s greater than `skipSynchronizationBeforeHeight` value', () => {
+    it('should return resumable header height when it is greater than the unsafe skip', () => {
       const { storage } = blockHeadersSyncWorker;
-      storage.getDefaultChainStore().state.lastSyncedHeaderHeight = 1300;
+      const { state } = storage.getDefaultChainStore();
+      state.blockHeaders = spvChainHeaders.slice(0, 2);
+      state.lastSyncedHeaderHeight = 1300;
       storage.application.syncOptions = {
         skipSynchronizationBeforeHeight: 1200,
       };
@@ -165,16 +192,45 @@ describe('BlockHeadersSyncWorker', () => {
       expect(startBlockHeight).to.equal(1300);
     });
 
-    it('should return `skipSynchronizationBeforeHeight` value if it\'s greater than last synced header height', () => {
+    it('should return resumable header height when the unsafe skip is greater', () => {
       const { storage } = blockHeadersSyncWorker;
-      storage.getDefaultChainStore().state.lastSyncedHeaderHeight = 1200;
+      const { state } = storage.getDefaultChainStore();
+      state.blockHeaders = spvChainHeaders.slice(0, 2);
+      state.lastSyncedHeaderHeight = 1200;
       storage.application.syncOptions = {
         skipSynchronizationBeforeHeight: 1300,
       };
 
       const startBlockHeight = blockHeadersSyncWorker.getStartBlockHeight();
 
-      expect(startBlockHeight).to.equal(1300);
+      expect(startBlockHeight).to.equal(1200);
+    });
+
+    it('should start at genesis when the implied first header height is negative', () => {
+      const { state } = blockHeadersSyncWorker.storage.getDefaultChainStore();
+      state.blockHeaders = spvChainHeaders.slice(0, 2);
+      state.lastSyncedHeaderHeight = 0;
+
+      const startBlockHeight = blockHeadersSyncWorker.getStartBlockHeight();
+
+      expect(startBlockHeight).to.equal(1);
+    });
+
+    it('should reject invalid persisted header state types and ranges', () => {
+      const { state } = blockHeadersSyncWorker.storage.getDefaultChainStore();
+
+      state.blockHeaders = {};
+      expect(() => blockHeadersSyncWorker.getStartBlockHeight())
+        .to.throw('Invalid block headers');
+
+      state.blockHeaders = [];
+      state.lastSyncedHeaderHeight = Number.MAX_SAFE_INTEGER + 1;
+      expect(() => blockHeadersSyncWorker.getStartBlockHeight())
+        .to.throw('Invalid last synced header height');
+
+      state.lastSyncedHeaderHeight = -2;
+      expect(() => blockHeadersSyncWorker.getStartBlockHeight())
+        .to.throw('Invalid last synced header height');
     });
   });
 
@@ -252,7 +308,9 @@ describe('BlockHeadersSyncWorker', () => {
 
     it('should throw error if start block height is greater than best block height', async () => {
       const { storage } = blockHeadersSyncWorker;
-      storage.getDefaultChainStore().state.lastSyncedHeaderHeight = 2000;
+      const { state } = storage.getDefaultChainStore();
+      state.blockHeaders = spvChainHeaders.slice(0, 2);
+      state.lastSyncedHeaderHeight = 2000;
 
       await expect(blockHeadersSyncWorker.onStart())
         .to.be.rejectedWith('Start block height 2000 is greater than best block height 1000');

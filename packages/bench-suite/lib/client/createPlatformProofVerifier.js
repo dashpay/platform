@@ -1,6 +1,60 @@
 const DAPIAddress = require('@dashevo/dapi-client/lib/dapiAddressProvider/DAPIAddress');
 
 /**
+ * `WasmSdkError.name` for a transition family whose proof cannot bind the
+ * execution of one specific transition.
+ *
+ * @type {string}
+ */
+const EXECUTION_NOT_PROVED = 'ExecutionNotProved';
+
+/**
+ * Read the error's kind without assuming it survives the WASM boundary.
+ *
+ * @param {*} error
+ * @returns {string|undefined}
+ */
+function readErrorName(error) {
+  try {
+    return error && error.name;
+  } catch (readError) {
+    // A WASM error object whose memory is already released throws on access.
+    return undefined;
+  }
+}
+
+/**
+ * Convert a WASM SDK error into a plain `Error`.
+ *
+ * These are wasm-bindgen class instances rather than `Error`s, and they carry
+ * their kind and message on prototype getters. Mocha runs the suite in
+ * parallel workers and serializes a failure by copying the error's own
+ * properties, so an unconverted one arrives with nothing in it and the run
+ * reports a test that failed for no stated reason.
+ *
+ * @param {*} error
+ * @returns {Error}
+ */
+function toReportableError(error) {
+  if (error instanceof Error) {
+    return error;
+  }
+
+  const name = readErrorName(error) || 'UnknownError';
+  let message;
+  try {
+    message = (error && error.message) || String(error);
+  } catch (readError) {
+    message = 'error details are unavailable';
+  }
+
+  const reportable = new Error(`${name}: ${message}`);
+  reportable.name = name;
+
+  return reportable;
+}
+
+/**
  * Shared EvoSDK instance. One per process: the verifier is stateless and the
  * underlying WASM SDK multiplexes concurrent requests.
  *
@@ -134,17 +188,25 @@ async function getEvoSdkForNetwork(callNetwork) {
 
 /**
  * Create an `IPlatformProofVerifier` for `Dash.Client`, backed by the
- * Rust/WASM SDK, which authenticates every result end to end: GroveDB proof
- * verification plus the Tenderdash quorum signature over the root hash.
+ * Rust/WASM SDK. Its proved re-query authenticates an execution result or
+ * affected-state snapshot end to end: GroveDB proof verification plus the
+ * Tenderdash quorum signature over the root hash.
  *
  * Verification re-queries Platform through the WASM SDK's proved paths rather
- * than re-checking the exact bytes the JS transport received: the returned
- * data (and the absence of a consensus error) is quorum-authenticated, so the
- * unverified DAPI response is never the source of truth.
+ * than re-checking the exact bytes the JS transport received. Execution proof
+ * is required wherever the transition family can produce one. The families
+ * that cannot fall back to a height-pinned snapshot of the affected state,
+ * which is not evidence that this exact transition executed; the caller
+ * handles consensus errors from the original response before invoking this
+ * verifier.
  *
+ * @param {Object} [dependencies]
+ * @param {Function} [dependencies.getEvoSdkForNetwork]
  * @returns {Object} IPlatformProofVerifier
  */
-function createPlatformProofVerifier() {
+function createPlatformProofVerifier({
+  getEvoSdkForNetwork: loadEvoSdkForNetwork = getEvoSdkForNetwork,
+} = {}) {
   return {
     /**
      * @param {Object} input
@@ -153,16 +215,31 @@ function createPlatformProofVerifier() {
      * @returns {Promise<void>}
      */
     async verifyStateTransitionResult({ serializedStateTransition, network }) {
-      const { evo, sdk } = await getEvoSdkForNetwork(network);
+      const { evo, sdk } = await loadEvoSdkForNetwork(network);
 
       const stateTransition = evo.StateTransition.fromBytes(
         new Uint8Array(serializedStateTransition),
       );
 
-      // Waits on the proved endpoint and verifies the execution proof and
-      // quorum signature inside the Rust SDK; throws unless the transition
-      // was executed (or yielded a consensus error, which also throws).
-      await sdk.stateTransitions.waitForResponse(stateTransition);
+      try {
+        await sdk.stateTransitions.waitForResponse(stateTransition);
+      } catch (error) {
+        // Balance top-ups, credit transfers and withdrawals, address funds
+        // movements, shields and no-history token operations have no proof
+        // that binds one specific transition, so the SDK reports that the
+        // execution was not proved rather than that anything failed. Their
+        // authenticated affected-state snapshot is the strongest result
+        // available; every other family keeps failing closed here.
+        if (readErrorName(error) !== EXECUTION_NOT_PROVED) {
+          throw toReportableError(error);
+        }
+
+        try {
+          await sdk.stateTransitions.waitForAffectedState(stateTransition);
+        } catch (affectedStateError) {
+          throw toReportableError(affectedStateError);
+        }
+      }
     },
 
     /**
@@ -183,7 +260,7 @@ function createPlatformProofVerifier() {
         );
       }
 
-      const { sdk } = await getEvoSdkForNetwork(network);
+      const { sdk } = await loadEvoSdkForNetwork(network);
 
       const history = await sdk.contracts.getHistory({
         dataContractId: new Uint8Array(contractId),

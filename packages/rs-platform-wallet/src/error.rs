@@ -93,6 +93,95 @@ pub enum PlatformWalletError {
     #[error("Transaction building failed: {0}")]
     TransactionBuild(String),
 
+    /// The address handed to [`CoreWallet::sign_message`] cannot be a signing
+    /// target at all: unparseable, encoded for a different network than the
+    /// wallet's, or not P2PKH. A caller-input error — the classic Dash
+    /// signed-message format recovers a public key and compares its
+    /// `PubkeyHash` payload, so P2SH / SegWit payloads have no defined
+    /// verification and are refused rather than signed into something no
+    /// verifier accepts. `reason` names which of the three it was.
+    ///
+    /// [`CoreWallet::sign_message`]: crate::wallet::core::CoreWallet::sign_message
+    #[error("message-signing address {address:?} is unusable: {reason}")]
+    MessageSigningAddressInvalid { address: String, reason: String },
+
+    /// The bytes handed to `core_wallet_sign_message` as the message are not
+    /// valid UTF-8, so there is no string to sign. Caller input, exactly like
+    /// [`Self::MessageSigningAddressInvalid`] — and given its own variant for
+    /// the same reason the address case has one: these errors exist to name
+    /// *which argument* the caller must fix, and reusing the address variant
+    /// for a message problem would render "address … is unusable" over a
+    /// perfectly good address.
+    ///
+    /// Only reachable across the FFI, where the message arrives as raw bytes; a
+    /// Rust or Kotlin caller cannot construct an ill-formed `&str`/`String`.
+    /// `address` is the (already validated as UTF-8) signing target, carried
+    /// for log correlation like every sibling — the *message* is what failed.
+    #[error("the message to sign for address {address} is not valid UTF-8: {reason}")]
+    MessageSigningMessageInvalid { address: String, reason: String },
+
+    /// [`CoreWallet::sign_message`] holds no usable signing key for a
+    /// well-formed P2PKH address on the right network. Two producers:
+    ///
+    /// * **Address resolution** — the address belongs to no *signable* funds
+    ///   account (BIP44 / BIP32 / CoinJoin / DashPay-receiving), or it belongs
+    ///   to a watch-only DashPay **external** account (a contact's receiving
+    ///   address, whose keys we never had). No signer is invoked.
+    /// * **The signer itself** — the backend reported its key missing, stamped
+    ///   as the reserved [`SIGNER_KEY_UNAVAILABLE_PREFIX`] at position 0 of its
+    ///   error rendering (`MnemonicResolverCoreSigner::NotFound` in
+    ///   production: the keychain holds no mnemonic for the wallet).
+    ///   `sign_message` checks that marker BEFORE prepending any context, so
+    ///   the condition stays typed across the FFI.
+    ///
+    /// Either way the conclusion is the same — no key can sign for this
+    /// address as things stand — so hosts route both to key repair / address
+    /// correction (FFI code 31). Carries no retry value as-is.
+    ///
+    /// [`CoreWallet::sign_message`]: crate::wallet::core::CoreWallet::sign_message
+    #[error(
+        "no signing key for message-signing address {address}: it belongs to no \
+         signable funds account of this wallet"
+    )]
+    MessageSigningKeyUnavailable { address: String },
+
+    /// [`CoreWallet::sign_message`] resolved a derivation path for the address
+    /// but could not produce a signature over it. Four causes, all carried in
+    /// `reason`: the signer backend does not advertise
+    /// [`SignerMethod::Digest`], so it cannot sign a host-computed digest at
+    /// all and is refused before it is ever invoked; the [`Signer`] itself
+    /// failed (Keystore/Keychain round-trip); the public key it returned does
+    /// not hash to the target address (a path-resolution bug — the guard exists
+    /// so a wrong-key signature can never be handed out as if it were the
+    /// address owner's); or no recovery id in `0..=3` recovers that public key.
+    ///
+    /// The capability refusal shares this variant rather than taking a
+    /// dedicated one because this is the crate's "a path resolved but no
+    /// signature came back" bucket, and because key-wallet folds the very same
+    /// refusal into its ordinary `BuilderError::SigningFailed`. It is
+    /// unreachable with any signer that ships today — the production mnemonic
+    /// resolver advertises `Digest` — so it does not warrant a new FFI code and
+    /// the host mirror-enum churn that follows one.
+    ///
+    /// Deliberately NOT given a dedicated FFI code: [`Signer::Error`] is
+    /// generic and bounded only by `Display`, so what lands here cannot be
+    /// classified structurally and falls through to `ErrorUnknown`. The one
+    /// signer failure with a typed meaning — a key-unavailable rendering with
+    /// [`SIGNER_KEY_UNAVAILABLE_PREFIX`] at position 0 — never reaches this
+    /// variant: `sign_message` promotes it to
+    /// [`MessageSigningKeyUnavailable`] (FFI code 31) before any context
+    /// string is composed. See the `MessageSigningFailed` arm's NOTE in
+    /// `platform-wallet-ffi`'s error conversion.
+    ///
+    /// [`MessageSigningKeyUnavailable`]: Self::MessageSigningKeyUnavailable
+    /// [`Signer::Error`]: key_wallet::signer::Signer::Error
+    ///
+    /// [`CoreWallet::sign_message`]: crate::wallet::core::CoreWallet::sign_message
+    /// [`Signer`]: key_wallet::signer::Signer
+    /// [`SignerMethod::Digest`]: key_wallet::signer::SignerMethod::Digest
+    #[error("message signing failed for address {address}: {reason}")]
+    MessageSigningFailed { address: String, reason: String },
+
     /// Atomic Core finalization could not select enough unreserved funds.
     #[error(
         "insufficient unreserved Core funds on {account_type:?} account {account_index}: \
@@ -101,6 +190,27 @@ pub enum PlatformWalletError {
     CoreInsufficientFunds {
         account_type: AccountTypePreference,
         account_index: u32,
+        available: Option<u64>,
+        required: Option<u64>,
+    },
+
+    /// Atomic Core finalization could not select enough unreserved funds for a
+    /// POOLED build (more than one funding source offered).
+    ///
+    /// Separate from [`CoreInsufficientFunds`] because `available`/`required`
+    /// describe the UNION of every offered source: attributing them to one
+    /// account would misreport the figures and could name a source that
+    /// contributed nothing — or that the wallet does not even have. FFI maps
+    /// both variants to the same host-facing insufficient-funds code, so hosts
+    /// classify a shortfall identically either way.
+    ///
+    /// [`CoreInsufficientFunds`]: Self::CoreInsufficientFunds
+    #[error(
+        "insufficient unreserved Core funds across the pooled funding sources \
+         {sources:?}: available {available:?}, required {required:?}"
+    )]
+    CorePooledInsufficientFunds {
+        sources: Vec<AccountTypePreference>,
         available: Option<u64>,
         required: Option<u64>,
     },
@@ -166,6 +276,16 @@ pub enum PlatformWalletError {
 
     #[error("Address operation failed: {0}")]
     AddressOperation(String),
+
+    /// A caller passed an argument this API cannot act on — as opposed to a
+    /// lookup that found nothing. Kept distinct from [`WalletNotFound`] so a
+    /// host is told to fix its input rather than that the wallet is missing;
+    /// FFI maps it to the existing invalid-parameter code, which is what the
+    /// FFI boundary already returns for the same class of rejection.
+    ///
+    /// [`WalletNotFound`]: Self::WalletNotFound
+    #[error("Invalid parameter: {0}")]
+    InvalidParameter(String),
 
     #[error(
         "no selectable inputs: only funded addresses appear as destinations \
@@ -329,6 +449,16 @@ pub enum PlatformWalletError {
 
     #[error("Shielded sync failed: {0}")]
     ShieldedSyncFailed(String),
+
+    /// A background sync pass did not drain within its quiesce budget, so
+    /// the operation that required a "no more persister stores" barrier
+    /// (manager shutdown, `clear_shielded`, a sync-state reset) aborted
+    /// fail-closed. The wedged pass may still fire persistence / event
+    /// callbacks; the host must keep its callback context alive and must
+    /// not commit any wipe it was about to pair with this call.
+    /// FFI mirror: `PlatformWalletFFIResultCode::ErrorShutdownIncomplete`.
+    #[error("Background sync did not quiesce: {0}")]
+    ShutdownIncomplete(String),
 
     #[error("Shielded commitment tree update failed: {0}")]
     ShieldedTreeUpdateFailed(String),
@@ -509,6 +639,119 @@ pub fn promote_address_nonce_error(error: &dash_sdk::Error) -> Option<PlatformWa
 /// [`promote_address_nonce_error`] for the transfer / withdrawal call sites.
 pub fn promote_address_nonce_error_or_sdk(error: dash_sdk::Error) -> PlatformWalletError {
     promote_address_nonce_error(&error).unwrap_or(PlatformWalletError::Sdk(error))
+}
+
+/// The reserved machine prefix that a typed `SigningKeyUnavailable` signer
+/// completion stamps at the **start** of its `ProtocolError::Generic` payload.
+/// Also stamped at position 0 of `MnemonicResolverCoreSigner::NotFound`'s
+/// `Display`, which is how a missing key stays recognizable across key-wallet's
+/// `Signer` surface (whose error type is only `Display`) — `sign_message`
+/// checks this prefix on the signer's rendering before adding any context and
+/// promotes the failure to the typed
+/// [`PlatformWalletError::MessageSigningKeyUnavailable`].
+///
+/// Canonically owned by the signer-completion boundary as
+/// [`rs_sdk_ffi::DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX`]. It is mirrored
+/// here — rather than imported — because this pure-logic crate must recognize
+/// the marker *before* an operation wrapper stringifies the underlying SDK
+/// error, yet is deliberately kept free of any dependency on the FFI crate.
+/// The two definitions are pinned byte-identical by a compile-time assertion in
+/// `platform-wallet-ffi` (`src/error.rs`), so any drift is a build failure
+/// rather than a silent code-31 regression (dashpay/platform#4183 review).
+pub const SIGNER_KEY_UNAVAILABLE_PREFIX: &str = "signer_error:key_unavailable: ";
+
+/// Preserve a structured `SigningKeyUnavailable` signer failure through an
+/// operation wrapper that would otherwise flatten it to a string and discard
+/// the typed discriminator the FFI boundary restores to code 31
+/// (`ErrorSigningKeyUnavailable`).
+///
+/// Several public signing paths (token transfer, DPNS registration, document
+/// replace, …) wrap every SDK failure in an operation-specific string variant
+/// (`TokenError`, `InvalidIdentityData`, …). A genuine key-unavailable
+/// completion still leaves the reserved prefix inside those strings, but the
+/// resulting variant reaches the FFI's `_` arm and flattens to
+/// `ErrorUnknown`, losing the host's key-repair routing. This helper keeps the
+/// failure verbatim under [`PlatformWalletError::Sdk`] — the one shape
+/// `From<PlatformWalletError> for PlatformWalletFFIResult` maps to code 31 —
+/// and hands every other error to `wrap`, the caller's stringifying wrapper,
+/// unchanged.
+///
+/// The check is **structural and position-0 only** (the marker must start the
+/// nested `ProtocolError::Generic` payload); it is never a substring sniff of
+/// the rendered error, so a foreign signer that merely mentions the token is
+/// not misrouted into key repair (dashpay/platform#4183 review). This mirrors
+/// the guarded restore already performed by the FFI conversion.
+pub fn preserve_signer_key_unavailable_or(
+    error: dash_sdk::Error,
+    wrap: impl FnOnce(dash_sdk::Error) -> PlatformWalletError,
+) -> PlatformWalletError {
+    if matches!(
+        &error,
+        dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(s))
+            if s.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX)
+    ) {
+        PlatformWalletError::Sdk(error)
+    } else {
+        wrap(error)
+    }
+}
+
+#[cfg(test)]
+mod signer_key_unavailable_tests {
+    use super::*;
+
+    /// A structured key-unavailable signer completion (the reserved marker at
+    /// the start of a `ProtocolError::Generic` payload) is preserved verbatim
+    /// under `Sdk` so the FFI boundary can restore code 31 — the operation
+    /// wrapper is NOT applied.
+    #[test]
+    fn preserves_structured_key_unavailable_error() {
+        let error = dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(format!(
+            "{SIGNER_KEY_UNAVAILABLE_PREFIX}no private key stored for 02abcd"
+        )));
+        let mapped = preserve_signer_key_unavailable_or(error, |e| {
+            PlatformWalletError::TokenError(format!("Token transfer failed: {e}"))
+        });
+        match mapped {
+            PlatformWalletError::Sdk(dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(s))) => {
+                assert!(s.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX));
+            }
+            other => panic!("expected preserved Sdk(Protocol(Generic)), got {other:?}"),
+        }
+    }
+
+    /// An unrelated SDK error is handed to the caller's wrapper unchanged.
+    #[test]
+    fn wraps_unrelated_error() {
+        let error = dash_sdk::Error::Generic("boom".to_string());
+        let mapped = preserve_signer_key_unavailable_or(error, |e| {
+            PlatformWalletError::TokenError(format!("Token transfer failed: {e}"))
+        });
+        match mapped {
+            PlatformWalletError::TokenError(msg) => {
+                assert!(msg.contains("Token transfer failed"));
+                assert!(msg.contains("boom"));
+            }
+            other => panic!("expected wrapped TokenError, got {other:?}"),
+        }
+    }
+
+    /// The marker only counts at position 0: a generic error that merely
+    /// mentions it mid-message is wrapped, never preserved as the typed
+    /// key-unavailable shape (dashpay/platform#4183 review).
+    #[test]
+    fn substring_marker_is_not_preserved() {
+        let error = dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(format!(
+            "remote signer reported: {SIGNER_KEY_UNAVAILABLE_PREFIX}oops"
+        )));
+        let mapped = preserve_signer_key_unavailable_or(error, |e| {
+            PlatformWalletError::InvalidIdentityData(format!("Failed to replace document: {e}"))
+        });
+        assert!(
+            matches!(mapped, PlatformWalletError::InvalidIdentityData(_)),
+            "a mid-message marker must be wrapped, not preserved"
+        );
+    }
 }
 
 #[cfg(test)]

@@ -4,14 +4,15 @@ pub mod accessors;
 pub mod dashpay_sync;
 pub mod identity_sync;
 mod load;
-mod loop_cancel;
 pub mod platform_address_sync;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
 mod wallet_lifecycle;
 
 use std::sync::Arc;
+use std::time::Duration;
 
+use dash_async::{ShutdownReport, ThreadRegistry, WorkerConfig, WorkerStatus, DEFAULT_JOIN_BUDGET};
 use tokio::sync::{Notify, RwLock};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -31,6 +32,288 @@ use crate::wallet::core::BalanceUpdateHandler;
 use crate::wallet::identity::network::DashPayPaymentHandler;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
+
+/// Registry key identifying each background worker the manager joins at
+/// shutdown.
+///
+/// The four periodic sync coordinators run their `!Send` loops on OS
+/// threads the shared [`ThreadRegistry`] spawns and owns end to end: it
+/// installs each loop's cancellation token, and
+/// [`shutdown`](PlatformWalletManager::shutdown) cancels and joins them —
+/// surfacing a panicked loop — before the host drops the tokio runtime.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum WalletWorker {
+    /// Platform-address (BLAST / DIP-17) balance sync coordinator.
+    PlatformAddressSync,
+    /// Per-identity token-state sync coordinator.
+    IdentitySync,
+    /// DashPay (contact requests + profiles) sync coordinator.
+    DashPaySync,
+    /// Shielded (Orchard) note sync coordinator.
+    ShieldedSync,
+    /// SPV runtime — the network event source feeding every persister-
+    /// visible wallet event. Not a registry worker: `SpvRuntime::stop`
+    /// owns its (bounded, abort-escalating) join, and
+    /// [`shutdown`](PlatformWalletManager::shutdown) folds the stop
+    /// outcome into the report so a failed SPV stop can never hide
+    /// behind a clean coordinator join.
+    Spv,
+    /// DashPay payment-hook tasks spawned by `DashPayPaymentHandler` in
+    /// response to SPV wallet events. Not a registry worker: the
+    /// handler's own tracker closes admission and joins the admitted
+    /// tasks; its drain outcome is folded into the report because those
+    /// tasks clone the FFI persister and can fire host callbacks.
+    DashPayPayments,
+    /// The wallet-event adapter task — the sink coordinator stores feed
+    /// into. Not a registry worker: joined by
+    /// [`shutdown`](PlatformWalletManager::shutdown) under a bounded
+    /// budget, with the live handle re-parked on timeout so a destroy
+    /// retry can re-join it.
+    EventAdapter,
+}
+
+// `dash_async::RegistryKey` is a blanket impl over
+// `Copy + Ord + Eq + Debug + Send + Sync + 'static`, which the derives above
+// satisfy — no explicit impl needed.
+
+/// Deadline for a coordinator `quiesce()` drain — how long we wait for an
+/// in-flight pass (its `is_syncing` slot) to fall before giving up and
+/// reporting the coordinator non-clean. Without a bound, a pass wedged in
+/// a network / persister / host-callback await blocks `shutdown()` (and
+/// therefore the FFI's `destroy`) forever, *before* the registry's
+/// per-worker join budget ever gets a chance to run. A timed-out drain is
+/// surfaced as [`WorkerStatus::Timeout`](dash_async::WorkerStatus::Timeout)
+/// so `all_clean()` fails and the host keeps its callback context alive.
+pub(crate) const COORDINATOR_DRAIN_BUDGET: Duration = Duration::from_secs(10);
+
+/// Deadline for draining the DashPay payment-hook tasks at shutdown.
+/// After it lapses each straggler is aborted and given
+/// [`PAYMENT_ABORT_GRACE`] to confirm termination; anything still alive
+/// is kept tracked and reported non-clean.
+pub(crate) const PAYMENT_DRAIN_BUDGET: Duration = Duration::from_secs(10);
+
+/// Post-abort confirmation grace for one payment-hook task. An abort only
+/// takes effect at the task's next await point, so a task stuck inside a
+/// synchronous persister call cannot be interrupted — after this grace it
+/// is left tracked (for a retry to re-join) and reported non-clean.
+pub(crate) const PAYMENT_ABORT_GRACE: Duration = Duration::from_secs(1);
+
+/// Deadline for joining the wallet-event adapter task at shutdown. The
+/// adapter exits promptly on cancellation; the bound exists so a persister
+/// `store` it is blocked in cannot hang `destroy`. On timeout the live
+/// handle is re-parked so a destroy retry re-joins it, and the report
+/// carries [`WorkerStatus::Timeout`](dash_async::WorkerStatus::Timeout).
+const EVENT_ADAPTER_JOIN_BUDGET: Duration = Duration::from_secs(10);
+
+/// RAII holder for a coordinator's `is_syncing` slot: clears the flag on
+/// drop, **including panic unwind out of a pass body**. Every pass must
+/// hold one of these instead of storing `false` manually — a panicking
+/// pass that leaves `is_syncing` latched would wedge `quiesce()`'s drain
+/// until its budget lapses on every subsequent teardown.
+pub(crate) struct SyncSlotGuard<'a>(pub(crate) &'a std::sync::atomic::AtomicBool);
+
+impl Drop for SyncSlotGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, std::sync::atomic::Ordering::Release);
+    }
+}
+
+/// Sync-pass admission gate shared by all four coordinators.
+///
+/// A pass claims its coordinator's `is_syncing` slot and then checks this
+/// gate; when the gate is closed it releases the slot and bails without
+/// touching any state. The gate is what turns "no pass is in flight right
+/// now" into "no pass is in flight *and none can start*", which is the
+/// barrier Clear / reset / shutdown need before they mutate or free the
+/// state a pass would touch.
+///
+/// Four independent reasons close it, deliberately kept apart:
+/// - an active drain ([`drain_pass`]) — the drain **counts as a holder
+///   from its first instruction**, so overlapping drains keep the gate
+///   shut for each other (see the race note on [`GateBookkeeping::holds`]),
+/// - a live [`QuiesceGuard`] holder — a caller that drained and is still
+///   mutating; the gate reopens when the last hold drops,
+/// - the latch — a drain that timed out leaves the gate stuck closed with
+///   no holder, so the wedged pass cannot be followed by a fresh one; the
+///   next *successful* drain clears it,
+/// - [`seal`](Self::seal) — terminal, set by
+///   [`shutdown`](PlatformWalletManager::shutdown); never reopens, so a
+///   direct `sync_now` that was already dispatched on a host thread
+///   cannot start a fresh pass after the drain concluded and the FFI
+///   freed the callback context.
+#[derive(Default)]
+pub(crate) struct QuiesceGate {
+    /// The single flag every pass reads — one atomic load on the hot path
+    /// instead of taking `bookkeeping`. Only ever written while holding
+    /// that lock, so it is always consistent with the state below.
+    closed: std::sync::atomic::AtomicBool,
+    /// Serializes every transition. Without it, a guard dropping (reopen)
+    /// can interleave with another caller closing + taking a hold, and the
+    /// stale reopen wins — leaving admission open under a live holder.
+    /// Held for a handful of instructions and never across an `.await`.
+    bookkeeping: std::sync::Mutex<GateBookkeeping>,
+}
+
+#[derive(Default)]
+struct GateBookkeeping {
+    /// Live [`QuiesceGuard`]s — including every drain still in flight,
+    /// which takes its hold at [`drain_pass`] entry rather than after its
+    /// final `is_syncing` observation. The early hold is load-bearing:
+    /// were a drain not counted until it finished, a concurrent holder's
+    /// drop could reopen the gate in the window between the drain's last
+    /// `is_syncing` load and its own hold, letting a direct sync claim
+    /// the slot and pass the gate check — and the drain would then return
+    /// "success" to a caller about to wipe state under that live pass.
+    holds: usize,
+    /// A drain timed out with the pass still holding `is_syncing`; keeps
+    /// the gate closed with no holder until a later drain succeeds.
+    latched: bool,
+    /// Terminal close. Wins over everything.
+    sealed: bool,
+}
+
+impl GateBookkeeping {
+    fn should_close(&self) -> bool {
+        self.sealed || self.latched || self.holds > 0
+    }
+}
+
+impl QuiesceGate {
+    /// Whether new sync passes are currently barred.
+    pub(crate) fn is_closed(&self) -> bool {
+        self.closed.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    fn bookkeeping(&self) -> std::sync::MutexGuard<'_, GateBookkeeping> {
+        // The critical sections are straight-line counter updates that
+        // cannot panic, so the lock cannot actually be poisoned.
+        self.bookkeeping
+            .lock()
+            .expect("quiesce gate mutex poisoned")
+    }
+
+    /// Recompute the hot-path flag from the bookkeeping — the ONLY writer
+    /// of `closed`, always under the lock.
+    fn publish_locked(&self, bookkeeping: &GateBookkeeping) {
+        self.closed.store(
+            bookkeeping.should_close(),
+            std::sync::atomic::Ordering::Release,
+        );
+    }
+
+    /// Take a hold, closing the gate. Called at [`drain_pass`] entry (the
+    /// drain itself is a holder) — there is no close-without-hold except
+    /// the timeout latch and the seal.
+    fn hold(&self) -> QuiesceGuard<'_> {
+        let mut bookkeeping = self.bookkeeping();
+        bookkeeping.holds += 1;
+        self.publish_locked(&bookkeeping);
+        QuiesceGuard(self)
+    }
+
+    /// A drain observed the pass fully drained while holding the gate:
+    /// clear any latch left by a previously timed-out drain. The caller
+    /// still holds its guard, so the gate stays closed until that drops.
+    fn drain_succeeded(&self) {
+        let mut bookkeeping = self.bookkeeping();
+        bookkeeping.latched = false;
+        self.publish_locked(&bookkeeping);
+    }
+
+    /// A drain gave up with the pass still holding `is_syncing`: latch the
+    /// gate closed so dropping the drain's own hold cannot reopen it.
+    fn latch_closed(&self) {
+        let mut bookkeeping = self.bookkeeping();
+        bookkeeping.latched = true;
+        self.publish_locked(&bookkeeping);
+    }
+
+    /// Drop a hold, reopening the gate only if nothing else closes it.
+    fn release(&self) {
+        let mut bookkeeping = self.bookkeeping();
+        bookkeeping.holds = bookkeeping.holds.saturating_sub(1);
+        self.publish_locked(&bookkeeping);
+    }
+
+    /// Close the gate permanently. Used by manager shutdown, after which
+    /// no pass may ever start again on this manager instance.
+    pub(crate) fn seal(&self) {
+        let mut bookkeeping = self.bookkeeping();
+        bookkeeping.sealed = true;
+        self.publish_locked(&bookkeeping);
+    }
+}
+
+/// RAII hold on a closed [`QuiesceGate`]: keeps new passes barred for as
+/// long as the holder is mutating state a pass would touch, and reopens
+/// the gate on drop — including `?` early-return and panic unwind.
+///
+/// Without this, `quiesce()` reopened the gate the instant it returned, so
+/// `clear_shielded` / `reset_platform_address_sync_state` ran their wipe
+/// with admission already re-opened: a direct `sync_now` on a host thread
+/// could snapshot pre-wipe state and re-persist it right after the wipe.
+#[must_use = "dropping the guard immediately reopens sync admission, which defeats the barrier"]
+pub(crate) struct QuiesceGuard<'a>(&'a QuiesceGate);
+
+impl Drop for QuiesceGuard<'_> {
+    fn drop(&mut self) {
+        self.0.release();
+    }
+}
+
+/// Shared drain body behind every coordinator's `quiesce*` family: take a
+/// hold on the gate so no new pass can start, cancel the loop, then wait
+/// for the in-flight pass (if any) to release `is_syncing`.
+///
+/// `is_syncing` is held across a pass's persister / host-callback fan-out,
+/// so its falling edge *with the gate closed* is a sound "fully drained,
+/// nothing more will fire" signal. The hold is taken at ENTRY — before the
+/// first `is_syncing` observation — so the gate is closed continuously
+/// from here to the returned guard's drop, and no concurrent holder's
+/// release can open an admission window mid-drain (the race a
+/// close-then-hold-at-the-end sequence has).
+///
+/// Returns a [`QuiesceGuard`] that keeps the gate closed until it drops.
+/// Returns `None` when the pass was still holding `is_syncing` at the
+/// deadline; the gate is latched closed on that path (the wedged pass
+/// must not be followed by a fresh one — a later successful drain clears
+/// the latch) and the caller must fail closed.
+pub(crate) async fn drain_pass<'a>(
+    gate: &'a QuiesceGate,
+    is_syncing: &std::sync::atomic::AtomicBool,
+    stop: impl FnOnce(),
+    budget: Duration,
+) -> Option<QuiesceGuard<'a>> {
+    let guard = gate.hold();
+    stop();
+    let deadline = tokio::time::Instant::now() + budget;
+    while is_syncing.load(std::sync::atomic::Ordering::Acquire) {
+        if tokio::time::Instant::now() >= deadline {
+            // Latch BEFORE the guard drops so there is no instant in
+            // which the gate is open on the timeout path.
+            gate.latch_closed();
+            drop(guard);
+            return None;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    gate.drain_succeeded();
+    Some(guard)
+}
+
+/// Base [`WorkerConfig`] each coordinator starts its loop thread with — the
+/// registry's default managed-join budget ([`DEFAULT_JOIN_BUDGET`]) so a
+/// wedged loop pass surfaces as
+/// [`WorkerStatus::Timeout`](dash_async::WorkerStatus::Timeout) instead of
+/// hanging shutdown forever, and the platform default OS-thread stack. A
+/// coordinator that needs a deeper stack (e.g. DashPay's GroveDB proof
+/// descent) overrides `stack_size` on top of this.
+pub(crate) fn coordinator_worker_config() -> WorkerConfig {
+    WorkerConfig {
+        join_budget: DEFAULT_JOIN_BUDGET,
+        stack_size: None,
+    }
+}
 
 /// Multi-wallet coordinator with SPV sync and event handling.
 ///
@@ -102,13 +385,20 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// is torn down.
     pub(super) event_adapter_cancel: CancellationToken,
     pub(super) event_adapter_join: tokio::sync::Mutex<Option<JoinHandle<()>>>,
+    /// Shared lifecycle registry for the periodic coordinator threads.
+    /// Each coordinator spawns its loop through `registry.start_thread` at
+    /// `start`, handing the registry ownership of the OS thread and its
+    /// cancellation token; [`shutdown`](Self::shutdown) cancels, joins, and
+    /// reports per-worker terminal status.
+    pub(super) registry: Arc<ThreadRegistry<WalletWorker>>,
     /// Host-visible hard sync-fault latch (dashpay/platform#4069). Set
-    /// (and never cleared) by the wallet-event adapter the first time it
-    /// freezes a durable watermark after a persistence `store()` rejection
-    /// or a dropped-event broadcast lag. Poll via
-    /// [`Self::sync_fault_detected`] to surface a "verification failed /
-    /// rescan pending" state rather than re-freezing silently on the next
-    /// launch.
+    /// (and never cleared for this manager instance's lifetime) by the
+    /// wallet-event adapter the first time it freezes a durable watermark
+    /// after a persistence `store()` rejection — the one remaining fault
+    /// trigger; the lossless persistence channel cannot drop or lag events.
+    /// Poll via [`Self::sync_fault_detected`] to surface a "verification
+    /// failed / rescan pending" state rather than re-freezing silently on
+    /// the next launch.
     pub(super) sync_fault: Arc<std::sync::atomic::AtomicBool>,
 }
 
@@ -123,18 +413,24 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         persister: Arc<P>,
         app_handler: Arc<dyn PlatformEventHandler>,
     ) -> Self {
-        // Subscribe to the wallet-event broadcast BEFORE the manager is
-        // wrapped in the shared `Arc<RwLock>` and handed to any producer,
-        // so no event emitted during startup is lost without a `Lagged`
-        // marker (a `broadcast::Receiver` only sees messages sent after its
-        // `subscribe()` — see `run_wallet_event_adapter`'s
-        // subscribe-before-publish note). The receiver is created here,
-        // synchronously, and moved into the adapter task below.
-        let wallet_manager_inner = WalletManager::new(sdk.network);
-        let event_receiver = wallet_manager_inner.subscribe_events();
+        // Take the manager's lossless, unbounded persistence receiver BEFORE
+        // the manager is wrapped in the shared `Arc<RwLock>` and handed to any
+        // producer. Unlike the old broadcast subscription, an
+        // `mpsc::UnboundedReceiver` buffers events emitted during startup
+        // rather than dropping them, so there is no subscribe-before-publish
+        // race and — being unbounded — it can never `Lagged` and freeze the
+        // durable sync watermark (dashpay/platform#4069). The receiver is
+        // taken here, once, and moved into the adapter task below.
+        let mut wallet_manager_inner = WalletManager::new(sdk.network);
+        let event_receiver = wallet_manager_inner
+            .take_persistence_receiver()
+            .expect("persistence receiver is available exactly once on a fresh WalletManager");
         let wallet_manager = Arc::new(RwLock::new(wallet_manager_inner));
         let wallets = Arc::new(RwLock::new(std::collections::BTreeMap::new()));
         let lock_notify = Arc::new(Notify::new());
+        // Shared registry that owns the coordinators' loop-thread join
+        // handles for a clean, panic-aware shutdown join.
+        let registry = ThreadRegistry::<WalletWorker>::new();
 
         // Host-visible hard sync-fault latch (dashpay/platform#4069). The
         // adapter raises it the first time it freezes a durable watermark.
@@ -183,14 +479,19 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let platform_address_sync = Arc::new(PlatformAddressSyncManager::new(
             Arc::clone(&wallets),
             Arc::clone(&event_manager),
+            Arc::clone(&registry),
         ));
         let identity_sync = Arc::new(IdentitySyncManager::new(
             Arc::clone(&sdk),
             Arc::clone(&persister),
+            Arc::clone(&registry),
         ));
         // DashPay sync shares the `wallets` map (not the token
         // registry) so DashPay-only identities sync on every sweep.
-        let dashpay_sync = Arc::new(DashPaySyncManager::new(Arc::clone(&wallets)));
+        let dashpay_sync = Arc::new(DashPaySyncManager::new(
+            Arc::clone(&wallets),
+            Arc::clone(&registry),
+        ));
         #[cfg(feature = "shielded")]
         let shielded_coordinator: Arc<
             RwLock<Option<Arc<crate::wallet::shielded::NetworkShieldedCoordinator>>>,
@@ -199,6 +500,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let shielded_sync = Arc::new(ShieldedSyncManager::new(
             Arc::clone(&event_manager),
             Arc::clone(&shielded_coordinator),
+            Arc::clone(&registry),
         ));
         Self {
             sdk,
@@ -219,18 +521,22 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             persister,
             event_adapter_cancel,
             event_adapter_join: tokio::sync::Mutex::new(Some(event_adapter_join)),
+            registry,
             sync_fault,
         }
     }
 
     /// Whether the wallet-event adapter has frozen a durable sync
-    /// watermark this session (dashpay/platform#4069).
+    /// watermark this manager's lifetime (dashpay/platform#4069).
     ///
-    /// Returns `true` once — and stays `true` for the manager's lifetime
-    /// — after the adapter drops record-bearing events (a broadcast lag)
-    /// or a persistence `store()` is rejected, meaning the persisted
-    /// `syncedHeight` is deliberately held behind the chain tip and a
-    /// rescan is pending on the next launch. Integrators poll this to
+    /// Returns `true` once — and stays `true` for THIS manager instance's
+    /// lifetime (a destroyed-and-recreated manager starts unlatched) —
+    /// after a persistence `store()` was rejected, the one remaining fault
+    /// trigger: the lossless persistence channel cannot drop or lag events,
+    /// so the old broadcast-lag trigger no longer exists. A latch means the
+    /// persisted `syncedHeight` is deliberately held behind the chain tip
+    /// for the affected wallet and a rescan is pending on the next launch.
+    /// Integrators poll this to
     /// surface a hard "verification failed / rescan pending" state instead
     /// of the fault being visible only in error logs. It is intentionally
     /// a coarse, latch-once, all-or-nothing signal (the per-wallet vs.
@@ -375,7 +681,30 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// fails; the host must not commit its own persistence wipe in that case.
     #[cfg(feature = "shielded")]
     pub async fn clear_shielded(&self) -> Result<(), crate::error::PlatformWalletError> {
-        self.shielded_sync_manager.quiesce().await;
+        // Hold the registry's per-key clearing latch across the WHOLE
+        // quiesce -> wipe. While it is up, `ShieldedSyncManager::start`
+        // (and any registry (re)start) is a no-op, so no fresh pass can
+        // slip between the quiesce and the wipe and re-persist notes into
+        // the store `coord.clear()` is about to reset. The guard's Drop
+        // releases the latch on every exit path (including `?` and panic).
+        let _clearing = self.registry.hold_clearing(WalletWorker::ShieldedSync);
+        // Hold sync admission shut for the WHOLE quiesce -> wipe as well.
+        // The clearing latch only bars registry (re)starts; a direct
+        // `sync_now` / `sync_wallet` on a host thread does not consult it,
+        // and a plain `quiesce()` reopens admission the instant it returns
+        // — so such a pass could snapshot the old account set and refill
+        // the commitment tree right after `coord.clear()` reset it. The
+        // guard's Drop reopens admission on every exit path (`?`, panic).
+        let Some(_quiesced) = self.shielded_sync_manager.quiesce_held().await else {
+            // Fail closed: a pass is still holding `is_syncing` after the
+            // drain budget, so wiping the store now would race its
+            // persister fan-out. The host must NOT commit its own wipe.
+            return Err(crate::error::PlatformWalletError::ShutdownIncomplete(
+                "shielded sync pass did not drain within the quiesce budget; \
+                 clear aborted — retry once sync is idle"
+                    .to_string(),
+            ));
+        };
         match self.shielded_coordinator().await {
             Some(coord) => coord.clear().await,
             None => {
@@ -412,7 +741,23 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     pub async fn reset_platform_address_sync_state(
         &self,
     ) -> Result<(), crate::error::PlatformWalletError> {
-        self.platform_address_sync_manager.quiesce().await;
+        // Same two-part exclusion as `clear_shielded`: the registry's
+        // clearing latch bars a loop (re)start, and the held quiesce guard
+        // bars a direct `sync_now` / `sync_wallet` for the whole
+        // quiesce -> reset section. Both Drops run on every exit path.
+        let _clearing = self
+            .registry
+            .hold_clearing(WalletWorker::PlatformAddressSync);
+        let Some(_quiesced) = self.platform_address_sync_manager.quiesce_held().await else {
+            // Fail closed, mirroring `clear_shielded`: resetting the
+            // watermark while a wedged pass still holds `is_syncing`
+            // would let its tail re-write the state this reset clears.
+            return Err(crate::error::PlatformWalletError::ShutdownIncomplete(
+                "platform-address sync pass did not drain within the quiesce budget; \
+                 reset aborted — retry once sync is idle"
+                    .to_string(),
+            ));
+        };
 
         // Snapshot Arc clones under a short read lock; never hold the
         // `wallets` read guard across the per-wallet `.await`s below —
@@ -429,45 +774,425 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         Ok(())
     }
 
-    /// Stop all background tasks and wait for them to exit.
+    /// Stop all background tasks, join their threads, and report how each
+    /// one ended.
     ///
     /// Stops SPV and **quiesces** the periodic coordinators
     /// (`PlatformAddressSyncManager`, `IdentitySyncManager`,
-    /// `DashPaySyncManager`, `ShieldedSyncManager`) — cancelling each
-    /// loop *and draining any in-flight pass to completion*, including
-    /// its persister / host-callback fan-out — then drains the
-    /// wallet-event adapter task.
-    /// Idempotent. Call before dropping the manager when a clean
-    /// shutdown is required (e.g. on app termination); a dirty drop
-    /// simply leaks the tasks until the runtime exits.
+    /// `DashPaySyncManager`, `ShieldedSyncManager`) — cancelling each loop
+    /// *and draining any in-flight pass to completion*, including its
+    /// persister / host-callback fan-out — then **joins** their loop OS
+    /// threads through the shared [`ThreadRegistry`] and finally drains the
+    /// wallet-event adapter task. Idempotent.
     ///
-    /// Ordering matters: SPV is stopped and joined first so it cannot dispatch
-    /// more wallet events. Payment-task admission is then closed and all
-    /// admitted work is joined. A cancel-only `stop()` would let a pass already
-    /// inside `sync_now` keep running and call `persister.store(...)` /
-    /// fire a host completion callback after the FFI's `destroy`
-    /// returned and the host freed the persister / event-handler
-    /// context — a use-after-free. So we `quiesce()` the sync managers
-    /// FIRST (so no further persister store or host callback can start),
-    /// and only THEN cancel + join the event adapter, which is the sink
-    /// those stores feed into.
-    pub async fn shutdown(&self) {
-        if let Err(error) = self.spv_manager.stop().await {
-            tracing::warn!(?error, "SPV shutdown failed");
-        }
+    /// Ordering matters and is fourfold:
+    /// 1. SPV is stopped and joined FIRST so it cannot dispatch more wallet
+    ///    events, then payment-task admission is closed and all admitted
+    ///    DashPay payment-hook work is joined.
+    /// 2. `quiesce()` each coordinator. Cancel-only `stop()` would
+    ///    let a pass already inside `sync_now` keep running and call
+    ///    `persister.store(...)` / fire a host completion callback after
+    ///    the FFI's `destroy` returned and the host freed the persister /
+    ///    event-handler context — a use-after-free.
+    /// 3. `registry.shutdown()` then JOINS the coordinator OS threads.
+    ///    `quiesce`'s `is_syncing` barrier only proves no pass is *in
+    ///    flight*; the detached thread may still be unwinding out of
+    ///    `Handle::block_on`, touching `tokio::time` on a runtime the host
+    ///    is about to drop. Joining guarantees it has fully exited, and
+    ///    surfaces a panicked loop as a non-clean [`WorkerStatus`] rather
+    ///    than silently dropping it.
+    /// 4. The event adapter — the sink those stores feed into — drains
+    ///    LAST.
+    ///
+    /// **Every phase is bounded.** SPV stop owns its own abort-escalating
+    /// join; the payment-hook drain is bounded by `PAYMENT_DRAIN_BUDGET`;
+    /// the coordinator drains run concurrently under
+    /// `COORDINATOR_DRAIN_BUDGET`; the registry join uses each worker's
+    /// join budget; the adapter join is bounded too (its live handle is
+    /// re-parked on timeout so a retry re-joins it). A wedged await
+    /// therefore surfaces as a non-clean report instead of hanging the
+    /// FFI's `destroy` forever.
+    ///
+    /// Returns a [`ShutdownReport`] keyed by [`WalletWorker`] — including
+    /// the non-registry workers [`WalletWorker::Spv`],
+    /// [`WalletWorker::DashPayPayments`], and
+    /// [`WalletWorker::EventAdapter`], so no callback-capable background
+    /// work is excluded from the verdict. Inspect
+    /// [`ShutdownReport::all_clean`] before freeing the host callback
+    /// context. A non-clean status flags a still-live worker or orphan.
+    ///
+    /// [`WorkerStatus`]: dash_async::WorkerStatus
+    pub async fn shutdown(&self) -> ShutdownReport<WalletWorker> {
+        // SPV first: it is the event source feeding everything below, and
+        // its `stop` owns a bounded, abort-escalating join of the run-loop
+        // task. Its outcome lands in the report — a failed stop must not
+        // hide behind a clean coordinator join.
+        let spv_status = match self.spv_manager.stop().await {
+            Ok(()) => WorkerStatus::Ok,
+            Err(error) => {
+                tracing::warn!(?error, "SPV shutdown failed");
+                WorkerStatus::Error(error.to_string())
+            }
+        };
 
-        self.dashpay_payment_handler.quiesce().await;
-        self.platform_address_sync_manager.quiesce().await;
-        self.identity_sync_manager.quiesce().await;
-        self.dashpay_sync_manager.quiesce().await;
+        // Close payment-hook admission and join the admitted tasks —
+        // they clone the FFI persister, so a straggler is exactly the
+        // callback-after-destroy hazard the report exists to catch.
+        let payments_drained = self
+            .dashpay_payment_handler
+            .quiesce_within(PAYMENT_DRAIN_BUDGET)
+            .await;
+
+        // Drain the coordinators concurrently against one shared budget so
+        // the drain phase as a whole is bounded (a wedged pass surfaces as
+        // `Timeout` in the report instead of hanging destroy forever).
+        //
+        // `_sealed_` (not plain `quiesce_within`): shutdown is terminal, so
+        // sync admission must NOT reopen when the drain returns. The FFI
+        // resolves the manager under a shared read guard, so a `sync_now`
+        // dispatched on a host thread can still be between its slot CAS and
+        // its gate check while `destroy` runs; a reopened gate would let it
+        // run a full pass — and fire persister / completion callbacks —
+        // after `destroy` returned and the host freed those contexts.
         #[cfg(feature = "shielded")]
-        self.shielded_sync_manager.quiesce().await;
+        let (pa_drained, id_drained, dp_drained, sh_drained) = tokio::join!(
+            self.platform_address_sync_manager
+                .quiesce_sealed_within(COORDINATOR_DRAIN_BUDGET),
+            self.identity_sync_manager
+                .quiesce_sealed_within(COORDINATOR_DRAIN_BUDGET),
+            self.dashpay_sync_manager
+                .quiesce_sealed_within(COORDINATOR_DRAIN_BUDGET),
+            self.shielded_sync_manager
+                .quiesce_sealed_within(COORDINATOR_DRAIN_BUDGET),
+        );
+        #[cfg(not(feature = "shielded"))]
+        let (pa_drained, id_drained, dp_drained) = tokio::join!(
+            self.platform_address_sync_manager
+                .quiesce_sealed_within(COORDINATOR_DRAIN_BUDGET),
+            self.identity_sync_manager
+                .quiesce_sealed_within(COORDINATOR_DRAIN_BUDGET),
+            self.dashpay_sync_manager
+                .quiesce_sealed_within(COORDINATOR_DRAIN_BUDGET),
+        );
 
-        self.event_adapter_cancel.cancel();
-        if let Some(handle) = self.event_adapter_join.lock().await.take() {
-            if let Err(e) = handle.await {
-                tracing::warn!(error = ?e, "Wallet event adapter task join error");
+        // Hard-join the coordinator loop threads now that every in-flight
+        // pass has drained. This is the barrier `quiesce` cannot give:
+        // it waits for the actual OS thread to terminate before the host
+        // drops the runtime.
+        let mut report = self.registry.shutdown().await;
+
+        // Fold drain timeouts in. A timed-out drain means a pass —
+        // possibly a *direct* `sync_now` running on a host FFI thread the
+        // registry never sees — may still hold `is_syncing` and fire
+        // persister callbacks, so a clean registry join must not mask it.
+        let drains = [
+            (WalletWorker::PlatformAddressSync, pa_drained),
+            (WalletWorker::IdentitySync, id_drained),
+            (WalletWorker::DashPaySync, dp_drained),
+            #[cfg(feature = "shielded")]
+            (WalletWorker::ShieldedSync, sh_drained),
+        ];
+        for (worker, drained) in drains {
+            if !drained {
+                let status = report
+                    .per_worker
+                    .entry(worker)
+                    .or_insert(WorkerStatus::Timeout);
+                if status.is_clean() {
+                    *status = WorkerStatus::Timeout;
+                }
             }
         }
+
+        report.per_worker.insert(WalletWorker::Spv, spv_status);
+        report.per_worker.insert(
+            WalletWorker::DashPayPayments,
+            if payments_drained {
+                WorkerStatus::Ok
+            } else {
+                WorkerStatus::Timeout
+            },
+        );
+
+        // The wallet-event adapter is the sink the coordinators' stores
+        // feed into, so it drains AFTER them. It is a plain tokio task,
+        // not a registry worker; on a join timeout the live handle is
+        // re-parked so a destroy retry can re-join it rather than
+        // silently detaching the task.
+        self.event_adapter_cancel.cancel();
+        let adapter_status = {
+            let mut slot = self.event_adapter_join.lock().await;
+            match slot.take() {
+                None => WorkerStatus::NotRunning,
+                Some(mut handle) => {
+                    match tokio::time::timeout(EVENT_ADAPTER_JOIN_BUDGET, &mut handle).await {
+                        Ok(Ok(())) => WorkerStatus::Ok,
+                        Ok(Err(e)) if e.is_panic() => WorkerStatus::Panicked(e.to_string()),
+                        Ok(Err(e)) => WorkerStatus::Stopped(Some(e.to_string())),
+                        Err(_) => {
+                            tracing::warn!(
+                                "wallet event adapter did not join within {:?}; re-parking",
+                                EVENT_ADAPTER_JOIN_BUDGET
+                            );
+                            *slot = Some(handle);
+                            WorkerStatus::Timeout
+                        }
+                    }
+                }
+            }
+        };
+        report
+            .per_worker
+            .insert(WalletWorker::EventAdapter, adapter_status);
+
+        report
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use dash_async::WorkerStatus;
+
+    use crate::changeset::{
+        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    };
+    use crate::events::{EventHandler, PlatformEventHandler};
+
+    struct NoopPersister;
+    impl PlatformWalletPersistence for NoopPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    struct NoopEventHandler;
+    impl EventHandler for NoopEventHandler {}
+    impl PlatformEventHandler for NoopEventHandler {}
+
+    fn make_manager() -> Arc<PlatformWalletManager<NoopPersister>> {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::new(NoopPersister),
+            Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>,
+        ))
+    }
+
+    /// `shutdown()` joins every started coordinator through the shared
+    /// [`ThreadRegistry`], reports each as cleanly joined, and is
+    /// idempotent — a second call finds nothing running and still reports
+    /// clean. This is the barrier the previous discard-the-handle `start`
+    /// could not give: proof the loop OS threads have terminated before the
+    /// host drops the runtime.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn shutdown_joins_started_coordinators_and_is_idempotent() {
+        let mgr = make_manager();
+        // Empty wallet/identity state, so each coordinator's first pass is a
+        // no-op and no network I/O happens; the point is thread lifecycle.
+        Arc::clone(&mgr.identity_sync_manager).start();
+        Arc::clone(&mgr.platform_address_sync_manager).start();
+        Arc::clone(&mgr.dashpay_sync_manager).start();
+
+        let report = mgr.shutdown().await;
+        assert!(report.all_clean(), "clean shutdown: {report:?}");
+        for worker in [
+            WalletWorker::IdentitySync,
+            WalletWorker::PlatformAddressSync,
+            WalletWorker::DashPaySync,
+        ] {
+            assert_eq!(
+                report.per_worker.get(&worker),
+                Some(&WorkerStatus::Ok),
+                "{worker:?} must join cleanly"
+            );
+        }
+        // The verdict must also cover the non-registry workers: SPV, the
+        // DashPay payment-hook tracker, and the wallet-event adapter. A
+        // report that omitted them could pass `all_clean()` while
+        // callback-capable background work stayed live.
+        for worker in [
+            WalletWorker::Spv,
+            WalletWorker::DashPayPayments,
+            WalletWorker::EventAdapter,
+        ] {
+            assert!(
+                report
+                    .per_worker
+                    .get(&worker)
+                    .is_some_and(WorkerStatus::is_clean),
+                "{worker:?} must be present and clean in the report: {report:?}"
+            );
+        }
+
+        // Second shutdown: the coordinators already joined, so the registry
+        // reports them NotRunning and the report stays clean.
+        let again = mgr.shutdown().await;
+        assert!(again.all_clean(), "idempotent shutdown: {again:?}");
+    }
+
+    /// `reset_platform_address_sync_state` must fail closed when the
+    /// in-flight pass does not drain: resetting watermarks and balances
+    /// under a live pass would let that pass's tail re-persist the state
+    /// the reset just cleared.
+    ///
+    /// It must also leave no lifecycle latch stuck on the failure path —
+    /// the registry's clearing latch is released by its guard's `Drop`, so
+    /// a later retry (or a normal `start`) is not permanently barred.
+    #[tokio::test(start_paused = true)]
+    async fn reset_platform_address_state_fails_closed_on_a_wedged_pass() {
+        let mgr = make_manager();
+
+        // Wedge a pass: take the slot and never release it, as a pass stuck
+        // in a network / persister await would.
+        assert!(mgr.platform_address_sync().wedge_sync_slot_for_test());
+
+        let error = tokio::time::timeout(
+            Duration::from_secs(30),
+            mgr.reset_platform_address_sync_state(),
+        )
+        .await
+        .expect("the reset must be bounded by the drain budget, not hang")
+        .expect_err("a wedged pass must abort the reset");
+        assert!(
+            matches!(
+                error,
+                crate::error::PlatformWalletError::ShutdownIncomplete(_)
+            ),
+            "expected ShutdownIncomplete so the FFI surfaces the typed code, got {error:?}"
+        );
+
+        assert!(
+            !mgr.registry.is_clearing(WalletWorker::PlatformAddressSync),
+            "the clearing latch must be released on the failure path"
+        );
+    }
+
+    /// A concurrent holder's drop must NOT reopen admission while another
+    /// drain is still in flight.
+    ///
+    /// RED against the close-then-hold-at-the-end gate: drain B closed the
+    /// gate but only became a *holder* after its final `is_syncing`
+    /// observation, so holder A dropping in that window stored
+    /// `closed = false` — a direct `sync_now` could then claim the slot,
+    /// pass the gate check, and run a full pass that B's caller (a
+    /// clear/reset about to wipe state) believed was impossible. With the
+    /// hold taken at drain entry, the gate is closed continuously from
+    /// B's first instruction to its guard's drop.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn concurrent_drain_keeps_gate_closed_across_another_holders_drop() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let gate = Arc::new(QuiesceGate::default());
+        let is_syncing = Arc::new(AtomicBool::new(false));
+
+        // Holder A: a completed drain (idle coordinator) holding its guard.
+        let guard_a = drain_pass(&gate, &is_syncing, || {}, Duration::from_secs(1))
+            .await
+            .expect("idle drain must succeed");
+
+        // Drain B: in flight against a wedged pass, parked in its poll
+        // loop. The guard cannot cross the task boundary (it borrows the
+        // task-local gate Arc), so B holds it in-task and is driven over
+        // channels.
+        is_syncing.store(true, Ordering::Release);
+        let gate_b = Arc::clone(&gate);
+        let is_syncing_b = Arc::clone(&is_syncing);
+        let (b_drained_tx, b_drained_rx) = tokio::sync::oneshot::channel::<bool>();
+        let (b_release_tx, b_release_rx) = tokio::sync::oneshot::channel::<()>();
+        let b = tokio::spawn(async move {
+            let guard = drain_pass(&gate_b, &is_syncing_b, || {}, Duration::from_secs(5)).await;
+            let _ = b_drained_tx.send(guard.is_some());
+            // Keep the guard held (B's caller "is mutating") until driven.
+            let _ = b_release_rx.await;
+            drop(guard);
+        });
+        // Let B take its entry hold and enter the poll loop.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // A finishes its mutation and drops. The gate must STAY closed:
+        // B's drain is still deciding whether the pass has drained.
+        drop(guard_a);
+        assert!(
+            gate.is_closed(),
+            "a holder's drop must not reopen admission while a drain is in flight"
+        );
+
+        // Release the wedge; B's drain completes and its guard keeps the
+        // gate closed until B's caller is done mutating.
+        is_syncing.store(false, Ordering::Release);
+        let b_drained = tokio::time::timeout(Duration::from_secs(2), b_drained_rx)
+            .await
+            .expect("drain B must complete once the pass drains")
+            .expect("channel");
+        assert!(b_drained, "drain B must succeed");
+        assert!(gate.is_closed());
+
+        b_release_tx.send(()).expect("drive B's guard drop");
+        tokio::time::timeout(Duration::from_secs(2), b)
+            .await
+            .expect("B must finish")
+            .expect("join");
+        assert!(!gate.is_closed(), "last hold gone — admission restored");
+    }
+
+    /// The timeout latch composes with the entry-hold: a timed-out drain
+    /// leaves the gate closed even though its own hold is gone, and only
+    /// a later successful drain clears the latch.
+    #[tokio::test(start_paused = true)]
+    async fn timed_out_drain_latches_gate_closed_until_a_successful_drain() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let gate = QuiesceGate::default();
+        let is_syncing = AtomicBool::new(true);
+
+        assert!(
+            drain_pass(&gate, &is_syncing, || {}, Duration::from_millis(50))
+                .await
+                .is_none(),
+            "a wedged pass must time the drain out"
+        );
+        assert!(gate.is_closed(), "timed-out drain leaves the gate latched");
+
+        // The wedge clears; the next drain succeeds, clears the latch, and
+        // its guard's drop restores admission.
+        is_syncing.store(false, Ordering::Release);
+        let guard = drain_pass(&gate, &is_syncing, || {}, Duration::from_millis(50))
+            .await
+            .expect("drain must succeed once the pass drained");
+        assert!(gate.is_closed());
+        drop(guard);
+        assert!(!gate.is_closed(), "successful drain clears the latch");
+    }
+
+    /// `SyncSlotGuard` must clear the `is_syncing` slot on panic unwind,
+    /// not just on normal fall-through. Without this, a pass that panics
+    /// leaves the flag latched and every subsequent `quiesce()` drain
+    /// burns its full budget before reporting non-clean — turning one
+    /// panicked pass into a permanently wedged (slow, never-clean)
+    /// teardown.
+    #[test]
+    fn sync_slot_guard_clears_flag_on_panic_unwind() {
+        let flag = std::sync::atomic::AtomicBool::new(true);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _slot = SyncSlotGuard(&flag);
+            panic!("pass body panicked");
+        }));
+        assert!(result.is_err(), "the pass body must have panicked");
+        assert!(
+            !flag.load(std::sync::atomic::Ordering::Acquire),
+            "guard must clear the slot during unwind"
+        );
     }
 }

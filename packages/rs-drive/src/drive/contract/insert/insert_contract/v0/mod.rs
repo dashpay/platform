@@ -1,6 +1,7 @@
 use crate::drive::contract::paths;
 
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
+use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes;
 use crate::drive::{contract_documents_path, votes, Drive, RootTree};
 use crate::util::object_size_info::DriveKeyInfo::{Key, KeyRef};
 use crate::util::storage_flags::StorageFlags;
@@ -396,37 +397,74 @@ impl Drive {
                     //   grovedb PR 670 combined surface): one tree
                     //   carries both metrics per-node.
                     // - neither → NormalTree (default; matches v0).
+                    //
+                    // Meta schema v3 (PV14) layers the ranking axes on top:
+                    // any `ranked*` flag upgrades the chosen variant to its
+                    // *indexed* mirror, which additionally carries one
+                    // ordered secondary Merk per axis. Note this dispatch
+                    // only ever sees a TERMINAL level — `has_index_with_type`
+                    // is `Some` exactly for single-property indexes, whose
+                    // top-level property-name tree IS the terminal one. A
+                    // compound index's terminal level lives deeper and is
+                    // materialized lazily by the document index walker.
                     let index_info = index_structure
                         .sub_levels()
                         .get(index.name.as_str())
                         .and_then(|level| level.has_index_with_type());
-                    let range_countable =
-                        index_info.map(|info| info.range_countable).unwrap_or(false);
-                    let range_summable =
-                        index_info.map(|info| info.range_summable).unwrap_or(false);
-                    match (range_countable, range_summable) {
-                        (true, true) => self.batch_insert_empty_provable_count_provable_sum_tree(
+                    let (tree_type, ranked_axes) =
+                        property_name_tree_type_and_ranked_axes(index_info)?;
+                    match tree_type {
+                        TreeType::ProvableCountProvableSumTree => self
+                            .batch_insert_empty_provable_count_provable_sum_tree(
+                                type_path,
+                                KeyRef(index_bytes),
+                                storage_flags.as_ref(),
+                                &mut batch_operations,
+                                &platform_version.drive,
+                            )?,
+                        TreeType::ProvableCountTree => self
+                            .batch_insert_empty_provable_count_tree(
+                                type_path,
+                                KeyRef(index_bytes),
+                                storage_flags.as_ref(),
+                                &mut batch_operations,
+                                &platform_version.drive,
+                            )?,
+                        TreeType::ProvableSumTree => self.batch_insert_empty_provable_sum_tree(
                             type_path,
                             KeyRef(index_bytes),
                             storage_flags.as_ref(),
                             &mut batch_operations,
                             &platform_version.drive,
                         )?,
-                        (true, false) => self.batch_insert_empty_provable_count_tree(
-                            type_path,
-                            KeyRef(index_bytes),
-                            storage_flags.as_ref(),
-                            &mut batch_operations,
-                            &platform_version.drive,
-                        )?,
-                        (false, true) => self.batch_insert_empty_provable_sum_tree(
-                            type_path,
-                            KeyRef(index_bytes),
-                            storage_flags.as_ref(),
-                            &mut batch_operations,
-                            &platform_version.drive,
-                        )?,
-                        (false, false) => self.batch_insert_empty_tree(
+                        TreeType::ProvableCountIndexedTree => self
+                            .batch_insert_empty_provable_count_indexed_tree(
+                                type_path,
+                                KeyRef(index_bytes),
+                                storage_flags.as_ref(),
+                                &mut batch_operations,
+                                &platform_version.drive,
+                            )?,
+                        TreeType::ProvableSumIndexedTree => self
+                            .batch_insert_empty_provable_sum_indexed_tree(
+                                type_path,
+                                KeyRef(index_bytes),
+                                storage_flags.as_ref(),
+                                &mut batch_operations,
+                                &platform_version.drive,
+                            )?,
+                        TreeType::ProvableCountProvableSumIndexedTree => self
+                            .batch_insert_empty_provable_count_provable_sum_indexed_tree(
+                                type_path,
+                                KeyRef(index_bytes),
+                                &ranked_axes,
+                                storage_flags.as_ref(),
+                                &mut batch_operations,
+                                &platform_version.drive,
+                            )?,
+                        // NormalTree, and defensively anything the resolver
+                        // could grow later: a plain subtree.
+                        _ => self.batch_insert_empty_tree(
                             type_path,
                             KeyRef(index_bytes),
                             storage_flags.as_ref(),

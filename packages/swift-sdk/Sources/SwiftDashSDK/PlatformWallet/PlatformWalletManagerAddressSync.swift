@@ -37,16 +37,38 @@ public struct PlatformAddressSyncEvent: Sendable {
     }
 }
 
-final class PlatformWalletEventHandler {
+/// `@unchecked Sendable`, matching `PlatformWalletPersistenceHandler`: this
+/// object *is* a cross-thread callback context by construction — Rust owns
+/// a retained reference to it and invokes the callbacks below from its own
+/// background threads. `manager` is written once at `init` and only read
+/// afterwards (weak loads are atomic), and every touch of the main-actor
+/// manager already hops through `Task { @MainActor }`.
+final class PlatformWalletEventHandler: @unchecked Sendable {
     weak var manager: PlatformWalletManager?
 
     init(manager: PlatformWalletManager) {
         self.manager = manager
     }
 
+    /// Build `EventHandlerCallbacks` that point to this handler.
+    ///
+    /// **Transfers ownership of a strong reference to Rust**: the context
+    /// is `passRetained`, and `release_fn` balances that retain exactly
+    /// once — when the Rust manager and every worker that can still
+    /// dispatch an event have dropped their references (possibly on a
+    /// Rust thread, possibly after `destroy` returns if a worker
+    /// straggles). ARC therefore cannot free this handler while any Rust
+    /// worker can still call back into it.
+    ///
+    /// If manager creation fails, Rust never took the reference — the
+    /// caller must balance the retain itself (see `configure`).
     func makeCallbacks() -> EventHandlerCallbacks {
         var callbacks = EventHandlerCallbacks()
-        callbacks.context = Unmanaged.passUnretained(self).toOpaque()
+        callbacks.context = Unmanaged.passRetained(self).toOpaque()
+        callbacks.release_fn = { context in
+            guard let context else { return }
+            Unmanaged<PlatformWalletEventHandler>.fromOpaque(context).release()
+        }
         callbacks.on_platform_address_sync_completed_fn = platformAddressSyncCompletedCallback
         callbacks.on_shielded_sync_completed_fn = shieldedSyncCompletedCallback
         callbacks.on_shielded_sync_progress_fn = shieldedSyncProgressCallback
@@ -160,6 +182,28 @@ extension PlatformWalletManager {
         var running = false
         try platform_wallet_manager_platform_address_sync_is_running(handle, &running).check()
         return running
+    }
+
+    /// Whether the native manager has frozen its durable sync watermark this
+    /// session (dashpay/platform#4069). `true` means the wallet-event adapter
+    /// dropped record-bearing events, or a persistence `store()` was rejected,
+    /// so the persisted `syncedHeight` is deliberately held behind the chain
+    /// tip and a rescan is pending on the next launch. Poll this to surface a
+    /// hard "verification failed / rescan pending" state instead of leaving
+    /// the fault visible only in the error logs.
+    ///
+    /// The flag latches for this native manager's lifetime: once `true` it stays
+    /// `true` until the manager is destroyed.
+    public func syncFaultDetected() throws -> Bool {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+
+        var detected = false
+        try platform_wallet_manager_sync_fault_detected(handle, &detected).check()
+        return detected
     }
 
     public func isPlatformAddressSyncing() throws -> Bool {

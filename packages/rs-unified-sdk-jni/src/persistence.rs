@@ -47,18 +47,19 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use crate::support::{net_from_ord, JVM};
-use jni::objects::{GlobalRef, JByteArray, JObject, JString, JValue};
+use crate::support::{guard, net_from_ord, JVM};
+use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JString, JValue};
+use jni::sys::jstring;
 use jni::JNIEnv;
 use platform_wallet_ffi::{
     AccountAddressPoolFFI, AccountChangeSetFFI, AccountSpecFFI, AddressBalanceEntryFFI,
     AssetLockEntryFFI, ContactIgnoredSenderFFI, ContactProfileRestoreEntryFFI, ContactRequestFFI,
     ContactRequestRemovalFFI, CoreAddressEntryFFI, IdentityEntryFFI, IdentityKeyEntryFFI,
-    IdentityKeyRemovalFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI, PaymentRestoreEntryFFI,
-    PersistenceCallbacks, PlatformAddressFFI, ProviderSpecialTxRestoreEntryFFI, SpentOutPointFFI,
-    TokenBalanceRemovalFFI, TokenBalanceUpsertFFI, TransactionRecordFFI,
-    UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI, UtxoRestoreEntryFFI, WalletChangeSetFFI,
-    WalletRestoreEntryFFI,
+    IdentityKeyRemovalFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI, InvitationEntryFFI,
+    PaymentRestoreEntryFFI, PersistenceCallbacks, PlatformAddressFFI,
+    ProviderSpecialTxRestoreEntryFFI, SpentOutPointFFI, TokenBalanceRemovalFFI,
+    TokenBalanceUpsertFFI, TransactionRecordFFI, UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI,
+    UtxoRestoreEntryFFI, WalletChangeSetFFI, WalletRestoreEntryFFI,
 };
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
@@ -77,7 +78,11 @@ use platform_wallet_ffi::shielded_persistence::{
 
 /// Boxed context handed to every trampoline via `callbacks.context`.
 /// Holds the Kotlin bridge as a `GlobalRef` so it survives across the
-/// vtable's lifetime and across threads.
+/// vtable's lifetime and across threads. Ownership transfers to the
+/// native manager at create (the vtable's `release_fn` is
+/// [`release_persistence_ctx`]): Rust frees the box — and with it the
+/// `GlobalRef` — exactly once, when the manager and every worker that
+/// cloned its persister have dropped their references.
 pub struct KotlinPersistenceCtx {
     pub(crate) bridge: GlobalRef,
 }
@@ -111,8 +116,9 @@ unsafe impl Sync for KotlinPersistenceCtx {}
 //   ShieldedActivityData      org/dashfoundation/dashsdk/ffi/ShieldedActivityData
 //   CoreTxRecordData          org/dashfoundation/dashsdk/ffi/CoreTxRecordData
 
-/// Assemble the full 32-slot vtable. `context` is the boxed
-/// [`KotlinPersistenceCtx`] pointer.
+/// Assemble the full persistence vtable (every slot named, wired or an
+/// explicit `None`). `context` is the boxed [`KotlinPersistenceCtx`]
+/// pointer.
 pub(crate) fn build_vtable(context: *mut c_void) -> PersistenceCallbacks {
     PersistenceCallbacks {
         context,
@@ -167,11 +173,37 @@ pub(crate) fn build_vtable(context: *mut c_void) -> PersistenceCallbacks {
         on_get_core_tx_record_fn: Some(tramp_get_core_tx_record),
         on_get_core_tx_record_free_fn: Some(tramp_get_core_tx_record_free),
         on_persist_asset_locks_fn: Some(tramp_persist_asset_locks),
-        // Android hasn't wired DIP-13 invitation persistence yet. Leaving this
-        // `None` keeps `FFIPersister::persists_durably()` fail-closed, so the
-        // invitation flow refuses to run on Android rather than create a
-        // non-durable voucher whose one-time key could be reused on restart.
-        on_persist_invitations_fn: None,
+        on_persist_invitations_fn: Some(tramp_persist_invitations),
+        // Android hasn't wired transaction enumeration yet. `None` makes
+        // `list_wallet_core_txids` return an empty list, so the sent-payment
+        // reconstruction sweep finds nothing to match and records nothing —
+        // Android keeps today's behaviour (a restored wallet shows no
+        // pre-restore contact payments) rather than misreporting.
+        on_list_wallet_core_txids_fn: None,
+        on_list_wallet_core_txids_free_fn: None,
+        // Android derives contact attribution from transaction history on
+        // reads and doesn't consume `PaymentEntry` rows, so there is
+        // nothing to land these in. `None` keeps the Rust-side payment
+        // recording in-memory-only on Android — same behaviour as before
+        // the slot existed.
+        on_persist_dashpay_payments_fn: None,
+        release_fn: Some(release_persistence_ctx),
+    }
+}
+
+/// `release_fn` for the persistence vtable: frees the boxed
+/// [`KotlinPersistenceCtx`] when the native manager's last persister
+/// reference drops. The FFI guarantees exactly one call, which may land
+/// on any Rust thread — `GlobalRef`'s own `Drop` attaches that thread to
+/// the JVM before deleting the reference, so no manual attach is needed
+/// here.
+///
+/// # Safety
+/// `context` must be the live boxed [`KotlinPersistenceCtx`] this vtable
+/// was built around, never freed elsewhere.
+unsafe extern "C" fn release_persistence_ctx(context: *mut c_void) {
+    if !context.is_null() {
+        drop(Box::from_raw(context as *mut KotlinPersistenceCtx));
     }
 }
 
@@ -1273,6 +1305,67 @@ unsafe extern "C" fn tramp_persist_asset_locks(
                 env.call_method(
                     bridge,
                     "onPersistAssetLockRemoval",
+                    "([B[B)I",
+                    &[(&wid).into(), (&opb).into()],
+                )?
+                .i()
+            })?;
+            if code != 0 {
+                return Ok(code);
+            }
+        }
+        Ok(0)
+    })
+}
+
+// ── Invitations (DIP-13) ──────────────────────────────────────────────
+
+/// One bridge call per `InvitationEntryFFI` upsert / per removed outpoint,
+/// mirroring [`tramp_persist_asset_locks`]. Every field is POD, so there are
+/// no owned buffers to marshal. A non-zero Kotlin return fails the round —
+/// `create_invitation` treats an unrecorded invitation row as a hard error
+/// (a funded voucher without a durable record is invisible and
+/// unreclaimable), so failures must propagate, never be swallowed.
+unsafe extern "C" fn tramp_persist_invitations(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    upserts_ptr: *const InvitationEntryFFI,
+    upserts_count: usize,
+    removed_ptr: *const [u8; 36],
+    removed_count: usize,
+) -> i32 {
+    with_bridge(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        for e in slice_or_empty(upserts_ptr, upserts_count) {
+            let code = env.with_local_frame(16, |env| {
+                let outpoint = env.byte_array_from_slice(&e.out_point)?;
+                env.call_method(
+                    bridge,
+                    "onPersistInvitationUpsert",
+                    "([B[BIJIIZI)I",
+                    &[
+                        (&wid).into(),
+                        (&outpoint).into(),
+                        JValue::Int(e.funding_index as i32),
+                        JValue::Long(e.amount_duffs as i64),
+                        JValue::Int(e.expiry_unix as i32),
+                        JValue::Int(e.created_at_secs as i32),
+                        JValue::Bool(u8::from(e.has_inviter != 0)),
+                        JValue::Int(i32::from(e.status)),
+                    ],
+                )?
+                .i()
+            })?;
+            if code != 0 {
+                return Ok(code);
+            }
+        }
+        for op in slice_or_empty(removed_ptr, removed_count) {
+            let code = env.with_local_frame(16, |env| {
+                let opb = env.byte_array_from_slice(op)?;
+                env.call_method(
+                    bridge,
+                    "onPersistInvitationRemoval",
                     "([B[B)I",
                     &[(&wid).into(), (&opb).into()],
                 )?
@@ -4055,6 +4148,153 @@ fn read_bytes_field_vec(
     Ok(buf.into_iter().map(|b| b as u8).collect())
 }
 
+// ── Bridge-descriptor verification ────────────────────────────────────
+
+/// Every `(name, JNI descriptor)` pair the trampolines above resolve
+/// against [`NativePersistenceBridge`] via virtual dispatch. `call_method`
+/// resolves each pair only when its slot first *fires*, so a drifted
+/// descriptor is a runtime failure at that moment — for the invitation
+/// upsert that would be mid-way through a live, funded `create_invitation`.
+/// [`nativeVerifyPersistenceBridgeDescriptors`] resolves the whole table up
+/// front instead; keep this table in sync with the `call_method` sites.
+const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
+    ("persistenceCapabilitiesVersion", "()I"),
+    ("persistenceCapabilitiesBits", "()J"),
+    ("onChangesetBegin", "([B)I"),
+    ("onChangesetEnd", "([BZ)I"),
+    ("onStore", "([B)I"),
+    ("onFlush", "([B)I"),
+    ("onPersistAddressBalance", "([BB[BJIIIJ)I"),
+    ("onPersistSyncState", "([BJJJ)I"),
+    ("onPersistWalletMetadata", "([BI[BI)I"),
+    ("onPersistAccountRegistration", "([BBBIII[B[B[B)I"),
+    (
+        "onPersistAccountAddressPoolEntry",
+        "([BBBIII[B[BB[BZBIZJLjava/lang/String;Ljava/lang/String;)I",
+    ),
+    ("onWalletChangesetHeader", "([BZIZJJJJ[B)I"),
+    ("onWalletChangesetAccountBegin", "([BIBBII[B[BIZIZ)I"),
+    ("onWalletChangesetAccountEnd", "([BI)I"),
+    (
+        "onWalletChangesetUtxoAdded",
+        "([B[BIJLjava/lang/String;[BIZZZZ)I",
+    ),
+    ("onWalletChangesetUtxoSpent", "([B[BI[B)I"),
+    (
+        "onWalletChangesetTransaction",
+        WALLET_CHANGESET_TRANSACTION_DESCRIPTOR,
+    ),
+    (
+        "onPersistIdentityUpsert",
+        "([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;\
+         Ljava/lang/String;[BZ[BZLjava/lang/String;)I",
+    ),
+    ("onPersistIdentityRemoval", "([B[B)I"),
+    (
+        "onPersistContactProfileDelta",
+        "([B[B[BZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;\
+         [BZ[BZLjava/lang/String;J)I",
+    ),
+    (
+        "onPersistIdentityKeyUpsert",
+        "([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;)I",
+    ),
+    ("onPersistIdentityKeyRemoval", "([B[BI)I"),
+    ("onPersistTokenBalanceUpsert", "([B[B[BJ)I"),
+    ("onPersistTokenBalanceRemoval", "([B[B[B)I"),
+    ("onPersistContactIgnored", "([B[B[BZ)I"),
+    (
+        "onPersistContactUpsert",
+        "([B[B[BZIII[B[B[BIJZLjava/lang/String;Ljava/lang/String;ZLjava/lang/String;[I)I",
+    ),
+    ("onPersistContactRemovalSent", "([B[B[B)I"),
+    ("onPersistContactRemovalIncoming", "([B[B[B)I"),
+    ("onPersistAssetLockUpsert", "([B[B[BIBIJB[B)I"),
+    ("onPersistAssetLockRemoval", "([B[B)I"),
+    ("onPersistInvitationUpsert", "([B[BIJIIZI)I"),
+    ("onPersistInvitationRemoval", "([B[B)I"),
+    #[cfg(feature = "shielded")]
+    ("onPersistShieldedNote", "([B[BIJ[B[BJBJ[B)I"),
+    #[cfg(feature = "shielded")]
+    ("onPersistShieldedNullifierSpent", "([B[BI[B)I"),
+    #[cfg(feature = "shielded")]
+    ("onPersistShieldedOutgoingNote", "([B[BI[B[BJJ[B)I"),
+    #[cfg(feature = "shielded")]
+    ("onPersistShieldedSyncedIndex", "([B[BIJ)I"),
+    #[cfg(feature = "shielded")]
+    (
+        "onPersistShieldedActivity",
+        "([B[BI[BBBBJJZJZJ[BZ[B[B[B[B)I",
+    ),
+    #[cfg(feature = "shielded")]
+    ("onPersistShieldedViewingKey", "([B[BI[B)I"),
+    (
+        "onLoadWalletList",
+        "()[Lorg/dashfoundation/dashsdk/ffi/WalletRestoreData;",
+    ),
+    #[cfg(feature = "shielded")]
+    (
+        "onLoadShieldedViewingKeys",
+        "()[Lorg/dashfoundation/dashsdk/ffi/ShieldedViewingKeyData;",
+    ),
+    #[cfg(feature = "shielded")]
+    (
+        "onLoadShieldedNotes",
+        "()[Lorg/dashfoundation/dashsdk/ffi/ShieldedNoteData;",
+    ),
+    #[cfg(feature = "shielded")]
+    (
+        "onLoadShieldedOutgoingNotes",
+        "()[Lorg/dashfoundation/dashsdk/ffi/ShieldedOutgoingNoteData;",
+    ),
+    #[cfg(feature = "shielded")]
+    (
+        "onLoadShieldedSyncStates",
+        "()[Lorg/dashfoundation/dashsdk/ffi/ShieldedSyncStateData;",
+    ),
+    #[cfg(feature = "shielded")]
+    (
+        "onLoadShieldedActivity",
+        "()[Lorg/dashfoundation/dashsdk/ffi/ShieldedActivityData;",
+    ),
+    (
+        "onGetCoreTxRecord",
+        "([B[B)Lorg/dashfoundation/dashsdk/ffi/CoreTxRecordData;",
+    ),
+];
+
+/// Resolve every [`BRIDGE_METHOD_TABLE`] pair against the concrete class of
+/// `bridge`. Returns `null` when every slot resolves; otherwise a
+/// `"name descriptor"` string naming the first unresolvable slot. Exists so
+/// the instrumented test suite can pin the Rust↔Kotlin descriptor lockstep
+/// up front instead of discovering a drift when a slot first fires at
+/// runtime.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_nativeVerifyPersistenceBridgeDescriptors(
+    mut env: JNIEnv,
+    _class: JClass,
+    bridge: JObject,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Ok(class) = env.get_object_class(&bridge) else {
+            return env
+                .new_string("<unresolvable bridge class>")
+                .map(|s| s.into_raw())
+                .unwrap_or(ptr::null_mut());
+        };
+        for (name, descriptor) in BRIDGE_METHOD_TABLE {
+            if env.get_method_id(&class, *name, *descriptor).is_err() {
+                let _ = env.exception_clear();
+                return env
+                    .new_string(format!("{name} {descriptor}"))
+                    .map(|s| s.into_raw())
+                    .unwrap_or(ptr::null_mut());
+            }
+        }
+        ptr::null_mut()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use dashcore::blockdata::transaction::special_transaction::provider_update_service::ProviderUpdateServicePayload;
@@ -4120,7 +4360,7 @@ mod tests {
         let callbacks = build_vtable(ptr::null_mut());
         assert!(callbacks.on_changeset_begin_fn.is_some());
         assert!(callbacks.on_changeset_end_fn.is_some());
-        assert!(callbacks.on_persist_invitations_fn.is_none());
+        assert!(callbacks.on_persist_invitations_fn.is_some());
     }
 
     #[cfg(feature = "shielded")]

@@ -58,11 +58,23 @@ class DashSdkErrorTest {
         // Distinct from the rs-sdk-ffi CryptoError that shares raw code 6.
         assertFalse(walletOp is DashSdkError.CryptoError)
 
-        listOf(7, 8, 98).forEach { code ->
+        listOf(7, 8).forEach { code ->
             val notFound = DashSdkError.fromNative(DashSDKException(offset + code, "missing"))
             assertTrue("platform-wallet code $code must be typed NotFound", notFound is DashSdkError.NotFound)
             assertEquals("missing", notFound.message)
         }
+
+        // 98 (PlatformWalletFFIResultCode::NotFound, the blanket Option → result
+        // miss) stays in the PlatformWallet subtree as the typed
+        // PlatformWallet.NotFound — parity with Swift's PlatformWalletError
+        // .notFound (also in the wallet-error family) — distinct from the typed
+        // top-level NotFound that 7/8 map to. Local reads still recognize it at
+        // the raw code via translateManagedIdentityNotFoundToZero (#4051) before
+        // this mapping runs.
+        val optionMiss = DashSdkError.fromNative(DashSDKException(offset + 98, "missing"))
+        assertTrue(optionMiss is DashSdkError.PlatformWallet.NotFound)
+        assertFalse(optionMiss is DashSdkError.NotFound)
+        assertEquals("missing", optionMiss.message)
 
         val noAnchor = DashSdkError.fromNative(DashSDKException(offset + 19, "mid-block tree"))
         assertTrue(noAnchor is DashSdkError.PlatformWallet.ShieldedNoRecordedAnchor)
@@ -103,6 +115,49 @@ class DashSdkErrorTest {
         )
         // The message must warn against retrying (distinct from the anchor case).
         assertTrue(broadcastUnconfirmed.message!!.contains("do NOT retry"))
+
+        // Definitive broadcast rejection (26) must reach callers as its own type,
+        // NOT as Generic: it is the definitive counterpart to the ambiguous
+        // TransactionBroadcastUnconfirmed (20), and on the deferred path the
+        // reservation was released and the token consumed — so it is not
+        // retryable in place, it must be rebuilt.
+        val rejected = DashSdkError.fromNative(DashSDKException(offset + 26, "bad-txns-inputs-spent"))
+        assertTrue(
+            "code 26 must not fall through to Generic",
+            rejected is DashSdkError.PlatformWallet.TransactionBroadcastRejected,
+        )
+        assertFalse(
+            "TransactionBroadcastRejected must NOT be retryable in place (rebuild the payment)",
+            rejected.isRetryable,
+        )
+        assertEquals("bad-txns-inputs-spent", rejected.message)
+
+        // Deferred build/broadcast: the three sibling reservation-token failures
+        // map to three distinct typed errors, none retryable.
+        val agedOut = DashSdkError.fromNative(DashSDKException(offset + 34, "stale token 7"))
+        assertTrue(agedOut is DashSdkError.PlatformWallet.StaleReservationToken)
+        assertFalse(
+            "StaleReservationToken must NOT be retryable (rebuild the payment)",
+            agedOut.isRetryable,
+        )
+        assertEquals("stale token 7", agedOut.message)
+
+        val consumed = DashSdkError.fromNative(DashSDKException(offset + 35, "already broadcast"))
+        assertTrue(consumed is DashSdkError.PlatformWallet.ReservationTokenConsumed)
+        assertFalse(
+            "ReservationTokenConsumed must NOT be retryable (rebuild the payment)",
+            consumed.isRetryable,
+        )
+        assertEquals("already broadcast", consumed.message)
+
+        val walletMismatch =
+            DashSdkError.fromNative(DashSDKException(offset + 36, "different generation"))
+        assertTrue(walletMismatch is DashSdkError.PlatformWallet.ReservationWalletMismatch)
+        assertFalse(
+            "ReservationWalletMismatch must NOT be retryable (rebuild the payment)",
+            walletMismatch.isRetryable,
+        )
+        assertEquals("different generation", walletMismatch.message)
     }
 
     @Test
@@ -114,6 +169,77 @@ class DashSdkErrorTest {
         assertEquals(99, (mapped as DashSdkError.PlatformWallet.Generic).nativeCode)
         assertEquals("boom", mapped.message)
         assertFalse("Generic platform-wallet errors are not retryable", mapped.isRetryable)
+    }
+
+    @Test
+    fun signingKeyUnavailableCode31MapsTyped() {
+        // The STRUCTURED discriminator (dashpay/platform#4060 finding 7):
+        // PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable (31) maps
+        // to the typed error on the code alone — no message inspection.
+        val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
+        val mapped = DashSdkError.fromNative(
+            DashSDKException(offset + 31, "arbitrary human text, no marker"),
+        )
+        assertTrue(mapped is DashSdkError.PlatformWallet.SigningKeyUnavailable)
+        assertFalse(mapped.isRetryable)
+    }
+
+    @Test
+    fun signingKeyUnavailableIsRecognizedByItsMessageMarker() {
+        val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
+        val marker = DashSdkError.PlatformWallet.SigningKeyUnavailable.MESSAGE_MARKER
+        // DEPRECATED fallback for the #4191 merge-order transition: at
+        // #4191's revision the completion error travels as free text under
+        // the catch-all codes (ErrorUnknown = 99 via the blanket
+        // PlatformWalletError conversion, sometimes wrapped as
+        // ErrorWalletOperation = 6) — both must keep surfacing typed until
+        // the fallback's removal (#4052, #4060 finding 7). Mixed
+        // old-native/new-Kotlin artifacts are unsupported (JNI arity
+        // change), so that pairing is NOT what this covers.
+        for (code in intArrayOf(6, 99)) {
+            val mapped = DashSdkError.fromNative(
+                DashSDKException(offset + code, "Signing failed: $marker deadbeef00112233…"),
+            )
+            assertTrue(
+                "code $code with marker → SigningKeyUnavailable",
+                mapped is DashSdkError.PlatformWallet.SigningKeyUnavailable,
+            )
+            assertFalse(mapped.isRetryable)
+        }
+        // Without the marker the catch-all mappings are untouched.
+        val walletOp = DashSdkError.fromNative(DashSDKException(offset + 6, "op failed"))
+        assertTrue(walletOp is DashSdkError.PlatformWallet.WalletOperation)
+        val generic = DashSdkError.fromNative(DashSDKException(offset + 99, "boom"))
+        assertTrue(generic is DashSdkError.PlatformWallet.Generic)
+    }
+
+    @Test
+    fun signingKeyMarkerNeverOverridesRetrySemanticsCodes() {
+        val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
+        val marker = DashSdkError.PlatformWallet.SigningKeyUnavailable.MESSAGE_MARKER
+        // A dedicated retry-semantics code keeps its type even if the Rust
+        // message happens to embed the marker text.
+        val mapped = DashSdkError.fromNative(
+            DashSDKException(offset + 19, "anchor missing; $marker something"),
+        )
+        assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedNoRecordedAnchor)
+    }
+
+    @Test
+    fun platformWalletNotFoundCodeMapsToTypedWalletNotFound() {
+        // PlatformWalletFFIResultCode::NotFound (98) — the code the Option →
+        // result conversion emits for "requested <thing> not found". Maps to
+        // the typed PlatformWallet.NotFound (Swift parity:
+        // PlatformWalletError.notFound); Dashpay's managed-identity reads
+        // translate the raw code to null before it ever escapes (#4051).
+        val mapped = DashSdkError.fromNative(
+            DashSDKException(
+                DashSdkError.PLATFORM_WALLET_CODE_OFFSET +
+                    DashSdkError.PLATFORM_WALLET_NOT_FOUND_CODE,
+                "requested platform_wallet::identity::ManagedIdentity not found",
+            ),
+        )
+        assertTrue(mapped is DashSdkError.PlatformWallet.NotFound)
     }
 
     @Test
@@ -138,7 +264,14 @@ class DashSdkErrorTest {
             }
         }.exceptionOrNull()
 
-        assertTrue(error is DashSdkError.NotFound)
-        assertEquals("wallet not found", error?.message)
+        // Code 98 surfaces (through the public mapNativeErrors boundary) as the
+        // typed PlatformWallet.NotFound — the wallet-family NotFound, exactly
+        // how Swift surfaces PlatformWalletError.notFound, and NOT the
+        // top-level NotFound reserved for rs-sdk-ffi codes 7/8 — so #4051's
+        // raw-code translation stays the single place that turns an
+        // unmanaged-identity miss into an absence.
+        assertTrue(error is DashSdkError.PlatformWallet.NotFound)
+        assertFalse(error is DashSdkError.NotFound)
+        assertEquals("wallet not found", (error as DashSdkError).message)
     }
 }
