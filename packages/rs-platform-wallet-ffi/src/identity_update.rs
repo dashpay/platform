@@ -609,20 +609,42 @@ mod tests {
                     identity_id: Identifier::from([0x11; 32]),
                     revision: 7,
                     nonce: 9,
-                    add_public_keys: vec![IdentityPublicKeyInCreationV0 {
-                        id: 17,
-                        key_type: KeyType::ECDSA_SECP256K1,
-                        purpose: Purpose::ENCRYPTION,
-                        security_level: SecurityLevel::MEDIUM,
-                        read_only: false,
-                        data: BinaryData::new(vec![0x02; 33]),
-                        signature: BinaryData::new(vec![0xaa; 65]),
-                        contract_bounds: Some(ContractBounds::SingleContractDocumentType {
-                            id: Identifier::from([0x44; 32]),
-                            document_type_name: "pro\0file".to_string(),
-                        }),
-                    }
-                    .into()],
+                    add_public_keys: vec![
+                        // Projected successfully, so its boxed data buffer and
+                        // contract-bounds string are live when the next key
+                        // fails. That makes the error path's
+                        // `free_parsed_public_keys` run over a non-empty
+                        // vector — with only the failing key present it would
+                        // free nothing and a leak here would go unnoticed.
+                        IdentityPublicKeyInCreationV0 {
+                            id: 16,
+                            key_type: KeyType::ECDSA_SECP256K1,
+                            purpose: Purpose::ENCRYPTION,
+                            security_level: SecurityLevel::MEDIUM,
+                            read_only: false,
+                            data: BinaryData::new(vec![0x03; 33]),
+                            signature: BinaryData::new(vec![0xcc; 65]),
+                            contract_bounds: Some(ContractBounds::SingleContractDocumentType {
+                                id: Identifier::from([0x55; 32]),
+                                document_type_name: "profile".to_string(),
+                            }),
+                        }
+                        .into(),
+                        IdentityPublicKeyInCreationV0 {
+                            id: 17,
+                            key_type: KeyType::ECDSA_SECP256K1,
+                            purpose: Purpose::ENCRYPTION,
+                            security_level: SecurityLevel::MEDIUM,
+                            read_only: false,
+                            data: BinaryData::new(vec![0x02; 33]),
+                            signature: BinaryData::new(vec![0xaa; 65]),
+                            contract_bounds: Some(ContractBounds::SingleContractDocumentType {
+                                id: Identifier::from([0x44; 32]),
+                                document_type_name: "pro\0file".to_string(),
+                            }),
+                        }
+                        .into(),
+                    ],
                     disable_public_keys: vec![],
                     user_fee_increase: 0,
                 },
