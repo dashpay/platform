@@ -23,25 +23,32 @@
 //!   * `hash160(pubkey)` — the voting address, which identifies both the voter
 //!     identity (`create_voter_identifier`) and the key on it.
 //!
-//! The voting [`IdentityPublicKey`] is then **fetched from the voter
-//! identity** rather than fabricated. Platform does always assign the voting
-//! key id 0 (`create_voter_identity_v0` passes 0, and a rotation creates a
-//! *different* identity — the identifier includes the voting address — whose
-//! key is likewise 0), so the id itself was never the problem. Fabricating a
-//! key meant never checking the two things that do fail:
+//! The voting [`IdentityPublicKey`] is **built locally, not fetched**.
+//! Platform always assigns a voter identity's voting key id 0:
+//! `create_voter_identity_v0` passes 0, and a rotation creates a *different*
+//! identity — the identifier includes the voting address — whose key is
+//! likewise 0. So the key Platform holds is knowable without a round trip, and
+//! `SingleKeySigner::can_sign_with` for `ECDSA_HASH160` recomputes the same
+//! `hash160(pubkey)` from the private key, so key and signer agree by
+//! construction.
 //!
-//!   * the voter identity may not exist for this `(pro_tx_hash, voting
-//!     address)` pair at all, and
-//!   * after a rotation `update_voter_identity_v0` **disables** the old
-//!     identity's keys, so key 0 can exist but be unusable.
+//! # Diagnosis is deferred to the failure path
 //!
-//! Both surfaced as Platform's opaque "Public key 0 doesn't exist" at
-//! broadcast time. Fetching the identity and matching on the key's own data
-//! (purpose, key type, `data`, not-disabled) reports each case for what it is.
+//! Two things do fail, and Platform reports both as the same opaque
+//! "Public key 0 doesn't exist":
 //!
-//! The `SingleKeySigner::can_sign_with` check for `ECDSA_HASH160` recomputes
-//! `hash160(pubkey)` from the same private key, so the fetched key and the
-//! signer agree.
+//!   * no voter identity exists for this `(pro_tx_hash, voting address)` pair,
+//!     or
+//!   * after a rotation `update_voter_identity_v0` **disabled** the old
+//!     identity's keys, so key 0 exists but is unusable.
+//!
+//! Telling those apart needs the identity, but fetching it before every cast
+//! would spend a Platform round trip per (node, contest) on runs that
+//! overwhelmingly succeed — a bulk vote of 6 nodes across 10 names is 60
+//! fetches. So the fetch happens only after a broadcast has already failed,
+//! where the cost is paid on a path that is already lost. A diagnosis replaces
+//! the opaque error; an unrelated failure (network, fees, a closed poll)
+//! survives unchanged rather than being recast as a key problem.
 //!
 //! A regular wallet is **not** a masternode and has no voting key, so a vote
 //! broadcast from such a wallet reaches a deterministic *authorization*
@@ -58,7 +65,9 @@ use dash_sdk::dpp::dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use dash_sdk::dpp::identifier::MasternodeIdentifiers;
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dash_sdk::dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose};
+use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+use dash_sdk::dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+use dash_sdk::dpp::platform_value::BinaryData;
 use dash_sdk::dpp::platform_value::{Identifier, Value};
 use dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dash_sdk::dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
@@ -331,28 +340,29 @@ unsafe fn cast_vote_inner(
     let public_key = PublicKey::from_secret_key(&secp, &secret_key);
     let voting_address = hash160::Hash::hash(&public_key.serialize()).to_byte_array();
 
-    // ---- Resolve the real voting key off the voter identity -----------------
+    // ---- Broadcast, then diagnose only on failure ---------------------------
     let wrapper = &*(sdk_handle as *const SDKWrapper);
     let sdk = &wrapper.sdk;
 
-    let voter_identifier = Identifier::create_voter_identifier(&pro_tx_hash_arr, &voting_address);
+    // Platform assigns a voter identity's voting key id 0 and nothing else:
+    // `create_voter_identity_v0` passes 0, and a rotation creates a DIFFERENT
+    // identity (the identifier includes the voting address) whose key is also
+    // 0. So the happy path needs no lookup — build the key Platform holds and
+    // broadcast. `SingleKeySigner::can_sign_with` recomputes the same hash160
+    // from the private key, so the key and the signer agree by construction.
+    let masternode_voting_key: IdentityPublicKey = IdentityPublicKeyV0 {
+        id: 0,
+        purpose: Purpose::VOTING,
+        security_level: SecurityLevel::HIGH,
+        key_type: KeyType::ECDSA_HASH160,
+        read_only: true,
+        data: BinaryData::new(voting_address.to_vec()),
+        disabled_at: None,
+        contract_bounds: None,
+    }
+    .into();
 
-    let masternode_voting_key: IdentityPublicKey = wrapper.runtime.block_on(async {
-        // Platform assigns the voting key id 0, but that was never what
-        // failed: the identity may not exist for this (pro_tx_hash, voting
-        // address) pair, or a rotation may have disabled its keys. Fabricating
-        // id 0 turned both into Platform's opaque "Public key 0 doesn't exist"
-        // at broadcast time.
-        let identity = Identity::fetch(sdk, voter_identifier)
-            .await
-            .map_err(FFIError::from)?
-            .ok_or_else(|| missing_voter_identity(&pro_tx_hash, &voter_identifier))?;
-
-        select_voting_key(&identity, &voting_address, &voter_identifier)
-    })?;
-
-    // ---- Broadcast ----------------------------------------------------------
-    wrapper.runtime.block_on(async {
+    let broadcast = wrapper.runtime.block_on(async {
         vote.put_to_platform_and_wait_for_response(
             pro_tx_hash,
             &masternode_voting_key,
@@ -361,10 +371,49 @@ unsafe fn cast_vote_inner(
             None,
         )
         .await
-        .map_err(FFIError::from)
-    })?;
+    });
 
-    Ok(())
+    let Err(broadcast_error) = broadcast else {
+        return Ok(());
+    };
+
+    // The failure modes here are indistinguishable from Platform's side: a
+    // missing voter identity and a rotated (disabled) key both surface as
+    // "Public key 0 doesn't exist". Fetching the identity says which — but only
+    // now, on the failure path. Doing it before every cast would spend a round
+    // trip per (node, contest) on runs that are overwhelmingly going to succeed.
+    let voter_identifier = Identifier::create_voter_identifier(&pro_tx_hash_arr, &voting_address);
+    let diagnosis = wrapper.runtime.block_on(diagnose_vote_failure(
+        sdk,
+        &pro_tx_hash,
+        &voter_identifier,
+        &voting_address,
+    ));
+
+    // A diagnosis replaces the opaque error; anything else (network, fees,
+    // an already-closed poll) must survive unchanged rather than be recast as
+    // a key problem.
+    Err(diagnosis.unwrap_or_else(|| FFIError::from(broadcast_error)))
+}
+
+/// Explain a failed vote broadcast, or `None` when the voter identity and its
+/// voting key are both fine and the failure lies elsewhere.
+///
+/// Runs only after a broadcast has already failed, so its cost is paid on the
+/// path that is already lost.
+async fn diagnose_vote_failure(
+    sdk: &dash_sdk::Sdk,
+    pro_tx_hash: &Identifier,
+    voter_identifier: &Identifier,
+    voting_address: &[u8; 20],
+) -> Option<FFIError> {
+    // A fetch that itself fails tells us nothing; leave the original error.
+    let fetched = Identity::fetch(sdk, *voter_identifier).await.ok()?;
+
+    let Some(identity) = fetched else {
+        return Some(missing_voter_identity(pro_tx_hash, voter_identifier));
+    };
+    select_voting_key(&identity, voting_address, voter_identifier).err()
 }
 
 fn invalid(message: &str) -> FFIError {
