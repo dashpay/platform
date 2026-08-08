@@ -280,6 +280,33 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     )
                     backgroundContext.insert(record)
                 }
+
+                // Spend-visibility reconcile (mirror of the Kotlin handler's
+                // onPersistAssetLockUpsert): an asset-lock tx burns its value
+                // into the special-tx payload and often has no wallet-owned
+                // standard output, so SPV block matching can miss it — the
+                // spender's transaction row then never leaves mempool context
+                // and resolveInputOutpoint's in-block flip never runs, leaving
+                // the funding TXOs isSpent=false forever. The lock's
+                // own STATUS keeps arriving via this callback; from
+                // InstantSendLocked (2) the network has locked the inputs, so
+                // flip the TXOs already linked to this lock's funding tx.
+                if entry.statusRaw >= 2,
+                   let displayTxidHex = entry.outPointHex.split(separator: ":").first,
+                   let displayTxid = Data(hexString: String(displayTxidHex)) {
+                    let wireTxid = Data(displayTxid.reversed())
+                    let staleDescriptor = FetchDescriptor<PersistentTxo>(
+                        predicate: #Predicate {
+                            $0.spendingTransaction?.txid == wireTxid && $0.isSpent == false
+                        }
+                    )
+                    if let stale = try? backgroundContext.fetch(staleDescriptor) {
+                        for txo in stale {
+                            txo.isSpent = true
+                            txo.lastUpdated = Date()
+                        }
+                    }
+                }
             }
 
             for outPointHex in removed {

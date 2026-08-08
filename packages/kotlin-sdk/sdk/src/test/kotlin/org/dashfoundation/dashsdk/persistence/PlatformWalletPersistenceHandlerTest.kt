@@ -9,6 +9,8 @@ import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.wallet.PlatformWalletPersistenceCapabilities
 import org.dashfoundation.dashsdk.persistence.entities.CoreAddressEntity
+import org.dashfoundation.dashsdk.persistence.entities.TransactionEntity
+import org.dashfoundation.dashsdk.persistence.entities.TxoEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
@@ -2761,5 +2763,80 @@ class PlatformWalletPersistenceHandlerTest {
 
         // Unchanged pre-invitation behavior: no account row conjured.
         assertTrue(db.accountDao().observeByWallet(walletId).first().isEmpty())
+    }
+
+    // ── Asset-lock spend visibility ────────────────────────────────────
+
+    /**
+     * An asset-lock tx burns its value into the special-tx payload and often
+     * has no wallet-owned standard output, so SPV block matching can miss it:
+     * the spender's transaction row never advances past mempool context and
+     * the in-block flip in onWalletChangesetTransaction never runs — the
+     * funding TXO sits at isSpent=false (spendingTxid set) FOREVER, and every
+     * isSpent-based balance read overstates the wallet. The lock's own status
+     * DOES keep arriving; from InstantSendLocked on, the upsert must flip
+     * linked TXOs.
+     */
+    @Test
+    fun assetLockStatusAdvanceFlipsItsFundingTxos() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val lockTxid = ByteArray(32) { 7 }
+        db.transactionDao().upsert(
+            TransactionEntity(txid = lockTxid, transactionData = ByteArray(4), context = 0),
+        )
+        val outpoint = ByteArray(36) { 9 }
+        db.txoDao().upsert(
+            TxoEntity(
+                outpoint = outpoint,
+                vout = 0,
+                amount = 1_000_000,
+                address = "yTest",
+                walletId = walletId,
+                spendingTxid = lockTxid,
+                spendingInputIndex = 0,
+                isSpent = false,
+            ),
+        )
+
+        // Broadcast (1) must NOT flip — the network holds no lock yet and a
+        // pre-broadcast abort could still release the inputs.
+        handler.onPersistAssetLockUpsert(
+            walletId, lockTxid + ByteArray(4), ByteArray(4), 0, 1, 0, 999_545, 1, null,
+        )
+        assertFalse(db.txoDao().getByOutpoint(outpoint)!!.isSpent)
+
+        // InstantSendLocked (2): the network has locked the inputs — flip.
+        handler.onPersistAssetLockUpsert(
+            walletId, lockTxid + ByteArray(4), ByteArray(4), 0, 1, 0, 999_545, 2, null,
+        )
+        assertTrue(db.txoDao().getByOutpoint(outpoint)!!.isSpent)
+    }
+
+    /** The Consumed (4) terminal upsert heals rows a missed IS/CL never flipped. */
+    @Test
+    fun assetLockConsumedHealsAStaleUnspentRow() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val lockTxid = ByteArray(32) { 8 }
+        db.transactionDao().upsert(
+            TransactionEntity(txid = lockTxid, transactionData = ByteArray(4), context = 0),
+        )
+        val outpoint = ByteArray(36) { 10 }
+        db.txoDao().upsert(
+            TxoEntity(
+                outpoint = outpoint,
+                vout = 0,
+                amount = 9_999_545,
+                address = "yTest2",
+                walletId = walletId,
+                spendingTxid = lockTxid,
+                spendingInputIndex = 0,
+                isSpent = false,
+            ),
+        )
+
+        handler.onPersistAssetLockUpsert(
+            walletId, lockTxid + ByteArray(4), ByteArray(4), 0, 1, 0, 9_999_545, 4, null,
+        )
+        assertTrue(db.txoDao().getByOutpoint(outpoint)!!.isSpent)
     }
 }

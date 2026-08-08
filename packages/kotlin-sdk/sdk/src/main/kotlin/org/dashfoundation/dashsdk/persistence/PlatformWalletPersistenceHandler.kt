@@ -1523,6 +1523,23 @@ class PlatformWalletPersistenceHandler(
                     updatedAt = now(),
                 ),
             )
+            // Spend-visibility reconcile: an asset-lock tx burns its value
+            // into the special-tx PAYLOAD and often has no wallet-owned
+            // standard output, so SPV block matching can miss it entirely —
+            // the spender's transaction row then never leaves mempool
+            // context and onWalletChangesetTransaction's in-block flip never
+            // runs, leaving the funding TXOs isSpent=0 (spendingTxid set)
+            // FOREVER. The lock's own STATUS is a signal that provably
+            // does arrive (the proof wait drives it): once it reaches
+            // InstantSendLocked (2) the network has locked the inputs, so
+            // flip the linked TXOs here. Monotonic, and keyed strictly to
+            // TXOs already linked to THIS lock's funding txid.
+            if ((status.toInt() and 0xFF) >= ASSET_LOCK_STATUS_INSTANT_SEND_LOCKED) {
+                val fundingTxid = outPoint.copyOfRange(0, 32)
+                for (txo in db.txoDao().getUnspentBySpendingTxid(fundingTxid)) {
+                    db.txoDao().upsert(txo.copy(isSpent = true, lastUpdated = now()))
+                }
+            }
         }
         0
     }
@@ -3089,6 +3106,15 @@ class PlatformWalletPersistenceHandler(
 
         /** `TransactionContext::InBlock` — spends only count once in-block. */
         private const val CONTEXT_IN_BLOCK = 2
+
+        /**
+         * Rust `AssetLockStatus` wire bytes (asset_lock_persistence.rs):
+         * Built 0, Broadcast 1, InstantSendLocked 2, ChainLocked 3,
+         * Consumed 4. At InstantSendLocked the network has locked the
+         * funding inputs — the spend-visibility reconcile treats the
+         * linked TXOs as spent from there.
+         */
+        private const val ASSET_LOCK_STATUS_INSTANT_SEND_LOCKED = 2
 
         /** `Network.testnet` rawValue — the Swift fallback network. */
         private const val NETWORK_TESTNET = 1

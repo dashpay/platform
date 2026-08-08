@@ -385,6 +385,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let Some(info) = wm.get_wallet_info(wallet_id) else {
             return Vec::new();
         };
+        let last_processed_height = info.core_wallet.metadata.last_processed_height;
         info.core_wallet
             .accounts
             .all_accounts()
@@ -393,7 +394,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 // Balance lives on the funds-bearing variant only;
                 // keys-only accounts (identity, asset-lock, provider)
                 // never carry UTXOs.
-                let balance = account.as_funds().map(|a| a.balance).unwrap_or_default();
+                //
+                // Computed FRESH from the account's UTXO set — NOT the cached
+                // `a.balance` field. The cache refreshes only when transaction
+                // processing runs `update_balance()`, and a self-authored
+                // asset-lock spend can leave it stale long after the UTXO set
+                // (which coin selection reads) has moved on. Deriving from the
+                // same source selection uses makes disagreement impossible;
+                // the fold is bounded by the account's UTXO count.
+                let balance = account
+                    .as_funds()
+                    .map(|a| computed_core_balance(a, last_processed_height))
+                    .unwrap_or_default();
                 // Walk every pool on the account, sum
                 // `used` + total entries. Cheap — pools are bounded by
                 // the gap limit.
@@ -1235,5 +1247,79 @@ mod spv_rescan_tests {
         })
         .await
         .expect("blocking accessor task");
+    }
+}
+
+/// Read-only [`WalletCoreBalance`] over an account's live UTXO set, with the
+/// exact bucket rules of `ManagedCoreFundsAccount::update_balance` (which
+/// requires `&mut self` and mutates the cache, so it cannot serve a
+/// read-path): locked, else immature, else confirmed when in a block /
+/// InstantSend-locked / trusted change, else unconfirmed.
+fn computed_core_balance(
+    account: &key_wallet::managed_account::ManagedCoreFundsAccount,
+    last_processed_height: u32,
+) -> key_wallet::wallet::balance::WalletCoreBalance {
+    let mut confirmed = 0u64;
+    let mut unconfirmed = 0u64;
+    let mut immature = 0u64;
+    let mut locked = 0u64;
+    for utxo in account.utxos.values() {
+        let value = utxo.txout.value;
+        if utxo.is_locked {
+            locked += value;
+        } else if !utxo.is_mature(last_processed_height) {
+            immature += value;
+        } else if utxo.is_confirmed || utxo.is_instantlocked || utxo.is_trusted {
+            confirmed += value;
+        } else {
+            unconfirmed += value;
+        }
+    }
+    key_wallet::wallet::balance::WalletCoreBalance::new(confirmed, unconfirmed, immature, locked)
+}
+
+#[cfg(test)]
+mod computed_balance_tests {
+    use super::*;
+    use key_wallet::account::StandardAccountType;
+
+    /// The accessor's per-account figure must come from the LIVE UTXO set,
+    /// not the cached balance field: a self-authored asset-lock spend can
+    /// leave the cache stale long after selection has moved on. Dirty the
+    /// UTXO set
+    /// without running update_balance and assert the fold reports the fresh
+    /// truth while the cache still holds the stale figure.
+    #[tokio::test]
+    async fn computed_balance_ignores_the_stale_cache() {
+        let (wallet_manager, wallet_id, _balance, _signer) =
+            crate::test_support::funded_wallet_manager(StandardAccountType::BIP44Account).await;
+
+        let mut wm = wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet");
+        let height = info.core_wallet.metadata.last_processed_height;
+        let account = info
+            .core_wallet
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .expect("bip44 account 0");
+
+        // Freshen the cache, then remove every UTXO WITHOUT refreshing it —
+        // the shape an unprocessed self-spend leaves behind.
+        account.update_balance(height);
+        let cached_before = account.balance;
+        assert!(cached_before.total() > 0, "fixture must be funded");
+        account.utxos.clear();
+
+        assert_eq!(
+            account.balance.total(),
+            cached_before.total(),
+            "precondition: the cache must still hold the stale figure"
+        );
+        assert_eq!(
+            computed_core_balance(account, height).total(),
+            0,
+            "the accessor's fold must see the live (empty) UTXO set"
+        );
     }
 }
