@@ -50,6 +50,10 @@ use rs_sdk_ffi::MnemonicResolverHandle;
 pub const PROVIDER_KEY_KIND_OPERATOR: u8 = 10;
 /// See [`PROVIDER_KEY_KIND_OPERATOR`].
 pub const PROVIDER_KEY_KIND_PLATFORM_NODE: u8 = 11;
+/// secp256k1 masternode voting keys (`ProviderVotingKeys`, tag 8).
+pub const PROVIDER_KEY_KIND_VOTING: u8 = 8;
+/// secp256k1 masternode owner keys (`ProviderOwnerKeys`, tag 9).
+pub const PROVIDER_KEY_KIND_OWNER: u8 = 9;
 
 /// One provider key derived at a single index, in the hex forms the host
 /// renders.
@@ -77,9 +81,20 @@ pub struct ProviderKeyAtIndexFFI {
     pub node_id_hex: *mut c_char,
     /// Null-terminated lowercase hex of the raw 32-byte private scalar
     /// (64 chars), populated only when `include_private` was set. BLS /
-    /// Ed25519 keys have no WIF, so this is the only private form. Null
-    /// otherwise; zeroized by the free function.
+    /// Ed25519 keys have no WIF, so for those this is the only private
+    /// form. Null otherwise; zeroized by the free function.
     pub private_key_hex: *mut c_char,
+    /// Null-terminated P2PKH address of the key. Non-null only for the
+    /// secp256k1 families (voting tag 8 / owner tag 9), whose keys appear
+    /// on-chain as the ProRegTx voting / owner addresses; null for BLS and
+    /// Ed25519 (no address form) and on the empty state.
+    pub address: *mut c_char,
+    /// Null-terminated WIF encoding of the private key, on the same terms
+    /// as `private_key_hex`: non-null only for the secp256k1 families, and
+    /// only when `include_private` was set. Encoded Rust-side so the
+    /// network byte and compression flag have one home. Zeroized by the
+    /// free function.
+    pub private_key_wif: *mut c_char,
 }
 
 impl ProviderKeyAtIndexFFI {
@@ -92,6 +107,8 @@ impl ProviderKeyAtIndexFFI {
             legacy_public_key_hex: std::ptr::null_mut(),
             node_id_hex: std::ptr::null_mut(),
             private_key_hex: std::ptr::null_mut(),
+            address: std::ptr::null_mut(),
+            private_key_wif: std::ptr::null_mut(),
         }
     }
 }
@@ -106,8 +123,10 @@ impl ProviderKeyAtIndexFFI {
 ///   lacks resident private keys (see the module docs). May be null for
 ///   an operator public listing on any wallet, or for a resident-key
 ///   wallet.
-/// - `kind` — [`PROVIDER_KEY_KIND_OPERATOR`] (BLS, tag 10) or
-///   [`PROVIDER_KEY_KIND_PLATFORM_NODE`] (Ed25519, tag 11).
+/// - `kind` — [`PROVIDER_KEY_KIND_OPERATOR`] (BLS, tag 10),
+///   [`PROVIDER_KEY_KIND_PLATFORM_NODE`] (Ed25519, tag 11),
+///   [`PROVIDER_KEY_KIND_VOTING`] (secp256k1, tag 8) or
+///   [`PROVIDER_KEY_KIND_OWNER`] (secp256k1, tag 9).
 /// - `index` — the key index to derive.
 /// - `include_private` — also return the raw private scalar.
 /// - `out` — populated on success. Release with
@@ -138,6 +157,8 @@ pub unsafe extern "C" fn platform_wallet_provider_key_at_index(
     let kind = match kind {
         PROVIDER_KEY_KIND_OPERATOR => ProviderKeyKind::Operator,
         PROVIDER_KEY_KIND_PLATFORM_NODE => ProviderKeyKind::PlatformNode,
+        PROVIDER_KEY_KIND_VOTING => ProviderKeyKind::Voting,
+        PROVIDER_KEY_KIND_OWNER => ProviderKeyKind::Owner,
         other => {
             return PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorInvalidParameter,
@@ -231,6 +252,8 @@ pub unsafe extern "C" fn platform_wallet_provider_key_at_index(
         legacy_public_key_bytes,
         node_id,
         private_key,
+        address,
+        private_key_wif,
     } = derived;
 
     let public_key_hex = unwrap_result_or_return!(CString::new(hex::encode(public_key_bytes)));
@@ -255,6 +278,20 @@ pub unsafe extern "C" fn platform_wallet_provider_key_at_index(
         None => std::ptr::null_mut(),
     };
 
+    // Public material — plain `CString::new`.
+    let address_ptr = match address {
+        Some(a) => unwrap_result_or_return!(CString::new(a)).into_raw(),
+        None => std::ptr::null_mut(),
+    };
+    // Secret: same `secret_string_into_raw` marshalling as the hex form, so
+    // the WIF never leaves an un-zeroized plaintext copy on the heap.
+    let private_key_wif_ptr = match private_key_wif {
+        Some(wif) => {
+            unwrap_result_or_return!(crate::address_private_key::secret_string_into_raw(wif))
+        }
+        None => std::ptr::null_mut(),
+    };
+
     unsafe {
         *out = ProviderKeyAtIndexFFI {
             index,
@@ -262,6 +299,8 @@ pub unsafe extern "C" fn platform_wallet_provider_key_at_index(
             legacy_public_key_hex,
             node_id_hex,
             private_key_hex,
+            address: address_ptr,
+            private_key_wif: private_key_wif_ptr,
         };
     }
     PlatformWalletFFIResult::ok()
@@ -296,6 +335,18 @@ pub unsafe extern "C" fn platform_wallet_provider_key_at_index_free(
     if !out.node_id_hex.is_null() {
         let _ = unsafe { CString::from_raw(out.node_id_hex) };
         out.node_id_hex = std::ptr::null_mut();
+    }
+    // The address is public material — free without scrubbing.
+    if !out.address.is_null() {
+        let _ = unsafe { CString::from_raw(out.address) };
+        out.address = std::ptr::null_mut();
+    }
+    // The WIF encodes the private key — zeroize on the same terms as the
+    // hex form below.
+    if !out.private_key_wif.is_null() {
+        let mut bytes = unsafe { CString::from_raw(out.private_key_wif) }.into_bytes_with_nul();
+        bytes.zeroize();
+        out.private_key_wif = std::ptr::null_mut();
     }
     // The private-key hex is sensitive — zeroize its bytes before free.
     if !out.private_key_hex.is_null() {
