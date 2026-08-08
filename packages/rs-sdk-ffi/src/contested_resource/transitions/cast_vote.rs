@@ -62,12 +62,7 @@ use crate::types::{FFINetwork, Network, SDKHandle};
 use crate::{DashSDKResult, FFIError};
 use dash_sdk::dpp::dashcore::hashes::{hash160, Hash};
 use dash_sdk::dpp::dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
-use dash_sdk::dpp::identifier::MasternodeIdentifiers;
-use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
-use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use dash_sdk::dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
-use dash_sdk::dpp::platform_value::BinaryData;
+use dash_sdk::dpp::dashcore::ProTxHash;
 use dash_sdk::dpp::platform_value::{Identifier, Value};
 use dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dash_sdk::dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
@@ -75,8 +70,10 @@ use dash_sdk::dpp::voting::vote_polls::VotePoll;
 use dash_sdk::dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
 use dash_sdk::dpp::voting::votes::resource_vote::ResourceVote;
 use dash_sdk::dpp::voting::votes::Vote;
+use dash_sdk::platform::transition::masternode_vote_keys::{
+    diagnose_voting_key_failure, is_voting_key_failure, voter_identity_voting_key, VotingKeyProblem,
+};
 use dash_sdk::platform::transition::vote::PutVote;
-use dash_sdk::platform::Fetch;
 use simple_signer::SingleKeySigner;
 use std::ffi::{c_char, CStr};
 use zeroize::Zeroizing;
@@ -354,23 +351,11 @@ unsafe fn cast_vote_inner(
     let wrapper = &*(sdk_handle as *const SDKWrapper);
     let sdk = &wrapper.sdk;
 
-    // Platform assigns a voter identity's voting key id 0 and nothing else:
-    // `create_voter_identity_v0` passes 0, and a rotation creates a DIFFERENT
-    // identity (the identifier includes the voting address) whose key is also
-    // 0. So the happy path needs no lookup — build the key Platform holds and
-    // broadcast. `SingleKeySigner::can_sign_with` recomputes the same hash160
-    // from the private key, so the key and the signer agree by construction.
-    let masternode_voting_key: IdentityPublicKey = IdentityPublicKeyV0 {
-        id: 0,
-        purpose: Purpose::VOTING,
-        security_level: SecurityLevel::HIGH,
-        key_type: KeyType::ECDSA_HASH160,
-        read_only: true,
-        data: BinaryData::new(voting_address.to_vec()),
-        disabled_at: None,
-        contract_bounds: None,
-    }
-    .into();
+    // The key Platform holds, built without a lookup — see the rs-sdk helper
+    // for why the id is knowable. `SingleKeySigner::can_sign_with` recomputes
+    // the same hash160 from the private key, so key and signer agree by
+    // construction.
+    let masternode_voting_key = voter_identity_voting_key(&voting_address);
 
     let broadcast = wrapper.runtime.block_on(async {
         vote.put_to_platform_and_wait_for_response(
@@ -392,7 +377,7 @@ unsafe fn cast_vote_inner(
     // identity, and diagnosing those would let an absent voter identity
     // masquerade as their cause — reporting "no voting identity" for a vote
     // that actually arrived too late.
-    if !is_voter_key_failure(&broadcast_error) {
+    if !is_voting_key_failure(&broadcast_error) {
         return Err(FFIError::from(broadcast_error));
     }
 
@@ -401,125 +386,54 @@ unsafe fn cast_vote_inner(
     // "Public key 0 doesn't exist". Fetching the identity says which, but only
     // here: doing it before every cast would spend a round trip per
     // (node, contest) on runs that overwhelmingly succeed.
-    let voter_identifier = Identifier::create_voter_identifier(&pro_tx_hash_arr, &voting_address);
-    let diagnosis = wrapper.runtime.block_on(diagnose_vote_failure(
+    let problem = wrapper.runtime.block_on(diagnose_voting_key_failure(
         sdk,
-        &pro_tx_hash,
-        &voter_identifier,
+        ProTxHash::from_byte_array(pro_tx_hash_arr),
         &voting_address,
     ));
 
     // Still fall back to the original when the identity and key both check out
     // — the signature failure was about something else on the key path.
-    Err(diagnosis.unwrap_or_else(|| FFIError::from(broadcast_error)))
-}
-
-/// Whether a broadcast failure is Platform rejecting the VOTING KEY, as opposed
-/// to anything else that can fail a vote.
-///
-/// Matched on the typed consensus error rather than its rendered text: the
-/// three signature variants below are exactly the ones the identity fetch can
-/// explain, and a message match would silently start diagnosing unrelated
-/// failures the first time a string changed.
-fn is_voter_key_failure(error: &dash_sdk::Error) -> bool {
-    use dash_sdk::dpp::consensus::signature::SignatureError;
-    use dash_sdk::dpp::consensus::ConsensusError;
-
-    fn is_key_signature_error(consensus: &ConsensusError) -> bool {
-        matches!(
-            consensus,
-            ConsensusError::SignatureError(
-                SignatureError::IdentityNotFoundError(_)
-                    | SignatureError::MissingPublicKeyError(_)
-                    | SignatureError::PublicKeyIsDisabledError(_)
-            )
-        )
-    }
-
-    match error {
-        // Rejected at broadcast: the consensus error rides on the response.
-        dash_sdk::Error::StateTransitionBroadcastError(e) => {
-            e.cause.as_ref().is_some_and(is_key_signature_error)
-        }
-        // Rejected locally / surfaced as a protocol error.
-        dash_sdk::Error::Protocol(dash_sdk::dpp::ProtocolError::ConsensusError(e)) => {
-            is_key_signature_error(e)
-        }
-        _ => false,
-    }
-}
-
-/// Explain a failed vote broadcast, or `None` when the voter identity and its
-/// voting key are both fine and the failure lies elsewhere.
-///
-/// Runs only after a broadcast has already failed, so its cost is paid on the
-/// path that is already lost.
-async fn diagnose_vote_failure(
-    sdk: &dash_sdk::Sdk,
-    pro_tx_hash: &Identifier,
-    voter_identifier: &Identifier,
-    voting_address: &[u8; 20],
-) -> Option<FFIError> {
-    // A fetch that itself fails tells us nothing; leave the original error.
-    let fetched = Identity::fetch(sdk, *voter_identifier).await.ok()?;
-
-    let Some(identity) = fetched else {
-        return Some(missing_voter_identity(pro_tx_hash, voter_identifier));
-    };
-    select_voting_key(&identity, voting_address, voter_identifier).err()
+    Err(problem
+        .map(describe_voting_key_problem)
+        .unwrap_or_else(|| FFIError::from(broadcast_error)))
 }
 
 fn invalid(message: &str) -> FFIError {
     FFIError::InvalidParameter(message.to_string())
 }
 
-/// Platform holds no voter identity for this `(pro_tx_hash, voting address)`.
-fn missing_voter_identity(pro_tx_hash: &Identifier, voter_identifier: &Identifier) -> FFIError {
-    FFIError::InvalidParameter(format!(
-        "No voting identity exists on Platform for masternode {} with this voting key \
-         (expected voter identity {}). Either the voting key does not match the \
-         masternode's registered voting address, or Platform has not created the \
-         voter identity yet.",
-        pro_tx_hash, voter_identifier
-    ))
-}
-
-/// Pick the voting key the caller's private key can actually sign with.
-///
-/// Matches on the key's own data rather than its position. Platform does
-/// assign the voting key id 0, so position would usually work — but it
-/// silently picks the wrong key on an identity carrying other keys, and it
-/// cannot tell a usable key from one `update_voter_identity_v0` disabled
-/// during a rotation. `disabled_at` is therefore part of the match, not an
-/// afterthought: a disabled key exists and would be selected by id.
-fn select_voting_key(
-    identity: &Identity,
-    voting_address: &[u8; 20],
-    voter_identifier: &Identifier,
-) -> Result<IdentityPublicKey, FFIError> {
-    identity
-        .public_keys()
-        .values()
-        .find(|key| {
-            key.purpose() == Purpose::VOTING
-                && key.key_type() == KeyType::ECDSA_HASH160
-                && key.data().as_slice() == voting_address
-                && key.disabled_at().is_none()
-        })
-        .cloned()
-        .ok_or_else(|| {
-            FFIError::InvalidParameter(format!(
-                "Voter identity {} has no enabled ECDSA_HASH160 voting key matching this \
-                 private key. The masternode's voting key may have been rotated.",
-                voter_identifier
-            ))
-        })
-}
-
 unsafe fn cstr<'a>(ptr: *const c_char, field: &str) -> Result<&'a str, FFIError> {
     CStr::from_ptr(ptr)
         .to_str()
         .map_err(|e| invalid(&format!("Invalid UTF-8 in {}: {}", field, e)))
+}
+
+/// Render a [`VotingKeyProblem`] as the message a host surfaces.
+///
+/// rs-sdk reports the fact; phrasing it is a binding concern, so the sentence
+/// lives here rather than in the SDK where every caller would inherit it.
+fn describe_voting_key_problem(problem: VotingKeyProblem) -> FFIError {
+    match problem {
+        VotingKeyProblem::NoVoterIdentity {
+            pro_tx_hash,
+            expected_voter_identity,
+        } => FFIError::InvalidParameter(format!(
+            "No voting identity exists on Platform for masternode {} with this voting key \
+             (expected voter identity {}). Either the voting key does not match the \
+             masternode's registered voting address, or Platform has not created the \
+             voter identity yet.",
+            Identifier::new(pro_tx_hash.to_byte_array()),
+            expected_voter_identity
+        )),
+        VotingKeyProblem::NoUsableVotingKey { voter_identity } => {
+            FFIError::InvalidParameter(format!(
+                "Voter identity {} has no enabled ECDSA_HASH160 voting key matching this \
+                 private key. The masternode's voting key may have been rotated.",
+                voter_identity
+            ))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -641,238 +555,48 @@ mod tests {
         }
     }
 
-    // ---- select_voting_key --------------------------------------------------
+    // ---- describe_voting_key_problem ----------------------------------------
     //
-    // `Identity::fetch` needs a live SDK, so the identity *lookup* stays
-    // integration-shaped. Key *selection* is the part that decides whether a
-    // vote can be signed, and it is pure — these cover it directly.
+    // Selection, the failure gate and the diagnosis itself now live in rs-sdk
+    // (`platform::transition::masternode_vote_keys`) and are tested there. What
+    // remains here is the one thing this layer owns: turning the SDK's typed
+    // fact into the sentence a host shows.
 
-    use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-    use dash_sdk::dpp::identity::v0::IdentityV0;
-    use dash_sdk::dpp::identity::SecurityLevel;
-    use dash_sdk::dpp::platform_value::BinaryData;
-    use std::collections::BTreeMap;
-
-    const VOTING_ADDRESS: [u8; 20] = [7u8; 20];
-    const OTHER_ADDRESS: [u8; 20] = [9u8; 20];
-
-    fn voter_id() -> Identifier {
-        Identifier::new([3u8; 32])
-    }
-
-    fn key(
-        id: u32,
-        purpose: Purpose,
-        key_type: KeyType,
-        data: [u8; 20],
-        disabled_at: Option<u64>,
-    ) -> IdentityPublicKey {
-        IdentityPublicKey::V0(IdentityPublicKeyV0 {
-            id,
-            purpose,
-            security_level: SecurityLevel::HIGH,
-            contract_bounds: None,
-            key_type,
-            read_only: false,
-            data: BinaryData::new(data.to_vec()),
-            disabled_at,
-        })
-    }
-
-    fn identity_with(keys: Vec<IdentityPublicKey>) -> Identity {
-        let mut public_keys = BTreeMap::new();
-        for k in keys {
-            public_keys.insert(k.id(), k);
-        }
-        Identity::V0(IdentityV0 {
-            id: voter_id(),
-            public_keys,
-            balance: 0,
-            revision: 0,
-        })
-    }
+    use dash_sdk::dpp::dashcore::ProTxHash;
+    use dash_sdk::platform::transition::masternode_vote_keys::VotingKeyProblem;
 
     #[test]
-    fn selects_the_enabled_voting_key_matching_the_private_key() {
-        let identity = identity_with(vec![key(
-            0,
-            Purpose::VOTING,
-            KeyType::ECDSA_HASH160,
-            VOTING_ADDRESS,
-            None,
-        )]);
-        let selected = select_voting_key(&identity, &VOTING_ADDRESS, &voter_id())
-            .expect("the matching enabled key should be selected");
-        assert_eq!(selected.data().as_slice(), &VOTING_ADDRESS);
-    }
-
-    #[test]
-    fn selects_by_data_not_by_position() {
-        // The real id is not 0 here. Selecting by position would take the
-        // AUTHENTICATION key and sign with something the signer cannot back.
-        let identity = identity_with(vec![
-            key(
-                0,
-                Purpose::AUTHENTICATION,
-                KeyType::ECDSA_HASH160,
-                OTHER_ADDRESS,
-                None,
-            ),
-            key(
-                4,
-                Purpose::VOTING,
-                KeyType::ECDSA_HASH160,
-                VOTING_ADDRESS,
-                None,
-            ),
-        ]);
-        let selected = select_voting_key(&identity, &VOTING_ADDRESS, &voter_id())
-            .expect("the voting key should be found at a non-zero id");
-        assert_eq!(selected.id(), 4);
-        assert_eq!(selected.purpose(), Purpose::VOTING);
-    }
-
-    #[test]
-    fn rejects_a_disabled_voting_key() {
-        // What a rotation leaves behind: `update_voter_identity_v0` disables
-        // the old identity's keys rather than removing them, so the key exists
-        // and would be picked by id.
-        let identity = identity_with(vec![key(
-            0,
-            Purpose::VOTING,
-            KeyType::ECDSA_HASH160,
-            VOTING_ADDRESS,
-            Some(1_700_000_000),
-        )]);
-        let err = select_voting_key(&identity, &VOTING_ADDRESS, &voter_id())
-            .expect_err("a disabled key must not be selected");
-        assert!(
-            format!("{:?}", err).contains("may have been rotated"),
-            "expected the rotation diagnostic, got: {:?}",
-            err
+    fn missing_identity_message_names_both_identifiers() {
+        let pro_tx = ProTxHash::from_byte_array([1u8; 32]);
+        let expected = Identifier::new([3u8; 32]);
+        let msg = format!(
+            "{:?}",
+            describe_voting_key_problem(VotingKeyProblem::NoVoterIdentity {
+                pro_tx_hash: pro_tx,
+                expected_voter_identity: expected,
+            })
         );
+
+        assert!(msg.contains(&format!("{}", Identifier::new(pro_tx.to_byte_array()))));
+        assert!(msg.contains(&format!("{}", expected)));
+        // The message crosses the FFI boundary verbatim and is shown to users,
+        // so it must read as prose — an earlier version rendered with blank
+        // gaps from an unescaped multi-line literal.
+        assert!(!msg.contains("  "), "message has whitespace runs: {msg}");
     }
 
     #[test]
-    fn rejects_a_voting_key_for_a_different_address() {
-        let identity = identity_with(vec![key(
-            0,
-            Purpose::VOTING,
-            KeyType::ECDSA_HASH160,
-            OTHER_ADDRESS,
-            None,
-        )]);
-        assert!(select_voting_key(&identity, &VOTING_ADDRESS, &voter_id()).is_err());
-    }
-
-    // ---- is_voter_key_failure -----------------------------------------------
-    //
-    // The gate deciding whether a failed broadcast gets a key diagnosis. Its
-    // absence was a real defect: diagnosis ran on EVERY failure, so a vote that
-    // arrived after the poll closed, cast by a node with no voter identity,
-    // was reported as "no voting identity exists" — replacing the true cause
-    // with a plausible-looking wrong one.
-
-    use dash_sdk::dpp::consensus::signature::{
-        BasicECDSAError, IdentityNotFoundError, MissingPublicKeyError, PublicKeyIsDisabledError,
-        SignatureError,
-    };
-    use dash_sdk::dpp::consensus::ConsensusError;
-
-    fn broadcast_error_with(cause: ConsensusError) -> dash_sdk::Error {
-        dash_sdk::Error::StateTransitionBroadcastError(
-            dash_sdk::error::StateTransitionBroadcastError {
-                code: 1,
-                message: "rejected".to_string(),
-                cause: Some(cause),
-            },
-        )
-    }
-
-    #[test]
-    fn key_failures_are_diagnosable() {
-        for cause in [
-            ConsensusError::SignatureError(SignatureError::MissingPublicKeyError(
-                MissingPublicKeyError::new(0),
-            )),
-            ConsensusError::SignatureError(SignatureError::PublicKeyIsDisabledError(
-                PublicKeyIsDisabledError::new(0),
-            )),
-            ConsensusError::SignatureError(SignatureError::IdentityNotFoundError(
-                IdentityNotFoundError::new(Identifier::new([3u8; 32])),
-            )),
-        ] {
-            assert!(
-                is_voter_key_failure(&broadcast_error_with(cause.clone())),
-                "{cause:?} is exactly what the identity fetch explains"
-            );
-        }
-    }
-
-    /// The regression this gate exists for: a failure unrelated to the key must
-    /// keep its own error even though the identity may well be absent.
-    #[test]
-    fn unrelated_failures_are_not_diagnosed() {
-        // A signature failure that is NOT about the key's existence or state.
-        // The identity fetch cannot explain it, so it must keep its own error —
-        // this is the discrimination the gate exists for, not merely
-        // "signature vs not signature".
-        let other_signature_failure = broadcast_error_with(ConsensusError::SignatureError(
-            SignatureError::BasicECDSAError(BasicECDSAError::new("bad signature".to_string())),
-        ));
-        assert!(!is_voter_key_failure(&other_signature_failure));
-
-        // A transport failure carries no consensus cause at all.
-        let transport = dash_sdk::Error::StateTransitionBroadcastError(
-            dash_sdk::error::StateTransitionBroadcastError {
-                code: 2,
-                message: "connection reset".to_string(),
-                cause: None,
-            },
+    fn rotated_key_message_names_the_identity_and_the_cause() {
+        let voter = Identifier::new([5u8; 32]);
+        let msg = format!(
+            "{:?}",
+            describe_voting_key_problem(VotingKeyProblem::NoUsableVotingKey {
+                voter_identity: voter,
+            })
         );
-        assert!(!is_voter_key_failure(&transport));
-    }
 
-    /// The purpose predicate must be load-bearing on its own.
-    ///
-    /// The only other AUTHENTICATION fixture also uses a different address, so
-    /// it is already rejected by the address check — deleting
-    /// `purpose() == VOTING` would leave every other test passing. This pins it
-    /// with an AUTHENTICATION key at the CORRECT address and key type, where
-    /// purpose is the only thing that can reject it.
-    #[test]
-    fn rejects_a_matching_address_under_the_wrong_purpose() {
-        let identity = identity_with(vec![key(
-            0,
-            Purpose::AUTHENTICATION,
-            KeyType::ECDSA_HASH160,
-            VOTING_ADDRESS,
-            None,
-        )]);
-        assert!(select_voting_key(&identity, &VOTING_ADDRESS, &voter_id()).is_err());
-    }
-
-    #[test]
-    fn rejects_a_matching_address_under_the_wrong_key_type() {
-        // Same 20 bytes, but not a key this signer can sign with.
-        let identity = identity_with(vec![key(
-            0,
-            Purpose::VOTING,
-            KeyType::BIP13_SCRIPT_HASH,
-            VOTING_ADDRESS,
-            None,
-        )]);
-        assert!(select_voting_key(&identity, &VOTING_ADDRESS, &voter_id()).is_err());
-    }
-
-    #[test]
-    fn missing_voter_identity_names_both_identifiers() {
-        let pro_tx = Identifier::new([1u8; 32]);
-        let msg = format!("{:?}", missing_voter_identity(&pro_tx, &voter_id()));
-        assert!(msg.contains(&format!("{}", pro_tx)));
-        assert!(msg.contains(&format!("{}", voter_id())));
-        // The diagnostic must read as prose — it crosses the FFI boundary and
-        // is shown verbatim to users.
-        assert!(!msg.contains("  "), "message has whitespace runs: {}", msg);
+        assert!(msg.contains(&format!("{}", voter)));
+        assert!(msg.contains("rotated"));
+        assert!(!msg.contains("  "), "message has whitespace runs: {msg}");
     }
 }
