@@ -85,6 +85,7 @@ pub(crate) const ASSET_LOCK_STATUS_LABELS: &[&str] = &[
     "is_locked",
     "chain_locked",
     "consumed",
+    "recovered_from_chain",
 ];
 
 fn status_str(s: &AssetLockStatus) -> &'static str {
@@ -94,6 +95,7 @@ fn status_str(s: &AssetLockStatus) -> &'static str {
         AssetLockStatus::InstantSendLocked => "is_locked",
         AssetLockStatus::ChainLocked => "chain_locked",
         AssetLockStatus::Consumed => "consumed",
+        AssetLockStatus::RecoveredFromChain => "recovered_from_chain",
     }
 }
 
@@ -198,6 +200,7 @@ mod tests {
             AssetLockStatus::InstantSendLocked,
             AssetLockStatus::ChainLocked,
             AssetLockStatus::Consumed,
+            AssetLockStatus::RecoveredFromChain,
         ];
         for v in &variants {
             match v {
@@ -205,7 +208,8 @@ mod tests {
                 | AssetLockStatus::Broadcast
                 | AssetLockStatus::InstantSendLocked
                 | AssetLockStatus::ChainLocked
-                | AssetLockStatus::Consumed => {}
+                | AssetLockStatus::Consumed
+                | AssetLockStatus::RecoveredFromChain => {}
             }
         }
         variants

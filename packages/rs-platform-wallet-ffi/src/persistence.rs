@@ -4828,6 +4828,7 @@ fn status_from_u8(b: u8) -> Result<platform_wallet::AssetLockStatus, Persistence
         2 => AssetLockStatus::InstantSendLocked,
         3 => AssetLockStatus::ChainLocked,
         4 => AssetLockStatus::Consumed,
+        5 => AssetLockStatus::RecoveredFromChain,
         other => {
             return Err(PersistenceError::backend(format!(
                 "tracked asset lock: unknown status discriminant {}",

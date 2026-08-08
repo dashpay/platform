@@ -307,6 +307,28 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 self.validate_or_upgrade_proof(proof, account_index, out_point)
                     .await?
             }
+            AssetLockStatus::RecoveredFromChain => {
+                // Reconstructed from on-chain history after a restore —
+                // Platform-side consumption is unknown. An explicit
+                // resume is allowed to try consuming it: Platform
+                // rejects an already-spent outpoint with a typed error,
+                // and a genuinely unspent lock is real recoverable
+                // value. The tx is already on chain (the lock was
+                // rebuilt from a wallet record), so no re-broadcast:
+                // validate the reconstructed proof when one was
+                // attached, otherwise wait for one the normal way.
+                match existing_proof {
+                    Some(proof) => {
+                        self.validate_or_upgrade_proof(proof, account_index, out_point)
+                            .await?
+                    }
+                    None => {
+                        let proof = self.wait_for_proof(out_point, timeout).await?;
+                        self.validate_or_upgrade_proof(proof, account_index, out_point)
+                            .await?
+                    }
+                }
+            }
             AssetLockStatus::Consumed => {
                 // Terminal tombstone — the asset lock was already
                 // burned by a successful identity registration / top-up.
