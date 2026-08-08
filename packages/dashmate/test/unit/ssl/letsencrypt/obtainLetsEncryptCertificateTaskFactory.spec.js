@@ -36,6 +36,8 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
         homeDir,
         validateLetsEncryptCertificate,
         saveCertificateTask,
+        null,
+        {},
       )(config);
 
       await obtainCertificateTask.run();
@@ -75,6 +77,8 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
         homeDir,
         validateLetsEncryptCertificate,
         saveCertificateTask,
+        null,
+        {},
       )(config);
 
       await obtainCertificateTask.run();
@@ -137,6 +141,8 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
         homeDir,
         this.sinon.stub(),
         saveCertificateTask,
+        null,
+        {},
       )(config);
 
       await expect(obtainCertificateTask.run({ force: true }))
@@ -216,6 +222,8 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
         homeDir,
         validateLetsEncryptCertificate,
         saveCertificateTask,
+        null,
+        {},
       );
 
       await expect(obtainCertificateTask(config).run({ force: true }))

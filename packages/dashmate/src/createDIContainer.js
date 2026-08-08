@@ -150,6 +150,12 @@ export default async function createDIContainer(options = {}) {
     )).singleton(),
     getServiceList: asFunction(getServiceListFactory).singleton(),
     configFileLockOptions: asValue({}),
+    // Obtaining a certificate from an ACME directory that is not publicly
+    // trusted needs its CA, and reaching one that is not on the internet needs
+    // different container networking. Neither applies to Let's Encrypt, so both
+    // are empty outside a test that runs a local ACME server.
+    legoCaCertificatePath: asValue(null),
+    legoContainerOptions: asValue({}),
     configFileRepository: asClass(ConfigFileJsonRepository).singleton(),
     getBaseConfig: asFunction(getBaseConfigFactory).singleton(),
     getLocalConfig: asFunction(getLocalConfigFactory).singleton(),

@@ -746,8 +746,12 @@ export default {
                         email: {
                           type: ['string', 'null'],
                         },
+                        acmeDirectoryUrl: {
+                          type: 'string',
+                          format: 'uri',
+                        },
                       },
-                      required: ['email'],
+                      required: ['email', 'acmeDirectoryUrl'],
                       additionalProperties: false,
                     },
                   },

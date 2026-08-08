@@ -1,0 +1,253 @@
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
+import Docker from 'dockerode';
+import { asValue } from 'awilix';
+import createDIContainer from '../../../src/createDIContainer.js';
+import HomeDir from '../../../src/config/HomeDir.js';
+import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
+
+/**
+ * Obtain a certificate from a real ACME server.
+ *
+ * Everything below the ACME directory URL is production code: the lego image,
+ * its arguments, the HTTP-01 challenge it answers, and the files it produces.
+ * Only the certificate authority is swapped, for Pebble - the server Let's
+ * Encrypt tests its own implementation against.
+ *
+ * Pebble rather than a stub because Dashmate identifies a node by its external
+ * IP, and an IP certificate is what has to work. Pebble implements the IP
+ * identifier extension and ships the same `shortlived` profile name Let's
+ * Encrypt requires for them, so the production arguments run unchanged.
+ */
+const PEBBLE_IMAGE = 'ghcr.io/letsencrypt/pebble:latest';
+
+// Pebble presents a certificate for `pebble`, `localhost` and 127.0.0.1 only,
+// so it has to be reached by a name it was issued for.
+const PEBBLE_HOSTNAME = 'pebble';
+const PEBBLE_ACME_PORT = 14000;
+
+// A subnet of its own, so a busy machine cannot collide with the fixed address
+// lego needs.
+const NETWORK_SUBNET = '172.29.0.0/16';
+const PEBBLE_IP = '172.29.0.2';
+const LEGO_IP = '172.29.0.3';
+
+describe('Let\'s Encrypt certificate against a local ACME server', function main() {
+  this.timeout(5 * 60 * 1000);
+
+  const docker = new Docker();
+  const networkName = `dashmate-acme-test-${crypto.randomBytes(4).toString('hex')}`;
+
+  let network;
+  let pebbleContainer;
+  let pebbleDir;
+  let homeDir;
+  let container;
+  let config;
+  let sslDir;
+
+  /**
+   * Pebble is distroless, so its CA and default config are read out of the
+   * image rather than from a shell inside it.
+   *
+   * @param {string} destination
+   */
+  async function extractPebbleFixtures(destination) {
+    const created = await docker.createContainer({ Image: PEBBLE_IMAGE });
+
+    try {
+      const archive = await created.getArchive({ path: '/test' });
+
+      await new Promise((resolve, reject) => {
+        const write = fs.createWriteStream(path.join(destination, 'test.tar'));
+        archive.pipe(write);
+        archive.on('error', reject);
+        write.on('finish', resolve);
+        write.on('error', reject);
+      });
+    } finally {
+      await created.remove({ force: true });
+    }
+
+    const { execFileSync } = await import('child_process');
+    execFileSync('tar', ['-xf', path.join(destination, 'test.tar'), '-C', destination]);
+  }
+
+  before(async () => {
+    await new Promise((resolve, reject) => {
+      docker.pull(PEBBLE_IMAGE, (err, stream) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        docker.modem.followProgress(stream, (e) => (e ? reject(e) : resolve()));
+      });
+    });
+
+    pebbleDir = fs.mkdtempSync(path.join(HomeDir.createTemp().getPath(), 'pebble-'));
+
+    await extractPebbleFixtures(pebbleDir);
+
+    // Validate against the port the production lego arguments serve on, so
+    // `--http.port :80` is exercised rather than replaced.
+    const pebbleConfigPath = path.join(pebbleDir, 'pebble-config.json');
+    const pebbleConfig = JSON.parse(
+      fs.readFileSync(path.join(pebbleDir, 'test', 'config', 'pebble-config.json'), 'utf8'),
+    );
+    pebbleConfig.pebble.httpPort = 80;
+    fs.writeFileSync(pebbleConfigPath, JSON.stringify(pebbleConfig), 'utf8');
+
+    network = await docker.createNetwork({
+      Name: networkName,
+      IPAM: { Config: [{ Subnet: NETWORK_SUBNET }] },
+    });
+
+    pebbleContainer = await docker.createContainer({
+      Image: PEBBLE_IMAGE,
+      Cmd: ['-config', '/test/config/pebble-config.json'],
+      // Without this Pebble sleeps before validating, for no benefit here.
+      Env: ['PEBBLE_VA_NOSLEEP=1'],
+      HostConfig: {
+        AutoRemove: true,
+        NetworkMode: networkName,
+        Binds: [`${pebbleConfigPath}:/test/config/pebble-config.json:ro`],
+      },
+      NetworkingConfig: {
+        EndpointsConfig: {
+          [networkName]: {
+            IPAMConfig: { IPv4Address: PEBBLE_IP },
+            Aliases: [PEBBLE_HOSTNAME],
+          },
+        },
+      },
+    });
+
+    await pebbleContainer.start();
+
+    homeDir = HomeDir.createTemp();
+
+    container = await createDIContainer({});
+    container.resolve('homeDir').change(homeDir);
+    container.register({
+      legoCaCertificatePath: asValue(
+        path.join(pebbleDir, 'test', 'certs', 'pebble.minica.pem'),
+      ),
+      legoContainerOptions: asValue({
+        HostConfig: {
+          NetworkMode: networkName,
+          // The challenge is served over the test network, so nothing needs to
+          // reach the host - and binding its port 80 would need root.
+          PortBindings: {},
+        },
+        NetworkingConfig: {
+          EndpointsConfig: {
+            [networkName]: { IPAMConfig: { IPv4Address: LEGO_IP } },
+          },
+        },
+      }),
+    });
+
+    config = getBaseConfigFactory(homeDir)();
+    // lego asks for a certificate covering this address, and Pebble connects
+    // back to it to validate - so it has to be the address lego answers on.
+    config.set('externalIp', LEGO_IP);
+    config.set('platform.gateway.ssl.providerConfigs.letsencrypt.email', 'test@dash.org');
+    config.set(
+      'platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl',
+      `https://${PEBBLE_HOSTNAME}:${PEBBLE_ACME_PORT}/dir`,
+    );
+
+    sslDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl');
+  });
+
+  after(async () => {
+    if (pebbleContainer) {
+      await pebbleContainer.stop().catch(() => {});
+    }
+
+    if (network) {
+      await network.remove().catch(() => {});
+    }
+
+    if (homeDir) {
+      homeDir.remove();
+    }
+  });
+
+  /**
+   * @param {string} certificatePath
+   * @param {string} keyPath
+   * @return {boolean}
+   */
+  function isMatchingPair(certificatePath, keyPath) {
+    const certificate = new crypto.X509Certificate(fs.readFileSync(certificatePath));
+
+    return certificate.checkPrivateKey(
+      crypto.createPrivateKey(fs.readFileSync(keyPath)),
+    );
+  }
+
+  it('should obtain a certificate for the external IP and install it for the gateway', async () => {
+    const obtainLetsEncryptCertificateTask = container.resolve('obtainLetsEncryptCertificateTask');
+
+    await obtainLetsEncryptCertificateTask(config).run({ force: true });
+
+    const certificatePath = path.join(sslDir, 'bundle.crt');
+    const keyPath = path.join(sslDir, 'private.key');
+
+    expect(fs.existsSync(certificatePath)).to.be.true();
+    expect(fs.existsSync(keyPath)).to.be.true();
+
+    // A certificate and key that do not belong together is the failure the
+    // gateway cannot recover from, and it is invisible in file listings.
+    expect(isMatchingPair(certificatePath, keyPath)).to.be.true();
+
+    // The certificate has to cover the address the node is reached on. Dashmate
+    // passes --disable-cn, so the IP is only ever in the SAN.
+    const certificate = new crypto.X509Certificate(fs.readFileSync(certificatePath));
+    expect(certificate.subjectAltName).to.equal(`IP Address:${LEGO_IP}`);
+
+    // A private key readable by anyone on the host is the regression this
+    // guards - it is not visible in any command output.
+    /* eslint-disable no-bitwise */
+    expect(fs.statSync(keyPath).mode & 0o777).to.equal(0o600);
+    expect(fs.statSync(certificatePath).mode & 0o777).to.equal(0o644);
+    /* eslint-enable no-bitwise */
+
+    // The provider is recorded only once usable files are in place, so a node
+    // never claims SSL it cannot serve.
+    expect(config.get('platform.gateway.ssl.enabled')).to.be.true();
+    expect(config.get('platform.gateway.ssl.provider')).to.equal('letsencrypt');
+
+    // Nothing may be left in the directory the gateway reads.
+    expect(fs.readdirSync(sslDir).filter((f) => f.includes('.tmp-'))).to.have.lengthOf(0);
+  });
+
+  it('should leave an installed certificate and the configuration untouched', async () => {
+    const obtainLetsEncryptCertificateTask = container.resolve('obtainLetsEncryptCertificateTask');
+
+    const certificatePath = path.join(sslDir, 'bundle.crt');
+    const keyPath = path.join(sslDir, 'private.key');
+    const before = {
+      certificate: fs.readFileSync(certificatePath),
+      key: fs.readFileSync(keyPath),
+    };
+
+    // An operator hardening the key further must not have it undone by a
+    // renewal check that had nothing to do.
+    fs.chmodSync(keyPath, 0o400);
+    config.markAsSaved();
+
+    await obtainLetsEncryptCertificateTask(config).run({});
+
+    expect(fs.readFileSync(certificatePath)).to.deep.equal(before.certificate);
+    expect(fs.readFileSync(keyPath)).to.deep.equal(before.key);
+    // eslint-disable-next-line no-bitwise
+    expect(fs.statSync(keyPath).mode & 0o777).to.equal(0o400);
+
+    // Rewriting an unchanged configuration is what made read-only commands
+    // clobber concurrent edits, and a renewal check runs unattended.
+    expect(config.isChanged()).to.be.false();
+  });
+});
