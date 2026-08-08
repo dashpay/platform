@@ -3260,6 +3260,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         let blockHeight: UInt64
         let hasBlockHeight: Bool
         let createdAtMs: UInt64
+        /// Chain-order key (commitment-tree position) when
+        /// `hasMinNotePosition` — orders scan-derived restored entries
+        /// whose date/height are unknown. See `PersistentShieldedActivity`.
+        let minNotePosition: UInt64
+        let hasMinNotePosition: Bool
         let identityId: Data
         let counterparty: Data
         let memo: Data
@@ -3293,6 +3298,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     existing.blockHeight = snap.blockHeight
                     existing.hasBlockHeight = snap.hasBlockHeight
                     existing.createdAtMs = snap.createdAtMs
+                    existing.minNotePosition = snap.minNotePosition
+                    existing.hasMinNotePosition = snap.hasMinNotePosition
                     existing.identityId = snap.identityId
                     existing.counterparty = snap.counterparty
                     existing.memo = snap.memo
@@ -3313,6 +3320,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                         blockHeight: snap.blockHeight,
                         hasBlockHeight: snap.hasBlockHeight,
                         createdAtMs: snap.createdAtMs,
+                        minNotePosition: snap.minNotePosition,
+                        hasMinNotePosition: snap.hasMinNotePosition,
                         identityId: snap.identityId,
                         counterparty: snap.counterparty,
                         memo: snap.memo,
@@ -3746,6 +3755,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     block_height: row.blockHeight,
                     has_block_height: row.hasBlockHeight ? 1 : 0,
                     created_at_ms: row.createdAtMs,
+                    min_note_position: row.minNotePosition,
+                    has_min_note_position: row.hasMinNotePosition ? 1 : 0,
                     identity_id: identityTuple,
                     has_identity_id: row.identityId.count == 32 ? 1 : 0,
                     counterparty_ptr: cpLen > 0 ? UnsafePointer(cpPtr) : nil,
@@ -7386,6 +7397,8 @@ private func persistShieldedActivityCallback(
                 blockHeight: e.block_height,
                 hasBlockHeight: e.has_block_height != 0,
                 createdAtMs: e.created_at_ms,
+                minNotePosition: e.min_note_position,
+                hasMinNotePosition: e.has_min_note_position != 0,
                 identityId: identityId,
                 counterparty: counterparty,
                 memo: memo,

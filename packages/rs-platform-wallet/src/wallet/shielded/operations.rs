@@ -2990,6 +2990,7 @@ mod record_activity_status_tests {
             block_height: None,
             status: ShieldedActivityStatus::Pending,
             created_at_ms: 1,
+            min_note_position: None,
             note_cmxs: vec![[0x01; 32]],
             spent_nullifiers: vec![],
         }

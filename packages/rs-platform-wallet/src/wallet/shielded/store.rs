@@ -1190,6 +1190,7 @@ mod tests {
                 block_height: height,
                 status,
                 created_at_ms: 0,
+                min_note_position: None,
                 note_cmxs: vec![[id; 32]],
                 spent_nullifiers: vec![],
             }

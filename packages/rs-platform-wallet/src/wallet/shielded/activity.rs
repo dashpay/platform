@@ -179,6 +179,16 @@ pub struct ShieldedActivityEntry {
     /// never the primary sort key. Hosts must render `0` as an unknown
     /// date, never as the epoch.
     pub created_at_ms: u64,
+    /// Chain-order key for scan-derived (restored) entries whose date
+    /// and height are unknowable: the smallest commitment-tree position
+    /// among the entry's own received notes. Tree positions are
+    /// append-only chain order, so sorting by this reproduces the exact
+    /// on-chain sequence of otherwise-undatable history — identically
+    /// on every device. `None` on live-recorded entries (which carry a
+    /// real record time instead) and on the rare outgoing-only cluster
+    /// (OVK-recovered sends don't persist a position).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub min_note_position: Option<u64>,
     /// cmxs of the visible outputs that fed [`Self::id`] (own notes +
     /// recovered sends). Linkage for status confirmation and dedupe.
     /// Stored as `Vec<[u8;32]>` (serde derive covers `[u8;32]`).
@@ -488,6 +498,11 @@ pub fn derive_activity_from_scan_data(
             continue;
         }
         let id = compute_activity_id(&visible_cmxs);
+        // Exact chain-order key: tree positions are append-only chain
+        // order, and the received notes carry theirs. Outgoing-only
+        // clusters (no persisted position on OVK-recovered sends)
+        // honestly report None.
+        let min_note_position = cluster.received.iter().map(|n| n.position).min();
         // Overlap-based dedupe: any stored entry whose visible cmx set
         // intersects this cluster's cmxs already owns (part of) the
         // cluster. `BTreeSet` so each overlapped id is reported once even
@@ -562,6 +577,7 @@ pub fn derive_activity_from_scan_data(
                 block_height: None,
                 status: ShieldedActivityStatus::Confirmed,
                 created_at_ms: 0,
+                min_note_position,
                 note_cmxs: visible_cmxs,
                 spent_nullifiers: linked_nullifiers,
             }
@@ -584,6 +600,7 @@ pub fn derive_activity_from_scan_data(
                 block_height: None,
                 status: ShieldedActivityStatus::Confirmed,
                 created_at_ms: 0,
+                min_note_position,
                 note_cmxs: visible_cmxs,
                 spent_nullifiers: linked_nullifiers,
             }
@@ -602,6 +619,7 @@ pub fn derive_activity_from_scan_data(
                 block_height: None,
                 status: ShieldedActivityStatus::Confirmed,
                 created_at_ms: 0,
+                min_note_position,
                 note_cmxs: visible_cmxs,
                 spent_nullifiers: Vec::new(),
             }
@@ -620,6 +638,7 @@ pub fn derive_activity_from_scan_data(
                 block_height: None,
                 status: ShieldedActivityStatus::Confirmed,
                 created_at_ms: 0,
+                min_note_position,
                 note_cmxs: visible_cmxs,
                 spent_nullifiers: Vec::new(),
             }
@@ -643,6 +662,7 @@ pub fn derive_activity_from_scan_data(
                 block_height: None,
                 status: ShieldedActivityStatus::Confirmed,
                 created_at_ms: 0,
+                min_note_position,
                 note_cmxs: visible_cmxs,
                 spent_nullifiers: Vec::new(),
             }
@@ -681,10 +701,14 @@ pub(crate) fn non_zero_memo(memo: &[u8]) -> Option<Vec<u8>> {
 ///    scan-derived restored history, whose real height and time are
 ///    unknowable client-side (see [`ShieldedActivityEntry::block_height`]).
 ///    Unknown age must not read as "newest", so they sink below every
-///    dated/heighted row, ordered by `id` — arbitrary but identical on
-///    every device that restores the same wallet.
+///    dated/heighted row — ordered by [`min_note_position`] descending
+///    (tree positions are exact chain order, so the band reads
+///    newest-first like the rest of the list, identically on every
+///    device), position-less entries last.
 ///
 /// A final `id` tiebreak makes the whole order total and deterministic.
+///
+/// [`min_note_position`]: ShieldedActivityEntry::min_note_position
 pub fn sort_activity_for_display(entries: &mut [ShieldedActivityEntry]) {
     // Band rank per the doc above; lower sorts first.
     fn band(e: &ShieldedActivityEntry) -> u8 {
@@ -707,6 +731,15 @@ pub fn sort_activity_for_display(entries: &mut [ShieldedActivityEntry]) {
             })
             // Tiebreak: more recent record time first.
             .then_with(|| b.created_at_ms.cmp(&a.created_at_ms))
+            // Chain order (band 4's primary key; a no-op elsewhere,
+            // where heights/record times already decided): later tree
+            // position first, position-less entries last.
+            .then_with(|| match (a.min_note_position, b.min_note_position) {
+                (Some(ap), Some(bp)) => bp.cmp(&ap),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            })
             // Final total order so the sort is deterministic.
             .then_with(|| a.id.cmp(&b.id))
     });
@@ -867,6 +900,9 @@ mod tests {
         // are device-independent (restored-history acceptance criteria).
         assert_eq!(d[0].block_height, None);
         assert_eq!(d[0].created_at_ms, 0);
+        // What they DO carry is the exact chain-order key: the received
+        // note's tree position.
+        assert_eq!(d[0].min_note_position, Some(0));
     }
 
     #[test]
@@ -1025,6 +1061,7 @@ mod tests {
                 ShieldedActivityStatus::Confirmed
             },
             created_at_ms: created,
+            min_note_position: None,
             note_cmxs: vec![[id; 32]],
             spent_nullifiers: vec![],
         };
@@ -1056,29 +1093,39 @@ mod tests {
 
     /// Scan-derived restored rows (no height AND no record time) must
     /// sink below every dated/heighted row: unknown age must never read
-    /// as "newest". Their relative order is by id — arbitrary but
-    /// identical on every device restoring the same wallet.
+    /// as "newest". Within the band they order by `min_note_position`
+    /// descending — tree positions are exact chain order — so restored
+    /// history reads newest-first like the rest of the list, and
+    /// identically on every device restoring the same wallet.
     #[test]
-    fn display_sort_sinks_unknown_age_scan_derived_rows() {
-        let mk = |height: Option<u64>, created: u64, id: u8| ShieldedActivityEntry {
-            id: [id; 32],
-            kind: ShieldedActivityKind::Sent,
-            direction: ShieldedDirection::Out,
-            amount: 1,
-            fee: None,
-            counterparty: None,
-            memo: None,
-            block_height: height,
-            status: ShieldedActivityStatus::Confirmed,
-            created_at_ms: created,
-            note_cmxs: vec![[id; 32]],
-            spent_nullifiers: vec![],
+    fn display_sort_sinks_unknown_age_scan_derived_rows_in_chain_order() {
+        let mk = |height: Option<u64>, created: u64, position: Option<u64>, id: u8| {
+            ShieldedActivityEntry {
+                id: [id; 32],
+                kind: ShieldedActivityKind::Sent,
+                direction: ShieldedDirection::Out,
+                amount: 1,
+                fee: None,
+                counterparty: None,
+                memo: None,
+                block_height: height,
+                status: ShieldedActivityStatus::Confirmed,
+                created_at_ms: created,
+                min_note_position: position,
+                note_cmxs: vec![[id; 32]],
+                spent_nullifiers: vec![],
+            }
         };
         let mut v = vec![
-            mk(None, 0, 9),      // scan-derived, unknown age
-            mk(Some(100), 1, 1), // settled
-            mk(None, 0, 2),      // scan-derived, unknown age
-            mk(None, 5, 3),      // fresh live success, height not yet backfilled
+            // Scan-derived rows with positions deliberately out of id
+            // order: id 9 holds the EARLIER position, so chain order
+            // (position desc) must place id 2 first — proving the sort
+            // keys on position, not id.
+            mk(None, 0, Some(7), 9),
+            mk(Some(100), 1, None, 1), // settled
+            mk(None, 0, Some(41), 2),  // scan-derived, later in chain
+            mk(None, 0, None, 6),      // scan-derived, position-less (send-only cluster)
+            mk(None, 5, None, 3),      // fresh live success, height not yet backfilled
         ];
         sort_activity_for_display(&mut v);
         assert_eq!(
@@ -1088,9 +1135,10 @@ mod tests {
         );
         assert_eq!(v[1].block_height, Some(100));
         assert_eq!(
-            (v[2].id[0], v[3].id[0]),
-            (2, 9),
-            "unknown-age scan-derived rows sink to the bottom, id-ordered"
+            (v[2].id[0], v[3].id[0], v[4].id[0]),
+            (2, 9, 6),
+            "unknown-age rows sink to the bottom in chain order (position \
+             desc), position-less rows last"
         );
     }
 

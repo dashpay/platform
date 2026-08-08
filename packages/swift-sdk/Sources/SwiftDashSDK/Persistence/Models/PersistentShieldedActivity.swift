@@ -74,6 +74,17 @@ public final class PersistentShieldedActivity {
     /// as the epoch and never as "now".
     public var createdAtMs: UInt64
 
+    /// Chain-order key when `hasMinNotePosition == true`: the smallest
+    /// commitment-tree position among the entry's own received notes.
+    /// Tree positions are exact append-only chain order, so this orders
+    /// scan-derived restored entries (whose date and height are
+    /// unknown — `createdAtMs == 0`, no block height) in their true
+    /// on-chain sequence, identically on every device. Absent on
+    /// live-recorded entries (which order by their real `createdAtMs`).
+    /// Defaults cover rows persisted before this field existed.
+    public var minNotePosition: UInt64 = 0
+    public var hasMinNotePosition: Bool = false
+
     /// Created identity id (32 bytes) when `kindTag == 6`
     /// (IdentityCreate); empty otherwise.
     public var identityId: Data
@@ -106,6 +117,8 @@ public final class PersistentShieldedActivity {
         blockHeight: UInt64,
         hasBlockHeight: Bool,
         createdAtMs: UInt64,
+        minNotePosition: UInt64 = 0,
+        hasMinNotePosition: Bool = false,
         identityId: Data,
         counterparty: Data,
         memo: Data,
@@ -124,6 +137,8 @@ public final class PersistentShieldedActivity {
         self.blockHeight = blockHeight
         self.hasBlockHeight = hasBlockHeight
         self.createdAtMs = createdAtMs
+        self.minNotePosition = minNotePosition
+        self.hasMinNotePosition = hasMinNotePosition
         self.identityId = identityId
         self.counterparty = counterparty
         self.memo = memo

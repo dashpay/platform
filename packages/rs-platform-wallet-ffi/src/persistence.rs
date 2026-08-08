@@ -2031,6 +2031,8 @@ impl PlatformWalletPersistence for FFIPersister {
                                 block_height: e.block_height.unwrap_or(0),
                                 has_block_height: u8::from(e.block_height.is_some()),
                                 created_at_ms: e.created_at_ms,
+                                min_note_position: e.min_note_position.unwrap_or(0),
+                                has_min_note_position: u8::from(e.min_note_position.is_some()),
                                 identity_id,
                                 has_identity_id,
                                 counterparty_ptr,
@@ -2586,6 +2588,11 @@ impl PlatformWalletPersistence for FFIPersister {
                             },
                             status,
                             created_at_ms: ffi.created_at_ms,
+                            min_note_position: if ffi.has_min_note_position != 0 {
+                                Some(ffi.min_note_position)
+                            } else {
+                                None
+                            },
                             note_cmxs,
                             spent_nullifiers,
                         });
