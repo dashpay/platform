@@ -67,18 +67,27 @@ pub fn apply(
 }
 
 /// Single source of truth for the `asset_locks.status` TEXT-column
-/// domain.
+/// domain **as the writer sees it**.
 ///
 /// Mirrors every variant of
 /// [`platform_wallet::wallet::asset_lock::tracked::AssetLockStatus`]
-/// (writer side: [`status_str`]). The migration in
-/// `migrations/V001__initial.rs` interpolates this array into the
-/// `CHECK (status IN (...))` clause so an unknown label is rejected at
-/// insert time rather than landing as silent garbage. The
-/// `asset_lock_status_labels_match_enum` unit test below enforces
-/// set-equality between this array and the writer's output — drift (a
-/// renamed/added variant) becomes a failing test, not a runtime
-/// divergence between Rust and SQLite.
+/// (writer side: [`status_str`]). The on-disk `CHECK (status IN (...))`
+/// clause rejects an unknown label at insert time rather than letting
+/// it land as silent garbage — but the migrations do NOT interpolate
+/// this const: each migration freezes its own copy of the domain,
+/// because a generated-SQL change breaks that migration's Refinery
+/// checksum on every database that already applied it
+/// (`abort_divergent` default). `V001__initial.rs` carries the original
+/// five labels; `V004__asset_lock_recovered_status.rs` rebuilt the
+/// table with the current six.
+///
+/// Two unit tests below keep the three copies honest:
+/// - `asset_lock_status_labels_match_enum` — this array ⇔ the writer's
+///   codomain ([`status_str`]);
+/// - `asset_lock_status_labels_frozen_in_latest_migration` — this array
+///   ⇔ the latest migration's frozen list, so ADDING a variant fails
+///   with instructions to append a new table-rebuild migration (V005+)
+///   instead of editing a shipped one.
 pub(crate) const ASSET_LOCK_STATUS_LABELS: &[&str] = &[
     "built",
     "broadcast",
@@ -226,6 +235,33 @@ mod tests {
             from_writer, from_const,
             "ASSET_LOCK_STATUS_LABELS ({:?}) drifted from status_str codomain ({:?})",
             from_const, from_writer
+        );
+    }
+
+    /// Pins the live label set to the domain frozen in the LATEST
+    /// asset-lock migration (`V004__asset_lock_recovered_status.rs`).
+    /// Shipped migrations interpolate nothing — their generated SQL is
+    /// checksummed by Refinery, so widening the domain means APPENDING
+    /// a new table-rebuild migration (V005+) with the new frozen list
+    /// and updating this pin, never editing V001/V004 in place.
+    #[test]
+    fn asset_lock_status_labels_frozen_in_latest_migration() {
+        assert_eq!(
+            ASSET_LOCK_STATUS_LABELS,
+            &[
+                "built",
+                "broadcast",
+                "is_locked",
+                "chain_locked",
+                "consumed",
+                "recovered_from_chain",
+            ],
+            "ASSET_LOCK_STATUS_LABELS no longer matches the CHECK domain \
+             frozen in V004__asset_lock_recovered_status.rs. Do NOT edit a \
+             shipped migration (its Refinery checksum would diverge on \
+             already-migrated databases): append a new migration that \
+             rebuilds asset_locks with the widened CHECK, then update this \
+             pin to the new migration's list."
         );
     }
 }

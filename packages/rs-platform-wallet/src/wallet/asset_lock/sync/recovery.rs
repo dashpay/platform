@@ -308,15 +308,21 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     .await?
             }
             AssetLockStatus::RecoveredFromChain => {
-                // Reconstructed from on-chain history after a restore —
-                // Platform-side consumption is unknown. An explicit
-                // resume is allowed to try consuming it: Platform
-                // rejects an already-spent outpoint with a typed error,
-                // and a genuinely unspent lock is real recoverable
-                // value. The tx is already on chain (the lock was
-                // rebuilt from a wallet record), so no re-broadcast:
-                // validate the reconstructed proof when one was
-                // attached, otherwise wait for one the normal way.
+                // Reconstructed from a chain-locked record after a
+                // restore — Platform-side consumption is unknown. An
+                // explicit resume is allowed to try consuming it:
+                // Platform rejects an already-spent outpoint with a
+                // typed error, and a genuinely unspent lock is real
+                // recoverable value. The reconstruction path only
+                // assigns this status to finalized records and attaches
+                // the chain proof at creation (non-final detections
+                // enter as `Broadcast`/`InstantSendLocked` and take
+                // those arms, re-broadcast included), so the proof is
+                // present by construction; the `None` arm is a
+                // defensive fallback for a row whose persisted proof
+                // was lost, and its wait resolves from the already
+                // chain-locked record rather than blocking on new
+                // network events.
                 match existing_proof {
                     Some(proof) => {
                         self.validate_or_upgrade_proof(proof, account_index, out_point)

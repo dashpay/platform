@@ -18,10 +18,14 @@
 //! `AssetLock`-type transactions). This module turns those records back
 //! into [`TrackedAssetLock`] entries.
 //!
-//! Reconstructed entries carry
-//! [`AssetLockStatus::RecoveredFromChain`] — Platform-side consumption
-//! is unknown after a restore, so they must land in neither the pending
-//! nor the consumed bucket (see the variant's doc).
+//! Entries reconstructed from **chain-locked** records carry
+//! [`AssetLockStatus::RecoveredFromChain`] with the chain proof
+//! attached — Platform-side consumption is unknown after a restore, so
+//! they must land in neither the pending nor the consumed bucket (see
+//! the variant's doc). Non-final detections (mempool / unconfirmed
+//! block) enter with the live pipeline's own pre-finality statuses and
+//! are upgraded in place when a later record proves finality (see
+//! [`recovered_status`] / [`enrich_from_record`]).
 //!
 //! The live entry point is the wallet-event adapter
 //! ([`crate::changeset::core_bridge`]): every `TransactionDetected` /
@@ -94,24 +98,48 @@ pub(crate) fn is_reconstruction_candidate(record: &TransactionRecord) -> bool {
 }
 
 /// Status + proof for a reconstructed lock, derived from the record's
-/// on-chain context. Always [`AssetLockStatus::RecoveredFromChain`];
-/// the proof is attached when the context proves chain finality so an
-/// explicit resume can consume the lock without another proof wait.
+/// on-chain context.
+///
+/// [`AssetLockStatus::RecoveredFromChain`] is reserved for records with
+/// **proven Core finality** (`InChainLockedBlock`) — the variant's
+/// invariant is "finality known, consumption unknown", and only those
+/// records satisfy it. The chain proof is attached so an explicit
+/// resume can consume the lock without another proof wait.
+///
+/// Non-final detections (a mempool sighting from a same-seed wallet on
+/// another device, a not-yet-chain-locked block) get the live
+/// pipeline's own statuses for exactly that state —
+/// [`AssetLockStatus::Broadcast`] / [`AssetLockStatus::InstantSendLocked`],
+/// mirroring `resolve_status_with_in_memory` in `sync::recovery` — so
+/// `resume_asset_lock` keeps its defensive re-broadcast for a tx that
+/// may still be evicted from mempools, and [`enrich_from_record`]
+/// upgrades the entry when a later record proves finality.
 fn recovered_status(
     record: &TransactionRecord,
     out_point: OutPoint,
 ) -> (AssetLockStatus, Option<dpp::prelude::AssetLockProof>) {
-    use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
-    let proof = match &record.context {
-        TransactionContext::InChainLockedBlock(_) => record.height().map(|height| {
-            dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
-                core_chain_locked_height: height,
-                out_point,
-            })
-        }),
-        _ => None,
-    };
-    (AssetLockStatus::RecoveredFromChain, proof)
+    match &record.context {
+        TransactionContext::InChainLockedBlock(_) => {
+            let proof = record
+                .height()
+                .map(|height| dpp::prelude::AssetLockProof::Chain(chain_proof(height, out_point)));
+            (AssetLockStatus::RecoveredFromChain, proof)
+        }
+        TransactionContext::InstantSend(_) => (AssetLockStatus::InstantSendLocked, None),
+        TransactionContext::Mempool | TransactionContext::InBlock(_) => {
+            (AssetLockStatus::Broadcast, None)
+        }
+    }
+}
+
+fn chain_proof(
+    core_chain_locked_height: u32,
+    out_point: OutPoint,
+) -> dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof {
+    dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof {
+        core_chain_locked_height,
+        out_point,
+    }
 }
 
 /// Find the fund-bearing account (BIP44 first, then CoinJoin — same
@@ -200,14 +228,85 @@ fn reconstruct_candidates(
         .collect()
 }
 
+/// Upgrade an already-tracked, still-unproven entry when a record
+/// proves its funding tx chain-locked.
+///
+/// Insert-if-absent protects live entries from being *replaced* by a
+/// reconstruction — but it also meant a proof-less entry (a
+/// reconstruction from a mempool detection, or a live `Broadcast` row
+/// stranded by an app kill) could never receive the chain proof a
+/// later `BlockProcessed` record carries. This closes that gap without
+/// clobbering anything a live flow owns:
+///
+/// - only entries whose `proof` is `None` AND whose status is
+///   [`Broadcast`](AssetLockStatus::Broadcast) /
+///   [`InstantSendLocked`](AssetLockStatus::InstantSendLocked) are
+///   touched — the two pre-finality states every existing path
+///   (`wait_for_proof`, `resume_asset_lock`) advances to
+///   `ChainLocked` + chain proof on observing the same finality, so
+///   this converges with, never contradicts, the live pipeline;
+/// - [`Built`](AssetLockStatus::Built) (owned by an in-flight build),
+///   [`Consumed`](AssetLockStatus::Consumed) (terminal), and
+///   proof-carrying entries are left untouched.
+///
+/// Every richer field (funding type, identity index, amount) is
+/// preserved — only `status` and `proof` advance.
+fn enrich_from_record(
+    info: &mut PlatformWalletInfo,
+    record: &TransactionRecord,
+    cs: &mut AssetLockChangeSet,
+) {
+    let TransactionContext::InChainLockedBlock(_) = &record.context else {
+        return;
+    };
+    let Some(height) = record.height() else {
+        return;
+    };
+    let Some(TransactionPayload::AssetLockPayloadType(payload)) =
+        &record.transaction.special_transaction_payload
+    else {
+        return;
+    };
+    for vout in 0..payload.credit_outputs.len() {
+        let out_point = OutPoint::new(record.txid, vout as u32);
+        let Some(entry) = info.tracked_asset_locks.get_mut(&out_point) else {
+            continue;
+        };
+        let upgradable = entry.proof.is_none()
+            && matches!(
+                entry.status,
+                AssetLockStatus::Broadcast | AssetLockStatus::InstantSendLocked
+            );
+        if !upgradable {
+            continue;
+        }
+        tracing::info!(
+            outpoint = %out_point,
+            height,
+            prior_status = ?entry.status,
+            "attaching chain proof to tracked asset lock from finalized scan record"
+        );
+        entry.status = AssetLockStatus::ChainLocked;
+        entry.proof = Some(dpp::prelude::AssetLockProof::Chain(chain_proof(
+            height, out_point,
+        )));
+        cs.asset_locks.insert(out_point, (&*entry).into());
+    }
+}
+
 /// Rebuild missing tracked-asset-lock entries from scan records.
 ///
 /// For each record that passes [`is_reconstruction_candidate`], match
-/// its credit outputs against the owning funding account and insert a
-/// [`AssetLockStatus::RecoveredFromChain`] entry for every outpoint not
-/// already tracked. Returns the changeset describing the inserted
-/// entries (empty when nothing was reconstructed) for the caller to
-/// persist alongside whatever else it is flushing.
+/// its credit outputs against the owning funding account and insert an
+/// entry for every outpoint not already tracked — status per
+/// [`recovered_status`] (`RecoveredFromChain` + chain proof for
+/// finalized records, the live pipeline's pre-finality statuses for
+/// mempool/unconfirmed detections). Already-tracked outpoints are
+/// never replaced, but a finalized record upgrades a still-unproven
+/// entry in place (see [`enrich_from_record`]). Returns the changeset
+/// describing the inserted/upgraded entries (empty when nothing
+/// changed) for the caller to persist alongside whatever else it is
+/// flushing.
 ///
 /// Callers should pre-filter with [`is_reconstruction_candidate`] and
 /// skip the call entirely when no record qualifies — this function
@@ -234,12 +333,17 @@ pub(crate) async fn reconstruct_tracked_asset_locks(
                 outpoint = %lock.out_point,
                 funding_type = ?lock.funding_type,
                 amount = lock.amount,
+                status = ?lock.status,
                 has_proof = lock.proof.is_some(),
                 "reconstructed tracked asset lock from on-chain record"
             );
             cs.asset_locks.insert(lock.out_point, (&lock).into());
             info.tracked_asset_locks.insert(lock.out_point, lock);
         }
+        // Then let a finalized record upgrade what's already tracked
+        // but still unproven (its own inserts above carry their proof
+        // already, so this only ever touches pre-existing entries).
+        enrich_from_record(info, record, &mut cs);
     }
     cs
 }
@@ -460,9 +564,13 @@ mod tests {
 
     /// A record that hasn't reached chain finality (mempool detection,
     /// e.g. a same-seed wallet on another device broadcasting) still
-    /// reconstructs — but with no proof to attach.
+    /// reconstructs — but with the live pipeline's own pre-finality
+    /// status, NOT `RecoveredFromChain` (whose invariant is "finality
+    /// known"). `Broadcast` keeps the resume path's defensive
+    /// re-broadcast for a tx that may still be evicted from mempools;
+    /// an IS-observed record likewise maps to `InstantSendLocked`.
     #[tokio::test]
-    async fn unconfirmed_record_reconstructs_without_proof() {
+    async fn unconfirmed_record_reconstructs_as_broadcast() {
         let (wallet_manager, wallet_id, tx) =
             wallet_with_built_asset_lock(AssetLockFundingType::AssetLockShieldedAddressTopUp, 0)
                 .await;
@@ -478,8 +586,112 @@ mod tests {
             .asset_locks
             .get(&OutPoint::new(tx.txid(), 0))
             .expect("changeset entry");
-        assert_eq!(entry.status, AssetLockStatus::RecoveredFromChain);
+        assert_eq!(entry.status, AssetLockStatus::Broadcast);
         assert!(entry.proof.is_none(), "no finality context ⇒ no proof");
+    }
+
+    /// A finalized record must upgrade an already-tracked, still
+    /// unproven entry in place (attach the chain proof, advance to
+    /// `ChainLocked`) — the insert-if-absent rule protects live entries
+    /// from replacement but must not strand them proof-less forever.
+    #[tokio::test]
+    async fn finalized_record_enriches_unproven_tracked_entry() {
+        let (wallet_manager, wallet_id, tx) =
+            wallet_with_built_asset_lock(AssetLockFundingType::IdentityRegistration, 0).await;
+        let out_point = OutPoint::new(tx.txid(), 0);
+
+        // First sighting: mempool → tracked at Broadcast, no proof.
+        let mempool_record = record_for(
+            &tx,
+            AccountType::IdentityRegistration,
+            TransactionContext::Mempool,
+        );
+        let cs =
+            reconstruct_tracked_asset_locks(&wallet_manager, &wallet_id, &[&mempool_record]).await;
+        assert_eq!(
+            cs.asset_locks.get(&out_point).expect("tracked").status,
+            AssetLockStatus::Broadcast
+        );
+
+        // Later sighting: the same tx in a chain-locked block.
+        let final_record = record_for(
+            &tx,
+            AccountType::IdentityRegistration,
+            chainlocked_context(910),
+        );
+        let cs =
+            reconstruct_tracked_asset_locks(&wallet_manager, &wallet_id, &[&final_record]).await;
+
+        let entry = cs
+            .asset_locks
+            .get(&out_point)
+            .expect("upgraded changeset entry");
+        assert_eq!(entry.status, AssetLockStatus::ChainLocked);
+        match &entry.proof {
+            Some(dpp::prelude::AssetLockProof::Chain(chain)) => {
+                assert_eq!(chain.core_chain_locked_height, 910);
+                assert_eq!(chain.out_point, out_point);
+            }
+            other => panic!("expected the attached chain proof, got {other:?}"),
+        }
+        let wm = wallet_manager.read().await;
+        let lock = wm
+            .get_wallet_info(&wallet_id)
+            .expect("wallet")
+            .tracked_asset_locks
+            .get(&out_point)
+            .expect("in-memory entry");
+        assert_eq!(lock.status, AssetLockStatus::ChainLocked);
+        assert!(lock.proof.is_some());
+    }
+
+    /// Enrichment must not touch entries a live flow owns: a `Built`
+    /// entry (in-flight build) and a `Consumed` tombstone stay exactly
+    /// as they are even when a finalized record for their tx arrives.
+    #[tokio::test]
+    async fn enrichment_leaves_built_and_consumed_entries_alone() {
+        for protected_status in [AssetLockStatus::Built, AssetLockStatus::Consumed] {
+            let (wallet_manager, wallet_id, tx) =
+                wallet_with_built_asset_lock(AssetLockFundingType::IdentityRegistration, 0).await;
+            let out_point = OutPoint::new(tx.txid(), 0);
+            {
+                let mut wm = wallet_manager.write().await;
+                let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet");
+                info.tracked_asset_locks.insert(
+                    out_point,
+                    TrackedAssetLock {
+                        out_point,
+                        transaction: tx.clone(),
+                        account_index: 0,
+                        funding_type: AssetLockFundingType::IdentityRegistration,
+                        identity_index: 0,
+                        amount: 1_000_000,
+                        status: protected_status.clone(),
+                        proof: None,
+                    },
+                );
+            }
+            let record = record_for(
+                &tx,
+                AccountType::IdentityRegistration,
+                chainlocked_context(910),
+            );
+            let cs = reconstruct_tracked_asset_locks(&wallet_manager, &wallet_id, &[&record]).await;
+            assert!(
+                Merge::is_empty(&cs),
+                "{protected_status:?} must not be enriched"
+            );
+            let wm = wallet_manager.read().await;
+            assert_eq!(
+                wm.get_wallet_info(&wallet_id)
+                    .expect("wallet")
+                    .tracked_asset_locks
+                    .get(&out_point)
+                    .expect("entry")
+                    .status,
+                protected_status
+            );
+        }
     }
 
     /// The lock-free pre-filter must reject everything that can't
