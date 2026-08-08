@@ -34,8 +34,14 @@ fn parse_secret_key(
         )));
     }
 
-    let bytes = unsafe { slice::from_raw_parts(private_key, private_key_len) };
-    SecretKey::from_slice(bytes)
+    // `SecretKey::from_slice` converts the slice into an unguarded local
+    // `[u8; 32]` on its way to the returned key, so parsing straight from the
+    // caller's slice would leave a second, unscrubbed copy of the scalar on
+    // the stack. Staging it here keeps every copy this side owns wiped.
+    let mut staged = Zeroizing::new([0u8; 32]);
+    staged.copy_from_slice(unsafe { slice::from_raw_parts(private_key, private_key_len) });
+
+    SecretKey::from_byte_array(&staged)
         .map(WipingSecretKey)
         .map_err(|error| invalid_parameter(format!("Invalid secp256k1 private key: {error}")))
 }
