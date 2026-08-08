@@ -66,8 +66,10 @@ pub fn apply(
     Ok(())
 }
 
-/// Single source of truth for the `asset_locks.status` TEXT-column
-/// domain **as the writer sees it**.
+/// Test-only drift guard for the `asset_locks.status` TEXT-column
+/// domain **as the writer sees it** (production code never reads this
+/// — the writer maps through [`status_str`] and the on-disk CHECK
+/// lives frozen inside the migrations).
 ///
 /// Mirrors every variant of
 /// [`platform_wallet::wallet::asset_lock::tracked::AssetLockStatus`]
@@ -88,6 +90,7 @@ pub fn apply(
 ///   ⇔ the latest migration's frozen list, so ADDING a variant fails
 ///   with instructions to append a new table-rebuild migration (V005+)
 ///   instead of editing a shipped one.
+#[cfg(test)]
 pub(crate) const ASSET_LOCK_STATUS_LABELS: &[&str] = &[
     "built",
     "broadcast",

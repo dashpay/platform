@@ -34,6 +34,16 @@ CREATE TABLE asset_locks_v4 (
     FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
 );
 
+-- Orphan policy: a row whose wallet was deleted while FK enforcement
+-- happened to be off is unreachable garbage (every read path keys
+-- through wallet_metadata), but copying it into the FK-declared twin
+-- under PRAGMA foreign_keys = ON would abort this whole migration with
+-- 'FOREIGN KEY constraint failed'. Drop such rows explicitly — the
+-- same outcome the declared ON DELETE CASCADE would have produced had
+-- enforcement been on when the wallet was deleted.
+DELETE FROM asset_locks
+    WHERE wallet_id NOT IN (SELECT wallet_id FROM wallet_metadata);
+
 INSERT INTO asset_locks_v4 (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob)
     SELECT wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob FROM asset_locks;
 

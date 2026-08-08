@@ -119,12 +119,22 @@ fn recovered_status(
     out_point: OutPoint,
 ) -> (AssetLockStatus, Option<dpp::prelude::AssetLockProof>) {
     match &record.context {
-        TransactionContext::InChainLockedBlock(_) => {
-            let proof = record
-                .height()
-                .map(|height| dpp::prelude::AssetLockProof::Chain(chain_proof(height, out_point)));
-            (AssetLockStatus::RecoveredFromChain, proof)
-        }
+        TransactionContext::InChainLockedBlock(_) => match record.height() {
+            Some(height) => (
+                AssetLockStatus::RecoveredFromChain,
+                Some(dpp::prelude::AssetLockProof::Chain(chain_proof(
+                    height, out_point,
+                ))),
+            ),
+            // Unreachable in practice (`InChainLockedBlock` always
+            // carries a `BlockInfo` height), but the status must stay
+            // bound to proof availability: a proof-less
+            // `RecoveredFromChain` entry would have no repair path
+            // (`enrich_from_record` only upgrades pre-finality
+            // statuses). Enter as pre-finality instead so a later
+            // heighted record can still enrich it.
+            None => (AssetLockStatus::Broadcast, None),
+        },
         TransactionContext::InstantSend(_) => (AssetLockStatus::InstantSendLocked, None),
         TransactionContext::Mempool | TransactionContext::InBlock(_) => {
             (AssetLockStatus::Broadcast, None)

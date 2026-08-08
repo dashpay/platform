@@ -278,8 +278,35 @@ fn tc045_v004_widens_asset_lock_status_on_existing_db() {
         "the V003 CHECK domain must reject recovered_from_chain"
     );
 
+    // 3b. Plant a legacy orphan row the way an old connection with FK
+    //     enforcement off could have: its wallet row is gone, so copying
+    //     it into the FK-declared twin would abort the rebuild. V004's
+    //     explicit orphan policy must drop it instead.
+    conn.pragma_update(None, "foreign_keys", false)
+        .expect("disable foreign keys");
+    let ghost_wallet = [9u8; 32];
+    conn.execute(
+        "INSERT INTO asset_locks (wallet_id, outpoint, status, account_index, identity_index, \
+         amount_duffs, lifecycle_blob) VALUES (?1, X'04', 'built', 0, 0, 1, X'04')",
+        params![ghost_wallet.as_slice()],
+    )
+    .expect("insert orphan row with FK enforcement off");
+    conn.pragma_update(None, "foreign_keys", true)
+        .expect("re-enable foreign keys");
+
     // 4. Upgrade to the latest schema (applies V004's table rebuild).
-    mig::run(&mut conn).expect("migrate to latest");
+    mig::run(&mut conn).expect("migrate to latest despite the orphan row");
+
+    // 4b. The orphan is gone (same outcome the declared cascade would
+    //     have produced), the real row below is untouched.
+    let orphans: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM asset_locks WHERE wallet_id = ?1",
+            params![ghost_wallet.as_slice()],
+            |row| row.get(0),
+        )
+        .expect("count orphans");
+    assert_eq!(orphans, 0, "V004 must drop legacy orphan rows, not abort");
 
     // 5. The pre-upgrade row survived the rebuild intact...
     let (status, identity_index, amount): (String, i64, i64) = conn
