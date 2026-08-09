@@ -208,6 +208,16 @@ public enum DashMigrationPlan: SchemaMigrationPlan {
 ///   - `PersistentTokenBalance.balance` remains the original `Int64` SwiftData
 ///     property and SQLite column. Protocol `u64` values use its raw bits via a
 ///     computed accessor, so full-domain support does not alter this V1 schema.
+///   - `PersistentDPNSName` gained the DPNS username-marketplace
+///     columns `documentIdBase58`, `priceCredits`, `saleStatusRaw`,
+///     `counterpartyIdBase58`, and `marketplaceUpdatedAt`, written by
+///     the new `on_persist_dpns_name_states_fn` persister callback
+///     (`DpnsNameStateFFI`). All optional or defaulted, and the
+///     `(networkRaw, normalizedParentDomainName, normalizedLabel)`
+///     uniqueness is unchanged ⇒ lightweight migration. Existing rows
+///     migrate with a nil `documentIdBase58`, which is the documented
+///     "no marketplace state tracked" signal — the next marketplace
+///     sync pass fills them in.
 /// Each of those is a destructive change to a unique-attribute
 /// column or to relationship topology, so any pre-existing dev
 /// store will fail to open and get rebuilt from scratch on next

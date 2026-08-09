@@ -45,6 +45,9 @@ use crate::contact_persistence::{
 use crate::core_address_types::{AddressPoolTypeTagFFI, CoreAddressEntryFFI, KeyTypeTagFFI};
 use crate::core_wallet_types::{free_wallet_changeset_ffi, WalletChangeSetFFI};
 use crate::dashpay_payment::{build_payment_persist_entries, DashpayPaymentPersistEntryFFI};
+use crate::dpns_name_state_persistence::{
+    build_dpns_name_state_entries, free_dpns_name_state_entries, DpnsNameStateFFI,
+};
 use crate::identity_persistence::{
     free_identity_entry_ffi, free_identity_key_entry_ffi, IdentityEntryFFI, IdentityKeyEntryFFI,
     IdentityKeyRemovalFFI,
@@ -769,6 +772,31 @@ pub struct PersistenceCallbacks {
             count: usize,
         ) -> i32,
     >,
+    /// Forwards `DpnsNameStateChangeSet` — the DPNS username-marketplace
+    /// rows (a name's listed price and whether it is still owned, sold,
+    /// or transferred away) — to the host. Appended at the END so the
+    /// struct layout stays stable; a host built against the previous
+    /// vtable keeps working and simply never sets this slot.
+    ///
+    /// Same upserts + tombstones shape as `on_persist_identities_fn`,
+    /// keyed by the 32-byte DPNS `domain` document id. Unlike the all-POD
+    /// invitation rows, each [`DpnsNameStateFFI`] owns three C strings
+    /// that are valid only for the callback window — the host must copy
+    /// anything it keeps before returning.
+    ///
+    /// Returns 0 on success. A non-zero return flips the round's
+    /// `success` flag to `false` so [`Self::on_changeset_end_fn`]
+    /// receives the rollback signal.
+    pub on_persist_dpns_name_states_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            rows: *const DpnsNameStateFFI,
+            rows_count: usize,
+            removed_ptr: *const [u8; 32],
+            removed_count: usize,
+        ) -> i32,
+    >,
 }
 
 // SAFETY: The context pointer is managed by the FFI caller who must ensure
@@ -803,6 +831,7 @@ impl Default for PersistenceCallbacks {
             on_list_wallet_core_txids_fn: None,
             on_list_wallet_core_txids_free_fn: None,
             on_persist_dashpay_payments_fn: None,
+            on_persist_dpns_name_states_fn: None,
             #[cfg(feature = "shielded")]
             on_persist_shielded_notes_fn: None,
             #[cfg(feature = "shielded")]
@@ -955,6 +984,9 @@ impl FFIPersister {
         }
         if self.callbacks.on_persist_invitations_fn.is_some() {
             capabilities = capabilities.union(PersistenceCapabilities::INVITATIONS);
+        }
+        if self.callbacks.on_persist_dpns_name_states_fn.is_some() {
+            capabilities = capabilities.union(PersistenceCapabilities::DPNS_NAME_STATES);
         }
         let wallet_restore = self.callbacks.on_load_wallet_list_fn.is_some()
             && self.callbacks.on_load_wallet_list_free_fn.is_some();
@@ -1555,6 +1587,56 @@ impl PlatformWalletPersistence for FFIPersister {
                     if result != 0 {
                         eprintln!(
                             "Invitation persistence callback returned error code {}",
+                            result
+                        );
+                        round_success = false;
+                    }
+                }
+            }
+        }
+
+        // Send the DPNS username-marketplace changeset — one upsert row
+        // per tracked `domain` document (keyed by document id) plus
+        // document-id tombstones. Maps onto the host's DPNS-name rows,
+        // whose marketplace columns (price, sale status, counterparty)
+        // these rows own.
+        //
+        // Fires AFTER the identities callback so a brand-new identity's
+        // row is already staged in the same round when the host resolves
+        // a marketplace row's owning identity.
+        if let Some(ref dpns_cs) = changeset.dpns_name_states {
+            if let Some(cb) = self.callbacks.on_persist_dpns_name_states_fn {
+                let upsert_refs: Vec<&platform_wallet::changeset::DpnsNameStateEntry> =
+                    dpns_cs.names.values().collect();
+                let mut upserts = build_dpns_name_state_entries(&upsert_refs);
+                let removed: Vec<[u8; 32]> =
+                    dpns_cs.removed.iter().map(|id| id.to_buffer()).collect();
+                if !upserts.is_empty() || !removed.is_empty() {
+                    let result = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            if upserts.is_empty() {
+                                std::ptr::null()
+                            } else {
+                                upserts.as_ptr()
+                            },
+                            upserts.len(),
+                            if removed.is_empty() {
+                                std::ptr::null()
+                            } else {
+                                removed.as_ptr()
+                            },
+                            removed.len(),
+                        )
+                    };
+                    // Release the per-row label strings on EVERY path,
+                    // including the callback-reported-failure one, before
+                    // the Vec drops its storage.
+                    unsafe { free_dpns_name_state_entries(&mut upserts) };
+                    if result != 0 {
+                        eprintln!(
+                            "DPNS name state persistence callback returned error code {}",
                             result
                         );
                         round_success = false;
@@ -6065,19 +6147,20 @@ mod tests {
         // terminal — growth is only safe while it happens at the end, where no
         // previously-defined slot changes offset. The count moves with each
         // append (invitations, then the `release_fn` context destructor, the
-        // txid enumeration pair, now the DashPay payment persist slot).
+        // txid enumeration pair, the DashPay payment persist slot, now the
+        // DPNS name-state persist slot).
         #[cfg(not(feature = "shielded"))]
         assert_eq!(
             std::mem::size_of::<PersistenceCallbacks>(),
-            25 * std::mem::size_of::<usize>()
+            26 * std::mem::size_of::<usize>()
         );
         #[cfg(feature = "shielded")]
         assert_eq!(
             std::mem::size_of::<PersistenceCallbacks>(),
-            41 * std::mem::size_of::<usize>()
+            42 * std::mem::size_of::<usize>()
         );
         assert_eq!(
-            std::mem::offset_of!(PersistenceCallbacks, on_persist_dashpay_payments_fn)
+            std::mem::offset_of!(PersistenceCallbacks, on_persist_dpns_name_states_fn)
                 + std::mem::size_of::<usize>(),
             std::mem::size_of::<PersistenceCallbacks>()
         );

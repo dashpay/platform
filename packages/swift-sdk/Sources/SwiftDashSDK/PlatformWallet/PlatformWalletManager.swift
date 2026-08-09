@@ -58,6 +58,10 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     public static let unsignedTokenStorage: UInt64 = 1 << 5
     public static let pendingContactCrypto: UInt64 = 1 << 6
     public static let walletRestore: UInt64 = 1 << 7
+    /// DPNS username-marketplace name-state rows (price / sale status /
+    /// counterparty) are mirrored durably. Mirrors
+    /// `PersistenceCapabilities::DPNS_NAME_STATES`.
+    public static let dpnsNameStates: UInt64 = 1 << 8
 
     public let version: UInt32
     public let bits: UInt64
@@ -275,6 +279,7 @@ public class PlatformWalletManager: ObservableObject {
             platform_wallet_manager_platform_address_sync_stop(handle).discard()
             platform_wallet_manager_shielded_sync_stop(handle).discard()
             platform_wallet_manager_dashpay_sync_stop(handle).discard()
+            platform_wallet_manager_dpns_sync_stop(handle).discard()
             // Rust OWNS the persistence/event callback handlers (they were
             // handed over retained at `configure`, with a `release_fn`):
             // any worker that outlives destroy keeps its handler alive

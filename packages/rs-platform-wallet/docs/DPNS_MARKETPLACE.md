@@ -1,10 +1,17 @@
 # DPNS Username Marketplace — wallet-level design
 
-Status: implementation in progress (2026-08-09). This document is the design
-record for the wallet-level DPNS marketplace layer in `rs-platform-wallet`,
-its FFI surface, and the swift-sdk wrappers. It also records the
-browse-for-sale investigation result (§7), which is a protocol limitation the
-wallet cannot work around.
+Status: implemented and testnet-verified (2026-08-09, §9). This document is
+the design record for the wallet-level DPNS marketplace layer in
+`rs-platform-wallet`, its FFI surface, and the swift-sdk wrappers. It also
+records the browse-for-sale investigation result (§7), which is a protocol
+limitation the wallet cannot work around.
+
+Known follow-ups (deliberately out of v1 scope): an FFI event slot for
+`on_dpns_marketplace_sync_completed` (there is no host-callback sibling for
+any coordinator-completion event today — hosts poll
+`dpnsLastSyncUnixSeconds()` or call `syncDpnsMarketplace()` on demand), and
+per-name detail across the sync FFI (counts only; the mirrored rows carry
+the detail).
 
 ## 1. Scope
 
@@ -197,23 +204,30 @@ pub struct DpnsNameHistoryEvent {
 
 ## 6. Typed errors
 
-New `PlatformWalletError` variants (with FFI codes from the free registry
-slots, mirrored in `PlatformWalletResultCode` + `PlatformWalletError` (Swift)):
+New `PlatformWalletError` variants, mirrored in `PlatformWalletResultCode`
++ `PlatformWalletError` (Swift). The FFI codes occupy a fresh contiguous
+block 37-40 above every prior claim (the same rule that moved the 34-36
+trio there, rather than reusing vacated slots 28/30); `DpnsNameNotFound`
+rides the existing `NotFound = 98`:
 
-| Variant | Trigger | FFI detail payload (JSON in `message`) |
-|---|---|---|
-| `DpnsNameNotFound { name }` | exact-label query empty | — |
-| `DocumentNotForSale { document_id }` | pre-check, or 40108 downcast | — |
-| `DocumentPriceChanged { document_id, expected, actual }` | pre-check, or 40109 downcast | `{"expected":u64,"actual":u64}` |
-| `InsufficientIdentityCredits { identity_id, required, available }` | pre-check, or `IdentityInsufficientBalanceError` downcast | `{"required":u64,"available":u64}` |
-| `ContestedNameNotTradable { label, ends_at_ms }` | contested guard | `{"endsAtMs":u64}` |
+| Variant | FFI code | Trigger | FFI detail payload (JSON in `message`) |
+|---|---|---|---|
+| `DpnsNameNotFound { name }` | 98 `NotFound` | exact-label query empty | — (Display) |
+| `DocumentNotForSale { document_id }` | 37 | pre-check, or 40108 downcast | — (Display) |
+| `DocumentPriceChanged { document_id, expected, actual }` | 38 | pre-check, or 40109 downcast | `{"documentId":"<base58>","expected":u64,"actual":u64}` |
+| `InsufficientIdentityCredits { identity_id, required, available }` | 39 | pre-check, or `IdentityInsufficientBalanceError` downcast | `{"identityId":"<base58>","required":u64,"available":u64}` |
+| `ContestedNameNotTradable { label, ends_at_ms }` | 40 | contested guard | `{"label":"<string>","endsAtMs":u64}` |
 
 Downcast helpers (`as_document_not_for_sale`, `as_incorrect_purchase_price`,
 `as_identity_insufficient_balance`) follow the existing
 `as_address_invalid_nonce` pattern so consensus rejections arrive typed, not
-stringly. The structured-JSON `message` convention for value-carrying codes is
-documented at the FFI enum and parsed by swift-sdk into typed Swift cases
-(fallback: raw string).
+stringly. The structured-JSON `message` convention for the three
+value-carrying codes is documented on each FFI enum variant and parsed by
+swift-sdk into typed Swift cases (`priceChanged`,
+`insufficientIdentityCredits`, `contestedNameNotTradable`); a payload that
+fails to parse degrades to `.unknown(message)` rather than trapping. Each
+detail object carries the id/label alongside the numbers so a host that
+surfaces the error out of band still knows which name it refers to.
 
 ## 7. Browse-for-sale: protocol limitation (investigated, not buildable here)
 

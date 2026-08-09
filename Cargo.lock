@@ -5218,6 +5218,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "simple-signer",
  "static_assertions",
  "thiserror 1.0.69",
  "tokio",

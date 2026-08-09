@@ -378,6 +378,149 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    /// Mirror the DPNS username-marketplace rows onto `PersistentDPNSName`.
+    ///
+    /// Rows are keyed the same way `upsertDPNSNames` keys the label cache
+    /// — `(networkRaw, normalizedParentDomainName, normalizedLabel)`,
+    /// mirroring the DPNS contract's `parentNameAndLabel` unique index —
+    /// so a marketplace row and the identity label snapshot converge on
+    /// ONE row per name rather than two competing ones. The difference is
+    /// which columns each owns: the identity snapshot owns
+    /// `label`/`acquiredAt`, this owns the marketplace section.
+    ///
+    /// Unlike the label cache this carries the real parent domain (the
+    /// FFI forwards it), so no `"dash"` default is stamped here.
+    ///
+    /// A row whose owning identity isn't in the store yet is logged and
+    /// skipped rather than failing the round: the relationship is
+    /// non-optional, the Rust side treats a failed marketplace store as
+    /// self-healing (the next sync pass re-emits the same rows), and
+    /// rolling the round back would also discard the identity insert that
+    /// makes the next pass succeed. A genuine SwiftData fetch failure DOES
+    /// fail the round, matching `persistInvitations`.
+    ///
+    /// `removed` document ids clear the marketplace section (and only it)
+    /// — the label cache belongs to the identity snapshot, so dropping the
+    /// whole row here would destroy state this callback does not own. A
+    /// cleared row reads as "not tracked" via `documentIdBase58 == nil`,
+    /// which is what `PersistentDPNSName.saleStatus` gates on.
+    ///
+    /// Runs entirely on `onQueue`, body inline (never re-enter `onQueue`);
+    /// no `save()` here — `endChangeset` commits the round.
+    func persistDpnsNameStates(
+        walletId: Data,
+        upserts: [DpnsNameStateSnapshot],
+        removed: [String]
+    ) -> Bool {
+        onQueue {
+            var allPersisted = true
+
+            for entry in upserts {
+                let identityId = entry.walletIdentityId
+                let identityDescriptor = FetchDescriptor<PersistentIdentity>(
+                    predicate: #Predicate { $0.identityId == identityId }
+                )
+                let identityRow: PersistentIdentity?
+                do {
+                    identityRow = try backgroundContext.fetch(identityDescriptor).first
+                } catch {
+                    print("⚠️ persistDpnsNameStates: identity fetch failed for \(identityId.toBase58String()) — skipping marketplace row for \"\(entry.label)\": \(error)")
+                    allPersisted = false
+                    continue
+                }
+                guard let identityRow else {
+                    // Not an error: the identity row simply isn't staged
+                    // yet. The next marketplace sync pass re-emits this row.
+                    print("ℹ️ persistDpnsNameStates: no identity row for \(identityId.toBase58String()) yet — marketplace state for \"\(entry.label)\" will land on the next sync pass")
+                    continue
+                }
+
+                let networkRaw = identityRow.networkRaw
+                let normalizedLabel = entry.normalizedLabel
+                let normalizedParent = entry.normalizedParentDomainName
+                let descriptor = FetchDescriptor<PersistentDPNSName>(
+                    predicate: #Predicate {
+                        $0.networkRaw == networkRaw
+                            && $0.normalizedParentDomainName == normalizedParent
+                            && $0.normalizedLabel == normalizedLabel
+                    }
+                )
+                let existing: PersistentDPNSName?
+                do {
+                    existing = try backgroundContext.fetch(descriptor).first
+                } catch {
+                    print("⚠️ persistDpnsNameStates: fetch failed for \"\(normalizedLabel)\" — its price/sale state may be stale in the UI: \(error)")
+                    allPersisted = false
+                    continue
+                }
+
+                let row: PersistentDPNSName
+                if let existing {
+                    row = existing
+                    // Rebind to the identity this marketplace row is
+                    // tracked for. For a sold/transferred row that is the
+                    // PREVIOUS owner (ours) — the row stays attached to
+                    // the wallet identity whose history it documents,
+                    // which is what the "your name was sold" affordance
+                    // reads.
+                    if row.identity !== identityRow {
+                        row.identity = identityRow
+                    }
+                } else {
+                    // No label-cache row yet (a name observed by the
+                    // marketplace sweep before the identity snapshot
+                    // carried it). The FFI forwards the NORMALIZED parent
+                    // domain only, so it seeds both the display and the
+                    // normalized column — identical for "dash", DPNS's
+                    // only top-level domain today, and the init re-runs
+                    // the (idempotent) normalization for the index column.
+                    row = PersistentDPNSName(
+                        identity: identityRow,
+                        label: entry.label,
+                        parentDomainName: entry.normalizedParentDomainName
+                    )
+                    backgroundContext.insert(row)
+                }
+
+                // The display label can gain corrected casing between
+                // flushes for the same normalized form; the normalized
+                // index columns don't move, so the unique constraint holds.
+                if row.label != entry.label {
+                    row.label = entry.label
+                }
+                row.documentIdBase58 = entry.documentIdBase58
+                row.priceCredits = entry.priceCredits.map { Int64(bitPattern: $0) }
+                row.saleStatusRaw = entry.statusRaw
+                row.counterpartyIdBase58 = entry.counterpartyIdBase58
+                row.marketplaceUpdatedAt = entry.lastSyncedAtMs
+                row.lastUpdated = Date()
+            }
+
+            for documentId in removed {
+                let descriptor = FetchDescriptor<PersistentDPNSName>(
+                    predicate: #Predicate { $0.documentIdBase58 == documentId }
+                )
+                do {
+                    for row in try backgroundContext.fetch(descriptor) {
+                        // Clear only the marketplace section — the label
+                        // cache is the identity snapshot's to own.
+                        row.documentIdBase58 = nil
+                        row.priceCredits = nil
+                        row.saleStatusRaw = 0
+                        row.counterpartyIdBase58 = nil
+                        row.marketplaceUpdatedAt = 0
+                        row.lastUpdated = Date()
+                    }
+                } catch {
+                    print("⚠️ persistDpnsNameStates: fetch failed for removal of document \(documentId) — stale price/sale state may linger: \(error)")
+                    allPersisted = false
+                }
+            }
+
+            return allPersisted
+        }
+    }
+
     /// Load all persisted tracked asset locks for a wallet — used by
     /// the wallet load path to rebuild `unused_asset_locks` on the
     /// Rust side so an in-flight registration that was interrupted by
@@ -440,6 +583,36 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         public let createdAtSecs: Int
         public let hasInviter: Bool
         public let statusRaw: Int
+    }
+
+    /// Owned snapshot of one `DpnsNameStateFFI` — the DPNS
+    /// username-marketplace state of a name tracked for a wallet
+    /// identity. Decouples the three C strings from the FFI heap so the
+    /// callback can return immediately and Rust can run its free-loop.
+    ///
+    /// Optionals mirror the FFI's `has_*` flags: `priceCredits == nil`
+    /// means "not listed for sale" (never a 0-credit listing), and a nil
+    /// timestamp means the document didn't carry one (never the epoch).
+    public struct DpnsNameStateSnapshot {
+        /// The DPNS `domain` document id, base58 — this row's key.
+        public let documentIdBase58: String
+        /// The wallet identity this row is tracked for.
+        public let walletIdentityId: Data
+        /// Display label, e.g. "Alice".
+        public let label: String
+        /// Homograph-normalized label, e.g. "a11ce".
+        public let normalizedLabel: String
+        /// Normalized parent domain — part of the row's uniqueness key.
+        public let normalizedParentDomainName: String
+        /// Listed price in credits, or nil when not for sale.
+        public let priceCredits: UInt64?
+        /// 0 = owned, 1 = sold, 2 = transferred.
+        public let statusRaw: Int16
+        /// Buyer / recipient of a departed name, base58. Nil while owned
+        /// or when the counterparty could not be resolved.
+        public let counterpartyIdBase58: String?
+        /// Unix ms of the pass that wrote this row.
+        public let lastSyncedAtMs: UInt64
     }
 
     /// Load all cached platform-address balances for a wallet. Tuple
@@ -1262,6 +1435,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 | PlatformWalletPersistenceCapabilities.providerTransactions
                 | PlatformWalletPersistenceCapabilities.unsignedTokenStorage
                 | PlatformWalletPersistenceCapabilities.walletRestore
+                | PlatformWalletPersistenceCapabilities.dpnsNameStates
         )
     }
 
@@ -1326,6 +1500,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         cb.on_list_wallet_core_txids_fn = listWalletCoreTxidsCallback
         cb.on_list_wallet_core_txids_free_fn = listWalletCoreTxidsFreeCallback
         cb.on_persist_dashpay_payments_fn = persistDashpayPaymentsCallback
+        cb.on_persist_dpns_name_states_fn = persistDpnsNameStatesCallback
         return cb
     }
 
@@ -6970,6 +7145,80 @@ private func persistInvitationsCallback(
     // `create_invitation` surfaces a funded-but-unrecorded voucher instead of
     // reporting success.
     return handler.persistInvitations(walletId: walletId, upserts: upserts, removed: removed) ? 0 : 1
+}
+
+/// C shim for `on_persist_dpns_name_states_fn`. Deep-copies every
+/// `DpnsNameStateFFI` row — including its three Rust-owned C strings —
+/// and every removed document-id tuple into owned Swift values before
+/// invoking the handler, so Rust can run its string free-loop the moment
+/// we return.
+///
+/// Returns 0 when every marketplace mutation was staged. A nonzero return
+/// fails the Rust persistence round and rolls the changeset back, which is
+/// reserved for genuine SwiftData fetch failures — a row whose identity
+/// isn't staged yet is skipped and re-emitted by the next sync pass rather
+/// than discarding the round's other writes.
+private func persistDpnsNameStatesCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    rowsPtr: UnsafePointer<DpnsNameStateFFI>?,
+    rowsCount: UInt,
+    removedPtr: UnsafePointer<FFIByteTuple32>?,
+    removedCount: UInt
+) -> Int32 {
+    guard let context = context,
+          let walletIdPtr = walletIdPtr else {
+        return 0
+    }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+
+    var upserts: [PlatformWalletPersistenceHandler.DpnsNameStateSnapshot] = []
+    if rowsCount > 0, let rowsPtr = rowsPtr {
+        upserts.reserveCapacity(Int(rowsCount))
+        for i in 0..<Int(rowsCount) {
+            let r = rowsPtr[i]
+            let documentId = dataFromTuple32(r.document_id)
+            let counterparty: String? = r.has_counterparty
+                ? dataFromTuple32(r.counterparty_id).toBase58String()
+                : nil
+            upserts.append(.init(
+                documentIdBase58: documentId.toBase58String(),
+                walletIdentityId: dataFromTuple32(r.wallet_identity_id),
+                label: r.label.map { String(cString: $0) } ?? "",
+                normalizedLabel: r.normalized_label.map { String(cString: $0) } ?? "",
+                normalizedParentDomainName: r.normalized_parent_domain_name
+                    .map { String(cString: $0) } ?? "",
+                priceCredits: r.has_price ? r.price : nil,
+                statusRaw: Int16(r.status),
+                counterpartyIdBase58: counterparty,
+                lastSyncedAtMs: r.last_synced_at_ms
+            ))
+        }
+    }
+
+    var removed: [String] = []
+    if removedCount > 0, let removedPtr = removedPtr {
+        removed.reserveCapacity(Int(removedCount))
+        for i in 0..<Int(removedCount) {
+            removed.append(dataFromTuple32(removedPtr[i]).toBase58String())
+        }
+    }
+
+    // A row whose normalized label didn't survive the C-string copy has
+    // no usable uniqueness key, so it would upsert onto the wrong row.
+    // Drop it here rather than corrupting the cache.
+    let usable = upserts.filter { !$0.normalizedLabel.isEmpty }
+    if usable.count != upserts.count {
+        print("⚠️ persistDpnsNameStates: dropped \(upserts.count - usable.count) marketplace row(s) with an unreadable normalized label")
+    }
+    if usable.isEmpty && removed.isEmpty {
+        return 0
+    }
+    return handler.persistDpnsNameStates(walletId: walletId, upserts: usable, removed: removed)
+        ? 0 : 1
 }
 
 /// C shim for `on_persist_asset_locks_fn`. Copies every
