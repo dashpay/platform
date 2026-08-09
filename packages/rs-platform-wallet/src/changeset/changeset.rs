@@ -953,9 +953,49 @@ pub struct AssetLockEntry {
 
 impl Merge for AssetLockChangeSet {
     fn merge(&mut self, other: Self) {
-        // Last write wins — later status is higher finality.
-        self.asset_locks.extend(other.asset_locks);
-        self.removed.extend(other.removed);
+        // Last write wins, with ONE lifecycle exception: `Consumed` is
+        // the terminal state, so a non-Consumed snapshot never replaces
+        // a Consumed one. Writers race here — the wallet-event
+        // adapter's batched drain can fold (or persist) a stale
+        // reconstruction/enrichment snapshot AFTER the live flow's
+        // synchronous consumption write — and every non-terminal
+        // transition is legitimately bidirectional (a live advance
+        // overwrites `RecoveredFromChain`, a defensive resume
+        // re-enters `Broadcast`), so terminality is the only ordering
+        // the merge can enforce without vetoing real transitions. The
+        // durable stores apply the same rule (sqlite upsert guard,
+        // swift-sdk `persistAssetLocks`), making the store order of
+        // racing snapshots immaterial.
+        for (out_point, entry) in other.asset_locks {
+            if entry.status == AssetLockStatus::Consumed {
+                // A Consumed write supersedes any earlier-folded
+                // tombstone for the outpoint — Consumed rows are
+                // deliberately retained for historical lookup (see the
+                // variant doc), so the terminal write wins over a stale
+                // removal exactly as it wins over a stale status.
+                self.removed.remove(&out_point);
+            } else if let Some(existing) = self.asset_locks.get(&out_point) {
+                if existing.status == AssetLockStatus::Consumed {
+                    continue;
+                }
+            }
+            self.asset_locks.insert(out_point, entry);
+        }
+        // Tombstones folded after a Consumed upsert are dropped for the
+        // same reason. The only removal emitter (`untrack_asset_lock`)
+        // fires exclusively for Built rows whose broadcast was
+        // definitively rejected, so a Consumed/removed pair for one
+        // outpoint has no legitimate producer — this is defense in
+        // depth matching the upsert guard.
+        for out_point in other.removed {
+            let consumed = self
+                .asset_locks
+                .get(&out_point)
+                .is_some_and(|entry| entry.status == AssetLockStatus::Consumed);
+            if !consumed {
+                self.removed.insert(out_point);
+            }
+        }
     }
 
     fn is_empty(&self) -> bool {
@@ -1661,6 +1701,102 @@ mod tests {
     fn test_empty_changeset() {
         let cs = PlatformWalletChangeSet::default();
         assert!(cs.is_empty());
+    }
+
+    /// Asset-lock merge is last-write-wins EXCEPT for the Consumed
+    /// terminal: when the wallet-event adapter's batched drain folds a
+    /// stale reconstruction/enrichment snapshot after (or before) the
+    /// live flow's consumption write, the fold must never regress
+    /// Consumed — while Consumed itself must still land over anything.
+    #[test]
+    fn asset_lock_merge_never_regresses_consumed() {
+        use dashcore::hashes::Hash;
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+
+        let outpoint = OutPoint {
+            txid: Txid::from_byte_array([0x61; 32]),
+            vout: 0,
+        };
+        let entry_with = |status: AssetLockStatus| AssetLockEntry {
+            out_point: outpoint,
+            transaction: Transaction {
+                version: 3,
+                lock_time: 0,
+                input: vec![],
+                output: vec![],
+                special_transaction_payload: None,
+            },
+            account_index: 0,
+            funding_type: AssetLockFundingType::IdentityRegistration,
+            identity_index: 0,
+            amount_duffs: 1,
+            status,
+            proof: None,
+        };
+        let cs_with = |status: AssetLockStatus| {
+            let mut cs = AssetLockChangeSet::default();
+            cs.asset_locks.insert(outpoint, entry_with(status));
+            cs
+        };
+
+        // Stale recovery snapshot folded AFTER the consumption write.
+        let mut folded = cs_with(AssetLockStatus::Consumed);
+        folded.merge(cs_with(AssetLockStatus::RecoveredFromChain));
+        assert_eq!(
+            folded.asset_locks[&outpoint].status,
+            AssetLockStatus::Consumed,
+            "a non-Consumed snapshot must not replace the Consumed terminal"
+        );
+
+        // The legitimate direction still lands.
+        let mut folded = cs_with(AssetLockStatus::RecoveredFromChain);
+        folded.merge(cs_with(AssetLockStatus::Consumed));
+        assert_eq!(
+            folded.asset_locks[&outpoint].status,
+            AssetLockStatus::Consumed
+        );
+
+        // Non-terminal transitions stay last-write-wins in both
+        // directions (live advances overwrite RecoveredFromChain, and
+        // enrichment overwrites Broadcast).
+        let mut folded = cs_with(AssetLockStatus::RecoveredFromChain);
+        folded.merge(cs_with(AssetLockStatus::ChainLocked));
+        assert_eq!(
+            folded.asset_locks[&outpoint].status,
+            AssetLockStatus::ChainLocked
+        );
+        let mut folded = cs_with(AssetLockStatus::Broadcast);
+        folded.merge(cs_with(AssetLockStatus::RecoveredFromChain));
+        assert_eq!(
+            folded.asset_locks[&outpoint].status,
+            AssetLockStatus::RecoveredFromChain
+        );
+
+        // Tombstones obey the same terminal rule. A removal folded
+        // after a Consumed entry is dropped…
+        let removal = || {
+            let mut cs = AssetLockChangeSet::default();
+            cs.removed.insert(outpoint);
+            cs
+        };
+        let mut folded = cs_with(AssetLockStatus::Consumed);
+        folded.merge(removal());
+        assert!(
+            folded.removed.is_empty(),
+            "a tombstone must not survive over a Consumed entry"
+        );
+        // …a Consumed entry folded after a tombstone clears it…
+        let mut folded = removal();
+        folded.merge(cs_with(AssetLockStatus::Consumed));
+        assert!(folded.removed.is_empty());
+        assert_eq!(
+            folded.asset_locks[&outpoint].status,
+            AssetLockStatus::Consumed
+        );
+        // …and a legitimate removal (rejected Built row) still folds.
+        let mut folded = cs_with(AssetLockStatus::Built);
+        folded.merge(removal());
+        assert!(folded.removed.contains(&outpoint));
     }
 
     #[test]

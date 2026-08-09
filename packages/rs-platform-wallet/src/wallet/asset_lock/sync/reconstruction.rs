@@ -36,6 +36,7 @@
 //! insert-if-absent: locks tracked live by the build pipeline (which
 //! tracks *before* broadcast) always win over a reconstruction.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
@@ -238,23 +239,35 @@ fn reconstruct_candidates(
         .collect()
 }
 
-/// Upgrade an already-tracked, still-unproven entry when a record
-/// proves its funding tx chain-locked.
+/// Upgrade an already-tracked, still-unproven entry to
+/// [`AssetLockStatus::RecoveredFromChain`] when a record proves its
+/// funding tx chain-locked.
 ///
 /// Insert-if-absent protects live entries from being *replaced* by a
 /// reconstruction — but it also meant a proof-less entry (a
-/// reconstruction from a mempool detection, or a live `Broadcast` row
-/// stranded by an app kill) could never receive the chain proof a
-/// later `BlockProcessed` record carries. This closes that gap without
+/// reconstruction from a pre-finality detection, or a live `Broadcast`
+/// row stranded by an app kill) could never receive the chain proof a
+/// later finalized record carries. This closes that gap without
 /// clobbering anything a live flow owns:
 ///
 /// - only entries whose `proof` is `None` AND whose status is
 ///   [`Broadcast`](AssetLockStatus::Broadcast) /
 ///   [`InstantSendLocked`](AssetLockStatus::InstantSendLocked) are
-///   touched — the two pre-finality states every existing path
-///   (`wait_for_proof`, `resume_asset_lock`) advances to
-///   `ChainLocked` + chain proof on observing the same finality, so
-///   this converges with, never contradicts, the live pipeline;
+///   touched. A lock a live flow is actively completing leaves that
+///   window within seconds: `wait_for_proof` attaches the IS/CL proof
+///   through `advance_asset_lock_status` (making `proof` non-`None`),
+///   and consumption tombstones it. What *remains* proof-less at
+///   Broadcast/IS-locked when on-chain finality arrives is, by
+///   elimination, a lock nobody is completing — a restore-scan
+///   reconstruction or a stranded row — so the truthful terminal is
+///   `RecoveredFromChain` ("final on Core, Platform-side consumption
+///   unknown"), NOT `ChainLocked`, which every consumer reads as "in
+///   flight". (An earlier revision upgraded to `ChainLocked`; after a
+///   restore that rendered every historical funding tx as a pending
+///   transfer.) In the benign race where a live `wait_for_proof` is
+///   still running, its own `advance_asset_lock_status` overwrites the
+///   status unconditionally moments later, so the live pipeline still
+///   wins;
 /// - [`Built`](AssetLockStatus::Built) (owned by an in-flight build),
 ///   [`Consumed`](AssetLockStatus::Consumed) (terminal), and
 ///   proof-carrying entries are left untouched.
@@ -296,7 +309,7 @@ fn enrich_from_record(
             prior_status = ?entry.status,
             "attaching chain proof to tracked asset lock from finalized scan record"
         );
-        entry.status = AssetLockStatus::ChainLocked;
+        entry.status = AssetLockStatus::RecoveredFromChain;
         entry.proof = Some(dpp::prelude::AssetLockProof::Chain(chain_proof(
             height, out_point,
         )));
@@ -335,25 +348,118 @@ pub(crate) async fn reconstruct_tracked_asset_locks(
         return cs;
     };
     for record in records {
-        // `reconstruct_candidates` reads `info.tracked_asset_locks`
-        // under the same write lock that guards the insert below, so
-        // insert-if-absent holds without a re-check.
-        for lock in reconstruct_candidates(info, record) {
-            tracing::info!(
-                outpoint = %lock.out_point,
-                funding_type = ?lock.funding_type,
-                amount = lock.amount,
-                status = ?lock.status,
-                has_proof = lock.proof.is_some(),
-                "reconstructed tracked asset lock from on-chain record"
-            );
-            cs.asset_locks.insert(lock.out_point, (&lock).into());
-            info.tracked_asset_locks.insert(lock.out_point, lock);
+        apply_record(info, record, &mut cs);
+    }
+    cs
+}
+
+/// One record's full reconstruction step: insert-if-absent, then let a
+/// finalized record upgrade what's already tracked but still unproven
+/// (the inserts carry their own proof already, so enrichment only ever
+/// touches pre-existing entries). Callers own the wallet-manager write
+/// lock — `reconstruct_candidates` reads `info.tracked_asset_locks`
+/// under that same lock, so insert-if-absent holds without a re-check.
+fn apply_record(
+    info: &mut PlatformWalletInfo,
+    record: &TransactionRecord,
+    cs: &mut AssetLockChangeSet,
+) {
+    for lock in reconstruct_candidates(info, record) {
+        tracing::info!(
+            outpoint = %lock.out_point,
+            funding_type = ?lock.funding_type,
+            amount = lock.amount,
+            status = ?lock.status,
+            has_proof = lock.proof.is_some(),
+            "reconstructed tracked asset lock from on-chain record"
+        );
+        cs.asset_locks.insert(lock.out_point, (&lock).into());
+        info.tracked_asset_locks.insert(lock.out_point, lock);
+    }
+    enrich_from_record(info, record, cs);
+}
+
+/// [`ChainLockProcessed`](key_wallet_manager::events::WalletEvent::ChainLockProcessed)
+/// sibling of [`enrich_from_record`]: upgrade the tracked entries whose
+/// funding txs a chainlock just promoted to `InChainLockedBlock`.
+///
+/// Why this exists: during a restore scan the filter walk detects the
+/// historical asset-lock funding txs *before* any chainlock is applied,
+/// so their entries insert at the pre-finality
+/// [`Broadcast`](AssetLockStatus::Broadcast) status. The promotion to
+/// chain-locked happens later, in bulk, when the tip chainlock arrives
+/// (`apply_chain_lock` promotes every `InBlock` record at height `<=`
+/// the chainlock) — and that promotion surfaces ONLY as a
+/// `ChainLockProcessed` event, whose records never re-flow through
+/// `TransactionDetected`/`BlockProcessed`. Without this hook the
+/// entries stayed pre-finality for the whole session (observed on a
+/// restored testnet wallet 2026-08-09: all 9 reconstructed locks stuck
+/// at `Broadcast` until an app restart re-emitted their records).
+///
+/// Deliberately record-free: under the default
+/// `keep-finalized-transactions=OFF` feature the promotion **evicts**
+/// the full records and the event retains only their txids (see
+/// `ManagedCoreFundsAccount::apply_chain_lock`), so reading the record
+/// back here would find nothing — an earlier record-based revision of
+/// this hook silently no-opped for exactly that reason. Everything
+/// needed lives elsewhere: the entries to upgrade are keyed by txid in
+/// `tracked_asset_locks`, and the chainlock's own height is a valid
+/// `ChainAssetLockProof` height for anything the chainlock buries (the
+/// same fact the resume path's CL-from-metadata fallback relies on).
+///
+/// The same upgrade guard as [`enrich_from_record`] applies: only
+/// proof-less entries at `Broadcast` / `InstantSendLocked` are touched
+/// — nothing live is completing an entry that is still proof-less when
+/// on-chain finality arrives, so `RecoveredFromChain` is the truthful
+/// terminal.
+///
+/// The event keys promoted txids by owning account type;
+/// funding-family filtering happens on those keys, so the common case
+/// (a chainlock promoting plain payments, or promoting nothing) never
+/// takes the wallet-manager write lock.
+pub(crate) async fn enrich_tracked_asset_locks_from_chain_lock(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: &WalletId,
+    chain_lock_height: u32,
+    locked_transactions: &BTreeMap<AccountType, Vec<dashcore::Txid>>,
+) -> AssetLockChangeSet {
+    let mut cs = AssetLockChangeSet::default();
+    let funding_txids: std::collections::BTreeSet<dashcore::Txid> = locked_transactions
+        .iter()
+        .filter(|(account_type, _)| funding_family(account_type).is_some())
+        .flat_map(|(_, txids)| txids.iter().copied())
+        .collect();
+    if funding_txids.is_empty() {
+        return cs;
+    }
+    let mut wm = wallet_manager.write().await;
+    let Some(info) = wm.get_wallet_info_mut(wallet_id) else {
+        return cs;
+    };
+    for (out_point, entry) in info.tracked_asset_locks.iter_mut() {
+        if !funding_txids.contains(&out_point.txid) {
+            continue;
         }
-        // Then let a finalized record upgrade what's already tracked
-        // but still unproven (its own inserts above carry their proof
-        // already, so this only ever touches pre-existing entries).
-        enrich_from_record(info, record, &mut cs);
+        let upgradable = entry.proof.is_none()
+            && matches!(
+                entry.status,
+                AssetLockStatus::Broadcast | AssetLockStatus::InstantSendLocked
+            );
+        if !upgradable {
+            continue;
+        }
+        tracing::info!(
+            outpoint = %out_point,
+            chain_lock_height,
+            prior_status = ?entry.status,
+            "attaching chain proof to tracked asset lock from chainlock promotion"
+        );
+        entry.status = AssetLockStatus::RecoveredFromChain;
+        entry.proof = Some(dpp::prelude::AssetLockProof::Chain(chain_proof(
+            chain_lock_height,
+            *out_point,
+        )));
+        cs.asset_locks.insert(*out_point, (&*entry).into());
     }
     cs
 }
@@ -602,8 +708,10 @@ mod tests {
 
     /// A finalized record must upgrade an already-tracked, still
     /// unproven entry in place (attach the chain proof, advance to
-    /// `ChainLocked`) — the insert-if-absent rule protects live entries
-    /// from replacement but must not strand them proof-less forever.
+    /// `RecoveredFromChain` — nothing live is completing an entry that
+    /// is still proof-less when finality arrives) — the
+    /// insert-if-absent rule protects live entries from replacement but
+    /// must not strand them proof-less forever.
     #[tokio::test]
     async fn finalized_record_enriches_unproven_tracked_entry() {
         let (wallet_manager, wallet_id, tx) =
@@ -636,7 +744,7 @@ mod tests {
             .asset_locks
             .get(&out_point)
             .expect("upgraded changeset entry");
-        assert_eq!(entry.status, AssetLockStatus::ChainLocked);
+        assert_eq!(entry.status, AssetLockStatus::RecoveredFromChain);
         match &entry.proof {
             Some(dpp::prelude::AssetLockProof::Chain(chain)) => {
                 assert_eq!(chain.core_chain_locked_height, 910);
@@ -651,8 +759,82 @@ mod tests {
             .tracked_asset_locks
             .get(&out_point)
             .expect("in-memory entry");
-        assert_eq!(lock.status, AssetLockStatus::ChainLocked);
+        assert_eq!(lock.status, AssetLockStatus::RecoveredFromChain);
         assert!(lock.proof.is_some());
+    }
+
+    /// The chainlock-promotion hook must finish what a pre-finality
+    /// scan started: a lock reconstructed at `Broadcast` (the scan saw
+    /// the tx before any chainlock was applied) upgrades to
+    /// `RecoveredFromChain` + a chain proof at the chainlock's height
+    /// when the `ChainLockProcessed` promotion names its txid — without
+    /// a restart, without the record re-flowing through
+    /// `TransactionDetected`/`BlockProcessed`, and without reading the
+    /// record back at all (the promotion evicts it under the default
+    /// `keep-finalized-transactions=OFF` feature).
+    #[tokio::test]
+    async fn chain_lock_promotion_upgrades_pre_finality_reconstruction() {
+        let (wallet_manager, wallet_id, tx) =
+            wallet_with_built_asset_lock(AssetLockFundingType::IdentityRegistration, 0).await;
+        let out_point = OutPoint::new(tx.txid(), 0);
+
+        // Restore-scan sighting before the chainlock: tracked at
+        // Broadcast, no proof.
+        let mempool_record = record_for(
+            &tx,
+            AccountType::IdentityRegistration,
+            TransactionContext::Mempool,
+        );
+        let cs =
+            reconstruct_tracked_asset_locks(&wallet_manager, &wallet_id, &[&mempool_record]).await;
+        assert_eq!(
+            cs.asset_locks.get(&out_point).expect("tracked").status,
+            AssetLockStatus::Broadcast
+        );
+
+        // The chainlock promotion names the txid under its funding
+        // account. No record is available — eviction already happened.
+        let locked_transactions: BTreeMap<AccountType, Vec<dashcore::Txid>> =
+            BTreeMap::from([(AccountType::IdentityRegistration, vec![tx.txid()])]);
+
+        let cs = enrich_tracked_asset_locks_from_chain_lock(
+            &wallet_manager,
+            &wallet_id,
+            910,
+            &locked_transactions,
+        )
+        .await;
+
+        let entry = cs
+            .asset_locks
+            .get(&out_point)
+            .expect("upgraded changeset entry");
+        assert_eq!(entry.status, AssetLockStatus::RecoveredFromChain);
+        match &entry.proof {
+            Some(dpp::prelude::AssetLockProof::Chain(chain)) => {
+                assert_eq!(chain.core_chain_locked_height, 910);
+                assert_eq!(chain.out_point, out_point);
+            }
+            other => panic!("expected a chain proof at the chainlock height, got {other:?}"),
+        }
+
+        // A promotion that names no funding-family account is a no-op
+        // (and must not take the wallet-manager write lock).
+        let unrelated: BTreeMap<AccountType, Vec<dashcore::Txid>> = BTreeMap::from([(
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            vec![tx.txid()],
+        )]);
+        let cs = enrich_tracked_asset_locks_from_chain_lock(
+            &wallet_manager,
+            &wallet_id,
+            911,
+            &unrelated,
+        )
+        .await;
+        assert!(Merge::is_empty(&cs));
     }
 
     /// Enrichment must not touch entries a live flow owns: a `Built`
@@ -786,7 +968,9 @@ mod tests {
 
     /// A reconstructed chain-locked lock is explicitly resumable: the
     /// attached proof feeds `resume_asset_lock` without another proof
-    /// wait, and the status advances to `ChainLocked` on the way out.
+    /// wait — and the status stays `RecoveredFromChain` on the way out
+    /// (a resume proves nothing new about Platform-side consumption,
+    /// so it must not re-enter the pending window).
     #[tokio::test]
     async fn recovered_lock_resumes_from_attached_proof() {
         let (wallet_manager, wallet_id, tx) =
@@ -826,5 +1010,113 @@ mod tests {
             }
             other => panic!("expected the reconstructed chain proof, got {other:?}"),
         }
+        let wm = wallet_manager.read().await;
+        assert_eq!(
+            wm.get_wallet_info(&wallet_id)
+                .expect("wallet")
+                .tracked_asset_locks
+                .get(&out_point)
+                .expect("entry")
+                .status,
+            AssetLockStatus::RecoveredFromChain,
+            "a resume must not downgrade a recovered lock into the pending window"
+        );
+    }
+
+    /// The benign race with a LIVE flow, end to end: a chainlock
+    /// promotion may reach a proof-less `Broadcast` entry while the
+    /// live pipeline's `wait_for_proof` is still running, transiently
+    /// classifying it `RecoveredFromChain`. The live pipeline's own
+    /// writers don't consult the entry — `wait_for_proof` resolves the
+    /// proof from records/events and the build pipeline then calls
+    /// `advance_asset_lock_status`, which overwrites status and proof
+    /// unconditionally — so the live flow always wins the race and the
+    /// transient recovery classification never sticks; consumption
+    /// still lands the `Consumed` terminal afterwards.
+    #[tokio::test]
+    async fn live_flow_advance_overwrites_chain_lock_recovery_classification() {
+        let (wallet_manager, wallet_id, tx) =
+            wallet_with_built_asset_lock(AssetLockFundingType::IdentityRegistration, 0).await;
+        let out_point = OutPoint::new(tx.txid(), 0);
+
+        // The live lock, stranded at proof-less Broadcast long enough
+        // for its block to chain-lock (IS lock never arrived).
+        let mempool_record = record_for(
+            &tx,
+            AccountType::IdentityRegistration,
+            TransactionContext::Mempool,
+        );
+        let _ =
+            reconstruct_tracked_asset_locks(&wallet_manager, &wallet_id, &[&mempool_record]).await;
+
+        // The chainlock promotion races in first.
+        let locked_transactions: BTreeMap<AccountType, Vec<dashcore::Txid>> =
+            BTreeMap::from([(AccountType::IdentityRegistration, vec![tx.txid()])]);
+        let cs = enrich_tracked_asset_locks_from_chain_lock(
+            &wallet_manager,
+            &wallet_id,
+            77,
+            &locked_transactions,
+        )
+        .await;
+        assert_eq!(
+            cs.asset_locks.get(&out_point).expect("entry").status,
+            AssetLockStatus::RecoveredFromChain
+        );
+
+        // The live flow's proof then arrives and its pipeline advances
+        // the entry exactly as `build.rs` does — the recovery
+        // classification is overwritten, not merged around.
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_network(Network::Testnet)
+                .build()
+                .expect("mock sdk"),
+        );
+        let manager = AssetLockManager::new(
+            sdk,
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::new(AlwaysRejectedBroadcaster),
+            WalletPersister::new(
+                wallet_id,
+                Arc::new(NoopTestPersister) as Arc<dyn PlatformWalletPersistence>,
+            ),
+        );
+        let live_proof = dpp::prelude::AssetLockProof::Chain(chain_proof(78, out_point));
+        manager
+            .advance_asset_lock_status(&out_point, AssetLockStatus::ChainLocked, Some(live_proof))
+            .await
+            .expect("live advance");
+        {
+            let wm = wallet_manager.read().await;
+            assert_eq!(
+                wm.get_wallet_info(&wallet_id)
+                    .expect("wallet")
+                    .tracked_asset_locks
+                    .get(&out_point)
+                    .expect("entry")
+                    .status,
+                AssetLockStatus::ChainLocked,
+                "the live pipeline's advance must overwrite the transient recovery classification"
+            );
+        }
+
+        // And consumption still reaches its terminal.
+        let _ = manager
+            .consume_asset_lock(&out_point)
+            .await
+            .expect("consume");
+        let wm = wallet_manager.read().await;
+        assert_eq!(
+            wm.get_wallet_info(&wallet_id)
+                .expect("wallet")
+                .tracked_asset_locks
+                .get(&out_point)
+                .expect("entry")
+                .status,
+            AssetLockStatus::Consumed
+        );
     }
 }

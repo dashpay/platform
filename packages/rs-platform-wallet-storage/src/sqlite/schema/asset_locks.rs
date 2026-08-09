@@ -27,6 +27,20 @@ pub fn apply(
     cs: &AssetLockChangeSet,
 ) -> Result<(), WalletStorageError> {
     if !cs.asset_locks.is_empty() {
+        // The upsert's WHERE clause enforces the one terminal lifecycle
+        // rule: a stored `consumed` row is never overwritten by a
+        // non-consumed snapshot. Racing writers persist through
+        // different paths (the wallet-event adapter's batched drain vs
+        // the live flows' synchronous changeset queue), so a stale
+        // reconstruction/enrichment snapshot can land AFTER the
+        // consumption write — this guard makes that arrival order
+        // immaterial. Every other transition is deliberately
+        // last-write-wins: non-terminal statuses move both ways (live
+        // advances overwrite `recovered_from_chain`, defensive resumes
+        // re-enter `broadcast`), so terminality is the only ordering
+        // the store can enforce without vetoing legitimate writes.
+        // `AssetLockChangeSet::merge` applies the same rule when
+        // batches fold before reaching the store.
         let mut stmt = tx.prepare_cached(
             "INSERT INTO asset_locks \
                 (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob) \
@@ -36,7 +50,8 @@ pub fn apply(
                 account_index = excluded.account_index, \
                 identity_index = excluded.identity_index, \
                 amount_duffs = excluded.amount_duffs, \
-                lifecycle_blob = excluded.lifecycle_blob",
+                lifecycle_blob = excluded.lifecycle_blob \
+             WHERE asset_locks.status != 'consumed' OR excluded.status = 'consumed'",
         )?;
         for (op, entry) in &cs.asset_locks {
             let op_bytes = blob::encode_outpoint(op)?;
@@ -56,8 +71,16 @@ pub fn apply(
         }
     }
     if !cs.removed.is_empty() {
-        let mut stmt =
-            tx.prepare_cached("DELETE FROM asset_locks WHERE wallet_id = ?1 AND outpoint = ?2")?;
+        // Same terminal rule as the upsert guard: a stored `consumed`
+        // row is never deleted by a stale tombstone. Consumed rows are
+        // deliberately retained for historical lookup, and the only
+        // removal emitter (`untrack_asset_lock`) fires exclusively for
+        // Built rows whose broadcast was rejected — so a removal
+        // reaching a consumed row is by construction a stale write.
+        let mut stmt = tx.prepare_cached(
+            "DELETE FROM asset_locks \
+             WHERE wallet_id = ?1 AND outpoint = ?2 AND status != 'consumed'",
+        )?;
         for op in &cs.removed {
             let op_bytes = blob::encode_outpoint(op)?;
             stmt.execute(params![wallet_id.as_slice(), &op_bytes[..]])?;

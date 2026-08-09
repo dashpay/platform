@@ -522,6 +522,140 @@ fn tc010b_recovered_from_chain_lock_roundtrip() {
     drop(tmp);
 }
 
+/// TC-010c: the store-order race between the wallet-event adapter and
+/// the live flows, applied in the exact adversarial order. A stale
+/// reconstruction/enrichment snapshot (`RecoveredFromChain`) that the
+/// adapter's batched drain persists AFTER the live flow's synchronous
+/// `Consumed` write must NOT regress the durable row — `Consumed` is
+/// terminal and the upsert's WHERE guard rejects the late arrival.
+/// Every other direction stays last-write-wins, including `Consumed`
+/// landing over `RecoveredFromChain`.
+#[test]
+fn tc010c_stale_recovery_snapshot_cannot_regress_consumed_row() {
+    use dashcore::hashes::Hash;
+    use dashcore::{OutPoint, Transaction, Txid};
+    use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+    use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+    use platform_wallet::changeset::{AssetLockChangeSet, AssetLockEntry};
+    use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
+
+    let entry_with = |outpoint: OutPoint, status: AssetLockStatus| AssetLockEntry {
+        out_point: outpoint,
+        transaction: Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: None,
+        },
+        account_index: 0,
+        funding_type: AssetLockFundingType::IdentityRegistration,
+        identity_index: 0,
+        amount_duffs: 1_000_000,
+        status: status.clone(),
+        proof: match status {
+            AssetLockStatus::RecoveredFromChain => {
+                Some(dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
+                    core_chain_locked_height: 900,
+                    out_point: outpoint,
+                }))
+            }
+            _ => None,
+        },
+    };
+    let store_one = |persister: &SqlitePersister, w, outpoint, status| {
+        let mut locks = AssetLockChangeSet::default();
+        locks
+            .asset_locks
+            .insert(outpoint, entry_with(outpoint, status));
+        persister
+            .store(
+                w,
+                PlatformWalletChangeSet {
+                    asset_locks: Some(locks),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    };
+
+    let (persister, tmp, path) = fresh_persister();
+    let w = wid(0xFA);
+    ensure_wallet_meta(&persister, &w);
+
+    // Outpoint A: live lock consumed, THEN the stale recovery snapshot
+    // arrives (the adapter drained its batch after the live write).
+    let a = OutPoint {
+        txid: Txid::from_byte_array([0x51; 32]),
+        vout: 0,
+    };
+    store_one(&persister, w, a, AssetLockStatus::Broadcast);
+    store_one(&persister, w, a, AssetLockStatus::Consumed);
+    store_one(&persister, w, a, AssetLockStatus::RecoveredFromChain);
+
+    // Outpoint B: the legitimate direction — a recovered lock is
+    // explicitly resumed and consumed; the terminal write must land.
+    let b = OutPoint {
+        txid: Txid::from_byte_array([0x52; 32]),
+        vout: 0,
+    };
+    store_one(&persister, w, b, AssetLockStatus::RecoveredFromChain);
+    store_one(&persister, w, b, AssetLockStatus::Consumed);
+
+    // A stale tombstone obeys the same terminal rule: a removal landing
+    // after the Consumed write must not delete the row…
+    let store_removed = |persister: &SqlitePersister, w, outpoint| {
+        let mut locks = AssetLockChangeSet::default();
+        locks.removed.insert(outpoint);
+        persister
+            .store(
+                w,
+                PlatformWalletChangeSet {
+                    asset_locks: Some(locks),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    };
+    store_removed(&persister, w, a);
+
+    // …while the legitimate removal path (a rejected Built row) still
+    // deletes.
+    let c = OutPoint {
+        txid: Txid::from_byte_array([0x53; 32]),
+        vout: 0,
+    };
+    store_one(&persister, w, c, AssetLockStatus::Built);
+    store_removed(&persister, w, c);
+
+    drop(persister);
+    let p2 = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+    let bucketed = platform_wallet_storage::sqlite::schema::asset_locks::load_state(
+        &p2.lock_conn_for_test(),
+        &w,
+    )
+    .unwrap();
+    assert_eq!(
+        bucketed[&0][&a].status,
+        AssetLockStatus::Consumed,
+        "a stale RecoveredFromChain snapshot landing after Consumed must be rejected"
+    );
+    assert_eq!(
+        bucketed[&0][&b].status,
+        AssetLockStatus::Consumed,
+        "Consumed must still land over RecoveredFromChain"
+    );
+    assert!(
+        bucketed[&0][&a].status == AssetLockStatus::Consumed,
+        "a stale removal must not delete the Consumed row"
+    );
+    assert!(
+        !bucketed[&0].contains_key(&c),
+        "a legitimate removal of a rejected Built row must still delete"
+    );
+    drop(tmp);
+}
+
 /// TC-012: DashPay profile + payment overlay round-trip through the
 /// dashpay_* tables via bincode-serde blobs.
 #[test]
