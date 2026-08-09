@@ -52,6 +52,10 @@ final class InvitationPersistenceTests: XCTestCase {
             | PlatformWalletPersistenceCapabilities.providerTransactions
             | PlatformWalletPersistenceCapabilities.unsignedTokenStorage
             | PlatformWalletPersistenceCapabilities.walletRestore
+            // DPNS username-marketplace name states: the handler wires
+            // `on_persist_dpns_name_states_fn` and lands the rows on
+            // `PersistentDPNSName`, so this bit is genuinely attested.
+            | PlatformWalletPersistenceCapabilities.dpnsNameStates
 
         XCTAssertEqual(
             capabilities.version,

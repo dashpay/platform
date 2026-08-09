@@ -39,6 +39,11 @@ struct IdentityDetailView: View {
         identities.first
     }
 
+    private func hasLoadedWallet(for identity: PersistentIdentity) -> Bool {
+        guard let walletId = identity.wallet?.walletId else { return false }
+        return walletManager.wallet(for: walletId) != nil
+    }
+
     @State private var isRefreshing = false
     @State private var showingEditAlias = false
     @State private var newAlias = ""
@@ -229,8 +234,16 @@ struct IdentityDetailView: View {
             }
 
             // DPNS Names Section
-            if !dpnsNames.isEmpty || !contestedDpnsNames.isEmpty || !identity.isLocal {
+            if !dpnsNames.isEmpty || !contestedDpnsNames.isEmpty || !identity.isLocal
+                || hasLoadedWallet(for: identity) {
                 Section("DPNS Names") {
+                    if !identity.isLocal && hasLoadedWallet(for: identity) {
+                        NavigationLink(destination: DpnsMarketplaceView(identity: identity)) {
+                            Label("Username Marketplace", systemImage: "storefront")
+                        }
+                        .accessibilityIdentifier("identity.dpnsMarketplace")
+                    }
+
                     if isLoadingDPNS {
                         HStack {
                             ProgressView()

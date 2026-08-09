@@ -99,6 +99,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 generation: Arc::clone(&generation),
                 identity_manager: IdentityManager::from(identity_manager),
                 tracked_asset_locks,
+                dpns_name_states: std::collections::BTreeMap::new(),
             };
 
             // Canonical id recomputed from the wallet's own key material.

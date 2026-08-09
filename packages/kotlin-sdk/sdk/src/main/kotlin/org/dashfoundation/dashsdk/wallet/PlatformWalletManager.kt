@@ -23,6 +23,7 @@ import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.DashpayNative
+import org.dashfoundation.dashsdk.ffi.DpnsMarketplaceNative
 import org.dashfoundation.dashsdk.ffi.FundingNative
 import org.dashfoundation.dashsdk.ffi.NativeWalletEventBridge
 import org.dashfoundation.dashsdk.ffi.WalletManagerNative
@@ -57,6 +58,7 @@ data class PlatformWalletPersistenceCapabilities(
         const val UNSIGNED_TOKEN_STORAGE: Long = 1L shl 5
         const val PENDING_CONTACT_CRYPTO: Long = 1L shl 6
         const val WALLET_RESTORE: Long = 1L shl 7
+        const val DPNS_NAME_STATES: Long = 1L shl 8
     }
 }
 
@@ -292,6 +294,37 @@ class PlatformWalletManager(
         override fun onPlatformAddressSyncPassCompleted(syncUnixSeconds: Long, walletCount: Int) {
             _syncEvents.tryEmit(
                 WalletSyncEvent.PlatformAddressPassCompleted(syncUnixSeconds, walletCount),
+            )
+        }
+
+        override fun onDpnsMarketplaceSyncCompleted(
+            walletId: ByteArray,
+            success: Boolean,
+            namesTracked: Int,
+            namesAdded: Int,
+            namesDeparted: Int,
+            pricesChanged: Int,
+            errorMessage: String?,
+        ) {
+            _syncEvents.tryEmit(
+                WalletSyncEvent.DpnsMarketplaceResult(
+                    walletId = walletId,
+                    success = success,
+                    namesTracked = namesTracked,
+                    namesAdded = namesAdded,
+                    namesDeparted = namesDeparted,
+                    pricesChanged = pricesChanged,
+                    errorMessage = errorMessage,
+                ),
+            )
+        }
+
+        override fun onDpnsMarketplaceSyncPassCompleted(
+            syncUnixSeconds: Long,
+            walletCount: Int,
+        ) {
+            _syncEvents.tryEmit(
+                WalletSyncEvent.DpnsMarketplacePassCompleted(syncUnixSeconds, walletCount),
             )
         }
 
@@ -631,6 +664,10 @@ class PlatformWalletManager(
      */
     val documentTransactions: org.dashfoundation.dashsdk.documents.DocumentTransactions =
         org.dashfoundation.dashsdk.documents.DocumentTransactions(teardownGate)
+
+    /** DPNS marketplace queries, trades, history and per-wallet sync. */
+    val dpnsMarketplace: org.dashfoundation.dashsdk.dpns.DpnsMarketplace =
+        org.dashfoundation.dashsdk.dpns.DpnsMarketplace(teardownGate)
 
     /**
      * Masternode contested-resource vote bridge — port of
@@ -1963,6 +2000,47 @@ class PlatformWalletManager(
         )
     }
 
+    // ── DPNS marketplace sync ─────────────────────────────────────────
+
+    /** Start the recurring cross-wallet DPNS marketplace sweep. */
+    suspend fun startDpnsSync() = withContext(Dispatchers.IO) {
+        mapNativeErrors { DpnsMarketplaceNative.syncStart(managerHandle) }
+    }
+
+    /** Stop the recurring DPNS marketplace sweep; it may be started again. */
+    suspend fun stopDpnsSync() = withContext(Dispatchers.IO) {
+        mapNativeErrors { DpnsMarketplaceNative.syncStop(managerHandle) }
+    }
+
+    suspend fun isDpnsSyncRunning(): Boolean = withContext(Dispatchers.IO) {
+        mapNativeErrors { DpnsMarketplaceNative.syncIsRunning(managerHandle) }
+    }
+
+    suspend fun isDpnsSyncing(): Boolean = withContext(Dispatchers.IO) {
+        mapNativeErrors { DpnsMarketplaceNative.syncIsSyncing(managerHandle) }
+    }
+
+    suspend fun dpnsLastSyncUnixSeconds(): Long = withContext(Dispatchers.IO) {
+        mapNativeErrors { DpnsMarketplaceNative.syncLastUnixSeconds(managerHandle) }
+    }
+
+    suspend fun setDpnsSyncInterval(seconds: Long) = withContext(Dispatchers.IO) {
+        require(seconds > 0) { "seconds must be positive" }
+        mapNativeErrors { DpnsMarketplaceNative.syncSetInterval(managerHandle, seconds) }
+    }
+
+    /** Run one DPNS marketplace sweep across every registered wallet now. */
+    suspend fun dpnsSyncNow(): org.dashfoundation.dashsdk.dpns.DpnsManagerSyncSummary =
+        withContext(Dispatchers.IO) {
+            val values = mapNativeErrors { DpnsMarketplaceNative.syncNow(managerHandle) }
+            check(values.size == 3) { "DPNS sync result must contain three values" }
+            org.dashfoundation.dashsdk.dpns.DpnsManagerSyncSummary(
+                successCount = values[0].toInt(),
+                errorCount = values[1].toInt(),
+                syncUnixSeconds = values[2],
+            )
+        }
+
     /** Deferred contact-crypto entries queued on [walletId]'s wallet. */
     suspend fun contactCryptoPendingCount(walletId: ByteArray): Int =
         withContext(Dispatchers.IO) {
@@ -2199,6 +2277,7 @@ class PlatformWalletManager(
         withContext(Dispatchers.IO) {
             // Best-effort stop; ignore failures (destroy shuts it all down).
             runCatching { DashpayNative.dashPaySyncStop(managerHandle) }
+            runCatching { DpnsMarketplaceNative.syncStop(managerHandle) }
             runCatching { WalletManagerNative.platformAddressSyncStop(managerHandle) }
             runCatching { WalletManagerNative.identitySyncStop(managerHandle) }
             runCatching { WalletManagerNative.shieldedSyncStop(managerHandle) }

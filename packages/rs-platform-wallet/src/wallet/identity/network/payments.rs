@@ -5862,6 +5862,8 @@ mod tests {
             persister: real.persister.clone(),
             broadcaster: Arc::new(AcceptingBroadcaster),
             sdk_writer: Arc::clone(&real.sdk_writer),
+            dpns_operation_gate: Arc::clone(&real.dpns_operation_gate),
+            dpns_sync_progress: Arc::clone(&real.dpns_sync_progress),
         }
     }
 
@@ -5895,6 +5897,8 @@ mod tests {
             persister: real.persister.clone(),
             broadcaster: Arc::new(RejectingBroadcaster),
             sdk_writer: Arc::clone(&real.sdk_writer),
+            dpns_operation_gate: Arc::clone(&real.dpns_operation_gate),
+            dpns_sync_progress: Arc::clone(&real.dpns_sync_progress),
         }
     }
 

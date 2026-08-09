@@ -787,6 +787,7 @@ mod tests {
             generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
+            dpns_name_states: BTreeMap::new(),
         };
         let out_point = OutPoint::new(tx.txid(), 0);
         let lock = TrackedAssetLock {

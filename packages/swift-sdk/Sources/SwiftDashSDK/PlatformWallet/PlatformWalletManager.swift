@@ -58,6 +58,10 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     public static let unsignedTokenStorage: UInt64 = 1 << 5
     public static let pendingContactCrypto: UInt64 = 1 << 6
     public static let walletRestore: UInt64 = 1 << 7
+    /// DPNS username-marketplace name-state rows (price / sale status /
+    /// counterparty) are mirrored durably. Mirrors
+    /// `PersistenceCapabilities::DPNS_NAME_STATES`.
+    public static let dpnsNameStates: UInt64 = 1 << 8
 
     public let version: UInt32
     public let bits: UInt64
@@ -142,6 +146,10 @@ public class PlatformWalletManager: ObservableObject {
 
     /// Last completed shielded sync event emitted by Rust.
     @Published public internal(set) var lastShieldedSyncEvent: ShieldedSyncEvent?
+
+    /// Last completed cross-wallet DPNS marketplace sync event emitted by
+    /// Rust. Every native pointer has been copied before publication.
+    @Published public internal(set) var lastDpnsSyncEvent: DpnsSyncEvent?
 
     /// Cumulative number of encrypted notes scanned in the **current**
     /// in-flight shielded sync pass, published once per chunk (~every
@@ -275,6 +283,7 @@ public class PlatformWalletManager: ObservableObject {
             platform_wallet_manager_platform_address_sync_stop(handle).discard()
             platform_wallet_manager_shielded_sync_stop(handle).discard()
             platform_wallet_manager_dashpay_sync_stop(handle).discard()
+            platform_wallet_manager_dpns_sync_stop(handle).discard()
             // Rust OWNS the persistence/event callback handlers (they were
             // handed over retained at `configure`, with a `release_fn`):
             // any worker that outlives destroy keeps its handler alive
@@ -330,6 +339,7 @@ public class PlatformWalletManager: ObservableObject {
         let handler: PlatformWalletPersistenceHandler?
         var persistence: PersistenceCallbacks
         var declaredCapabilities: PersistenceCapabilitiesFFI
+        var persistenceExtension: PersistenceCallbacksExtension
         if let container = modelContainer {
             let h = PlatformWalletPersistenceHandler(
                 modelContainer: container,
@@ -337,6 +347,7 @@ public class PlatformWalletManager: ObservableObject {
             )
             persistence = h.makeCallbacks()
             declaredCapabilities = h.makePersistenceCapabilities()
+            persistenceExtension = h.makePersistenceCallbacksExtension()
             handler = h
         } else {
             persistence = PersistenceCallbacks()
@@ -345,18 +356,25 @@ public class PlatformWalletManager: ObservableObject {
                 reserved: 0,
                 bits: 0
             )
+            persistenceExtension = PersistenceCallbacksExtension()
+            persistenceExtension.struct_size = UInt(MemoryLayout<PersistenceCallbacksExtension>.size)
+            persistenceExtension.version = UInt32(PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION)
+            persistenceExtension.reserved = 0
             handler = nil
         }
 
         let eventHandler = PlatformWalletEventHandler(manager: self)
         var eventHandlerCallbacks = eventHandler.makeCallbacks()
+        var eventHandlerExtension = eventHandler.makeCallbacksExtension()
 
         do {
-            try platform_wallet_manager_create_with_persistence_capabilities(
+            try platform_wallet_manager_create_with_extensions(
                 sdkPointer,
                 &persistence,
                 &eventHandlerCallbacks,
                 &declaredCapabilities,
+                &persistenceExtension,
+                &eventHandlerExtension,
                 &handle
             ).check()
         } catch {

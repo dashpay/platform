@@ -1,4 +1,5 @@
-//! JNI bridge for the platform-wallet-ffi `EventHandlerCallbacks` vtable.
+//! JNI bridge for the platform-wallet-ffi `EventHandlerCallbacks` vtable
+//! and its size/version-tagged additive event extension.
 //!
 //! Kotlin counterpart: `org.dashfoundation.dashsdk.ffi.NativeWalletEventBridge`,
 //! reached from the manager built in [`crate::wallet_manager`].
@@ -28,7 +29,9 @@
 use crate::support::JVM;
 use jni::objects::{GlobalRef, JByteArray, JObject, JValue};
 use jni::JNIEnv;
-use platform_wallet_ffi::event_handler::EventHandlerCallbacks;
+use platform_wallet_ffi::event_handler::{
+    DpnsSyncWalletResultFFI, EventHandlerCallbacks, EventHandlerCallbacksExtension,
+};
 use platform_wallet_ffi::platform_address_sync::PlatformAddressSyncWalletResultFFI;
 use platform_wallet_ffi::shielded_types::ShieldedSyncWalletResultFFI;
 use std::ffi::{c_void, CStr};
@@ -210,6 +213,49 @@ unsafe extern "C" fn tramp_platform_address_sync_completed(
     });
 }
 
+// ── on_dpns_marketplace_sync_completed (versioned extension) ─────────
+
+unsafe extern "C" fn tramp_dpns_marketplace_sync_completed(
+    context: *mut c_void,
+    results: *const DpnsSyncWalletResultFFI,
+    count: usize,
+    sync_unix_seconds: u64,
+) {
+    with_bridge(context, |env, bridge| {
+        for result in slice_or_empty(results, count) {
+            env.with_local_frame(16, |env| -> Result<(), jni::errors::Error> {
+                let wallet_id = id32(env, &result.wallet_id)?;
+                let error = cstr_opt(env, result.error_message)?;
+                env.call_method(
+                    bridge,
+                    "onDpnsMarketplaceSyncCompleted",
+                    "([BZIIIILjava/lang/String;)V",
+                    &[
+                        (&wallet_id).into(),
+                        JValue::Bool(result.success as u8),
+                        JValue::Int(result.names_tracked as i32),
+                        JValue::Int(result.names_added as i32),
+                        JValue::Int(result.names_departed as i32),
+                        JValue::Int(result.prices_changed as i32),
+                        (&error).into(),
+                    ],
+                )?;
+                Ok(())
+            })?;
+        }
+        env.call_method(
+            bridge,
+            "onDpnsMarketplaceSyncPassCompleted",
+            "(JI)V",
+            &[
+                JValue::Long(sync_unix_seconds as i64),
+                JValue::Int(count as i32),
+            ],
+        )?;
+        Ok(())
+    });
+}
+
 // ── on_shielded_sync_completed ────────────────────────────────────────
 
 unsafe extern "C" fn tramp_shielded_sync_completed(
@@ -301,7 +347,8 @@ unsafe extern "C" fn tramp_shielded_tree_progress(
 /// [`KotlinEventCtx`]). Every slot is wired: the two ABI-simple event /
 /// error slots, plus the platform-address + shielded completion / progress
 /// slots that marshal their payload arrays into per-entry flat calls on the
-/// Kotlin bridge.
+/// Kotlin bridge. DPNS completion lives in [`build_event_extension`] so the
+/// legacy by-value vtable never grows.
 pub(crate) fn build_event_vtable(context: *mut c_void) -> EventHandlerCallbacks {
     EventHandlerCallbacks {
         context,
@@ -312,6 +359,16 @@ pub(crate) fn build_event_vtable(context: *mut c_void) -> EventHandlerCallbacks 
         on_shielded_sync_progress_fn: Some(tramp_shielded_sync_progress),
         on_shielded_tree_progress_fn: Some(tramp_shielded_tree_progress),
         release_fn: Some(release_event_ctx),
+    }
+}
+
+/// Build the size/version-tagged additive event extension. It shares the
+/// legacy vtable's context and destructor and is copied during manager
+/// creation.
+pub(crate) fn build_event_extension() -> EventHandlerCallbacksExtension {
+    EventHandlerCallbacksExtension {
+        on_dpns_marketplace_sync_completed_fn: Some(tramp_dpns_marketplace_sync_completed),
+        ..EventHandlerCallbacksExtension::default()
     }
 }
 

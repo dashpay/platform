@@ -363,6 +363,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             generation: Arc::clone(&generation),
             identity_manager: crate::wallet::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
+            dpns_name_states: std::collections::BTreeMap::new(),
         };
 
         wallet.downgrade_to_external_signable();
