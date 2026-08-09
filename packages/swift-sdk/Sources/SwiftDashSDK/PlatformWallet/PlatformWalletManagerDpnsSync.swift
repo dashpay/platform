@@ -29,6 +29,98 @@ public struct DpnsSyncSummary: Sendable, Equatable {
     }
 }
 
+/// One registered wallet's result in a completed manager-wide DPNS
+/// marketplace sync pass.
+public struct DpnsWalletSyncResult: Sendable, Equatable {
+    public let walletId: Data
+    public let success: Bool
+    public let namesTracked: UInt32
+    public let namesAdded: UInt32
+    public let namesDeparted: UInt32
+    public let pricesChanged: UInt32
+    public let errorMessage: String?
+
+    public init(
+        walletId: Data,
+        success: Bool,
+        namesTracked: UInt32,
+        namesAdded: UInt32,
+        namesDeparted: UInt32,
+        pricesChanged: UInt32,
+        errorMessage: String?
+    ) {
+        self.walletId = walletId
+        self.success = success
+        self.namesTracked = namesTracked
+        self.namesAdded = namesAdded
+        self.namesDeparted = namesDeparted
+        self.pricesChanged = pricesChanged
+        self.errorMessage = errorMessage
+    }
+
+    /// Copy callback-duration native storage into an owned Swift value.
+    init(ffi: DpnsSyncWalletResultFFI) {
+        var walletIdTuple = ffi.wallet_id
+        self.init(
+            walletId: Swift.withUnsafeBytes(of: &walletIdTuple) { Data($0) },
+            success: ffi.success,
+            namesTracked: ffi.names_tracked,
+            namesAdded: ffi.names_added,
+            namesDeparted: ffi.names_departed,
+            pricesChanged: ffi.prices_changed,
+            errorMessage: ffi.error_message.map { String(cString: $0) }
+        )
+    }
+}
+
+/// One completed manager-wide DPNS marketplace sync pass.
+public struct DpnsSyncEvent: Sendable, Equatable {
+    public let syncUnixSeconds: UInt64
+    public let walletResults: [DpnsWalletSyncResult]
+
+    public init(syncUnixSeconds: UInt64, walletResults: [DpnsWalletSyncResult]) {
+        self.syncUnixSeconds = syncUnixSeconds
+        self.walletResults = walletResults
+    }
+
+    public func result(for walletId: Data) -> DpnsWalletSyncResult? {
+        walletResults.first { $0.walletId == walletId }
+    }
+}
+
+/// C trampoline for
+/// `EventHandlerCallbacksExtension.on_dpns_marketplace_sync_completed_fn`.
+/// Rust owns every pointer only for this call, so the complete result array
+/// and every error string are copied before hopping to the main actor.
+func dpnsMarketplaceSyncCompletedCallback(
+    context: UnsafeMutableRawPointer?,
+    resultsPtr: UnsafePointer<DpnsSyncWalletResultFFI>?,
+    count: UInt,
+    syncUnixSeconds: UInt64
+) {
+    guard let context else { return }
+
+    let handler = Unmanaged<PlatformWalletEventHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+
+    var results: [DpnsWalletSyncResult] = []
+    if let resultsPtr, count > 0 {
+        results.reserveCapacity(Int(count))
+        for index in 0..<Int(count) {
+            results.append(DpnsWalletSyncResult(ffi: resultsPtr[index]))
+        }
+    }
+
+    let event = DpnsSyncEvent(
+        syncUnixSeconds: syncUnixSeconds,
+        walletResults: results
+    )
+    Task { @MainActor [weak manager = handler.manager] in
+        manager?.handleDpnsSyncCompleted(event)
+    }
+}
+
 extension PlatformWalletManager {
     // MARK: - DPNS marketplace sync lifecycle
     //
@@ -40,6 +132,10 @@ extension PlatformWalletManager {
     // per-identity registry surface here. It runs on a slower default
     // cadence (60s) than DashPay's 15s because marketplace state changes
     // are rare.
+
+    func handleDpnsSyncCompleted(_ event: DpnsSyncEvent) {
+        lastDpnsSyncEvent = event
+    }
 
     /// Start the recurring DPNS username-marketplace sync background
     /// loop. Idempotent — calling while already running is a no-op.

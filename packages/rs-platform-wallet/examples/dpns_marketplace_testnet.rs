@@ -6,7 +6,8 @@
 //! typed stale-price rejection → purchase by a second identity →
 //! ownership/records/label reconciliation → history timeline (priceSet ×2 +
 //! purchased) → re-list → delist via transfer-to-self → `$price` cleared.
-//! Results feed `docs/DPNS_MARKETPLACE.md` §9.
+//! Use the printed results to validate the active testnet contract and
+//! transition behavior before shipping SDK changes.
 //!
 //! Environment (secrets stay in env, never printed):
 //!   DPNS_MNEMONIC       required — wallet recovery phrase

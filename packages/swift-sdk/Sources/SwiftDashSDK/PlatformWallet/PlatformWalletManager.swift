@@ -147,6 +147,10 @@ public class PlatformWalletManager: ObservableObject {
     /// Last completed shielded sync event emitted by Rust.
     @Published public internal(set) var lastShieldedSyncEvent: ShieldedSyncEvent?
 
+    /// Last completed cross-wallet DPNS marketplace sync event emitted by
+    /// Rust. Every native pointer has been copied before publication.
+    @Published public internal(set) var lastDpnsSyncEvent: DpnsSyncEvent?
+
     /// Cumulative number of encrypted notes scanned in the **current**
     /// in-flight shielded sync pass, published once per chunk (~every
     /// 2048 notes) via the Rust-side progress callback. Nil between
@@ -361,14 +365,16 @@ public class PlatformWalletManager: ObservableObject {
 
         let eventHandler = PlatformWalletEventHandler(manager: self)
         var eventHandlerCallbacks = eventHandler.makeCallbacks()
+        var eventHandlerExtension = eventHandler.makeCallbacksExtension()
 
         do {
-            try platform_wallet_manager_create_with_persistence_extensions(
+            try platform_wallet_manager_create_with_extensions(
                 sdkPointer,
                 &persistence,
                 &eventHandlerCallbacks,
                 &declaredCapabilities,
                 &persistenceExtension,
+                &eventHandlerExtension,
                 &handle
             ).check()
         } catch {

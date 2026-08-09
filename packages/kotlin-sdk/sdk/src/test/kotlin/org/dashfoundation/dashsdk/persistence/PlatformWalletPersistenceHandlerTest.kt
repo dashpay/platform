@@ -65,7 +65,7 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(0L, noOpBridge.persistenceCapabilitiesBits())
 
         assertEquals(1, handler.persistenceCapabilitiesVersion())
-        assertEquals(0xbfL, handler.persistenceCapabilitiesBits())
+        assertEquals(0x1bfL, handler.persistenceCapabilitiesBits())
         // Android has no pending-contact-crypto callback, so it must not
         // attest that semantic contract.
         assertEquals(0L, handler.persistenceCapabilitiesBits() and 0x40L)
@@ -76,6 +76,7 @@ class PlatformWalletPersistenceHandlerTest {
         )
         assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.ATOMIC_CHANGESETS))
         assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.INVITATIONS))
+        assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.DPNS_NAME_STATES))
     }
 
     // ── Standalone (non-bracketed) writes ─────────────────────────────
@@ -733,6 +734,79 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals("hi", profile.publicMessage)
         assertNotNull(profile.avatarHash)
         assertNull(profile.avatarFingerprint)
+    }
+
+    @Test
+    fun identityDpnsSnapshotRemovesStaleOwnedLabels() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val identityId = ByteArray(32) { 12 }
+
+        fun persistSnapshot(vararg names: String) {
+            handler.onChangesetBegin(walletId)
+            handler.onPersistIdentityUpsert(
+                walletId, identityId, 1, 0, false, 0, 0, true, walletId,
+                names.toList().toTypedArray(), LongArray(names.size), false, null, null, null,
+                ByteArray(32), false, ByteArray(8), false, null,
+            )
+            handler.onChangesetEnd(walletId, success = true)
+        }
+
+        persistSnapshot("Alice", "Bob")
+        assertEquals(2, db.dpnsNameDao().observeByIdentity(identityId).first().size)
+
+        persistSnapshot("Alice")
+        val current = db.dpnsNameDao().observeByIdentity(identityId).first()
+        assertEquals(listOf("Alice"), current.map { it.label })
+        assertEquals(1, db.dpnsNameDao().observeMarketplaceByIdentity(identityId).first().size)
+    }
+
+    @Test
+    fun marketplaceStateRetainsDepartedNameAndCanRemoveIt() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val identityId = ByteArray(32) { 13 }
+        val documentId = ByteArray(32) { 14 }
+        val buyerId = ByteArray(32) { 15 }
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityUpsert(
+            walletId, identityId, 1, 0, false, 0, 0, true, walletId,
+            emptyArray(), longArrayOf(), false, null, null, null,
+            ByteArray(32), false, ByteArray(8), false, null,
+        )
+        handler.onPersistDpnsNameState(
+            walletId = walletId,
+            documentId = documentId,
+            walletIdentityId = identityId,
+            hasCounterparty = true,
+            counterpartyId = buyerId,
+            label = "Alice",
+            normalizedLabel = "a11ce",
+            normalizedParentDomainName = "dash",
+            hasPrice = false,
+            priceCredits = 0,
+            status = 1,
+            createdAtMs = 100,
+            updatedAtMs = 200,
+            transferredAtMs = 300,
+            lastSyncedAtMs = 400,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertTrue(db.dpnsNameDao().observeByIdentity(identityId).first().isEmpty())
+        val retained = db.dpnsNameDao().observeMarketplaceByIdentity(identityId).first().single()
+        assertTrue(documentId.contentEquals(retained.documentId!!))
+        assertFalse(retained.isOwned)
+        assertEquals(1, retained.saleStatusRaw)
+        assertTrue(buyerId.contentEquals(retained.counterpartyIdentityId!!))
+        assertEquals(100L, retained.documentCreatedAtMs)
+        assertEquals(200L, retained.documentUpdatedAtMs)
+        assertEquals(300L, retained.documentTransferredAtMs)
+        assertEquals(400L, retained.marketplaceUpdatedAt)
+
+        handler.onChangesetBegin(walletId)
+        handler.onRemoveDpnsNameState(walletId, documentId)
+        handler.onChangesetEnd(walletId, success = true)
+        assertNull(db.dpnsNameDao().getByDocumentId(documentId))
     }
 
     @Test

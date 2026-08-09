@@ -498,6 +498,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 row.priceCredits = entry.priceCredits.map { Int64(bitPattern: $0) }
                 row.saleStatusRaw = entry.statusRaw
                 row.counterpartyIdBase58 = entry.counterpartyIdBase58
+                row.documentCreatedAtMs = entry.createdAtMs
+                row.documentUpdatedAtMs = entry.updatedAtMs
+                row.documentTransferredAtMs = entry.transferredAtMs
                 row.marketplaceUpdatedAt = entry.lastSyncedAtMs
                 row.lastUpdated = Date()
             }
@@ -514,6 +517,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                         row.priceCredits = nil
                         row.saleStatusRaw = 0
                         row.counterpartyIdBase58 = nil
+                        row.documentCreatedAtMs = nil
+                        row.documentUpdatedAtMs = nil
+                        row.documentTransferredAtMs = nil
                         row.marketplaceUpdatedAt = 0
                         row.lastUpdated = Date()
                     }
@@ -617,6 +623,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         /// Buyer / recipient of a departed name, base58. Nil while owned
         /// or when the counterparty could not be resolved.
         public let counterpartyIdBase58: String?
+        /// Domain document `$createdAt` in Unix ms, or nil when absent.
+        public let createdAtMs: UInt64?
+        /// Domain document `$updatedAt` in Unix ms, or nil when absent.
+        public let updatedAtMs: UInt64?
+        /// Domain document `$transferredAt` in Unix ms, or nil when absent.
+        public let transferredAtMs: UInt64?
         /// Unix ms of the pass that wrote this row.
         public let lastSyncedAtMs: UInt64
     }
@@ -7229,6 +7241,9 @@ private func persistDpnsNameStatesCallback(
                 priceCredits: r.has_price ? r.price : nil,
                 statusRaw: Int16(r.status),
                 counterpartyIdBase58: counterparty,
+                createdAtMs: r.created_at_ms == 0 ? nil : r.created_at_ms,
+                updatedAtMs: r.updated_at_ms == 0 ? nil : r.updated_at_ms,
+                transferredAtMs: r.transferred_at_ms == 0 ? nil : r.transferred_at_ms,
                 lastSyncedAtMs: r.last_synced_at_ms
             ))
         }

@@ -5,7 +5,7 @@
 //! marketplace sync pass.
 //!
 //! Wallet-layer design record:
-//! `rs-platform-wallet/docs/DPNS_MARKETPLACE.md`. The typed rejections
+//! `platform-wallet`. The typed rejections
 //! these entry points can return (`ErrorDocumentNotForSale`,
 //! `ErrorDocumentPriceChanged`, `ErrorInsufficientIdentityCredits`,
 //! `ErrorContestedNameNotTradable`) are documented on
@@ -166,6 +166,70 @@ pub struct DpnsNameHistoryEventFFI {
     /// The buyer (`kind == 2`) or recipient (`kind == 3`). Ignore unless
     /// `has_to`.
     pub to_id: [u8; 32],
+}
+
+/// One label newly observed on a wallet identity during marketplace sync.
+#[repr(C)]
+pub struct DpnsNameAddedFFI {
+    pub identity_id: [u8; 32],
+    pub label: *mut c_char,
+}
+
+/// One name that left a wallet identity during marketplace sync.
+#[repr(C)]
+pub struct DpnsNameDepartedFFI {
+    pub identity_id: [u8; 32],
+    pub label: *mut c_char,
+    pub has_document_id: bool,
+    pub document_id: [u8; 32],
+    /// Whether the departure could be classified. When true, `status` is
+    /// `1` for sold or `2` for transferred and `counterparty_id` is present.
+    pub has_status: bool,
+    pub status: u8,
+    pub counterparty_id: [u8; 32],
+}
+
+/// One listing-price change observed during marketplace sync.
+#[repr(C)]
+pub struct DpnsPriceChangeFFI {
+    pub document_id: [u8; 32],
+    pub label: *mut c_char,
+    pub has_previous: bool,
+    pub previous: u64,
+    pub has_current: bool,
+    pub current: u64,
+}
+
+/// Lossless result of one per-wallet marketplace sync pass.
+///
+/// Release all owned arrays and strings with
+/// [`dpns_marketplace_sync_summary_free`]. The older counts-only API remains
+/// available for source and ABI compatibility.
+#[repr(C)]
+pub struct DpnsMarketplaceSyncSummaryFFI {
+    pub names_tracked: u32,
+    pub names_added: *mut DpnsNameAddedFFI,
+    pub names_added_count: usize,
+    pub names_departed: *mut DpnsNameDepartedFFI,
+    pub names_departed_count: usize,
+    pub prices_changed: *mut DpnsPriceChangeFFI,
+    pub prices_changed_count: usize,
+    pub sync_unix_ms: u64,
+}
+
+impl Default for DpnsMarketplaceSyncSummaryFFI {
+    fn default() -> Self {
+        Self {
+            names_tracked: 0,
+            names_added: ptr::null_mut(),
+            names_added_count: 0,
+            names_departed: ptr::null_mut(),
+            names_departed_count: 0,
+            prices_changed: ptr::null_mut(),
+            prices_changed_count: 0,
+            sync_unix_ms: 0,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -340,7 +404,7 @@ unsafe fn publish_array<T>(values: Vec<T>, out_ptr: *mut *mut T, out_count: *mut
 /// `null` for the first page.
 ///
 /// There is no server-side price filter or ordering: `$price` is not an
-/// indexable system property (design doc §7), so the marketplace is
+/// indexable system property, so the marketplace is
 /// search-driven. Release the array with [`dpns_marketplace_names_free`].
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_dpns_marketplace_search(
@@ -769,6 +833,87 @@ pub unsafe extern "C" fn platform_wallet_dpns_marketplace_sync(
     PlatformWalletFFIResult::ok()
 }
 
+/// Run one marketplace sync pass and retain the complete delta and completion
+/// timestamp. This is the lossless companion to the original counts-only
+/// [`platform_wallet_dpns_marketplace_sync`] entry point.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_dpns_marketplace_sync_detailed(
+    wallet_handle: Handle,
+    out_summary: *mut DpnsMarketplaceSyncSummaryFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_summary);
+    unsafe { *out_summary = DpnsMarketplaceSyncSummaryFFI::default() };
+
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity = wallet.identity().clone();
+        block_on_worker(async move { identity.sync_dpns_marketplace().await })
+    });
+    let result = unwrap_option_or_return!(option);
+    let summary = unwrap_result_or_return!(result);
+
+    let added: Vec<DpnsNameAddedFFI> = summary
+        .names_added
+        .into_iter()
+        .map(|(identity_id, label)| DpnsNameAddedFFI {
+            identity_id: identity_id.to_buffer(),
+            label: owned_c_string(&label),
+        })
+        .collect();
+    let departed: Vec<DpnsNameDepartedFFI> = summary
+        .names_departed
+        .into_iter()
+        .map(|row| {
+            let (has_status, status, counterparty_id) = match row.status {
+                Some(DpnsNameSaleStatus::Sold { to }) => (true, 1, to.to_buffer()),
+                Some(DpnsNameSaleStatus::Transferred { to }) => (true, 2, to.to_buffer()),
+                Some(DpnsNameSaleStatus::Owned) | None => (false, 0, [0; 32]),
+            };
+            DpnsNameDepartedFFI {
+                identity_id: row.identity_id.to_buffer(),
+                label: owned_c_string(&row.label),
+                has_document_id: row.document_id.is_some(),
+                document_id: row.document_id.map_or([0; 32], |id| id.to_buffer()),
+                has_status,
+                status,
+                counterparty_id,
+            }
+        })
+        .collect();
+    let prices: Vec<DpnsPriceChangeFFI> = summary
+        .prices_changed
+        .into_iter()
+        .map(|row| DpnsPriceChangeFFI {
+            document_id: row.document_id.to_buffer(),
+            label: owned_c_string(&row.label),
+            has_previous: row.previous.is_some(),
+            previous: row.previous.unwrap_or(0),
+            has_current: row.current.is_some(),
+            current: row.current.unwrap_or(0),
+        })
+        .collect();
+
+    let mut ffi = DpnsMarketplaceSyncSummaryFFI {
+        names_tracked: summary.names_tracked,
+        sync_unix_ms: summary.sync_unix_ms,
+        ..Default::default()
+    };
+    unsafe {
+        publish_array(added, &mut ffi.names_added, &mut ffi.names_added_count);
+        publish_array(
+            departed,
+            &mut ffi.names_departed,
+            &mut ffi.names_departed_count,
+        );
+        publish_array(
+            prices,
+            &mut ffi.prices_changed,
+            &mut ffi.prices_changed_count,
+        );
+        *out_summary = ffi;
+    }
+    PlatformWalletFFIResult::ok()
+}
+
 // ---------------------------------------------------------------------------
 // Destructors
 // ---------------------------------------------------------------------------
@@ -793,6 +938,46 @@ pub unsafe extern "C" fn dpns_marketplace_name_free(name: *mut DpnsMarketplaceNa
         free_owned_c_string(&mut boxed.label);
         free_owned_c_string(&mut boxed.normalized_label);
     }
+}
+
+/// Release the owned arrays and strings inside a detailed sync summary and
+/// reset it to the empty value. Safe to call on an already-empty summary.
+#[no_mangle]
+pub unsafe extern "C" fn dpns_marketplace_sync_summary_free(
+    summary: *mut DpnsMarketplaceSyncSummaryFFI,
+) {
+    if summary.is_null() {
+        return;
+    }
+    let summary = unsafe { &mut *summary };
+    if !summary.names_added.is_null() && summary.names_added_count > 0 {
+        let rows = unsafe {
+            std::slice::from_raw_parts_mut(summary.names_added, summary.names_added_count)
+        };
+        for row in rows.iter_mut() {
+            unsafe { free_owned_c_string(&mut row.label) };
+        }
+        let _ = unsafe { Box::from_raw(rows as *mut [DpnsNameAddedFFI]) };
+    }
+    if !summary.names_departed.is_null() && summary.names_departed_count > 0 {
+        let rows = unsafe {
+            std::slice::from_raw_parts_mut(summary.names_departed, summary.names_departed_count)
+        };
+        for row in rows.iter_mut() {
+            unsafe { free_owned_c_string(&mut row.label) };
+        }
+        let _ = unsafe { Box::from_raw(rows as *mut [DpnsNameDepartedFFI]) };
+    }
+    if !summary.prices_changed.is_null() && summary.prices_changed_count > 0 {
+        let rows = unsafe {
+            std::slice::from_raw_parts_mut(summary.prices_changed, summary.prices_changed_count)
+        };
+        for row in rows.iter_mut() {
+            unsafe { free_owned_c_string(&mut row.label) };
+        }
+        let _ = unsafe { Box::from_raw(rows as *mut [DpnsPriceChangeFFI]) };
+    }
+    *summary = DpnsMarketplaceSyncSummaryFFI::default();
 }
 
 /// Release an array of [`DpnsMarketplaceNameFFI`] — every row's two
@@ -1059,7 +1244,58 @@ mod tests {
             dpns_marketplace_names_free(ptr::null_mut(), 3);
             dpns_name_state_rows_free(ptr::null_mut(), 0);
             dpns_name_history_events_free(ptr::null_mut(), 0);
+            dpns_marketplace_sync_summary_free(ptr::null_mut());
         }
+    }
+
+    #[test]
+    fn detailed_sync_summary_frees_every_nested_array() {
+        let mut summary = DpnsMarketplaceSyncSummaryFFI {
+            names_tracked: 3,
+            sync_unix_ms: 99,
+            ..Default::default()
+        };
+        unsafe {
+            publish_array(
+                vec![DpnsNameAddedFFI {
+                    identity_id: [1; 32],
+                    label: owned_c_string("Alice"),
+                }],
+                &mut summary.names_added,
+                &mut summary.names_added_count,
+            );
+            publish_array(
+                vec![DpnsNameDepartedFFI {
+                    identity_id: [2; 32],
+                    label: owned_c_string("Bob"),
+                    has_document_id: true,
+                    document_id: [3; 32],
+                    has_status: true,
+                    status: 1,
+                    counterparty_id: [4; 32],
+                }],
+                &mut summary.names_departed,
+                &mut summary.names_departed_count,
+            );
+            publish_array(
+                vec![DpnsPriceChangeFFI {
+                    document_id: [5; 32],
+                    label: owned_c_string("Carol"),
+                    has_previous: false,
+                    previous: 0,
+                    has_current: true,
+                    current: 7,
+                }],
+                &mut summary.prices_changed,
+                &mut summary.prices_changed_count,
+            );
+            dpns_marketplace_sync_summary_free(&mut summary);
+        }
+        assert_eq!(summary.names_tracked, 0);
+        assert_eq!(summary.sync_unix_ms, 0);
+        assert!(summary.names_added.is_null());
+        assert!(summary.names_departed.is_null());
+        assert!(summary.prices_changed.is_null());
     }
 
     /// `publish_array` on an empty Vec must write the documented
@@ -1126,6 +1362,12 @@ mod tests {
             )
         };
         assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
+
+        let mut detailed = DpnsMarketplaceSyncSummaryFFI::default();
+        let r = unsafe { platform_wallet_dpns_marketplace_sync_detailed(bogus, &mut detailed) };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
+        assert!(detailed.names_added.is_null());
+        assert_eq!(detailed.sync_unix_ms, 0);
         assert!(names.is_null());
         assert_eq!(count, 0);
 

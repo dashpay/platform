@@ -2,8 +2,6 @@
 //! purchase / transfer orchestration, per-name trade history, and the
 //! local name-state bookkeeping behind them.
 //!
-//! Design record: `rs-platform-wallet/docs/DPNS_MARKETPLACE.md`.
-//!
 //! The generic document-trade transitions live in `document.rs`
 //! (`set_document_price_with_signer` / `purchase_document_with_signer` /
 //! `transfer_document_with_signer`); this module composes them with the
@@ -20,15 +18,15 @@
 //! - the trade-history timeline from the Document History system
 //!   contract.
 //!
-//! Consensus facts this module relies on (verified against rs-drive; see
-//! the design doc §2): purchase and transfer both REMOVE `$price`
+//! Consensus facts this module relies on (verified against rs-drive):
+//! purchase and transfer both REMOVE `$price`
 //! (transfer-to-self is therefore the delist primitive); purchase
 //! requires the transition price to equal the listed price;
 //! `records.identity` is rewritten to the new owner by the protocol on
 //! purchase/transfer; a name inside an active contested-name vote is not
 //! in the documents tree at all.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
 use dpp::document::property_names::PRICE;
@@ -84,6 +82,10 @@ pub const DOCUMENT_TRANSITION_FEE_RESERVE_CREDITS: Credits = 100_000_000;
 const DEFAULT_SEARCH_LIMIT: u32 = 25;
 /// Page size for the per-identity domain-document sync query.
 const SYNC_QUERY_LIMIT: u32 = 100;
+/// Maximum number of departed names whose history is resolved in one
+/// sync pass. Combined with [`SYNC_QUERY_LIMIT`], this keeps every pass
+/// bounded even when an identity has accumulated a large name set.
+const SYNC_DEPARTURE_LIMIT: usize = 25;
 /// Page size for per-name history queries (per event type).
 const HISTORY_QUERY_LIMIT: u32 = 100;
 
@@ -235,11 +237,10 @@ pub struct DepartedDpnsName {
     pub identity_id: Identifier,
     pub label: String,
     pub document_id: Option<Identifier>,
-    /// `Some(Sold { to })` when the departure is attributable to a
-    /// purchase, `Some(Transferred { to })` when the new owner is known
-    /// but no purchase matches, and `None` when the domain document could
-    /// not be resolved at all (deleted name / fetch failure) — unknown is
-    /// reported as unknown, never as a fabricated counterparty.
+    /// `Some(Sold { to })` or `Some(Transferred { to })` only when a
+    /// direct history event names this identity as the departing party.
+    /// `None` means the document was deleted or no direct event could be
+    /// resolved — unknown is never reported with a fabricated counterparty.
     pub status: Option<DpnsNameSaleStatus>,
 }
 
@@ -275,8 +276,20 @@ impl DpnsMarketplaceSyncSummary {
     }
 }
 
+/// Incremental scan state shared by every clone of one wallet handle.
+///
+/// `seen_normalized_labels` spans all pages in the current ownership
+/// scan. Departures are considered only after the final page, so a name
+/// on a later page is never misclassified as having left the wallet.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct DpnsMarketplaceSyncProgress {
+    pub(crate) cursor: Option<Identifier>,
+    pub(crate) seen_normalized_labels: BTreeSet<String>,
+    pub(crate) pending_departures: VecDeque<DpnsNameInfo>,
+}
+
 // ---------------------------------------------------------------------------
-// Contract caches
+// System contracts
 // ---------------------------------------------------------------------------
 
 /// The DPNS system contract id (fixed across contract versions).
@@ -289,30 +302,8 @@ fn document_history_contract_id() -> Identifier {
     dpp::data_contracts::SystemDataContract::DocumentHistory.id()
 }
 
-/// Cached system contracts, keyed by `(network, contract id)`.
-///
-/// **Keyed by network, deliberately.** The cache is process-wide (a
-/// `static`), but a host can hold several `PlatformWalletManager`s at
-/// once and each is bound to one network. These contracts are FETCHED
-/// ON-CHAIN, so a bare process-global cell would let the first caller's
-/// network decide the contract definition every later caller — including
-/// a wallet on a different network — uses for document queries and
-/// post-broadcast proof verification. Networks routinely run different
-/// protocol versions, and the DPNS / Document History system contracts
-/// can differ in schema and version between them, so a cross-network hit
-/// would verify against the wrong definition.
-type SystemContractCache =
-    std::sync::RwLock<BTreeMap<(dashcore::Network, Identifier), Arc<DataContract>>>;
-
-static SYSTEM_CONTRACT_CACHE: std::sync::OnceLock<SystemContractCache> = std::sync::OnceLock::new();
-
-fn system_contract_cache() -> &'static SystemContractCache {
-    SYSTEM_CONTRACT_CACHE.get_or_init(|| std::sync::RwLock::new(BTreeMap::new()))
-}
-
 impl IdentityWallet {
-    /// Fetch a system contract for this wallet's network, memoized in
-    /// [`SYSTEM_CONTRACT_CACHE`].
+    /// Fetch a system contract through this wallet's active SDK/provider.
     ///
     /// Goes through `fetch_contract_arc_for_document_op`, which also
     /// registers the contract with the SDK's context provider so
@@ -322,41 +313,22 @@ impl IdentityWallet {
     /// version, and makes the marketplace self-sufficient on hosts that
     /// never seed the trusted provider's known-contracts list.
     ///
-    /// A lock is never held across the `.await`: a miss drops the read
-    /// guard, fetches, then takes the write guard. Two racing misses both
-    /// fetch and the later one wins the insert — same contract, so the
-    /// only cost is a duplicate round-trip.
-    async fn cached_system_contract(
+    /// Do not put these contracts in a process-global cache: two SDKs on
+    /// the same network can use different providers/devnets or observe a
+    /// different active protocol version. The SDK context owns whatever
+    /// caching is safe for its own lifetime.
+    async fn system_contract(
         &self,
         contract_id: Identifier,
         document_type_name: &str,
     ) -> Result<Arc<DataContract>, PlatformWalletError> {
-        let network = self.sdk.network;
-        let key = (network, contract_id);
-        if let Some(contract) = system_contract_cache()
-            .read()
-            .ok()
-            .and_then(|cache| cache.get(&key).cloned())
-        {
-            // Re-register on cache hits too: the context provider can be
-            // swapped/reset across SDK reconnects while this static
-            // outlives it. Registration is an idempotent map insert.
-            self.register_contract_for_proof_verification(&contract);
-            return Ok(contract);
-        }
-        let contract = self
-            .fetch_contract_arc_for_document_op(&contract_id, document_type_name)
-            .await?;
-        if let Ok(mut cache) = system_contract_cache().write() {
-            cache.insert(key, Arc::clone(&contract));
-        }
-        Ok(contract)
+        self.fetch_contract_arc_for_document_op(&contract_id, document_type_name)
+            .await
     }
 
-    /// The DPNS data contract for this wallet's network. See
-    /// [`Self::cached_system_contract`].
+    /// The DPNS data contract for this wallet's active SDK context.
     pub(crate) async fn dpns_contract(&self) -> Result<Arc<DataContract>, PlatformWalletError> {
-        self.cached_system_contract(dpns_contract_id(), DPNS_DOCUMENT_TYPE)
+        self.system_contract(dpns_contract_id(), DPNS_DOCUMENT_TYPE)
             .await
     }
 
@@ -364,11 +336,11 @@ impl IdentityWallet {
     /// the event log DPNS v2's `keeps*History` flags write `transfer` /
     /// `purchase` / `priceUpdate` documents into. NOT the GroveDB
     /// `documentsKeepHistory` mechanism (`getDocumentHistory` returns
-    /// empty for DPNS). See [`Self::cached_system_contract`].
+    /// empty for DPNS).
     pub(crate) async fn document_history_contract(
         &self,
     ) -> Result<Arc<DataContract>, PlatformWalletError> {
-        self.cached_system_contract(document_history_contract_id(), HISTORY_TYPE_TRANSFER)
+        self.system_contract(document_history_contract_id(), HISTORY_TYPE_TRANSFER)
             .await
     }
 }
@@ -412,6 +384,30 @@ fn insert_sync_row(rows: &mut BTreeMap<Identifier, DpnsNameStateEntry>, entry: D
     }
 }
 
+fn direct_departure_candidate(
+    event: DpnsNameHistoryEvent,
+    departing_identity: &Identifier,
+) -> Option<(u64, DpnsNameSaleStatus)> {
+    match event.kind {
+        DpnsNameHistoryEventKind::Purchased { seller, buyer, .. }
+            if seller == *departing_identity =>
+        {
+            Some((event.at_ms, DpnsNameSaleStatus::Sold { to: buyer }))
+        }
+        DpnsNameHistoryEventKind::Transferred { from, to } if from == *departing_identity => {
+            Some((event.at_ms, DpnsNameSaleStatus::Transferred { to }))
+        }
+        _ => None,
+    }
+}
+
+struct ResolvedDepartedName {
+    summary: DepartedDpnsName,
+    entry: Option<DpnsNameStateEntry>,
+    remove_document_id: Option<Identifier>,
+    retry: bool,
+}
+
 impl IdentityWallet {
     // -----------------------------------------------------------------
     // Queries (network reads, sale state included)
@@ -423,8 +419,8 @@ impl IdentityWallet {
     /// An empty prefix is a valid alphabetical browse (equality on the
     /// parent domain + orderBy label). `start_after` is the cursor: pass
     /// the last row's `document_id` to fetch the next page. There is NO
-    /// server-side price filter or ordering — `$price` is not indexable
-    /// (design doc §7); the marketplace is search-driven.
+    /// server-side price filter or ordering — `$price` is not indexable,
+    /// so the marketplace is search-driven.
     pub async fn search_dpns_names_with_state(
         &self,
         prefix: &str,
@@ -530,52 +526,75 @@ impl IdentityWallet {
                 break;
             }
 
-            let query = DocumentQuery {
-                select: SelectProjection::documents(),
-                data_contract: Arc::clone(&contract),
-                document_type_name: DPNS_DOCUMENT_TYPE.to_string(),
-                where_clauses: vec![WhereClause {
-                    field: "records.identity".to_string(),
-                    operator: WhereOperator::Equal,
-                    value: Value::Identifier(identity_id.to_buffer()),
-                }],
-                group_by: vec![],
-                having: vec![],
-                order_by_clauses: vec![],
-                limit: page_limit as u32,
-                offset: None,
-                start: cursor.map(|id| Start::StartAfter(id.to_vec())),
-            };
-            let documents = Document::fetch_many(&self.sdk, query).await.map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to fetch DPNS domain documents: {e}"
-                ))
-            })?;
-            let page_len = documents.len();
-            let last_id = documents.keys().last().copied();
-            states.extend(
-                documents
-                    .into_iter()
-                    .filter_map(|(_, document)| document)
-                    .map(|document| DpnsDomainState::from_document(&document))
-                    .collect::<Result<Vec<_>, _>>()?,
-            );
+            let (page, next_cursor, complete) = self
+                .dpns_domain_states_page(
+                    Arc::clone(&contract),
+                    identity_id,
+                    cursor,
+                    page_limit as u32,
+                )
+                .await?;
+            states.extend(page);
 
-            if page_len < page_limit || maximum.is_some_and(|value| states.len() >= value) {
+            if complete || maximum.is_some_and(|value| states.len() >= value) {
                 break;
             }
-            let Some(last_id) = last_id else {
-                break;
-            };
-            if cursor == Some(last_id) {
+            if cursor == next_cursor {
                 return Err(PlatformWalletError::InvalidIdentityData(
                     "DPNS identity query pagination cursor did not advance".to_string(),
                 ));
             }
-            cursor = Some(last_id);
+            cursor = next_cursor;
         }
 
         Ok(states)
+    }
+
+    /// Fetch exactly one identity-owned DPNS page. The returned cursor is
+    /// retained by marketplace sync so one pass never drains an unbounded
+    /// document set.
+    async fn dpns_domain_states_page(
+        &self,
+        contract: Arc<DataContract>,
+        identity_id: &Identifier,
+        start_after: Option<Identifier>,
+        page_limit: u32,
+    ) -> Result<(Vec<DpnsDomainState>, Option<Identifier>, bool), PlatformWalletError> {
+        let query = DocumentQuery {
+            select: SelectProjection::documents(),
+            data_contract: contract,
+            document_type_name: DPNS_DOCUMENT_TYPE.to_string(),
+            where_clauses: vec![WhereClause {
+                field: "records.identity".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(identity_id.to_buffer()),
+            }],
+            group_by: vec![],
+            having: vec![],
+            order_by_clauses: vec![],
+            limit: page_limit,
+            offset: None,
+            start: start_after.map(|id| Start::StartAfter(id.to_vec())),
+        };
+        let documents = Document::fetch_many(&self.sdk, query).await.map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to fetch DPNS domain documents: {e}"
+            ))
+        })?;
+        let page_len = documents.len();
+        let next_cursor = documents.keys().last().copied();
+        let states = documents
+            .into_iter()
+            .filter_map(|(_, document)| document)
+            .map(|document| DpnsDomainState::from_document(&document))
+            .collect::<Result<Vec<_>, _>>()?;
+        let complete = page_len < page_limit as usize;
+        if !complete && next_cursor.is_none() {
+            return Err(PlatformWalletError::InvalidIdentityData(
+                "full DPNS identity query page did not provide a pagination cursor".to_string(),
+            ));
+        }
+        Ok((states, next_cursor, complete))
     }
 
     /// The tracked marketplace rows (owned names with sale state, plus
@@ -698,7 +717,7 @@ impl IdentityWallet {
         })?;
         let identity = info
             .identity_manager
-            .identity(identity_id)
+            .wallet_identity(&self.wallet_id, identity_id)
             .map(|m| m.identity.clone())
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
         identity
@@ -765,7 +784,10 @@ impl IdentityWallet {
         let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
             return;
         };
-        let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
+        let Some(managed) = info
+            .identity_manager
+            .wallet_identity_mut(&self.wallet_id, identity_id)
+        else {
             return;
         };
         if managed.dpns_names.iter().any(|n| n.label == label) {
@@ -788,7 +810,10 @@ impl IdentityWallet {
         let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
             return;
         };
-        let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
+        let Some(managed) = info
+            .identity_manager
+            .wallet_identity_mut(&self.wallet_id, identity_id)
+        else {
             return;
         };
         managed.remove_dpns_name(label, &self.persister);
@@ -798,7 +823,11 @@ impl IdentityWallet {
     async fn is_wallet_identity(&self, identity_id: &Identifier) -> bool {
         let wm = self.wallet_manager.read().await;
         wm.get_wallet_info(&self.wallet_id)
-            .map(|info| info.identity_manager.identity(identity_id).is_some())
+            .map(|info| {
+                info.identity_manager
+                    .wallet_identity(&self.wallet_id, identity_id)
+                    .is_some()
+            })
             .unwrap_or(false)
     }
 
@@ -835,6 +864,7 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
+        let _operation = self.dpns_operation_gate.lock().await;
         let state = self.fetch_dpns_domain_state_required(name).await?;
         if state.owner_id != *owner_identity_id {
             return Err(PlatformWalletError::InvalidParameter(format!(
@@ -881,6 +911,7 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
+        let _operation = self.dpns_operation_gate.lock().await;
         let state = self.fetch_dpns_domain_state_required(name).await?;
         if state.owner_id != *owner_identity_id {
             return Err(PlatformWalletError::InvalidParameter(format!(
@@ -939,6 +970,7 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
+        let _operation = self.dpns_operation_gate.lock().await;
         if recipient_id == owner_identity_id {
             return Err(PlatformWalletError::InvalidParameter(
                 "transfer recipient is the current owner — use delist_dpns_name for a \
@@ -1034,6 +1066,7 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
+        let _operation = self.dpns_operation_gate.lock().await;
         let state = self.fetch_dpns_domain_state_required(name).await?;
         if state.owner_id == *purchaser_identity_id {
             return Err(PlatformWalletError::InvalidParameter(format!(
@@ -1064,7 +1097,7 @@ impl IdentityWallet {
                 )
             })?;
             info.identity_manager
-                .managed_identity(purchaser_identity_id)
+                .wallet_identity(&self.wallet_id, purchaser_identity_id)
                 .map(|m| m.balance())
                 .ok_or(PlatformWalletError::IdentityNotFound(
                     *purchaser_identity_id,
@@ -1286,6 +1319,7 @@ impl IdentityWallet {
     pub async fn sync_dpns_marketplace(
         &self,
     ) -> Result<DpnsMarketplaceSyncSummary, PlatformWalletError> {
+        let _operation = self.dpns_operation_gate.lock().await;
         // Snapshot identity ids, their label lists, and the current rows.
         let (identity_ids, labels_by_identity, previous_rows) = {
             let wm = self.wallet_manager.read().await;
@@ -1294,113 +1328,182 @@ impl IdentityWallet {
                     "Wallet info not found in wallet manager".to_string(),
                 )
             })?;
-            let ids = info.identity_manager.identity_ids();
-            let labels: BTreeMap<Identifier, Vec<DpnsNameInfo>> = ids
-                .iter()
-                .filter_map(|id| {
-                    info.identity_manager
-                        .managed_identity(id)
-                        .map(|m| (*id, m.dpns_names.clone()))
-                })
+            let ids = info.identity_manager.wallet_identity_ids(&self.wallet_id);
+            let labels: BTreeMap<Identifier, Vec<DpnsNameInfo>> = info
+                .identity_manager
+                .wallet_managed_identities(&self.wallet_id)
+                .map(|managed| (managed.identity.id(), managed.dpns_names.clone()))
                 .collect();
             (ids, labels, info.dpns_name_states.clone())
         };
 
         let mut summary = DpnsMarketplaceSyncSummary::default();
         let mut rows_to_write: BTreeMap<Identifier, DpnsNameStateEntry> = BTreeMap::new();
+        let mut rows_to_remove: BTreeSet<Identifier> = BTreeSet::new();
         let mut sellers_to_refresh: Vec<Identifier> = Vec::new();
         let now = now_ms();
+        let contract = self.dpns_contract().await?;
 
         for identity_id in identity_ids {
-            let states = match self
-                .dpns_domain_states_for_identity(&identity_id, None)
-                .await
-            {
-                Ok(states) => states,
-                Err(e) => {
-                    tracing::warn!(
-                        identity = %identity_id,
-                        "DPNS marketplace sync: domain-state fetch failed, skipping identity: {e}"
-                    );
-                    continue;
-                }
-            };
-            // `records.identity` follows ownership on-chain, but filter on
-            // `$ownerId` anyway so a protocol edge (or pre-rewrite record)
-            // can't count someone else's document as ours.
-            let owned: Vec<&DpnsDomainState> = states
-                .iter()
-                .filter(|s| s.owner_id == identity_id)
-                .collect();
-            let owned_normalized: Vec<String> =
-                owned.iter().map(|s| s.normalized_label.clone()).collect();
-
             let previous_labels = labels_by_identity
                 .get(&identity_id)
                 .cloned()
                 .unwrap_or_default();
 
-            // Owned rows: upsert, tracking price changes vs the previous row.
-            for state in &owned {
-                if let Some(prev) = previous_rows.get(&state.document_id) {
-                    if prev.wallet_identity_id == identity_id && prev.price != state.price {
-                        summary.prices_changed.push(DpnsPriceChange {
-                            document_id: state.document_id,
-                            label: state.label.clone(),
-                            previous: prev.price,
-                            current: state.price,
-                        });
+            let mut progress = self
+                .dpns_sync_progress
+                .lock()
+                .map_err(|_| {
+                    PlatformWalletError::InvalidIdentityData(
+                        "DPNS marketplace sync progress lock was poisoned".to_string(),
+                    )
+                })?
+                .get(&identity_id)
+                .cloned()
+                .unwrap_or_default();
+
+            if progress.pending_departures.is_empty() {
+                let (states, next_cursor, complete) = match self
+                    .dpns_domain_states_page(
+                        Arc::clone(&contract),
+                        &identity_id,
+                        progress.cursor,
+                        SYNC_QUERY_LIMIT,
+                    )
+                    .await
+                {
+                    Ok(page) => page,
+                    Err(e) => {
+                        tracing::warn!(
+                            identity = %identity_id,
+                            "DPNS marketplace sync: domain-state page failed, retaining cursor: {e}"
+                        );
+                        continue;
+                    }
+                };
+                // `records.identity` follows ownership on-chain, but filter on
+                // `$ownerId` anyway so a protocol edge (or pre-rewrite record)
+                // can't count someone else's document as ours.
+                let owned: Vec<&DpnsDomainState> = states
+                    .iter()
+                    .filter(|state| state.owner_id == identity_id)
+                    .collect();
+
+                progress
+                    .seen_normalized_labels
+                    .extend(owned.iter().map(|state| state.normalized_label.clone()));
+
+                // Owned rows: upsert, tracking price changes vs the previous row.
+                for state in &owned {
+                    if let Some(prev) = previous_rows.get(&state.document_id) {
+                        if prev.wallet_identity_id == identity_id && prev.price != state.price {
+                            summary.prices_changed.push(DpnsPriceChange {
+                                document_id: state.document_id,
+                                label: state.label.clone(),
+                                previous: prev.price,
+                                current: state.price,
+                            });
+                        }
+                    }
+                    insert_sync_row(
+                        &mut rows_to_write,
+                        state.to_entry(identity_id, DpnsNameSaleStatus::Owned, now),
+                    );
+                    summary.names_tracked += 1;
+                }
+
+                // Newly observed labels → legacy list additions.
+                for state in &owned {
+                    let known = previous_labels.iter().any(|name| {
+                        convert_to_homograph_safe_chars(&name.label) == state.normalized_label
+                    });
+                    if !known {
+                        self.add_dpns_label_if_missing(
+                            &identity_id,
+                            &state.label,
+                            state
+                                .transferred_at_ms
+                                .or(state.created_at_ms)
+                                .or(Some(now)),
+                        )
+                        .await;
+                        summary.names_added.push((identity_id, state.label.clone()));
                     }
                 }
-                insert_sync_row(
-                    &mut rows_to_write,
-                    state.to_entry(identity_id, DpnsNameSaleStatus::Owned, now),
-                );
-                summary.names_tracked += 1;
-            }
 
-            // Newly observed labels → legacy list additions.
-            for state in &owned {
-                let known = previous_labels
-                    .iter()
-                    .any(|n| convert_to_homograph_safe_chars(&n.label) == state.normalized_label);
-                if !known {
-                    self.add_dpns_label_if_missing(
-                        &identity_id,
-                        &state.label,
-                        state
-                            .transferred_at_ms
-                            .or(state.created_at_ms)
-                            .or(Some(now)),
-                    )
-                    .await;
-                    summary.names_added.push((identity_id, state.label.clone()));
+                if complete {
+                    progress.cursor = None;
+                    progress.pending_departures = previous_labels
+                        .iter()
+                        .filter(|name| {
+                            !progress
+                                .seen_normalized_labels
+                                .contains(&convert_to_homograph_safe_chars(&name.label))
+                        })
+                        .cloned()
+                        .collect();
+                    progress.seen_normalized_labels.clear();
+                } else {
+                    progress.cursor = next_cursor;
                 }
             }
 
-            // Departed labels: previously listed on the identity, no longer
-            // among its owned documents.
-            for prev_name in &previous_labels {
-                let normalized = convert_to_homograph_safe_chars(&prev_name.label);
-                if owned_normalized.contains(&normalized) {
-                    continue;
-                }
-                let departed = self
-                    .resolve_departed_name(&identity_id, &prev_name.label, &previous_rows, now)
+            // Resolve only a fixed number of departed names per pass. A
+            // transient domain fetch error keeps the item queued and its
+            // label/row intact, so the next pass retries without data loss.
+            let mut departures_processed = 0;
+            while departures_processed < SYNC_DEPARTURE_LIMIT {
+                let Some(previous_name) = progress.pending_departures.pop_front() else {
+                    break;
+                };
+                let resolved = self
+                    .resolve_departed_name(&identity_id, &previous_name.label, &previous_rows, now)
                     .await;
-                self.remove_dpns_label(&identity_id, &prev_name.label).await;
-                if let Some(entry) = departed.1 {
+                if resolved.retry {
+                    progress.pending_departures.push_front(previous_name);
+                    break;
+                }
+                departures_processed += 1;
+                self.remove_dpns_label(&identity_id, &previous_name.label)
+                    .await;
+                if let Some(entry) = resolved.entry {
                     insert_sync_row(&mut rows_to_write, entry);
                 }
-                if matches!(departed.0.status, Some(DpnsNameSaleStatus::Sold { .. })) {
+                if let Some(document_id) = resolved.remove_document_id {
+                    rows_to_remove.insert(document_id);
+                }
+                if matches!(
+                    resolved.summary.status,
+                    Some(DpnsNameSaleStatus::Sold { .. })
+                ) {
                     sellers_to_refresh.push(identity_id);
                 }
-                summary.names_departed.push(departed.0);
+                summary.names_departed.push(resolved.summary);
+            }
+
+            let mut sync_progress = self.dpns_sync_progress.lock().map_err(|_| {
+                PlatformWalletError::InvalidIdentityData(
+                    "DPNS marketplace sync progress lock was poisoned".to_string(),
+                )
+            })?;
+            if progress.cursor.is_none()
+                && progress.seen_normalized_labels.is_empty()
+                && progress.pending_departures.is_empty()
+            {
+                sync_progress.remove(&identity_id);
+            } else {
+                sync_progress.insert(identity_id, progress);
             }
         }
 
-        self.record_dpns_name_states(rows_to_write.into_values().collect(), vec![])
-            .await;
+        // A current owned row wins when one document moves between two
+        // identities in this wallet during the same pass.
+        rows_to_remove.retain(|document_id| !rows_to_write.contains_key(document_id));
+        self.record_dpns_name_states(
+            rows_to_write.into_values().collect(),
+            rows_to_remove.into_iter().collect(),
+        )
+        .await;
         sellers_to_refresh.sort();
         sellers_to_refresh.dedup();
         for seller in sellers_to_refresh {
@@ -1415,89 +1518,118 @@ impl IdentityWallet {
     /// the domain document by label to learn the new owner, then
     /// classify the departure through the history contract.
     ///
-    /// Returns the summary record plus the updated row (when the
-    /// document could be resolved).
+    /// A confirmed missing document removes the stale local row. A
+    /// transport/query error requests a retry and leaves both the label
+    /// and local row untouched.
     async fn resolve_departed_name(
         &self,
         identity_id: &Identifier,
         label: &str,
         previous_rows: &BTreeMap<Identifier, DpnsNameStateEntry>,
         now: u64,
-    ) -> (DepartedDpnsName, Option<DpnsNameStateEntry>) {
+    ) -> ResolvedDepartedName {
+        let previous_document_id = previous_rows
+            .values()
+            .find(|entry| {
+                entry.wallet_identity_id == *identity_id
+                    && entry.normalized_label == convert_to_homograph_safe_chars(label)
+            })
+            .map(|entry| entry.document_id);
         let state = match self.dpns_name_state(label).await {
             Ok(Some(state)) => state,
-            Ok(None) | Err(_) => {
-                // Document gone (deleted name) or unreadable: report the
-                // departure without a new owner; keep any old row as-is.
-                let document_id = previous_rows
-                    .values()
-                    .find(|e| {
-                        e.wallet_identity_id == *identity_id
-                            && e.normalized_label == convert_to_homograph_safe_chars(label)
-                    })
-                    .map(|e| e.document_id);
-                return (
-                    DepartedDpnsName {
+            Ok(None) => {
+                return ResolvedDepartedName {
+                    summary: DepartedDpnsName {
                         identity_id: *identity_id,
                         label: label.to_string(),
-                        document_id,
+                        document_id: previous_document_id,
                         status: None,
                     },
-                    None,
+                    entry: None,
+                    remove_document_id: previous_document_id,
+                    retry: false,
+                };
+            }
+            Err(error) => {
+                tracing::warn!(
+                    identity = %identity_id,
+                    name = label,
+                    "DPNS departed-name lookup failed; retaining local state for retry: {error}"
                 );
+                return ResolvedDepartedName {
+                    summary: DepartedDpnsName {
+                        identity_id: *identity_id,
+                        label: label.to_string(),
+                        document_id: previous_document_id,
+                        status: None,
+                    },
+                    entry: None,
+                    remove_document_id: None,
+                    retry: true,
+                };
             }
         };
         let status = self
-            .classify_departure(&state.document_id, &state.owner_id, state.transferred_at_ms)
+            .classify_departure(&state.document_id, identity_id)
             .await;
-        let entry = state.to_entry(*identity_id, status, now);
-        (
-            DepartedDpnsName {
+        ResolvedDepartedName {
+            summary: DepartedDpnsName {
                 identity_id: *identity_id,
                 label: label.to_string(),
                 document_id: Some(state.document_id),
-                status: Some(status),
+                status,
             },
-            Some(entry),
-        )
+            entry: status.map(|sale_status| state.to_entry(*identity_id, sale_status, now)),
+            remove_document_id: status.is_none().then_some(state.document_id),
+            retry: false,
+        }
     }
 
-    /// Sold vs transferred: the protocol stamps the history `purchase`
-    /// document and the domain's `$transferredAt` from the same block
-    /// time, so a purchase event whose buyer is the new owner at exactly
-    /// the domain's transfer timestamp means the departure was a sale.
-    /// Anything else — including an unavailable history query — reports
-    /// as `Transferred` (the enum's documented fallback), never a
-    /// fabricated `Sold`.
+    /// Find the latest history event whose *departing side* is the wallet
+    /// identity. This is intentionally independent of the live domain's
+    /// current owner: after S→A→B, S's departure must remain S→A.
     async fn classify_departure(
         &self,
         document_id: &Identifier,
-        new_owner: &Identifier,
-        domain_transferred_at_ms: Option<u64>,
-    ) -> DpnsNameSaleStatus {
-        let purchases = match self
-            .fetch_history_documents(&dpns_contract_id(), document_id, HISTORY_TYPE_PURCHASE)
-            .await
-        {
-            Ok(docs) => docs,
-            Err(e) => {
-                tracing::warn!(
-                    document = %document_id,
-                    "purchase-history lookup failed; reporting departure as transfer: {e}"
-                );
-                return DpnsNameSaleStatus::Transferred { to: *new_owner };
+        departing_identity: &Identifier,
+    ) -> Option<DpnsNameSaleStatus> {
+        let mut candidates: Vec<(u64, DpnsNameSaleStatus)> = Vec::new();
+        for document_type in [HISTORY_TYPE_PURCHASE, HISTORY_TYPE_TRANSFER] {
+            let documents = match self
+                .fetch_history_documents(&dpns_contract_id(), document_id, document_type)
+                .await
+            {
+                Ok(documents) => documents,
+                Err(error) => {
+                    tracing::warn!(
+                        document = %document_id,
+                        history_type = document_type,
+                        "DPNS departure-history lookup failed: {error}"
+                    );
+                    continue;
+                }
+            };
+            for document in documents {
+                match history_event_from_document(document_type, &document) {
+                    Ok(event) => {
+                        if let Some(candidate) =
+                            direct_departure_candidate(event, departing_identity)
+                        {
+                            candidates.push(candidate);
+                        }
+                    }
+                    Err(error) => tracing::warn!(
+                        document = %document.id(),
+                        history_type = document_type,
+                        "ignoring malformed DPNS departure-history document: {error}"
+                    ),
+                }
             }
-        };
-        let sold = purchases.iter().any(|doc| {
-            doc.owner_id() == *new_owner
-                && domain_transferred_at_ms.is_some()
-                && doc.created_at() == domain_transferred_at_ms
-        });
-        if sold {
-            DpnsNameSaleStatus::Sold { to: *new_owner }
-        } else {
-            DpnsNameSaleStatus::Transferred { to: *new_owner }
         }
+        candidates
+            .into_iter()
+            .max_by_key(|(at_ms, _)| *at_ms)
+            .map(|(_, status)| status)
     }
 }
 
@@ -1652,5 +1784,35 @@ mod tests {
             assert_eq!(row.wallet_identity_id, buyer_id);
             assert_eq!(row.status, DpnsNameSaleStatus::Owned);
         }
+    }
+
+    #[test]
+    fn departure_attribution_ignores_later_multi_hop_owner() {
+        let seller = Identifier::from([1; 32]);
+        let first_buyer = Identifier::from([2; 32]);
+        let later_buyer = Identifier::from([3; 32]);
+        let seller_departure = DpnsNameHistoryEvent {
+            kind: DpnsNameHistoryEventKind::Purchased {
+                price: 10,
+                seller,
+                buyer: first_buyer,
+            },
+            at_ms: 100,
+            block_height: None,
+        };
+        let later_transfer = DpnsNameHistoryEvent {
+            kind: DpnsNameHistoryEventKind::Transferred {
+                from: first_buyer,
+                to: later_buyer,
+            },
+            at_ms: 200,
+            block_height: None,
+        };
+
+        assert_eq!(
+            direct_departure_candidate(seller_departure, &seller),
+            Some((100, DpnsNameSaleStatus::Sold { to: first_buyer }))
+        );
+        assert_eq!(direct_departure_candidate(later_transfer, &seller), None);
     }
 }

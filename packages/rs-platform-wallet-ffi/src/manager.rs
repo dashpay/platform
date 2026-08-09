@@ -2,7 +2,10 @@
 
 use crate::check_ptr;
 use crate::error::*;
-use crate::event_handler::{EventHandlerCallbacks, FFIEventHandler};
+use crate::event_handler::{
+    DpnsMarketplaceSyncCompletedFn, EventHandlerCallbacks, EventHandlerCallbacksExtension,
+    FFIEventHandler, PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION,
+};
 use crate::handle::*;
 use crate::persistence::{
     FFIPersister, PersistDpnsNameStatesFn, PersistenceCallbacks, PersistenceCallbacksExtension,
@@ -72,6 +75,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create(
         event_handler,
         PersistenceCapabilities::NONE,
         None,
+        None,
         out_handle,
     )
 }
@@ -96,6 +100,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_persistence_capabil
         persistence,
         event_handler,
         declaration,
+        None,
         None,
         out_handle,
     )
@@ -129,6 +134,38 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_persistence_extensi
         event_handler,
         declaration,
         dpns_callback,
+        None,
+        out_handle,
+    )
+}
+
+/// Create a manager with both size/version-tagged persistence and event
+/// extensions. Additive event callbacks share the legacy event vtable's
+/// context and release function; Rust copies supported slots and never
+/// retains either extension pointer.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_create_with_extensions(
+    sdk_ptr: *const c_void,
+    persistence: *const PersistenceCallbacks,
+    event_handler: *const EventHandlerCallbacks,
+    persistence_capabilities: *const PersistenceCapabilitiesFFI,
+    persistence_extension: *const PersistenceCallbacksExtension,
+    event_extension: *const EventHandlerCallbacksExtension,
+    out_handle: *mut Handle,
+) -> PlatformWalletFFIResult {
+    check_ptr!(persistence_capabilities);
+    check_ptr!(persistence_extension);
+    check_ptr!(event_extension);
+    let declaration = persistence_capabilities_declaration(&*persistence_capabilities);
+    let dpns_persistence_callback = persistence_extension_dpns_callback(persistence_extension);
+    let dpns_event_callback = event_extension_dpns_callback(event_extension);
+    platform_wallet_manager_create_impl(
+        sdk_ptr,
+        persistence,
+        event_handler,
+        declaration,
+        dpns_persistence_callback,
+        dpns_event_callback,
         out_handle,
     )
 }
@@ -156,12 +193,36 @@ unsafe fn persistence_extension_dpns_callback(
     std::ptr::addr_of!((*extension).on_persist_dpns_name_states_fn).read()
 }
 
+unsafe fn event_extension_dpns_callback(
+    extension: *const EventHandlerCallbacksExtension,
+) -> Option<DpnsMarketplaceSyncCompletedFn> {
+    let supplied_size = std::ptr::addr_of!((*extension).struct_size).read();
+    let version_end =
+        std::mem::offset_of!(EventHandlerCallbacksExtension, version) + std::mem::size_of::<u32>();
+    if supplied_size < version_end {
+        return None;
+    }
+    let version = std::ptr::addr_of!((*extension).version).read();
+    if version != PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION {
+        return None;
+    }
+    let callback_end = std::mem::offset_of!(
+        EventHandlerCallbacksExtension,
+        on_dpns_marketplace_sync_completed_fn
+    ) + std::mem::size_of::<Option<DpnsMarketplaceSyncCompletedFn>>();
+    if supplied_size < callback_end {
+        return None;
+    }
+    std::ptr::addr_of!((*extension).on_dpns_marketplace_sync_completed_fn).read()
+}
+
 unsafe fn platform_wallet_manager_create_impl(
     sdk_ptr: *const c_void,
     persistence: *const PersistenceCallbacks,
     event_handler: *const EventHandlerCallbacks,
     declared_capabilities: PersistenceCapabilities,
     dpns_name_states_callback: Option<PersistDpnsNameStatesFn>,
+    dpns_event_callback: Option<DpnsMarketplaceSyncCompletedFn>,
     out_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
     check_ptr!(sdk_ptr);
@@ -204,8 +265,10 @@ unsafe fn platform_wallet_manager_create_impl(
             dpns_name_states_callback,
         ),
     );
-    let handler: Arc<dyn platform_wallet::PlatformEventHandler> =
-        Arc::new(FFIEventHandler::new(std::ptr::read(event_handler)));
+    let handler: Arc<dyn platform_wallet::PlatformEventHandler> = Arc::new(FFIEventHandler::new(
+        std::ptr::read(event_handler),
+        dpns_event_callback,
+    ));
 
     // `PlatformWalletManager::new` spawns the wallet-event adapter
     // task on construction (the subscriber that translates upstream

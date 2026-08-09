@@ -210,7 +210,8 @@ public enum DashMigrationPlan: SchemaMigrationPlan {
 ///     computed accessor, so full-domain support does not alter this V1 schema.
 ///   - `PersistentDPNSName` gained the DPNS username-marketplace
 ///     columns `documentIdBase58`, `priceCredits`, `saleStatusRaw`,
-///     `counterpartyIdBase58`, and `marketplaceUpdatedAt`, written by
+///     `counterpartyIdBase58`, the three optional document timestamps,
+///     and `marketplaceUpdatedAt`, written by
 ///     the new `on_persist_dpns_name_states_fn` persister callback
 ///     (`DpnsNameStateFFI`). All optional or defaulted, and the
 ///     `(networkRaw, normalizedParentDomainName, normalizedLabel)`

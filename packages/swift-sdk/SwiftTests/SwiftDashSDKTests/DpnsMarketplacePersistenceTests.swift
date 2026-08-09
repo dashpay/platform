@@ -56,6 +56,25 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
         XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
     }
 
+    func testMarketplaceColumnsHaveMigrationSafeDefaults() {
+        let identity = PersistentIdentity(
+            identityId: ownerId,
+            isLocal: false,
+            network: .testnet
+        )
+        let row = PersistentDPNSName(identity: identity, label: "Alice")
+
+        XCTAssertNil(row.documentIdBase58)
+        XCTAssertNil(row.priceCredits)
+        XCTAssertEqual(row.saleStatusRaw, 0)
+        XCTAssertNil(row.counterpartyIdBase58)
+        XCTAssertNil(row.documentCreatedAtMs)
+        XCTAssertNil(row.documentUpdatedAtMs)
+        XCTAssertNil(row.documentTransferredAtMs)
+        XCTAssertEqual(row.marketplaceUpdatedAt, 0)
+        XCTAssertNil(row.saleStatus)
+    }
+
     func testCanonicalSnapshotsHideDepartedHistoryAndDeleteCacheOnlyRows() throws {
         let context = ModelContext(container)
         let owner = PersistentIdentity(
@@ -93,6 +112,9 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
                     priceCredits: 5_000,
                     statusRaw: 1,
                     counterpartyIdBase58: Data(repeating: 0x44, count: 32).toBase58String(),
+                    createdAtMs: 11,
+                    updatedAtMs: 12,
+                    transferredAtMs: 13,
                     lastSyncedAtMs: 100
                 )
             ],
@@ -126,6 +148,9 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
         XCTAssertEqual(allRows.first?.label, "Alice")
         XCTAssertEqual(allRows.first?.isOwned, false)
         XCTAssertEqual(allRows.first?.saleStatusRaw, 1)
+        XCTAssertEqual(allRows.first?.documentCreatedAtMs, 11)
+        XCTAssertEqual(allRows.first?.documentUpdatedAtMs, 12)
+        XCTAssertEqual(allRows.first?.documentTransferredAtMs, 13)
         identity = try XCTUnwrap(PersistentIdentity.fetch(in: readContext, identityId: ownerId))
         XCTAssertNil(identity.mainDpnsName)
         XCTAssertNil(identity.dpnsName)
@@ -163,6 +188,9 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
                     priceCredits: nil,
                     statusRaw: 0,
                     counterpartyIdBase58: nil,
+                    createdAtMs: nil,
+                    updatedAtMs: nil,
+                    transferredAtMs: nil,
                     lastSyncedAtMs: 200
                 )
             ],
@@ -220,6 +248,9 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
                     priceCredits: nil,
                     statusRaw: 0,
                     counterpartyIdBase58: nil,
+                    createdAtMs: 21,
+                    updatedAtMs: 22,
+                    transferredAtMs: 23,
                     lastSyncedAtMs: 300
                 )
             ],
@@ -256,6 +287,9 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
         row.priceCredits = 12_345
         row.saleStatusRaw = 2
         row.counterpartyIdBase58 = nextOwnerId.toBase58String()
+        row.documentCreatedAtMs = 41
+        row.documentUpdatedAtMs = 42
+        row.documentTransferredAtMs = 43
         row.marketplaceUpdatedAt = 400
         context.insert(owner)
         context.insert(row)
@@ -279,6 +313,9 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
         XCTAssertNil(rows.first?.priceCredits)
         XCTAssertEqual(rows.first?.saleStatusRaw, 0)
         XCTAssertNil(rows.first?.counterpartyIdBase58)
+        XCTAssertNil(rows.first?.documentCreatedAtMs)
+        XCTAssertNil(rows.first?.documentUpdatedAtMs)
+        XCTAssertNil(rows.first?.documentTransferredAtMs)
         XCTAssertEqual(rows.first?.marketplaceUpdatedAt, 0)
     }
 

@@ -243,6 +243,7 @@ struct SwiftExampleAppApp: App {
                 try walletManager.stopPlatformAddressSync()
                 try walletManager.stopShieldedSync()
                 try walletManager.stopDashPaySync()
+                try walletManager.stopDpnsSync()
             } catch {
                 SDKLogger.error(
                     "Failed to stop sync coordinators: \(error.localizedDescription)"
@@ -323,6 +324,15 @@ struct SwiftExampleAppApp: App {
             // Idempotent: starting while running is a no-op.
             if try !walletManager.isDashPaySyncRunning() {
                 try walletManager.startDashPaySync()
+            }
+
+            // DPNS username-marketplace sale state is session-scoped in the
+            // native wallet and therefore needs a first pass after every app
+            // launch. Keep the recurring coordinator aligned with the other
+            // wallet-driven loops: start when at least one wallet is loaded,
+            // stop above when the active manager becomes empty.
+            if try !walletManager.isDpnsSyncRunning() {
+                try walletManager.startDpnsSync()
             }
         } catch {
             SDKLogger.error(

@@ -460,11 +460,18 @@ public enum PlatformWalletError: LocalizedError {
     }
 
     init(result: PlatformWalletResult) {
-        let detail = result.message ?? "<no detail from Rust>"
-        switch result.code {
+        self.init(code: result.code, message: result.message)
+    }
+
+    /// Internal seam for exercising the stable error-code/detail contract
+    /// without manufacturing a Rust-owned `PlatformWalletFFIResult` string.
+    /// Production callers continue to enter through `init(result:)`.
+    init(code: PlatformWalletResultCode, message: String?) {
+        let detail = message ?? "<no detail from Rust>"
+        switch code {
         case .success:
             // Constructing an error from a success result is a caller bug
-            self = .unknown(result.message
+            self = .unknown(message
                 ?? "PlatformWalletError built from a success result")
         case .errorInvalidHandle:     self = .invalidHandle(detail)
         case .errorInvalidParameter:  self = .invalidParameter(detail)

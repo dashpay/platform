@@ -165,12 +165,87 @@ public struct DpnsMarketplaceSyncSummary: Sendable, Equatable {
     public let departed: UInt32
     /// Listed-price changes since the previous pass.
     public let pricesChanged: UInt32
+    /// Labels newly observed, with the wallet identity that owns each one.
+    public let addedNames: [DpnsNameAdded]
+    /// Names that left a wallet identity, including the classified destination
+    /// when the wallet could establish it.
+    public let departedNames: [DpnsNameDeparture]
+    /// Full before/after values for listings whose price changed.
+    public let priceChanges: [DpnsPriceChange]
+    /// Unix milliseconds when this pass completed.
+    public let syncUnixMs: UInt64
 
-    public init(tracked: UInt32, added: UInt32, departed: UInt32, pricesChanged: UInt32) {
+    public init(
+        tracked: UInt32,
+        added: UInt32,
+        departed: UInt32,
+        pricesChanged: UInt32,
+        addedNames: [DpnsNameAdded] = [],
+        departedNames: [DpnsNameDeparture] = [],
+        priceChanges: [DpnsPriceChange] = [],
+        syncUnixMs: UInt64 = 0
+    ) {
         self.tracked = tracked
         self.added = added
         self.departed = departed
         self.pricesChanged = pricesChanged
+        self.addedNames = addedNames
+        self.departedNames = departedNames
+        self.priceChanges = priceChanges
+        self.syncUnixMs = syncUnixMs
+    }
+}
+
+/// One label newly observed by a marketplace sync pass.
+public struct DpnsNameAdded: Sendable, Equatable {
+    public let identityId: Data
+    public let label: String
+
+    public init(identityId: Data, label: String) {
+        self.identityId = identityId
+        self.label = label
+    }
+}
+
+/// One name that left a wallet identity during marketplace sync.
+public struct DpnsNameDeparture: Sendable, Equatable {
+    public let identityId: Data
+    public let label: String
+    public let documentId: Data?
+    /// `.sold` or `.transferred` when the destination was classifiable;
+    /// nil when the sweep could only establish that the name departed.
+    public let status: DpnsNameSaleStatus?
+
+    public init(
+        identityId: Data,
+        label: String,
+        documentId: Data?,
+        status: DpnsNameSaleStatus?
+    ) {
+        self.identityId = identityId
+        self.label = label
+        self.documentId = documentId
+        self.status = status
+    }
+}
+
+/// One listing-price change observed during marketplace sync.
+public struct DpnsPriceChange: Sendable, Equatable {
+    public let documentId: Data
+    public let label: String
+    public let previousPriceCredits: UInt64?
+    public let currentPriceCredits: UInt64?
+
+    public init(
+        documentId: Data,
+        label: String,
+        previousPriceCredits: UInt64?,
+        currentPriceCredits: UInt64?
+    ) {
+        self.documentId = documentId
+        self.label = label
+        self.previousPriceCredits = previousPriceCredits
+        self.currentPriceCredits = currentPriceCredits
     }
 }
 
@@ -208,12 +283,12 @@ extension DpnsMarketplaceName {
 extension DpnsNameStateRow {
     /// Copy a Rust-owned persisted row into an owned Swift value.
     ///
-    /// An unrecognised `status` byte decodes to `.owned` with a
-    /// counterparty of `nil` only when `has_counterparty` is false;
-    /// otherwise it is treated as `.transferred`, the wallet layer's own
-    /// documented fallback for an unattributable departure — the row is
-    /// never reported as a sale the wallet cannot evidence.
-    init(ffi: DpnsNameStateRowFFI) {
+    /// The status/counterparty pair is one invariant at this boundary:
+    /// owned rows must not carry a counterparty, while sold/transferred
+    /// rows must carry one. Unknown or inconsistent rows fail closed and
+    /// are omitted by the collection wrapper rather than being presented
+    /// as an ownership state this Swift build cannot establish.
+    init?(ffi: DpnsNameStateRowFFI) {
         var documentTuple = ffi.document_id
         var walletIdentityTuple = ffi.wallet_identity_id
         var counterpartyTuple = ffi.counterparty_id
@@ -222,12 +297,14 @@ extension DpnsNameStateRow {
             : nil
         let status: DpnsNameSaleStatus
         switch (ffi.status, counterparty) {
+        case (0, .none):
+            status = .owned
         case (1, .some(let to)):
             status = .sold(to: to)
-        case (_, .some(let to)):
+        case (2, .some(let to)):
             status = .transferred(to: to)
         default:
-            status = .owned
+            return nil
         }
         self.init(
             documentId: Swift.withUnsafeBytes(of: &documentTuple) { Data($0) },
@@ -240,6 +317,55 @@ extension DpnsNameStateRow {
             updatedAtMs: ffi.updated_at_ms == 0 ? nil : ffi.updated_at_ms,
             transferredAtMs: ffi.transferred_at_ms == 0 ? nil : ffi.transferred_at_ms,
             lastSyncedAtMs: ffi.last_synced_at_ms
+        )
+    }
+}
+
+extension DpnsNameAdded {
+    init(ffi: DpnsNameAddedFFI) {
+        var identityTuple = ffi.identity_id
+        self.init(
+            identityId: Swift.withUnsafeBytes(of: &identityTuple) { Data($0) },
+            label: ffi.label.map { String(cString: $0) } ?? ""
+        )
+    }
+}
+
+extension DpnsNameDeparture {
+    init(ffi: DpnsNameDepartedFFI) {
+        var identityTuple = ffi.identity_id
+        var documentTuple = ffi.document_id
+        var counterpartyTuple = ffi.counterparty_id
+        let status: DpnsNameSaleStatus?
+        switch (ffi.has_status, ffi.status) {
+        case (true, 1):
+            status = .sold(to: Swift.withUnsafeBytes(of: &counterpartyTuple) { Data($0) })
+        case (true, 2):
+            status = .transferred(
+                to: Swift.withUnsafeBytes(of: &counterpartyTuple) { Data($0) }
+            )
+        default:
+            status = nil
+        }
+        self.init(
+            identityId: Swift.withUnsafeBytes(of: &identityTuple) { Data($0) },
+            label: ffi.label.map { String(cString: $0) } ?? "",
+            documentId: ffi.has_document_id
+                ? Swift.withUnsafeBytes(of: &documentTuple) { Data($0) }
+                : nil,
+            status: status
+        )
+    }
+}
+
+extension DpnsPriceChange {
+    init(ffi: DpnsPriceChangeFFI) {
+        var documentTuple = ffi.document_id
+        self.init(
+            documentId: Swift.withUnsafeBytes(of: &documentTuple) { Data($0) },
+            label: ffi.label.map { String(cString: $0) } ?? "",
+            previousPriceCredits: ffi.has_previous ? ffi.previous : nil,
+            currentPriceCredits: ffi.has_current ? ffi.current : nil
         )
     }
 }
@@ -377,7 +503,7 @@ extension ManagedPlatformWallet {
             try result.check()
             guard let ptr = outPtr, outCount > 0 else { return [] }
             defer { dpns_name_state_rows_free(ptr, outCount) }
-            return (0..<Int(outCount)).map { DpnsNameStateRow(ffi: ptr[$0]) }
+            return (0..<Int(outCount)).compactMap { DpnsNameStateRow(ffi: ptr[$0]) }
         }.value
     }
 
@@ -598,22 +724,46 @@ extension ManagedPlatformWallet {
         let handle = self.handle
         return try await Task.detached(priority: .userInitiated) {
             () -> DpnsMarketplaceSyncSummary in
-            var tracked: UInt32 = 0
-            var added: UInt32 = 0
-            var departed: UInt32 = 0
-            var pricesChanged: UInt32 = 0
-            try platform_wallet_dpns_marketplace_sync(
-                handle,
-                &tracked,
-                &added,
-                &departed,
-                &pricesChanged
-            ).check()
+            var ffi = DpnsMarketplaceSyncSummaryFFI()
+            try platform_wallet_dpns_marketplace_sync_detailed(handle, &ffi).check()
+            defer { dpns_marketplace_sync_summary_free(&ffi) }
+
+            let addedNames: [DpnsNameAdded]
+            if let rows = ffi.names_added, ffi.names_added_count > 0 {
+                addedNames = (0..<Int(ffi.names_added_count)).map {
+                    DpnsNameAdded(ffi: rows[$0])
+                }
+            } else {
+                addedNames = []
+            }
+
+            let departedNames: [DpnsNameDeparture]
+            if let rows = ffi.names_departed, ffi.names_departed_count > 0 {
+                departedNames = (0..<Int(ffi.names_departed_count)).map {
+                    DpnsNameDeparture(ffi: rows[$0])
+                }
+            } else {
+                departedNames = []
+            }
+
+            let priceChanges: [DpnsPriceChange]
+            if let rows = ffi.prices_changed, ffi.prices_changed_count > 0 {
+                priceChanges = (0..<Int(ffi.prices_changed_count)).map {
+                    DpnsPriceChange(ffi: rows[$0])
+                }
+            } else {
+                priceChanges = []
+            }
+
             return DpnsMarketplaceSyncSummary(
-                tracked: tracked,
-                added: added,
-                departed: departed,
-                pricesChanged: pricesChanged
+                tracked: ffi.names_tracked,
+                added: UInt32(clamping: ffi.names_added_count),
+                departed: UInt32(clamping: ffi.names_departed_count),
+                pricesChanged: UInt32(clamping: ffi.prices_changed_count),
+                addedNames: addedNames,
+                departedNames: departedNames,
+                priceChanges: priceChanges,
+                syncUnixMs: ffi.sync_unix_ms
             )
         }.value
     }

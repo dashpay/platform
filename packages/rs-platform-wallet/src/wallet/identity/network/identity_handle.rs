@@ -20,11 +20,13 @@
 //! `SpvBroadcaster` because the [`AssetLockManager`] itself is pinned; that
 //! invariant lives in `PlatformWallet::new`.
 
-use std::sync::Arc;
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex as StdMutex};
 
 use dashcore::secp256k1::PublicKey;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, KeyType};
+use dpp::prelude::Identifier;
 use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, KeyDerivationType};
 use key_wallet::dip9::{
     IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
@@ -322,6 +324,14 @@ pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     /// signer-generic `PutDocument` trait) behind two by-value methods
     /// so the call sites stay simple.
     pub(crate) sdk_writer: Arc<super::sdk_writer::SdkWriter>,
+    /// Serializes DPNS marketplace mutations and sync reconciliation for
+    /// this wallet. Every cloned handle shares the same gate.
+    pub(crate) dpns_operation_gate: Arc<tokio::sync::Mutex<()>>,
+    /// Bounded ownership-scan cursors, one per wallet identity. This is a
+    /// short-lived in-memory optimization; durable marketplace rows remain
+    /// the source rendered after process restart.
+    pub(crate) dpns_sync_progress:
+        Arc<StdMutex<BTreeMap<Identifier, super::dpns_marketplace::DpnsMarketplaceSyncProgress>>>,
 }
 
 // Manual `Debug`: the derive would require `B: Debug`, which is not part
@@ -345,6 +355,8 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for IdentityWallet<B> {
             persister: self.persister.clone(),
             broadcaster: Arc::clone(&self.broadcaster),
             sdk_writer: Arc::clone(&self.sdk_writer),
+            dpns_operation_gate: Arc::clone(&self.dpns_operation_gate),
+            dpns_sync_progress: Arc::clone(&self.dpns_sync_progress),
         }
     }
 }

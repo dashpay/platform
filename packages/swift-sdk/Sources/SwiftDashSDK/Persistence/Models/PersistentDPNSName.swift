@@ -14,10 +14,10 @@ import SwiftData
 /// list reactively — `@Query` over a row collection beats a `[String]`
 /// column that views can only read in bulk on `onAppear`.
 ///
-/// This is purely a label cache. The DPNS document's `normalizedLabel`
-/// (homograph-safe form used for the uniqueness lookup) is NOT
-/// persisted here — DPNS lookups go through the SDK / platform-wallet,
-/// and the local cache only needs to render the display label.
+/// The identity-snapshot portion starts as a label cache. Marketplace sync
+/// later enriches that same row with the domain document id, listing state,
+/// ownership outcome, and document timestamps so SwiftUI can present the
+/// last confirmed state without issuing a network lookup for every row.
 @Model
 public final class PersistentDPNSName {
     /// Compound uniqueness on `(networkRaw, normalizedParentDomainName,
@@ -110,16 +110,28 @@ public final class PersistentDPNSName {
     /// Raw ``DpnsNameSaleStatus`` discriminant: 0 = owned, 1 = sold,
     /// 2 = transferred. Defaults to 0 so existing rows migrate, so read
     /// it through ``saleStatus`` rather than directly.
-    public var saleStatusRaw: Int16
+    public var saleStatusRaw: Int16 = 0
 
     /// Base58 id of the counterparty a departed name went to — the buyer
     /// when `saleStatusRaw == 1`, the recipient when it is 2. `nil` while
     /// the name is still owned (or the counterparty is unknown).
     public var counterpartyIdBase58: String?
 
+    /// Domain document `$createdAt` in Unix milliseconds. `nil` when
+    /// Platform did not carry the timestamp.
+    public var documentCreatedAtMs: UInt64?
+
+    /// Domain document `$updatedAt` in Unix milliseconds. `nil` when
+    /// Platform did not carry the timestamp.
+    public var documentUpdatedAtMs: UInt64?
+
+    /// Domain document `$transferredAt` in Unix milliseconds. `nil` when
+    /// Platform did not carry the timestamp.
+    public var documentTransferredAtMs: UInt64?
+
     /// Unix-millis timestamp of the sync pass / confirmed transition
     /// that last wrote the marketplace fields. `0` = never written.
-    public var marketplaceUpdatedAt: UInt64
+    public var marketplaceUpdatedAt: UInt64 = 0
 
     // MARK: - Relationships
 
@@ -164,6 +176,9 @@ public final class PersistentDPNSName {
         self.priceCredits = nil
         self.saleStatusRaw = 0
         self.counterpartyIdBase58 = nil
+        self.documentCreatedAtMs = nil
+        self.documentUpdatedAtMs = nil
+        self.documentTransferredAtMs = nil
         self.marketplaceUpdatedAt = 0
         self.createdAt = Date()
         self.lastUpdated = Date()
