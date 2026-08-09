@@ -827,9 +827,13 @@ mod tests {
             },
             vec![tx.txid()],
         )]);
-        let cs =
-            enrich_tracked_asset_locks_from_chain_lock(&wallet_manager, &wallet_id, 911, &unrelated)
-                .await;
+        let cs = enrich_tracked_asset_locks_from_chain_lock(
+            &wallet_manager,
+            &wallet_id,
+            911,
+            &unrelated,
+        )
+        .await;
         assert!(Merge::is_empty(&cs));
     }
 
@@ -1042,8 +1046,8 @@ mod tests {
             AccountType::IdentityRegistration,
             TransactionContext::Mempool,
         );
-        let _ = reconstruct_tracked_asset_locks(&wallet_manager, &wallet_id, &[&mempool_record])
-            .await;
+        let _ =
+            reconstruct_tracked_asset_locks(&wallet_manager, &wallet_id, &[&mempool_record]).await;
 
         // The chainlock promotion races in first.
         let locked_transactions: BTreeMap<AccountType, Vec<dashcore::Txid>> =
@@ -1100,7 +1104,10 @@ mod tests {
         }
 
         // And consumption still reaches its terminal.
-        let _ = manager.consume_asset_lock(&out_point).await.expect("consume");
+        let _ = manager
+            .consume_asset_lock(&out_point)
+            .await
+            .expect("consume");
         let wm = wallet_manager.read().await;
         assert_eq!(
             wm.get_wallet_info(&wallet_id)
