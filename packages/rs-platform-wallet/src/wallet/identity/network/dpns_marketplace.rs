@@ -301,12 +301,12 @@ fn document_history_contract_id() -> Identifier {
 /// protocol versions, and the DPNS / Document History system contracts
 /// can differ in schema and version between them, so a cross-network hit
 /// would verify against the wrong definition.
-static SYSTEM_CONTRACT_CACHE: std::sync::OnceLock<
-    std::sync::RwLock<BTreeMap<(dashcore::Network, Identifier), Arc<DataContract>>>,
-> = std::sync::OnceLock::new();
+type SystemContractCache =
+    std::sync::RwLock<BTreeMap<(dashcore::Network, Identifier), Arc<DataContract>>>;
 
-fn system_contract_cache(
-) -> &'static std::sync::RwLock<BTreeMap<(dashcore::Network, Identifier), Arc<DataContract>>> {
+static SYSTEM_CONTRACT_CACHE: std::sync::OnceLock<SystemContractCache> = std::sync::OnceLock::new();
+
+fn system_contract_cache() -> &'static SystemContractCache {
     SYSTEM_CONTRACT_CACHE.get_or_init(|| std::sync::RwLock::new(BTreeMap::new()))
 }
 
