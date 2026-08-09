@@ -64,6 +64,12 @@ pub struct PlatformWalletInfo {
     pub(crate) generation: Arc<WalletGeneration>,
     pub identity_manager: IdentityManager,
     pub tracked_asset_locks: BTreeMap<OutPoint, TrackedAssetLock>,
+    /// DPNS name states with sale price (username marketplace), keyed by
+    /// domain document id. Session-lifetime working set for the
+    /// marketplace sync/orchestration ops; the durable copy is the
+    /// host-side persister mirror fed by
+    /// [`DpnsNameStateChangeSet`](crate::changeset::DpnsNameStateChangeSet).
+    pub dpns_name_states: BTreeMap<Identifier, crate::changeset::DpnsNameStateEntry>,
 }
 
 /// A platform wallet that combines core UTXO functionality with identity management.

@@ -24,6 +24,7 @@ mod contract;
 mod discovery;
 mod document;
 mod dpns;
+mod dpns_marketplace;
 mod identity_handle;
 mod loading;
 mod register_from_addresses;
@@ -70,6 +71,10 @@ pub use contact_requests::{
 pub use dashpay_view::DashPayView;
 pub use discovery::IdentityDiscoveryOptions;
 pub use dpns::{ContestContender, ContestVoteState, ContestWinner};
+pub use dpns_marketplace::{
+    DepartedDpnsName, DpnsDomainState, DpnsMarketplaceSyncSummary, DpnsNameHistoryEvent,
+    DpnsNameHistoryEventKind, DpnsPriceChange, DOCUMENT_TRANSITION_FEE_RESERVE_CREDITS,
+};
 pub use identity_handle::{
     derive_ecdsa_identity_auth_keypair_from_master, derive_identity_auth_key_hash_from_master,
     derive_identity_auth_keypair, identity_auth_derivation_path_for_type, DerivedIdentityAuthKey,

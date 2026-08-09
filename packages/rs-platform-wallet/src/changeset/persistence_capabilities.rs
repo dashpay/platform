@@ -46,6 +46,8 @@ impl PersistenceCapabilities {
     pub const DEFERRED_CONTACT_CRYPTO: Self = Self::PENDING_CONTACT_CRYPTO;
     /// A persisted core wallet snapshot can be loaded after process restart.
     pub const WALLET_RESTORE: Self = Self(1 << 7);
+    /// DPNS name-state (username marketplace) rows can be persisted.
+    pub const DPNS_NAME_STATES: Self = Self(1 << 8);
 
     /// Capabilities required before exporting and funding an invitation voucher.
     pub const INVITATION_CREATION: Self = Self(
@@ -113,6 +115,10 @@ impl PersistenceCapabilities {
                 "pending_contact_crypto",
             ),
             (PersistenceCapabilities::WALLET_RESTORE, "wallet_restore"),
+            (
+                PersistenceCapabilities::DPNS_NAME_STATES,
+                "dpns_name_states",
+            ),
         ];
 
         KNOWN
@@ -140,6 +146,7 @@ mod tests {
         assert_eq!(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE.bits(), 0x20);
         assert_eq!(PersistenceCapabilities::PENDING_CONTACT_CRYPTO.bits(), 0x40);
         assert_eq!(PersistenceCapabilities::WALLET_RESTORE.bits(), 0x80);
+        assert_eq!(PersistenceCapabilities::DPNS_NAME_STATES.bits(), 0x100);
     }
 
     #[test]

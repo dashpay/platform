@@ -116,7 +116,7 @@ where
 /// flow correct for *any* document type — e.g. DPNS `preorder` requires
 /// `HIGH`, so both `CRITICAL` and `HIGH` keys qualify, but `MEDIUM` does
 /// not.
-fn allowed_signing_security_levels(requirement: SecurityLevel) -> Vec<SecurityLevel> {
+pub(super) fn allowed_signing_security_levels(requirement: SecurityLevel) -> Vec<SecurityLevel> {
     if requirement == SecurityLevel::MASTER {
         return vec![SecurityLevel::MASTER];
     }
@@ -652,11 +652,12 @@ impl IdentityWallet {
             .document_transfer(builder, &signing_key, &SignerRef(signer))
             .await
             .map_err(|e| {
-                // Preserve a structured key-unavailable signer failure so the
-                // FFI boundary can still restore code 31; only genuine
-                // operation failures get stringified into `InvalidIdentityData`
+                // Typed trade rejections (not-for-sale / price-changed /
+                // insufficient credits) and the structured key-unavailable
+                // signer failure survive; only genuine operation failures
+                // get stringified into `InvalidIdentityData`
                 // (dashpay/platform#4183 review).
-                crate::error::preserve_signer_key_unavailable_or(e, |e| {
+                crate::error::promote_document_trade_error_or(e, |e| {
                     PlatformWalletError::InvalidIdentityData(format!(
                         "Failed to transfer document: {e}"
                     ))
@@ -715,11 +716,11 @@ impl IdentityWallet {
             .document_set_price(builder, &signing_key, &SignerRef(signer))
             .await
             .map_err(|e| {
-                // Preserve a structured key-unavailable signer failure so the
-                // FFI boundary can still restore code 31; only genuine
-                // operation failures get stringified into `InvalidIdentityData`
+                // Typed trade rejections and the structured key-unavailable
+                // signer failure survive; only genuine operation failures
+                // get stringified into `InvalidIdentityData`
                 // (dashpay/platform#4183 review).
-                crate::error::preserve_signer_key_unavailable_or(e, |e| {
+                crate::error::promote_document_trade_error_or(e, |e| {
                     PlatformWalletError::InvalidIdentityData(format!(
                         "Failed to set document price: {e}"
                     ))
@@ -783,11 +784,13 @@ impl IdentityWallet {
             .document_purchase(builder, &signing_key, &SignerRef(signer))
             .await
             .map_err(|e| {
-                // Preserve a structured key-unavailable signer failure so the
-                // FFI boundary can still restore code 31; only genuine
-                // operation failures get stringified into `InvalidIdentityData`
-                // (dashpay/platform#4183 review).
-                crate::error::preserve_signer_key_unavailable_or(e, |e| {
+                // Typed trade rejections — crucially the price-changed race
+                // (40109), where the consensus equality check is the backstop
+                // behind the wallet's pre-flight — and the structured
+                // key-unavailable signer failure survive; only genuine
+                // operation failures get stringified into
+                // `InvalidIdentityData` (dashpay/platform#4183 review).
+                crate::error::promote_document_trade_error_or(e, |e| {
                     PlatformWalletError::InvalidIdentityData(format!(
                         "Failed to purchase document: {e}"
                     ))

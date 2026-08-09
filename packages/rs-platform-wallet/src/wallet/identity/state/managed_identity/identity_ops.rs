@@ -240,6 +240,37 @@ impl ManagedIdentity {
         }
     }
 
+    /// Replace the DPNS-name list wholesale.
+    ///
+    /// Use this when a sync round (or a confirmed sale/transfer) has the
+    /// canonical set of names owned by this identity. `IdentityChangeSet::merge`
+    /// and replay both treat this field as a complete last-write-wins
+    /// snapshot, so names that left the identity (sold / transferred
+    /// away) are removed, including by an empty snapshot — the same
+    /// policy as [`Self::set_contested_dpns_names`].
+    pub fn set_dpns_names(&mut self, names: Vec<DpnsNameInfo>, persister: &WalletPersister) {
+        self.dpns_names = names;
+        let cs = self.snapshot_changeset();
+        if let Err(e) = persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
+    }
+
+    /// Remove one DPNS name by label (the sold / transferred-away case).
+    ///
+    /// No-op (no changeset emitted) when the label isn't present.
+    pub fn remove_dpns_name(&mut self, label: &str, persister: &WalletPersister) {
+        let before = self.dpns_names.len();
+        self.dpns_names.retain(|n| n.label != label);
+        if self.dpns_names.len() == before {
+            return;
+        }
+        let cs = self.snapshot_changeset();
+        if let Err(e) = persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
+    }
+
     /// Append a contested DPNS label this identity is contending for.
     ///
     /// Dedup is enforced — the same label isn't added twice. When a
