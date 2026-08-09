@@ -265,7 +265,12 @@ impl IdentityWallet {
 
         // Build + broadcast the voucher asset lock at the invitation funding
         // account (the builder auto-selects the next unused funding index and
-        // returns its derivation path). `identity_index` is unused for the
+        // returns its derivation path). The DASH backing it is POOLED across
+        // `ASSET_LOCK_FUNDING_SOURCES` — the BIP44 and BIP32 accounts at
+        // `funding_account_index` plus every DashPay contact-receiving account
+        // — so an invitation can be funded from a balance spread across
+        // accounts, without the sweep-then-lock hop that used to be required.
+        // `identity_index` is unused for the
         // `IdentityInvitation` funding type. Only the broadcast half runs here —
         // the proof wait is deferred until AFTER the invitation record below is
         // durably persisted, so an interruption during the (potentially long)

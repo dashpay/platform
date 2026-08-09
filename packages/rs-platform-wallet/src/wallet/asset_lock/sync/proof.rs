@@ -45,28 +45,39 @@ pub(super) fn record_or_persister(
 }
 
 /// Family-aware in-memory funding-tx record lookup, shared by EVERY proof,
-/// ChainLock-wait, and recovery path. `TrackedAssetLock.account_index` is
-/// family-less (it doesn't record whether the lock was BIP44- or
-/// CoinJoin-funded), and key-wallet files a transaction that spends CoinJoin
-/// inputs under `coinjoin_accounts` — so a BIP44-only lookup leaves a
-/// whole-balance drain lock's IS/CL record invisible (fatal on hosts running
-/// `NoPlatformPersistence`, whose persister fallback always returns `None`).
-/// BIP44 is checked first (every historical lock), then CoinJoin.
+/// ChainLock-wait, and recovery path.
+///
+/// `TrackedAssetLock.account_index` is family-less — it records the source
+/// index, not which accounts ended up funding the lock — while key-wallet files
+/// a transaction under *every* account its inputs touch. So the record can sit
+/// in any of the families a lock may be funded from, and looking in only some
+/// of them leaves it invisible (fatal on hosts running `NoPlatformPersistence`,
+/// whose persister fallback always returns `None`, and a burnt proof-wait
+/// timeout everywhere else).
+///
+/// Two shapes make that a live concern: a whole-balance CoinJoin drain files
+/// only under `coinjoin_accounts`, and a POOLED asset lock
+/// (`ASSET_LOCK_FUNDING_SOURCES`) may take nothing from BIP44 and be funded
+/// entirely out of the BIP32 account or a DashPay contact-receiving one. All
+/// four families are therefore checked: the standard pair and CoinJoin at
+/// `account_index`, then the DashPay receiving accounts, which span their own
+/// indices and so are searched by txid alone. BIP44 stays first — it holds
+/// every historical lock.
 pub(in crate::wallet::asset_lock) fn funding_tx_record(
     accounts: &key_wallet::account::ManagedAccountCollection,
     account_index: u32,
     txid: &Txid,
 ) -> Option<TransactionRecord> {
-    accounts
-        .standard_bip44_accounts
-        .get(&account_index)
-        .and_then(|a| a.transactions().get(txid).cloned())
-        .or_else(|| {
-            accounts
-                .coinjoin_accounts
-                .get(&account_index)
-                .and_then(|a| a.transactions().get(txid).cloned())
-        })
+    let at_index = [
+        accounts.standard_bip44_accounts.get(&account_index),
+        accounts.standard_bip32_accounts.get(&account_index),
+        accounts.coinjoin_accounts.get(&account_index),
+    ];
+    at_index
+        .into_iter()
+        .flatten()
+        .chain(accounts.dashpay_receival_accounts.values())
+        .find_map(|account| account.transactions().get(txid).cloned())
 }
 
 /// Variant of [`record_or_persister`] that swallows persister errors
