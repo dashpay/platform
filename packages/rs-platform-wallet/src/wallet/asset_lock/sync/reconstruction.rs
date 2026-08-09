@@ -1018,4 +1018,98 @@ mod tests {
             "a resume must not downgrade a recovered lock into the pending window"
         );
     }
+
+    /// The benign race with a LIVE flow, end to end: a chainlock
+    /// promotion may reach a proof-less `Broadcast` entry while the
+    /// live pipeline's `wait_for_proof` is still running, transiently
+    /// classifying it `RecoveredFromChain`. The live pipeline's own
+    /// writers don't consult the entry — `wait_for_proof` resolves the
+    /// proof from records/events and the build pipeline then calls
+    /// `advance_asset_lock_status`, which overwrites status and proof
+    /// unconditionally — so the live flow always wins the race and the
+    /// transient recovery classification never sticks; consumption
+    /// still lands the `Consumed` terminal afterwards.
+    #[tokio::test]
+    async fn live_flow_advance_overwrites_chain_lock_recovery_classification() {
+        let (wallet_manager, wallet_id, tx) =
+            wallet_with_built_asset_lock(AssetLockFundingType::IdentityRegistration, 0).await;
+        let out_point = OutPoint::new(tx.txid(), 0);
+
+        // The live lock, stranded at proof-less Broadcast long enough
+        // for its block to chain-lock (IS lock never arrived).
+        let mempool_record = record_for(
+            &tx,
+            AccountType::IdentityRegistration,
+            TransactionContext::Mempool,
+        );
+        let _ = reconstruct_tracked_asset_locks(&wallet_manager, &wallet_id, &[&mempool_record])
+            .await;
+
+        // The chainlock promotion races in first.
+        let locked_transactions: BTreeMap<AccountType, Vec<dashcore::Txid>> =
+            BTreeMap::from([(AccountType::IdentityRegistration, vec![tx.txid()])]);
+        let cs = enrich_tracked_asset_locks_from_chain_lock(
+            &wallet_manager,
+            &wallet_id,
+            77,
+            &locked_transactions,
+        )
+        .await;
+        assert_eq!(
+            cs.asset_locks.get(&out_point).expect("entry").status,
+            AssetLockStatus::RecoveredFromChain
+        );
+
+        // The live flow's proof then arrives and its pipeline advances
+        // the entry exactly as `build.rs` does — the recovery
+        // classification is overwritten, not merged around.
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_network(Network::Testnet)
+                .build()
+                .expect("mock sdk"),
+        );
+        let manager = AssetLockManager::new(
+            sdk,
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::new(AlwaysRejectedBroadcaster),
+            WalletPersister::new(
+                wallet_id,
+                Arc::new(NoopTestPersister) as Arc<dyn PlatformWalletPersistence>,
+            ),
+        );
+        let live_proof = dpp::prelude::AssetLockProof::Chain(chain_proof(78, out_point));
+        manager
+            .advance_asset_lock_status(&out_point, AssetLockStatus::ChainLocked, Some(live_proof))
+            .await
+            .expect("live advance");
+        {
+            let wm = wallet_manager.read().await;
+            assert_eq!(
+                wm.get_wallet_info(&wallet_id)
+                    .expect("wallet")
+                    .tracked_asset_locks
+                    .get(&out_point)
+                    .expect("entry")
+                    .status,
+                AssetLockStatus::ChainLocked,
+                "the live pipeline's advance must overwrite the transient recovery classification"
+            );
+        }
+
+        // And consumption still reaches its terminal.
+        let _ = manager.consume_asset_lock(&out_point).await.expect("consume");
+        let wm = wallet_manager.read().await;
+        assert_eq!(
+            wm.get_wallet_info(&wallet_id)
+                .expect("wallet")
+                .tracked_asset_locks
+                .get(&out_point)
+                .expect("entry")
+                .status,
+            AssetLockStatus::Consumed
+        );
+    }
 }

@@ -69,6 +69,26 @@ pub enum AssetLockStatus {
     /// proves finality while nothing live is completing them
     /// (`enrich_from_record`).
     ///
+    /// # Lifecycle vs live flows
+    ///
+    /// "Nothing live is completing them" is enforced structurally, not
+    /// by a provenance flag: enrichment only touches proof-less
+    /// entries, and a lock a live flow drives leaves the proof-less
+    /// window as soon as its proof resolves (`wait_for_proof` →
+    /// `advance_asset_lock_status`, which overwrites status + proof
+    /// unconditionally, and `resume_asset_lock`, which advances from
+    /// its step-1 status snapshot). In the one race where a chainlock
+    /// promotion reaches a still-waiting live lock first, the live
+    /// pipeline's own write lands moments later and wins — the
+    /// transient recovery classification never sticks (regression:
+    /// `live_flow_advance_overwrites_chain_lock_recovery_classification`).
+    /// The only transition OUT of this status is therefore a live
+    /// writer: an explicit resume completing the spend (`Consumed` via
+    /// `consume_asset_lock`) or re-driving the proof pipeline; a
+    /// resume that proves nothing new keeps this status
+    /// (`resume_asset_lock` preserves it rather than re-entering the
+    /// pending window).
+    ///
     /// Core-side finality is therefore guaranteed (a
     /// `ChainAssetLockProof` from the record's height is attached at
     /// creation), but **Platform-side consumption is unknown**: the
