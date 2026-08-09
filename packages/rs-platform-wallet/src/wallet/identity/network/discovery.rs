@@ -477,29 +477,25 @@ impl IdentityWallet {
             identity_index += 1;
         }
 
-        // Nothing found, and at least one index was never answered: the scan
-        // does not know whether an identity exists, so it must not claim there
-        // is none. Callers retry on error; they cache an empty success.
-        if discovered.is_empty() && failed_probes > 0 {
+        if scan_result_is_trustworthy(discovered.len(), failed_probes) {
+            // Found something despite a failed probe: the discovered
+            // identities are already persisted, so return them rather than
+            // discarding the work. The gap is still worth a line — an identity
+            // at the failed index would be missed until the next scan.
+            if failed_probes > 0 {
+                tracing::warn!(
+                    "Identity discovery completed with {} unanswered probe(s); an identity at \
+                     a failed index may be missing until the next scan",
+                    failed_probes
+                );
+            }
+        } else {
             return Err(PlatformWalletError::IdentityDiscoveryIncomplete {
                 start_index,
                 probed: identity_index.saturating_sub(start_index),
                 failed_probes,
-                last_error: last_probe_error
-                    .unwrap_or_else(|| "unknown probe failure".to_string()),
+                last_error: last_probe_error.unwrap_or_else(|| "unknown probe failure".to_string()),
             });
-        }
-
-        // Found something despite a failed probe: the discovered identities are
-        // already persisted, so return them rather than discarding the work.
-        // The gap is still worth a line — an identity at the failed index would
-        // be missed until the next scan.
-        if failed_probes > 0 {
-            tracing::warn!(
-                "Identity discovery completed with {} unanswered probe(s); an identity at a \
-                 failed index may be missing until the next scan",
-                failed_probes
-            );
         }
 
         // --- DPNS lookup for all discovered identities ---
@@ -555,10 +551,27 @@ impl IdentityWallet {
     }
 }
 
+/// Whether a finished gap-limit scan may be reported as its literal result.
+///
+/// A scan answers "which identities does this seed own", and there are three
+/// endings, not two: it found some, it confirmed there are none, or it never
+/// got an answer. The third used to be reported as the second — a failed probe
+/// incremented the same miss counter as an empty index, so a scan that reached
+/// no one at all returned "this seed owns no identity". Callers cannot retry
+/// what they were told is a definitive answer, so a few seconds of network
+/// trouble after restore-from-seed cost a whole session's DashPay state.
+///
+/// Emptiness is only trustworthy when every probe was actually answered.
+/// A scan that found something is trustworthy either way: those identities
+/// exist, and the caller re-scans later for anything a failed index hid.
+fn scan_result_is_trustworthy(discovered: usize, failed_probes: u32) -> bool {
+    discovered > 0 || failed_probes == 0
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::identity_handle::derive_ecdsa_identity_auth_keypair_from_master;
-    use super::breadcrumb_decisions;
+    use super::{breadcrumb_decisions, scan_result_is_trustworthy};
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::v0::IdentityV0;
@@ -811,5 +824,27 @@ mod tests {
                 "unexpected ownership decision for key {key_id}"
             );
         }
+    }
+
+    /// The regression this whole distinction exists for: a scan that found
+    /// nothing because it could not reach Platform must not be reported as a
+    /// scan that found nothing because there is nothing.
+    #[test]
+    fn empty_scan_with_unanswered_probes_is_not_trustworthy() {
+        assert!(!scan_result_is_trustworthy(0, 1));
+        assert!(!scan_result_is_trustworthy(0, 5));
+    }
+
+    #[test]
+    fn empty_scan_with_every_probe_answered_is_trustworthy() {
+        assert!(scan_result_is_trustworthy(0, 0));
+    }
+
+    /// Discovered identities are already persisted, so a partial failure does
+    /// not discard them — it only means a later scan may find more.
+    #[test]
+    fn scan_that_found_something_is_trustworthy_despite_failures() {
+        assert!(scan_result_is_trustworthy(1, 0));
+        assert!(scan_result_is_trustworthy(1, 3));
     }
 }
