@@ -257,6 +257,19 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     predicate: #Predicate { $0.outPointHex == outPointHex }
                 )
                 if let existing = try? backgroundContext.fetch(descriptor).first {
+                    // Consumed (4) is the terminal lifecycle state — never
+                    // let a non-Consumed snapshot regress it. Writers race:
+                    // the wallet-event adapter's batched drain can deliver a
+                    // stale reconstruction/enrichment snapshot AFTER the
+                    // live flow's synchronous consumption write, and this
+                    // upsert is otherwise last-write-wins. Mirrors the same
+                    // guard in `AssetLockChangeSet::merge` and the
+                    // rs-platform-wallet-storage sqlite upsert; all other
+                    // transitions stay last-write-wins because non-terminal
+                    // statuses legitimately move both ways.
+                    if existing.statusRaw == 4 && entry.statusRaw != 4 {
+                        continue
+                    }
                     existing.walletId = walletId
                     existing.transactionBytes = entry.transactionBytes
                     existing.fundingTypeRaw = entry.fundingTypeRaw
@@ -288,6 +301,15 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     predicate: #Predicate { $0.outPointHex == hex }
                 )
                 if let existing = try? backgroundContext.fetch(descriptor).first {
+                    // Same terminal rule as the upsert guard above: a
+                    // Consumed (4) row is deliberately retained for
+                    // historical lookup and the only removal emitter
+                    // (`untrack_asset_lock`) targets rejected Built
+                    // rows — a removal reaching a consumed row is by
+                    // construction a stale write.
+                    if existing.statusRaw == 4 {
+                        continue
+                    }
                     backgroundContext.delete(existing)
                 }
             }

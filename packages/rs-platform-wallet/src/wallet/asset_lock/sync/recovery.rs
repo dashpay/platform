@@ -314,10 +314,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // Platform rejects an already-spent outpoint with a
                 // typed error, and a genuinely unspent lock is real
                 // recoverable value. The reconstruction path only
-                // assigns this status to finalized records and attaches
-                // the chain proof at creation (non-final detections
-                // enter as `Broadcast`/`InstantSendLocked` and take
-                // those arms, re-broadcast included), so the proof is
+                // assigns this status alongside a chain proof — at
+                // creation for records already finalized, or via
+                // `enrich_from_record` when finality arrives later
+                // (non-final detections enter as
+                // `Broadcast`/`InstantSendLocked` and take those arms,
+                // re-broadcast included, until then) — so the proof is
                 // present by construction; the `None` arm is a
                 // defensive fallback for a row whose persisted proof
                 // was lost, and its wait resolves from the already
@@ -344,10 +346,23 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             }
         };
 
-        // 3. Advance status and attach proof.
-        let new_status = match &proof {
-            dpp::prelude::AssetLockProof::Instant(_) => AssetLockStatus::InstantSendLocked,
-            dpp::prelude::AssetLockProof::Chain(_) => AssetLockStatus::ChainLocked,
+        // 3. Advance status and attach proof. A `RecoveredFromChain`
+        // entry keeps its status: the resume proved (or refreshed)
+        // Core-side finality, which that status already asserts — it
+        // proved nothing new about Platform-side consumption, so
+        // advancing into `InstantSendLocked`/`ChainLocked` (which
+        // consumers read as "in flight") would silently re-enter the
+        // pending window and resurrect the false-"Pending" rendering
+        // on every restored lock whose resume didn't end in a spend.
+        // Consumption is recorded separately (`consume_asset_lock`)
+        // when the credit output actually lands on Platform.
+        let new_status = if status == AssetLockStatus::RecoveredFromChain {
+            AssetLockStatus::RecoveredFromChain
+        } else {
+            match &proof {
+                dpp::prelude::AssetLockProof::Instant(_) => AssetLockStatus::InstantSendLocked,
+                dpp::prelude::AssetLockProof::Chain(_) => AssetLockStatus::ChainLocked,
+            }
         };
         let cs = self
             .advance_asset_lock_status(out_point, new_status, Some(proof.clone()))
