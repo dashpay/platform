@@ -491,6 +491,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 row.documentIdBase58 = entry.documentIdBase58
                 row.priceCredits = entry.priceCredits.map { Int64(bitPattern: $0) }
                 row.saleStatusRaw = entry.statusRaw
+                row.isOwned = entry.statusRaw == 0
                 row.counterpartyIdBase58 = entry.counterpartyIdBase58
                 row.marketplaceUpdatedAt = entry.lastSyncedAtMs
                 row.lastUpdated = Date()
@@ -1439,6 +1440,18 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         )
     }
 
+    /// Additive callbacks live in their own size/version-tagged structure so
+    /// Rust never reads beyond the established unsized callback vtable used by
+    /// older hosts.
+    func makePersistenceCallbacksExtension() -> PersistenceCallbacksExtension {
+        var extensionCallbacks = PersistenceCallbacksExtension()
+        extensionCallbacks.struct_size = UInt(MemoryLayout<PersistenceCallbacksExtension>.size)
+        extensionCallbacks.version = UInt32(PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION)
+        extensionCallbacks.reserved = 0
+        extensionCallbacks.on_persist_dpns_name_states_fn = persistDpnsNameStatesCallback
+        return extensionCallbacks
+    }
+
     /// Build `PersistenceCallbacks` that point to this handler.
     ///
     /// **Transfers ownership of a strong reference to Rust**: the context
@@ -1500,7 +1513,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         cb.on_list_wallet_core_txids_fn = listWalletCoreTxidsCallback
         cb.on_list_wallet_core_txids_free_fn = listWalletCoreTxidsFreeCallback
         cb.on_persist_dashpay_payments_fn = persistDashpayPaymentsCallback
-        cb.on_persist_dpns_name_states_fn = persistDpnsNameStatesCallback
         return cb
     }
 
@@ -1707,21 +1719,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             }
             row.lastUpdated = Date()
 
-            // Upsert the DPNS-label cache for this identity.
-            //
-            // The Rust changeset's merge policy is append-only
-            // (`IdentityChangeSet::merge` only adds labels not
-            // already present on the existing entry), so a label
-            // missing from this flush does NOT mean it was removed
-            // — we mirror that by inserting new rows but never
-            // deleting existing ones here. DPNS doesn't expose a
-            // user-driven "delete name" today; if/when it does, the
-            // removal must arrive via a separate signal so we know
-            // it's intentional.
-            //
-            // `acquiredAt` is informational on the existing row —
-            // we refresh it on upsert so a later sync that fills in
-            // the timestamp wins over an earlier `0` placeholder.
+            // Reconcile the DPNS-label cache against Rust's canonical
+            // last-write-wins identity snapshot. A missing label is no longer
+            // owned. Untracked cache-only rows can be deleted; marketplace
+            // rows are retained with `isOwned == false` so their sale/transfer
+            // history remains available.
             upsertDPNSNames(
                 identityRow: row,
                 names: entry.dpnsNames
@@ -1814,10 +1816,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// is extended to carry the parent domain, this site's defaults
     /// become the fallback path.
     ///
-    /// Append-only at the per-identity level: existing rows whose
-    /// label is no longer in the FFI list survive (see the call-site
-    /// comment on `IdentityChangeSet::merge`'s policy). The function
-    /// only ever inserts or refreshes; it does NOT cascade-prune.
+    /// The carried list is canonical for current ownership. Missing
+    /// cache-only rows are pruned. Missing marketplace-tracked rows survive as
+    /// history but are marked `isOwned == false` so owned-name queries and UI
+    /// selection cannot surface them.
     ///
     /// Assumes it's already running on `serialQueue` — only called
     /// from inside `persistIdentities`'s `onQueue` body.
@@ -1825,16 +1827,30 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         identityRow: PersistentIdentity,
         names: [(label: String, acquiredAt: UInt64)]
     ) {
-        if names.isEmpty {
-            return
-        }
-
         let networkRaw = identityRow.networkRaw
         // DPNS today exposes only the "dash" top-level domain. If the
         // FFI ever forwards a different parent, the model carries it
         // through verbatim — for now we stamp the universal default.
         let parentDomainName = "dash"
         let normalizedParentDomainName = PersistentDPNSName.normalize(parentDomainName)
+        let canonicalLabels = Set(names.map { PersistentDPNSName.normalize($0.label) })
+        let identityId = identityRow.identityId
+        let ownedRowsDescriptor = FetchDescriptor<PersistentDPNSName>(
+            predicate: #Predicate { $0.identity.identityId == identityId }
+        )
+        let previouslyAssociatedRows =
+            (try? backgroundContext.fetch(ownedRowsDescriptor)) ?? Array(identityRow.dpnsNames)
+
+        for row in previouslyAssociatedRows
+        where !canonicalLabels.contains(row.normalizedLabel) {
+            row.isOwned = false
+            row.lastUpdated = Date()
+            if row.documentIdBase58 == nil {
+                // No marketplace history is attached, so this is only a stale
+                // label-cache row and can be removed entirely.
+                backgroundContext.delete(row)
+            }
+        }
 
         for entry in names {
             let normalizedLabel = PersistentDPNSName.normalize(entry.label)
@@ -1846,6 +1862,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
             )
             if let existing = try? backgroundContext.fetch(descriptor).first {
+                existing.isOwned = true
                 // Refresh the timestamp if the FFI now carries a
                 // non-zero value. Don't clobber a real timestamp
                 // with a `0` placeholder — `acquired_at` is sticky
@@ -1880,6 +1897,16 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 )
                 backgroundContext.insert(row)
             }
+        }
+
+        let fallbackLabel = names.first?.label
+        if let selected = identityRow.mainDpnsName,
+           !canonicalLabels.contains(PersistentDPNSName.normalize(selected)) {
+            identityRow.mainDpnsName = fallbackLabel
+        }
+        if let displayed = identityRow.dpnsName,
+           !canonicalLabels.contains(PersistentDPNSName.normalize(displayed)) {
+            identityRow.dpnsName = fallbackLabel
         }
     }
 

@@ -84,14 +84,11 @@ public final class PersistentIdentity {
     @Relationship(deleteRule: .cascade, inverse: \PersistentDocument.ownerIdentity) public var documents: [PersistentDocument]
     @Relationship(deleteRule: .nullify) public var tokenBalances: [PersistentTokenBalance]
 
-    /// Confirmed DPNS labels owned by this identity. Cascade-deleted
-    /// from the parent — losing the identity row drops the label
-    /// cache too. Append-only on the write path: the changeset's
-    /// merge policy never removes labels (DPNS doesn't expose a
-    /// user-driven "delete name" today), so the persister callback
-    /// only inserts new rows, never removes them. Predicates filter
-    /// by the denormalized `PersistentDPNSName.identityId` column,
-    /// not through this collection — see
+    /// Confirmed DPNS labels observed for this identity. Cascade-deleted from
+    /// the parent — losing the identity row drops the label cache and retained
+    /// marketplace history too. Sold/transferred rows remain related to the
+    /// previous wallet identity for history, but have
+    /// `PersistentDPNSName.isOwned == false`; owned-name surfaces use
     /// `PersistentDPNSName.predicate(identityId:)`.
     @Relationship(deleteRule: .cascade, inverse: \PersistentDPNSName.identity)
     public var dpnsNames: [PersistentDPNSName] = []

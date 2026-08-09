@@ -113,6 +113,66 @@ pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PENDING_CONTACT_CRYPTO: u64 = 1
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DEFERRED_CONTACT_CRYPTO: u64 =
     PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PENDING_CONTACT_CRYPTO;
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_WALLET_RESTORE: u64 = 1 << 7;
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DPNS_NAME_STATES: u64 = 1 << 8;
+
+/// Version of [`PersistenceCallbacksExtension`]. The extension is deliberately
+/// separate from [`PersistenceCallbacks`]: existing hosts pass the latter by
+/// pointer without a size field, so growing it would make Rust read beyond an
+/// older allocation.
+pub const PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION: u32 = 1;
+
+pub type PersistDpnsNameStatesFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    rows: *const DpnsNameStateFFI,
+    rows_count: usize,
+    removed_ptr: *const [u8; 32],
+    removed_count: usize,
+) -> i32;
+
+/// Size- and version-tagged additive persistence callbacks.
+///
+/// `context` is the context in the accompanying [`PersistenceCallbacks`]
+/// vtable and has the same lifetime. The extension owns no additional context,
+/// so the legacy vtable's `release_fn` remains the single release hook.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct PersistenceCallbacksExtension {
+    /// Total bytes supplied by the caller, including this header. Rust reads a
+    /// callback only when its complete field fits within this size.
+    pub struct_size: usize,
+    pub version: u32,
+    pub reserved: u32,
+    /// Declared INLINE rather than as `Option<PersistDpnsNameStatesFn>`,
+    /// even though that alias exists and is ABI-identical: cbindgen does
+    /// not expand a named fn-pointer alias inside `Option`, emitting an
+    /// opaque `struct Option_PersistDpnsNameStatesFn` forward
+    /// declaration and then using it by value — an incomplete type that
+    /// makes the generated header unbuildable as a clang module. Every
+    /// sibling callback on [`PersistenceCallbacks`] is inline for the
+    /// same reason; keep new ones that way.
+    pub on_persist_dpns_name_states_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            rows: *const DpnsNameStateFFI,
+            rows_count: usize,
+            removed_ptr: *const [u8; 32],
+            removed_count: usize,
+        ) -> i32,
+    >,
+}
+
+impl Default for PersistenceCallbacksExtension {
+    fn default() -> Self {
+        Self {
+            struct_size: std::mem::size_of::<Self>(),
+            version: PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
+            reserved: 0,
+            on_persist_dpns_name_states_fn: None,
+        }
+    }
+}
 
 /// C callback vtable for wallet persistence.
 ///
@@ -772,31 +832,6 @@ pub struct PersistenceCallbacks {
             count: usize,
         ) -> i32,
     >,
-    /// Forwards `DpnsNameStateChangeSet` — the DPNS username-marketplace
-    /// rows (a name's listed price and whether it is still owned, sold,
-    /// or transferred away) — to the host. Appended at the END so the
-    /// struct layout stays stable; a host built against the previous
-    /// vtable keeps working and simply never sets this slot.
-    ///
-    /// Same upserts + tombstones shape as `on_persist_identities_fn`,
-    /// keyed by the 32-byte DPNS `domain` document id. Unlike the all-POD
-    /// invitation rows, each [`DpnsNameStateFFI`] owns three C strings
-    /// that are valid only for the callback window — the host must copy
-    /// anything it keeps before returning.
-    ///
-    /// Returns 0 on success. A non-zero return flips the round's
-    /// `success` flag to `false` so [`Self::on_changeset_end_fn`]
-    /// receives the rollback signal.
-    pub on_persist_dpns_name_states_fn: Option<
-        unsafe extern "C" fn(
-            context: *mut c_void,
-            wallet_id: *const u8,
-            rows: *const DpnsNameStateFFI,
-            rows_count: usize,
-            removed_ptr: *const [u8; 32],
-            removed_count: usize,
-        ) -> i32,
-    >,
 }
 
 // SAFETY: The context pointer is managed by the FFI caller who must ensure
@@ -831,7 +866,6 @@ impl Default for PersistenceCallbacks {
             on_list_wallet_core_txids_fn: None,
             on_list_wallet_core_txids_free_fn: None,
             on_persist_dashpay_payments_fn: None,
-            on_persist_dpns_name_states_fn: None,
             #[cfg(feature = "shielded")]
             on_persist_shielded_notes_fn: None,
             #[cfg(feature = "shielded")]
@@ -911,6 +945,8 @@ impl RoundGuardState {
 /// In-memory persister that accumulates changesets and notifies via callbacks.
 pub struct FFIPersister {
     callbacks: PersistenceCallbacks,
+    /// Additive callbacks negotiated outside the legacy unsized vtable.
+    dpns_name_states_callback: Option<PersistDpnsNameStatesFn>,
     /// Semantic capability declaration supplied separately from the callback
     /// vtable by the additive manager-create API. Keeping this out of
     /// `PersistenceCallbacks` preserves that established C struct's size.
@@ -963,8 +999,21 @@ impl FFIPersister {
         callbacks: PersistenceCallbacks,
         declared_capabilities: PersistenceCapabilities,
     ) -> Self {
+        Self::new_with_persistence_capabilities_and_dpns_callback(
+            callbacks,
+            declared_capabilities,
+            None,
+        )
+    }
+
+    pub fn new_with_persistence_capabilities_and_dpns_callback(
+        callbacks: PersistenceCallbacks,
+        declared_capabilities: PersistenceCapabilities,
+        dpns_name_states_callback: Option<PersistDpnsNameStatesFn>,
+    ) -> Self {
         Self {
             callbacks,
+            dpns_name_states_callback,
             declared_capabilities,
             pending: RwLock::new(BTreeMap::new()),
             round_lock: Mutex::new(RoundGuardState::default()),
@@ -985,7 +1034,7 @@ impl FFIPersister {
         if self.callbacks.on_persist_invitations_fn.is_some() {
             capabilities = capabilities.union(PersistenceCapabilities::INVITATIONS);
         }
-        if self.callbacks.on_persist_dpns_name_states_fn.is_some() {
+        if self.dpns_name_states_callback.is_some() {
             capabilities = capabilities.union(PersistenceCapabilities::DPNS_NAME_STATES);
         }
         let wallet_restore = self.callbacks.on_load_wallet_list_fn.is_some()
@@ -1605,7 +1654,7 @@ impl PlatformWalletPersistence for FFIPersister {
         // row is already staged in the same round when the host resolves
         // a marketplace row's owning identity.
         if let Some(ref dpns_cs) = changeset.dpns_name_states {
-            if let Some(cb) = self.callbacks.on_persist_dpns_name_states_fn {
+            if let Some(cb) = self.dpns_name_states_callback {
                 let upsert_refs: Vec<&platform_wallet::changeset::DpnsNameStateEntry> =
                     dpns_cs.names.values().collect();
                 let mut upserts = build_dpns_name_state_entries(&upsert_refs);
@@ -6141,28 +6190,32 @@ mod tests {
         assert_eq!(ffi.reserved, 0);
         assert_eq!(ffi.bits, 0x81);
         assert_eq!(std::mem::size_of::<PersistenceCapabilitiesFFI>(), 16);
-        // Capability negotiation is deliberately NOT appended to the legacy
-        // callback vtable. Pin the vtable size so a new slot has to be a
-        // deliberate, reviewed act, and prove the last-appended field really is
-        // terminal — growth is only safe while it happens at the end, where no
-        // previously-defined slot changes offset. The count moves with each
-        // append (invitations, then the `release_fn` context destructor, the
-        // txid enumeration pair, the DashPay payment persist slot, now the
-        // DPNS name-state persist slot).
+        // Additive capabilities and callbacks are deliberately NOT appended to
+        // the legacy unsized callback vtable. Pin its established size and
+        // terminal DashPay slot: reading even a single later word would overrun
+        // a host compiled against this ABI.
         #[cfg(not(feature = "shielded"))]
         assert_eq!(
             std::mem::size_of::<PersistenceCallbacks>(),
-            26 * std::mem::size_of::<usize>()
+            25 * std::mem::size_of::<usize>()
         );
         #[cfg(feature = "shielded")]
         assert_eq!(
             std::mem::size_of::<PersistenceCallbacks>(),
-            42 * std::mem::size_of::<usize>()
+            41 * std::mem::size_of::<usize>()
         );
         assert_eq!(
-            std::mem::offset_of!(PersistenceCallbacks, on_persist_dpns_name_states_fn)
+            std::mem::offset_of!(PersistenceCallbacks, on_persist_dashpay_payments_fn)
                 + std::mem::size_of::<usize>(),
             std::mem::size_of::<PersistenceCallbacks>()
+        );
+        assert_eq!(PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION, 1);
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_dpns_name_states_fn
+            ) + std::mem::size_of::<Option<PersistDpnsNameStatesFn>>(),
+            std::mem::size_of::<PersistenceCallbacksExtension>()
         );
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITIES_VERSION,
@@ -6199,6 +6252,10 @@ mod tests {
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_WALLET_RESTORE,
             PersistenceCapabilities::WALLET_RESTORE.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DPNS_NAME_STATES,
+            PersistenceCapabilities::DPNS_NAME_STATES.bits()
         );
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ACCOUNT_ADDRESS_POOLS,

@@ -1,8 +1,9 @@
 import Foundation
 import SwiftData
 
-/// SwiftData row for one confirmed DPNS label owned by a
-/// `PersistentIdentity`. Mirrors a single
+/// SwiftData row for one confirmed DPNS label observed for a
+/// `PersistentIdentity`, including retained sale/transfer history after the
+/// name leaves that identity. Mirrors a single
 /// `platform_wallet::DpnsNameInfo` after it travels across the FFI on
 /// `IdentityEntryFFI.dpns_names` / `dpns_names_acquired_at`.
 ///
@@ -69,6 +70,12 @@ public final class PersistentDPNSName {
     /// label belonging to the identity. Mirrors
     /// `DpnsNameInfo.acquired_at`. `0` when unknown.
     public var acquiredAt: UInt64
+
+    /// Whether the latest canonical identity snapshot still includes this
+    /// name. Departed marketplace rows remain attached to the previous wallet
+    /// identity so sale/transfer history survives, but are excluded from owned
+    /// name queries through this flag.
+    public var isOwned: Bool = true
 
     // MARK: - Username marketplace
     //
@@ -144,6 +151,7 @@ public final class PersistentDPNSName {
         self.parentDomainName = parentDomainName
         self.normalizedParentDomainName = Self.normalize(parentDomainName)
         self.acquiredAt = acquiredAt
+        self.isOwned = true
         // A freshly inserted row carries no marketplace state until the
         // marketplace persister callback writes it — hence a nil document
         // id, which is the "not tracked" signal the read contract above
@@ -236,15 +244,16 @@ extension PersistentDPNSName {
 // MARK: - Queries
 
 extension PersistentDPNSName {
-    /// Predicate filtering all DPNS-label rows that belong to a
-    /// specific identity. Traverses the `identity` relationship to
+    /// Predicate filtering DPNS labels currently owned by a specific
+    /// identity. Retained sold/transferred history rows deliberately do not
+    /// match. Traverses the `identity` relationship to
     /// match its `identityId` — safe because the relationship is
     /// non-optional and SwiftData's predicate engine handles
     /// non-optional one-hop traversal cleanly.
     public static func predicate(identityId: Data) -> Predicate<PersistentDPNSName> {
         let target = identityId
         return #Predicate<PersistentDPNSName> { name in
-            name.identity.identityId == target
+            name.identity.identityId == target && name.isOwned == true
         }
     }
 }

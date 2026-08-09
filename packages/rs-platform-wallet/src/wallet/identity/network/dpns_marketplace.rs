@@ -392,6 +392,26 @@ fn dpns_label(name: &str) -> &str {
     name.strip_suffix(".dash").unwrap_or(name)
 }
 
+/// Insert one row produced by a marketplace sync pass.
+///
+/// A domain document can appear twice when it moves between two identities
+/// managed by the same wallet: once as the new owner's authoritative `Owned`
+/// row and once as the old owner's departure. The persistent store has one row
+/// per document id, so current ownership must win independently of the
+/// identity-manager's deliberately unspecified iteration order.
+fn insert_sync_row(rows: &mut BTreeMap<Identifier, DpnsNameStateEntry>, entry: DpnsNameStateEntry) {
+    let should_replace = rows
+        .get(&entry.document_id)
+        .map(|existing| {
+            matches!(entry.status, DpnsNameSaleStatus::Owned)
+                || !matches!(existing.status, DpnsNameSaleStatus::Owned)
+        })
+        .unwrap_or(true);
+    if should_replace {
+        rows.insert(entry.document_id, entry);
+    }
+}
+
 impl IdentityWallet {
     // -----------------------------------------------------------------
     // Queries (network reads, sale state included)
@@ -486,29 +506,76 @@ impl IdentityWallet {
     /// `records.identity` index (the only identity-keyed index; the
     /// protocol rewrites `records.identity` to the new owner on
     /// purchase/transfer, so this stays authoritative across sales).
+    /// `None` drains every server page; `Some(n)` returns at most `n`
+    /// documents while still respecting the server's per-page limit.
     pub async fn dpns_domain_states_for_identity(
         &self,
         identity_id: &Identifier,
         limit: Option<u32>,
     ) -> Result<Vec<DpnsDomainState>, PlatformWalletError> {
+        if limit == Some(0) {
+            return Ok(Vec::new());
+        }
         let contract = self.dpns_contract().await?;
-        let query = DocumentQuery {
-            select: SelectProjection::documents(),
-            data_contract: contract,
-            document_type_name: DPNS_DOCUMENT_TYPE.to_string(),
-            where_clauses: vec![WhereClause {
-                field: "records.identity".to_string(),
-                operator: WhereOperator::Equal,
-                value: Value::Identifier(identity_id.to_buffer()),
-            }],
-            group_by: vec![],
-            having: vec![],
-            order_by_clauses: vec![],
-            limit: limit.unwrap_or(SYNC_QUERY_LIMIT),
-            offset: None,
-            start: None,
-        };
-        self.fetch_domain_states(query).await
+        let maximum = limit.map(|value| value as usize);
+        let mut states = Vec::new();
+        let mut cursor: Option<Identifier> = None;
+
+        loop {
+            let remaining = maximum.map(|value| value.saturating_sub(states.len()));
+            let page_limit = remaining
+                .map(|value| value.min(SYNC_QUERY_LIMIT as usize))
+                .unwrap_or(SYNC_QUERY_LIMIT as usize);
+            if page_limit == 0 {
+                break;
+            }
+
+            let query = DocumentQuery {
+                select: SelectProjection::documents(),
+                data_contract: Arc::clone(&contract),
+                document_type_name: DPNS_DOCUMENT_TYPE.to_string(),
+                where_clauses: vec![WhereClause {
+                    field: "records.identity".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Identifier(identity_id.to_buffer()),
+                }],
+                group_by: vec![],
+                having: vec![],
+                order_by_clauses: vec![],
+                limit: page_limit as u32,
+                offset: None,
+                start: cursor.map(|id| Start::StartAfter(id.to_vec())),
+            };
+            let documents = Document::fetch_many(&self.sdk, query).await.map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to fetch DPNS domain documents: {e}"
+                ))
+            })?;
+            let page_len = documents.len();
+            let last_id = documents.keys().last().copied();
+            states.extend(
+                documents
+                    .into_iter()
+                    .filter_map(|(_, document)| document)
+                    .map(|document| DpnsDomainState::from_document(&document))
+                    .collect::<Result<Vec<_>, _>>()?,
+            );
+
+            if page_len < page_limit || maximum.is_some_and(|value| states.len() >= value) {
+                break;
+            }
+            let Some(last_id) = last_id else {
+                break;
+            };
+            if cursor == Some(last_id) {
+                return Err(PlatformWalletError::InvalidIdentityData(
+                    "DPNS identity query pagination cursor did not advance".to_string(),
+                ));
+            }
+            cursor = Some(last_id);
+        }
+
+        Ok(states)
     }
 
     /// The tracked marketplace rows (owned names with sale state, plus
@@ -1136,8 +1203,9 @@ impl IdentityWallet {
         Ok(events)
     }
 
-    /// Fetch one history document type's rows for a source document via
-    /// the `byDocument` (dataContractId, documentId, $createdAt) index.
+    /// Fetch every history document of one type for a source document via
+    /// the `byDocument` (dataContractId, documentId, $createdAt) index,
+    /// draining its server pages in ascending creation order.
     async fn fetch_history_documents(
         &self,
         source_contract_id: &Identifier,
@@ -1145,38 +1213,60 @@ impl IdentityWallet {
         history_doc_type: &str,
     ) -> Result<Vec<Document>, PlatformWalletError> {
         let contract = self.document_history_contract().await?;
-        let query = DocumentQuery {
-            select: SelectProjection::documents(),
-            data_contract: contract,
-            document_type_name: history_doc_type.to_string(),
-            where_clauses: vec![
-                WhereClause {
-                    field: "dataContractId".to_string(),
-                    operator: WhereOperator::Equal,
-                    value: Value::Identifier(source_contract_id.to_buffer()),
-                },
-                WhereClause {
-                    field: "documentId".to_string(),
-                    operator: WhereOperator::Equal,
-                    value: Value::Identifier(source_document_id.to_buffer()),
-                },
-            ],
-            group_by: vec![],
-            having: vec![],
-            order_by_clauses: vec![OrderClause {
-                field: "$createdAt".to_string(),
-                ascending: true,
-            }],
-            limit: HISTORY_QUERY_LIMIT,
-            offset: None,
-            start: None,
-        };
-        let documents = Document::fetch_many(&self.sdk, query).await.map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to fetch {history_doc_type} history documents: {e}"
-            ))
-        })?;
-        Ok(documents.into_iter().filter_map(|(_, doc)| doc).collect())
+        let mut all_documents = Vec::new();
+        let mut cursor: Option<Identifier> = None;
+
+        loop {
+            let query = DocumentQuery {
+                select: SelectProjection::documents(),
+                data_contract: Arc::clone(&contract),
+                document_type_name: history_doc_type.to_string(),
+                where_clauses: vec![
+                    WhereClause {
+                        field: "dataContractId".to_string(),
+                        operator: WhereOperator::Equal,
+                        value: Value::Identifier(source_contract_id.to_buffer()),
+                    },
+                    WhereClause {
+                        field: "documentId".to_string(),
+                        operator: WhereOperator::Equal,
+                        value: Value::Identifier(source_document_id.to_buffer()),
+                    },
+                ],
+                group_by: vec![],
+                having: vec![],
+                order_by_clauses: vec![OrderClause {
+                    field: "$createdAt".to_string(),
+                    ascending: true,
+                }],
+                limit: HISTORY_QUERY_LIMIT,
+                offset: None,
+                start: cursor.map(|id| Start::StartAfter(id.to_vec())),
+            };
+            let documents = Document::fetch_many(&self.sdk, query).await.map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to fetch {history_doc_type} history documents: {e}"
+                ))
+            })?;
+            let page_len = documents.len();
+            let last_id = documents.keys().last().copied();
+            all_documents.extend(documents.into_iter().filter_map(|(_, document)| document));
+
+            if page_len < HISTORY_QUERY_LIMIT as usize {
+                break;
+            }
+            let Some(last_id) = last_id else {
+                break;
+            };
+            if cursor == Some(last_id) {
+                return Err(PlatformWalletError::InvalidIdentityData(format!(
+                    "{history_doc_type} history pagination cursor did not advance"
+                )));
+            }
+            cursor = Some(last_id);
+        }
+
+        Ok(all_documents)
     }
 
     // -----------------------------------------------------------------
@@ -1217,7 +1307,7 @@ impl IdentityWallet {
         };
 
         let mut summary = DpnsMarketplaceSyncSummary::default();
-        let mut rows_to_write: Vec<DpnsNameStateEntry> = Vec::new();
+        let mut rows_to_write: BTreeMap<Identifier, DpnsNameStateEntry> = BTreeMap::new();
         let mut sellers_to_refresh: Vec<Identifier> = Vec::new();
         let now = now_ms();
 
@@ -1262,7 +1352,10 @@ impl IdentityWallet {
                         });
                     }
                 }
-                rows_to_write.push(state.to_entry(identity_id, DpnsNameSaleStatus::Owned, now));
+                insert_sync_row(
+                    &mut rows_to_write,
+                    state.to_entry(identity_id, DpnsNameSaleStatus::Owned, now),
+                );
                 summary.names_tracked += 1;
             }
 
@@ -1297,7 +1390,7 @@ impl IdentityWallet {
                     .await;
                 self.remove_dpns_label(&identity_id, &prev_name.label).await;
                 if let Some(entry) = departed.1 {
-                    rows_to_write.push(entry);
+                    insert_sync_row(&mut rows_to_write, entry);
                 }
                 if matches!(departed.0.status, Some(DpnsNameSaleStatus::Sold { .. })) {
                     sellers_to_refresh.push(identity_id);
@@ -1306,7 +1399,8 @@ impl IdentityWallet {
             }
         }
 
-        self.record_dpns_name_states(rows_to_write, vec![]).await;
+        self.record_dpns_name_states(rows_to_write.into_values().collect(), vec![])
+            .await;
         sellers_to_refresh.sort();
         sellers_to_refresh.dedup();
         for seller in sellers_to_refresh {
@@ -1477,6 +1571,26 @@ fn history_event_from_document(
 mod tests {
     use super::*;
 
+    fn name_state_entry(
+        document_id: Identifier,
+        wallet_identity_id: Identifier,
+        status: DpnsNameSaleStatus,
+    ) -> DpnsNameStateEntry {
+        DpnsNameStateEntry {
+            document_id,
+            wallet_identity_id,
+            label: "alice".to_string(),
+            normalized_label: "a11ce".to_string(),
+            normalized_parent_domain_name: DPNS_PARENT_DOMAIN.to_string(),
+            price: None,
+            status,
+            created_at_ms: None,
+            updated_at_ms: None,
+            transferred_at_ms: None,
+            last_synced_at_ms: 1,
+        }
+    }
+
     #[test]
     fn dpns_label_strips_only_the_dash_suffix() {
         assert_eq!(dpns_label("alice"), "alice");
@@ -1490,5 +1604,28 @@ mod tests {
         // 0.001 DASH = 100_000 duffs = 100_000_000 credits (1 duff =
         // 1000 credits). Pin the constant against unit drift.
         assert_eq!(DOCUMENT_TRANSITION_FEE_RESERVE_CREDITS, 100_000 * 1_000);
+    }
+
+    #[test]
+    fn owned_sync_row_wins_regardless_of_identity_iteration_order() {
+        let document_id = Identifier::from([1; 32]);
+        let seller_id = Identifier::from([2; 32]);
+        let buyer_id = Identifier::from([3; 32]);
+        let sold = name_state_entry(
+            document_id,
+            seller_id,
+            DpnsNameSaleStatus::Sold { to: buyer_id },
+        );
+        let owned = name_state_entry(document_id, buyer_id, DpnsNameSaleStatus::Owned);
+
+        for entries in [[sold.clone(), owned.clone()], [owned.clone(), sold.clone()]] {
+            let mut rows = BTreeMap::new();
+            for entry in entries {
+                insert_sync_row(&mut rows, entry);
+            }
+            let row = rows.get(&document_id).expect("document row");
+            assert_eq!(row.wallet_identity_id, buyer_id);
+            assert_eq!(row.status, DpnsNameSaleStatus::Owned);
+        }
     }
 }

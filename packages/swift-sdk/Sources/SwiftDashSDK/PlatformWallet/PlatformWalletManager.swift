@@ -335,6 +335,7 @@ public class PlatformWalletManager: ObservableObject {
         let handler: PlatformWalletPersistenceHandler?
         var persistence: PersistenceCallbacks
         var declaredCapabilities: PersistenceCapabilitiesFFI
+        var persistenceExtension: PersistenceCallbacksExtension
         if let container = modelContainer {
             let h = PlatformWalletPersistenceHandler(
                 modelContainer: container,
@@ -342,6 +343,7 @@ public class PlatformWalletManager: ObservableObject {
             )
             persistence = h.makeCallbacks()
             declaredCapabilities = h.makePersistenceCapabilities()
+            persistenceExtension = h.makePersistenceCallbacksExtension()
             handler = h
         } else {
             persistence = PersistenceCallbacks()
@@ -350,6 +352,10 @@ public class PlatformWalletManager: ObservableObject {
                 reserved: 0,
                 bits: 0
             )
+            persistenceExtension = PersistenceCallbacksExtension()
+            persistenceExtension.struct_size = UInt(MemoryLayout<PersistenceCallbacksExtension>.size)
+            persistenceExtension.version = UInt32(PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION)
+            persistenceExtension.reserved = 0
             handler = nil
         }
 
@@ -357,11 +363,12 @@ public class PlatformWalletManager: ObservableObject {
         var eventHandlerCallbacks = eventHandler.makeCallbacks()
 
         do {
-            try platform_wallet_manager_create_with_persistence_capabilities(
+            try platform_wallet_manager_create_with_persistence_extensions(
                 sdkPointer,
                 &persistence,
                 &eventHandlerCallbacks,
                 &declaredCapabilities,
+                &persistenceExtension,
                 &handle
             ).check()
         } catch {

@@ -4,7 +4,10 @@ use crate::check_ptr;
 use crate::error::*;
 use crate::event_handler::{EventHandlerCallbacks, FFIEventHandler};
 use crate::handle::*;
-use crate::persistence::{FFIPersister, PersistenceCallbacks, PersistenceCapabilitiesFFI};
+use crate::persistence::{
+    FFIPersister, PersistDpnsNameStatesFn, PersistenceCallbacks, PersistenceCallbacksExtension,
+    PersistenceCapabilitiesFFI, PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
+};
 use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
@@ -68,6 +71,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create(
         persistence,
         event_handler,
         PersistenceCapabilities::NONE,
+        None,
         out_handle,
     )
 }
@@ -92,8 +96,64 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_persistence_capabil
         persistence,
         event_handler,
         declaration,
+        None,
         out_handle,
     )
+}
+
+/// Create a manager with an explicit capability declaration and the current
+/// size/version-tagged additive callback extension.
+///
+/// `persistence_extension` must point to at least its leading `struct_size`
+/// field. Fields beyond that are read only when `struct_size` proves they are
+/// present and the version is recognized. Unknown versions and short
+/// extensions fail closed to no additive callbacks. The extension shares the
+/// legacy vtable's `context` and `release_fn`; Rust copies the callback pointer
+/// during this call and never retains the extension pointer.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_create_with_persistence_extensions(
+    sdk_ptr: *const c_void,
+    persistence: *const PersistenceCallbacks,
+    event_handler: *const EventHandlerCallbacks,
+    persistence_capabilities: *const PersistenceCapabilitiesFFI,
+    persistence_extension: *const PersistenceCallbacksExtension,
+    out_handle: *mut Handle,
+) -> PlatformWalletFFIResult {
+    check_ptr!(persistence_capabilities);
+    check_ptr!(persistence_extension);
+    let declaration = persistence_capabilities_declaration(&*persistence_capabilities);
+    let dpns_callback = persistence_extension_dpns_callback(persistence_extension);
+    platform_wallet_manager_create_impl(
+        sdk_ptr,
+        persistence,
+        event_handler,
+        declaration,
+        dpns_callback,
+        out_handle,
+    )
+}
+
+unsafe fn persistence_extension_dpns_callback(
+    extension: *const PersistenceCallbacksExtension,
+) -> Option<PersistDpnsNameStatesFn> {
+    let supplied_size = std::ptr::addr_of!((*extension).struct_size).read();
+    let version_end =
+        std::mem::offset_of!(PersistenceCallbacksExtension, version) + std::mem::size_of::<u32>();
+    if supplied_size < version_end {
+        return None;
+    }
+    let version = std::ptr::addr_of!((*extension).version).read();
+    if version != PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION {
+        return None;
+    }
+    let callback_end = std::mem::offset_of!(
+        PersistenceCallbacksExtension,
+        on_persist_dpns_name_states_fn
+    ) + std::mem::size_of::<Option<PersistDpnsNameStatesFn>>();
+    if supplied_size < callback_end {
+        return None;
+    }
+    std::ptr::addr_of!((*extension).on_persist_dpns_name_states_fn).read()
 }
 
 unsafe fn platform_wallet_manager_create_impl(
@@ -101,6 +161,7 @@ unsafe fn platform_wallet_manager_create_impl(
     persistence: *const PersistenceCallbacks,
     event_handler: *const EventHandlerCallbacks,
     declared_capabilities: PersistenceCapabilities,
+    dpns_name_states_callback: Option<PersistDpnsNameStatesFn>,
     out_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
     check_ptr!(sdk_ptr);
@@ -136,10 +197,13 @@ unsafe fn platform_wallet_manager_create_impl(
     }
 
     let sdk = Arc::new((*(sdk_ptr as *const Sdk)).clone());
-    let persister = Arc::new(FFIPersister::new_with_persistence_capabilities(
-        std::ptr::read(persistence),
-        declared_capabilities,
-    ));
+    let persister = Arc::new(
+        FFIPersister::new_with_persistence_capabilities_and_dpns_callback(
+            std::ptr::read(persistence),
+            declared_capabilities,
+            dpns_name_states_callback,
+        ),
+    );
     let handler: Arc<dyn platform_wallet::PlatformEventHandler> =
         Arc::new(FFIEventHandler::new(std::ptr::read(event_handler)));
 
@@ -637,12 +701,36 @@ mod tests {
         0
     }
 
+    unsafe extern "C" fn persist_dpns_name_states(
+        _context: *mut c_void,
+        _wallet_id: *const u8,
+        _rows: *const crate::dpns_name_state_persistence::DpnsNameStateFFI,
+        _rows_count: usize,
+        _removed_ptr: *const [u8; 32],
+        _removed_count: usize,
+    ) -> i32 {
+        0
+    }
+
     fn persistence_callbacks() -> PersistenceCallbacks {
         PersistenceCallbacks {
             on_changeset_begin_fn: Some(begin_changeset),
             on_changeset_end_fn: Some(end_changeset),
             ..Default::default()
         }
+    }
+
+    fn assert_legacy_persistence_callbacks_layout() {
+        #[cfg(not(feature = "shielded"))]
+        assert_eq!(
+            std::mem::size_of::<PersistenceCallbacks>(),
+            25 * std::mem::size_of::<usize>()
+        );
+        #[cfg(feature = "shielded")]
+        assert_eq!(
+            std::mem::size_of::<PersistenceCallbacks>(),
+            41 * std::mem::size_of::<usize>()
+        );
     }
 
     fn event_callbacks() -> EventHandlerCallbacks {
@@ -834,6 +922,7 @@ mod tests {
 
     #[test]
     fn legacy_create_is_abi_stable_and_fail_closed() {
+        assert_legacy_persistence_callbacks_layout();
         let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
         let callbacks = persistence_callbacks();
         let event_callbacks = event_callbacks();
@@ -858,6 +947,7 @@ mod tests {
 
     #[test]
     fn additive_create_versions_and_intersects_capabilities() {
+        assert_legacy_persistence_callbacks_layout();
         let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
         let callbacks = persistence_callbacks();
         let event_callbacks = event_callbacks();
@@ -866,6 +956,7 @@ mod tests {
             reserved: 0,
             bits: PersistenceCapabilities::ATOMIC_CHANGESETS
                 .union(PersistenceCapabilities::INVITATIONS)
+                .union(PersistenceCapabilities::DPNS_NAME_STATES)
                 .bits(),
         };
         let mut handle = 0;
@@ -888,6 +979,60 @@ mod tests {
 
         let result = unsafe { platform_wallet_manager_destroy(handle) };
         assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+    }
+
+    #[test]
+    fn extension_create_versions_and_intersects_dpns_callback() {
+        let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+        let callbacks = persistence_callbacks();
+        let event_callbacks = event_callbacks();
+        let declaration = PersistenceCapabilitiesFFI {
+            version: PERSISTENCE_CAPABILITIES_VERSION,
+            reserved: 0,
+            bits: PersistenceCapabilities::DPNS_NAME_STATES.bits(),
+        };
+        let extension = PersistenceCallbacksExtension {
+            on_persist_dpns_name_states_fn: Some(persist_dpns_name_states),
+            ..Default::default()
+        };
+        let mut handle = 0;
+        let result = unsafe {
+            platform_wallet_manager_create_with_persistence_extensions(
+                &sdk as *const Sdk as *const c_void,
+                &callbacks,
+                &event_callbacks,
+                &declaration,
+                &extension,
+                &mut handle,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(
+            query(handle).bits,
+            PersistenceCapabilities::DPNS_NAME_STATES.bits()
+        );
+
+        let result = unsafe { platform_wallet_manager_destroy(handle) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+    }
+
+    #[test]
+    fn short_and_unknown_persistence_extensions_fail_closed() {
+        let short = PersistenceCallbacksExtension {
+            struct_size: std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_dpns_name_states_fn
+            ),
+            on_persist_dpns_name_states_fn: Some(persist_dpns_name_states),
+            ..Default::default()
+        };
+        let unknown = PersistenceCallbacksExtension {
+            version: PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION + 1,
+            on_persist_dpns_name_states_fn: Some(persist_dpns_name_states),
+            ..Default::default()
+        };
+        assert!(unsafe { persistence_extension_dpns_callback(&short) }.is_none());
+        assert!(unsafe { persistence_extension_dpns_callback(&unknown) }.is_none());
     }
 }
 

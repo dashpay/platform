@@ -304,7 +304,10 @@ extension ManagedPlatformWallet {
         startAfter: Data? = nil
     ) async throws -> [DpnsMarketplaceName] {
         let handle = self.handle
-        let cursorBytes: [UInt8]? = startAfter.map { Array($0) }
+        let cursorBytes = try Self.validatedOptionalIdentifier(
+            startAfter,
+            parameter: "startAfter"
+        )
         return try await Task.detached(priority: .userInitiated) { () -> [DpnsMarketplaceName] in
             var outPtr: UnsafeMutablePointer<DpnsMarketplaceNameFFI>? = nil
             var outCount: UInt = 0
@@ -361,7 +364,10 @@ extension ManagedPlatformWallet {
         identityId: Data? = nil
     ) async throws -> [DpnsNameStateRow] {
         let handle = self.handle
-        let idBytes: [UInt8]? = identityId.map { Array($0) }
+        let idBytes = try Self.validatedOptionalIdentifier(
+            identityId,
+            parameter: "identityId"
+        )
         return try await Task.detached(priority: .userInitiated) { () -> [DpnsNameStateRow] in
             var outPtr: UnsafeMutablePointer<DpnsNameStateRowFFI>? = nil
             var outCount: UInt = 0
@@ -613,6 +619,22 @@ extension ManagedPlatformWallet {
     }
 
     // MARK: - Shared marshalling helpers
+
+    /// Validate values passed to native APIs that read a fixed 32-byte
+    /// identifier. Checking before taking the pointer prevents Rust from
+    /// reading beyond a shorter `Data` allocation.
+    static func validatedOptionalIdentifier(
+        _ data: Data?,
+        parameter: String
+    ) throws -> [UInt8]? {
+        guard let data else { return nil }
+        guard data.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "\(parameter) must contain exactly 32 bytes (got \(data.count))"
+            )
+        }
+        return Array(data)
+    }
 
     /// Run `body` with a pointer to `bytes`, or a NULL pointer when it is
     /// nil — the "optional 32-byte argument" shape the marketplace search
