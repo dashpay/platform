@@ -351,6 +351,10 @@ impl IdentityWallet {
         // with it every DashPay contact) until the app was relaunched.
         let mut failed_probes = 0u32;
         let mut last_probe_error: Option<String> = None;
+        // Identities Platform answered with, including ones the manager
+        // already tracked. `discovered` holds only the NEW ones, so it is the
+        // wrong thing to judge reachability by — see `identities_seen += 1`.
+        let mut identities_seen = 0usize;
 
         while consecutive_misses < gap_limit {
             // Derive the MASTER auth pubkey hash for this identity index
@@ -453,6 +457,11 @@ impl IdentityWallet {
                     if is_new {
                         discovered.push(identity.clone());
                     }
+                    // Counted for every sighting, not just new ones: a rescan
+                    // that re-confirms an identity the manager already holds
+                    // still proves Platform answered, and `discovered` stays
+                    // empty in that case.
+                    identities_seen += 1;
                     consecutive_misses = 0;
                 }
                 Ok(None) => {
@@ -477,7 +486,7 @@ impl IdentityWallet {
             identity_index += 1;
         }
 
-        if scan_result_is_trustworthy(discovered.len(), failed_probes) {
+        if scan_result_is_trustworthy(identities_seen, failed_probes) {
             // Found something despite a failed probe: the discovered
             // identities are already persisted, so return them rather than
             // discarding the work. The gap is still worth a line — an identity
@@ -562,10 +571,18 @@ impl IdentityWallet {
 /// trouble after restore-from-seed cost a whole session's DashPay state.
 ///
 /// Emptiness is only trustworthy when every probe was actually answered.
-/// A scan that found something is trustworthy either way: those identities
-/// exist, and the caller re-scans later for anything a failed index hid.
-fn scan_result_is_trustworthy(discovered: usize, failed_probes: u32) -> bool {
-    discovered > 0 || failed_probes == 0
+/// A scan that saw an identity is trustworthy either way: it reached Platform
+/// and the seed demonstrably owns one, and the caller re-scans later for
+/// anything a failed index hid.
+///
+/// `identities_seen` counts every index Platform answered with an identity —
+/// NOT the length of the returned `discovered` list, which holds only the ones
+/// the manager did not already track. A rescan from index 0 (what the app's
+/// "Find identities" command does) re-confirms known identities without adding
+/// to `discovered`, so judging by that list would report a reachable scan as
+/// incomplete the moment any later index failed.
+fn scan_result_is_trustworthy(identities_seen: usize, failed_probes: u32) -> bool {
+    identities_seen > 0 || failed_probes == 0
 }
 
 #[cfg(test)]
@@ -846,5 +863,18 @@ mod tests {
     fn scan_that_found_something_is_trustworthy_despite_failures() {
         assert!(scan_result_is_trustworthy(1, 0));
         assert!(scan_result_is_trustworthy(1, 3));
+    }
+
+    /// A rescan from index 0 re-confirms identities the manager already holds,
+    /// which never reach the returned `discovered` list. Judging by that list
+    /// would call a scan that plainly reached Platform "incomplete" as soon as
+    /// a later index failed — turning the app's "Find identities" command into
+    /// an error for a wallet whose identity was found successfully.
+    #[test]
+    fn rescan_of_a_known_identity_is_trustworthy_despite_a_later_failure() {
+        let identities_seen = 1; // answered at index 0, but is_new == false
+        let discovered_len = 0; // …so nothing was added to `discovered`
+        assert!(scan_result_is_trustworthy(identities_seen, 4));
+        assert!(!scan_result_is_trustworthy(discovered_len, 4));
     }
 }
