@@ -71,8 +71,16 @@ pub fn apply(
         }
     }
     if !cs.removed.is_empty() {
-        let mut stmt =
-            tx.prepare_cached("DELETE FROM asset_locks WHERE wallet_id = ?1 AND outpoint = ?2")?;
+        // Same terminal rule as the upsert guard: a stored `consumed`
+        // row is never deleted by a stale tombstone. Consumed rows are
+        // deliberately retained for historical lookup, and the only
+        // removal emitter (`untrack_asset_lock`) fires exclusively for
+        // Built rows whose broadcast was rejected — so a removal
+        // reaching a consumed row is by construction a stale write.
+        let mut stmt = tx.prepare_cached(
+            "DELETE FROM asset_locks \
+             WHERE wallet_id = ?1 AND outpoint = ?2 AND status != 'consumed'",
+        )?;
         for op in &cs.removed {
             let op_bytes = blob::encode_outpoint(op)?;
             stmt.execute(params![wallet_id.as_slice(), &op_bytes[..]])?;

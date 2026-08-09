@@ -301,6 +301,15 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     predicate: #Predicate { $0.outPointHex == hex }
                 )
                 if let existing = try? backgroundContext.fetch(descriptor).first {
+                    // Same terminal rule as the upsert guard above: a
+                    // Consumed (4) row is deliberately retained for
+                    // historical lookup and the only removal emitter
+                    // (`untrack_asset_lock`) targets rejected Built
+                    // rows — a removal reaching a consumed row is by
+                    // construction a stale write.
+                    if existing.statusRaw == 4 {
+                        continue
+                    }
                     backgroundContext.delete(existing)
                 }
             }

@@ -967,16 +967,35 @@ impl Merge for AssetLockChangeSet {
         // swift-sdk `persistAssetLocks`), making the store order of
         // racing snapshots immaterial.
         for (out_point, entry) in other.asset_locks {
-            if entry.status != AssetLockStatus::Consumed {
-                if let Some(existing) = self.asset_locks.get(&out_point) {
-                    if existing.status == AssetLockStatus::Consumed {
-                        continue;
-                    }
+            if entry.status == AssetLockStatus::Consumed {
+                // A Consumed write supersedes any earlier-folded
+                // tombstone for the outpoint — Consumed rows are
+                // deliberately retained for historical lookup (see the
+                // variant doc), so the terminal write wins over a stale
+                // removal exactly as it wins over a stale status.
+                self.removed.remove(&out_point);
+            } else if let Some(existing) = self.asset_locks.get(&out_point) {
+                if existing.status == AssetLockStatus::Consumed {
+                    continue;
                 }
             }
             self.asset_locks.insert(out_point, entry);
         }
-        self.removed.extend(other.removed);
+        // Tombstones folded after a Consumed upsert are dropped for the
+        // same reason. The only removal emitter (`untrack_asset_lock`)
+        // fires exclusively for Built rows whose broadcast was
+        // definitively rejected, so a Consumed/removed pair for one
+        // outpoint has no legitimate producer — this is defense in
+        // depth matching the upsert guard.
+        for out_point in other.removed {
+            let consumed = self
+                .asset_locks
+                .get(&out_point)
+                .is_some_and(|entry| entry.status == AssetLockStatus::Consumed);
+            if !consumed {
+                self.removed.insert(out_point);
+            }
+        }
     }
 
     fn is_empty(&self) -> bool {
@@ -1752,6 +1771,32 @@ mod tests {
             folded.asset_locks[&outpoint].status,
             AssetLockStatus::RecoveredFromChain
         );
+
+        // Tombstones obey the same terminal rule. A removal folded
+        // after a Consumed entry is dropped…
+        let removal = || {
+            let mut cs = AssetLockChangeSet::default();
+            cs.removed.insert(outpoint);
+            cs
+        };
+        let mut folded = cs_with(AssetLockStatus::Consumed);
+        folded.merge(removal());
+        assert!(
+            folded.removed.is_empty(),
+            "a tombstone must not survive over a Consumed entry"
+        );
+        // …a Consumed entry folded after a tombstone clears it…
+        let mut folded = removal();
+        folded.merge(cs_with(AssetLockStatus::Consumed));
+        assert!(folded.removed.is_empty());
+        assert_eq!(
+            folded.asset_locks[&outpoint].status,
+            AssetLockStatus::Consumed
+        );
+        // …and a legitimate removal (rejected Built row) still folds.
+        let mut folded = cs_with(AssetLockStatus::Built);
+        folded.merge(removal());
+        assert!(folded.removed.contains(&outpoint));
     }
 
     #[test]

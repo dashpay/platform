@@ -602,6 +602,32 @@ fn tc010c_stale_recovery_snapshot_cannot_regress_consumed_row() {
     store_one(&persister, w, b, AssetLockStatus::RecoveredFromChain);
     store_one(&persister, w, b, AssetLockStatus::Consumed);
 
+    // A stale tombstone obeys the same terminal rule: a removal landing
+    // after the Consumed write must not delete the row…
+    let store_removed = |persister: &SqlitePersister, w, outpoint| {
+        let mut locks = AssetLockChangeSet::default();
+        locks.removed.insert(outpoint);
+        persister
+            .store(
+                w,
+                PlatformWalletChangeSet {
+                    asset_locks: Some(locks),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    };
+    store_removed(&persister, w, a);
+
+    // …while the legitimate removal path (a rejected Built row) still
+    // deletes.
+    let c = OutPoint {
+        txid: Txid::from_byte_array([0x53; 32]),
+        vout: 0,
+    };
+    store_one(&persister, w, c, AssetLockStatus::Built);
+    store_removed(&persister, w, c);
+
     drop(persister);
     let p2 = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
     let bucketed = platform_wallet_storage::sqlite::schema::asset_locks::load_state(
@@ -618,6 +644,14 @@ fn tc010c_stale_recovery_snapshot_cannot_regress_consumed_row() {
         bucketed[&0][&b].status,
         AssetLockStatus::Consumed,
         "Consumed must still land over RecoveredFromChain"
+    );
+    assert!(
+        bucketed[&0][&a].status == AssetLockStatus::Consumed,
+        "a stale removal must not delete the Consumed row"
+    );
+    assert!(
+        !bucketed[&0].contains_key(&c),
+        "a legitimate removal of a rejected Built row must still delete"
     );
     drop(tmp);
 }
