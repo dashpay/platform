@@ -42,10 +42,10 @@ use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Value;
 use dpp::prelude::{DataContract, Identifier};
 
+use dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start;
 use dash_sdk::drive::query::{OrderClause, SelectProjection, WhereClause, WhereOperator};
 use dash_sdk::platform::dpns_usernames::{convert_to_homograph_safe_chars, is_contested_username};
 use dash_sdk::platform::{DocumentQuery, FetchMany};
-use dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -923,11 +923,9 @@ impl IdentityWallet {
                 "identity {purchaser_identity_id} already owns DPNS name {name:?}"
             )));
         }
-        let listed_price = state
-            .price
-            .ok_or(PlatformWalletError::DocumentNotForSale {
-                document_id: state.document_id,
-            })?;
+        let listed_price = state.price.ok_or(PlatformWalletError::DocumentNotForSale {
+            document_id: state.document_id,
+        })?;
         if listed_price != expected_price {
             return Err(PlatformWalletError::DocumentPriceChanged {
                 document_id: state.document_id,
@@ -955,8 +953,7 @@ impl IdentityWallet {
                     *purchaser_identity_id,
                 ))?
         };
-        let required =
-            expected_price.saturating_add(DOCUMENT_TRANSITION_FEE_RESERVE_CREDITS);
+        let required = expected_price.saturating_add(DOCUMENT_TRANSITION_FEE_RESERVE_CREDITS);
         if available < required {
             return Err(PlatformWalletError::InsufficientIdentityCredits {
                 identity_id: *purchaser_identity_id,
@@ -989,11 +986,7 @@ impl IdentityWallet {
         )
         .await;
         self.record_dpns_name_states(
-            vec![confirmed_state.to_entry(
-                *purchaser_identity_id,
-                DpnsNameSaleStatus::Owned,
-                now,
-            )],
+            vec![confirmed_state.to_entry(*purchaser_identity_id, DpnsNameSaleStatus::Owned, now)],
             vec![],
         )
         .await;
@@ -1225,9 +1218,9 @@ impl IdentityWallet {
 
             // Newly observed labels → legacy list additions.
             for state in &owned {
-                let known = previous_labels.iter().any(|n| {
-                    convert_to_homograph_safe_chars(&n.label) == state.normalized_label
-                });
+                let known = previous_labels
+                    .iter()
+                    .any(|n| convert_to_homograph_safe_chars(&n.label) == state.normalized_label);
                 if !known {
                     self.add_dpns_label_if_missing(
                         &identity_id,

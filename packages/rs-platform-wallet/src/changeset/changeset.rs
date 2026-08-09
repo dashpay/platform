@@ -1876,7 +1876,10 @@ mod tests {
         cs.merge(sold);
 
         assert_eq!(cs.names[&doc].price, None);
-        assert_eq!(cs.names[&doc].status, DpnsNameSaleStatus::Sold { to: buyer });
+        assert_eq!(
+            cs.names[&doc].status,
+            DpnsNameSaleStatus::Sold { to: buyer }
+        );
         assert!(cs.removed.contains(&other_doc));
         assert!(!cs.is_empty());
     }

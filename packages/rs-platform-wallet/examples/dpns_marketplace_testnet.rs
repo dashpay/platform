@@ -113,10 +113,7 @@ fn dapi_addresses() -> AddressList {
 
 /// Whether `sk_bytes` is the private key for `key` (33-byte pubkey for
 /// ECDSA_SECP256K1, hash160 for ECDSA_HASH160).
-fn private_key_matches(
-    key: &dpp::identity::IdentityPublicKey,
-    sk_bytes: &[u8; 32],
-) -> bool {
+fn private_key_matches(key: &dpp::identity::IdentityPublicKey, sk_bytes: &[u8; 32]) -> bool {
     let secp = dashcore::secp256k1::Secp256k1::new();
     let Ok(sk) = dashcore::secp256k1::SecretKey::from_byte_array(sk_bytes) else {
         return false;
@@ -223,7 +220,11 @@ async fn discover(
             println!("identity not found on testnet");
             return Ok(());
         };
-        println!("balance={} keys={}", identity.balance(), identity.public_keys().len());
+        println!(
+            "balance={} keys={}",
+            identity.balance(),
+            identity.public_keys().len()
+        );
         let mut any = false;
         for index in 0..10u32 {
             let mut probe = SimpleSigner::default();
@@ -262,7 +263,6 @@ async fn discover(
     }
     Ok(())
 }
-
 
 /// Re-read `label`'s on-chain state until `predicate` holds or attempts
 /// run out. Fresh reads race lagging replicas — a query right after a
@@ -329,8 +329,14 @@ async fn run_flow(
         .ok_or_else(|| format!("no identity at buyer index {buyer_index}"))?;
     let seller_id = seller.id();
     let buyer_id = buyer.id();
-    println!("seller (index {seller_index}): {seller_id} balance={}", seller.balance());
-    println!("buyer  (index {buyer_index}): {buyer_id} balance={}", buyer.balance());
+    println!(
+        "seller (index {seller_index}): {seller_id} balance={}",
+        seller.balance()
+    );
+    println!(
+        "buyer  (index {buyer_index}): {buyer_id} balance={}",
+        buyer.balance()
+    );
 
     let mut signer = SimpleSigner::default();
     let seller_keys = load_hd_keys_into_signer(&mut signer, &seller, seller_index, master);
@@ -348,8 +354,14 @@ async fn run_flow(
             "buyer balance {} < {BUYER_MIN_CREDITS}, transferring {BUYER_TOP_UP} credits from seller",
             buyer.balance()
         );
-        idw.transfer_credits_with_external_signer(&seller_id, &buyer_id, BUYER_TOP_UP, &signer, None)
-            .await?;
+        idw.transfer_credits_with_external_signer(
+            &seller_id,
+            &buyer_id,
+            BUYER_TOP_UP,
+            &signer,
+            None,
+        )
+        .await?;
         idw.refresh_identity(&buyer_id).await?;
     }
 
@@ -439,7 +451,10 @@ async fn run_flow(
     check(
         "local-row",
         row.wallet_identity_id == buyer_id && row.status == DpnsNameSaleStatus::Owned,
-        format!("row identity={} status={:?}", row.wallet_identity_id, row.status),
+        format!(
+            "row identity={} status={:?}",
+            row.wallet_identity_id, row.status
+        ),
     );
 
     // 6. History: Registered + PriceSet(1M) + PriceSet(2M) + Purchased(2M).
@@ -467,7 +482,11 @@ async fn run_flow(
         price_sets == vec![PRICE_INITIAL, PRICE_FINAL],
         format!("{price_sets:?}"),
     );
-    check("history-purchase", purchased, "purchase event with price+parties");
+    check(
+        "history-purchase",
+        purchased,
+        "purchase event with price+parties",
+    );
     check(
         "history-registered",
         matches!(
@@ -515,7 +534,9 @@ async fn run_flow(
         .await?;
     check(
         "search",
-        results.iter().any(|s| s.normalized_label == fresh.normalized_label),
+        results
+            .iter()
+            .any(|s| s.normalized_label == fresh.normalized_label),
         format!("{} result(s) for prefix", results.len()),
     );
     let summary = idw.sync_dpns_marketplace().await?;

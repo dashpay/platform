@@ -72,8 +72,8 @@ pub unsafe extern "C" fn platform_wallet_manager_dpns_sync_is_running(
     // fire, so the caller never reads uninitialized stack contents.
     *out_running = false;
 
-    let option =
-        PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.dpns_sync().is_running());
+    let option = PLATFORM_WALLET_MANAGER_STORAGE
+        .with_item(handle, |manager| manager.dpns_sync().is_running());
     let running = unwrap_option_or_return!(option);
     *out_running = running;
     PlatformWalletFFIResult::ok()
@@ -88,8 +88,8 @@ pub unsafe extern "C" fn platform_wallet_manager_dpns_sync_is_syncing(
     check_ptr!(out_syncing);
     *out_syncing = false;
 
-    let option =
-        PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.dpns_sync().is_syncing());
+    let option = PLATFORM_WALLET_MANAGER_STORAGE
+        .with_item(handle, |manager| manager.dpns_sync().is_syncing());
     let syncing = unwrap_option_or_return!(option);
     *out_syncing = syncing;
     PlatformWalletFFIResult::ok()
@@ -108,8 +108,9 @@ pub unsafe extern "C" fn platform_wallet_manager_dpns_sync_last_sync_unix_second
     check_ptr!(out_last_sync_unix);
     *out_last_sync_unix = 0;
 
-    let option = PLATFORM_WALLET_MANAGER_STORAGE
-        .with_item(handle, |manager| manager.dpns_sync().last_sync_unix_seconds());
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        manager.dpns_sync().last_sync_unix_seconds()
+    });
     let value = unwrap_option_or_return!(option);
     *out_last_sync_unix = value.unwrap_or(0);
     PlatformWalletFFIResult::ok()
@@ -219,8 +220,9 @@ mod tests {
         let mut ok = 7usize;
         let mut err = 7usize;
         let mut ts = 7u64;
-        let r =
-            unsafe { platform_wallet_manager_dpns_sync_sync_now(bogus, &mut ok, &mut err, &mut ts) };
+        let r = unsafe {
+            platform_wallet_manager_dpns_sync_sync_now(bogus, &mut ok, &mut err, &mut ts)
+        };
         assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
     }
 
@@ -231,10 +233,12 @@ mod tests {
     fn null_required_out_pointers_are_rejected() {
         let bogus: Handle = 1;
 
-        let r = unsafe { platform_wallet_manager_dpns_sync_is_running(bogus, std::ptr::null_mut()) };
+        let r =
+            unsafe { platform_wallet_manager_dpns_sync_is_running(bogus, std::ptr::null_mut()) };
         assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
 
-        let r = unsafe { platform_wallet_manager_dpns_sync_is_syncing(bogus, std::ptr::null_mut()) };
+        let r =
+            unsafe { platform_wallet_manager_dpns_sync_is_syncing(bogus, std::ptr::null_mut()) };
         assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
 
         let r = unsafe {

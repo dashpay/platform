@@ -32,11 +32,11 @@ pub use changeset::{
     DpnsNameSaleStatus, DpnsNameStateChangeSet, DpnsNameStateEntry, HighestUsedIndexes,
     IdentityChangeSet, IdentityEntry, IdentityKeyDerivationIndices, IdentityKeyEntry,
     IdentityKeysChangeSet, InvitationChangeSet, InvitationEntry, InvitationStatus,
-    KeyDerivationBreadcrumb, KeyWithBreadcrumb, PendingContactCrypto,
-    PendingContactCryptoKey, PendingContactCryptoKind, PendingContactCryptoOp,
-    PlatformAddressBalanceEntry, PlatformAddressChangeSet, PlatformWalletChangeSet,
-    ProviderKeyAccountEntry, ProviderKeyExtendedPubKey, ProviderPlatformNodePubKey,
-    ReceivedContactRequestKey, SentContactRequestKey, TokenBalanceChangeSet, WalletMetadataEntry,
+    KeyDerivationBreadcrumb, KeyWithBreadcrumb, PendingContactCrypto, PendingContactCryptoKey,
+    PendingContactCryptoKind, PendingContactCryptoOp, PlatformAddressBalanceEntry,
+    PlatformAddressChangeSet, PlatformWalletChangeSet, ProviderKeyAccountEntry,
+    ProviderKeyExtendedPubKey, ProviderPlatformNodePubKey, ReceivedContactRequestKey,
+    SentContactRequestKey, TokenBalanceChangeSet, WalletMetadataEntry,
 };
 pub use client_start_state::ClientStartState;
 pub use client_wallet_start_state::ClientWalletStartState;

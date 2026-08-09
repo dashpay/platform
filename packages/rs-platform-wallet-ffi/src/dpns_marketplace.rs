@@ -177,7 +177,9 @@ pub struct DpnsNameHistoryEventFFI {
 /// [`crate::dpns`] — the host reads a null label as an empty one rather
 /// than losing the whole row.
 fn owned_c_string(s: &str) -> *mut c_char {
-    CString::new(s).map(|c| c.into_raw()).unwrap_or(ptr::null_mut())
+    CString::new(s)
+        .map(|c| c.into_raw())
+        .unwrap_or(ptr::null_mut())
 }
 
 /// Release a C string produced by [`owned_c_string`] and null the slot,
@@ -381,8 +383,10 @@ pub unsafe extern "C" fn platform_wallet_dpns_marketplace_search(
     let result = unwrap_option_or_return!(option);
     let states = unwrap_result_or_return!(result);
 
-    let rows: Vec<DpnsMarketplaceNameFFI> =
-        states.iter().map(DpnsMarketplaceNameFFI::from_state).collect();
+    let rows: Vec<DpnsMarketplaceNameFFI> = states
+        .iter()
+        .map(DpnsMarketplaceNameFFI::from_state)
+        .collect();
     unsafe { publish_array(rows, out_results, out_count) };
     PlatformWalletFFIResult::ok()
 }
@@ -454,8 +458,10 @@ pub unsafe extern "C" fn platform_wallet_dpns_marketplace_my_names(
     let result = unwrap_option_or_return!(option);
     let entries = unwrap_result_or_return!(result);
 
-    let rows: Vec<DpnsNameStateRowFFI> =
-        entries.iter().map(DpnsNameStateRowFFI::from_entry).collect();
+    let rows: Vec<DpnsNameStateRowFFI> = entries
+        .iter()
+        .map(DpnsNameStateRowFFI::from_entry)
+        .collect();
     unsafe { publish_array(rows, out_rows, out_count) };
     PlatformWalletFFIResult::ok()
 }
@@ -587,7 +593,9 @@ pub unsafe extern "C" fn platform_wallet_dpns_delist_name(
         let identity = wallet.identity().clone();
         block_on_worker(async move {
             let signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
-            identity.delist_dpns_name(&owner_id, &name_str, signer).await
+            identity
+                .delist_dpns_name(&owner_id, &name_str, signer)
+                .await
         })
     });
     let result = unwrap_option_or_return!(option);
@@ -917,7 +925,9 @@ mod tests {
         assert_eq!(ffi.records_identity_id, [3u8; 32]);
         assert!(ffi.has_price);
         assert_eq!(ffi.price, 5_000);
-        let label = unsafe { CStr::from_ptr(ffi.label) }.to_string_lossy().into_owned();
+        let label = unsafe { CStr::from_ptr(ffi.label) }
+            .to_string_lossy()
+            .into_owned();
         let normalized = unsafe { CStr::from_ptr(ffi.normalized_label) }
             .to_string_lossy()
             .into_owned();

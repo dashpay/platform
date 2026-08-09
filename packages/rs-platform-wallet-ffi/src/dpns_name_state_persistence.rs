@@ -121,9 +121,7 @@ pub fn build_dpns_name_state_entries(entries: &[&DpnsNameStateEntry]) -> Vec<Dpn
                 counterparty_id,
                 label: owned_c_string(&entry.label),
                 normalized_label: owned_c_string(&entry.normalized_label),
-                normalized_parent_domain_name: owned_c_string(
-                    &entry.normalized_parent_domain_name,
-                ),
+                normalized_parent_domain_name: owned_c_string(&entry.normalized_parent_domain_name),
                 has_price,
                 price,
                 status,

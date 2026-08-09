@@ -16,8 +16,8 @@ use crate::sqlite::error::WalletStorageError;
 // Imports used only by the test-gated reader below.
 #[cfg(any(test, feature = "__test-helpers"))]
 use {
-    dpp::prelude::Identifier, platform_wallet::changeset::DpnsNameStateEntry,
-    rusqlite::Connection, std::collections::BTreeMap,
+    dpp::prelude::Identifier, platform_wallet::changeset::DpnsNameStateEntry, rusqlite::Connection,
+    std::collections::BTreeMap,
 };
 
 pub fn apply(
@@ -61,18 +61,27 @@ pub fn apply(
                 price,
                 status,
                 counterparty.map(|c| c.to_vec()),
-                entry.created_at_ms.map(|v| crate::sqlite::util::safe_cast::u64_to_i64(
-                    "dpns_name_states.created_at_ms",
-                    v
-                )).transpose()?,
-                entry.updated_at_ms.map(|v| crate::sqlite::util::safe_cast::u64_to_i64(
-                    "dpns_name_states.updated_at_ms",
-                    v
-                )).transpose()?,
-                entry.transferred_at_ms.map(|v| crate::sqlite::util::safe_cast::u64_to_i64(
-                    "dpns_name_states.transferred_at_ms",
-                    v
-                )).transpose()?,
+                entry
+                    .created_at_ms
+                    .map(|v| crate::sqlite::util::safe_cast::u64_to_i64(
+                        "dpns_name_states.created_at_ms",
+                        v
+                    ))
+                    .transpose()?,
+                entry
+                    .updated_at_ms
+                    .map(|v| crate::sqlite::util::safe_cast::u64_to_i64(
+                        "dpns_name_states.updated_at_ms",
+                        v
+                    ))
+                    .transpose()?,
+                entry
+                    .transferred_at_ms
+                    .map(|v| crate::sqlite::util::safe_cast::u64_to_i64(
+                        "dpns_name_states.transferred_at_ms",
+                        v
+                    ))
+                    .transpose()?,
                 crate::sqlite::util::safe_cast::u64_to_i64(
                     "dpns_name_states.last_synced_at_ms",
                     entry.last_synced_at_ms

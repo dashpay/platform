@@ -1492,9 +1492,12 @@ mod tests {
             actual: 2_000,
         }
         .into();
-        let parsed: serde_json::Value = serde_json::from_str(&message_of(&result))
-            .expect("code 38 message must parse as JSON");
-        assert_eq!(parsed["documentId"], document_id.to_string(Encoding::Base58));
+        let parsed: serde_json::Value =
+            serde_json::from_str(&message_of(&result)).expect("code 38 message must parse as JSON");
+        assert_eq!(
+            parsed["documentId"],
+            document_id.to_string(Encoding::Base58)
+        );
         assert_eq!(parsed["expected"], 1_000u64);
         assert_eq!(parsed["actual"], 2_000u64);
     }
@@ -1508,9 +1511,12 @@ mod tests {
             available: 7,
         }
         .into();
-        let parsed: serde_json::Value = serde_json::from_str(&message_of(&result))
-            .expect("code 39 message must parse as JSON");
-        assert_eq!(parsed["identityId"], identity_id.to_string(Encoding::Base58));
+        let parsed: serde_json::Value =
+            serde_json::from_str(&message_of(&result)).expect("code 39 message must parse as JSON");
+        assert_eq!(
+            parsed["identityId"],
+            identity_id.to_string(Encoding::Base58)
+        );
         assert_eq!(parsed["required"], 100_001_000u64);
         assert_eq!(parsed["available"], 7u64);
     }
@@ -1522,8 +1528,8 @@ mod tests {
             ends_at_ms: 1_800_000_000_000,
         }
         .into();
-        let parsed: serde_json::Value = serde_json::from_str(&message_of(&result))
-            .expect("code 40 message must parse as JSON");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&message_of(&result)).expect("code 40 message must parse as JSON");
         assert_eq!(parsed["label"], "alice");
         assert_eq!(parsed["endsAtMs"], 1_800_000_000_000u64);
     }
