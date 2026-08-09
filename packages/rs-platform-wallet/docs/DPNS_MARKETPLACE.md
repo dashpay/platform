@@ -260,4 +260,38 @@ be derived from `priceUpdate` documents by `$createdAt` if the app wants it.
 
 ## 9. Testnet verification results
 
-_Pending — to be filled in by the verification run._
+Run 2026-08-09 via `examples/dpns_marketplace_testnet.rs` (phase `run`)
+against testnet DAPI, seller = wallet HD identity index 1, buyer = index 3
+(distinct identities, same wallet — exercising both buyer- and seller-side
+reconciliation). Every check passed:
+
+| Step | Result |
+|---|---|
+| register `mktp1786261653test.dash` (uncontested) on seller | PASS |
+| `set_dpns_name_price` 1,000,000 credits — confirmed doc + fresh query | PASS |
+| re-price to 2,000,000 credits | PASS |
+| purchase at stale price → typed `DocumentPriceChanged{expected:1M, actual:2M}` (pre-broadcast) | PASS |
+| `purchase_dpns_name` at 2M → owner flips to buyer | PASS |
+| purchase clears `$price` on the confirmed document | PASS |
+| protocol rewrote `records.identity` to the buyer | PASS |
+| local marketplace row → buyer / `Owned` | PASS |
+| `dpns_name_history` → `Registered`, `PriceSet(1M)` @503688, `PriceSet(2M)` @503689, `Purchased{2M, seller, buyer}` @503690 — ordered, with block heights | PASS |
+| purchase of unlisted name → typed `DocumentNotForSale` | PASS |
+| re-list 3M then `delist_dpns_name` (transfer-to-self) → confirmed doc `$price=None`, owner unchanged | PASS |
+| fresh query after delist → `$price=None` (with bounded lagging-replica retry) | PASS |
+| `search_dpns_names_with_state` prefix search finds the name | PASS |
+| `sync_dpns_marketplace` pass → 6 names tracked, no spurious deltas | PASS |
+
+Findings folded back into the implementation during verification:
+
+- `Sdk::register_dpns_name` never registers the DPNS contract with the
+  context provider, so on hosts that don't pre-seed known contracts the
+  post-broadcast proof fails with "unknown contract … in document
+  verification" **after the registration landed**. Fixed:
+  `register_name_with_external_signer` now fetches+registers the contract
+  first, and the marketplace contract caches hold the **on-chain fetched**
+  contract (registered with the provider) rather than the bundled one.
+- Fresh reads right after a broadcast can race a lagging replica (a
+  banned/slow node serving the previous block). The confirmed document
+  returned by each transition is the authoritative proof-verified state;
+  UI-level re-reads should tolerate one block of replica lag.

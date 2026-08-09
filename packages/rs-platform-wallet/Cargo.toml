@@ -100,6 +100,9 @@ name = "shielded_chunk_timing_bench"
 required-features = ["shielded"]
 
 [dev-dependencies]
+# In-process Signer<IdentityPublicKey> for the manual testnet
+# verification example (`examples/dpns_marketplace_testnet.rs`).
+simple-signer = { path = "../simple-signer", features = ["state-transitions"] }
 # Used by `examples/shielded_chunk_timing_bench.rs` and
 # `tests/shielded_decrypt_bench.rs` to assemble per-chunk wire
 # fixtures and decode the `ShieldedEncryptedNote` wire type.

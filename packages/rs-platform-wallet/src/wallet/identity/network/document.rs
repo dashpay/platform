@@ -137,7 +137,7 @@ impl IdentityWallet {
     /// returns `None` for the contract and proof verification fails with
     /// "unknown contract ... in document verification", even though the
     /// write landed on-chain.
-    fn register_contract_for_proof_verification(&self, contract: &DataContract) {
+    pub(super) fn register_contract_for_proof_verification(&self, contract: &DataContract) {
         if let Some(provider) = self.sdk.context_provider() {
             provider.register_data_contract(Arc::new(contract.clone()));
         }
@@ -330,7 +330,7 @@ impl IdentityWallet {
     /// transfer / set-price / purchase) — each needs the contract as an
     /// `Arc<DataContract>` for both the single-document fetch query and
     /// the transition builder.
-    async fn fetch_contract_arc_for_document_op(
+    pub(super) async fn fetch_contract_arc_for_document_op(
         &self,
         contract_id: &Identifier,
         document_type_name: &str,

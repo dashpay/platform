@@ -279,49 +279,66 @@ impl DpnsMarketplaceSyncSummary {
 // Contract caches
 // ---------------------------------------------------------------------------
 
-/// Process-wide cached DPNS data contract (bundled system contract, same
-/// caching rationale as [`super::dashpay_contract`]). Used for *query
-/// building*; the trade transitions keep fetching the on-chain contract
-/// through `fetch_contract_arc_for_document_op` (which also registers it
-/// for post-broadcast proof verification).
-pub(crate) fn dpns_contract() -> Result<Arc<DataContract>, PlatformWalletError> {
-    static CONTRACT: std::sync::OnceLock<Arc<DataContract>> = std::sync::OnceLock::new();
-    if let Some(contract) = CONTRACT.get() {
-        return Ok(Arc::clone(contract));
-    }
-    let contract = dpp::system_data_contracts::load_system_data_contract(
-        dpp::data_contracts::SystemDataContract::DPNS,
-        dpp::version::PlatformVersion::latest(),
-    )
-    .map_err(|e| {
-        PlatformWalletError::InvalidIdentityData(format!("Failed to load DPNS contract: {e}"))
-    })?;
-    let arc = Arc::new(contract);
-    let _ = CONTRACT.set(Arc::clone(&arc));
-    Ok(CONTRACT.get().map(Arc::clone).unwrap_or(arc))
+/// The DPNS system contract id (fixed across contract versions).
+fn dpns_contract_id() -> Identifier {
+    dpp::data_contracts::SystemDataContract::DPNS.id()
 }
 
-/// Process-wide cached Document History system contract — the event log
-/// DPNS v2's `keeps*History` flags write `transfer` / `purchase` /
-/// `priceUpdate` documents into. NOT the GroveDB `documentsKeepHistory`
-/// mechanism (`getDocumentHistory` returns empty for DPNS).
-pub(crate) fn document_history_contract() -> Result<Arc<DataContract>, PlatformWalletError> {
-    static CONTRACT: std::sync::OnceLock<Arc<DataContract>> = std::sync::OnceLock::new();
-    if let Some(contract) = CONTRACT.get() {
-        return Ok(Arc::clone(contract));
+/// The Document History system contract id.
+fn document_history_contract_id() -> Identifier {
+    dpp::data_contracts::SystemDataContract::DocumentHistory.id()
+}
+
+impl IdentityWallet {
+    /// Process-wide cached DPNS data contract, fetched ON-CHAIN once via
+    /// `fetch_contract_arc_for_document_op` — which also registers it
+    /// with the SDK's context provider so document-query and
+    /// post-broadcast proof verification can resolve it. Fetching (vs
+    /// the bundled system contract) guarantees the schema matches the
+    /// network's active contract version, and makes the marketplace
+    /// self-sufficient on hosts that never seed the trusted provider's
+    /// known-contracts list.
+    pub(crate) async fn dpns_contract(&self) -> Result<Arc<DataContract>, PlatformWalletError> {
+        static CONTRACT: std::sync::OnceLock<Arc<DataContract>> = std::sync::OnceLock::new();
+        if let Some(contract) = CONTRACT.get() {
+            // Re-register on cache hits too: the context provider can be
+            // swapped/reset across SDK reconnects while this static
+            // outlives it. Registration is an idempotent map insert.
+            self.register_contract_for_proof_verification(contract);
+            return Ok(Arc::clone(contract));
+        }
+        let contract = self
+            .fetch_contract_arc_for_document_op(&dpns_contract_id(), DPNS_DOCUMENT_TYPE)
+            .await?;
+        // A concurrent first call may have won the race — return
+        // whichever Arc actually landed in the cell.
+        let _ = CONTRACT.set(Arc::clone(&contract));
+        Ok(CONTRACT.get().map(Arc::clone).unwrap_or(contract))
     }
-    let contract = dpp::system_data_contracts::load_system_data_contract(
-        dpp::data_contracts::SystemDataContract::DocumentHistory,
-        dpp::version::PlatformVersion::latest(),
-    )
-    .map_err(|e| {
-        PlatformWalletError::InvalidIdentityData(format!(
-            "Failed to load Document History contract: {e}"
-        ))
-    })?;
-    let arc = Arc::new(contract);
-    let _ = CONTRACT.set(Arc::clone(&arc));
-    Ok(CONTRACT.get().map(Arc::clone).unwrap_or(arc))
+
+    /// Process-wide cached Document History system contract — the event
+    /// log DPNS v2's `keeps*History` flags write `transfer` / `purchase`
+    /// / `priceUpdate` documents into. NOT the GroveDB
+    /// `documentsKeepHistory` mechanism (`getDocumentHistory` returns
+    /// empty for DPNS). Same on-chain fetch + provider registration as
+    /// [`Self::dpns_contract`].
+    pub(crate) async fn document_history_contract(
+        &self,
+    ) -> Result<Arc<DataContract>, PlatformWalletError> {
+        static CONTRACT: std::sync::OnceLock<Arc<DataContract>> = std::sync::OnceLock::new();
+        if let Some(contract) = CONTRACT.get() {
+            self.register_contract_for_proof_verification(contract);
+            return Ok(Arc::clone(contract));
+        }
+        let contract = self
+            .fetch_contract_arc_for_document_op(
+                &document_history_contract_id(),
+                HISTORY_TYPE_TRANSFER,
+            )
+            .await?;
+        let _ = CONTRACT.set(Arc::clone(&contract));
+        Ok(CONTRACT.get().map(Arc::clone).unwrap_or(contract))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -362,7 +379,7 @@ impl IdentityWallet {
         limit: Option<u32>,
         start_after: Option<Identifier>,
     ) -> Result<Vec<DpnsDomainState>, PlatformWalletError> {
-        let contract = dpns_contract()?;
+        let contract = self.dpns_contract().await?;
         let normalized_prefix = convert_to_homograph_safe_chars(dpns_label(prefix));
         let mut where_clauses = vec![WhereClause {
             field: "normalizedParentDomainName".to_string(),
@@ -400,7 +417,7 @@ impl IdentityWallet {
         &self,
         name: &str,
     ) -> Result<Option<DpnsDomainState>, PlatformWalletError> {
-        let contract = dpns_contract()?;
+        let contract = self.dpns_contract().await?;
         let normalized = convert_to_homograph_safe_chars(dpns_label(name));
         if normalized.is_empty() {
             return Err(PlatformWalletError::InvalidParameter(
@@ -442,7 +459,7 @@ impl IdentityWallet {
         identity_id: &Identifier,
         limit: Option<u32>,
     ) -> Result<Vec<DpnsDomainState>, PlatformWalletError> {
-        let contract = dpns_contract()?;
+        let contract = self.dpns_contract().await?;
         let query = DocumentQuery {
             select: SelectProjection::documents(),
             data_contract: contract,
@@ -554,7 +571,7 @@ impl IdentityWallet {
         &self,
         identity_id: &Identifier,
     ) -> Result<IdentityPublicKey, PlatformWalletError> {
-        let contract = dpns_contract()?;
+        let contract = self.dpns_contract().await?;
         let required_level = contract
             .document_type_for_name(DPNS_DOCUMENT_TYPE)
             .map_err(|e| {
@@ -717,7 +734,7 @@ impl IdentityWallet {
             )));
         }
         let signing_key = self.select_dpns_signing_key(owner_identity_id).await?;
-        let contract_id = dpns_contract()?.id();
+        let contract_id = dpns_contract_id();
         let confirmed = self
             .set_document_price_with_signer(
                 owner_identity_id,
@@ -768,7 +785,7 @@ impl IdentityWallet {
             });
         }
         let signing_key = self.select_dpns_signing_key(owner_identity_id).await?;
-        let contract_id = dpns_contract()?.id();
+        let contract_id = dpns_contract_id();
         let confirmed = self
             .transfer_document_with_signer(
                 owner_identity_id,
@@ -828,7 +845,7 @@ impl IdentityWallet {
             )));
         }
         let signing_key = self.select_dpns_signing_key(owner_identity_id).await?;
-        let contract_id = dpns_contract()?.id();
+        let contract_id = dpns_contract_id();
         let confirmed = self
             .transfer_document_with_signer(
                 owner_identity_id,
@@ -948,7 +965,7 @@ impl IdentityWallet {
             });
         }
         let signing_key = self.select_dpns_signing_key(purchaser_identity_id).await?;
-        let contract_id = dpns_contract()?.id();
+        let contract_id = dpns_contract_id();
         let confirmed = self
             .purchase_document_with_signer(
                 purchaser_identity_id,
@@ -1051,7 +1068,7 @@ impl IdentityWallet {
         document_id: &Identifier,
         registered_at_ms: Option<u64>,
     ) -> Result<Vec<DpnsNameHistoryEvent>, PlatformWalletError> {
-        let dpns_contract_id = dpns_contract()?.id();
+        let dpns_contract_id = dpns_contract_id();
         let mut events: Vec<DpnsNameHistoryEvent> = Vec::new();
         if let Some(at_ms) = registered_at_ms {
             events.push(DpnsNameHistoryEvent {
@@ -1084,7 +1101,7 @@ impl IdentityWallet {
         source_document_id: &Identifier,
         history_doc_type: &str,
     ) -> Result<Vec<Document>, PlatformWalletError> {
-        let contract = document_history_contract()?;
+        let contract = self.document_history_contract().await?;
         let query = DocumentQuery {
             select: SelectProjection::documents(),
             data_contract: contract,
@@ -1321,14 +1338,8 @@ impl IdentityWallet {
         new_owner: &Identifier,
         domain_transferred_at_ms: Option<u64>,
     ) -> DpnsNameSaleStatus {
-        let dpns_contract_id = match dpns_contract() {
-            Ok(c) => c.id(),
-            Err(_) => {
-                return DpnsNameSaleStatus::Transferred { to: *new_owner };
-            }
-        };
         let purchases = match self
-            .fetch_history_documents(&dpns_contract_id, document_id, HISTORY_TYPE_PURCHASE)
+            .fetch_history_documents(&dpns_contract_id(), document_id, HISTORY_TYPE_PURCHASE)
             .await
         {
             Ok(docs) => docs,
