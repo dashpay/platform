@@ -6,12 +6,22 @@ the design record for the wallet-level DPNS marketplace layer in
 records the browse-for-sale investigation result (§7), which is a protocol
 limitation the wallet cannot work around.
 
-Known follow-ups (deliberately out of v1 scope): an FFI event slot for
-`on_dpns_marketplace_sync_completed` (there is no host-callback sibling for
-any coordinator-completion event today — hosts poll
-`dpnsLastSyncUnixSeconds()` or call `syncDpnsMarketplace()` on demand), and
-per-name detail across the sync FFI (counts only; the mirrored rows carry
-the detail).
+Known follow-ups (deliberately out of v1 scope):
+
+- An FFI event slot for `on_dpns_marketplace_sync_completed` — there is no
+  host-callback sibling for any coordinator-completion event today, so hosts
+  poll `dpnsLastSyncUnixSeconds()` or call `syncDpnsMarketplace()` on demand.
+- Per-name detail across the sync FFI (counts only; the mirrored rows carry
+  the detail).
+- **Rust-side restore of name-state rows at wallet load.** The in-memory map
+  is session-scoped: it starts empty each process start and the first sync
+  pass repopulates it. This matches the invitations store — `SqlitePersister`
+  does not attest `WALLET_RESTORE` and `load()` still reports
+  `ClientStartState::wallets` in `LOAD_UNIMPLEMENTED` — and hosts read the
+  durable persister mirror, which does survive restart. Wiring a real restore
+  means adding a DPNS field to `ClientStartState` plus a rehydration path,
+  which is the same work `WALLET_RESTORE` needs generally; worth doing once
+  for every store that skips it rather than DPNS-only.
 
 ## 1. Scope
 

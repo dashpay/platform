@@ -511,10 +511,20 @@ impl IdentityWallet {
         self.fetch_domain_states(query).await
     }
 
-    /// The locally persisted marketplace rows (owned names with sale
-    /// state, plus retained `Sold`/`Transferred` rows), optionally
-    /// filtered to one wallet identity. Reads the in-memory working set —
-    /// no network.
+    /// The tracked marketplace rows (owned names with sale state, plus
+    /// retained `Sold`/`Transferred` rows), optionally filtered to one
+    /// wallet identity. Reads the in-memory working set — no network.
+    ///
+    /// **Session-scoped.** This map starts EMPTY on every process start
+    /// and is repopulated by the first
+    /// [`sync_dpns_marketplace`](Self::sync_dpns_marketplace) pass; the
+    /// wallet load path does not rehydrate it. That mirrors the
+    /// invitations store — `SqlitePersister` does not attest
+    /// `WALLET_RESTORE` and `load()` still reports
+    /// `ClientStartState::wallets` in `LOAD_UNIMPLEMENTED`. The durable
+    /// copy a host should render after a restart is the persister mirror
+    /// (Swift `PersistentDPNSName`), which the changeset feeds; treat an
+    /// empty return here as "not synced yet", never as "no names".
     pub async fn local_dpns_name_states(
         &self,
         identity_id: Option<&Identifier>,
