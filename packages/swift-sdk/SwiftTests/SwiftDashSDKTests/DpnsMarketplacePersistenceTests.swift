@@ -131,7 +131,60 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
         XCTAssertNil(identity.dpnsName)
     }
 
-    func testCanonicalSnapshotRebindsUniqueNameToNewOwner() throws {
+    func testMarketplaceCallbackCannotRestoreOwnershipRemovedByCanonicalSnapshot() throws {
+        let documentId = Data(repeating: 0x35, count: 32).toBase58String()
+        let context = ModelContext(container)
+        let owner = PersistentIdentity(identityId: ownerId, isLocal: false, network: .testnet)
+        let row = PersistentDPNSName(identity: owner, label: "Alice")
+        row.documentIdBase58 = documentId
+        context.insert(owner)
+        context.insert(row)
+        try context.save()
+
+        // Commit the canonical ownership removal first. The later marketplace
+        // update is a separate persistence round, matching independent sync
+        // callbacks that can arrive well after the identity snapshot.
+        applyIdentitySnapshot(id: ownerId, names: [])
+
+        handler.beginChangeset(walletId: walletId)
+        // Deliberately disagree with the already-committed identity snapshot.
+        // Marketplace status is metadata relative to its tracked identity, not
+        // ownership authority for the label cache, so this must not flip
+        // `isOwned` back to true.
+        XCTAssertTrue(handler.persistDpnsNameStates(
+            walletId: walletId,
+            upserts: [
+                .init(
+                    documentIdBase58: documentId,
+                    walletIdentityId: ownerId,
+                    label: "Alice",
+                    normalizedLabel: PersistentDPNSName.normalize("Alice"),
+                    normalizedParentDomainName: PersistentDPNSName.normalize("dash"),
+                    priceCredits: nil,
+                    statusRaw: 0,
+                    counterpartyIdBase58: nil,
+                    lastSyncedAtMs: 200
+                )
+            ],
+            removed: []
+        ))
+        XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
+
+        let readContext = ModelContext(container)
+        let persisted = try XCTUnwrap(
+            readContext.fetch(FetchDescriptor<PersistentDPNSName>()).first
+        )
+        XCTAssertFalse(persisted.isOwned)
+        XCTAssertEqual(persisted.saleStatusRaw, 0)
+        XCTAssertTrue(try readContext.fetch(
+            FetchDescriptor<PersistentDPNSName>(
+                predicate: PersistentDPNSName.predicate(identityId: ownerId)
+            )
+        ).isEmpty)
+    }
+
+    func testSameWalletTransferRebindsSingleCanonicalRowToNewOwner() throws {
+        let documentId = Data(repeating: 0x36, count: 32).toBase58String()
         let context = ModelContext(container)
         let oldOwner = PersistentIdentity(identityId: ownerId, isLocal: false, network: .testnet)
         let nextOwner = PersistentIdentity(
@@ -141,12 +194,38 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
         )
         let row = PersistentDPNSName(identity: oldOwner, label: "Alice")
         row.isOwned = false
+        row.documentIdBase58 = documentId
+        row.saleStatusRaw = 2
+        row.counterpartyIdBase58 = nextOwnerId.toBase58String()
         context.insert(oldOwner)
         context.insert(nextOwner)
         context.insert(row)
         try context.save()
 
-        applyIdentitySnapshot(id: nextOwnerId, names: [("Alice", 30)])
+        handler.beginChangeset(walletId: walletId)
+        handler.persistIdentities(
+            walletId: walletId,
+            upserts: [identitySnapshot(id: nextOwnerId, names: [("Alice", 30)])],
+            removed: []
+        )
+        XCTAssertTrue(handler.persistDpnsNameStates(
+            walletId: walletId,
+            upserts: [
+                .init(
+                    documentIdBase58: documentId,
+                    walletIdentityId: nextOwnerId,
+                    label: "Alice",
+                    normalizedLabel: PersistentDPNSName.normalize("Alice"),
+                    normalizedParentDomainName: PersistentDPNSName.normalize("dash"),
+                    priceCredits: nil,
+                    statusRaw: 0,
+                    counterpartyIdBase58: nil,
+                    lastSyncedAtMs: 300
+                )
+            ],
+            removed: []
+        ))
+        XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
 
         let readContext = ModelContext(container)
         let rows = try readContext.fetch(FetchDescriptor<PersistentDPNSName>())
@@ -154,6 +233,53 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
         XCTAssertEqual(rows.first?.identity.identityId, nextOwnerId)
         XCTAssertEqual(rows.first?.isOwned, true)
         XCTAssertEqual(rows.first?.acquiredAt, 30)
+        XCTAssertEqual(rows.first?.saleStatusRaw, 0)
+        XCTAssertNil(rows.first?.counterpartyIdBase58)
+        XCTAssertTrue(try readContext.fetch(
+            FetchDescriptor<PersistentDPNSName>(
+                predicate: PersistentDPNSName.predicate(identityId: ownerId)
+            )
+        ).isEmpty)
+        XCTAssertEqual(try readContext.fetch(
+            FetchDescriptor<PersistentDPNSName>(
+                predicate: PersistentDPNSName.predicate(identityId: nextOwnerId)
+            )
+        ).map(\.label), ["Alice"])
+    }
+
+    func testMarketplaceRemovalClearsOnlyMarketplaceColumns() throws {
+        let documentId = Data(repeating: 0x37, count: 32).toBase58String()
+        let context = ModelContext(container)
+        let owner = PersistentIdentity(identityId: ownerId, isLocal: false, network: .testnet)
+        let row = PersistentDPNSName(identity: owner, label: "Alice", acquiredAt: 40)
+        row.documentIdBase58 = documentId
+        row.priceCredits = 12_345
+        row.saleStatusRaw = 2
+        row.counterpartyIdBase58 = nextOwnerId.toBase58String()
+        row.marketplaceUpdatedAt = 400
+        context.insert(owner)
+        context.insert(row)
+        try context.save()
+
+        handler.beginChangeset(walletId: walletId)
+        XCTAssertTrue(handler.persistDpnsNameStates(
+            walletId: walletId,
+            upserts: [],
+            removed: [documentId]
+        ))
+        XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
+
+        let readContext = ModelContext(container)
+        let rows = try readContext.fetch(FetchDescriptor<PersistentDPNSName>())
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.label, "Alice")
+        XCTAssertEqual(rows.first?.acquiredAt, 40)
+        XCTAssertEqual(rows.first?.isOwned, true)
+        XCTAssertNil(rows.first?.documentIdBase58)
+        XCTAssertNil(rows.first?.priceCredits)
+        XCTAssertEqual(rows.first?.saleStatusRaw, 0)
+        XCTAssertNil(rows.first?.counterpartyIdBase58)
+        XCTAssertEqual(rows.first?.marketplaceUpdatedAt, 0)
     }
 
     func testOptionalIdentifiersRequireExactly32Bytes() throws {

@@ -390,6 +390,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     ///
     /// Unlike the label cache this carries the real parent domain (the
     /// FFI forwards it), so no `"dash"` default is stamped here.
+    /// Marketplace rows own only the marketplace columns; `isOwned` remains
+    /// exclusively controlled by the canonical identity snapshot. A row first
+    /// observed here is initialized fail-closed as not owned until such a
+    /// snapshot includes it.
     ///
     /// A row whose owning identity isn't in the store yet is logged and
     /// skipped rather than failing the round: the relationship is
@@ -457,12 +461,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 let row: PersistentDPNSName
                 if let existing {
                     row = existing
-                    // Rebind to the identity this marketplace row is
-                    // tracked for. For a sold/transferred row that is the
-                    // PREVIOUS owner (ours) — the row stays attached to
-                    // the wallet identity whose history it documents,
-                    // which is what the "your name was sold" affordance
-                    // reads.
+                    // Rebind to the identity Rust tracks for this one
+                    // per-document row. For a name that left the wallet this
+                    // is the previous owner, preserving departed history. For
+                    // a same-wallet transfer Rust deliberately emits the
+                    // current owner's `Owned` row, which wins over the old
+                    // owner's departure because this schema has one unique row
+                    // per name.
                     if row.identity !== identityRow {
                         row.identity = identityRow
                     }
@@ -477,7 +482,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     row = PersistentDPNSName(
                         identity: identityRow,
                         label: entry.label,
-                        parentDomainName: entry.normalizedParentDomainName
+                        parentDomainName: entry.normalizedParentDomainName,
+                        isOwned: false
                     )
                     backgroundContext.insert(row)
                 }
@@ -491,7 +497,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 row.documentIdBase58 = entry.documentIdBase58
                 row.priceCredits = entry.priceCredits.map { Int64(bitPattern: $0) }
                 row.saleStatusRaw = entry.statusRaw
-                row.isOwned = entry.statusRaw == 0
                 row.counterpartyIdBase58 = entry.counterpartyIdBase58
                 row.marketplaceUpdatedAt = entry.lastSyncedAtMs
                 row.lastUpdated = Date()
@@ -1723,7 +1728,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // last-write-wins identity snapshot. A missing label is no longer
             // owned. Untracked cache-only rows can be deleted; marketplace
             // rows are retained with `isOwned == false` so their sale/transfer
-            // history remains available.
+            // history remains available unless another wallet identity's
+            // canonical snapshot rebinds that single unique-name row.
             upsertDPNSNames(
                 identityRow: row,
                 names: entry.dpnsNames
@@ -1819,7 +1825,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// The carried list is canonical for current ownership. Missing
     /// cache-only rows are pruned. Missing marketplace-tracked rows survive as
     /// history but are marked `isOwned == false` so owned-name queries and UI
-    /// selection cannot surface them.
+    /// selection cannot surface them. If the name moved to another identity in
+    /// this wallet, that identity's canonical snapshot subsequently rebinds the
+    /// same unique row and marks it owned there.
     ///
     /// Assumes it's already running on `serialQueue` — only called
     /// from inside `persistIdentities`'s `onQueue` body.

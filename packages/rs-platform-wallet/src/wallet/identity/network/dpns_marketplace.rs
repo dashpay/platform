@@ -1070,7 +1070,7 @@ impl IdentityWallet {
                     *purchaser_identity_id,
                 ))?
         };
-        let required = expected_price.saturating_add(DOCUMENT_TRANSITION_FEE_RESERVE_CREDITS);
+        let required = required_purchase_credits(expected_price)?;
         if available < required {
             return Err(PlatformWalletError::InsufficientIdentityCredits {
                 identity_id: *purchaser_identity_id,
@@ -1567,6 +1567,17 @@ fn history_event_from_document(
     })
 }
 
+fn required_purchase_credits(expected_price: Credits) -> Result<Credits, PlatformWalletError> {
+    expected_price
+        .checked_add(DOCUMENT_TRANSITION_FEE_RESERVE_CREDITS)
+        .ok_or_else(|| {
+            PlatformWalletError::InvalidParameter(
+                "DPNS purchase price is too large to reserve the document transition fee"
+                    .to_string(),
+            )
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1604,6 +1615,20 @@ mod tests {
         // 0.001 DASH = 100_000 duffs = 100_000_000 credits (1 duff =
         // 1000 credits). Pin the constant against unit drift.
         assert_eq!(DOCUMENT_TRANSITION_FEE_RESERVE_CREDITS, 100_000 * 1_000);
+    }
+
+    #[test]
+    fn purchase_credit_requirement_rejects_overflow() {
+        assert_eq!(
+            required_purchase_credits(1).expect("small price should fit"),
+            DOCUMENT_TRANSITION_FEE_RESERVE_CREDITS + 1
+        );
+
+        assert!(matches!(
+            required_purchase_credits(u64::MAX),
+            Err(PlatformWalletError::InvalidParameter(message))
+                if message.contains("too large")
+        ));
     }
 
     #[test]

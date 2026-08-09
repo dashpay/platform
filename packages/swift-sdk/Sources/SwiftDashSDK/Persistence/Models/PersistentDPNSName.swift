@@ -1,9 +1,11 @@
 import Foundation
 import SwiftData
 
-/// SwiftData row for one confirmed DPNS label observed for a
-/// `PersistentIdentity`, including retained sale/transfer history after the
-/// name leaves that identity. Mirrors a single
+/// SwiftData row for one confirmed DPNS label observed by this wallet. There
+/// is one row per `(network, parent, normalized label)`: when a name leaves the
+/// wallet, the row stays attached to the departed identity for history; when
+/// it moves between two identities in the same wallet, that one row follows
+/// the current owner. Mirrors a single
 /// `platform_wallet::DpnsNameInfo` after it travels across the FFI on
 /// `IdentityEntryFFI.dpns_names` / `dpns_names_acquired_at`.
 ///
@@ -72,9 +74,10 @@ public final class PersistentDPNSName {
     public var acquiredAt: UInt64
 
     /// Whether the latest canonical identity snapshot still includes this
-    /// name. Departed marketplace rows remain attached to the previous wallet
-    /// identity so sale/transfer history survives, but are excluded from owned
-    /// name queries through this flag.
+    /// name. Marketplace callbacks never overwrite this value. A name that
+    /// leaves the wallet keeps its row on the departed identity with `false`;
+    /// a same-wallet transfer rebinds the unique row to the current identity
+    /// with `true`.
     public var isOwned: Bool = true
 
     // MARK: - Username marketplace
@@ -142,7 +145,8 @@ public final class PersistentDPNSName {
         identity: PersistentIdentity,
         label: String,
         parentDomainName: String = "dash",
-        acquiredAt: UInt64 = 0
+        acquiredAt: UInt64 = 0,
+        isOwned: Bool = true
     ) {
         self.identity = identity
         self.networkRaw = identity.networkRaw
@@ -151,7 +155,7 @@ public final class PersistentDPNSName {
         self.parentDomainName = parentDomainName
         self.normalizedParentDomainName = Self.normalize(parentDomainName)
         self.acquiredAt = acquiredAt
-        self.isOwned = true
+        self.isOwned = isOwned
         // A freshly inserted row carries no marketplace state until the
         // marketplace persister callback writes it — hence a nil document
         // id, which is the "not tracked" signal the read contract above

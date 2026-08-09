@@ -86,9 +86,11 @@ public final class PersistentIdentity {
 
     /// Confirmed DPNS labels observed for this identity. Cascade-deleted from
     /// the parent — losing the identity row drops the label cache and retained
-    /// marketplace history too. Sold/transferred rows remain related to the
-    /// previous wallet identity for history, but have
-    /// `PersistentDPNSName.isOwned == false`; owned-name surfaces use
+    /// marketplace history too. A name that leaves this wallet remains related
+    /// to its departed identity for history with
+    /// `PersistentDPNSName.isOwned == false`. A transfer to another identity in
+    /// the same wallet instead rebinds the schema's single unique-name row to
+    /// the current owner. Owned-name surfaces use
     /// `PersistentDPNSName.predicate(identityId:)`.
     @Relationship(deleteRule: .cascade, inverse: \PersistentDPNSName.identity)
     public var dpnsNames: [PersistentDPNSName] = []
