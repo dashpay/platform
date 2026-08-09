@@ -289,55 +289,87 @@ fn document_history_contract_id() -> Identifier {
     dpp::data_contracts::SystemDataContract::DocumentHistory.id()
 }
 
+/// Cached system contracts, keyed by `(network, contract id)`.
+///
+/// **Keyed by network, deliberately.** The cache is process-wide (a
+/// `static`), but a host can hold several `PlatformWalletManager`s at
+/// once and each is bound to one network. These contracts are FETCHED
+/// ON-CHAIN, so a bare process-global cell would let the first caller's
+/// network decide the contract definition every later caller — including
+/// a wallet on a different network — uses for document queries and
+/// post-broadcast proof verification. Networks routinely run different
+/// protocol versions, and the DPNS / Document History system contracts
+/// can differ in schema and version between them, so a cross-network hit
+/// would verify against the wrong definition.
+static SYSTEM_CONTRACT_CACHE: std::sync::OnceLock<
+    std::sync::RwLock<BTreeMap<(dashcore::Network, Identifier), Arc<DataContract>>>,
+> = std::sync::OnceLock::new();
+
+fn system_contract_cache(
+) -> &'static std::sync::RwLock<BTreeMap<(dashcore::Network, Identifier), Arc<DataContract>>> {
+    SYSTEM_CONTRACT_CACHE.get_or_init(|| std::sync::RwLock::new(BTreeMap::new()))
+}
+
 impl IdentityWallet {
-    /// Process-wide cached DPNS data contract, fetched ON-CHAIN once via
-    /// `fetch_contract_arc_for_document_op` — which also registers it
-    /// with the SDK's context provider so document-query and
-    /// post-broadcast proof verification can resolve it. Fetching (vs
-    /// the bundled system contract) guarantees the schema matches the
-    /// network's active contract version, and makes the marketplace
-    /// self-sufficient on hosts that never seed the trusted provider's
-    /// known-contracts list.
-    pub(crate) async fn dpns_contract(&self) -> Result<Arc<DataContract>, PlatformWalletError> {
-        static CONTRACT: std::sync::OnceLock<Arc<DataContract>> = std::sync::OnceLock::new();
-        if let Some(contract) = CONTRACT.get() {
+    /// Fetch a system contract for this wallet's network, memoized in
+    /// [`SYSTEM_CONTRACT_CACHE`].
+    ///
+    /// Goes through `fetch_contract_arc_for_document_op`, which also
+    /// registers the contract with the SDK's context provider so
+    /// document-query and post-broadcast proof verification can resolve
+    /// it. Fetching (rather than loading the bundled system contract)
+    /// guarantees the schema matches the network's ACTIVE contract
+    /// version, and makes the marketplace self-sufficient on hosts that
+    /// never seed the trusted provider's known-contracts list.
+    ///
+    /// A lock is never held across the `.await`: a miss drops the read
+    /// guard, fetches, then takes the write guard. Two racing misses both
+    /// fetch and the later one wins the insert — same contract, so the
+    /// only cost is a duplicate round-trip.
+    async fn cached_system_contract(
+        &self,
+        contract_id: Identifier,
+        document_type_name: &str,
+    ) -> Result<Arc<DataContract>, PlatformWalletError> {
+        let network = self.sdk.network;
+        let key = (network, contract_id);
+        if let Some(contract) = system_contract_cache()
+            .read()
+            .ok()
+            .and_then(|cache| cache.get(&key).cloned())
+        {
             // Re-register on cache hits too: the context provider can be
             // swapped/reset across SDK reconnects while this static
             // outlives it. Registration is an idempotent map insert.
-            self.register_contract_for_proof_verification(contract);
-            return Ok(Arc::clone(contract));
+            self.register_contract_for_proof_verification(&contract);
+            return Ok(contract);
         }
         let contract = self
-            .fetch_contract_arc_for_document_op(&dpns_contract_id(), DPNS_DOCUMENT_TYPE)
+            .fetch_contract_arc_for_document_op(&contract_id, document_type_name)
             .await?;
-        // A concurrent first call may have won the race — return
-        // whichever Arc actually landed in the cell.
-        let _ = CONTRACT.set(Arc::clone(&contract));
-        Ok(CONTRACT.get().map(Arc::clone).unwrap_or(contract))
+        if let Ok(mut cache) = system_contract_cache().write() {
+            cache.insert(key, Arc::clone(&contract));
+        }
+        Ok(contract)
     }
 
-    /// Process-wide cached Document History system contract — the event
-    /// log DPNS v2's `keeps*History` flags write `transfer` / `purchase`
-    /// / `priceUpdate` documents into. NOT the GroveDB
+    /// The DPNS data contract for this wallet's network. See
+    /// [`Self::cached_system_contract`].
+    pub(crate) async fn dpns_contract(&self) -> Result<Arc<DataContract>, PlatformWalletError> {
+        self.cached_system_contract(dpns_contract_id(), DPNS_DOCUMENT_TYPE)
+            .await
+    }
+
+    /// The Document History system contract for this wallet's network —
+    /// the event log DPNS v2's `keeps*History` flags write `transfer` /
+    /// `purchase` / `priceUpdate` documents into. NOT the GroveDB
     /// `documentsKeepHistory` mechanism (`getDocumentHistory` returns
-    /// empty for DPNS). Same on-chain fetch + provider registration as
-    /// [`Self::dpns_contract`].
+    /// empty for DPNS). See [`Self::cached_system_contract`].
     pub(crate) async fn document_history_contract(
         &self,
     ) -> Result<Arc<DataContract>, PlatformWalletError> {
-        static CONTRACT: std::sync::OnceLock<Arc<DataContract>> = std::sync::OnceLock::new();
-        if let Some(contract) = CONTRACT.get() {
-            self.register_contract_for_proof_verification(contract);
-            return Ok(Arc::clone(contract));
-        }
-        let contract = self
-            .fetch_contract_arc_for_document_op(
-                &document_history_contract_id(),
-                HISTORY_TYPE_TRANSFER,
-            )
-            .await?;
-        let _ = CONTRACT.set(Arc::clone(&contract));
-        Ok(CONTRACT.get().map(Arc::clone).unwrap_or(contract))
+        self.cached_system_contract(document_history_contract_id(), HISTORY_TYPE_TRANSFER)
+            .await
     }
 }
 
@@ -903,10 +935,18 @@ impl IdentityWallet {
     /// The broadcast transition carries `expected_price` — NEVER the
     /// re-read price — so a listing change between pre-flight and
     /// broadcast is rejected by consensus (code 40109) and surfaces as
-    /// the same typed `DocumentPriceChanged`. On success both sides are
-    /// reconciled locally (buyer gains the label + row; a wallet-owned
-    /// seller loses the label, row → `Sold`) and both identities'
-    /// balances are refreshed best-effort.
+    /// the same typed `DocumentPriceChanged`.
+    ///
+    /// On success both sides are reconciled locally: the buyer gains the
+    /// label and the name-state row (`Owned`), and a wallet-owned seller
+    /// loses the label. Both identities' balances are refreshed
+    /// best-effort. Note the seller does NOT get a `Sold` row when both
+    /// parties live in this wallet — rows are keyed by `document_id`
+    /// alone, and the buyer's `Owned` row already occupies that key; the
+    /// seller's departure is represented by the label removal.
+    /// `Sold` rows are written by the sync pass, which sees a name leave
+    /// an identity it still tracks (same keying constraint as
+    /// [`Self::transfer_dpns_name`]).
     pub async fn purchase_dpns_name<S>(
         &self,
         purchaser_identity_id: &Identifier,

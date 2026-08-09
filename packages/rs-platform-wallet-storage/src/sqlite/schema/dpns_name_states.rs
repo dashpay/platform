@@ -208,12 +208,12 @@ pub fn read_all(
 mod tests {
     use super::*;
 
-    fn entry(seed: u8, status: DpnsNameSaleStatus, price: Option<u64>) -> DpnsNameStateEntry {
+    fn entry(tag: u8, status: DpnsNameSaleStatus, price: Option<u64>) -> DpnsNameStateEntry {
         DpnsNameStateEntry {
-            document_id: Identifier::from([seed; 32]),
+            document_id: Identifier::from([tag; 32]),
             wallet_identity_id: Identifier::from([0xAA; 32]),
-            label: format!("Alice{seed}"),
-            normalized_label: format!("a11ce{seed}"),
+            label: format!("Alice{tag}"),
+            normalized_label: format!("a11ce{tag}"),
             normalized_parent_domain_name: "dash".to_string(),
             price,
             status,
@@ -268,5 +268,40 @@ mod tests {
         let got = read_all(&conn, &wallet_id).unwrap();
         assert_eq!(got.len(), 1);
         assert_eq!(got[&e0.document_id], e0b);
+    }
+
+    /// `price` is `Credits` (u64) in Rust and the writer routes it through
+    /// `u64_to_i64`, so a negative price cannot originate from this crate.
+    /// The column CHECK is the backstop that stops a hand-edited or
+    /// corrupted row from reading back as valid marketplace state.
+    #[test]
+    fn negative_price_is_rejected_by_the_schema() {
+        let wallet_id: WalletId = [0x33; 32];
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        conn.execute(
+            "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+
+        let insert_with_price = |conn: &Connection, doc: u8, price: i64| {
+            conn.execute(
+                "INSERT INTO dpns_name_states \
+                    (wallet_id, document_id, identity_id, label, normalized_label, \
+                     normalized_parent_domain, price, status, counterparty_id, \
+                     last_synced_at_ms) \
+                 VALUES (?1, ?2, ?3, 'Alice', 'a11ce', 'dash', ?4, 'owned', NULL, 1)",
+                params![&wallet_id[..], &[doc; 32][..], &[0xAAu8; 32][..], price],
+            )
+        };
+        assert!(
+            insert_with_price(&conn, 0x01, -1).is_err(),
+            "negative price must violate the column CHECK"
+        );
+        assert!(
+            insert_with_price(&conn, 0x02, 0).is_ok(),
+            "a zero-credit listing is valid"
+        );
     }
 }

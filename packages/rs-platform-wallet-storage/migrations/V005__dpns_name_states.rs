@@ -20,7 +20,7 @@ pub fn migration() -> String {
         label TEXT NOT NULL,
         normalized_label TEXT NOT NULL,
         normalized_parent_domain TEXT NOT NULL,
-        price INTEGER,
+        price INTEGER CHECK (price IS NULL OR price >= 0),
         status TEXT NOT NULL CHECK (status IN ('owned', 'sold', 'transferred')),
         counterparty_id BLOB,
         created_at_ms INTEGER,

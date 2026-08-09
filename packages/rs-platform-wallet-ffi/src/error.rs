@@ -1384,34 +1384,6 @@ mod tests {
         );
     }
 
-    /// `MessageSigningFailed` is intentionally unmapped: its causes are
-    /// internal invariant breaks, which should read as a bug rather than as a
-    /// key-repair prompt, so it falls through to ErrorUnknown carrying the
-    /// signer's own rendering. Pinned so a future arm cannot silently claim it.
-    ///
-    /// Note this variant no longer carries malformed-message-bytes, which used
-    /// to land here and therefore on ErrorUnknown; they now have their own
-    /// `MessageSigningMessageInvalid` mapping to ErrorInvalidParameter. What
-    /// remains here is genuinely internal.
-    ///
-    /// A signer-reported key-unavailable failure never lands on this variant:
-    /// `sign_message` checks the reserved marker at position 0 of the signer's
-    /// UNWRAPPED rendering and returns the typed
-    /// `MessageSigningKeyUnavailable` before composing `reason` as
-    /// "signer rejected the digest at {path}: {e}". Once a reason exists, any
-    /// marker in it sits mid-string, and matching it there would be the
-    /// substring sniff #4183's review rejected. See the NOTE on the mapping
-    /// arm.
-    /// Read a result's message back as an owned `String`. Every
-    /// marketplace assertion below inspects the message, and the raw
-    /// `CStr::from_ptr` dance is noise at each site.
-    fn message_of(result: &PlatformWalletFFIResult) -> String {
-        assert!(!result.message.is_null(), "result carries no message");
-        unsafe { std::ffi::CStr::from_ptr(result.message) }
-            .to_string_lossy()
-            .into_owned()
-    }
-
     /// The four DPNS-marketplace trade rejections each map to their own
     /// dedicated code rather than flattening to `ErrorUnknown`, and the
     /// not-found case rides the existing `NotFound`. Hosts branch on these
@@ -1557,6 +1529,24 @@ mod tests {
         );
     }
 
+    /// `MessageSigningFailed` is intentionally unmapped: its causes are
+    /// internal invariant breaks, which should read as a bug rather than as a
+    /// key-repair prompt, so it falls through to ErrorUnknown carrying the
+    /// signer's own rendering. Pinned so a future arm cannot silently claim it.
+    ///
+    /// Note this variant no longer carries malformed-message-bytes, which used
+    /// to land here and therefore on ErrorUnknown; they now have their own
+    /// `MessageSigningMessageInvalid` mapping to ErrorInvalidParameter. What
+    /// remains here is genuinely internal.
+    ///
+    /// A signer-reported key-unavailable failure never lands on this variant:
+    /// `sign_message` checks the reserved marker at position 0 of the signer's
+    /// UNWRAPPED rendering and returns the typed
+    /// `MessageSigningKeyUnavailable` before composing `reason` as
+    /// "signer rejected the digest at {path}: {e}". Once a reason exists, any
+    /// marker in it sits mid-string, and matching it there would be the
+    /// substring sniff #4183's review rejected. See the NOTE on the mapping
+    /// arm.
     #[test]
     fn message_signing_failed_falls_through_to_unknown() {
         let internal = PlatformWalletError::MessageSigningFailed {
@@ -1565,5 +1555,15 @@ mod tests {
         };
         let result: PlatformWalletFFIResult = internal.into();
         assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorUnknown);
+    }
+
+    /// Read a result's message back as an owned `String`. Every
+    /// marketplace assertion below inspects the message, and the raw
+    /// `CStr::from_ptr` dance is noise at each site.
+    fn message_of(result: &PlatformWalletFFIResult) -> String {
+        assert!(!result.message.is_null(), "result carries no message");
+        unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned()
     }
 }

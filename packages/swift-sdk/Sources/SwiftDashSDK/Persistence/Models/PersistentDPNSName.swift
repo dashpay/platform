@@ -172,9 +172,16 @@ extension PersistentDPNSName {
     /// undecodable — the wallet always attaches one for a sale or a
     /// transfer, so its absence means the row is unreliable, not that the
     /// name went nowhere.
+    ///
+    /// An unrecognized discriminant is likewise `nil`, never `.owned`: if
+    /// Rust's `DpnsNameSaleStatus` gains a variant, an older Swift build
+    /// must report the row as unreadable rather than claim a departed
+    /// name is still owned.
     public var saleStatus: DpnsNameSaleStatus? {
         guard documentIdBase58 != nil else { return nil }
         switch saleStatusRaw {
+        case 0:
+            return .owned
         case 1:
             guard let to = counterpartyId else { return nil }
             return .sold(to: to)
@@ -182,7 +189,7 @@ extension PersistentDPNSName {
             guard let to = counterpartyId else { return nil }
             return .transferred(to: to)
         default:
-            return .owned
+            return nil
         }
     }
 

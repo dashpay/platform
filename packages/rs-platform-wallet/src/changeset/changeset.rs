@@ -1113,12 +1113,26 @@ pub struct DpnsNameStateChangeSet {
 
 impl Merge for DpnsNameStateChangeSet {
     fn merge(&mut self, other: Self) {
-        // Last write wins per document id; `names` and `removed` merge
-        // independently and the sqlite writer applies inserts before
-        // deletes, so a document id present in both within one merged
-        // round resolves to "removed" (same insert-XOR-tombstone
-        // discipline as `InvitationChangeSet` — emit at most one action
-        // per key per mutation).
+        // Last OPERATION wins per document id, not merely last write.
+        //
+        // The sqlite writer applies inserts before deletes, so a key
+        // landing in both sets resolves to "removed" no matter which
+        // operation came first — a stale tombstone would silently
+        // swallow a newer upsert. Each side therefore evicts the key
+        // from the other as it merges, so the operation that arrived
+        // later is the one that survives.
+        //
+        // Deliberately stricter than `InvitationChangeSet`'s
+        // insert-XOR-tombstone convention: a marketplace row can
+        // legitimately come back after removal (a name re-acquired
+        // later), so the ordering hazard is reachable here rather than
+        // latent.
+        for document_id in other.names.keys() {
+            self.removed.remove(document_id);
+        }
+        for document_id in &other.removed {
+            self.names.remove(document_id);
+        }
         self.names.extend(other.names);
         self.removed.extend(other.removed);
     }
@@ -1882,6 +1896,38 @@ mod tests {
         );
         assert!(cs.removed.contains(&other_doc));
         assert!(!cs.is_empty());
+
+        // Tombstone AFTER an upsert: the later remove wins and the
+        // superseded upsert does not linger in `names`.
+        let mut upsert_then_remove = DpnsNameStateChangeSet::default();
+        upsert_then_remove
+            .names
+            .insert(doc, entry(Some(1), DpnsNameSaleStatus::Owned));
+        let mut tombstone = DpnsNameStateChangeSet::default();
+        tombstone.removed.insert(doc);
+        upsert_then_remove.merge(tombstone);
+        assert!(!upsert_then_remove.names.contains_key(&doc));
+        assert!(upsert_then_remove.removed.contains(&doc));
+
+        // Upsert AFTER a tombstone (a name re-acquired later): the newer
+        // upsert wins and the stale tombstone is dropped. Without the
+        // eviction this row would be silently deleted, because the
+        // sqlite writer applies inserts before deletes.
+        let mut remove_then_upsert = DpnsNameStateChangeSet::default();
+        remove_then_upsert.removed.insert(doc);
+        let mut reacquired = DpnsNameStateChangeSet::default();
+        reacquired
+            .names
+            .insert(doc, entry(Some(7), DpnsNameSaleStatus::Owned));
+        remove_then_upsert.merge(reacquired);
+        assert!(!remove_then_upsert.removed.contains(&doc));
+        assert_eq!(remove_then_upsert.names[&doc].price, Some(7));
+
+        // Replaying the same round is idempotent.
+        let mut replayed = remove_then_upsert.clone();
+        replayed.merge(remove_then_upsert.clone());
+        assert_eq!(replayed.names, remove_then_upsert.names);
+        assert_eq!(replayed.removed, remove_then_upsert.removed);
     }
 
     /// The deferred contact-crypto queue rides the changeset as add/clear
