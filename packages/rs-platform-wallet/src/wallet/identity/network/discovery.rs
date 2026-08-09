@@ -339,6 +339,18 @@ impl IdentityWallet {
         let mut consecutive_misses = 0u32;
         let mut identity_index = start_index;
         let mut discovered: Vec<Identity> = Vec::new();
+        // A probe that never reached Platform is not evidence that the index is
+        // empty, so failures are counted apart from genuine misses. They still
+        // advance `consecutive_misses` — the scan has to terminate when the
+        // network is down — but a scan that ends with nothing found and at
+        // least one failed probe reports itself incomplete instead of
+        // returning `Ok(vec![])`. That empty-Ok was indistinguishable at the
+        // FFI boundary from "this seed owns no identity", and dashwallet
+        // cached it as final for the rest of the session: a few seconds of
+        // trouble right after restore-from-seed hid an existing identity (and
+        // with it every DashPay contact) until the app was relaunched.
+        let mut failed_probes = 0u32;
+        let mut last_probe_error: Option<String> = None;
 
         while consecutive_misses < gap_limit {
             // Derive the MASTER auth pubkey hash for this identity index
@@ -452,14 +464,42 @@ impl IdentityWallet {
                         identity_index,
                         e
                     );
-                    // Treat a transient fetch error as a miss so the
-                    // scan eventually terminates; the user can rerun
-                    // to pick up anything we skipped over.
+                    // Advance the miss counter so the scan still terminates
+                    // when Platform is unreachable, but remember that this
+                    // index was never actually answered — the result below
+                    // depends on telling the two apart.
+                    last_probe_error = Some(e.to_string());
+                    failed_probes += 1;
                     consecutive_misses += 1;
                 }
             }
 
             identity_index += 1;
+        }
+
+        // Nothing found, and at least one index was never answered: the scan
+        // does not know whether an identity exists, so it must not claim there
+        // is none. Callers retry on error; they cache an empty success.
+        if discovered.is_empty() && failed_probes > 0 {
+            return Err(PlatformWalletError::IdentityDiscoveryIncomplete {
+                start_index,
+                probed: identity_index.saturating_sub(start_index),
+                failed_probes,
+                last_error: last_probe_error
+                    .unwrap_or_else(|| "unknown probe failure".to_string()),
+            });
+        }
+
+        // Found something despite a failed probe: the discovered identities are
+        // already persisted, so return them rather than discarding the work.
+        // The gap is still worth a line — an identity at the failed index would
+        // be missed until the next scan.
+        if failed_probes > 0 {
+            tracing::warn!(
+                "Identity discovery completed with {} unanswered probe(s); an identity at a \
+                 failed index may be missing until the next scan",
+                failed_probes
+            );
         }
 
         // --- DPNS lookup for all discovered identities ---
