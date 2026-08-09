@@ -618,7 +618,16 @@ async fn build_core_changeset(
             CoreChangeSet {
                 new_utxos: derive_new_utxos(record),
                 spent_utxos: derive_spent_utxos(record),
-                records: vec![(**record).clone()],
+                // A contact's watch-only chain never defines the
+                // wallet's transaction row (see `is_contact_watch_only`).
+                // The usage deltas below are still emitted, so the
+                // event is not dropped and the contact's address pool
+                // still advances.
+                records: if is_contact_watch_only(record) {
+                    Vec::new()
+                } else {
+                    vec![(**record).clone()]
+                },
                 // Mirror the upstream-emitted derived addresses
                 // through to the persister so newly-extended pool
                 // rows are written transactionally with the tx that
@@ -668,9 +677,20 @@ async fn build_core_changeset(
             // record's content does change though, so re-emit it.
             // Matured coinbase records likewise: no UTXO topology change,
             // just a status update for the persister.
-            cs.records.extend(inserted.iter().cloned());
-            cs.records.extend(updated.iter().cloned());
-            cs.records.extend(matured.iter().cloned());
+            //
+            // Contact watch-only records are filtered out of all three
+            // lists: re-emitting one on confirmation would re-clobber the
+            // funding account's row with an incoming/positive
+            // classification just as the first sighting did (see
+            // `is_contact_watch_only`).
+            cs.records.extend(
+                inserted
+                    .iter()
+                    .chain(updated.iter())
+                    .chain(matured.iter())
+                    .filter(|r| !is_contact_watch_only(r))
+                    .cloned(),
+            );
             cs.last_processed_height = Some(*height);
             // Pool extensions triggered by any record in this block.
             // Already deduped upstream by `project_derived_addresses`;
@@ -938,12 +958,72 @@ async fn is_chain_locked(
     false
 }
 
+/// Is this record owned by a contact's watch-only DashPay chain?
+///
+/// A `DashpayExternalAccount` derives its addresses from the
+/// **contact's** xpub, so this wallet can observe those outputs but can
+/// never sign for them. They are the contact's coins; this wallet only
+/// ever pays into them.
+///
+/// dashpay/rust-dashcore#926 established exactly that policy at the
+/// balance layer, dropping `dashpay_external_accounts` from
+/// `ManagedAccountCollection::all_funding_accounts` (and `_mut`), which
+/// covers `balance`, `account_balances`, `utxos` and
+/// `get_spendable_utxos` in one place. `dashpay_receival_accounts` were
+/// deliberately kept: those derive from *our* xpub, so a contact paying
+/// into them really is money arriving.
+///
+/// The persistence seam is the same rule's second home. Upstream
+/// `check_core_transaction` emits **one `TransactionRecord` per matched
+/// account** (`key_wallet::transaction_checking::wallet_checker`), so a
+/// payment to a contact produces two records sharing one txid:
+///
+/// | record's account          | `direction` | `net_amount`     |
+/// |---------------------------|-------------|------------------|
+/// | funding (BIP44/BIP32/…)   | `Outgoing`  | `change - spent` |
+/// | `DashpayExternalAccount`  | `Incoming`  | `+paid`          |
+///
+/// The external account's record is not *wrong* about its own account —
+/// that chain did receive an output. It is wrong as a description of the
+/// **wallet**, and the persisted `transactions` row is keyed by txid
+/// alone, with no per-account dimension to disambiguate (the
+/// `transaction_account_involvements` table is only written for
+/// provider-key accounts). Whichever record is stored last therefore
+/// defines the row, and the watch-only one — emitted last, because
+/// `all_accounts` visits the DashPay accounts after the standard ones —
+/// wins: a payment *away* is persisted as an incoming credit, and its
+/// output is written into `txos` as a wallet-owned coin no key of ours
+/// can spend.
+///
+/// So external-account records are excluded from the persist-time
+/// projection entirely, exactly as #926 excluded the accounts from
+/// balance aggregation. What survives from the same event is everything
+/// that is genuinely ours to remember: the address-used flips and
+/// highest-used watermarks (so contact address rotation keeps working),
+/// the derived-address rows, and `derive_spent_utxos` (so a contact
+/// spending an output persisted *before* this fix still clears the
+/// stale row).
+fn is_contact_watch_only(record: &TransactionRecord) -> bool {
+    matches!(
+        record.account_type,
+        AccountType::DashpayExternalAccount { .. }
+    )
+}
+
 /// Derive the "ours" UTXOs created by a transaction's outputs.
 ///
 /// Walks `record.output_details`, keeps entries with role `Received` or
 /// `Change`, and reconstructs a full `Utxo` from the corresponding
 /// `transaction.output[index]` plus the record's confirmation context.
+///
+/// Records belonging to a contact's watch-only chain yield nothing —
+/// see [`is_contact_watch_only`]. This is the direct counterpart of
+/// dashpay/rust-dashcore#926 dropping those accounts from `utxos()` /
+/// `get_spendable_utxos()`.
 fn derive_new_utxos(record: &TransactionRecord) -> Vec<Utxo> {
+    if is_contact_watch_only(record) {
+        return Vec::new();
+    }
     let height = record.context.block_info().map(|b| b.height()).unwrap_or(0);
     let is_confirmed = matches!(
         record.context,
@@ -1042,6 +1122,470 @@ impl CoreChangeSet {
             && self.addresses_derived.is_empty()
             && self.addresses_marked_used.is_empty()
             && self.account_highest_used.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod contact_watch_only_projection_tests {
+    //! Regression coverage for the persist-time projection of records
+    //! belonging to a contact's watch-only `DashpayExternalAccount`
+    //! (dashpay/rust-dashcore#926's policy at the persistence seam —
+    //! see [`is_contact_watch_only`]).
+    //!
+    //! Upstream emits one record per matched account, so these tests
+    //! build the record pair a real payment-to-a-contact produces and
+    //! assert on what [`build_core_changeset`] hands the persister:
+    //! the funding account's outgoing/negative row, and no wallet TXO
+    //! for the coin that landed on the contact's chain.
+
+    use super::*;
+    use dashcore::hashes::Hash;
+    use dashcore::{Address as DashAddress, BlockHash, Txid};
+    use dashcore::{OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Witness};
+    use key_wallet::account::{AccountType, StandardAccountType};
+    use key_wallet::managed_account::transaction_record::{
+        InputDetail, OutputDetail, TransactionDirection,
+    };
+    use key_wallet::transaction_checking::transaction_router::TransactionType;
+    use key_wallet::transaction_checking::BlockInfo;
+    use key_wallet::{Network, WalletCoreBalance};
+    use key_wallet_manager::WalletManager;
+
+    const WALLET_ID: WalletId = [9u8; 32];
+
+    /// Duffs, matching the testnet capture that surfaced this bug:
+    /// 1.0 DASH funded, 0.69998912 paid to the contact, 0.3 back as
+    /// change, 1088 duffs of fee. The wallet's true net is therefore
+    /// `-70_000_000`; the store held `+69_998_912`.
+    const FUNDING: u64 = 100_000_000;
+    const PAID_TO_CONTACT: u64 = 69_998_912;
+    const CHANGE: u64 = 30_000_000;
+
+    fn our_change_address() -> DashAddress {
+        DashAddress::dummy(Network::Testnet, 1)
+    }
+
+    fn our_receive_address() -> DashAddress {
+        DashAddress::dummy(Network::Testnet, 2)
+    }
+
+    /// An address on the contact's watch-only chain — derived from the
+    /// *contact's* xpub in production, so we can see it but never sign.
+    fn contact_address() -> DashAddress {
+        DashAddress::dummy(Network::Testnet, 3)
+    }
+
+    fn bip44_account_0() -> AccountType {
+        AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        }
+    }
+
+    fn contact_external_account() -> AccountType {
+        AccountType::DashpayExternalAccount {
+            index: 0,
+            user_identity_id: [1u8; 32],
+            friend_identity_id: [2u8; 32],
+        }
+    }
+
+    fn in_block(height: u32) -> TransactionContext {
+        TransactionContext::InBlock(BlockInfo::new(
+            height,
+            BlockHash::from_slice(&[4u8; 32]).expect("valid block hash"),
+            1_234_567_890,
+        ))
+    }
+
+    fn funding_outpoint() -> OutPoint {
+        OutPoint {
+            txid: Txid::from_slice(&[5u8; 32]).expect("valid txid"),
+            vout: 0,
+        }
+    }
+
+    /// One input (our funding coin) and the given outputs, in order.
+    fn tx_with(outputs: &[(&DashAddress, u64)]) -> Transaction {
+        Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: funding_outpoint(),
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffffffff,
+                witness: Witness::new(),
+            }],
+            output: outputs
+                .iter()
+                .map(|(addr, value)| TxOut {
+                    value: *value,
+                    script_pubkey: addr.script_pubkey(),
+                })
+                .collect(),
+            special_transaction_payload: None,
+        }
+    }
+
+    /// The input detail upstream builds when the spent outpoint was one
+    /// of the account's own UTXOs.
+    fn our_input() -> InputDetail {
+        InputDetail {
+            index: 0,
+            value: FUNDING,
+            address: our_change_address(),
+        }
+    }
+
+    fn output(index: u32, role: OutputRole, address: &DashAddress, value: u64) -> OutputDetail {
+        OutputDetail {
+            index,
+            role,
+            address: Some(address.clone()),
+            value,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn record(
+        tx: &Transaction,
+        account_type: AccountType,
+        direction: TransactionDirection,
+        input_details: Vec<InputDetail>,
+        output_details: Vec<OutputDetail>,
+        net_amount: i64,
+    ) -> TransactionRecord {
+        TransactionRecord::new(
+            tx.clone(),
+            account_type,
+            in_block(1_000),
+            TransactionType::Standard,
+            direction,
+            input_details,
+            output_details,
+            net_amount,
+        )
+    }
+
+    /// The record pair a payment to a contact really produces: the
+    /// funding account sees `Outgoing` with a negative net, and the
+    /// contact's watch-only chain independently sees `Incoming` with a
+    /// positive net for the very same txid.
+    ///
+    /// Output 0 pays the contact, output 1 is our change.
+    fn contact_payment_records() -> (Transaction, TransactionRecord, TransactionRecord) {
+        let tx = tx_with(&[
+            (&contact_address(), PAID_TO_CONTACT),
+            (&our_change_address(), CHANGE),
+        ]);
+        let funding = record(
+            &tx,
+            bip44_account_0(),
+            TransactionDirection::Outgoing,
+            vec![our_input()],
+            vec![
+                // Not ours as far as the funding account is concerned.
+                output(0, OutputRole::Sent, &contact_address(), PAID_TO_CONTACT),
+                output(1, OutputRole::Change, &our_change_address(), CHANGE),
+            ],
+            CHANGE as i64 - FUNDING as i64,
+        );
+        let watch_only = record(
+            &tx,
+            contact_external_account(),
+            TransactionDirection::Incoming,
+            // No inputs: this account owns none of the coins spent.
+            Vec::new(),
+            vec![output(
+                0,
+                OutputRole::Received,
+                &contact_address(),
+                PAID_TO_CONTACT,
+            )],
+            PAID_TO_CONTACT as i64,
+        );
+        (tx, funding, watch_only)
+    }
+
+    fn test_manager() -> Arc<RwLock<WalletManager<PlatformWalletInfo>>> {
+        Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
+            dashcore::Network::Testnet,
+        )))
+    }
+
+    fn block_processed(inserted: Vec<TransactionRecord>) -> WalletEvent {
+        WalletEvent::BlockProcessed {
+            wallet_id: WALLET_ID,
+            height: 1_000,
+            chain_lock: None,
+            inserted,
+            updated: vec![],
+            matured: vec![],
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+            addresses_derived: vec![],
+        }
+    }
+
+    fn transaction_detected(record: TransactionRecord) -> WalletEvent {
+        WalletEvent::TransactionDetected {
+            wallet_id: WALLET_ID,
+            record: Box::new(record),
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+            addresses_derived: vec![],
+        }
+    }
+
+    /// (1) A payment to a contact must persist as the outgoing,
+    /// negative row — not the contact chain's incoming, positive one.
+    ///
+    /// Before the fix both records reached `CoreChangeSet.records`;
+    /// because the persisted `transactions` row is keyed by txid alone,
+    /// the watch-only record (emitted last, since `all_accounts` visits
+    /// DashPay accounts after standard ones) defined the stored row and
+    /// a 0.69998912 payment *away* was persisted as `+69_998_912`.
+    #[tokio::test]
+    async fn contact_directed_payment_persists_as_outgoing_and_negative() {
+        let (tx, funding, watch_only) = contact_payment_records();
+        // Upstream ordering: standard account first, DashPay last.
+        let cs = build_core_changeset(&test_manager(), &block_processed(vec![funding, watch_only]))
+            .await;
+
+        assert_eq!(
+            cs.records.len(),
+            1,
+            "exactly one record may define the txid-keyed transaction row"
+        );
+        let persisted = &cs.records[0];
+        assert_eq!(persisted.txid, tx.txid());
+        assert_eq!(
+            persisted.direction,
+            TransactionDirection::Outgoing,
+            "a payment to a contact is money leaving this wallet"
+        );
+        assert_eq!(
+            persisted.net_amount,
+            CHANGE as i64 - FUNDING as i64,
+            "net must be -(spent - change), not the contact's credit"
+        );
+        assert!(
+            persisted.net_amount < 0,
+            "net_amount must be negative, was {}",
+            persisted.net_amount
+        );
+
+        // The coin that landed on the contact's chain is not ours, so it
+        // must never enter the wallet's TXO set — this is the phantom
+        // `isSpent = 0` row that only the contact's own spend could ever
+        // have cleared.
+        let utxo_outpoints: Vec<u32> = cs.new_utxos.iter().map(|u| u.outpoint.vout).collect();
+        assert_eq!(
+            utxo_outpoints,
+            vec![1],
+            "only our change output may become a wallet UTXO"
+        );
+        assert_eq!(cs.new_utxos[0].txout.value, CHANGE);
+    }
+
+    /// Same assertion for the first-sighting path, which delivers each
+    /// account's record as its own `TransactionDetected` event — there
+    /// is no sibling record in the batch to fall back on, so the filter
+    /// has to hold standalone.
+    #[tokio::test]
+    async fn contact_watch_only_detection_persists_no_transaction_row() {
+        let (_, _, watch_only) = contact_payment_records();
+        let cs = build_core_changeset(&test_manager(), &transaction_detected(watch_only)).await;
+
+        assert!(
+            cs.records.is_empty(),
+            "a contact's watch-only chain must not define a wallet transaction row"
+        );
+        assert!(
+            cs.new_utxos.is_empty(),
+            "the contact's output must not become a wallet UTXO"
+        );
+    }
+
+    /// The funding account's own `TransactionDetected` still persists
+    /// normally — the filter is scoped to the watch-only account, not
+    /// to the transaction.
+    #[tokio::test]
+    async fn funding_account_detection_of_the_same_payment_still_persists() {
+        let (tx, funding, _) = contact_payment_records();
+        let cs = build_core_changeset(&test_manager(), &transaction_detected(funding)).await;
+
+        assert_eq!(cs.records.len(), 1);
+        assert_eq!(cs.records[0].txid, tx.txid());
+        assert_eq!(cs.records[0].direction, TransactionDirection::Outgoing);
+        assert!(cs.records[0].net_amount < 0);
+    }
+
+    /// (2) A genuine receive is untouched: incoming, positive, and its
+    /// output still becomes a wallet UTXO.
+    #[tokio::test]
+    async fn genuine_receive_still_persists_incoming_and_positive() {
+        let tx = tx_with(&[(&our_receive_address(), PAID_TO_CONTACT)]);
+        let received = record(
+            &tx,
+            bip44_account_0(),
+            TransactionDirection::Incoming,
+            // Someone else's coins funded it.
+            Vec::new(),
+            vec![output(
+                0,
+                OutputRole::Received,
+                &our_receive_address(),
+                PAID_TO_CONTACT,
+            )],
+            PAID_TO_CONTACT as i64,
+        );
+        let cs = build_core_changeset(&test_manager(), &block_processed(vec![received])).await;
+
+        assert_eq!(cs.records.len(), 1);
+        assert_eq!(cs.records[0].direction, TransactionDirection::Incoming);
+        assert_eq!(cs.records[0].net_amount, PAID_TO_CONTACT as i64);
+        assert!(cs.records[0].net_amount > 0);
+        assert_eq!(cs.new_utxos.len(), 1, "a real receive still creates a TXO");
+        assert_eq!(cs.new_utxos[0].txout.value, PAID_TO_CONTACT);
+    }
+
+    /// (2b) A receive on a DashPay **receival** account — addresses
+    /// derived from *our* xpub, which a contact pays into — is money
+    /// genuinely arriving and must keep its incoming/positive row.
+    /// This is the boundary #926 drew and this change must not blur.
+    #[tokio::test]
+    async fn dashpay_receival_account_receive_is_unaffected() {
+        let tx = tx_with(&[(&our_receive_address(), PAID_TO_CONTACT)]);
+        let received = record(
+            &tx,
+            AccountType::DashpayReceivingFunds {
+                index: 0,
+                user_identity_id: [1u8; 32],
+                friend_identity_id: [2u8; 32],
+            },
+            TransactionDirection::Incoming,
+            Vec::new(),
+            vec![output(
+                0,
+                OutputRole::Received,
+                &our_receive_address(),
+                PAID_TO_CONTACT,
+            )],
+            PAID_TO_CONTACT as i64,
+        );
+        let cs = build_core_changeset(&test_manager(), &block_processed(vec![received])).await;
+
+        assert_eq!(
+            cs.records.len(),
+            1,
+            "receival accounts derive from OUR xpub — those funds are ours"
+        );
+        assert_eq!(cs.records[0].direction, TransactionDirection::Incoming);
+        assert_eq!(cs.records[0].net_amount, PAID_TO_CONTACT as i64);
+        assert_eq!(cs.new_utxos.len(), 1);
+    }
+
+    /// (3) An internal transfer — every output owned, none on a
+    /// contact's chain — is unaffected in direction, net and TXOs.
+    #[tokio::test]
+    async fn internal_transfer_is_unaffected() {
+        let tx = tx_with(&[
+            (&our_receive_address(), PAID_TO_CONTACT),
+            (&our_change_address(), CHANGE),
+        ]);
+        let internal = record(
+            &tx,
+            bip44_account_0(),
+            TransactionDirection::Internal,
+            vec![our_input()],
+            vec![
+                output(
+                    0,
+                    OutputRole::Received,
+                    &our_receive_address(),
+                    PAID_TO_CONTACT,
+                ),
+                output(1, OutputRole::Change, &our_change_address(), CHANGE),
+            ],
+            (PAID_TO_CONTACT + CHANGE) as i64 - FUNDING as i64,
+        );
+        let cs = build_core_changeset(&test_manager(), &block_processed(vec![internal])).await;
+
+        assert_eq!(cs.records.len(), 1);
+        assert_eq!(cs.records[0].direction, TransactionDirection::Internal);
+        assert_eq!(
+            cs.records[0].net_amount,
+            (PAID_TO_CONTACT + CHANGE) as i64 - FUNDING as i64
+        );
+        assert_eq!(
+            cs.new_utxos.len(),
+            2,
+            "both owned outputs stay in the wallet's TXO set"
+        );
+        assert_eq!(cs.spent_utxos.len(), 1, "the spent input is still removed");
+    }
+
+    /// Confirmation re-emits the same records under `updated`. The
+    /// filter has to hold there too, or the watch-only row would
+    /// re-clobber the correct one the moment the block landed.
+    #[tokio::test]
+    async fn confirmation_re_emit_does_not_reintroduce_the_watch_only_row() {
+        let (_, funding, watch_only) = contact_payment_records();
+        let event = WalletEvent::BlockProcessed {
+            wallet_id: WALLET_ID,
+            height: 1_001,
+            chain_lock: None,
+            inserted: vec![],
+            updated: vec![funding, watch_only],
+            matured: vec![],
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+            addresses_derived: vec![],
+        };
+        let cs = build_core_changeset(&test_manager(), &event).await;
+
+        assert_eq!(cs.records.len(), 1);
+        assert_eq!(cs.records[0].direction, TransactionDirection::Outgoing);
+    }
+
+    /// A contact spending an output that a *pre-fix* build already
+    /// persisted must still clear that stale row, so `derive_spent_utxos`
+    /// stays deliberately unfiltered. Only the transaction row and the
+    /// new-TXO projection are suppressed.
+    #[tokio::test]
+    async fn contact_spend_still_clears_a_stale_pre_fix_txo() {
+        let tx = tx_with(&[(&contact_address(), PAID_TO_CONTACT)]);
+        let watch_only_spend = record(
+            &tx,
+            contact_external_account(),
+            TransactionDirection::Outgoing,
+            vec![InputDetail {
+                index: 0,
+                value: PAID_TO_CONTACT,
+                address: contact_address(),
+            }],
+            vec![output(
+                0,
+                OutputRole::Sent,
+                &contact_address(),
+                PAID_TO_CONTACT,
+            )],
+            -(PAID_TO_CONTACT as i64),
+        );
+        let cs =
+            build_core_changeset(&test_manager(), &block_processed(vec![watch_only_spend])).await;
+
+        assert!(
+            cs.records.is_empty(),
+            "the contact spending their own coin is not a transaction of ours"
+        );
+        assert_eq!(
+            cs.spent_utxos.len(),
+            1,
+            "the stale pre-fix TXO must still be removed"
+        );
+        assert_eq!(cs.spent_utxos[0].outpoint, funding_outpoint());
     }
 }
 
