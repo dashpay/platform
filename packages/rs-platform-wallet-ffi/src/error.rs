@@ -216,6 +216,21 @@ pub enum PlatformWalletFFIResultCode {
     /// join instead of erroring. Swift mirror:
     /// `PlatformWalletResultCode.errorShutdownIncomplete`.
     ErrorShutdownIncomplete = 27,
+    /// Asset-lock coin selection came up short over the *permitted* funding
+    /// set (dashpay/platform#4073). Carries the structured
+    /// `available`/`required` duff amounts in the message string — the
+    /// by-value `PlatformWalletFFIResult` is ABI-frozen (code + message only),
+    /// so the figures ride the typed `Display` rendering or not at all.
+    ///
+    /// Distinct from [`Self::ErrorCoreInsufficientFunds`] (22), which is the
+    /// atomic Core-send selector rather than the asset-lock builder. Asset-lock
+    /// funding never unions across accounts, so this names a shortfall on the
+    /// ONE account the caller selected; a host offering another source must
+    /// name it explicitly.
+    ///
+    /// Reached by the CoinJoin → shielded migration when the mixed account
+    /// cannot cover the lock, which is why the Android binding needs it typed.
+    ErrorAssetLockInsufficientFunds = 29,
     /// A state transition could not be signed because the signer has no
     /// usable private key for the requested public key — the stored blob is
     /// missing, stranded, or written under a different Keystore/Keychain
@@ -248,7 +263,10 @@ pub enum PlatformWalletFFIResultCode {
     //
     //   27  ErrorShutdownIncomplete         MERGED on v4.2-dev (dashpay/platform#4268)
     //   28  (free — vacated by this PR)
-    //   29  ErrorAssetLockInsufficientFunds dashpay/platform#4184
+    //   29  ErrorAssetLockInsufficientFunds ALLOCATED above. Claimed by
+    //       dashpay/platform#4184, which was closed unmerged along with its
+    //       successor #4316; this PR salvages the code at its reserved number
+    //       so the ABI matches what every host mirror already documents.
     //   30  (free — vacated by this PR)
     //   31  ErrorSigningKeyUnavailable      dashpay/platform#4183, #4259
     //   32  ErrorTransactionBuild           dashpay/platform#4247, #4256
@@ -604,6 +622,16 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::AssetLockFundingMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockFundingMismatch
+            }
+            // The asset-lock coin-selection shortfall (dashpay/platform#4073).
+            // Without this arm it flattens to `ErrorUnknown` (99), hiding a
+            // typed shortfall behind the catch-all and forcing hosts to
+            // string-match the Display text. The structured
+            // `available`/`required` duff amounts still travel in the message
+            // (there are no out-params for them), but the code now lets a host
+            // branch on the shortfall without parsing text.
+            PlatformWalletError::AssetLockInsufficientFunds { .. } => {
+                PlatformWalletFFIResultCode::ErrorAssetLockInsufficientFunds
             }
             // A quiesce/drain barrier that did not complete within budget
             // (clear/reset paths). The host must fail closed: keep its
@@ -1074,6 +1102,59 @@ mod tests {
             let result: PlatformWalletFFIResult = error.into();
             assert_eq!(result.code, expected);
         }
+    }
+
+    /// The asset-lock coin-selection shortfall must cross the FFI boundary as
+    /// the dedicated `ErrorAssetLockInsufficientFunds` (29) code — NOT
+    /// `ErrorUnknown` (99) as it did before this arm existed
+    /// (dashpay/platform#4073) — and its structured `available`/`required`
+    /// duffs must survive verbatim in the message so hosts can parse the
+    /// amounts.
+    #[test]
+    fn asset_lock_insufficient_funds_maps_to_dedicated_code() {
+        let err = PlatformWalletError::AssetLockInsufficientFunds {
+            available: 18_000_000,
+            required: 100_000_000,
+        };
+        let rendered = err.to_string();
+        // Guard the exact text hosts (dash-wallet) substring-match on.
+        assert!(
+            rendered.contains("asset lock coin selection is short"),
+            "shortfall Display text changed — coordinate dash-wallet's matcher \
+             (rendered: {rendered})"
+        );
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockInsufficientFunds,
+            "must not flatten to ErrorUnknown(99) (rendered: {rendered})"
+        );
+        assert_ne!(
+            result.code as i32,
+            PlatformWalletFFIResultCode::ErrorUnknown as i32
+        );
+        assert!(!result.message.is_null());
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(
+            msg, rendered,
+            "structured available/required duffs must survive the FFI boundary verbatim"
+        );
+    }
+
+    /// The numeric value of `ErrorAssetLockInsufficientFunds` is ABI, mirrored
+    /// by hand in the Swift and Kotlin host enums. Pin it so a future
+    /// renumbering of the surrounding block cannot silently re-point a host's
+    /// shortfall branch at some other error.
+    #[test]
+    fn asset_lock_insufficient_funds_code_is_pinned_at_29() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorAssetLockInsufficientFunds as i32,
+            29,
+            "code 29 is reserved for the asset-lock shortfall in the FFI \
+             error-code registry; hosts mirror the number, not the name"
+        );
     }
 
     /// `WalletAlreadyExists` maps to the dedicated

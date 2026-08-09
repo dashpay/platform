@@ -1481,6 +1481,54 @@ class PlatformWalletManager(
     }
 
     /**
+     * Fund a wallet's shielded (Orchard) pool by DRAINING its CoinJoin account
+     * (`m/9'/coinType'/4'/coinJoinAccountIndex'`) into a single asset lock —
+     * port of Swift's `shieldedFundFromCoinJoinDrain`.
+     *
+     * Sibling of [shieldedFundFromAssetLock] with drain funding, which is what
+     * makes this the CoinJoin → Shielded migration path: every final mixed-coin
+     * UTXO is consumed and the lock value is `Σ inputs − L1 fee`, computed
+     * Rust-side, so the mixed coins never hop through a transparent BIP44
+     * address on the way in. Hence no amount parameter, and no surplus output
+     * (the single-recipient remainder flow pins the consensus surplus to zero).
+     *
+     * The recipient receives `lockValue − poolFee` credits. The Rust preflight
+     * rejects a drain whose balance could not clear the Type 18 pool fee, so an
+     * unrecoverable dust lock is never broadcast; a drain of an empty account
+     * fails with the typed asset-lock shortfall
+     * ([org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.AssetLockInsufficientFunds]).
+     * A stuck lock resumes via [shieldedResumeFundFromAssetLock] exactly like a
+     * BIP44-funded one.
+     *
+     * Blocks for the ~30s Halo 2 proof; the shielded note itself arrives on the
+     * next shielded sync pass, so nothing is returned.
+     *
+     * @param walletId the 32-byte wallet id.
+     * @param recipientRaw43 the 43-byte raw Orchard payment address
+     *   (11-byte diversifier + 32-byte pk_d).
+     * @param coinJoinAccountIndex the CoinJoin account whose whole balance
+     *   funds the asset lock (account 0 for every current wallet).
+     */
+    suspend fun shieldedFundFromCoinJoinDrain(
+        walletId: ByteArray,
+        recipientRaw43: ByteArray,
+        coinJoinAccountIndex: Int = 0,
+    ): Unit = teardownGate.op {
+        require(coinJoinAccountIndex >= 0) {
+            "coinJoinAccountIndex must be non-negative, got $coinJoinAccountIndex"
+        }
+        mapNativeErrors {
+            FundingNative.shieldedFundFromCoinJoinDrain(
+                managerHandle,
+                walletId,
+                coinJoinAccountIndex,
+                recipientRaw43,
+                mnemonicResolverHandle,
+            )
+        }
+    }
+
+    /**
      * Shield from Platform balance (Type 15) — port of Swift's
      * `shieldedShield`. Spends [amount] credits from the wallet's
      * [paymentAccount] Platform-Payment addresses (auto-selected in

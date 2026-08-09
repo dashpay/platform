@@ -100,6 +100,27 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorAssetLockInsufficientFunds` (native code 29). Asset-lock coin
+         * selection came up short on the ONE funds account the caller selected
+         * — asset-lock funding never unions across accounts, so another source
+         * must be named explicitly rather than combined automatically.
+         *
+         * Distinct from [CoreInsufficientFunds] (22), which is the atomic
+         * Core-send selector rather than the asset-lock builder. The shortfall
+         * figures travel in [message] as `available {n} duffs, required {n}
+         * duffs` — the native result is ABI-frozen to code + message, so there
+         * are no structured fields to read.
+         *
+         * Raised by
+         * [shieldedFundFromCoinJoinDrain][org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedFundFromCoinJoinDrain]
+         * when the CoinJoin account has nothing to drain, and by
+         * [shieldedFundFromAssetLock][org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedFundFromAssetLock]
+         * when the funding account cannot cover the requested lock.
+         */
+        class AssetLockInsufficientFunds(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * `ErrorShieldedNoRecordedAnchor` (native code 19). A shielded spend
          * could not be built against a Platform-recorded anchor because the
          * local commitment tree is mid-block. Nothing was broadcast and the
@@ -470,10 +491,11 @@ sealed class DashSdkError(
             24 -> PlatformWallet.AssetLockAlreadyConsumed(message, cause) // ErrorAssetLockAlreadyConsumed
             25 -> PlatformWallet.AssetLockFundingMismatch(message, cause) // ErrorAssetLockFundingMismatch
             26 -> PlatformWallet.TransactionBroadcastRejected(message, cause) // ErrorTransactionBroadcastRejected
+            29 -> PlatformWallet.AssetLockInsufficientFunds(message, cause) // ErrorAssetLockInsufficientFunds
             // The deferred-token trio sits at the contiguous block 34-36 because
             // 27-33 are claimed elsewhere: 27 ErrorShutdownIncomplete
             // (dashpay/platform#4268, merged), 29 ErrorAssetLockInsufficientFunds
-            // (#4184), 31 ErrorSigningKeyUnavailable (#4183/#4259), 32
+            // (mapped above), 31 ErrorSigningKeyUnavailable (#4183/#4259), 32
             // ErrorTransactionBuild (#4247/#4256), 33 ErrorTransactionSigning
             // (#4256). See packages/rs-platform-wallet-ffi/ERROR_CODE_REGISTRY.md.
             34 -> PlatformWallet.StaleReservationToken(message, cause) // ErrorStaleReservationToken

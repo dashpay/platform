@@ -252,6 +252,36 @@ pub enum PlatformWalletError {
         actual_identity_index: u32,
     },
 
+    /// Asset-lock coin selection came up short, so a host (and ultimately the
+    /// wallet UI) can render a precise shortfall instead of a stringly-typed
+    /// "Insufficient funds" message (dashpay/platform#4073).
+    ///
+    /// The `available` figure reflects the single funds account the caller
+    /// selected — the unmixed BIP44 account by default, or an explicit account
+    /// such as CoinJoin. A shortfall here means that *one* account is short:
+    /// asset-lock funding never unions across accounts, so a different source
+    /// must be named explicitly rather than combined automatically.
+    ///
+    /// Distinct from [`CoreInsufficientFunds`] / [`CorePooledInsufficientFunds`],
+    /// which belong to the atomic Core-send selector rather than the asset-lock
+    /// builder, and which carry `Option` amounts because a pooled send may not
+    /// know them. The asset-lock builder always has concrete figures: the
+    /// key-wallet shortfall errors carry their own, and the empty-candidate-set
+    /// case is reported as `available: 0` against the requested target.
+    ///
+    /// On a *drain* build (whole-account funding, e.g. the CoinJoin → shielded
+    /// migration) the requested target is the zero credit-output placeholder
+    /// that key-wallet rewrites to `Σ inputs − fee`, so an empty account
+    /// surfaces here as `available: 0, required: 0` — the "this account has
+    /// nothing to drain" signal. The real floor for a drain is the Type 18 pool
+    /// fee, enforced downstream against the built payload once the lock value
+    /// is known.
+    #[error(
+        "asset lock coin selection is short: available {available} duffs, \
+         required {required} duffs"
+    )]
+    AssetLockInsufficientFunds { available: u64, required: u64 },
+
     #[error("SDK error: {0}")]
     Sdk(#[from] dash_sdk::Error),
 

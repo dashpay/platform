@@ -13,9 +13,11 @@ use key_wallet::bip32::DerivationPath;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::signer::ExtendedPubKeySigner;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::{
-    AssetLockFundingAccount, AssetLockFundingType, CreditOutputFunding,
+    AssetLockError, AssetLockFundingAccount, AssetLockFundingType, CreditOutputFunding,
 };
+use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionError;
 use key_wallet::wallet::managed_wallet_info::managed_account_operations::ManagedAccountOperations;
+use key_wallet::wallet::managed_wallet_info::transaction_builder::BuilderError;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 
@@ -188,12 +190,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 signer,
             )
             .await
-            .map_err(|e| {
-                PlatformWalletError::AssetLockTransaction(format!(
-                    "Asset lock builder failed: {}",
-                    e
-                ))
-            })?;
+            .map_err(|e| map_builder_error(e, amount_duffs))?;
 
         // 4. Pull the (pubkey, path) for our single credit output.
         //
@@ -964,6 +961,58 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     }
 }
 
+/// Map a key-wallet [`AssetLockError`] to a [`PlatformWalletError`], promoting
+/// every coin-selection shortfall shape to the typed
+/// [`PlatformWalletError::AssetLockInsufficientFunds`] so callers get one
+/// structured shortfall contract (dashpay/platform#4073) instead of a string
+/// they must pattern-match:
+///
+///   - `BuilderError::InsufficientFunds` / `SelectionError::InsufficientFunds`
+///     carry their own exact `available`/`required` duff amounts — preserved
+///     verbatim.
+///   - `SelectionError::NoUtxosAvailable` — the zero-spendable-candidate case,
+///     the MOST extreme shortfall — carries no amounts, so it would otherwise
+///     fall through to the generic string form while *partial* shortfalls
+///     stayed typed. It maps to `available: 0` against the caller's
+///     `requested` target, keeping the empty candidate set on the same
+///     structured path.
+///
+/// `requested` is the caller's target in duffs. On a drain build it is the
+/// zero credit-output placeholder (key-wallet rewrites the value to
+/// `Σ inputs − fee`), so an empty account reports `available: 0, required: 0`
+/// — "nothing to drain". A drain's real floor is the pool fee, enforced
+/// downstream by `broadcast_funded_asset_lock_with_funding` against the built
+/// payload.
+///
+/// Every other builder error keeps the pre-existing generic
+/// `AssetLockTransaction` string form.
+fn map_builder_error(e: AssetLockError, requested: u64) -> PlatformWalletError {
+    match e {
+        AssetLockError::Builder(
+            BuilderError::InsufficientFunds {
+                available,
+                required,
+            }
+            | BuilderError::CoinSelection(SelectionError::InsufficientFunds {
+                available,
+                required,
+            }),
+        ) => PlatformWalletError::AssetLockInsufficientFunds {
+            available,
+            required,
+        },
+        AssetLockError::Builder(BuilderError::CoinSelection(SelectionError::NoUtxosAvailable)) => {
+            PlatformWalletError::AssetLockInsufficientFunds {
+                available: 0,
+                required: requested,
+            }
+        }
+        other => {
+            PlatformWalletError::AssetLockTransaction(format!("Asset lock builder failed: {other}"))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
@@ -991,6 +1040,68 @@ mod tests {
     use crate::wallet::platform_wallet::PlatformWalletInfo;
     use crate::wallet::platform_wallet::WalletId;
     use crate::{AssetLockFundingType, PlatformWalletError};
+
+    /// The zero-spendable-candidate selection error must surface the SAME
+    /// typed shortfall as a partial shortfall (not the generic string form),
+    /// so hosts stay on one structured path; and a partial shortfall must
+    /// still carry its own exact amounts (dashpay/platform#4073).
+    #[test]
+    fn coin_selection_shortfalls_map_to_typed_insufficient_funds() {
+        use super::{map_builder_error, AssetLockError, BuilderError, SelectionError};
+
+        // Zero spendable candidates -> typed, available: 0, required = requested.
+        match map_builder_error(
+            AssetLockError::Builder(BuilderError::CoinSelection(
+                SelectionError::NoUtxosAvailable,
+            )),
+            12_345,
+        ) {
+            PlatformWalletError::AssetLockInsufficientFunds {
+                available,
+                required,
+            } => {
+                assert_eq!(available, 0, "empty candidate set means nothing available");
+                assert_eq!(
+                    required, 12_345,
+                    "requested target threaded through as required"
+                );
+            }
+            other => panic!("expected typed AssetLockInsufficientFunds, got {other:?}"),
+        }
+
+        // A partial shortfall keeps its own exact amounts; the requested arg is
+        // NOT substituted for the builder's carried values.
+        match map_builder_error(
+            AssetLockError::Builder(BuilderError::CoinSelection(
+                SelectionError::InsufficientFunds {
+                    available: 100,
+                    required: 500,
+                },
+            )),
+            999,
+        ) {
+            PlatformWalletError::AssetLockInsufficientFunds {
+                available,
+                required,
+            } => {
+                assert_eq!(available, 100);
+                assert_eq!(required, 500, "carried amounts win over the requested arg");
+            }
+            other => panic!("expected typed AssetLockInsufficientFunds, got {other:?}"),
+        }
+
+        // A non-shortfall builder error keeps the pre-existing generic string
+        // form — the typed promotion must not swallow unrelated failures.
+        match map_builder_error(AssetLockError::WatchOnlyWallet, 42) {
+            PlatformWalletError::AssetLockTransaction(msg) => {
+                assert!(
+                    msg.starts_with("Asset lock builder failed: "),
+                    "generic form preserved, got {msg}"
+                );
+            }
+            other => panic!("expected generic AssetLockTransaction, got {other:?}"),
+        }
+    }
 
     /// Persistence stub that records every stored changeset so tests can
     /// assert what the asset-lock flow queued. `fail_flush` simulates a
@@ -1369,8 +1480,14 @@ mod tests {
                 &signer,
             )
             .await;
+        // The reserved UTXO leaves zero spendable candidates, so this is the
+        // typed selection shortfall — a stronger assertion than the old generic
+        // build-error match, which any unrelated failure would also satisfy.
         assert!(
-            matches!(rebuild, Err(PlatformWalletError::AssetLockTransaction(_))),
+            matches!(
+                rebuild,
+                Err(PlatformWalletError::AssetLockInsufficientFunds { available: 0, .. })
+            ),
             "rebuild must fail at input selection while the reservation is \
              kept, got {rebuild:?}"
         );
@@ -1475,8 +1592,12 @@ mod tests {
                 &signer,
             )
             .await;
+        // As above: zero spendable candidates is the typed selection shortfall.
         assert!(
-            matches!(rebuild, Err(PlatformWalletError::AssetLockTransaction(_))),
+            matches!(
+                rebuild,
+                Err(PlatformWalletError::AssetLockInsufficientFunds { available: 0, .. })
+            ),
             "rebuild must fail at input selection while the reservation is \
              kept for the advanced row, got {rebuild:?}"
         );
