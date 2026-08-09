@@ -187,6 +187,13 @@ pub(crate) fn build_vtable(context: *mut c_void) -> PersistenceCallbacks {
         // recording in-memory-only on Android — same behaviour as before
         // the slot existed.
         on_persist_dashpay_payments_fn: None,
+        // Android has no DPNS username-marketplace surface and no Kotlin
+        // mirror for the name-state rows. `None` leaves the
+        // `DPNS_NAME_STATES` capability unattested (the FFI persister
+        // only reports it when this slot is wired), so marketplace sale
+        // state stays in-memory for the session on Android rather than
+        // being reported as durable.
+        on_persist_dpns_name_states_fn: None,
         release_fn: Some(release_persistence_ctx),
     }
 }
