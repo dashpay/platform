@@ -59,11 +59,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             // it (no proof was provided). Otherwise the proof we
             // already have determines the status without a lookup.
             if proof.is_none() {
-                info.core_wallet
-                    .accounts
-                    .standard_bip44_accounts
-                    .get(&account_index)
-                    .and_then(|a| a.transactions().get(&out_point.txid).cloned())
+                super::proof::funding_tx_record(
+                    &info.core_wallet.accounts,
+                    account_index,
+                    &out_point.txid,
+                )
             } else {
                 None
             }
@@ -307,6 +307,36 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 self.validate_or_upgrade_proof(proof, account_index, out_point)
                     .await?
             }
+            AssetLockStatus::RecoveredFromChain => {
+                // Reconstructed from a chain-locked record after a
+                // restore — Platform-side consumption is unknown. An
+                // explicit resume is allowed to try consuming it:
+                // Platform rejects an already-spent outpoint with a
+                // typed error, and a genuinely unspent lock is real
+                // recoverable value. The reconstruction path only
+                // assigns this status alongside a chain proof — at
+                // creation for records already finalized, or via
+                // `enrich_from_record` when finality arrives later
+                // (non-final detections enter as
+                // `Broadcast`/`InstantSendLocked` and take those arms,
+                // re-broadcast included, until then) — so the proof is
+                // present by construction; the `None` arm is a
+                // defensive fallback for a row whose persisted proof
+                // was lost, and its wait resolves from the already
+                // chain-locked record rather than blocking on new
+                // network events.
+                match existing_proof {
+                    Some(proof) => {
+                        self.validate_or_upgrade_proof(proof, account_index, out_point)
+                            .await?
+                    }
+                    None => {
+                        let proof = self.wait_for_proof(out_point, timeout).await?;
+                        self.validate_or_upgrade_proof(proof, account_index, out_point)
+                            .await?
+                    }
+                }
+            }
             AssetLockStatus::Consumed => {
                 // Terminal tombstone — the asset lock was already
                 // burned by a successful identity registration / top-up.
@@ -316,10 +346,23 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             }
         };
 
-        // 3. Advance status and attach proof.
-        let new_status = match &proof {
-            dpp::prelude::AssetLockProof::Instant(_) => AssetLockStatus::InstantSendLocked,
-            dpp::prelude::AssetLockProof::Chain(_) => AssetLockStatus::ChainLocked,
+        // 3. Advance status and attach proof. A `RecoveredFromChain`
+        // entry keeps its status: the resume proved (or refreshed)
+        // Core-side finality, which that status already asserts — it
+        // proved nothing new about Platform-side consumption, so
+        // advancing into `InstantSendLocked`/`ChainLocked` (which
+        // consumers read as "in flight") would silently re-enter the
+        // pending window and resurrect the false-"Pending" rendering
+        // on every restored lock whose resume didn't end in a spend.
+        // Consumption is recorded separately (`consume_asset_lock`)
+        // when the credit output actually lands on Platform.
+        let new_status = if status == AssetLockStatus::RecoveredFromChain {
+            AssetLockStatus::RecoveredFromChain
+        } else {
+            match &proof {
+                dpp::prelude::AssetLockProof::Instant(_) => AssetLockStatus::InstantSendLocked,
+                dpp::prelude::AssetLockProof::Chain(_) => AssetLockStatus::ChainLocked,
+            }
         };
         let cs = self
             .advance_asset_lock_status(out_point, new_status, Some(proof.clone()))
@@ -582,13 +625,14 @@ mod tests {
             timed_out,
             PlatformWalletError::FinalityTimeout(actual) if actual == out_point
         ));
-        let broadcast = broadcaster
-            .transactions
-            .lock()
-            .expect("recording broadcaster mutex");
-        assert_eq!(broadcast.as_slice(), std::slice::from_ref(&transaction));
-        assert_eq!(broadcast[0].txid(), out_point.txid);
-        drop(broadcast);
+        {
+            let broadcast = broadcaster
+                .transactions
+                .lock()
+                .expect("recording broadcaster mutex");
+            assert_eq!(broadcast.as_slice(), std::slice::from_ref(&transaction));
+            assert_eq!(broadcast[0].txid(), out_point.txid);
+        }
 
         // The real consume path leaves a terminal tombstone. That gives a
         // same-process retry a truthful typed error, while a foreign outpoint
@@ -743,6 +787,7 @@ mod tests {
             generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
+            dpns_name_states: BTreeMap::new(),
         };
         let out_point = OutPoint::new(tx.txid(), 0);
         let lock = TrackedAssetLock {

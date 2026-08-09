@@ -358,29 +358,66 @@ class DashDatabaseMigrationTest {
         db.close()
     }
 
+    /** v9 labels remain owned/unlisted and gain nullable marketplace ids. */
+    @Test
+    fun migrate9To10AddsDpnsMarketplaceState() {
+        val legacy = helper.createDatabase(dbName, 9)
+        legacy.execSQL(
+            "INSERT INTO identities (identityId, networkRaw, balance, revision, identityIndex, " +
+                "isLocal, identityType, createdAt, lastUpdated) " +
+                "VALUES (x'01', 1, 0, 0, 0, 1, 'user', 0, 0)",
+        )
+        legacy.execSQL(
+            "INSERT INTO dpns_names (networkRaw, label, normalizedLabel, parentDomainName, " +
+                "normalizedParentDomainName, acquiredAt, identityId, createdAt, lastUpdated) " +
+                "VALUES (1, 'Alice', 'a11ce', 'dash', 'dash', 42, x'01', 0, 0)",
+        )
+        legacy.close()
+
+        val db = helper.runMigrationsAndValidate(dbName, 10, true, DashDatabase.MIGRATION_9_10)
+        db.query(
+            "SELECT documentId, isOwned, priceCredits, saleStatusRaw, " +
+                "counterpartyIdentityId, documentCreatedAtMs, documentUpdatedAtMs, " +
+                "documentTransferredAtMs, marketplaceUpdatedAt FROM dpns_names",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertTrue(cursor.isNull(0))
+            assertEquals(1, cursor.getInt(1))
+            assertTrue(cursor.isNull(2))
+            assertEquals(0, cursor.getInt(3))
+            assertTrue(cursor.isNull(4))
+            assertEquals(0L, cursor.getLong(5))
+            assertEquals(0L, cursor.getLong(6))
+            assertEquals(0L, cursor.getLong(7))
+            assertEquals(0L, cursor.getLong(8))
+        }
+        db.close()
+    }
+
     /** The requested contiguous path from the pre-u64 v4 schema to latest. */
     @Test
     fun migrate4ToLatest() {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            9,
+            10,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
             DashDatabase.MIGRATION_6_7,
             DashDatabase.MIGRATION_7_8,
             DashDatabase.MIGRATION_8_9,
+            DashDatabase.MIGRATION_9_10,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v9 schema. */
+    /** The full chain from v1 must also land on a valid v10 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            9,
+            10,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -390,6 +427,7 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_6_7,
             DashDatabase.MIGRATION_7_8,
             DashDatabase.MIGRATION_8_9,
+            DashDatabase.MIGRATION_9_10,
         ).close()
     }
 }

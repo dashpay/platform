@@ -380,6 +380,14 @@ struct DPNSNameStorageListView: View {
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                    HStack(spacing: 8) {
+                        Text(record.saleStatus.map(DpnsMarketplaceUI.status) ?? "Not tracked")
+                        if let price = record.listedPriceCredits {
+                            Text(DpnsMarketplaceUI.price(price))
+                        }
+                    }
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
                 }
             }
         }

@@ -1,6 +1,7 @@
 package org.dashfoundation.dashsdk.errors
 
 import org.dashfoundation.dashsdk.ffi.DashSDKException
+import org.json.JSONObject
 
 /**
  * Public error hierarchy of the Kotlin SDK — the Android analog of the
@@ -307,6 +308,47 @@ sealed class DashSdkError(
         class ReservationWalletMismatch(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
 
+        /** The DPNS name is not currently listed for sale. */
+        class DocumentNotForSale(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /** The listing changed after the user confirmed [expectedCredits]. */
+        class DocumentPriceChanged(
+            val documentId: String,
+            val expectedCredits: ULong,
+            val actualCredits: ULong,
+            cause: Throwable? = null,
+        ) : PlatformWallet(
+            "The DPNS price changed from $expectedCredits to $actualCredits credits. " +
+                "Nothing was purchased.",
+            cause,
+        )
+
+        /** The purchasing identity cannot cover price plus the fee reserve. */
+        class InsufficientIdentityCredits(
+            val identityId: String,
+            val requiredCredits: ULong,
+            val availableCredits: ULong,
+            cause: Throwable? = null,
+        ) : PlatformWallet(
+            "Identity $identityId has $availableCredits credits but $requiredCredits are required.",
+            cause,
+        )
+
+        /** The name is still in an active contested-name vote. */
+        class ContestedNameNotTradable(
+            val label: String,
+            val endsAtMs: Long,
+            cause: Throwable? = null,
+        ) : PlatformWallet(
+            if (endsAtMs == 0L) {
+                "\"$label\" cannot be traded until its contested-name vote resolves."
+            } else {
+                "\"$label\" cannot be traded until its contested-name vote ends at $endsAtMs ms."
+            },
+            cause,
+        )
+
         /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
@@ -410,9 +452,9 @@ sealed class DashSdkError(
             //    whose wallet is no longer registered in the manager, or a
             //    signed-payment finalize whose wallet was removed while it was
             //    being signed;
-            //  * finalized-transaction HANDLE (V2) path — a tx-builder finalize
+            //  * finalized-transaction HANDLE path — a tx-builder finalize
             //    whose wallet was removed or re-created during signing (no handle
-            //    is published), or a V2 broadcast whose generation is gone.
+            //    is published), or a finalized-handle broadcast whose generation is gone.
             // Every one reconciles the build's UTXO reservation before returning.
             // Nothing was broadcast, and unlike ReservationWalletMismatch (36)
             // no other live generation holds the payment either — so it is not
@@ -437,6 +479,36 @@ sealed class DashSdkError(
             34 -> PlatformWallet.StaleReservationToken(message, cause) // ErrorStaleReservationToken
             35 -> PlatformWallet.ReservationTokenConsumed(message, cause) // ErrorReservationTokenConsumed
             36 -> PlatformWallet.ReservationWalletMismatch(message, cause) // ErrorReservationWalletMismatch
+            37 -> PlatformWallet.DocumentNotForSale(message, cause)
+            38 -> parseMarketplaceDetail(message)?.let { detail ->
+                runCatching {
+                    PlatformWallet.DocumentPriceChanged(
+                        documentId = detail.getString("documentId"),
+                        expectedCredits = detail.requiredULong("expected"),
+                        actualCredits = detail.requiredULong("actual"),
+                        cause = cause,
+                    )
+                }.getOrNull()
+            } ?: PlatformWallet.Generic(code, message, cause)
+            39 -> parseMarketplaceDetail(message)?.let { detail ->
+                runCatching {
+                    PlatformWallet.InsufficientIdentityCredits(
+                        identityId = detail.getString("identityId"),
+                        requiredCredits = detail.requiredULong("required"),
+                        availableCredits = detail.requiredULong("available"),
+                        cause = cause,
+                    )
+                }.getOrNull()
+            } ?: PlatformWallet.Generic(code, message, cause)
+            40 -> parseMarketplaceDetail(message)?.let { detail ->
+                runCatching {
+                    PlatformWallet.ContestedNameNotTradable(
+                        label = detail.getString("label"),
+                        endsAtMs = detail.getLong("endsAtMs"),
+                        cause = cause,
+                    )
+                }.getOrNull()
+            } ?: PlatformWallet.Generic(code, message, cause)
             // ErrorSigningKeyUnavailable — the STRUCTURED signer
             // discriminator (dashpay/platform#4060 finding 7): the typed
             // completion code rides the whole Rust round-trip, no message
@@ -458,6 +530,12 @@ sealed class DashSdkError(
 
         private fun isSigningKeyUnavailable(message: String): Boolean =
             message.contains(PlatformWallet.SigningKeyUnavailable.MESSAGE_MARKER)
+
+        private fun parseMarketplaceDetail(message: String): JSONObject? =
+            runCatching { JSONObject(message) }.getOrNull()
+
+        private fun JSONObject.requiredULong(name: String): ULong =
+            get(name).toString().toULong()
     }
 }
 

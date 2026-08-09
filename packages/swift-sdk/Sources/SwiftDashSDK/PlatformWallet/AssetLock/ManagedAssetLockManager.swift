@@ -54,6 +54,17 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
         /// locked amount); a Consumed lock cannot fund another
         /// identity.
         case consumed = 4
+        /// Reconstructed from on-chain history after a wallet restore
+        /// (the SDK's restore-scan reconstruction) rather than tracked
+        /// live through the build pipeline. Core-side finality is
+        /// known, but Platform-side consumption is UNKNOWN — the lock
+        /// may have funded an identity long ago, or be unspent
+        /// stranded value. Deliberately outside both the pending
+        /// window (`broadcast`…`chainLocked`) and `consumed`: UIs must
+        /// render neither "in flight" nor "done" for these rows. An
+        /// explicit resume may consume one; Platform rejects an
+        /// already-spent outpoint with a typed error.
+        case recoveredFromChain = 5
     }
 
     /// A tracked asset lock.

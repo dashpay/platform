@@ -215,6 +215,27 @@ pub enum PlatformWalletError {
         required: Option<u64>,
     },
 
+    /// Atomic Core finalization could not select enough unreserved funds for a
+    /// POOLED build (more than one funding source offered).
+    ///
+    /// Separate from [`CoreInsufficientFunds`] because `available`/`required`
+    /// describe the UNION of every offered source: attributing them to one
+    /// account would misreport the figures and could name a source that
+    /// contributed nothing — or that the wallet does not even have. FFI maps
+    /// both variants to the same host-facing insufficient-funds code, so hosts
+    /// classify a shortfall identically either way.
+    ///
+    /// [`CoreInsufficientFunds`]: Self::CoreInsufficientFunds
+    #[error(
+        "insufficient unreserved Core funds across the pooled funding sources \
+         {sources:?}: available {available:?}, required {required:?}"
+    )]
+    CorePooledInsufficientFunds {
+        sources: Vec<AccountTypePreference>,
+        available: Option<u64>,
+        required: Option<u64>,
+    },
+
     #[error("no spendable inputs available on {account_type} account {account_index}: {context}")]
     NoSpendableInputs {
         account_type: StandardAccountType,
@@ -255,6 +276,61 @@ pub enum PlatformWalletError {
     #[error("SDK error: {0}")]
     Sdk(#[from] dash_sdk::Error),
 
+    /// No DPNS `domain` document exists for the requested name (exact
+    /// normalized-label lookup came back empty). Distinct from
+    /// [`Self::InvalidParameter`]: the input was well-formed, the name
+    /// just isn't registered (or is hidden inside an unresolved contest —
+    /// see [`Self::ContestedNameNotTradable`] for the pre-checked case).
+    #[error("DPNS name not found: {name:?}")]
+    DpnsNameNotFound { name: String },
+
+    /// The DPNS domain document carries no `$price` — it is not listed
+    /// for sale. Raised by the wallet's pre-flight check and by the
+    /// consensus downcast of `DocumentNotForSaleError` (DPP code 40108).
+    #[error("document {document_id} is not for sale")]
+    DocumentNotForSale { document_id: Identifier },
+
+    /// The listed price no longer equals the price the user confirmed.
+    /// Raised pre-flight (fresh read ≠ confirmed price) and by the
+    /// consensus downcast of `DocumentIncorrectPurchasePriceError` (DPP
+    /// code 40109) when the listing changed between the pre-flight read
+    /// and broadcast — the purchase did NOT execute in either case.
+    #[error(
+        "document {document_id} price changed: purchase was confirmed at \
+         {expected} credits but the listing is now {actual} credits"
+    )]
+    DocumentPriceChanged {
+        document_id: Identifier,
+        expected: Credits,
+        actual: Credits,
+    },
+
+    /// The identity's credit balance cannot cover the operation
+    /// (principal + fee margin for pre-flight checks; Platform's own
+    /// arithmetic for the consensus downcast of
+    /// `IdentityInsufficientBalanceError`).
+    #[error(
+        "identity {identity_id} has insufficient credits: {required} required, \
+         {available} available"
+    )]
+    InsufficientIdentityCredits {
+        identity_id: Identifier,
+        required: Credits,
+        available: Credits,
+    },
+
+    /// The name is inside an active contested-name vote, so its domain
+    /// document is not yet in the documents tree and cannot be listed,
+    /// transferred, or purchased. Without this guard the network returns
+    /// a bare `DocumentNotFoundError` (40101), which reads as "no such
+    /// name" — this typed error says what is actually going on.
+    /// `ends_at_ms == 0` means the vote's end time was unavailable.
+    #[error(
+        "DPNS name {label:?} is in an active contested-name vote \
+         (ends at {ends_at_ms} ms) and cannot be traded until the contest resolves"
+    )]
+    ContestedNameNotTradable { label: String, ends_at_ms: u64 },
+
     /// Platform rejected an address-funds transition because a spent address's
     /// provided nonce did not equal its expected next value (DPP consensus code
     /// 40603, `AddressInvalidNonceError`) — an optimistic `fetched + 1` nonce
@@ -276,6 +352,16 @@ pub enum PlatformWalletError {
 
     #[error("Address operation failed: {0}")]
     AddressOperation(String),
+
+    /// A caller passed an argument this API cannot act on — as opposed to a
+    /// lookup that found nothing. Kept distinct from [`WalletNotFound`] so a
+    /// host is told to fix its input rather than that the wallet is missing;
+    /// FFI maps it to the existing invalid-parameter code, which is what the
+    /// FFI boundary already returns for the same class of rejection.
+    ///
+    /// [`WalletNotFound`]: Self::WalletNotFound
+    #[error("Invalid parameter: {0}")]
+    InvalidParameter(String),
 
     #[error(
         "no selectable inputs: only funded addresses appear as destinations \
@@ -629,6 +715,80 @@ pub fn promote_address_nonce_error(error: &dash_sdk::Error) -> Option<PlatformWa
 /// [`promote_address_nonce_error`] for the transfer / withdrawal call sites.
 pub fn promote_address_nonce_error_or_sdk(error: dash_sdk::Error) -> PlatformWalletError {
     promote_address_nonce_error(&error).unwrap_or(PlatformWalletError::Sdk(error))
+}
+
+/// Extract the consensus verdict from the `dash_sdk::Error` shapes that can
+/// carry one — `StateTransitionBroadcastError` (wait-stream),
+/// `Protocol(ConsensusError)` (CheckTx), and the dapi-client's
+/// exhausted-retry envelope it recurses into. Shared by the typed-promotion
+/// matchers below; the same coverage caveat as
+/// [`as_asset_lock_proof_cl_height_too_low`] applies (re-audit when
+/// `dash_sdk::Error` gains consensus-carrying variants).
+fn consensus_error_of(error: &dash_sdk::Error) -> Option<&dpp::consensus::ConsensusError> {
+    match error {
+        dash_sdk::Error::StateTransitionBroadcastError(broadcast_err) => {
+            broadcast_err.cause.as_ref()
+        }
+        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(ce)) => Some(ce.as_ref()),
+        dash_sdk::Error::NoAvailableAddressesToRetry(inner) => consensus_error_of(inner),
+        _ => None,
+    }
+}
+
+/// Promote a document-trade consensus rejection to its typed
+/// [`PlatformWalletError`] so callers get structured data instead of a
+/// stringified verdict:
+///
+/// - `DocumentNotForSaleError` (40108) → [`PlatformWalletError::DocumentNotForSale`]
+/// - `DocumentIncorrectPurchasePriceError` (40109) →
+///   [`PlatformWalletError::DocumentPriceChanged`] (carries both prices —
+///   the race-lost purchase case; the transition did NOT execute)
+/// - `IdentityInsufficientBalanceError` →
+///   [`PlatformWalletError::InsufficientIdentityCredits`]
+///
+/// Returns `None` for anything else, leaving the caller's fallback mapping
+/// in charge.
+pub fn promote_document_trade_error(error: &dash_sdk::Error) -> Option<PlatformWalletError> {
+    use dpp::consensus::state::state_error::StateError;
+    use dpp::consensus::ConsensusError;
+
+    match consensus_error_of(error)? {
+        ConsensusError::StateError(StateError::DocumentNotForSaleError(e)) => {
+            Some(PlatformWalletError::DocumentNotForSale {
+                document_id: *e.document_id(),
+            })
+        }
+        ConsensusError::StateError(StateError::DocumentIncorrectPurchasePriceError(e)) => {
+            Some(PlatformWalletError::DocumentPriceChanged {
+                document_id: *e.document_id(),
+                expected: e.trying_to_purchase_at_price(),
+                actual: e.actual_price(),
+            })
+        }
+        ConsensusError::StateError(StateError::IdentityInsufficientBalanceError(e)) => {
+            Some(PlatformWalletError::InsufficientIdentityCredits {
+                identity_id: *e.identity_id(),
+                required: e.required_balance(),
+                available: e.balance(),
+            })
+        }
+        _ => None,
+    }
+}
+
+/// Map a document-trade transition's SDK error to a [`PlatformWalletError`]:
+/// typed trade rejections first ([`promote_document_trade_error`]), then the
+/// structured signer-key-unavailable preservation, then the caller's `wrap`
+/// fallback. Owned-error `.map_err(...)?` analogue for the set-price /
+/// purchase / transfer call sites.
+pub fn promote_document_trade_error_or(
+    error: dash_sdk::Error,
+    wrap: impl FnOnce(dash_sdk::Error) -> PlatformWalletError,
+) -> PlatformWalletError {
+    if let Some(promoted) = promote_document_trade_error(&error) {
+        return promoted;
+    }
+    preserve_signer_key_unavailable_or(error, wrap)
 }
 
 /// The reserved machine prefix that a typed `SigningKeyUnavailable` signer

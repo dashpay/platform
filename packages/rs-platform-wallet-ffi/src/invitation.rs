@@ -29,7 +29,9 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 
 use dpp::identity::accessors::IdentityGettersV0;
-use platform_wallet::wallet::identity::crypto::{parse_invitation_uri, InviterInfo};
+use platform_wallet::wallet::identity::crypto::{
+    parse_invitation_uri, wif_network_matches, InviterInfo,
+};
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
 
 use platform_wallet::wallet::identity::network::MAX_INVITATION_TTL_SECS;
@@ -310,6 +312,113 @@ pub unsafe extern "C" fn platform_wallet_claim_invitation(
     let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
     unsafe {
         *out_identity_handle = handle;
+    }
+    PlatformWalletFFIResult::ok()
+}
+
+/// The identity id this invitation WOULD create — a read-only probe that lets
+/// the UI reject an already-claimed voucher up front.
+///
+/// Platform derives a created identity's id from the asset-lock outpoint, so
+/// the caller can ask "does an identity already exist under this id?" (a plain
+/// identity fetch) and answer "has this invitation been used?" without
+/// attempting the claim. Without it, a spent voucher only surfaces at the very
+/// end of registration as a raw "asset lock … already completely used", after
+/// the invitee has chosen a username and entered their PIN.
+///
+/// Unlike [`platform_wallet_parse_invitation`] this DOES hit the network: the
+/// funding transaction has to be refetched to locate the credit output the
+/// voucher controls (it need not be output 0). It still claims nothing and
+/// mutates no wallet state.
+///
+/// # What an identity id does and does not tell you
+///
+/// An identity existing under the returned id means the voucher was
+/// **definitely** claimed. Its absence does **not** mean it is usable: the same
+/// lock can be consumed by `IdentityTopUp` (the reclaim path behind
+/// [`platform_wallet_topup_identity_with_existing_asset_lock_signer`] with
+/// `consume_invitation_voucher: true`), which credits an existing identity
+/// instead of creating this one. Platform exposes no client query for spent
+/// asset locks, so that case is undetectable here. Reject on "identity exists";
+/// otherwise proceed without concluding the voucher is good.
+///
+/// # Errors are NOT uniformly undetermined
+///
+/// Two failures are definitive and mean the link can never be claimed by this
+/// wallet — the caller should surface them, not proceed:
+///
+/// * `ErrorInvalidParameter` — the URI is malformed, so there is no invitation.
+/// * `ErrorInvalidNetwork` — the voucher key belongs to the other network;
+///   [`platform_wallet_claim_invitation`] applies the same guard and will
+///   refuse it too.
+///
+/// Every other failure (funding-tx not yet propagated, transport error) leaves
+/// usability genuinely undetermined, and only those should be treated as
+/// "proceed".
+///
+/// # Safety
+/// - `uri` must be a valid NUL-terminated UTF-8 C string.
+/// - `out_identity_id` must be a valid `*mut [u8; 32]`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_invitation_prospective_identity_id(
+    wallet_handle: Handle,
+    uri: *const c_char,
+    out_identity_id: *mut [u8; 32],
+) -> PlatformWalletFFIResult {
+    check_ptr!(uri);
+    check_ptr!(out_identity_id);
+    // Sentinel before any fallible work, matching the claim/parse siblings.
+    unsafe {
+        *out_identity_id = [0u8; 32];
+    }
+
+    let uri = unwrap_result_or_return!(unsafe { CStr::from_ptr(uri) }.to_str());
+    // A malformed link is definitive, not undetermined: there is no invitation
+    // to claim. Surfaced as its own code so the caller can say so instead of
+    // falling through the generic arm into "proceed anyway".
+    let invitation = match parse_invitation_uri(uri) {
+        Ok(invitation) => invitation,
+        Err(e) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                format!("invitation link is malformed and cannot be claimed: {e}"),
+            );
+        }
+    };
+
+    let option = PLATFORM_WALLET_STORAGE.with_item(
+        wallet_handle,
+        |wallet| -> Result<dash_sdk::platform::Identifier, PlatformWalletFFIResult> {
+            // Also definitive: the claim applies the same guard, so a link for the
+            // other network can never be claimed through this wallet. Checked here
+            // (as the withdrawal FFI does) to give it a distinguishable code rather
+            // than flattening into the catch-all the library error maps to.
+            if !wif_network_matches(invitation.voucher_key_network, wallet.network()) {
+                return Err(PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorInvalidNetwork,
+                    format!(
+                        "invitation is for the {:?} network but this wallet is on {:?}",
+                        invitation.voucher_key_network,
+                        wallet.network()
+                    ),
+                ));
+            }
+            let identity_wallet = wallet.identity().clone();
+            block_on_worker(async move {
+                identity_wallet
+                    .invitation_prospective_identity_id(&invitation)
+                    .await
+            })
+            .map_err(PlatformWalletFFIResult::from)
+        },
+    );
+    let result = unwrap_option_or_return!(option);
+    let identifier = match result {
+        Ok(identifier) => identifier,
+        Err(e) => return e,
+    };
+    unsafe {
+        *out_identity_id = identifier.to_buffer();
     }
     PlatformWalletFFIResult::ok()
 }

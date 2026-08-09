@@ -114,10 +114,15 @@ public final class PersistentAssetLock {
 
     /// Discriminant of [`AssetLockStatus`]:
     /// 0 = Built, 1 = Broadcast, 2 = InstantSendLocked, 3 = ChainLocked,
-    /// 4 = Consumed. Stored as `Int` so `#Predicate` can match raw
-    /// values directly (the progress bar compares against 0/1/2/3 and
-    /// the resumable-locks filter against 4 to hide already-spent
-    /// rows).
+    /// 4 = Consumed, 5 = RecoveredFromChain. Stored as `Int` so
+    /// `#Predicate` can match raw values directly (the progress bar
+    /// compares against 0/1/2/3 and the resumable-locks filter against
+    /// 4 to hide already-spent rows).
+    ///
+    /// `5` (RecoveredFromChain) rows are written by the SDK's
+    /// restore-scan reconstruction: the lock is confirmed on chain but
+    /// its Platform-side consumption is unknown, so UIs must treat it
+    /// as neither pending (1…3) nor done (4).
     public var statusRaw: Int
 
     /// Bincode-encoded `AssetLockProof` (`dpp::bincode::config::standard()`).

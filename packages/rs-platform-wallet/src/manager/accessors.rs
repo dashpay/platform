@@ -14,6 +14,7 @@ use key_wallet::WalletCoreBalance;
 
 use crate::changeset::{PersistenceCapabilities, PlatformWalletPersistence};
 use crate::manager::dashpay_sync::DashPaySyncManager;
+use crate::manager::dpns_sync::DpnsSyncManager;
 use crate::manager::identity_sync::IdentitySyncManager;
 use crate::manager::platform_address_sync::PlatformAddressSyncManager;
 #[cfg(feature = "shielded")]
@@ -340,6 +341,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         Arc::clone(&self.dashpay_sync_manager)
     }
 
+    /// Access the recurring DPNS username-marketplace sync coordinator.
+    pub fn dpns_sync(&self) -> &DpnsSyncManager {
+        &self.dpns_sync_manager
+    }
+
+    /// Clone the `Arc<DpnsSyncManager>` so callers (e.g. FFI) can invoke
+    /// [`DpnsSyncManager::start`] which takes `&Arc<Self>`.
+    pub fn dpns_sync_arc(&self) -> Arc<DpnsSyncManager> {
+        Arc::clone(&self.dpns_sync_manager)
+    }
+
     /// Access the shielded sync coordinator.
     #[cfg(feature = "shielded")]
     pub fn shielded_sync(&self) -> &ShieldedSyncManager {
@@ -652,6 +664,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     AssetLockStatus::InstantSendLocked => 2,
                     AssetLockStatus::ChainLocked => 3,
                     AssetLockStatus::Consumed => 4,
+                    AssetLockStatus::RecoveredFromChain => 5,
                 };
                 let (instant_lock_present, chain_lock_height) = match &lock.proof {
                     Some(dpp::prelude::AssetLockProof::Instant(_)) => (true, 0u32),

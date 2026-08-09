@@ -73,7 +73,10 @@
 //! The seed and any returned scalar are wrapped in [`Zeroizing`] so they
 //! are scrubbed when dropped.
 
+use key_wallet::account::derivation::AccountDerivation;
 use key_wallet::account::{AccountType, BLSAccount, EdDSAAccount};
+use key_wallet::bip32::{ChildNumber, ExtendedPrivKey};
+use key_wallet::managed_account::address_pool::AddressPoolType;
 use zeroize::Zeroizing;
 
 use super::platform_wallet::PlatformWallet;
@@ -285,6 +288,12 @@ pub enum ProviderKeyKind {
     /// Ed25519 platform-node keys
     /// ([`AccountType::ProviderPlatformKeys`], FFI tag 11).
     PlatformNode,
+    /// secp256k1 masternode owner keys
+    /// ([`AccountType::ProviderOwnerKeys`], FFI tag 9).
+    Owner,
+    /// secp256k1 masternode voting keys
+    /// ([`AccountType::ProviderVotingKeys`], FFI tag 8).
+    Voting,
 }
 
 impl ProviderKeyKind {
@@ -293,6 +302,8 @@ impl ProviderKeyKind {
         match self {
             ProviderKeyKind::Operator => AccountType::ProviderOperatorKeys,
             ProviderKeyKind::PlatformNode => AccountType::ProviderPlatformKeys,
+            ProviderKeyKind::Owner => AccountType::ProviderOwnerKeys,
+            ProviderKeyKind::Voting => AccountType::ProviderVotingKeys,
         }
     }
 }
@@ -323,9 +334,19 @@ pub struct ProviderDerivedKey {
     /// the raw 48-byte BLS public key, not a hash).
     pub node_id: Option<[u8; 20]>,
     /// Raw private-key scalar (32 bytes), present only when the caller
-    /// asked for it. BLS / Ed25519 keys have no WIF, so this is the
-    /// only private form. Zeroized on drop.
+    /// asked for it. BLS / Ed25519 keys have no WIF, so for those this is
+    /// the only private form. Zeroized on drop.
     pub private_key: Option<Zeroizing<Vec<u8>>>,
+    /// The key's P2PKH address. `Some` only for the secp256k1 families
+    /// ([`ProviderKeyKind::Owner`] / [`ProviderKeyKind::Voting`]), whose
+    /// keys appear on-chain as the ProRegTx owner / voting addresses;
+    /// `None` for BLS / Ed25519, which have no address form.
+    pub address: Option<String>,
+    /// WIF encoding of `private_key`, on the same terms: `Some` only for
+    /// the secp256k1 families and only when a private key was requested.
+    /// Encoded here rather than by the caller so the network byte and
+    /// compression flag have one home. Zeroized on drop.
+    pub private_key_wif: Option<Zeroizing<String>>,
 }
 
 /// The operator seed↔xpub cross-check guard, factored out so it can be
@@ -493,6 +514,9 @@ impl PlatformWallet {
                     legacy_public_key_bytes,
                     node_id: None,
                     private_key,
+                    // BLS keys have no address or WIF form.
+                    address: None,
+                    private_key_wif: None,
                 })
             }
             ProviderKeyKind::PlatformNode => {
@@ -546,6 +570,137 @@ impl PlatformWallet {
                     legacy_public_key_bytes: None,
                     node_id: Some(node_id),
                     private_key,
+                    // Ed25519 platform-node keys have no address or WIF form.
+                    address: None,
+                    private_key_wif: None,
+                })
+            }
+            ProviderKeyKind::Owner | ProviderKeyKind::Voting => {
+                let account = state
+                    .wallet()
+                    .accounts
+                    .account_of_type(account_type)
+                    .ok_or_else(|| {
+                        PlatformWalletError::AddressNotFound(format!(
+                            "wallet has no secp256k1 {} account",
+                            match kind {
+                                ProviderKeyKind::Owner => "provider-owner-keys",
+                                _ => "provider-voting-keys",
+                            }
+                        ))
+                    })?;
+
+                // Provider key accounts hold one pool with no
+                // internal/external split, derived at a non-hardened child
+                // index — so the public side comes off the account xpub and
+                // needs no seed, exactly like the BLS operator family.
+                let public_key = account
+                    .derive_public_key_at(AddressPoolType::Absent, index, None)
+                    .map_err(|e| {
+                        PlatformWalletError::KeyDerivation(format!(
+                            "failed to derive provider public key at index {index}: {e}"
+                        ))
+                    })?;
+                let address = account
+                    .derive_address_at(AddressPoolType::Absent, index, None)
+                    .map_err(|e| {
+                        PlatformWalletError::KeyDerivation(format!(
+                            "failed to derive provider address at index {index}: {e}"
+                        ))
+                    })?;
+
+                let (private_key, private_key_wif) = match &seed {
+                    Some(seed) => {
+                        // Derived inline rather than through
+                        // `Account::derive_from_seed_private_key_at`, which
+                        // gates on `is_watch_only` and so refuses exactly the
+                        // external-signable wallets this seed argument exists
+                        // to serve (see the module docs on the BLS / Ed25519
+                        // families using the gate-free #881 entry points for
+                        // the same reason; secp256k1 has no such entry point).
+                        //
+                        // Shape mirrors `BLSAccount::operator_private_key_at`:
+                        // raw seed → master xpriv → the account's own DIP-3
+                        // path → non-hardened child `index`. The account path
+                        // is resolved from the account type, so it is applied
+                        // exactly once.
+                        let master =
+                            ExtendedPrivKey::new_master(network, seed.as_ref()).map_err(|e| {
+                                PlatformWalletError::KeyDerivation(format!(
+                                    "failed to build master xpriv: {e}"
+                                ))
+                            })?;
+                        let secp = dashcore::key::Secp256k1::new();
+                        // The ACCOUNT's own path, not `account_type.derivation_path(network)`.
+                        // The public side above comes off `account.account_xpub`, built from
+                        // this path using the ACCOUNT's network; resolving it again from the
+                        // type plus the wallet's network makes the coin type an independent
+                        // input, and the two disagree the moment those networks differ.
+                        // Taking it from the account is agreement by construction, so the
+                        // cross-check below verifies the seed rather than the path.
+                        let account_path = account.derivation_path().map_err(|e| {
+                            PlatformWalletError::KeyDerivation(format!(
+                                "failed to resolve the provider account path: {e}"
+                            ))
+                        })?;
+                        let child = ChildNumber::from_normal_idx(index).map_err(|e| {
+                            PlatformWalletError::KeyDerivation(format!(
+                                "invalid provider key index {index}: {e}"
+                            ))
+                        })?;
+                        let mut child_xpriv = master
+                            .derive_priv(&secp, &account_path)
+                            .and_then(|acct| {
+                                let child_path: key_wallet::bip32::DerivationPath =
+                                    vec![child].into();
+                                acct.derive_priv(&secp, &child_path)
+                            })
+                            .map_err(|e| {
+                                PlatformWalletError::KeyDerivation(format!(
+                                    "failed to derive provider private key at index {index}: {e}"
+                                ))
+                            })?;
+                        let mut private = child_xpriv.to_priv();
+                        let derived_public = private.public_key(&secp);
+
+                        // Produce every output while the scalar is still live,
+                        // then erase it. `dashcore::PrivateKey` is `Copy` and
+                        // has no `Drop`, so unlike the `Zeroizing` outputs below
+                        // nothing scrubs it on the way out — the raw scalar
+                        // would otherwise be left behind in this frame. Both
+                        // copies are erased: the extended key it came from, and
+                        // the `PrivateKey` itself.
+                        let outputs = if derived_public == public_key {
+                            Some((
+                                Zeroizing::new(private.inner.secret_bytes().to_vec()),
+                                Zeroizing::new(private.to_wif()),
+                            ))
+                        } else {
+                            None
+                        };
+                        private.inner.non_secure_erase();
+                        child_xpriv.private_key.non_secure_erase();
+
+                        let Some((scalar, wif)) = outputs else {
+                            return Err(PlatformWalletError::KeyDerivation(format!(
+                                "provider key at index {index} is inconsistent: the seed-derived \
+                                 private key's public key does not match the account xpub's"
+                            )));
+                        };
+                        (Some(scalar), Some(wif))
+                    }
+                    None => (None, None),
+                };
+
+                Ok(ProviderDerivedKey {
+                    index,
+                    public_key_bytes: public_key.to_bytes(),
+                    // secp256k1 keys have no BLS legacy variant.
+                    legacy_public_key_bytes: None,
+                    node_id: None,
+                    private_key,
+                    address: Some(address.to_string()),
+                    private_key_wif,
                 })
             }
         }
@@ -883,5 +1038,166 @@ mod tests {
             Some(keys.len() as u32 - 1),
             "highest_generated must advance to the last populated index"
         );
+    }
+
+    /// The secp256k1 (owner / voting) families must derive at the DIP-3
+    /// account path applied EXACTLY once: `m/9'/coin'/3'/{2'|1'}/index`.
+    ///
+    /// This is the invariant the Swift key-wallet route silently violated —
+    /// it pre-derived the account root and handed that in as the "master",
+    /// so the account path was applied twice and every owner/voting key came
+    /// from `m/9'/5'/3'/1'/9'/5'/3'/1'/index`. Nothing failed locally: the
+    /// key was well-formed and deterministic, and only a counterparty
+    /// holding the real key could tell (Platform rejected the masternode
+    /// vote as having no voter identity, because the voter identity is
+    /// derived from the signing key's own hash160).
+    #[test]
+    fn ecdsa_provider_keys_derive_at_the_dip3_path() {
+        use key_wallet::bip32::{DerivationPath, ExtendedPrivKey};
+        use std::str::FromStr;
+
+        for (network, coin) in [(Network::Mainnet, "5'"), (Network::Testnet, "1'")] {
+            let wallet = seed_bearing_wallet(network);
+            let seed = wallet.wallet_seed_bytes().expect("resident seed");
+            let master = ExtendedPrivKey::new_master(network, &seed).expect("master xpriv");
+            let secp = dashcore::key::Secp256k1::new();
+
+            for (kind, family) in [
+                (ProviderKeyKind::Owner, "2'"),
+                (ProviderKeyKind::Voting, "1'"),
+            ] {
+                let account = wallet
+                    .accounts
+                    .account_of_type(kind.account_type())
+                    .expect("provider account");
+
+                for index in [0u32, 1, 19] {
+                    let derived = account
+                        .derive_from_seed_private_key_at(&seed, index)
+                        .expect("account-based derivation");
+
+                    let path =
+                        DerivationPath::from_str(&format!("m/9'/{coin}/3'/{family}/{index}"))
+                            .expect("explicit DIP-3 path");
+                    let expected = master.derive_priv(&secp, &path).expect("path derivation");
+
+                    assert_eq!(
+                        derived.inner.secret_bytes(),
+                        expected.private_key.secret_bytes(),
+                        "{kind:?} key at index {index} on {network:?} must come from \
+                         m/9'/{coin}/3'/{family}/{index}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// The doubled path must NOT be what we derive. Guards the specific
+    /// regression rather than merely asserting the correct value, so a future
+    /// change that reintroduces pre-derivation fails here explicitly.
+    #[test]
+    fn ecdsa_provider_keys_do_not_double_apply_the_account_path() {
+        use key_wallet::bip32::{DerivationPath, ExtendedPrivKey};
+        use std::str::FromStr;
+
+        let wallet = seed_bearing_wallet(Network::Mainnet);
+        let seed = wallet.wallet_seed_bytes().expect("resident seed");
+        let account = wallet
+            .accounts
+            .account_of_type(ProviderKeyKind::Voting.account_type())
+            .expect("voting account");
+
+        let derived = account
+            .derive_from_seed_private_key_at(&seed, 19)
+            .expect("account-based derivation");
+
+        let master = ExtendedPrivKey::new_master(Network::Mainnet, &seed).expect("master");
+        let doubled = master
+            .derive_priv(
+                &dashcore::key::Secp256k1::new(),
+                &DerivationPath::from_str("m/9'/5'/3'/1'/9'/5'/3'/1'/19").expect("doubled path"),
+            )
+            .expect("doubled derivation");
+
+        assert_ne!(
+            derived.inner.secret_bytes(),
+            doubled.private_key.secret_bytes(),
+            "the account derivation path is being applied twice again"
+        );
+    }
+
+    /// A WATCH-ONLY account must still derive its secp256k1 private key from
+    /// a supplied seed.
+    ///
+    /// This is the shape the iOS app actually runs: the wallet is
+    /// external-signable, its seed lives in the Keychain, and the caller
+    /// resolves it on demand. The first cut of this branch went through
+    /// `Account::derive_from_seed_private_key_at`, which gates on
+    /// `is_watch_only` and so refused exactly the wallets the seed argument
+    /// exists to serve — "Watch-only wallet: private keys not available".
+    ///
+    /// The seed-bearing tests above passed the whole time, which is the point
+    /// of this one: they never exercised the gate.
+    #[test]
+    fn ecdsa_provider_keys_derive_for_a_watch_only_account() {
+        use key_wallet::bip32::{DerivationPath, ExtendedPrivKey};
+        use std::str::FromStr;
+
+        let wallet = seed_bearing_wallet(Network::Mainnet);
+        let seed = wallet.wallet_seed_bytes().expect("resident seed");
+        let secp = dashcore::key::Secp256k1::new();
+        let master = ExtendedPrivKey::new_master(Network::Mainnet, &seed).expect("master");
+
+        for (kind, family) in [
+            (ProviderKeyKind::Owner, "2'"),
+            (ProviderKeyKind::Voting, "1'"),
+        ] {
+            let account_type = kind.account_type();
+            let watch_only = wallet
+                .accounts
+                .account_of_type(account_type)
+                .expect("provider account")
+                .to_watch_only();
+            assert!(
+                watch_only.is_watch_only,
+                "precondition: account is watch-only"
+            );
+
+            // The gated wrapper refuses this account — pinned so a future
+            // change back to it fails here rather than on a device.
+            assert!(
+                watch_only
+                    .derive_from_seed_private_key_at(&seed, 19)
+                    .is_err(),
+                "the gated wrapper is expected to refuse a watch-only account"
+            );
+
+            // The path this module actually uses is gate-free and must agree
+            // with the explicit DIP-3 path.
+            let account_path = account_type
+                .derivation_path(Network::Mainnet)
+                .expect("account path");
+            let child = ChildNumber::from_normal_idx(19).expect("child index");
+            let child_path: DerivationPath = vec![child].into();
+            let derived = master
+                .derive_priv(&secp, &account_path)
+                .and_then(|acct| acct.derive_priv(&secp, &child_path))
+                .expect("gate-free derivation")
+                .to_priv();
+
+            let expected = master
+                .derive_priv(
+                    &secp,
+                    &DerivationPath::from_str(&format!("m/9'/5'/3'/{family}/19"))
+                        .expect("explicit path"),
+                )
+                .expect("path derivation");
+
+            assert_eq!(
+                derived.inner.secret_bytes(),
+                expected.private_key.secret_bytes(),
+                "{kind:?} watch-only derivation must match m/9'/5'/3'/{family}/19"
+            );
+        }
     }
 }

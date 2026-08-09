@@ -829,6 +829,7 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
             .union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE)
             .union(PersistenceCapabilities::PENDING_CONTACT_CRYPTO)
+            .union(PersistenceCapabilities::DPNS_NAME_STATES)
     }
 
     /// Merge `changeset` into the per-wallet buffer.
@@ -1104,6 +1105,9 @@ fn apply_changeset_to_tx(
     }
     if let Some(invitations) = cs.invitations.as_ref() {
         schema::invitations::apply(tx, wallet_id, invitations)?;
+    }
+    if let Some(dpns_name_states) = cs.dpns_name_states.as_ref() {
+        schema::dpns_name_states::apply(tx, wallet_id, dpns_name_states)?;
     }
     if let Some(balances) = cs.token_balances.as_ref() {
         schema::token_balances::apply(tx, wallet_id, balances)?;

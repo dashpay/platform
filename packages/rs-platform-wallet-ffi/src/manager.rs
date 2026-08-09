@@ -2,9 +2,15 @@
 
 use crate::check_ptr;
 use crate::error::*;
-use crate::event_handler::{EventHandlerCallbacks, FFIEventHandler};
+use crate::event_handler::{
+    DpnsMarketplaceSyncCompletedFn, EventHandlerCallbacks, EventHandlerCallbacksExtension,
+    FFIEventHandler, PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION,
+};
 use crate::handle::*;
-use crate::persistence::{FFIPersister, PersistenceCallbacks, PersistenceCapabilitiesFFI};
+use crate::persistence::{
+    FFIPersister, PersistDpnsNameStatesFn, PersistenceCallbacks, PersistenceCallbacksExtension,
+    PersistenceCapabilitiesFFI, PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
+};
 use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
@@ -68,6 +74,8 @@ pub unsafe extern "C" fn platform_wallet_manager_create(
         persistence,
         event_handler,
         PersistenceCapabilities::NONE,
+        None,
+        None,
         out_handle,
     )
 }
@@ -92,8 +100,120 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_persistence_capabil
         persistence,
         event_handler,
         declaration,
+        None,
+        None,
         out_handle,
     )
+}
+
+/// Create a manager with an explicit capability declaration and the current
+/// size/version-tagged additive callback extension.
+///
+/// `persistence_extension` must point to at least its leading `struct_size`
+/// field. Fields beyond that are read only when `struct_size` proves they are
+/// present and the version is recognized. Unknown versions and short
+/// extensions fail closed to no additive callbacks. The extension shares the
+/// legacy vtable's `context` and `release_fn`; Rust copies the callback pointer
+/// during this call and never retains the extension pointer.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_create_with_persistence_extensions(
+    sdk_ptr: *const c_void,
+    persistence: *const PersistenceCallbacks,
+    event_handler: *const EventHandlerCallbacks,
+    persistence_capabilities: *const PersistenceCapabilitiesFFI,
+    persistence_extension: *const PersistenceCallbacksExtension,
+    out_handle: *mut Handle,
+) -> PlatformWalletFFIResult {
+    check_ptr!(persistence_capabilities);
+    check_ptr!(persistence_extension);
+    let declaration = persistence_capabilities_declaration(&*persistence_capabilities);
+    let dpns_callback = persistence_extension_dpns_callback(persistence_extension);
+    platform_wallet_manager_create_impl(
+        sdk_ptr,
+        persistence,
+        event_handler,
+        declaration,
+        dpns_callback,
+        None,
+        out_handle,
+    )
+}
+
+/// Create a manager with both size/version-tagged persistence and event
+/// extensions. Additive event callbacks share the legacy event vtable's
+/// context and release function; Rust copies supported slots and never
+/// retains either extension pointer.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_create_with_extensions(
+    sdk_ptr: *const c_void,
+    persistence: *const PersistenceCallbacks,
+    event_handler: *const EventHandlerCallbacks,
+    persistence_capabilities: *const PersistenceCapabilitiesFFI,
+    persistence_extension: *const PersistenceCallbacksExtension,
+    event_extension: *const EventHandlerCallbacksExtension,
+    out_handle: *mut Handle,
+) -> PlatformWalletFFIResult {
+    check_ptr!(persistence_capabilities);
+    check_ptr!(persistence_extension);
+    check_ptr!(event_extension);
+    let declaration = persistence_capabilities_declaration(&*persistence_capabilities);
+    let dpns_persistence_callback = persistence_extension_dpns_callback(persistence_extension);
+    let dpns_event_callback = event_extension_dpns_callback(event_extension);
+    platform_wallet_manager_create_impl(
+        sdk_ptr,
+        persistence,
+        event_handler,
+        declaration,
+        dpns_persistence_callback,
+        dpns_event_callback,
+        out_handle,
+    )
+}
+
+unsafe fn persistence_extension_dpns_callback(
+    extension: *const PersistenceCallbacksExtension,
+) -> Option<PersistDpnsNameStatesFn> {
+    let supplied_size = std::ptr::addr_of!((*extension).struct_size).read();
+    let version_end =
+        std::mem::offset_of!(PersistenceCallbacksExtension, version) + std::mem::size_of::<u32>();
+    if supplied_size < version_end {
+        return None;
+    }
+    let version = std::ptr::addr_of!((*extension).version).read();
+    if version != PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION {
+        return None;
+    }
+    let callback_end = std::mem::offset_of!(
+        PersistenceCallbacksExtension,
+        on_persist_dpns_name_states_fn
+    ) + std::mem::size_of::<Option<PersistDpnsNameStatesFn>>();
+    if supplied_size < callback_end {
+        return None;
+    }
+    std::ptr::addr_of!((*extension).on_persist_dpns_name_states_fn).read()
+}
+
+unsafe fn event_extension_dpns_callback(
+    extension: *const EventHandlerCallbacksExtension,
+) -> Option<DpnsMarketplaceSyncCompletedFn> {
+    let supplied_size = std::ptr::addr_of!((*extension).struct_size).read();
+    let version_end =
+        std::mem::offset_of!(EventHandlerCallbacksExtension, version) + std::mem::size_of::<u32>();
+    if supplied_size < version_end {
+        return None;
+    }
+    let version = std::ptr::addr_of!((*extension).version).read();
+    if version != PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION {
+        return None;
+    }
+    let callback_end = std::mem::offset_of!(
+        EventHandlerCallbacksExtension,
+        on_dpns_marketplace_sync_completed_fn
+    ) + std::mem::size_of::<Option<DpnsMarketplaceSyncCompletedFn>>();
+    if supplied_size < callback_end {
+        return None;
+    }
+    std::ptr::addr_of!((*extension).on_dpns_marketplace_sync_completed_fn).read()
 }
 
 unsafe fn platform_wallet_manager_create_impl(
@@ -101,6 +221,8 @@ unsafe fn platform_wallet_manager_create_impl(
     persistence: *const PersistenceCallbacks,
     event_handler: *const EventHandlerCallbacks,
     declared_capabilities: PersistenceCapabilities,
+    dpns_name_states_callback: Option<PersistDpnsNameStatesFn>,
+    dpns_event_callback: Option<DpnsMarketplaceSyncCompletedFn>,
     out_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
     check_ptr!(sdk_ptr);
@@ -136,12 +258,17 @@ unsafe fn platform_wallet_manager_create_impl(
     }
 
     let sdk = Arc::new((*(sdk_ptr as *const Sdk)).clone());
-    let persister = Arc::new(FFIPersister::new_with_persistence_capabilities(
-        std::ptr::read(persistence),
-        declared_capabilities,
+    let persister = Arc::new(
+        FFIPersister::new_with_persistence_capabilities_and_dpns_callback(
+            std::ptr::read(persistence),
+            declared_capabilities,
+            dpns_name_states_callback,
+        ),
+    );
+    let handler: Arc<dyn platform_wallet::PlatformEventHandler> = Arc::new(FFIEventHandler::new(
+        std::ptr::read(event_handler),
+        dpns_event_callback,
     ));
-    let handler: Arc<dyn platform_wallet::PlatformEventHandler> =
-        Arc::new(FFIEventHandler::new(std::ptr::read(event_handler)));
 
     // `PlatformWalletManager::new` spawns the wallet-event adapter
     // task on construction (the subscriber that translates upstream
@@ -572,7 +699,7 @@ pub(crate) async fn remove_wallet_and_tear_down_generation<
             // The wallet and its accounts' `ReservationSet`s are now gone from
             // the manager, so the deferred-payment reservations cease to exist —
             // there is nothing to reconcile. DROP (do not release) this
-            // generation's registry tokens and its finalized-tx V2 handles. This
+            // generation's registry tokens and its finalized-tx handles. This
             // is the teardown half of the single generation policy both deferred
             // paths share: it makes any stale handle to the removed generation
             // inert, so a later destroy/release of a lingering handle can never
@@ -580,7 +707,7 @@ pub(crate) async fn remove_wallet_and_tear_down_generation<
             let core = removed.core();
             crate::core_wallet::signed_payment::SIGNED_PAYMENT_REGISTRY
                 .remove_entries_for_wallet(core);
-            crate::handle::CORE_SIGNED_TRANSACTION_V2_STORAGE
+            crate::handle::CORE_SIGNED_TRANSACTION_STORAGE
                 .remove_matching(|tx| tx.wallet.is_same_generation(core));
         })
         .await?;
@@ -637,12 +764,36 @@ mod tests {
         0
     }
 
+    unsafe extern "C" fn persist_dpns_name_states(
+        _context: *mut c_void,
+        _wallet_id: *const u8,
+        _rows: *const crate::dpns_name_state_persistence::DpnsNameStateFFI,
+        _rows_count: usize,
+        _removed_ptr: *const [u8; 32],
+        _removed_count: usize,
+    ) -> i32 {
+        0
+    }
+
     fn persistence_callbacks() -> PersistenceCallbacks {
         PersistenceCallbacks {
             on_changeset_begin_fn: Some(begin_changeset),
             on_changeset_end_fn: Some(end_changeset),
             ..Default::default()
         }
+    }
+
+    fn assert_legacy_persistence_callbacks_layout() {
+        #[cfg(not(feature = "shielded"))]
+        assert_eq!(
+            std::mem::size_of::<PersistenceCallbacks>(),
+            25 * std::mem::size_of::<usize>()
+        );
+        #[cfg(feature = "shielded")]
+        assert_eq!(
+            std::mem::size_of::<PersistenceCallbacks>(),
+            41 * std::mem::size_of::<usize>()
+        );
     }
 
     fn event_callbacks() -> EventHandlerCallbacks {
@@ -834,6 +985,7 @@ mod tests {
 
     #[test]
     fn legacy_create_is_abi_stable_and_fail_closed() {
+        assert_legacy_persistence_callbacks_layout();
         let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
         let callbacks = persistence_callbacks();
         let event_callbacks = event_callbacks();
@@ -858,6 +1010,7 @@ mod tests {
 
     #[test]
     fn additive_create_versions_and_intersects_capabilities() {
+        assert_legacy_persistence_callbacks_layout();
         let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
         let callbacks = persistence_callbacks();
         let event_callbacks = event_callbacks();
@@ -866,6 +1019,7 @@ mod tests {
             reserved: 0,
             bits: PersistenceCapabilities::ATOMIC_CHANGESETS
                 .union(PersistenceCapabilities::INVITATIONS)
+                .union(PersistenceCapabilities::DPNS_NAME_STATES)
                 .bits(),
         };
         let mut handle = 0;
@@ -888,6 +1042,60 @@ mod tests {
 
         let result = unsafe { platform_wallet_manager_destroy(handle) };
         assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+    }
+
+    #[test]
+    fn extension_create_versions_and_intersects_dpns_callback() {
+        let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+        let callbacks = persistence_callbacks();
+        let event_callbacks = event_callbacks();
+        let declaration = PersistenceCapabilitiesFFI {
+            version: PERSISTENCE_CAPABILITIES_VERSION,
+            reserved: 0,
+            bits: PersistenceCapabilities::DPNS_NAME_STATES.bits(),
+        };
+        let extension = PersistenceCallbacksExtension {
+            on_persist_dpns_name_states_fn: Some(persist_dpns_name_states),
+            ..Default::default()
+        };
+        let mut handle = 0;
+        let result = unsafe {
+            platform_wallet_manager_create_with_persistence_extensions(
+                &sdk as *const Sdk as *const c_void,
+                &callbacks,
+                &event_callbacks,
+                &declaration,
+                &extension,
+                &mut handle,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(
+            query(handle).bits,
+            PersistenceCapabilities::DPNS_NAME_STATES.bits()
+        );
+
+        let result = unsafe { platform_wallet_manager_destroy(handle) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+    }
+
+    #[test]
+    fn short_and_unknown_persistence_extensions_fail_closed() {
+        let short = PersistenceCallbacksExtension {
+            struct_size: std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_dpns_name_states_fn
+            ),
+            on_persist_dpns_name_states_fn: Some(persist_dpns_name_states),
+            ..Default::default()
+        };
+        let unknown = PersistenceCallbacksExtension {
+            version: PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION + 1,
+            on_persist_dpns_name_states_fn: Some(persist_dpns_name_states),
+            ..Default::default()
+        };
+        assert!(unsafe { persistence_extension_dpns_callback(&short) }.is_none());
+        assert!(unsafe { persistence_extension_dpns_callback(&unknown) }.is_none());
     }
 }
 
@@ -940,8 +1148,9 @@ mod remove_wallet_lifecycle_tests {
                 SignedCoreTransaction::new_for_test(
                     dummy_tx(),
                     0,
-                    AccountTypePreference::BIP44,
-                    0,
+                    vec![AccountTypePreference::BIP44
+                        .account_type(0)
+                        .expect("single account")],
                     0,
                     None,
                     core.test_generation_marker(),
@@ -1173,30 +1382,31 @@ mod remove_wallet_lifecycle_tests {
     }
 
     // ---------------------------------------------------------------------
-    // V2 finalized-transaction-handle path (`dashpay/platform#4185` review).
+    // finalized-transaction-handle path (`dashpay/platform#4185` review).
     //
-    // The registry-token path above was gated first; the V2 path
-    // (`core_wallet_tx_builder_finalize` → `CORE_SIGNED_TRANSACTION_V2_STORAGE`
-    // → `core_wallet_broadcast_signed_transaction_v2`) reaches the SAME
+    // The registry-token path above was gated first; the finalized-handle path
+    // (`core_wallet_tx_builder_finalize` → `CORE_SIGNED_TRANSACTION_STORAGE`
+    // → `core_wallet_broadcast_signed_transaction`) reaches the SAME
     // broadcaster through a retained handle and was left ungated. Its
     // `is_same_generation` check compares two HANDLES, and a removed generation
     // matches itself, so two retained handles pushed a deleted wallet's
     // transaction onto the network.
     // ---------------------------------------------------------------------
 
-    /// Publish a V2 finalized-transaction handle for `core`'s generation, the
+    /// Publish a finalized-transaction handle for `core`'s generation, the
     /// way `core_wallet_tx_builder_finalize` does.
-    fn publish_v2_handle(
+    fn publish_finalized_handle(
         core: &CoreWallet<platform_wallet::broadcaster::SpvBroadcaster>,
     ) -> Handle {
-        crate::handle::CORE_SIGNED_TRANSACTION_V2_STORAGE.insert(
-            crate::core_wallet::FFICoreSignedTransactionV2 {
+        crate::handle::CORE_SIGNED_TRANSACTION_STORAGE.insert(
+            crate::core_wallet::FFICoreSignedTransaction {
                 wallet: core.clone(),
                 transaction: SignedCoreTransaction::new_for_test(
                     dummy_tx(),
                     0,
-                    AccountTypePreference::BIP44,
-                    0,
+                    vec![AccountTypePreference::BIP44
+                        .account_type(0)
+                        .expect("single account")],
                     0,
                     None,
                     core.test_generation_marker(),
@@ -1205,7 +1415,7 @@ mod remove_wallet_lifecycle_tests {
         )
     }
 
-    /// Requirement: a V2 handle whose wallet generation was removed must be
+    /// Requirement: a finalized handle whose wallet generation was removed must be
     /// refused BEFORE the network, exactly as the registry-token path is.
     ///
     /// Deterministic. The setup reproduces the late-finalizer publication
@@ -1219,7 +1429,7 @@ mod remove_wallet_lifecycle_tests {
     /// straight to the broadcaster with no manager lookup at all — so the
     /// transaction went to the network.
     #[test]
-    fn broadcasting_a_v2_handle_for_a_removed_wallet_is_refused_before_the_network() {
+    fn broadcasting_a_finalized_handle_for_a_removed_wallet_is_refused_before_the_network() {
         let _registry = crate::core_wallet::signed_payment::registry_test_guard();
 
         // The extern "C" entry points call `runtime().block_on` themselves, so
@@ -1243,12 +1453,12 @@ mod remove_wallet_lifecycle_tests {
             core
         });
 
-        let transaction_handle = publish_v2_handle(&core);
+        let transaction_handle = publish_finalized_handle(&core);
         let core_handle = crate::handle::CORE_WALLET_STORAGE.insert(core.clone());
 
         let mut out_txid: *mut std::os::raw::c_char = std::ptr::null_mut();
         let result = unsafe {
-            crate::core_wallet::core_wallet_broadcast_signed_transaction_v2(
+            crate::core_wallet::core_wallet_broadcast_signed_transaction(
                 core_handle,
                 transaction_handle,
                 &mut out_txid,
@@ -1258,7 +1468,7 @@ mod remove_wallet_lifecycle_tests {
         assert_eq!(
             result.code,
             PlatformWalletFFIResultCode::NotFound,
-            "a V2 handle whose wallet was removed must be refused without a send"
+            "a finalized handle whose wallet was removed must be refused without a send"
         );
         assert!(
             out_txid.is_null(),
@@ -1268,26 +1478,26 @@ mod remove_wallet_lifecycle_tests {
         // Refusing still CONSUMES the handle: the generation is gone, so there is
         // nothing to reconcile and nothing to retry.
         assert!(
-            crate::handle::CORE_SIGNED_TRANSACTION_V2_STORAGE
+            crate::handle::CORE_SIGNED_TRANSACTION_STORAGE
                 .remove(transaction_handle)
                 .is_none(),
-            "the refused V2 handle must have been consumed"
+            "the refused finalized handle must have been consumed"
         );
     }
 
-    /// Requirement: a teardown WAITS for an in-flight V2 operation on that
-    /// generation, then sweeps its handle — so a V2 handle can never be published
+    /// Requirement: a teardown WAITS for an in-flight finalized-transaction operation on that
+    /// generation, then sweeps its handle — so a finalized handle can never be published
     /// into an already-swept storage and outlive its wallet.
     ///
     /// Deterministic. The held shared guard stands in for
     /// `core_wallet_tx_builder_finalize` sitting between its liveness check and
-    /// its insert, or `core_wallet_broadcast_signed_transaction_v2` sitting
-    /// between its liveness check and the send. Before the fix the V2 path took no
+    /// its insert, or `core_wallet_broadcast_signed_transaction` sitting
+    /// between its liveness check and the send. Before the fix the finalized-handle path took no
     /// gate at all: the teardown ran to completion — sweep included — while the
     /// finalizer was signing, and the handle it then published was permanently
     /// outside any sweep and fully broadcastable.
     #[test]
-    fn teardown_waits_for_an_in_flight_v2_operation_and_then_sweeps_its_handle() {
+    fn teardown_waits_for_an_in_flight_finalized_operation_and_then_sweeps_its_handle() {
         let _registry = crate::core_wallet::signed_payment::registry_test_guard();
 
         let (core, transaction_handle) = runtime().block_on(async {
@@ -1298,7 +1508,7 @@ mod remove_wallet_lifecycle_tests {
                 .expect("wallet present");
             let core = wallet.core().clone();
 
-            // The V2 operation enters this generation's gate (as the FFI does
+            // The finalized-transaction operation enters this generation's gate (as the FFI does
             // after signing).
             let in_flight = core.generation_payment_guard().await;
 
@@ -1313,16 +1523,16 @@ mod remove_wallet_lifecycle_tests {
             tokio::time::sleep(Duration::from_millis(200)).await;
             assert!(
                 !teardown.is_finished(),
-                "teardown must wait for the in-flight V2 operation to leave the gate"
+                "teardown must wait for the in-flight finalized-transaction operation to leave the gate"
             );
 
             // Because teardown is still waiting, the operation's liveness check
             // sees a live wallet and its publish is legitimate.
             assert!(
                 core.is_current_generation().await,
-                "the wallet must still be live while a V2 operation holds the gate"
+                "the wallet must still be live while a finalized-transaction operation holds the gate"
             );
-            let transaction_handle = publish_v2_handle(&core);
+            let transaction_handle = publish_finalized_handle(&core);
 
             drop(in_flight);
             teardown
@@ -1334,13 +1544,13 @@ mod remove_wallet_lifecycle_tests {
             (core, transaction_handle)
         });
 
-        // The teardown that was waiting swept the handle the V2 operation
+        // The teardown that was waiting swept the handle the finalized-transaction operation
         // published — the invariant the gate exists to restore.
         assert!(
-            crate::handle::CORE_SIGNED_TRANSACTION_V2_STORAGE
+            crate::handle::CORE_SIGNED_TRANSACTION_STORAGE
                 .remove(transaction_handle)
                 .is_none(),
-            "the in-flight V2 operation's handle must have been swept by teardown"
+            "the in-flight finalized-transaction operation's handle must have been swept by teardown"
         );
         drop(core);
     }

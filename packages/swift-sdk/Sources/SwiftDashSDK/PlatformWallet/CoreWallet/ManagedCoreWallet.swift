@@ -240,73 +240,6 @@ public class ManagedCoreWallet {
 
     // MARK: - Transactions
 
-    /// Broadcast a transaction built by `CoreTransactionBuilder.buildSigned`.
-    ///
-    /// The funding account captured at build time is forwarded so that a
-    /// definitive broadcast rejection releases the UTXO reservation
-    /// `buildSigned` took, letting an immediate retry reselect those inputs.
-    ///
-    /// Returns the authoritative accepted/rejected/unknown network outcome.
-    /// Throws only for local or FFI failures that prevented an outcome from
-    /// being determined.
-    public func broadcastTransactionWithOutcome(
-        _ tx: CoreTransaction
-    ) throws -> CoreTransactionBroadcastOutcome {
-        var txidPtr: UnsafeMutablePointer<CChar>? = nil
-        let ffiResult = withUnsafePointer(to: tx.ffi) { txPtr in
-            core_wallet_broadcast_transaction(
-                handle, txPtr, tx.accountType.ffi, tx.accountIndex, &txidPtr
-            )
-        }
-        let result = PlatformWalletResult(ffiResult)
-
-        defer {
-            if let txidPtr {
-                platform_wallet_string_free(txidPtr)
-            }
-        }
-
-        switch result.code {
-        case .success, .errorTransactionBroadcastRejected,
-             .errorTransactionBroadcastUnconfirmed:
-            guard let txidPtr else {
-                throw PlatformWalletError.nullPointer(
-                    "core_wallet_broadcast_transaction returned a NULL txid pointer for \(result.code)"
-                )
-            }
-            let txid = String(cString: txidPtr)
-            let reason = result.message ?? "<no detail from Rust>"
-
-            return try CoreTransactionBroadcastOutcome(
-                resultCode: result.code,
-                txid: txid,
-                reason: reason
-            )
-
-        default:
-            try result.throwIfError()
-            throw PlatformWalletError.unknown(
-                "core_wallet_broadcast_transaction returned an unexpected success state"
-            )
-        }
-    }
-
-    /// Compatibility wrapper preserving the former throwing API.
-    ///
-    /// New code should inspect `broadcastTransactionWithOutcome` so an unknown
-    /// outcome cannot be mistaken for a definitive rejection.
-    @available(*, deprecated, message: "Use broadcastTransactionWithOutcome(_:) and handle accepted/rejected/unknown")
-    public func broadcastTransaction(_ tx: CoreTransaction) throws -> String {
-        switch try broadcastTransactionWithOutcome(tx) {
-        case .accepted(let txid):
-            return txid
-        case .rejected(_, let reason):
-            throw PlatformWalletError.transactionBroadcastRejected(reason)
-        case .unknown(_, let reason):
-            throw PlatformWalletError.transactionBroadcastUnconfirmed(reason)
-        }
-    }
-
     /// Consume and broadcast an atomically finalized transaction, returning
     /// the authoritative accepted/rejected/unknown network outcome.
     public func broadcastTransactionWithOutcome(
@@ -314,7 +247,7 @@ public class ManagedCoreWallet {
     ) throws -> CoreTransactionBroadcastOutcome {
         let transactionHandle = try tx.takeForBroadcast()
         var txidPtr: UnsafeMutablePointer<CChar>? = nil
-        let result = PlatformWalletResult(core_wallet_broadcast_signed_transaction_v2(
+        let result = PlatformWalletResult(core_wallet_broadcast_signed_transaction(
             handle,
             transactionHandle,
             &txidPtr
@@ -331,7 +264,7 @@ public class ManagedCoreWallet {
              .errorTransactionBroadcastUnconfirmed:
             guard let txidPtr else {
                 throw PlatformWalletError.nullPointer(
-                    "core_wallet_broadcast_signed_transaction_v2 returned a NULL txid pointer for \(result.code)"
+                    "core_wallet_broadcast_signed_transaction returned a NULL txid pointer for \(result.code)"
                 )
             }
             return try CoreTransactionBroadcastOutcome(
@@ -343,7 +276,7 @@ public class ManagedCoreWallet {
         default:
             try result.throwIfError()
             throw PlatformWalletError.unknown(
-                "core_wallet_broadcast_signed_transaction_v2 returned an unexpected success state"
+                "core_wallet_broadcast_signed_transaction returned an unexpected success state"
             )
         }
     }
@@ -390,7 +323,7 @@ public class ManagedCoreWallet {
 
     /// Consume without sending and release its reservation immediately.
     public func abandonTransaction(_ tx: FinalizedCoreTransaction) throws {
-        try core_wallet_abandon_signed_transaction_v2(
+        try core_wallet_abandon_signed_transaction(
             handle,
             tx.takeForAbandon()
         ).check()

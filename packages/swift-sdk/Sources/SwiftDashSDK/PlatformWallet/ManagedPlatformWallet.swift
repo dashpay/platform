@@ -932,6 +932,10 @@ extension ManagedPlatformWallet {
         case operatorBLS = 10
         /// Ed25519 platform-node keys (`ProviderPlatformKeys`, tag 11).
         case platformNodeEdDSA = 11
+        /// secp256k1 masternode voting keys (`ProviderVotingKeys`, tag 8).
+        case votingECDSA = 8
+        /// secp256k1 masternode owner keys (`ProviderOwnerKeys`, tag 9).
+        case ownerECDSA = 9
     }
 
     /// One provider key derived at a single index, in the hex forms the
@@ -955,8 +959,17 @@ extension ManagedPlatformWallet {
         public let nodeIdHex: String?
         /// Lowercase hex of the raw 32-byte private scalar, present only
         /// when the reveal requested it. BLS / Ed25519 keys have no WIF,
-        /// so this is the only private form.
+        /// so for those this is the only private form.
         public let privateKeyHex: String?
+        /// P2PKH address of the key. Non-nil only for the secp256k1
+        /// families (``ProviderKeyKind/votingECDSA`` /
+        /// ``ProviderKeyKind/ownerECDSA``), whose keys appear on-chain as
+        /// the ProRegTx voting / owner addresses.
+        public let address: String?
+        /// WIF encoding of the private key, on the same terms as
+        /// ``privateKeyHex``. Encoded on the Rust side so the network byte
+        /// and compression flag have one home.
+        public let privateKeyWIF: String?
 
         /// Public memberwise init so hosts can build display rows from the
         /// persisted platform-node core-address rows (typed
@@ -968,13 +981,17 @@ extension ManagedPlatformWallet {
             publicKeyHex: String,
             legacyPublicKeyHex: String?,
             nodeIdHex: String?,
-            privateKeyHex: String?
+            privateKeyHex: String?,
+            address: String? = nil,
+            privateKeyWIF: String? = nil
         ) {
             self.index = index
             self.publicKeyHex = publicKeyHex
             self.legacyPublicKeyHex = legacyPublicKeyHex
             self.nodeIdHex = nodeIdHex
             self.privateKeyHex = privateKeyHex
+            self.address = address
+            self.privateKeyWIF = privateKeyWIF
         }
     }
 
@@ -1035,12 +1052,16 @@ extension ManagedPlatformWallet {
             let legacyPublicKeyHex = out.legacy_public_key_hex.map { String(cString: $0) }
             let nodeIdHex = out.node_id_hex.map { String(cString: $0) }
             let privateKeyHex = out.private_key_hex.map { String(cString: $0) }
+            let address = out.address.map { String(cString: $0) }
+            let privateKeyWIF = out.private_key_wif.map { String(cString: $0) }
             return ProviderDerivedKey(
                 index: out.index,
                 publicKeyHex: publicKeyHex,
                 legacyPublicKeyHex: legacyPublicKeyHex,
                 nodeIdHex: nodeIdHex,
-                privateKeyHex: privateKeyHex
+                privateKeyHex: privateKeyHex,
+                address: address,
+                privateKeyWIF: privateKeyWIF
             )
         }
     }
@@ -2197,6 +2218,41 @@ extension ManagedPlatformWallet {
                 )
             }
             return ManagedIdentity(handle: outManagedHandle)
+        }.value
+    }
+
+    /// The identity id this invitation WOULD create, without claiming it.
+    ///
+    /// Platform derives a created identity's id from the asset-lock outpoint,
+    /// so fetching an identity under the returned id answers "has this
+    /// invitation already been used?" before the invitee picks a username and
+    /// enters their PIN — the only other way to find out is the claim itself,
+    /// which reports it as a raw "asset lock … already completely used".
+    ///
+    /// Unlike ``parseInvitation(uri:)`` this hits the network: the funding
+    /// transaction is refetched to locate the credit output the voucher
+    /// controls. It claims nothing and mutates no wallet state.
+    ///
+    /// Throws on anything undetermined — wrong network, a funding tx that has
+    /// not propagated, transport failure. Callers must treat a throw as
+    /// "proceed", never as an answer either way.
+    public func invitationProspectiveIdentityId(uri: String) async throws -> Data {
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) { () -> Data in
+            var idTuple: (
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+            ) = (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            )
+            let result = uri.withCString { uriPtr in
+                platform_wallet_invitation_prospective_identity_id(handle, uriPtr, &idTuple)
+            }
+            try result.check()
+            return withUnsafeBytes(of: idTuple) { Data($0) }
         }.value
     }
 
@@ -4219,12 +4275,16 @@ extension ManagedPlatformWallet {
     /// this call and `broadcastSigned` drops it on restart and the UTXOs become
     /// spendable again.
     ///
+    /// Funding defaults to `.allSpendable`: BIP44 + BIP32 + every DashPay
+    /// contact-receiving account, change returning to BIP44. Pass an explicit
+    /// `accountType` to restrict the payment to one family.
+    ///
     /// Kotlin parity: `ManagedPlatformWallet.buildSignedPayment`
     /// (`ManagedPlatformWallet.kt`).
     public func buildSignedPayment(
         recipients: [(address: String, amountDuffs: UInt64)],
         network: Network,
-        accountType: CoreTransactionBuilder.AccountType = .bip44,
+        accountType: CoreTransactionBuilder.AccountType = .allSpendable,
         accountIndex: UInt32 = 0
     ) throws -> SignedCoreTransaction {
         guard !recipients.isEmpty else {

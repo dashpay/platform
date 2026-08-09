@@ -1,40 +1,6 @@
 import Foundation
 import DashSDKFFI
 
-/// A built, signed core transaction. Broadcast it via
-/// `ManagedCoreWallet.broadcastTransaction`; its bytes are freed when this
-/// object is released.
-public final class CoreTransaction {
-    var ffi: FFICoreTransaction
-
-    /// The account that funded this transaction, captured at build time.
-    /// `broadcastTransaction` forwards it so a failed broadcast can release
-    /// the UTXO reservation `buildSigned` took on that account.
-    let accountType: CoreTransactionBuilder.AccountType
-    let accountIndex: UInt32
-
-    init(
-        ffi: FFICoreTransaction,
-        accountType: CoreTransactionBuilder.AccountType,
-        accountIndex: UInt32
-    ) {
-        self.ffi = ffi
-        self.accountType = accountType
-        self.accountIndex = accountIndex
-    }
-
-    deinit { withUnsafeMutablePointer(to: &ffi) { core_wallet_transaction_free($0) } }
-
-    /// Network fee in duffs.
-    public var fee: UInt64 { ffi.fee }
-
-    /// Consensus-serialized signed transaction bytes (copied out).
-    public var data: Data {
-        guard let p = ffi.tx_bytes, ffi.tx_len > 0 else { return Data() }
-        return Data(bytes: p, count: Int(ffi.tx_len))
-    }
-}
-
 /// Ownership token for a Core transaction atomically funded and reserved in Rust.
 public final class FinalizedCoreTransaction {
     private var nativeHandle: Handle
@@ -43,9 +9,9 @@ public final class FinalizedCoreTransaction {
     init(handle: Handle) throws {
         var value: UInt64 = 0
         do {
-            try core_wallet_signed_transaction_v2_fee(handle, &value).check()
+            try core_wallet_signed_transaction_fee(handle, &value).check()
         } catch {
-            core_wallet_signed_transaction_v2_free(handle)
+            core_wallet_signed_transaction_free(handle)
             throw error
         }
         nativeHandle = handle
@@ -54,7 +20,7 @@ public final class FinalizedCoreTransaction {
 
     deinit {
         if nativeHandle != 0 {
-            core_wallet_signed_transaction_v2_free(nativeHandle)
+            core_wallet_signed_transaction_free(nativeHandle)
         }
     }
 
@@ -78,7 +44,7 @@ public final class FinalizedCoreTransaction {
 
         var bytesPtr: UnsafeMutablePointer<UInt8>? = nil
         var bytesLen: UInt = 0
-        try core_wallet_signed_transaction_v2_bytes(nativeHandle, &bytesPtr, &bytesLen).check()
+        try core_wallet_signed_transaction_bytes(nativeHandle, &bytesPtr, &bytesLen).check()
 
         guard let bytesPtr, bytesLen > 0 else {
             throw PlatformWalletError.unknown(
@@ -178,12 +144,19 @@ public final class CoreTransactionBuilder {
         case bip44
         case bip32
         case coinJoin
+        /// Pool every spendable transparent source: BIP44 + BIP32 + all
+        /// DashPay contact-receiving accounts. Change returns to BIP44 (the
+        /// first pooled source). CoinJoin stays out (separate privacy
+        /// domain), as do a contact's watch-only external coins. The default
+        /// selector for a plain send.
+        case allSpendable
 
         var ffi: CoreAccountTypeFFI {
             switch self {
             case .bip44: return CORE_ACCOUNT_TYPE_FFI_BIP44
             case .bip32: return CORE_ACCOUNT_TYPE_FFI_BIP32
             case .coinJoin: return CORE_ACCOUNT_TYPE_FFI_COIN_JOIN
+            case .allSpendable: return CORE_ACCOUNT_TYPE_FFI_ALL_SPENDABLE
             }
         }
     }
@@ -210,7 +183,7 @@ public final class CoreTransactionBuilder {
     }
 
     private let handle: UnsafeMutablePointer<FFITransactionBuilder>
-    /// Set once `buildSigned` has consumed the builder, so `deinit` skips the
+    /// Set once a finalizer has consumed the builder, so `deinit` skips the
     /// Rust-side destroy.
     private var consumed = false
 
@@ -227,20 +200,6 @@ public final class CoreTransactionBuilder {
         if !consumed {
             core_wallet_tx_builder_destroy(handle)
         }
-    }
-
-    /// Fund from the account's UTXOs and set its change address.
-    @discardableResult
-    @available(*, deprecated, message: "Use finalizeAtomic; split funding/signing is not concurrency-safe")
-    public func setFunding(
-        wallet: ManagedPlatformWallet,
-        accountType: AccountType,
-        accountIndex: UInt32
-    ) throws -> CoreTransactionBuilder {
-        try core_wallet_tx_builder_set_funding(
-            handle, wallet.handle, accountType.ffi, accountIndex
-        ).check()
-        return self
     }
 
     /// Add a chosen subset of the account's UTXOs (as returned by
@@ -355,48 +314,12 @@ public final class CoreTransactionBuilder {
         return self
     }
 
-    /// Build and sign against the account; returns the signed transaction
-    /// without broadcasting. Consumes the builder — it is freed on the Rust
-    /// side and this instance must not be reused afterwards.
-    @available(*, deprecated, message: "Use finalizeAtomic; split funding/signing is not concurrency-safe")
-    public func buildSigned(
-        wallet: ManagedPlatformWallet,
-        accountType: AccountType,
-        accountIndex: UInt32
-    ) throws -> CoreTransaction {
-        guard !consumed else {
-            throw PlatformWalletError.unknown("CoreTransactionBuilder already consumed")
-        }
-        var out = FFICoreTransaction(tx_bytes: nil, tx_len: 0, fee: 0)
-
-        let resolver = MnemonicResolver()
-        let result = withExtendedLifetime(resolver) {
-            core_wallet_tx_builder_build_signed(
-                handle,
-                wallet.handle,
-                accountType.ffi,
-                accountIndex,
-                resolver.handle,
-                &out
-            )
-        }
-        // The FFI frees the builder on every path, so mark consumed before the check.
-        consumed = true
-        try result.check()
-
-        guard out.tx_bytes != nil, out.tx_len > 0 else {
-            throw PlatformWalletError.unknown("FFI returned success but tx buffer was empty")
-        }
-
-        return CoreTransaction(ffi: out, accountType: accountType, accountIndex: accountIndex)
-    }
-
     /// Consume this configured builder, atomically select and reserve inputs,
     /// then sign after Rust has released the wallet-manager lock.
     public func finalizeAtomic(
         wallet: ManagedPlatformWallet,
-        accountType: AccountType,
-        accountIndex: UInt32
+        accountType: AccountType = .allSpendable,
+        accountIndex: UInt32 = 0
     ) throws -> FinalizedCoreTransaction {
         guard !consumed else {
             throw PlatformWalletError.unknown("CoreTransactionBuilder already consumed")
