@@ -761,7 +761,7 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun marketplaceStateRetainsDepartedNameAndCanRemoveIt() = runTest {
+    fun marketplaceStateRetainsDepartedNameAndCanClearIt() = runTest {
         handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
         val identityId = ByteArray(32) { 13 }
         val documentId = ByteArray(32) { 14 }
@@ -806,6 +806,49 @@ class PlatformWalletPersistenceHandlerTest {
         handler.onChangesetBegin(walletId)
         handler.onRemoveDpnsNameState(walletId, documentId)
         handler.onChangesetEnd(walletId, success = true)
+        assertNull(db.dpnsNameDao().getByDocumentId(documentId))
+        val labelCache = db.dpnsNameDao().observeMarketplaceByIdentity(identityId).first().single()
+        assertEquals("Alice", labelCache.label)
+        assertFalse(labelCache.isOwned)
+        assertNull(labelCache.documentId)
+        assertNull(labelCache.priceCredits)
+        assertEquals(0, labelCache.saleStatusRaw)
+        assertNull(labelCache.counterpartyIdentityId)
+        assertEquals(0L, labelCache.documentCreatedAtMs)
+        assertEquals(0L, labelCache.documentUpdatedAtMs)
+        assertEquals(0L, labelCache.documentTransferredAtMs)
+        assertEquals(0L, labelCache.marketplaceUpdatedAt)
+    }
+
+    @Test
+    fun marketplaceStateSkipsUnknownIdentityWithoutRollingBackRound() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val missingIdentityId = ByteArray(32) { 16 }
+        val documentId = ByteArray(32) { 17 }
+
+        handler.onChangesetBegin(walletId)
+        assertEquals(
+            0,
+            handler.onPersistDpnsNameState(
+                walletId = walletId,
+                documentId = documentId,
+                walletIdentityId = missingIdentityId,
+                hasCounterparty = false,
+                counterpartyId = ByteArray(32),
+                label = "Orphan",
+                normalizedLabel = "0rphan",
+                normalizedParentDomainName = "dash",
+                hasPrice = false,
+                priceCredits = 0,
+                status = 0,
+                createdAtMs = 100,
+                updatedAtMs = 200,
+                transferredAtMs = 0,
+                lastSyncedAtMs = 300,
+            ),
+        )
+        assertEquals(0, handler.onChangesetEnd(walletId, success = true))
+
         assertNull(db.dpnsNameDao().getByDocumentId(documentId))
     }
 

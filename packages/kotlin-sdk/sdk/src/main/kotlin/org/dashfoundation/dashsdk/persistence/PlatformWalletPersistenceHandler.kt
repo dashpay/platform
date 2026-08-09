@@ -1133,6 +1133,12 @@ class PlatformWalletPersistenceHandler(
     ): Int = guarded {
         require(status.toInt() in 0..2) { "unknown DPNS sale status $status" }
         stage(walletId) { db ->
+            // The relationship is non-optional. A marketplace sweep can race
+            // the first identity snapshot, so skip this row and let the next
+            // sync re-emit it instead of rolling back the complete changeset.
+            if (db.identityDao().getByIdentityId(walletIdentityId) == null) {
+                return@stage
+            }
             val networkRaw = db.walletDao().getByWalletId(walletId)?.networkRaw ?: NETWORK_TESTNET
             val existing = db.dpnsNameDao().getByDocumentId(documentId)
                 ?: db.dpnsNameDao().getByUniqueKey(
@@ -1167,7 +1173,9 @@ class PlatformWalletPersistenceHandler(
     }
 
     override fun onRemoveDpnsNameState(walletId: ByteArray, documentId: ByteArray): Int = guarded {
-        stage(walletId) { db -> db.dpnsNameDao().deleteByDocumentId(documentId) }
+        stage(walletId) { db ->
+            db.dpnsNameDao().clearMarketplaceByDocumentId(documentId, now())
+        }
         0
     }
 

@@ -237,7 +237,7 @@ struct IdentityDetailView: View {
             if !dpnsNames.isEmpty || !contestedDpnsNames.isEmpty || !identity.isLocal
                 || hasLoadedWallet(for: identity) {
                 Section("DPNS Names") {
-                    if hasLoadedWallet(for: identity) {
+                    if !identity.isLocal && hasLoadedWallet(for: identity) {
                         NavigationLink(destination: DpnsMarketplaceView(identity: identity)) {
                             Label("Username Marketplace", systemImage: "storefront")
                         }

@@ -29,8 +29,18 @@ interface DpnsNameDao {
     @Query("SELECT * FROM dpns_names WHERE documentId = :documentId LIMIT 1")
     suspend fun getByDocumentId(documentId: ByteArray): DpnsNameEntity?
 
-    @Query("DELETE FROM dpns_names WHERE documentId = :documentId")
-    suspend fun deleteByDocumentId(documentId: ByteArray)
+    /**
+     * Clear fields owned by marketplace reconciliation without deleting the
+     * identity snapshot's label-cache row.
+     */
+    @Query(
+        "UPDATE dpns_names SET documentId = NULL, priceCredits = NULL, " +
+            "saleStatusRaw = 0, counterpartyIdentityId = NULL, " +
+            "documentCreatedAtMs = 0, documentUpdatedAtMs = 0, " +
+            "documentTransferredAtMs = 0, marketplaceUpdatedAt = 0, " +
+            "lastUpdated = :lastUpdated WHERE documentId = :documentId"
+    )
+    suspend fun clearMarketplaceByDocumentId(documentId: ByteArray, lastUpdated: java.util.Date)
 
     /** Persister upsert key (the Swift `#Unique` triple). */
     @Query(

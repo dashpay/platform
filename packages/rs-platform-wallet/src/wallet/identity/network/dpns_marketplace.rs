@@ -1569,9 +1569,31 @@ impl IdentityWallet {
                 };
             }
         };
-        let status = self
+        let status = match self
             .classify_departure(&state.document_id, identity_id)
-            .await;
+            .await
+        {
+            Ok(status) => status,
+            Err(error) => {
+                tracing::warn!(
+                    identity = %identity_id,
+                    name = label,
+                    document = %state.document_id,
+                    "DPNS departure-history classification failed; retaining local state for retry: {error}"
+                );
+                return ResolvedDepartedName {
+                    summary: DepartedDpnsName {
+                        identity_id: *identity_id,
+                        label: label.to_string(),
+                        document_id: Some(state.document_id),
+                        status: None,
+                    },
+                    entry: None,
+                    remove_document_id: None,
+                    retry: true,
+                };
+            }
+        };
         ResolvedDepartedName {
             summary: DepartedDpnsName {
                 identity_id: *identity_id,
@@ -1592,23 +1614,12 @@ impl IdentityWallet {
         &self,
         document_id: &Identifier,
         departing_identity: &Identifier,
-    ) -> Option<DpnsNameSaleStatus> {
+    ) -> Result<Option<DpnsNameSaleStatus>, PlatformWalletError> {
         let mut candidates: Vec<(u64, DpnsNameSaleStatus)> = Vec::new();
         for document_type in [HISTORY_TYPE_PURCHASE, HISTORY_TYPE_TRANSFER] {
-            let documents = match self
+            let documents = self
                 .fetch_history_documents(&dpns_contract_id(), document_id, document_type)
-                .await
-            {
-                Ok(documents) => documents,
-                Err(error) => {
-                    tracing::warn!(
-                        document = %document_id,
-                        history_type = document_type,
-                        "DPNS departure-history lookup failed: {error}"
-                    );
-                    continue;
-                }
-            };
+                .await?;
             for document in documents {
                 match history_event_from_document(document_type, &document) {
                     Ok(event) => {
@@ -1626,10 +1637,10 @@ impl IdentityWallet {
                 }
             }
         }
-        candidates
+        Ok(candidates
             .into_iter()
             .max_by_key(|(at_ms, _)| *at_ms)
-            .map(|(_, status)| status)
+            .map(|(_, status)| status))
     }
 }
 

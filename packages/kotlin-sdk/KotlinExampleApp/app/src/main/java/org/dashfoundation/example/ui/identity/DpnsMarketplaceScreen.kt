@@ -118,8 +118,10 @@ fun DpnsMarketplaceScreen(identityIdHex: String, navController: NavHostControlle
                         enabled = wallet != null && !busy,
                         modifier = Modifier.testTag("dpnsMarketplace.refresh"),
                         onClick = {
+                            val activeManager = manager ?: return@IconButton
+                            val activeWallet = wallet ?: return@IconButton
                             launch {
-                                val summary = manager!!.dpnsMarketplace.sync(wallet!!.handle)
+                                val summary = activeManager.dpnsMarketplace.sync(activeWallet.handle)
                                 lastSyncMs = summary.syncUnixMs
                                 syncMessage = "${summary.tracked} tracked, ${summary.added.size} added, " +
                                     "${summary.departed.size} departed, ${summary.pricesChanged.size} repriced"
@@ -150,8 +152,14 @@ fun DpnsMarketplaceScreen(identityIdHex: String, navController: NavHostControlle
                     enabled = wallet != null && !busy,
                     modifier = Modifier.testTag("dpnsMarketplace.search"),
                     onClick = {
+                        val activeManager = manager ?: return@Button
+                        val activeWallet = wallet ?: return@Button
                         launch {
-                            results = manager!!.dpnsMarketplace.search(wallet!!.handle, prefix.trim(), 50)
+                            results = activeManager.dpnsMarketplace.search(
+                                activeWallet.handle,
+                                prefix.trim(),
+                                50,
+                            )
                         }
                     },
                 ) { Text("Search") }
@@ -183,10 +191,12 @@ fun DpnsMarketplaceScreen(identityIdHex: String, navController: NavHostControlle
                         onSetPrice = { pendingAction = MarketplaceAction.SetPrice(row.label) },
                         onDelist = { pendingAction = MarketplaceAction.Delist(row.label) },
                         onTransfer = { pendingAction = MarketplaceAction.Transfer(row.label) },
-                        onHistory = {
+                        onHistory = history@{
+                            val activeManager = manager ?: return@history
+                            val activeWallet = wallet ?: return@history
                             launch {
                                 histories[row.normalizedLabel] =
-                                    manager!!.dpnsMarketplace.history(wallet!!.handle, row.label)
+                                    activeManager.dpnsMarketplace.history(activeWallet.handle, row.label)
                             }
                         },
                     )
@@ -268,7 +278,7 @@ private fun MarketplaceResultCard(
     isMine: Boolean,
     onPurchase: (() -> Unit)?,
 ) {
-    Card(Modifier.fillMaxWidth().testTag("dpnsMarketplace.result.${row.normalizedLabel}")) {
+    Card(Modifier.fillMaxWidth().testTag("dpnsMarketplace.search.${row.normalizedLabel}")) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("${row.label}.dash", style = MaterialTheme.typography.titleMedium)
             Text(if (isMine) "Owned by this identity" else "Owner ${Base58.encode(row.ownerId)}")
