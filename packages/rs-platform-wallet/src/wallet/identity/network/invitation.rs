@@ -45,15 +45,19 @@ use crate::wallet::identity::network::contact_requests::ContactCryptoProvider;
 
 use super::*;
 
-/// Hard cap on the amount an invitation can lock (0.05 DASH). The voucher is a
+/// Hard cap on the amount an invitation can lock (0.26 DASH). The voucher is a
 /// bearer credential, so the blast radius of a leaked link is bounded here in
-/// Rust — not just in the UI. Sized for onboarding: the invitee spends the
-/// voucher on identity creation **plus** a normal DPNS name (~0.03 DASH — the
-/// legacy `DASH_PAY_FEE`), so the previous 0.01 cap was actually below a usable
-/// invitation and rejected its own onboarding default. The contested/premium-name
-/// tier (~0.25 DASH) is deferred until contested-name-via-invite claim exists;
-/// raise this cap when it does.
-pub const MAX_INVITATION_DUFFS: u64 = 5_000_000;
+/// Rust — not just in the UI. Sized for onboarding at BOTH username tiers: the
+/// invitee spends the voucher on identity creation **plus** a DPNS name — a
+/// normal name (~0.03 DASH, the legacy `DASH_PAY_FEE`) or a contested/premium
+/// name (~0.25 DASH, `DASH_PAY_FEE_CONTESTED`), with the 0.01 margin covering
+/// the create/claim fees. The earlier 0.05 value deferred the contested tier
+/// "until contested-name-via-invite claim exists" — the claim path is
+/// amount-agnostic and contested-invite claims are verified working, and the
+/// Android wallet has funded contested invitations at 0.25 since 2024, so the
+/// deferral is over. (The pre-merge 0.01 iteration was below even a usable
+/// non-contested invitation and rejected its own onboarding default.)
+pub const MAX_INVITATION_DUFFS: u64 = 26_000_000;
 
 /// Floor on the amount an invitation can lock (0.003 DASH). A voucher funds a
 /// Platform identity operation, and creating an identity — which is what the
