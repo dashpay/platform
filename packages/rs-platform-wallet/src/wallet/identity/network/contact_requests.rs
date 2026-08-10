@@ -1924,7 +1924,19 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         }
 
         let mut cleared: Vec<PendingContactCryptoKey> = Vec::new();
+        // How much of `cleared` is already dequeued + persisted, and the running
+        // total actually removed. Bookkeeping lands per entry, so at most one
+        // entry's worth can ever be in flight.
+        let mut flushed: usize = 0;
+        let mut drained_total: usize = 0;
         for entry in &entries {
+            // Land the previous entry's dequeue before starting any new work.
+            if cleared.len() > flushed {
+                drained_total += self
+                    .flush_drained_contact_crypto(&entries, &cleared[flushed..])
+                    .await;
+                flushed = cleared.len();
+            }
             // Stop between entries, never inside one: an entry that has already
             // committed its side effect must reach the `cleared.push` that
             // records it.
@@ -2283,6 +2295,29 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             }
         }
 
+        // Land whatever the last entry completed.
+        drained_total += self
+            .flush_drained_contact_crypto(&entries, &cleared[flushed..])
+            .await;
+
+        drained_total
+    }
+
+    /// Apply the dequeue for entries a drain just completed: remove them from
+    /// their owners' in-memory queues and persist the removal. Returns how many
+    /// were actually removed.
+    ///
+    /// Called after **each** completed entry rather than once per drain. The
+    /// per-entry side effects (`register_contact_account`, the reciprocal send)
+    /// commit as the loop runs, so batching the bookkeeping to the end means a
+    /// drain that stops — its budget, or a caller that drops the future —
+    /// leaves work it really finished still queued and reported as zero. One
+    /// entry's work and one entry's dequeue now land together.
+    async fn flush_drained_contact_crypto(
+        &self,
+        entries: &[crate::changeset::PendingContactCrypto],
+        cleared: &[crate::changeset::PendingContactCryptoKey],
+    ) -> usize {
         if cleared.is_empty() {
             return 0;
         }
@@ -2303,7 +2338,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // entry still value-equal to the snapshot's — a mid-drain upsert
         // (changed payload) is left queued for the next drain rather than
         // clobbered by this stale snapshot.
-        let removed: Vec<PendingContactCryptoKey> = {
+        let removed: Vec<crate::changeset::PendingContactCryptoKey> = {
             let mut wm = self.wallet_manager.write().await;
             match wm.get_wallet_info_mut(&self.wallet_id) {
                 Some(info) => {
@@ -2421,8 +2456,22 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // failure) are NOT pushed here so they stay retryable.
         let mut verify_failed: Vec<(Identifier, Identifier, Vec<u8>)> = Vec::new();
         let mut accepted: usize = 0;
+        // How much of each has already been applied — see the loop head.
+        let mut flushed: usize = 0;
+        let mut verify_flushed: usize = 0;
 
         for entry in &entries {
+            // Land the previous entry's dequeue + verify-failure marks before
+            // starting new work, so a stop can strand at most one entry's.
+            if cleared.len() > flushed || verify_failed.len() > verify_flushed {
+                self.flush_cleared_auto_accepts(
+                    &cleared[flushed..],
+                    &verify_failed[verify_flushed..],
+                )
+                .await;
+                flushed = cleared.len();
+                verify_flushed = verify_failed.len();
+            }
             // Stop between entries: an accept whose reciprocal already went out
             // must reach its `cleared.push` / `accepted += 1`.
             if budget_spent(deadline) {
@@ -2535,6 +2584,23 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             }
         }
 
+        // Land whatever the last entry resolved.
+        self.flush_cleared_auto_accepts(&cleared[flushed..], &verify_failed[verify_flushed..])
+            .await;
+
+        accepted
+    }
+
+    /// Dequeue the `AutoAccept` entries a drain just resolved and record the
+    /// permanent verify failures among them. Called after each resolved entry,
+    /// for the same reason as [`Self::flush_drained_contact_crypto`]: a
+    /// reciprocal that has already been broadcast must not be able to end up
+    /// still queued because the drain stopped before its bookkeeping ran.
+    async fn flush_cleared_auto_accepts(
+        &self,
+        cleared: &[crate::changeset::PendingContactCryptoKey],
+        verify_failed: &[(Identifier, Identifier, Vec<u8>)],
+    ) {
         if !cleared.is_empty() {
             {
                 let mut wm = self.wallet_manager.write().await;
@@ -2562,7 +2628,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     // enqueue gate skips the same bad proof (in-memory only —
                     // retried once per launch; the request stays manually
                     // acceptable).
-                    for (owner, sender, proof) in &verify_failed {
+                    for (owner, sender, proof) in verify_failed {
                         if let Some(managed) = info.identity_manager.managed_identity_mut(owner) {
                             managed.mark_auto_accept_verify_failed(sender, proof);
                         }
@@ -2570,7 +2636,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 }
             }
             let changeset = crate::changeset::PlatformWalletChangeSet {
-                pending_contact_crypto_cleared: cleared,
+                pending_contact_crypto_cleared: cleared.to_vec(),
                 ..Default::default()
             };
             if let Err(e) = self.persister.store(changeset) {
@@ -2578,8 +2644,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     "auto-accept: failed to persist cleared entries (in-memory already updated)");
             }
         }
-
-        accepted
     }
 
     /// Build a DIP-15 auto-accept QR URI (`dash:?du=<username>&dapk=<key_blob>`),

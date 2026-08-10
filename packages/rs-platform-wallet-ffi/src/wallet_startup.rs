@@ -7,7 +7,7 @@
 //! [`platform_wallet::manager::startup`]; this is the marshalling shell.
 
 use platform_wallet::manager::startup::{
-    ScanKey, WalletStartupOptions, WalletStartupOutcome, WalletStartupStatus,
+    WalletStartupOptions, WalletStartupOutcome, WalletStartupStatus,
 };
 use rs_sdk_ffi::{MnemonicResolverHandle, SignerHandle, VTableSigner};
 use std::time::Duration;
@@ -145,45 +145,36 @@ pub unsafe extern "C" fn platform_wallet_manager_start_wallet_subsystems(
         );
     };
 
-    // Key material is only needed for a scan, and a wallet whose identity is
-    // already on file will not run one — so a warm launch must not pay for a
-    // Keychain round trip, nor be failed by one that goes wrong. Ask first.
-    let needs_scan_key = !PLATFORM_WALLET_MANAGER_STORAGE
-        .with_item(manager_handle, |m| m.has_local_identity_blocking(&wid))
-        .unwrap_or(false);
-
-    // Resolve the master xpriv once, up front. The helper holds the mnemonic
-    // and seed in `Zeroizing` buffers and scrubs them before returning; the
-    // master itself has no `Drop`, so it is erased explicitly below.
+    // The master xpriv is resolved lazily, by the library, on the branch that
+    // actually scans — this crate no longer predicts when that is. Erasure is
+    // the library's too: it resolved the key, so it clears it.
     //
-    // A failure here is NOT returned as an FFI error — this call documents that
-    // only handle and wallet-id problems throw. It becomes `ScanKey::Unavailable`
-    // instead, so a locked device defers the scan rather than failing it
-    // terminally.
-    //
-    // `None` = no key needed (warm launch) or none exists (resident-key
-    // wallet); `Some(Err(()))` = a scan needs one and we could not get it.
-    // Both no-key cases collapse to `None`: nothing to scan for, or a host that
-    // deliberately supplied no resolver (watch-only / resident-key wallet, where
-    // discovery derives in-process). Neither is a failure to obtain a key.
-    let mut master: Option<Result<_, ()>> = if !needs_scan_key || mnemonic_resolver_handle.is_null()
-    {
-        None
-    } else {
-        Some(
-            match resolve_master_from_resolver(mnemonic_resolver_handle, &wid, network) {
-                Ok(master) => Ok(master),
-                Err(_) => {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(wid),
-                        "startup: could not resolve the wallet mnemonic; deferring the \
-                         identity scan to a later start"
-                    );
-                    Err(())
-                }
-            },
-        )
+    // The handle is carried as a `usize` so the closure stays `Send + Sync`;
+    // it is valid for the duration of this call, which is the only time the
+    // closure can run. A null resolver means the host is telling us the wallet
+    // holds resident keys (watch-only / in-process derive), so no resolver is
+    // supplied at all — as opposed to one that fails, which the library treats
+    // as a retryable "come back later".
+    let resolver_addr = mnemonic_resolver_handle as usize;
+    let resolve_scan_key = move || {
+        resolve_master_from_resolver(resolver_addr as *mut MnemonicResolverHandle, &wid, network)
+            .map_err(|e| {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wid),
+                    code = ?e.code,
+                    "startup: could not resolve the wallet mnemonic for the identity scan"
+                );
+                // Carried as an error the library can classify, not as an FFI
+                // throw: the documented contract is that only handle and
+                // wallet-id problems throw, and a locked device is neither.
+                platform_wallet::error::PlatformWalletError::KeyDerivation(format!(
+                    "mnemonic resolver failed ({:?})",
+                    e.code
+                ))
+            })
     };
+    let scan_key = (!mnemonic_resolver_handle.is_null())
+        .then_some(&resolve_scan_key as &(dyn Fn() -> Result<_, _> + Send + Sync));
 
     let signer_addr = if identity_signer_handle.is_null() {
         0usize
@@ -211,12 +202,6 @@ pub unsafe extern "C" fn platform_wallet_manager_start_wallet_subsystems(
     // so the future cannot satisfy `block_on_worker`'s `'static` bound. The
     // scoped thread also supplies the 8 MB stack the GroveDB proof
     // verification inside discovery needs.
-    let scan_key = match master.as_ref() {
-        Some(Ok(master)) => ScanKey::Master(master),
-        Some(Err(())) => ScanKey::Unavailable,
-        None => ScanKey::Resident,
-    };
-
     let result = run_on_big_stack_thread(|| {
         PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
             crate::runtime::runtime().block_on(async {
@@ -228,11 +213,6 @@ pub unsafe extern "C" fn platform_wallet_manager_start_wallet_subsystems(
             })
         })
     });
-
-    // Erase the master before any early return below.
-    if let Some(Ok(master)) = master.as_mut() {
-        master.private_key.non_secure_erase();
-    }
 
     let outcome = match result {
         Ok(Some(Ok(outcome))) => outcome,

@@ -26,10 +26,12 @@
 //!
 //! # Key material
 //!
-//! Per-call, never resident. The caller resolves the master xpriv and the
-//! contact-crypto provider for exactly this call and drops them after — the
-//! same contract [`crate::wallet::identity::IdentityWallet::discover_from_master`]
-//! and the drain already use. Making the unattended sweep self-sufficient
+//! Per-call, never resident. The contact-crypto provider is built for exactly
+//! this call and dropped after — the same contract the drain already uses. The
+//! master xpriv is not even that: the caller hands over a [`ScanKeyResolver`]
+//! and this module invokes it only on the branch that scans, so a launch with
+//! nothing to discover never touches the Keychain at all. Making the unattended
+//! sweep self-sufficient
 //! instead would turn a narrowly-scoped Keychain capability into a standing
 //! one, which is a security-posture change and deliberately not what this is.
 
@@ -84,24 +86,25 @@ async fn within_budget<F: std::future::Future>(deadline: Instant, future: F) -> 
     tokio::time::timeout(remaining, future).await.ok()
 }
 
-/// Where an identity scan gets its key material — and, importantly, the
-/// difference between not needing any and not being able to get it.
+/// Produces the master xpriv an identity scan needs, on demand.
 ///
-/// Collapsing the last case into "no master supplied" makes a temporary
-/// problem look permanent: a Keychain-backed wallet would fall through to the
-/// resident-key derive, fail because it deliberately holds no private key, and
-/// be classified [`WalletStartupStatus::DiscoveryFailed`] — which tells the
-/// client never to try again over a device that was merely locked.
-pub enum ScanKey<'a> {
-    /// The wallet holds resident keys; discovery derives in-process.
-    Resident,
-    /// The caller resolved a master xpriv for this call.
-    Master(&'a ExtendedPrivKey),
-    /// Key material was needed but could not be obtained right now — a locked
-    /// device, a denied Keychain read, a transient failure. Discovery is
-    /// skipped and reported as retryable rather than attempted and failed.
-    Unavailable,
-}
+/// **Lazy is the point.** Which branches scan is this module's decision — a
+/// wallet with an identity on file does not — and a caller that resolves up
+/// front has to predict that decision to avoid paying for it. On iOS resolving
+/// means a Keychain round trip, at worst behind a biometric prompt, so a warm
+/// launch would pay for a key it never uses, and pay outside the budget it is
+/// about to be measured against. Handing the sequence a closure instead keeps
+/// the rule in one crate: the FFI marshals, the JNI bridge inherits the
+/// behaviour rather than reimplementing it, and a future change to when a scan
+/// happens cannot silently starve one of them of key material.
+///
+/// `None` means the wallet holds resident keys and discovery derives
+/// in-process. An `Err` means a scan needed a key and could not get one right
+/// now — a locked device, a denied Keychain read — which is reported as
+/// retryable, never as the terminal [`WalletStartupStatus::DiscoveryFailed`]
+/// that an attempted-and-failed derive would produce.
+pub type ScanKeyResolver<'a> =
+    &'a (dyn Fn() -> Result<ExtendedPrivKey, PlatformWalletError> + Send + Sync);
 
 /// Knobs for [`PlatformWalletManager::start_wallet_subsystems`].
 #[derive(Debug, Clone, Copy)]
@@ -348,13 +351,17 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
     /// # Key material
     ///
     /// `scan_key` and `contact_crypto` are borrowed for this call only and must
-    /// not be retained by the caller afterwards. See [`ScanKey`] for why
-    /// "unavailable" is spelled out rather than folded into "none".
+    /// not be retained by the caller afterwards. `scan_key` is invoked at most
+    /// once, and only on the branch that actually scans — see
+    /// [`ScanKeyResolver`] for why the caller must not resolve it up front.
     /// `identity_signer` is `None` to skip the DIP-15 auto-accept pass.
+    ///
+    /// The resolved key never outlives this call: it is erased before
+    /// discovery returns.
     pub async fn start_wallet_subsystems<C, S>(
         &self,
         wallet_id: &WalletId,
-        scan_key: ScanKey<'_>,
+        scan_key: Option<ScanKeyResolver<'_>>,
         contact_crypto: Option<&C>,
         identity_signer: Option<&S>,
         opts: WalletStartupOptions,
@@ -512,98 +519,118 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
         &self,
         wallet_id: &WalletId,
         identity_wallet: &crate::wallet::identity::IdentityWallet,
-        scan_key: ScanKey<'_>,
+        scan_key: Option<ScanKeyResolver<'_>>,
         gap_limit: Option<u32>,
         deadline: Instant,
         tally: &mut StartupTally,
     ) {
-        // No key, no scan — but this is a "come back later", not a failure.
-        // Attempting it anyway would derive against a wallet that holds no
-        // private key, and the resulting error would be classified terminal.
-        if matches!(scan_key, ScanKey::Unavailable) {
-            tracing::info!(
-                "startup: scan key material unavailable; deferring discovery to a later start"
-            );
-            tally.record_unreachable();
-            tally.record_discovery_gave_up();
-            return;
-        }
+        // This is the branch that scans, so this is where the key gets
+        // resolved — not one moment earlier. A failure here is "come back
+        // later", never a verdict: the realistic causes are a locked device or
+        // a denied Keychain read, and deriving anyway against a wallet that
+        // holds no private key would fail locally and be classified terminal,
+        // telling the client to stop trying over a condition that clears
+        // itself on the next unlock.
+        let mut master = match scan_key {
+            None => None,
+            Some(resolve) => match resolve() {
+                Ok(master) => Some(master),
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        "startup: scan key material unavailable; deferring discovery to a \
+                         later start"
+                    );
+                    tally.record_unreachable();
+                    tally.record_discovery_gave_up();
+                    return;
+                }
+            },
+        };
 
         let opts = IdentityDiscoveryOptions {
             start_index: Some(0),
             gap_limit: gap_limit.unwrap_or(IdentityDiscoveryOptions::default().gap_limit),
         };
 
-        for (attempt, backoff) in DISCOVERY_BACKOFF.iter().map(Some).chain([None]).enumerate() {
-            // A single scan walks up to `gap_limit` indices, each a Platform
-            // fetch plus a DPNS lookup, so it needs the same ceiling the other
-            // steps have — otherwise one attempt can outlast the whole budget
-            // this call promises.
-            let attempt_future = async {
-                match scan_key {
-                    ScanKey::Master(master) => {
-                        identity_wallet.discover_from_master(opts, master).await
+        // Scoped so every exit path — including the early returns inside the
+        // loop — lands on the erase below. `return` leaves this block, not the
+        // function, so the tally bookkeeping keeps its existing shape.
+        async {
+            for (attempt, backoff) in DISCOVERY_BACKOFF.iter().map(Some).chain([None]).enumerate() {
+                // A single scan walks up to `gap_limit` indices, each a Platform
+                // fetch plus a DPNS lookup, so it needs the same ceiling the other
+                // steps have — otherwise one attempt can outlast the whole budget
+                // this call promises.
+                let attempt_future = async {
+                    match master.as_ref() {
+                        Some(master) => identity_wallet.discover_from_master(opts, master).await,
+                        None => identity_wallet.discover(opts).await,
                     }
-                    ScanKey::Resident => identity_wallet.discover(opts).await,
-                    // Unreachable: guarded before the loop.
-                    ScanKey::Unavailable => unreachable!(),
-                }
-            };
-            let Some(result) = within_budget(deadline, attempt_future).await else {
-                // Sightings persist incrementally, so an abandoned scan may
-                // still have folded an identity in before it was cut off.
-                if let Some(known) = self.local_identity_id(wallet_id).await {
-                    tally.record_local_identity(known);
-                    return;
-                }
-                break;
-            };
+                };
+                let Some(result) = within_budget(deadline, attempt_future).await else {
+                    // Sightings persist incrementally, so an abandoned scan may
+                    // still have folded an identity in before it was cut off.
+                    if let Some(known) = self.local_identity_id(wallet_id).await {
+                        tally.record_local_identity(known);
+                        return;
+                    }
+                    break;
+                };
 
-            match result {
-                Ok(found) => {
-                    match found.first() {
-                        Some(identity) => tally.record_discovered(identity.id()),
-                        // An empty return is not proof on its own: `discover`
-                        // reports only identities THIS call inserted, so a
-                        // concurrent startup that inserted one first leaves us
-                        // seeing it as already-managed and returning nothing.
-                        // Consult local state before calling it absence.
-                        None => match self.local_identity_id(wallet_id).await {
-                            Some(known) => tally.record_discovered(known),
-                            None => tally.record_proven_absent(),
-                        },
+                match result {
+                    Ok(found) => {
+                        match found.first() {
+                            Some(identity) => tally.record_discovered(identity.id()),
+                            // An empty return is not proof on its own: `discover`
+                            // reports only identities THIS call inserted, so a
+                            // concurrent startup that inserted one first leaves us
+                            // seeing it as already-managed and returning nothing.
+                            // Consult local state before calling it absence.
+                            None => match self.local_identity_id(wallet_id).await {
+                                Some(known) => tally.record_discovered(known),
+                                None => tally.record_proven_absent(),
+                            },
+                        }
+                        return;
                     }
-                    return;
+                    Err(PlatformWalletError::IdentityDiscoveryIncomplete { .. }) => {
+                        tally.record_unreachable();
+                    }
+                    Err(e) => {
+                        // Not a reachability question — a wallet/persistence
+                        // failure will not fix itself on the next attempt, so this
+                        // is recorded as terminal rather than as "try again".
+                        tracing::warn!(
+                            error = %e,
+                            "startup: identity discovery failed for a non-network reason"
+                        );
+                        tally.record_discovery_failed_locally();
+                        return;
+                    }
                 }
-                Err(PlatformWalletError::IdentityDiscoveryIncomplete { .. }) => {
-                    tally.record_unreachable();
+
+                let Some(backoff) = backoff else { break };
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    break;
                 }
-                Err(e) => {
-                    // Not a reachability question — a wallet/persistence
-                    // failure will not fix itself on the next attempt, so this
-                    // is recorded as terminal rather than as "try again".
-                    tracing::warn!(
-                        error = %e,
-                        "startup: identity discovery failed for a non-network reason"
-                    );
-                    tally.record_discovery_failed_locally();
-                    return;
-                }
+                tracing::info!(
+                    attempt = attempt + 1,
+                    "startup: identity discovery could not reach Platform; retrying"
+                );
+                tokio::time::sleep((*backoff).min(remaining)).await;
             }
 
-            let Some(backoff) = backoff else { break };
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                break;
-            }
-            tracing::info!(
-                attempt = attempt + 1,
-                "startup: identity discovery could not reach Platform; retrying"
-            );
-            tokio::time::sleep((*backoff).min(remaining)).await;
+            tally.record_discovery_gave_up();
         }
+        .await;
 
-        tally.record_discovery_gave_up();
+        // The key lives no longer than the scan that needed it. `ExtendedPrivKey`
+        // has no `Drop`, so this is the only thing that clears it.
+        if let Some(master) = master.as_mut() {
+            master.private_key.non_secure_erase();
+        }
     }
 }
 
