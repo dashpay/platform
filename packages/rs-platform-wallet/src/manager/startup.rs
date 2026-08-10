@@ -274,6 +274,13 @@ impl StartupTally {
         if self.contact_accounts_pending > 0 {
             return WalletStartupStatus::PartialAccountsPending;
         }
+        // An empty queue only means "nothing left to build" if a contact pass
+        // actually completed. Without one there may be undiscovered contact
+        // requests whose account builds were never enqueued, and calling that
+        // `Ready` would promise addresses this call never prepared.
+        if !self.dashpay_sync_ran {
+            return WalletStartupStatus::PartialAccountsPending;
+        }
         WalletStartupStatus::Ready
     }
 
@@ -327,7 +334,16 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
         let started = Instant::now();
-        let deadline = started + opts.budget;
+        // `Instant + Duration` panics when the sum is not representable, and
+        // this runs under an `extern "C"` caller whose thread wrapper re-raises
+        // a panic as an abort — so an absurd budget would take the host process
+        // down rather than return an error.
+        let deadline = started.checked_add(opts.budget).ok_or_else(|| {
+            PlatformWalletError::InvalidParameter(format!(
+                "startup budget {:?} exceeds the supported duration range",
+                opts.budget
+            ))
+        })?;
         let mut tally = StartupTally::default();
 
         let wallet = self
@@ -342,6 +358,7 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
             tally.record_local_identity(known);
         } else {
             self.discover_identity_with_backoff(
+                wallet_id,
                 identity_wallet,
                 master,
                 opts.gap_limit,
@@ -464,6 +481,7 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
     /// — is worth another attempt.
     async fn discover_identity_with_backoff(
         &self,
+        wallet_id: &WalletId,
         identity_wallet: &crate::wallet::identity::IdentityWallet,
         master: Option<&ExtendedPrivKey>,
         gap_limit: Option<u32>,
@@ -476,16 +494,39 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
         };
 
         for (attempt, backoff) in DISCOVERY_BACKOFF.iter().map(Some).chain([None]).enumerate() {
-            let result = match master {
-                Some(master) => identity_wallet.discover_from_master(opts, master).await,
-                None => identity_wallet.discover(opts).await,
+            // A single scan walks up to `gap_limit` indices, each a Platform
+            // fetch plus a DPNS lookup, so it needs the same ceiling the other
+            // steps have — otherwise one attempt can outlast the whole budget
+            // this call promises.
+            let attempt_future = async {
+                match master {
+                    Some(master) => identity_wallet.discover_from_master(opts, master).await,
+                    None => identity_wallet.discover(opts).await,
+                }
+            };
+            let Some(result) = within_budget(deadline, attempt_future).await else {
+                // Sightings persist incrementally, so an abandoned scan may
+                // still have folded an identity in before it was cut off.
+                if let Some(known) = self.local_identity_id(wallet_id).await {
+                    tally.record_local_identity(known);
+                    return;
+                }
+                break;
             };
 
             match result {
                 Ok(found) => {
                     match found.first() {
                         Some(identity) => tally.record_discovered(identity.id()),
-                        None => tally.record_proven_absent(),
+                        // An empty return is not proof on its own: `discover`
+                        // reports only identities THIS call inserted, so a
+                        // concurrent startup that inserted one first leaves us
+                        // seeing it as already-managed and returning nothing.
+                        // Consult local state before calling it absence.
+                        None => match self.local_identity_id(wallet_id).await {
+                            Some(known) => tally.record_discovered(known),
+                            None => tally.record_proven_absent(),
+                        },
                     }
                     return;
                 }
@@ -635,6 +676,20 @@ mod tests {
             tally.discovery_attempts, 0,
             "a known identity must not cost a network scan"
         );
+    }
+
+    /// An empty drain queue is not evidence of readiness on its own. Without a
+    /// completed contact pass there may be requests nobody has looked at, whose
+    /// account builds were therefore never enqueued — reporting `Ready` would
+    /// promise addresses this call never prepared.
+    #[test]
+    fn an_empty_queue_without_a_contact_pass_is_not_ready() {
+        let mut tally = StartupTally::default();
+        tally.record_discovered(identity());
+        tally.record_drain(0, 0);
+
+        assert!(!tally.dashpay_sync_ran);
+        assert_eq!(tally.status(), WalletStartupStatus::PartialAccountsPending);
     }
 
     #[test]

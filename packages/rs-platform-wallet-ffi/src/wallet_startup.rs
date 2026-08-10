@@ -146,12 +146,26 @@ pub unsafe extern "C" fn platform_wallet_manager_start_wallet_subsystems(
     // Resolve the master xpriv once, up front. The helper holds the mnemonic
     // and seed in `Zeroizing` buffers and scrubs them before returning; the
     // master itself has no `Drop`, so it is erased explicitly below.
+    //
+    // A failure here is NOT returned as an FFI error. This call documents that
+    // only handle and wallet-id problems throw, and the resolver is needed only
+    // when a scan actually runs — a warm launch whose identity is already known
+    // must not be failed by a Keychain hiccup it never needed. If a scan does
+    // turn out to be required, it fails without key material and surfaces as
+    // `DiscoveryFailed`, which is the structured outcome for exactly this.
     let mut master = if mnemonic_resolver_handle.is_null() {
         None
     } else {
         match resolve_master_from_resolver(mnemonic_resolver_handle, &wid, network) {
             Ok(master) => Some(master),
-            Err(e) => return e,
+            Err(_) => {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wid),
+                    "startup: could not resolve the wallet mnemonic; continuing without \
+                     scan key material"
+                );
+                None
+            }
         }
     };
 

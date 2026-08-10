@@ -147,7 +147,18 @@ extension PlatformWalletManager {
                 "budget must be a finite, non-negative number of seconds, got \(requested)"
             )
         case .some(let requested):
-            budgetSecs = max(1, UInt64(requested.rounded()))
+            // `UInt64(_:)` traps on anything outside its range, which a finite
+            // `TimeInterval` can still be — `.greatestFiniteMagnitude` among
+            // them. The failable initializer turns that into an error instead
+            // of a crash. Rust validates the deadline independently: plenty of
+            // representable `UInt64` seconds still cannot be added to an
+            // `Instant`.
+            guard let converted = UInt64(exactly: requested.rounded()) else {
+                throw PlatformWalletError.invalidParameter(
+                    "budget is outside the supported range of whole seconds: \(requested)"
+                )
+            }
+            budgetSecs = max(1, converted)
         }
 
         return try await Task.detached(priority: .userInitiated) { () -> WalletStartupOutcome in
