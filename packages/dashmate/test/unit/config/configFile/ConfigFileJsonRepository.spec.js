@@ -201,6 +201,34 @@ describe('ConfigFileJsonRepository', () => {
         .to.equal('9.9.9');
     });
 
+    // Migrations are not all pure - one moves TLS files and deletes the
+    // originals - so deciding whether one is due must not run them. Running
+    // them to find out would do that work outside the lock, where another
+    // command reconfiguring the node is free to be doing the same.
+    it('should decide a migration is due without running any migration', () => {
+      seedConfigFile();
+
+      let migrationRuns = 0;
+      const countingMigration = (data) => {
+        migrationRuns += 1;
+
+        return data;
+      };
+
+      const repository = new ConfigFileJsonRepository(
+        countingMigration,
+        homeDir,
+        createDefaults,
+        CURRENT_FORMAT_VERSION,
+      );
+
+      repository.readAndMigrate();
+
+      // One read, inside no lock, because the recorded version is current.
+      expect(migrationRuns).to.equal(1);
+      expect(fs.existsSync(homeDir.joinPath('config.json.lock'))).to.be.false();
+    });
+
     it('should retry migration rendering when the first render fails', () => {
       seedConfigFile();
 
@@ -227,7 +255,7 @@ describe('ConfigFileJsonRepository', () => {
     it('should not wait for a lock when reading does not migrate', () => {
       seedConfigFile();
 
-      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults, {
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults, CURRENT_FORMAT_VERSION, {
         acquireTimeout: 50,
       });
       const lockPath = homeDir.joinPath('config.json.lock');
@@ -568,7 +596,7 @@ describe('ConfigFileJsonRepository', () => {
 
       // proper-lockfile floors `stale` at 2s and the refresh that detects loss at
       // 1s, so this is as fast as the path can be made to happen.
-      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults, {
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults, CURRENT_FORMAT_VERSION, {
         stale: 2000,
       });
 
@@ -618,7 +646,7 @@ describe('ConfigFileJsonRepository', () => {
     it('should give up waiting for another holder with an actionable error', () => {
       seedConfigFile();
 
-      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults, {
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults, CURRENT_FORMAT_VERSION, {
         acquireTimeout: 700,
       });
 

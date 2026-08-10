@@ -139,6 +139,35 @@ describe('renewCertificate', () => {
     expect(writeConfigTemplates).to.not.have.been.called();
   });
 
+  // Issuance runs for minutes, long enough for the lease to be stolen and
+  // another command to save and render newer state. Rendering from this
+  // configuration would overwrite it, and the save's own check is too late.
+  it('should not render service files when the lease was lost during issuance', async function it() {
+    const obtainCertificateTask = this.sinon.stub().callsFake((config) => ({
+      run: this.sinon.stub().callsFake(async () => {
+        config.set(
+          'platform.gateway.ssl.providerConfigs.zerossl.id',
+          'issued-certificate-id-000000000000',
+        );
+
+        // The lock went stale while the certificate was being issued.
+        repository.isExclusive = () => false;
+      }),
+    }));
+    const writeConfigTemplates = this.sinon.stub();
+
+    await expect(renewCertificate({
+      configName,
+      provider: 'zerossl',
+      expirationDays: 30,
+      obtainCertificateTask,
+      configFileRepository: repository,
+      writeConfigTemplates,
+    })).to.be.rejectedWith('Lost the configuration lock');
+
+    expect(writeConfigTemplates).to.not.have.been.called();
+  });
+
   it('should checkpoint produced certificate state when obtain fails', async function it() {
     const obtainCertificateTask = this.sinon.stub().callsFake((config, {
       onCertificateCreated,

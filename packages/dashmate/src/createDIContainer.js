@@ -7,6 +7,8 @@ import {
 } from 'awilix';
 
 import Docker from 'dockerode';
+import fs from 'fs';
+import path from 'path';
 
 import getServiceListFactory from './docker/getServiceListFactory.js';
 import ensureFileMountExistsFactory from './docker/ensureFileMountExistsFactory.js';
@@ -116,6 +118,8 @@ import getLocalConfigFactory from '../configs/defaults/getLocalConfigFactory.js'
 import getTestnetConfigFactory from '../configs/defaults/getTestnetConfigFactory.js';
 import getMainnetConfigFactory from '../configs/defaults/getMainnetConfigFactory.js';
 import getConfigFileMigrationsFactory from '../configs/getConfigFileMigrationsFactory.js';
+import getConfigFormatVersion from './config/configFile/getConfigFormatVersion.js';
+import { PACKAGE_ROOT_DIR } from './constants.js';
 import assertLocalServicesRunningFactory from './test/asserts/assertLocalServicesRunningFactory.js';
 import assertServiceRunningFactory from './test/asserts/assertServiceRunningFactory.js';
 import generateEnvsFactory from './config/generateEnvsFactory.js';
@@ -176,6 +180,10 @@ export default async function createDIContainer(options = {}) {
     createConfigFile: asFunction(createConfigFileFactory).singleton(),
     getConfigFileMigrations: asFunction(getConfigFileMigrationsFactory).singleton(),
     migrateConfigFile: asFunction(migrateConfigFileFactory).singleton(),
+    configFormatVersion: asFunction((getConfigFileMigrations) => getConfigFormatVersion(
+      getConfigFileMigrations(),
+      JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8')).version,
+    )).singleton(),
     isHelper: asValue(process.env.DASHMATE_HELPER === '1'),
     getConnectionHost: asFunction(getConnectionHostFactory).singleton(),
     generateEnvs: asFunction(generateEnvsFactory).singleton(),

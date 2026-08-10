@@ -2,6 +2,7 @@ import fs from 'fs';
 import Ajv from 'ajv';
 import path from 'path';
 import lockfile from 'proper-lockfile';
+import semver from 'semver';
 import writeFileAtomic from 'write-file-atomic';
 import Config from '../Config.js';
 import { PACKAGE_ROOT_DIR } from '../../constants.js';
@@ -72,12 +73,21 @@ export default class ConfigFileJsonRepository {
    * @param {migrateConfigFile} migrateConfigFile
    * @param {HomeDir} homeDir
    * @param {createConfigFile} createConfigFile
+   * @param {string} configFormatVersion - the format this build produces, used
+   *   to tell a migrating read from a clean one without running any migration
    * @param {Object} [configFileLockOptions={}] - lock timing overrides
    * @param {number} [configFileLockOptions.stale]
    * @param {number} [configFileLockOptions.acquireTimeout]
    */
-  constructor(migrateConfigFile, homeDir, createConfigFile, configFileLockOptions = {}) {
+  constructor(
+    migrateConfigFile,
+    homeDir,
+    createConfigFile,
+    configFormatVersion,
+    configFileLockOptions = {},
+  ) {
     this.migrateConfigFile = migrateConfigFile;
+    this.configFormatVersion = configFormatVersion;
     this.createConfigFile = createConfigFile;
     this.ajv = new Ajv();
     this.lockStaleMs = configFileLockOptions.stale ?? LOCK_STALE_MS;
@@ -191,7 +201,23 @@ export default class ConfigFileJsonRepository {
         beforeSave(configFile);
       }
 
-      this.#save(configFile);
+      try {
+        this.#save(configFile);
+      } catch (e) {
+        // The generated files now describe a change that did not survive.
+        // Nothing on disk records that they are ahead, so re-render them from
+        // the state that is still there rather than leave the two disagreeing.
+        if (beforeSave && fs.existsSync(this.configFilePath)) {
+          try {
+            beforeSave(this.read());
+          } catch {
+            // Keep the save failure - it is the one the caller has to act on,
+            // and it already says nothing was written.
+          }
+        }
+
+        throw e;
+      }
 
       if (onSaved) {
         onSaved(configFile);
@@ -224,10 +250,12 @@ export default class ConfigFileJsonRepository {
       return { configFile, migrated };
     };
 
-    const initialResult = readResult();
-
-    if (!initialResult.configFile.isChanged()) {
-      return { configFile: initialResult.configFile };
+    // Decide whether a migration is due from the recorded version alone.
+    // Migrations are not all pure - some move service files on disk and delete
+    // the originals - so running them to find out would do that work outside
+    // the lock, and again inside it.
+    if (!this.#isMigrationDue()) {
+      return { configFile: this.read(options) };
     }
 
     return this.#locked(() => {
@@ -247,6 +275,43 @@ export default class ConfigFileJsonRepository {
 
       return { configFile };
     });
+  }
+
+  /**
+   * Whether the file on disk records an older format than this build produces.
+   *
+   * Reads the recorded version only. Running the migrations to find out would
+   * perform their side effects - the 0.25.7 migration moves TLS files and
+   * deletes the originals - before this process holds the lock.
+   *
+   * @returns {boolean}
+   */
+  #isMigrationDue() {
+    // Without a target to compare against there is no way to tell, and guessing
+    // wrong means running a migration's file moves outside the lock. Taking the
+    // lock costs a reader nothing it would not already pay when a migration is
+    // genuinely due.
+    if (typeof this.configFormatVersion !== 'string') {
+      return true;
+    }
+
+    let recordedVersion;
+
+    try {
+      recordedVersion = JSON.parse(
+        fs.readFileSync(this.configFilePath, 'utf8'),
+      ).configFormatVersion;
+    } catch {
+      // An unreadable or malformed file is read()'s to report, with the error
+      // that names the file and the reason.
+      return true;
+    }
+
+    if (typeof recordedVersion !== 'string' || semver.valid(recordedVersion) === null) {
+      return true;
+    }
+
+    return semver.lt(recordedVersion, this.configFormatVersion);
   }
 
   /**

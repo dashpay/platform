@@ -30,6 +30,7 @@ describe('scheduleRenewLetsEncryptCertificateFactory', () => {
         getConfig: this.sinon.stub().returns(config),
       }),
       acquire: this.sinon.stub(),
+      isExclusive: () => true,
       readAndMigrate: this.sinon.stub().returns({
         configFile: {
           getConfig: this.sinon.stub().returns(config),

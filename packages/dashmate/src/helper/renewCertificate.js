@@ -55,6 +55,16 @@ export default async function renewCertificate({
     }
 
     if (config.isChanged()) {
+      // Issuance can take minutes, which is long enough for this lease to be
+      // lost and another command to save and render newer state. Rendering from
+      // this configuration would overwrite that, and the save's own check comes
+      // too late to prevent it.
+      if (!configFileRepository.isExclusive()) {
+        throw new Error('Lost the configuration lock while renewing the certificate,'
+          + ' so the gateway service files were not written. The certificate was'
+          + ' obtained; re-run renewal once no other command is changing configuration.');
+      }
+
       // Rendering before the save keeps a failure recoverable: nothing is
       // committed, so the next renewal attempt redoes both. Saving first would
       // leave the gateway's generated files behind a configuration that already
