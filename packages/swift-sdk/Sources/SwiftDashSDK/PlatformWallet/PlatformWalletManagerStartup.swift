@@ -1,0 +1,158 @@
+//
+//  PlatformWalletManagerStartup.swift
+//  SwiftDashSDK
+//
+//  Ordered wallet bring-up: identity → contacts → contact accounts, run as one
+//  bounded call before the host starts Core SPV.
+//
+
+import Foundation
+
+/// Why a bring-up stopped where it did.
+///
+/// Every case is a normal result. A host starts Core SPV on all of them — the
+/// partial cases just mean the DIP-15 rescan has work left to do.
+public enum WalletStartupStatus: UInt8, Sendable {
+    /// Identity resolved, contacts synced, no contact-account builds left
+    /// queued. Everything a contact payment needs is in place.
+    case ready = 0
+    /// Platform answered that this seed owns no identity. Terminal, and not a
+    /// failure — there is nothing to sync and nothing to drain.
+    case noIdentity = 1
+    /// The identity scan never reached Platform inside the budget. The wallet
+    /// may well own one; we do not know yet.
+    case partialNoIdentity = 2
+    /// Identity resolved and synced, but contact-account builds are still
+    /// queued — the drain did not finish inside the budget.
+    case partialAccountsPending = 3
+
+    /// Whether Platform gave a definitive answer about this seed's identity.
+    ///
+    /// `false` only for ``partialNoIdentity``, the one outcome worth repeating.
+    public var identityIsSettled: Bool { self != .partialNoIdentity }
+}
+
+/// What a bring-up did.
+public struct WalletStartupOutcome: Sendable, Equatable {
+    public let status: WalletStartupStatus
+    /// The wallet's identity, when one is known by the time this returned.
+    public let identityId: Data?
+    /// Discovery scans performed. `0` when a local identity was already known
+    /// and no network scan was needed.
+    public let discoveryAttempts: UInt32
+    /// Whether the inline contact-request pass ran.
+    public let dashPaySyncRan: Bool
+    /// Contact-crypto entries the drain completed.
+    public let contactAccountsDrained: UInt32
+    /// Contact-account builds still queued on return. Non-zero means the
+    /// DIP-15 rescan will have to backfill those contacts' payments.
+    public let contactAccountsPending: UInt32
+    public let elapsed: TimeInterval
+}
+
+extension PlatformWalletManager {
+    /// Bring one wallet's DashPay state up in dependency order, then return so
+    /// the caller can start Core SPV.
+    ///
+    /// A contact's DIP-15 payment addresses are derived from its contact
+    /// account, and an address the wallet is not watching when the
+    /// compact-filter scan passes its funding height produces no transaction at
+    /// all. This runs identity discovery, one contact-request pass, and the
+    /// signer-present drain that turns queued contact-crypto into real accounts
+    /// — so the first filter set already covers them.
+    ///
+    /// The ordering, the retry policy and the budget all live Rust-side; this
+    /// is a thin bridge. Call it once per wallet load, immediately before
+    /// `startSpv`.
+    ///
+    /// - Parameters:
+    ///   - wallet: the wallet to bring up.
+    ///   - budget: ceiling for the whole sequence. `nil` uses the SDK default
+    ///     (20s). Expiry is reported in the outcome, never thrown: Core sync is
+    ///     the wallet's primary function and must not be held hostage to
+    ///     Platform being slow.
+    ///   - gapLimit: identity-discovery gap limit; `nil` uses the default.
+    ///   - storage: `WalletStorage` used by the resolver callback to read the
+    ///     BIP-39 mnemonic from the Keychain. Overridable for tests.
+    ///
+    /// - Returns: what the sequence achieved. Start Core SPV regardless of the
+    ///   status; inspect `contactAccountsPending` for diagnostics.
+    ///
+    /// - Throws: only for an unconfigured manager, a malformed wallet id, or an
+    ///   unknown wallet. An unreachable Platform, a failed sync pass and an
+    ///   unfinished drain are all reported through the returned status.
+    ///
+    /// # Key material
+    ///
+    /// The mnemonic resolver and identity signer are built for this call and
+    /// pinned across it with `withExtendedLifetime`; Rust borrows and never
+    /// retains them. That per-call contract is deliberate — a standing
+    /// Keychain capability driven by an unattended loop would be a different
+    /// security posture, not a convenience.
+    @discardableResult
+    public func startWalletSubsystems(
+        wallet: ManagedPlatformWallet,
+        budget: TimeInterval? = nil,
+        gapLimit: UInt32? = nil,
+        storage: WalletStorage = WalletStorage()
+    ) async throws -> WalletStartupOutcome {
+        try ensureConfigured()
+
+        let walletId = wallet.walletId
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be 32 bytes, got \(walletId.count)"
+            )
+        }
+
+        let handle = self.handle
+        // A genuine watch-only wallet has no Keychain mnemonic; Rust then
+        // derives in-process and the resolver is never consulted.
+        let coreSigner: MnemonicResolver? =
+            storage.hasMnemonic(for: walletId) ? MnemonicResolver(storage: storage) : nil
+        // Identity signer for the DIP-15 auto-accept pass. Nil without a
+        // SwiftData container → the drain runs provider-only, matching
+        // `unlockWalletFromKeychain`.
+        let identitySigner: KeychainSigner? = self.modelContainer.map {
+            KeychainSigner(modelContainer: $0, network: self.signerNetwork ?? .testnet)
+        }
+        let budgetSecs = UInt64((budget ?? 0).rounded())
+
+        return try await Task.detached(priority: .userInitiated) { () -> WalletStartupOutcome in
+            try withExtendedLifetime((coreSigner, identitySigner)) {
+                var out = WalletStartupOutcomeFFI()
+                try walletId.withUnsafeBytes { raw in
+                    try platform_wallet_manager_start_wallet_subsystems(
+                        handle,
+                        raw.bindMemory(to: UInt8.self).baseAddress,
+                        coreSigner?.handle,
+                        identitySigner?.handle,
+                        budgetSecs,
+                        gapLimit ?? 0,
+                        &out
+                    ).check()
+                }
+                return WalletStartupOutcome(out)
+            }
+        }.value
+    }
+}
+
+extension WalletStartupOutcome {
+    /// Map the flat FFI struct. An unrecognised status discriminant is read as
+    /// ``WalletStartupStatus/partialNoIdentity`` — the conservative choice,
+    /// since it is the one status that does not claim the identity question is
+    /// settled.
+    init(_ ffi: WalletStartupOutcomeFFI) {
+        self.status = WalletStartupStatus(rawValue: ffi.status) ?? .partialNoIdentity
+        self.identityId =
+            ffi.has_identity_id
+            ? Swift.withUnsafeBytes(of: ffi.identity_id) { Data($0) }
+            : nil
+        self.discoveryAttempts = ffi.discovery_attempts
+        self.dashPaySyncRan = ffi.dashpay_sync_ran
+        self.contactAccountsDrained = ffi.contact_accounts_drained
+        self.contactAccountsPending = ffi.contact_accounts_pending
+        self.elapsed = TimeInterval(ffi.elapsed_ms) / 1000
+    }
+}

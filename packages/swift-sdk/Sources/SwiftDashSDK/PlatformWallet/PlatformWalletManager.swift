@@ -250,8 +250,11 @@ public class PlatformWalletManager: ObservableObject {
     /// `KeychainSigner` (the identity document signer) for the unlock-time
     /// auto-accept drain. Nil when configured without persistence (no Keychain
     /// signing possible → the drain runs provider-only).
-    private var modelContainer: ModelContainer?
-    private var signerNetwork: Network?
+    /// `internal`, not `private`: the ordered bring-up in
+    /// `PlatformWalletManagerStartup` builds the same signer for the same
+    /// drain, and reusing these beats duplicating the construction there.
+    var modelContainer: ModelContainer?
+    var signerNetwork: Network?
 
     /// Convenience reference; the FFI callback context's lifetime is
     /// owned by Rust (retained reference transferred at `configure`,
@@ -1342,7 +1345,9 @@ public class PlatformWalletManager: ObservableObject {
 
     // MARK: - Internals
 
-    private func ensureConfigured() throws {
+    /// `internal` so the extensions in sibling files gate on the same check
+    /// rather than re-implementing it.
+    func ensureConfigured() throws {
         if !isConfigured || handle == NULL_HANDLE {
             throw PlatformWalletError.invalidHandle(
                 "PlatformWalletManager not configured"
