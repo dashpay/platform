@@ -259,8 +259,9 @@ pub enum PlatformWalletError {
     #[error("Asset lock {0} is not tracked by this wallet")]
     AssetLockNotTracked(dashcore::OutPoint),
 
-    /// A one-shot asset lock has already funded a successful Platform
-    /// transition and cannot be resumed again.
+    /// Platform reported that a one-shot asset lock outpoint was already
+    /// consumed. Rejection responses are not quorum-authenticated; callers
+    /// must not infer terminal local state from this signal alone.
     #[error("Asset lock {0} has already been consumed")]
     AssetLockAlreadyConsumed(dashcore::OutPoint),
 
@@ -755,8 +756,9 @@ fn consensus_error_of(error: &dash_sdk::Error) -> Option<&dpp::consensus::Consen
 /// Matches the structured consensus error carried by both CheckTx
 /// (`Protocol(ConsensusError)`) and wait-stream
 /// (`StateTransitionBroadcastError`) failures. The outpoint comparison is
-/// deliberate: callers may only reconcile the tracked lock they actually
-/// submitted, never an unrelated outpoint mentioned by a malformed error.
+/// deliberate: callers may only recognize a report for the tracked lock they
+/// actually submitted, never an unrelated outpoint mentioned by a malformed
+/// error. This signal alone does not authenticate terminal consumption.
 pub fn is_asset_lock_already_consumed(
     error: &dash_sdk::Error,
     out_point: &dashcore::OutPoint,

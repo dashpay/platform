@@ -613,9 +613,10 @@ fn map_spend_result(
     }
 }
 
-/// Preserve the idempotent "already consumed" recovery result across the
-/// FFI boundary while keeping every other resume failure on the existing
-/// generic error path.
+/// Preserve the typed "already consumed" recovery report across the FFI
+/// boundary while keeping every other resume failure on the existing generic
+/// error path. The wallet retains nonterminal consumption-unknown state; the
+/// host must not interpret this code as authenticated completion.
 fn map_asset_lock_resume_result(
     result: Result<(), PlatformWalletError>,
 ) -> PlatformWalletFFIResult {

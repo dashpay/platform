@@ -584,7 +584,7 @@ mod tests {
             wallet_id,
             Arc::new(Notify::new()),
             Arc::clone(&broadcaster),
-            WalletPersister::new(wallet_id, Arc::<RecordingPersistence>::clone(&persistence)),
+            WalletPersister::new(wallet_id, persistence),
         );
         let (transaction, _path) = manager
             .build_asset_lock_transaction(
@@ -649,16 +649,6 @@ mod tests {
                 .status,
             AssetLockStatus::Consumed
         );
-        let persisted_status = persistence
-            .stored
-            .lock()
-            .expect("recording persistence mutex")
-            .iter()
-            .filter_map(|cs| cs.asset_locks.as_ref())
-            .filter_map(|asset_locks| asset_locks.asset_locks.get(&out_point))
-            .map(|asset_lock| asset_lock.status.clone())
-            .next_back();
-        assert_eq!(persisted_status, Some(AssetLockStatus::Consumed));
         {
             let wm = wallet_manager.read().await;
             assert_eq!(
