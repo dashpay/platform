@@ -424,7 +424,11 @@ impl IdentityWallet {
             )));
         }
         let proof = self.reconstruct_asset_lock_proof(invitation).await?;
-        proof.create_identifier().map_err(|e| {
+        // The reconstruction now carries an optional ChainLock fallback for
+        // the claim path; the prospective id is always derived from the
+        // PRIMARY proof (both proofs cover the same credit output, so the
+        // id is identical either way).
+        proof.primary.create_identifier().map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!(
                 "invitation asset lock proof yielded no identity id: {e}"
             ))
@@ -1069,7 +1073,7 @@ mod tests {
         let inv = parsed(key, txid.to_string(), None);
 
         let proof = assemble_asset_lock_proof(tx, true, 100, &inv).unwrap();
-        let id = proof.create_identifier().unwrap();
+        let id = proof.primary.create_identifier().unwrap();
 
         let from_index_0 =
             ChainAssetLockProof::new(100, OutPoint::new(txid, 0).into()).create_identifier();
@@ -1116,6 +1120,7 @@ mod tests {
 
         let id = assemble_asset_lock_proof(tx, true, 100, &inv)
             .unwrap()
+            .primary
             .create_identifier()
             .unwrap();
 
