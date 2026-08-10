@@ -141,6 +141,21 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// amount plus input 0's retained fee reserve. Refresh the shield
     /// preflight and ask the user to confirm the new capacity.
     case errorShieldedInsufficientBalance = 41
+    /// The tracked asset-lock transaction spends an outpoint that a different,
+    /// already-confirmed transaction of the same wallet spent first — typically
+    /// a restored wallet whose rescan resurrected a UTXO one of its own earlier
+    /// asset locks had already consumed. Peers drop such a double spend without
+    /// replying, so the lock can never confirm and its proof wait would hang.
+    /// The conflict screen stops the current resume before it broadcasts again
+    /// or enters the proof wait (a `Broadcast`-status lock was sent on an
+    /// earlier call). TERMINAL: this is the one code that lets a host offer to
+    /// discard the asset lock and rebuild it from currently-unspent inputs — a
+    /// fund-safe action, because the confirmed spender is this wallet's own
+    /// transaction, so the value either stays in the sibling or (after a freak
+    /// reorg) returns to the spendable set. Its absence is not proof of
+    /// liveness — the Rust-side scan cannot see conflicts whose spender was
+    /// already pruned.
+    case errorAssetLockInputConflict = 42
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -238,6 +253,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorContestedNameNotTradable
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_INSUFFICIENT_BALANCE:
             self = .errorShieldedInsufficientBalance
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_INPUT_CONFLICT:
+            self = .errorAssetLockInputConflict
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -418,6 +435,16 @@ public enum PlatformWalletError: LocalizedError {
     /// `endsAtMs == 0` means the vote's end time was unavailable — show it
     /// as unknown rather than as "ends at the epoch".
     case contestedNameNotTradable(label: String, endsAtMs: UInt64)
+    /// The tracked asset lock spends an outpoint a different,
+    /// already-confirmed transaction spent first, so it is a double spend no
+    /// peer will relay and it can never confirm. Nothing was broadcast and
+    /// nothing is in flight. TERMINAL: unlike `transactionBroadcastUnconfirmed`
+    /// — where the transaction may well be alive and discarding it would
+    /// strand real funds — this is the one asset-lock error that lets a host
+    /// offer to discard the lock and rebuild it from currently-unspent inputs.
+    /// The message names the lock's outpoint, the conflicting input, and the
+    /// confirmed spender, so a host can say *which* lock died.
+    case assetLockInputConflict(String)
     /// The named thing does not exist. For the deferred payment calls this is
     /// the wallet-was-REMOVED case: the token's wallet (or the wallet a payment
     /// was just signed against) is no longer registered in the manager, so there
@@ -452,6 +479,7 @@ public enum PlatformWalletError: LocalizedError {
              .staleReservationToken(let m), .reservationTokenConsumed(let m),
              .reservationWalletMismatch(let m),
              .notForSale(let m),
+             .assetLockInputConflict(let m),
              .notFound(let m), .unknown(let m):
             return m
         // The three value-carrying marketplace rejections compose their
@@ -561,6 +589,15 @@ public enum PlatformWalletError: LocalizedError {
             } else {
                 self = .unknown(detail)
             }
+        // Code 41 carries the typed `Display` rendering, not a JSON detail
+        // object: it already names the asset-lock outpoint, the conflicting
+        // input, and the confirmed spender's txid, and reads as a sentence, so
+        // it passes through like the other prose-message codes. The terminal
+        // "discard and rebuild" verdict is the CODE's meaning, not the
+        // string's — hosts must key their discard affordance off the case, not
+        // off text matching.
+        case .errorAssetLockInputConflict:
+            self = .assetLockInputConflict(detail)
         case .notFound:               self = .notFound(detail)
         case .errorUnknown:           self = .unknown(detail)
         }

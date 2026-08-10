@@ -5,16 +5,20 @@
 //! and re-deriving private keys.
 
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
+use std::collections::BTreeSet;
 use std::time::Duration;
 
 use dashcore::Address as DashAddress;
-use dashcore::OutPoint;
+use dashcore::{OutPoint, Txid};
+use dpp::prelude::CoreBlockHeight;
 use key_wallet::bip32::DerivationPath;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
 use crate::changeset::changeset::AssetLockChangeSet;
 use crate::error::PlatformWalletError;
+use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 use super::super::manager::AssetLockManager;
 use super::super::tracked::{AssetLockStatus, TrackedAssetLock};
@@ -188,6 +192,62 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 // Resumable asset lock
 // ---------------------------------------------------------------------------
 
+/// Find the first outpoint of `lock`'s transaction that some **other,
+/// confirmed** transaction of this wallet already spent, returning
+/// `(conflicting_input, spending_txid, spender_height)`.
+///
+/// A hit means the asset lock is a double spend of a settled outpoint.
+/// Peers reject such a transaction at the mempool boundary and relay
+/// nothing back — Core has not sent BIP61 `reject` messages by default
+/// since 0.17 — so the lock can neither be mined nor IS-locked, and a
+/// proof wait on it never terminates. Callers turn a hit into
+/// [`PlatformWalletError::AssetLockInputConflict`] instead of
+/// (re-)broadcasting into that void.
+///
+/// **Best-effort in one direction only.** A hit is conclusive: the
+/// spender is a confirmed transaction sitting in this wallet's own
+/// history, and confirmed spends of an outpoint are mutually exclusive.
+/// A miss proves nothing. Under the default
+/// `keep-finalized-transactions = OFF` feature, key-wallet evicts the
+/// full `TransactionRecord` once a chainlock buries it and retains only
+/// the txid, so precisely the oldest — and therefore most likely —
+/// conflicts are invisible here. A lock that clears this scan may still
+/// be a double spend, and the existing timeout path remains its only
+/// backstop. Do not restructure callers to treat "no conflict" as proof
+/// of liveness.
+///
+/// Confirmation is required rather than mere presence: an unconfirmed
+/// sibling that spends the same outpoint is a competing candidate, not a
+/// verdict. Either transaction can still win, and the tracked lock is
+/// often the one the user actually wants to push through, so a mempool
+/// record must not condemn it.
+fn first_confirmed_input_conflict(
+    info: &PlatformWalletInfo,
+    lock: &TrackedAssetLock,
+) -> Option<(OutPoint, Txid, Option<CoreBlockHeight>)> {
+    let lock_txid = lock.transaction.txid();
+    let lock_inputs: BTreeSet<OutPoint> = lock
+        .transaction
+        .input
+        .iter()
+        .map(|input| input.previous_output)
+        .collect();
+
+    info.core_wallet
+        .transaction_history()
+        .into_iter()
+        .filter(|record| record.txid != lock_txid && record.is_confirmed())
+        .find_map(|record| {
+            let conflicting_input = record
+                .transaction
+                .input
+                .iter()
+                .map(|input| input.previous_output)
+                .find(|outpoint| lock_inputs.contains(outpoint))?;
+            Some((conflicting_input, record.txid, record.height()))
+        })
+}
+
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Resume a tracked asset lock from whatever stage it's at.
     ///
@@ -211,6 +271,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// still needs a proof (`Built` / `Broadcast`): `None` waits
     /// **indefinitely** for finality. For `InstantSendLocked` / `ChainLocked`
     /// the proof already exists and no wait happens, so the value is moot.
+    ///
+    /// A `Built` / `Broadcast` lock is first screened by
+    /// [`first_confirmed_input_conflict`]; a hit short-circuits to
+    /// [`PlatformWalletError::AssetLockInputConflict`] without broadcasting
+    /// or waiting, because such a lock is a double spend that no peer will
+    /// relay. That screen is one-sided — read its docs before treating a
+    /// clean pass as evidence the lock is alive.
     pub async fn resume_asset_lock(
         &self,
         out_point: &OutPoint,
@@ -219,7 +286,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         tracing::info!(outpoint = %out_point, ?timeout, "resume_asset_lock: entered");
 
         // 1. Look up the tracked lock — snapshot the fields we need.
-        let (tx, status, existing_proof, account_index) = {
+        let (tx, status, existing_proof, account_index, input_conflict) = {
             let wm = self.wallet_manager.read().await;
             let info = wm
                 .get_wallet_info(&self.wallet_id)
@@ -240,13 +307,55 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 account_index = lock.account_index,
                 "resume_asset_lock: lock looked up"
             );
+            // Only the two proof-less statuses are candidates. A lock
+            // carrying an IS/Chain proof, a `RecoveredFromChain` entry
+            // (reconstructed from a record the chain itself accepted), and
+            // a `Consumed` tombstone are all settled by evidence stronger
+            // than this scan; re-classifying one of them as a double spend
+            // on the strength of an unrelated history record would
+            // invalidate a lock the network already honoured.
+            let input_conflict = match lock.status {
+                AssetLockStatus::Built | AssetLockStatus::Broadcast => {
+                    first_confirmed_input_conflict(info, lock)
+                }
+                AssetLockStatus::InstantSendLocked
+                | AssetLockStatus::ChainLocked
+                | AssetLockStatus::RecoveredFromChain
+                | AssetLockStatus::Consumed => None,
+            };
             (
                 lock.transaction.clone(),
                 lock.status.clone(),
                 lock.proof.clone(),
                 lock.account_index,
+                input_conflict,
             )
         };
+
+        // Fail before the `Built` / `Broadcast` arms reach their
+        // (re-)broadcast and their proof wait: the transaction is a double
+        // spend of a settled outpoint, so the broadcast is discarded
+        // without a reply and the wait — unbounded for the user-facing
+        // funding flows — would never return. The typed error is what lets
+        // a host offer to discard the lock instead of showing a spinner
+        // forever.
+        if let Some((input, spent_by, height)) = input_conflict {
+            tracing::warn!(
+                outpoint = %out_point,
+                %input,
+                %spent_by,
+                ?height,
+                "resume_asset_lock: asset lock double-spends an outpoint \
+                 already consumed by a confirmed transaction; it can never \
+                 confirm"
+            );
+            return Err(PlatformWalletError::AssetLockInputConflict {
+                out_point: *out_point,
+                input,
+                spent_by,
+                height,
+            });
+        }
 
         // 2. Resume from the current status.
         let proof = match status {
@@ -517,10 +626,15 @@ mod tests {
 
     use async_trait::async_trait;
     use dashcore::hashes::Hash;
-    use dashcore::{Network, OutPoint, Transaction, Txid};
+    use dashcore::{BlockHash, Network, OutPoint, Transaction, TxIn, Txid};
     use key_wallet::account::account_collection::AccountCollection;
     use key_wallet::account::account_type::StandardAccountType;
     use key_wallet::account::{Account, AccountType};
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    use key_wallet::managed_account::transaction_record::{
+        TransactionDirection, TransactionRecord,
+    };
+    use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
     use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
     use key_wallet::wallet::Wallet;
     use key_wallet_manager::WalletManager;
@@ -539,7 +653,7 @@ mod tests {
     use crate::wallet::core::WalletGeneration;
     use crate::wallet::identity::IdentityManager;
     use crate::wallet::persister::WalletPersister;
-    use crate::wallet::platform_wallet::PlatformWalletInfo;
+    use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
     use crate::AssetLockFundingType;
 
     /// Persistence stub that records every stored changeset so the test
@@ -967,6 +1081,322 @@ mod tests {
         assert_eq!(
             rederived, path,
             "re-derived credit-output path must match the build-time path"
+        );
+    }
+
+    // -----------------------------------------------------------------
+    // Input-conflict screen (double-spent asset locks)
+    // -----------------------------------------------------------------
+
+    /// Everything the input-conflict tests need: a funded wallet, a built
+    /// asset-lock transaction over its spendable UTXO, its outpoint, and a
+    /// manager whose broadcaster records every send so a test can prove
+    /// the screen fired *before* the (re-)broadcast rather than after it.
+    struct ConflictFixture {
+        wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: WalletId,
+        manager: AssetLockManager<RecordingBroadcaster>,
+        broadcaster: Arc<RecordingBroadcaster>,
+        transaction: Transaction,
+        out_point: OutPoint,
+    }
+
+    impl ConflictFixture {
+        async fn new() -> Self {
+            let (wallet_manager, wallet_id, _generation, signer) =
+                funded_wallet_manager(StandardAccountType::BIP44Account).await;
+            let broadcaster = Arc::new(RecordingBroadcaster::default());
+            let sdk = Arc::new(
+                dash_sdk::SdkBuilder::new_mock()
+                    .with_network(Network::Testnet)
+                    .build()
+                    .expect("mock sdk"),
+            );
+            let manager = AssetLockManager::new(
+                sdk,
+                Arc::clone(&wallet_manager),
+                wallet_id,
+                Arc::new(Notify::new()),
+                Arc::clone(&broadcaster),
+                WalletPersister::new(wallet_id, Arc::new(RecordingPersistence::default())),
+            );
+            let (transaction, _path) = manager
+                .build_asset_lock_transaction(
+                    1_000_000,
+                    0,
+                    AssetLockFundingType::IdentityRegistration,
+                    4,
+                    &signer,
+                )
+                .await
+                .expect("build asset lock");
+            let out_point = OutPoint::new(transaction.txid(), 0);
+            Self {
+                wallet_manager,
+                wallet_id,
+                manager,
+                broadcaster,
+                transaction,
+                out_point,
+            }
+        }
+
+        /// The single outpoint the asset-lock transaction spends — the one
+        /// a rescan-resurrected UTXO would have handed it a second time.
+        fn funded_input(&self) -> OutPoint {
+            self.transaction
+                .input
+                .first()
+                .expect("asset lock spends at least one input")
+                .previous_output
+        }
+
+        async fn track(
+            &self,
+            status: AssetLockStatus,
+            proof: Option<dpp::prelude::AssetLockProof>,
+        ) {
+            let mut wm = self.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&self.wallet_id)
+                .expect("wallet must remain registered");
+            info.tracked_asset_locks.insert(
+                self.out_point,
+                TrackedAssetLock {
+                    out_point: self.out_point,
+                    transaction: self.transaction.clone(),
+                    account_index: 0,
+                    funding_type: AssetLockFundingType::IdentityRegistration,
+                    identity_index: 4,
+                    amount: 1_000_000,
+                    status,
+                    proof,
+                },
+            );
+        }
+
+        /// File `record` in the wallet's BIP44 account by direct map
+        /// insertion. Going through the detection pipeline instead would
+        /// route the record by relevance and, for a chainlocked context,
+        /// evict it again under the default `keep-finalized-transactions`
+        /// build — the scan under test reads `transaction_history()`, so
+        /// the record has to actually be there.
+        async fn file_record(&self, record: TransactionRecord) {
+            let mut wm = self.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&self.wallet_id)
+                .expect("wallet must remain registered");
+            info.core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .expect("funded fixture has BIP44 account 0")
+                .transactions_mut()
+                .insert(record.txid, record);
+        }
+
+        fn broadcast_count(&self) -> usize {
+            self.broadcaster
+                .transactions
+                .lock()
+                .expect("recording broadcaster mutex")
+                .len()
+        }
+    }
+
+    /// Wrap `transaction` as a history record filed against BIP44 account 0.
+    fn record_for(transaction: Transaction, context: TransactionContext) -> TransactionRecord {
+        TransactionRecord::new(
+            transaction,
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            context,
+            TransactionType::Standard,
+            TransactionDirection::Outgoing,
+            Vec::new(),
+            Vec::new(),
+            0,
+        )
+    }
+
+    /// A distinct transaction that spends `spends`. Its txid falls out of
+    /// the inputs, so it never collides with the asset lock's own.
+    fn transaction_spending(spends: OutPoint) -> Transaction {
+        Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: spends,
+                ..Default::default()
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        }
+    }
+
+    fn confirmed_at(height: u32) -> TransactionContext {
+        TransactionContext::InBlock(BlockInfo::new(
+            height,
+            BlockHash::all_zeros(),
+            1_700_000_000,
+        ))
+    }
+
+    /// The incident this screen exists for: a restored wallet re-spends an
+    /// outpoint one of its own earlier, already-confirmed transactions
+    /// consumed long ago. Peers drop the double spend without a reply, so
+    /// the pre-existing behaviour — re-broadcast, then wait, unbounded for
+    /// the user-facing funding flows — could never terminate. The resume
+    /// must fail with the typed terminal error and must not touch the
+    /// network on the way out.
+    #[tokio::test]
+    async fn broadcast_resume_reports_input_conflict_when_a_confirmed_tx_spent_the_input() {
+        let fixture = ConflictFixture::new().await;
+        fixture.track(AssetLockStatus::Broadcast, None).await;
+
+        let spender = transaction_spending(fixture.funded_input());
+        let spender_txid = spender.txid();
+        fixture
+            .file_record(record_for(spender, confirmed_at(1_234)))
+            .await;
+
+        let error = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect_err("a double-spent asset lock must fail, not wait");
+        match error {
+            PlatformWalletError::AssetLockInputConflict {
+                out_point,
+                input,
+                spent_by,
+                height,
+            } => {
+                assert_eq!(out_point, fixture.out_point);
+                assert_eq!(input, fixture.funded_input());
+                assert_eq!(spent_by, spender_txid);
+                assert_eq!(height, Some(1_234));
+            }
+            other => panic!("expected AssetLockInputConflict, got {other:?}"),
+        }
+        assert_eq!(
+            fixture.broadcast_count(),
+            0,
+            "the screen must short-circuit ahead of the defensive re-broadcast"
+        );
+    }
+
+    /// An unconfirmed sibling spending the same outpoint is a competing
+    /// candidate, not a verdict — either transaction can still win, and
+    /// condemning the tracked lock on a mempool record would discard a
+    /// perfectly live funding attempt. The resume must take its normal
+    /// course (re-broadcast, then wait) instead.
+    #[tokio::test]
+    async fn broadcast_resume_ignores_an_unconfirmed_spend_of_the_same_input() {
+        let fixture = ConflictFixture::new().await;
+        fixture.track(AssetLockStatus::Broadcast, None).await;
+
+        fixture
+            .file_record(record_for(
+                transaction_spending(fixture.funded_input()),
+                TransactionContext::Mempool,
+            ))
+            .await;
+
+        let error = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect_err("no proof event should arrive within the deadline");
+        assert!(
+            !matches!(error, PlatformWalletError::AssetLockInputConflict { .. }),
+            "an unconfirmed conflict must not condemn the lock, got {error:?}"
+        );
+        assert_eq!(
+            fixture.broadcast_count(),
+            1,
+            "the resume must still reach its defensive re-broadcast"
+        );
+    }
+
+    /// The asset-lock transaction is itself filed in wallet history once
+    /// it is seen on chain, and it necessarily spends every outpoint it
+    /// spends. Matching on the outpoints alone would therefore make every
+    /// confirmed lock report itself as its own double spend; the txid
+    /// guard is what prevents that.
+    #[tokio::test]
+    async fn resume_does_not_treat_the_locks_own_confirmed_record_as_a_conflict() {
+        let fixture = ConflictFixture::new().await;
+        fixture.track(AssetLockStatus::Broadcast, None).await;
+
+        fixture
+            .file_record(record_for(fixture.transaction.clone(), confirmed_at(1_234)))
+            .await;
+
+        let outcome = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
+            .await;
+        assert!(
+            !matches!(
+                outcome,
+                Err(PlatformWalletError::AssetLockInputConflict { .. })
+            ),
+            "a lock's own record must never condemn it, got {outcome:?}"
+        );
+    }
+
+    /// Settled locks are decided by evidence the screen has no standing to
+    /// overturn: a `Consumed` tombstone records a completed Platform spend,
+    /// and a proof-carrying lock holds finality the network already granted.
+    /// Both must return exactly what they returned before the screen
+    /// existed, even with a confirmed conflicting record sitting in history
+    /// — and neither may broadcast.
+    #[tokio::test]
+    async fn settled_locks_keep_their_outcome_despite_a_confirmed_conflicting_record() {
+        let fixture = ConflictFixture::new().await;
+        fixture
+            .file_record(record_for(
+                transaction_spending(fixture.funded_input()),
+                confirmed_at(1_234),
+            ))
+            .await;
+
+        let chain_proof = dpp::prelude::AssetLockProof::Chain(
+            dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof {
+                core_chain_locked_height: 1_234,
+                out_point: fixture.out_point,
+            },
+        );
+        fixture
+            .track(AssetLockStatus::ChainLocked, Some(chain_proof.clone()))
+            .await;
+        let (resumed_proof, _path) = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect("a chain-locked lock resumes from its own proof");
+        assert_eq!(resumed_proof, chain_proof);
+
+        fixture.track(AssetLockStatus::Consumed, None).await;
+        let consumed = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect_err("a consumed lock must stay terminal");
+        assert!(
+            matches!(
+                consumed,
+                PlatformWalletError::AssetLockAlreadyConsumed(actual) if actual == fixture.out_point
+            ),
+            "expected AssetLockAlreadyConsumed, got {consumed:?}"
+        );
+        assert_eq!(
+            fixture.broadcast_count(),
+            0,
+            "settled locks never re-enter the broadcast path"
         );
     }
 }

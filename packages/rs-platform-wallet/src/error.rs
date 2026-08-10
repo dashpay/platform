@@ -2,7 +2,7 @@ use dpp::address_funds::PlatformAddress;
 use dpp::consensus::state::address_funds::AddressInvalidNonceError;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
-use dpp::prelude::AddressNonce;
+use dpp::prelude::{AddressNonce, CoreBlockHeight};
 use key_wallet::account::StandardAccountType;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
@@ -280,6 +280,44 @@ pub enum PlatformWalletError {
         expected_identity_index: u32,
         actual_funding_type: AssetLockFundingType,
         actual_identity_index: u32,
+    },
+
+    /// The tracked asset-lock transaction spends an outpoint that a
+    /// **different, already-confirmed** transaction of this same wallet
+    /// spent first. The lock is permanently dead: every peer rejects it
+    /// as a double spend at the mempool boundary and therefore relays
+    /// nothing, so no IS-lock and no ChainLock can ever be produced for
+    /// it. Peers do not answer with BIP61 `reject` (Core stopped sending
+    /// those by default in 0.17), so the drop is silent — without this
+    /// variant the condition is indistinguishable from "the network is
+    /// slow", and the wallet's proof wait (unbounded for the user-facing
+    /// funding flows) simply never returns.
+    ///
+    /// The typical origin is a restored wallet: a rescan repopulates the
+    /// UTXO set from chain data, an asset-lock build selects an input the
+    /// restored view still believes is unspent, and the transaction that
+    /// actually spent it — often one of the wallet's own earlier asset
+    /// locks — has been confirmed for a long time.
+    ///
+    /// Terminal, not retryable: the funds behind `input` are gone into
+    /// `spent_by`, so the only recovery is to discard this lock and build
+    /// a new one from currently-unspent inputs. `height` is the block
+    /// height of the confirmed spender when the record carries block info.
+    ///
+    /// Raising this error is a definite verdict; NOT raising it proves
+    /// nothing — see the detection helper in
+    /// `wallet::asset_lock::sync::recovery` for why the scan is
+    /// best-effort.
+    #[error(
+        "Asset lock {out_point} can never confirm: it spends {input}, which was \
+         already spent by confirmed transaction {spent_by} (block height \
+         {height:?}) — the lock is a double spend and no peer will relay it"
+    )]
+    AssetLockInputConflict {
+        out_point: dashcore::OutPoint,
+        input: dashcore::OutPoint,
+        spent_by: dashcore::Txid,
+        height: Option<CoreBlockHeight>,
     },
 
     #[error("SDK error: {0}")]

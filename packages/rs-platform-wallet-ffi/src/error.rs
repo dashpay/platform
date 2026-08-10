@@ -265,6 +265,8 @@ pub enum PlatformWalletFFIResultCode {
     //   38  ErrorDocumentPriceChanged       DPNS username marketplace
     //   39  ErrorInsufficientIdentityCredits DPNS username marketplace
     //   40  ErrorContestedNameNotTradable   DPNS username marketplace
+    //   41  ErrorShieldedInsufficientBalance Platform→Shielded capacity preflight
+    //   42  ErrorAssetLockInputConflict     asset-lock double-spend detection
     //
     // 38/39/40 carry a STABLE JSON detail object in the result `message`
     // instead of the typed `Display` rendering — see each variant's doc for
@@ -368,6 +370,39 @@ pub enum PlatformWalletFFIResultCode {
     /// language-surface compatibility; it is a Platform Payment-account
     /// shortfall, not a shielded-note shortfall.
     ErrorShieldedInsufficientBalance = 41,
+
+    /// Maps `PlatformWalletError::AssetLockInputConflict`. The tracked
+    /// asset-lock transaction spends an outpoint that a different,
+    /// already-confirmed transaction of the same wallet spent first — the
+    /// classic restored-wallet failure, where a rescan resurrects a UTXO
+    /// the wallet's own earlier asset lock had long since consumed. Such a
+    /// transaction is a double spend: peers drop it at the mempool
+    /// boundary and send nothing back (no BIP61 `reject`), so it can never
+    /// be mined or IS-locked and the resume's proof wait would hang
+    /// indefinitely.
+    ///
+    /// TERMINAL, and the only code here that authorises a host to discard
+    /// a tracked asset lock: this resume broadcast nothing and no retry of
+    /// this outpoint can ever succeed while the confirmed spender stands.
+    /// The remedy is to drop the lock and build a new one from
+    /// currently-unspent inputs — a fund-safe action either way, because
+    /// the conflicting spender is necessarily this wallet's own
+    /// transaction (only this wallet can sign its outpoints): the value
+    /// lives in the sibling, and even a freak reorg that removed the
+    /// sibling would simply return the inputs to the spendable set.
+    /// Contrast `ErrorTransactionBroadcastUnconfirmed`, where the tx may
+    /// well be alive and discarding it would strand real funds.
+    ///
+    /// Raised only on a positive detection; its ABSENCE is not a liveness
+    /// signal. The wallet-side scan reads confirmed records still held in
+    /// memory, and under the default `keep-finalized-transactions = OFF`
+    /// build those are pruned once chainlocked, so an old conflict can go
+    /// unseen and surface as the usual finality timeout instead.
+    ///
+    /// Message: the typed `Display` rendering, which names the asset-lock
+    /// outpoint, the conflicting input, the confirmed spender's txid, and
+    /// the spender's finality (chainlocked or merely in a block).
+    ErrorAssetLockInputConflict = 42,
 
     /// The named thing does not exist.
     ///
@@ -620,6 +655,13 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::AssetLockFundingMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockFundingMismatch
+            }
+            // Terminal double spend. Distinct from every other asset-lock
+            // code because it is the one that tells a host the lock is dead
+            // rather than pending: without it this reached `ErrorUnknown`,
+            // which no host may act on destructively.
+            PlatformWalletError::AssetLockInputConflict { .. } => {
+                PlatformWalletFFIResultCode::ErrorAssetLockInputConflict
             }
             // A quiesce/drain barrier that did not complete within budget
             // (clear/reset paths). The host must fail closed: keep its
