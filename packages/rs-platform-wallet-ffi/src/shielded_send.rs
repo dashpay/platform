@@ -596,13 +596,11 @@ fn map_spend_result(
             PlatformWalletFFIResultCode::ErrorAddressNonceMismatch,
             format!("{operation} failed: {e}"),
         ),
-        // The cached Platform Payment-account suffix no longer covers the
+        // The cached Platform Payment-account set no longer covers the
         // requested claim plus input-0's fee reserve. Keep this distinct from
         // generic wallet-operation failures so hosts can refresh preflight and
         // re-confirm a smaller amount instead of retrying unchanged.
-        Err(e @ PlatformWalletError::ShieldedInsufficientBalance { .. })
-            if operation == "shielded shield" =>
-        {
+        Err(e @ PlatformWalletError::PlatformShieldCapacityExceeded { .. }) => {
             PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance,
                 format!("{operation} failed: {e}"),
@@ -830,8 +828,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
 /// lexicographic `PlatformAddress`, the leading prefix before the first address
 /// whose balance is strictly greater than the shared fee reserve is excluded,
 /// later addresses below the protocol version's minimum input amount are
-/// omitted, and the reserve is retained only on input 0. No DAPI request,
-/// signing, proof construction, or broadcast is performed.
+/// omitted, and the lexicographically earliest usable set is truncated to the
+/// versioned maximum address-input count. The reserve is retained only on input
+/// 0. Capacity is therefore executable under the wallet's deterministic policy,
+/// not globally optimized over later balances. No DAPI request, signing, proof
+/// construction, or broadcast is performed.
 ///
 /// A normal no-capacity result writes all numeric fields (including the total
 /// account balance and zero usable/max capacity), returns `Success`, and carries
@@ -1809,7 +1810,7 @@ mod tests {
     #[test]
     fn map_spend_result_maps_shield_capacity_race_to_dedicated_code() {
         let shield_result = map_spend_result(
-            Err(PlatformWalletError::ShieldedInsufficientBalance {
+            Err(PlatformWalletError::PlatformShieldCapacityExceeded {
                 available: 3_623_849_220,
                 required: 3_623_849_221,
             }),

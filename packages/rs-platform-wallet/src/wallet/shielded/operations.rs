@@ -130,7 +130,7 @@ fn address_not_enough_funds(
 /// preflight instead of retrying the stale amount unchanged.
 fn map_shield_input_fetch_error(e: &dash_sdk::Error) -> PlatformWalletError {
     match address_not_enough_funds(e) {
-        Some(short) => PlatformWalletError::ShieldedInsufficientBalance {
+        Some(short) => PlatformWalletError::PlatformShieldCapacityExceeded {
             available: short.balance(),
             required: short.required_balance(),
         },
@@ -2901,12 +2901,12 @@ mod shield_input_fetch_error_tests {
         let mapped = map_shield_input_fetch_error(&sdk_error);
         assert!(matches!(
             &mapped,
-            PlatformWalletError::ShieldedInsufficientBalance { available, required }
+            PlatformWalletError::PlatformShieldCapacityExceeded { available, required }
                 if *available == 3_623_849_220 && *required == 3_623_849_221
         ));
         assert_eq!(
             mapped.to_string(),
-            "Insufficient shielded balance: available 3623849220, required 3623849221"
+            "Platform shield capacity exceeded: available 3623849220, required 3623849221"
         );
     }
 }
@@ -2914,6 +2914,8 @@ mod shield_input_fetch_error_tests {
 #[cfg(test)]
 mod reserve_shield_fee_tests {
     use super::*;
+    use crate::wallet::platform_wallet::SHIELDED_SHIELD_FEE_RESERVE_CREDITS;
+    use dpp::version::LATEST_PLATFORM_VERSION;
 
     fn addr(b: u8) -> PlatformAddress {
         PlatformAddress::P2pkh([b; 20])
@@ -2938,6 +2940,29 @@ mod reserve_shield_fee_tests {
         );
         // Σ claims grew by exactly `fee`, satisfying `Σ inputs >= amount + F`.
         assert_eq!(out.values().sum::<u64>(), 6_000_000 + fee);
+    }
+
+    #[test]
+    fn versioned_fee_keeps_input_zero_valid_and_fits_reserved_headroom() {
+        let min_input_amount = LATEST_PLATFORM_VERSION
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_input_amount;
+        let shield_fee = compute_minimum_shielded_fee(SHIELD_NUM_ACTIONS, LATEST_PLATFORM_VERSION)
+            .expect("latest shield fee must be computable");
+        let smallest_fee_inclusive_claim = shield_fee
+            .checked_add(1)
+            .expect("latest shield fee plus one credit must fit");
+
+        assert!(
+            smallest_fee_inclusive_claim >= min_input_amount,
+            "adding the fee must lift even input 0's smallest positive base claim above the protocol minimum"
+        );
+        assert!(
+            shield_fee <= SHIELDED_SHIELD_FEE_RESERVE_CREDITS,
+            "the wallet's retained input-0 headroom must cover the versioned shield fee"
+        );
     }
 
     #[test]

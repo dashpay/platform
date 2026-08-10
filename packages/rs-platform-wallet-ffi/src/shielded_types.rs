@@ -13,9 +13,10 @@ use std::os::raw::c_char;
 /// Cached Platform-to-shielded capacity for one payment account.
 ///
 /// The Rust wallet planner computes every field from the same lexicographic
-/// candidate suffix later used by the shield execution path. A normal
-/// no-capacity state is represented by `can_shield == false`, not by an FFI
-/// error; the Success-coded result message carries the optional explanation.
+/// candidate set later used by the shield execution path, including the
+/// versioned address-input cap. A normal no-capacity state is represented by
+/// `can_shield == false`, not by an FFI error; the Success-coded result message
+/// carries the optional explanation.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ShieldedShieldPreflightFFI {

@@ -90,6 +90,17 @@ sealed class DashSdkError(
         class CoreInsufficientFunds(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
 
+        /**
+         * `ErrorShieldedInsufficientBalance` (native code 41; historical FFI
+         * spelling). A Platform Payment account's deterministic shield input
+         * set cannot cover the requested amount plus input 0's retained fee
+         * reserve. Nothing was built or broadcast. Refresh preflight and ask
+         * the user to confirm a smaller amount rather than retrying unchanged.
+         * This is distinct from insufficient private shielded-note balance.
+         */
+        class PlatformShieldCapacityExceeded(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
         class AssetLockNotTracked(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
 
@@ -509,6 +520,7 @@ sealed class DashSdkError(
                     )
                 }.getOrNull()
             } ?: PlatformWallet.Generic(code, message, cause)
+            41 -> PlatformWallet.PlatformShieldCapacityExceeded(message, cause)
             // ErrorSigningKeyUnavailable — the STRUCTURED signer
             // discriminator (dashpay/platform#4060 finding 7): the typed
             // completion code rides the whole Rust round-trip, no message

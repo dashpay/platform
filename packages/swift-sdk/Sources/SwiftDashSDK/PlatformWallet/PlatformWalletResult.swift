@@ -344,9 +344,10 @@ public enum PlatformWalletError: LocalizedError {
     /// sync reaches a confirmed state. Distinct from `shieldedSpendUnconfirmed`,
     /// which must NOT be retried.
     case shieldedNoRecordedAnchor(String)
-    /// The cached Platform Payment-account suffix cannot cover a shield's
+    /// The cached Platform Payment-account input set cannot cover a shield's
     /// requested amount plus the fee reserve retained on input 0. Despite the
-    /// historical Rust name, this is not a shielded-pool balance failure.
+    /// retained public Swift/FFI name, this is not a shielded-pool balance
+    /// failure.
     case shieldedInsufficientBalance(String)
     /// A core transaction broadcast was submitted but its outcome is
     /// unknown — the transaction may already be on the network. The wallet

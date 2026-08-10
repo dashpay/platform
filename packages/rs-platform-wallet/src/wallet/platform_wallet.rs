@@ -7,6 +7,8 @@ use std::sync::Arc;
 use dashcore::OutPoint;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
+#[cfg(feature = "shielded")]
+use key_wallet::PlatformP2PKHAddress;
 use key_wallet_manager::WalletManager;
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
@@ -15,6 +17,8 @@ use super::asset_lock::tracked::TrackedAssetLock;
 use super::core::{CoreWallet, WalletBalance, WalletGeneration};
 use super::identity::{IdentityManager, IdentityWallet};
 use super::persister::WalletPersister;
+#[cfg(feature = "shielded")]
+use super::platform_addresses::merge_platform_payment_candidate_addresses;
 use super::platform_addresses::PlatformAddressWallet;
 // Phase 4d.3 deleted the `ShieldedWallet` wrapper; per-account
 // keysets now live in `self.shielded_keys` directly. Spend
@@ -55,14 +59,19 @@ pub struct ShieldedShieldPreflight {
     pub can_shield: bool,
     /// Sum of all funded candidate addresses in the payment account.
     pub account_balance_credits: Credits,
-    /// Sum of the usable suffix beginning at the first address whose balance
-    /// is strictly greater than [`SHIELDED_SHIELD_FEE_RESERVE_CREDITS`]. Later
-    /// addresses below the protocol version's minimum input amount are omitted.
+    /// Sum of the lexicographically earliest representable candidate set. It
+    /// begins at the first address whose balance is strictly greater than
+    /// [`SHIELDED_SHIELD_FEE_RESERVE_CREDITS`], omits later addresses below the
+    /// versioned minimum input amount, and contains at most the versioned
+    /// maximum address-input count.
     pub usable_balance_credits: Credits,
     /// Balance retained on input 0 for the transition fee.
     pub fee_reserve_credits: Credits,
-    /// Maximum claim accepted by the shared selector:
+    /// Maximum claim accepted by the wallet's deterministic selector:
     /// `usable_balance_credits - fee_reserve_credits`, floored at zero.
+    /// This is not a balance-optimized subset of every funded address; it
+    /// preserves the established lexicographic selection policy within the
+    /// protocol's input-count limit.
     pub max_shieldable_credits: Credits,
     /// Human-readable explanation when [`can_shield`](Self::can_shield) is
     /// false. Capacity exhaustion is a normal result, not a structural error.
@@ -95,7 +104,7 @@ impl ShieldedShieldInputPlan {
             } else {
                 self.preflight.usable_balance_credits
             };
-            return Err(PlatformWalletError::ShieldedInsufficientBalance {
+            return Err(PlatformWalletError::PlatformShieldCapacityExceeded {
                 available,
                 required: amount.saturating_add(self.preflight.fee_reserve_credits),
             });
@@ -135,7 +144,7 @@ impl ShieldedShieldInputPlan {
         // `max_shieldable_credits` is derived from these exact candidates, so
         // this is an invariant guard rather than a second capacity rule.
         if accumulated_claim < amount {
-            return Err(PlatformWalletError::ShieldedInsufficientBalance {
+            return Err(PlatformWalletError::PlatformShieldCapacityExceeded {
                 available: accumulated_claim,
                 required: amount,
             });
@@ -156,10 +165,17 @@ fn checked_credit_sum<'a>(
 }
 
 /// Analyze funded Platform addresses once for both preflight and execution.
+///
+/// The representable set is the lexicographically earliest usable prefix,
+/// capped at `max_address_inputs`. Deliberately retaining the wallet's existing
+/// ordering policy avoids silently replacing earlier addresses with later,
+/// larger balances; consequently preflight Max means the maximum accepted by
+/// this deterministic policy, not a globally balance-optimized subset.
 #[cfg(feature = "shielded")]
 fn plan_shield_inputs(
     mut candidates: Vec<(PlatformAddress, Credits)>,
     min_input_amount: Credits,
+    max_address_inputs: usize,
 ) -> Result<ShieldedShieldInputPlan, PlatformWalletError> {
     candidates.sort_by_key(|(address, _)| *address);
 
@@ -168,22 +184,24 @@ fn plan_shield_inputs(
     let viable_input_0 = candidates
         .iter()
         .position(|(_, balance)| *balance > SHIELDED_SHIELD_FEE_RESERVE_CREDITS);
-    let usable_candidates = viable_input_0
+    let usable_candidates: Vec<(PlatformAddress, Credits)> = viable_input_0
         .map(|index| {
-            let mut usable = Vec::with_capacity(candidates.len() - index);
             // Keep the fee-bearing input 0 regardless of its post-reserve base
             // capacity: the shield fee is added to its requested claim before
             // structure validation. Later addresses get no fee addition, so a
             // full balance below `min_input_amount` can never form a valid
-            // input and must not inflate preflight capacity.
-            usable.push(candidates[index]);
-            usable.extend(
-                candidates[index + 1..]
-                    .iter()
-                    .copied()
-                    .filter(|(_, balance)| *balance >= min_input_amount),
-            );
-            usable
+            // input and must not inflate preflight capacity. Finally, truncate
+            // the deterministic sequence before deriving capacity so Max can
+            // always be represented by a protocol-valid input count.
+            std::iter::once(candidates[index])
+                .chain(
+                    candidates[index + 1..]
+                        .iter()
+                        .copied()
+                        .filter(|(_, balance)| *balance >= min_input_amount),
+                )
+                .take(max_address_inputs)
+                .collect()
         })
         .unwrap_or_default();
     let usable_balance_credits =
@@ -1543,30 +1561,36 @@ impl PlatformWallet {
                 ))
             })?;
 
-        // Preserve the shield path's existing cached candidate set exactly.
-        // Sorting happens in `plan_shield_inputs`, after conversion, because
-        // the resulting PlatformAddress order is what the BTreeMap and network
-        // use to identify input 0.
-        let candidates = account
-            .addresses
-            .addresses
-            .values()
-            .filter_map(|address_info| {
-                let p2pkh =
-                    key_wallet::PlatformP2PKHAddress::from_address(&address_info.address).ok()?;
+        // Candidate discovery must include both the transient derived pool and
+        // persisted balances hydrated during wallet load. The latter can be
+        // populated before the derived pool after an app relaunch. Sorting
+        // happens in `plan_shield_inputs`, after conversion, because the
+        // resulting PlatformAddress order is what the BTreeMap and network use
+        // to identify input 0.
+        let candidate_addresses = merge_platform_payment_candidate_addresses(
+            account
+                .addresses
+                .addresses
+                .values()
+                .filter_map(|address_info| {
+                    PlatformP2PKHAddress::from_address(&address_info.address).ok()
+                }),
+            account.address_balances.keys().copied(),
+        );
+        let candidates = candidate_addresses
+            .into_iter()
+            .filter_map(|p2pkh| {
                 let balance = account.address_credit_balance(&p2pkh);
                 (balance > 0).then_some((PlatformAddress::P2pkh(p2pkh.to_bytes()), balance))
             })
             .collect();
 
-        let min_input_amount = self
-            .sdk
-            .version()
-            .dpp
-            .state_transitions
-            .address_funds
-            .min_input_amount;
-        plan_shield_inputs(candidates, min_input_amount)
+        let state_transition_version = &self.sdk.version().dpp.state_transitions;
+        plan_shield_inputs(
+            candidates,
+            state_transition_version.address_funds.min_input_amount,
+            usize::from(state_transition_version.max_address_inputs),
+        )
     }
 
     /// Return a cached capacity snapshot for shielding from one Platform
@@ -1577,9 +1601,11 @@ impl PlatformWallet {
     /// Platform addresses are sorted lexicographically, the leading prefix
     /// through the first address able to retain the shared fee reserve is
     /// analyzed once, later addresses below the versioned minimum input amount
-    /// are omitted, and the maximum claim is reported from that usable suffix.
-    /// It performs no DAPI request, signing, proof construction, or broadcast.
-    /// A normal no-capacity state is returned with
+    /// are omitted, and the lexicographically earliest usable addresses are
+    /// capped at the versioned maximum input count. The reported maximum is
+    /// therefore executable under the wallet's deterministic ordering policy;
+    /// it is not a balance-optimized subset. It performs no DAPI request,
+    /// signing, proof construction, or broadcast. A normal no-capacity state is returned with
     /// `can_shield == false`; only missing wallet/account state or arithmetic
     /// overflow is an error.
     #[cfg(feature = "shielded")]
@@ -1614,8 +1640,8 @@ impl PlatformWallet {
     /// Returns `ShieldedNotBound` if no shielded sub-wallet is
     /// bound, `AddressOperation` if the platform-payment account
     /// at `payment_account` doesn't exist, or
-    /// `ShieldedInsufficientBalance` if the account's total
-    /// credits can't cover `amount + fee_buffer`.
+    /// `PlatformShieldCapacityExceeded` if the selected Platform-address set
+    /// can't cover `amount + fee_buffer`.
     #[cfg(feature = "shielded")]
     pub async fn shielded_shield_from_account<S, P>(
         &self,
@@ -2034,6 +2060,13 @@ mod shield_input_selection_tests {
         PlatformAddress::P2pkh([b; 20])
     }
 
+    fn indexed_addr(index: usize) -> PlatformAddress {
+        let encoded = index.to_be_bytes();
+        let mut hash = [0u8; 20];
+        hash[20 - encoded.len()..].copy_from_slice(&encoded);
+        PlatformAddress::P2pkh(hash)
+    }
+
     fn min_input_amount() -> Credits {
         LATEST_PLATFORM_VERSION
             .dpp
@@ -2042,10 +2075,19 @@ mod shield_input_selection_tests {
             .min_input_amount
     }
 
+    fn max_address_inputs() -> usize {
+        usize::from(
+            LATEST_PLATFORM_VERSION
+                .dpp
+                .state_transitions
+                .max_address_inputs,
+        )
+    }
+
     fn plan(
         candidates: Vec<(PlatformAddress, Credits)>,
     ) -> Result<ShieldedShieldInputPlan, PlatformWalletError> {
-        plan_shield_inputs(candidates, min_input_amount())
+        plan_shield_inputs(candidates, min_input_amount(), max_address_inputs())
     }
 
     #[test]
@@ -2083,7 +2125,7 @@ mod shield_input_selection_tests {
         let err = plan.select_inputs(1).unwrap_err();
         assert!(matches!(
             err,
-            PlatformWalletError::ShieldedInsufficientBalance { available, required }
+            PlatformWalletError::PlatformShieldCapacityExceeded { available, required }
                 if available == RESERVE && required == 1 + RESERVE
         ));
     }
@@ -2122,7 +2164,7 @@ mod shield_input_selection_tests {
         let err = plan.select_inputs(4 * RESERVE).unwrap_err();
         assert!(matches!(
             err,
-            PlatformWalletError::ShieldedInsufficientBalance { .. }
+            PlatformWalletError::PlatformShieldCapacityExceeded { .. }
         ));
     }
 
@@ -2149,7 +2191,7 @@ mod shield_input_selection_tests {
         let err = plan.select_inputs(2_623_849_221).unwrap_err();
         assert!(matches!(
             err,
-            PlatformWalletError::ShieldedInsufficientBalance { available, required }
+            PlatformWalletError::PlatformShieldCapacityExceeded { available, required }
                 if available == 3_623_849_220 && required == 3_623_849_221
         ));
     }
@@ -2194,6 +2236,43 @@ mod shield_input_selection_tests {
     }
 
     #[test]
+    fn versioned_input_cap_excludes_max_plus_one_candidate_from_capacity_and_selection() {
+        let max_inputs = max_address_inputs();
+        assert!(max_inputs > 0, "latest protocol must permit shield inputs");
+
+        let candidates = (1..=max_inputs + 1)
+            .map(|index| (indexed_addr(index), 2 * RESERVE))
+            .collect();
+        let plan = plan(candidates).unwrap();
+        let expected_account_balance = (max_inputs as u64 + 1) * 2 * RESERVE;
+        let expected_usable_balance = max_inputs as u64 * 2 * RESERVE;
+        let expected_max = expected_usable_balance - RESERVE;
+
+        assert_eq!(
+            plan.preflight.account_balance_credits,
+            expected_account_balance
+        );
+        assert_eq!(
+            plan.preflight.usable_balance_credits,
+            expected_usable_balance
+        );
+        assert_eq!(plan.preflight.max_shieldable_credits, expected_max);
+        assert_eq!(plan.usable_candidates.len(), max_inputs);
+
+        let selected = plan.select_inputs(expected_max).unwrap();
+        assert_eq!(selected.len(), max_inputs);
+        assert!(!selected.contains_key(&indexed_addr(max_inputs + 1)));
+
+        let err = plan.select_inputs(expected_max + 1).unwrap_err();
+        assert!(matches!(
+            err,
+            PlatformWalletError::PlatformShieldCapacityExceeded { available, required }
+                if available == expected_usable_balance
+                    && required == expected_usable_balance + 1
+        ));
+    }
+
+    #[test]
     fn excludes_later_address_below_versioned_minimum_from_max() {
         let dust = min_input_amount() - 1;
         let plan = plan(vec![(addr(1), 2 * RESERVE), (addr(2), dust)]).unwrap();
@@ -2209,7 +2288,7 @@ mod shield_input_selection_tests {
         let err = plan.select_inputs(RESERVE + 1).unwrap_err();
         assert!(matches!(
             err,
-            PlatformWalletError::ShieldedInsufficientBalance { available, required }
+            PlatformWalletError::PlatformShieldCapacityExceeded { available, required }
                 if available == 2 * RESERVE && required == 2 * RESERVE + 1
         ));
     }

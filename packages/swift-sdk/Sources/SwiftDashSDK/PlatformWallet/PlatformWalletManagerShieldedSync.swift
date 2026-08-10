@@ -597,11 +597,13 @@ extension PlatformWalletManager {
     /// shield without signing, proving, broadcasting, or querying DAPI.
     ///
     /// Rust sorts funded addresses lexicographically, excludes the leading
-    /// prefix before the first address that can retain the fee reserve, and
-    /// omits later addresses below the protocol version's minimum input amount
-    /// before reporting suffix capacity. A fragmented/no-capacity account
-    /// returns `canShield == false` with meaningful numeric fields and a
-    /// reason; it is not thrown as an error.
+    /// prefix before the first address that can retain the fee reserve, omits
+    /// later addresses below the protocol version's minimum input amount, and
+    /// truncates the lexicographically earliest usable set to the versioned
+    /// maximum input count. The result is executable under that deterministic
+    /// wallet policy rather than globally optimized over later balances. A
+    /// fragmented/no-capacity account returns `canShield == false` with
+    /// meaningful numeric fields and a reason; it is not thrown as an error.
     public func shieldedShieldPreflight(
         walletId: Data,
         paymentAccount: UInt32 = 0
