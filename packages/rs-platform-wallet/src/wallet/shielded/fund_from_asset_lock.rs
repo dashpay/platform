@@ -861,8 +861,8 @@ mod tests {
 
     use super::*;
     use crate::changeset::{
-        ClientStartState, PersistenceError, PersistenceErrorKind, PlatformWalletChangeSet,
-        PlatformWalletPersistence,
+        ClientStartState, PersistenceCapabilities, PersistenceError, PersistenceErrorKind,
+        PlatformWalletChangeSet, PlatformWalletPersistence,
     };
     use crate::test_support::{funded_wallet_manager, AlwaysRejectedBroadcaster};
     use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
@@ -922,11 +922,20 @@ mod tests {
         fail_next_store: AtomicBool,
         fail_next_flush: Mutex<Option<PersistenceErrorKind>>,
         store_commits_inline: AtomicBool,
+        omit_reconciliation_capabilities: AtomicBool,
     }
 
     impl PlatformWalletPersistence for RecordingPersistence {
         fn store_commits_inline(&self) -> bool {
             self.store_commits_inline.load(Ordering::SeqCst)
+        }
+
+        fn persistence_capabilities(&self) -> PersistenceCapabilities {
+            if self.omit_reconciliation_capabilities.load(Ordering::SeqCst) {
+                PersistenceCapabilities::NONE
+            } else {
+                PersistenceCapabilities::SHIELDED_ASSET_LOCK_RECONCILIATION
+            }
         }
 
         fn store(
@@ -1089,6 +1098,41 @@ mod tests {
             .map(|entry| entry.status.clone())
             .next_back();
         assert_eq!(persisted_status, Some(AssetLockStatus::RecoveredFromChain));
+    }
+
+    #[tokio::test]
+    async fn consumed_report_without_persistence_contract_keeps_pending_state() {
+        let ctx = consumption_report_context().await;
+        ctx.persistence
+            .omit_reconciliation_capabilities
+            .store(true, Ordering::SeqCst);
+
+        let error = reconcile_asset_lock_submit_error(
+            &ctx.manager,
+            already_consumed_error(ctx.out_point),
+            &ctx.out_point,
+            &ctx.proof,
+            None,
+        )
+        .await
+        .expect_err("unsupported persistence must fail before reconciliation");
+        assert!(matches!(error, PlatformWalletError::Persistence(_)));
+
+        let wm = ctx.wallet_manager.read().await;
+        let lock = wm
+            .get_wallet_info(&ctx.wallet_id)
+            .expect("wallet")
+            .tracked_asset_locks
+            .get(&ctx.out_point)
+            .expect("tracked lock");
+        assert_eq!(lock.status, AssetLockStatus::ChainLocked);
+        assert_eq!(lock.proof, Some(ctx.proof));
+        assert!(ctx
+            .persistence
+            .stored
+            .lock()
+            .expect("recording persistence mutex")
+            .is_empty());
     }
 
     #[tokio::test]

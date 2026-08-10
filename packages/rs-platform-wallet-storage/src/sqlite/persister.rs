@@ -824,7 +824,8 @@ impl PlatformWalletPersistence for SqlitePersister {
     fn persistence_capabilities(&self) -> PersistenceCapabilities {
         // Every `flush_inner` applies the complete changeset in one SQLite
         // transaction. The current schema also has lossless token balances,
-        // invitations, account pools, and deferred-contact-crypto queue rows.
+        // invitations, account pools, tracked asset locks, and
+        // deferred-contact-crypto queue rows.
         // Do NOT attest WALLET_RESTORE (and therefore not provider restore):
         // `load()` still reports `ClientStartState::wallets` in
         // `LOAD_UNIMPLEMENTED`. Shielded state lives in a separate store.
@@ -834,6 +835,7 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE)
             .union(PersistenceCapabilities::PENDING_CONTACT_CRYPTO)
             .union(PersistenceCapabilities::DPNS_NAME_STATES)
+            .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
     }
 
     /// Merge `changeset` into the per-wallet buffer.

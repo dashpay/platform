@@ -48,6 +48,9 @@ impl PersistenceCapabilities {
     pub const WALLET_RESTORE: Self = Self(1 << 7);
     /// DPNS name-state (username marketplace) rows can be persisted.
     pub const DPNS_NAME_STATES: Self = Self(1 << 8);
+    /// Tracked asset-lock rows, including status and proof updates, can be
+    /// persisted. Restart hydration is the separate `WALLET_RESTORE` contract.
+    pub const TRACKED_ASSET_LOCKS: Self = Self(1 << 9);
 
     /// Capabilities required before exporting and funding an invitation voucher.
     pub const INVITATION_CREATION: Self = Self(
@@ -60,6 +63,11 @@ impl PersistenceCapabilities {
     /// Capabilities required for seed-backed FVK persistence and seedless rebind.
     pub const SHIELDED_FVK_RESTART: Self =
         Self(Self::ATOMIC_CHANGESETS.0 | Self::SHIELDED_VIEWING_KEYS.0);
+
+    /// Capabilities required to durably reconcile an asset-lock status and
+    /// restore that exact row after process restart.
+    pub const SHIELDED_ASSET_LOCK_RECONCILIATION: Self =
+        Self(Self::ATOMIC_CHANGESETS.0 | Self::TRACKED_ASSET_LOCKS.0 | Self::WALLET_RESTORE.0);
 
     pub const fn from_bits_retain(bits: u64) -> Self {
         Self(bits)
@@ -119,6 +127,10 @@ impl PersistenceCapabilities {
                 PersistenceCapabilities::DPNS_NAME_STATES,
                 "dpns_name_states",
             ),
+            (
+                PersistenceCapabilities::TRACKED_ASSET_LOCKS,
+                "tracked_asset_locks",
+            ),
         ];
 
         KNOWN
@@ -147,6 +159,11 @@ mod tests {
         assert_eq!(PersistenceCapabilities::PENDING_CONTACT_CRYPTO.bits(), 0x40);
         assert_eq!(PersistenceCapabilities::WALLET_RESTORE.bits(), 0x80);
         assert_eq!(PersistenceCapabilities::DPNS_NAME_STATES.bits(), 0x100);
+        assert_eq!(PersistenceCapabilities::TRACKED_ASSET_LOCKS.bits(), 0x200);
+        assert_eq!(
+            PersistenceCapabilities::SHIELDED_ASSET_LOCK_RECONCILIATION.bits(),
+            0x281
+        );
     }
 
     #[test]
