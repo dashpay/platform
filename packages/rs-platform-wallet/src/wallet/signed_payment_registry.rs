@@ -467,39 +467,44 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
             return Err(SignedPaymentError::WalletRemoved(token));
         }
 
-        // Refuse to SEND a token whose reservation could already have been
-        // swept and re-selected by an unrelated build — but reconcile its
-        // reservation first. With the build's owner token present the release
-        // is safe at ANY age: `release_reservation_if_owner` frees the inputs
-        // only while this build still owns them and no-ops after a TTL sweep
-        // or re-reservation transferred ownership. Between the guard bound
-        // (RESERVATION_MAX_AGE_BLOCKS) and key-wallet's TTL the reservation is
-        // typically STILL HELD, so dropping without releasing would strand the
-        // inputs for several more blocks while telling the caller to rebuild —
-        // and the rebuild would fail selection. Only a token-less entry falls
-        // back to the drop-without-release policy (an unguarded by-outpoint
-        // release could free a newer build's reservation).
-        if reservation_expired(
-            entry.registered_height,
-            current.last_processed_height().await,
-        ) {
-            Self::reconcile_removed_entry(entry).await;
-            return Err(SignedPaymentError::StaleReservationToken(token));
-        }
-
         // One releasing-broadcast path for every funding variant, CoinJoin
         // included: a definitive rejection releases the reservation for an
         // immediate rebuild, an ambiguous outcome keeps it, and the release is
         // bound to the token's own wallet generation.
-        let txid = entry
+        //
+        // The age bound is NOT pre-checked here: it is re-validated
+        // atomically with dispatch, under the wallet-manager read guard
+        // inside `broadcast_payment_releasing_reservation` — a check made
+        // out here is stale by the time the send begins (catch-up can
+        // advance the clock, and a concurrent finalization can sweep +
+        // re-reserve the inputs in the gap). On the stale outcome the
+        // broadcaster was never touched and the entry is reconciled below
+        // exactly as the old pre-check did: with the build's owner token
+        // present the release is safe at ANY age
+        // (`release_reservation_if_owner` no-ops once ownership was
+        // transferred); between the guard bound and key-wallet's TTL the
+        // reservation is typically STILL HELD, so releasing is what lets
+        // the instructed immediate rebuild reselect the inputs. Only a
+        // token-less entry falls back to drop-without-release (an
+        // unguarded by-outpoint release could free a newer build's
+        // reservation).
+        match entry
             .core
             .broadcast_payment_releasing_reservation(
                 &entry.funding_accounts,
                 &entry.tx,
                 entry.funding_reservation_token,
+                entry.registered_height,
             )
-            .await?;
-        Ok(txid)
+            .await
+        {
+            Ok(txid) => Ok(txid),
+            Err(PlatformWalletError::StaleReservation) => {
+                Self::reconcile_removed_entry(entry).await;
+                Err(SignedPaymentError::StaleReservationToken(token))
+            }
+            Err(error) => Err(error.into()),
+        }
     }
 
     /// Reconcile one already-removed entry's reservation, bound to the token's
