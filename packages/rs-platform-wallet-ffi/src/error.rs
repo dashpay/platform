@@ -605,6 +605,14 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::AssetLockFundingMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockFundingMismatch
             }
+            // A retained asset-lock manager whose wallet generation was removed
+            // (or replaced under the same deterministic id). The owning generation
+            // no longer exists, so the same NotFound semantic as a missing wallet
+            // handle applies — Swift/Kotlin re-acquire from the current wallet
+            // rather than parsing the English message.
+            PlatformWalletError::AssetLockManagerInactive(..) => {
+                PlatformWalletFFIResultCode::NotFound
+            }
             // A quiesce/drain barrier that did not complete within budget
             // (clear/reset paths). The host must fail closed: keep its
             // callback context alive and skip any paired persistence wipe.
@@ -1230,6 +1238,32 @@ mod tests {
         assert!(
             msg.contains("Platform expected 2"),
             "expected nonce must render exactly: {msg}"
+        );
+    }
+
+    /// A retained asset-lock manager whose wallet was removed must surface
+    /// as NotFound (the generation no longer exists), not ErrorUnknown —
+    /// Swift/Kotlin re-acquire from the current wallet on that code.
+    #[test]
+    fn asset_lock_manager_inactive_maps_to_not_found() {
+        let err = PlatformWalletError::AssetLockManagerInactive("deadbeef".to_string());
+        let rendered = err.to_string();
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::NotFound,
+            "AssetLockManagerInactive should map to NotFound (rendered: {rendered})"
+        );
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(
+            msg, rendered,
+            "Display payload must survive the FFI boundary verbatim"
+        );
+        assert!(
+            msg.contains("no longer active"),
+            "typed Display must name the inactive condition: {msg}"
         );
     }
 

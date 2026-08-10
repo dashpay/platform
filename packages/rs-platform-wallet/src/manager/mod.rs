@@ -319,6 +319,24 @@ pub(crate) fn coordinator_worker_config() -> WorkerConfig {
     }
 }
 
+/// Test-only rendezvous for
+/// [`PlatformWalletManager::remove_pre_detach_gate`]. `arrived` fires
+/// once [`remove_wallet`](PlatformWalletManager::remove_wallet) has
+/// retired the asset-lock manager and dropped the shared
+/// `WalletManager` entry but has NOT yet detached the handle from
+/// `wallets`; the removal then blocks on `release`.
+///
+/// That is precisely the window in which a same-mnemonic re-import can
+/// succeed (the id it collides on is already free) and publish a
+/// replacement generation the removal would then detach as if it were
+/// the generation it retired.
+#[cfg(test)]
+#[derive(Clone)]
+pub(super) struct RemovePreDetachGate {
+    pub(super) arrived: Arc<Notify>,
+    pub(super) release: Arc<Notify>,
+}
+
 /// Multi-wallet coordinator with SPV sync and event handling.
 ///
 /// Events are dispatched through [`PlatformEventManager`] to all registered
@@ -410,6 +428,41 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// failed / rescan pending" state rather than re-freezing silently on
     /// the next launch.
     pub(super) sync_fault: Arc<std::sync::atomic::AtomicBool>,
+    /// Serializes whole-wallet **registration and hydration** —
+    /// [`register_wallet`](Self::register_wallet) /
+    /// [`create_wallet_from_seed_bytes`](Self::create_wallet_from_seed_bytes)
+    /// and [`load_from_persistor`](Self::load_from_persistor) — over the
+    /// multi-step `wallet_manager` + `wallets` rewrite those paths perform.
+    ///
+    /// Registration inserts into `wallet_manager`, persists, builds the
+    /// handle, and only then publishes into `wallets`. Hydration walks the
+    /// same maps in the opposite direction. Without an outer serial, two
+    /// concurrent creates (or a create racing a load) can interleave those
+    /// steps even though every individual map lock was held correctly.
+    ///
+    /// Removal does **not** take this mutex. Same-id re-import is allowed
+    /// in the free-id window after a removal has dropped the inner
+    /// `WalletManager` entry; the replacement is protected by
+    /// generation-aware detach (`Arc::ptr_eq` on the retired generation)
+    /// and by each generation's own lifecycle gate
+    /// ([`WalletGeneration::teardown_guard`](crate::wallet::core::WalletGeneration::teardown_guard)),
+    /// not by serializing registration against removal. See
+    /// [`remove_wallet_with_teardown`](Self::remove_wallet_with_teardown).
+    ///
+    /// Lock ordering: when held, this is the OUTERMOST lock of a
+    /// registration/hydration transition. Acquire it before
+    /// `wallet_manager` and before `wallets` — never the reverse, and
+    /// never from code already holding either. Nothing reachable from
+    /// inside a registration/hydration transition re-enters one, so no
+    /// cycle exists.
+    pub(super) wallet_lifecycle_serial: tokio::sync::Mutex<()>,
+    /// Test-only pause point inside
+    /// [`remove_wallet_with_teardown`](Self::remove_wallet_with_teardown),
+    /// between dropping the shared `WalletManager` entry and detaching
+    /// the handle from `wallets`. `None` (the default) makes the hook a
+    /// no-op. Used by the generation-aware detach regression test.
+    #[cfg(test)]
+    pub(super) remove_pre_detach_gate: std::sync::Mutex<Option<RemovePreDetachGate>>,
 }
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
@@ -541,7 +594,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             event_adapter_join: tokio::sync::Mutex::new(Some(event_adapter_join)),
             registry,
             sync_fault,
+            wallet_lifecycle_serial: tokio::sync::Mutex::new(()),
+            #[cfg(test)]
+            remove_pre_detach_gate: std::sync::Mutex::new(None),
         }
+    }
+
+    /// Acquire
+    /// [`wallet_lifecycle_serial`](Self::wallet_lifecycle_serial) for a
+    /// registration or hydration transition. Removal does not take this
+    /// lock — see the field docs.
+    pub(super) async fn lock_wallet_lifecycle_serial(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.wallet_lifecycle_serial.lock().await
     }
 
     /// Whether the wallet-event adapter has frozen a durable sync

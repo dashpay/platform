@@ -88,6 +88,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             self.broadcaster.as_ref(),
             &self.wallet_manager,
             &self.wallet_id,
+            self.generation(),
             account_type,
             account_index,
             transaction,

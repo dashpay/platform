@@ -465,6 +465,7 @@ impl PlatformWallet {
             Arc::clone(&sdk),
             Arc::clone(&wallet_manager),
             wallet_id,
+            Arc::clone(&generation),
             lock_notify,
             broadcaster,
             wallet_persister.clone(),

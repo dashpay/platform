@@ -280,6 +280,29 @@ pub enum PlatformWalletError {
         actual_identity_index: u32,
     },
 
+    /// The operation was issued through an `AssetLockManager` whose wallet
+    /// has since been removed from the `PlatformWalletManager`.
+    ///
+    /// Wallet ids are deterministic in (seed, network), so re-importing the
+    /// same mnemonic re-creates the very same id against a *fresh*
+    /// `PlatformWalletInfo` and a *fresh* `AssetLockManager`. A handle
+    /// retained across the removal (an FFI `asset_lock_manager` handle the
+    /// host never destroyed, or an in-flight resume task) resolves through
+    /// the shared `WalletManager` by id alone, so without this guard it
+    /// would silently start mutating and persisting the replacement
+    /// wallet's rows under a different `status_persist_serial` than the
+    /// live manager — reintroducing the very stale-snapshot reversal the
+    /// ordering mutex closes within one instance.
+    ///
+    /// Always a stale-handle bug on the caller's side; the fix is to
+    /// re-acquire the manager from the current `PlatformWallet`.
+    #[error(
+        "Asset lock manager for wallet {0} is no longer active — its wallet was \
+         removed from the manager; re-acquire the asset lock manager from the \
+         current wallet handle"
+    )]
+    AssetLockManagerInactive(String),
+
     #[error("SDK error: {0}")]
     Sdk(#[from] dash_sdk::Error),
 

@@ -46,6 +46,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
         let persister_dyn: Arc<dyn PlatformWalletPersistence> = Arc::clone(&self.persister) as _;
 
+        // Hydration is a multi-step registration-class rewrite: each wallet
+        // goes live in `wallet_manager` well before it is published into
+        // `self.wallets`, and the batch rollback at the bottom unwinds
+        // both maps. Held across the whole loop so a concurrent
+        // registration/hydration of a deterministic id this batch is
+        // mid-way through cannot interleave those steps. Removal is
+        // generation-gated separately and does not take this mutex —
+        // see
+        // [`wallet_lifecycle_serial`](PlatformWalletManager::wallet_lifecycle_serial).
+        let _lifecycle = self.lock_wallet_lifecycle_serial().await;
+
         // Track every wallet successfully inserted into
         // `wallet_manager` and `self.wallets` during this call so the
         // batch is transactional: if any later iteration fails (id

@@ -4,7 +4,7 @@
 //! resolving status from wallet info, resuming interrupted locks,
 //! and re-deriving private keys.
 
-use crate::broadcaster::TransactionBroadcaster;
+use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
 use std::time::Duration;
 
 use dashcore::Address as DashAddress;
@@ -18,6 +18,7 @@ use crate::error::PlatformWalletError;
 
 use super::super::manager::AssetLockManager;
 use super::super::tracked::{AssetLockStatus, TrackedAssetLock};
+use super::tracking::BuiltPromotion;
 
 // ---------------------------------------------------------------------------
 // Blocking accessor (for synchronous / evo-tool contexts)
@@ -33,6 +34,22 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// on-chain context from `ManagedWalletInfo` to determine the correct
     /// status (and constructs a `ChainAssetLockProof` if the TX is in a
     /// chain-locked block).
+    ///
+    /// # Lifecycle
+    ///
+    /// Silently no-ops (with a warning) when the owning wallet has been
+    /// removed from the `PlatformWalletManager`. This path returns `()`
+    /// — it is a best-effort catch-up whose every other failure mode is
+    /// already logged-and-dropped — so a stale handle is refused the
+    /// same way rather than by a signature change.
+    ///
+    /// Like the async mutators, the authoritative check happens AFTER
+    /// `status_persist_serial` is taken and before the commit-phase
+    /// wallet lookup: phase 2 resolves status without any lock held and
+    /// may call into host persistence, which is more than enough time
+    /// for a removal (and a re-import re-creating the same
+    /// deterministic id) to land. The advisory pre-check up front only
+    /// saves that work.
     #[allow(clippy::too_many_arguments)]
     pub fn recover_asset_lock_blocking(
         &self,
@@ -44,6 +61,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         out_point: OutPoint,
         proof: Option<dpp::prelude::AssetLockProof>,
     ) {
+        if let Err(e) = self.ensure_active() {
+            tracing::warn!(
+                outpoint = %out_point,
+                error = %e,
+                "recover_asset_lock_blocking: refusing to recover through a \
+                 retired asset-lock manager"
+            );
+            return;
+        }
+
         // Phase 1 (lock held): claim the tracked-asset-lock slot and
         // pull the in-memory record out so the lookup work is
         // bounded to a single hashmap fetch.
@@ -85,7 +112,31 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             None => self.resolve_status_with_in_memory(in_memory_record, account_index, &out_point),
         };
 
-        // Phase 3 (lock held): commit the tracked-asset-lock entry.
+        // Phase 3 (locks held): commit the tracked-asset-lock entry and
+        // enqueue it as one serialized unit. Without the ordering mutex
+        // a concurrent flow could finalize this row and enqueue its
+        // proof-bearing snapshot in the window between the insert below
+        // and the enqueue, leaving the older recovered snapshot durable
+        // (see `status_persist_serial`). `blocking_lock` matches the
+        // `blocking_write` already used here — this method is documented
+        // as callable only OUTSIDE a tokio async context.
+        let _serial = self.status_persist_serial.blocking_lock();
+
+        // Authoritative stale-handle check, under the same mutex
+        // `deactivate` must hold to retire this manager — so a removal
+        // racing phase 2 either finished (and this insert is refused)
+        // or is still waiting for this critical section to end.
+        if let Err(e) = self.ensure_active_under_serial(&_serial) {
+            tracing::warn!(
+                outpoint = %out_point,
+                error = %e,
+                "recover_asset_lock_blocking: wallet was removed while resolving \
+                 the lock's status — dropping the recovery instead of writing to \
+                 replacement wallet state"
+            );
+            return;
+        }
+
         // We re-check `tracked_asset_locks.contains_key` because
         // another caller could have raced in during phase 2 — first
         // writer wins.
@@ -218,8 +269,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath), PlatformWalletError> {
         tracing::info!(outpoint = %out_point, ?timeout, "resume_asset_lock: entered");
 
+        // Fail a stale handle before doing any work. Advisory only —
+        // this call goes on to await a broadcast and a proof, so the
+        // removal it is meant to catch can equally land afterwards. The
+        // guarantee comes from the same check inside
+        // `promote_built_to_broadcast` / `advance_asset_lock_status`,
+        // taken under `status_persist_serial`.
+        self.ensure_active()?;
+
         // 1. Look up the tracked lock — snapshot the fields we need.
-        let (tx, status, existing_proof, account_index) = {
+        let (tx, mut status, mut existing_proof, account_index) = {
             let wm = self.wallet_manager.read().await;
             let info = wm
                 .get_wallet_info(&self.wallet_id)
@@ -248,15 +307,98 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             )
         };
 
+        // Test-only pause between the read-locked snapshot above and the
+        // write-locked compare-and-set below, so a test can deterministically
+        // hold this resume on a stale `Built` snapshot while another flow
+        // finalizes the same row. No-op unless a test installed the gate.
+        #[cfg(test)]
+        {
+            let gate = self
+                .resume_pre_promote_gate
+                .lock()
+                .expect("resume pre-promote gate mutex")
+                .clone();
+            if let Some(gate) = gate {
+                // Signal first: the snapshot above is taken, so whatever the
+                // test does next is guaranteed to race a stale `Built`.
+                gate.arrived.notify_one();
+                gate.release.notified().await;
+            }
+        }
+
+        // 1b. Promote `Built` → `Broadcast` BEFORE calling `broadcast(&tx)`.
+        // The snapshot above dropped the read lock, so a concurrent
+        // create-path Rejected cleanup can race the re-broadcast: if the row
+        // is still `Built` when `untrack_asset_lock` runs, the guard doesn't
+        // fire, the row is deleted, and the funding reservation is released
+        // while this call is still handing the same transaction to the
+        // network. Advancing first pushes the status past `Built` under the
+        // write lock, so either (a) we win and the untrack guard preserves
+        // the row + reservation, or (b) untrack ran first, the row is
+        // already gone, and this promotion fails before we ever call
+        // `broadcast(&tx)`.
+        //
+        // The promotion is a compare-and-set rather than an unconditional
+        // write because that same dropped read lock lets TWO resumes both
+        // snapshot `Built`. If the first one broadcasts, obtains a proof and
+        // finalizes the row to `InstantSendLocked` / `ChainLocked` (step 3),
+        // an unconditional write from this delayed second caller would
+        // downgrade the finalized row to `Broadcast` while leaving the proof
+        // attached, and persist that inconsistent state. Instead we re-read
+        // the row's current status and proof under the write lock and
+        // re-dispatch from there — the arms below then take the already-have-
+        // a-proof path instead of waiting again for a proof we already hold.
+        if status == AssetLockStatus::Built {
+            match self.promote_built_to_broadcast(out_point).await? {
+                // The promotion queued its own changeset, atomically with
+                // the compare-and-set — see `status_persist_serial`.
+                BuiltPromotion::Promoted(_cs) => {}
+                BuiltPromotion::AlreadyAdvanced {
+                    current_status,
+                    current_proof,
+                } => {
+                    tracing::info!(
+                        outpoint = %out_point,
+                        status = ?current_status,
+                        has_proof = current_proof.is_some(),
+                        "resume_asset_lock: row advanced past Built concurrently — \
+                         re-dispatching from its current state"
+                    );
+                    status = current_status;
+                    existing_proof = current_proof;
+                }
+            }
+        }
+
         // 2. Resume from the current status.
         let proof = match status {
             AssetLockStatus::Built => {
-                // Re-broadcast and wait for proof.
-                self.broadcaster.broadcast(&tx).await?;
-                let cs = self
-                    .advance_asset_lock_status(out_point, AssetLockStatus::Broadcast, None)
-                    .await?;
-                self.queue_asset_lock_changeset(cs);
+                // Promoted to `Broadcast` in step 1b — this arm owns that
+                // promotion, so it is the one that re-broadcasts.
+                //
+                // Hold the generation lifecycle gate across the liveness
+                // check and the network send so wallet removal cannot
+                // complete while this re-broadcast is still in flight
+                // (host teardown would otherwise delete recovery material
+                // for a transaction that can still reach the network).
+                let _lifecycle = self.admit_broadcast().await?;
+                match self.broadcaster.broadcast(&tx).await {
+                    Ok(_) => {
+                        drop(_lifecycle);
+                    }
+                    Err(e @ BroadcastError::Rejected { .. }) => {
+                        // Keep `Broadcast`: a concurrent successful resume
+                        // may own that status, and the `Broadcast` arm
+                        // defensively re-broadcasts on later resumes.
+                        return Err(e.into());
+                    }
+                    Err(e @ BroadcastError::MaybeSent { .. }) => {
+                        // Outcome unknown — the tx may already be
+                        // propagating. Keep `Broadcast` so a later resume
+                        // can defensively re-broadcast and wait for proof.
+                        return Err(e.into());
+                    }
+                }
                 let proof = self.wait_for_proof(out_point, timeout).await?;
                 self.validate_or_upgrade_proof(proof, account_index, out_point)
                     .await?
@@ -282,15 +424,22 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // rather than failing the resume on a tx that is actually
                 // fine. If the tx really was mined, `wait_for_proof`
                 // resolves immediately from the SPV/persisted record.
-                if let Err(e) = self.broadcaster.broadcast(&tx).await {
-                    tracing::debug!(
-                        outpoint = %out_point,
-                        error = %e,
-                        "resume_asset_lock: defensive re-broadcast of a \
-                         Broadcast-status lock returned an error (likely \
-                         already in a mempool or mined); proceeding to wait \
-                         for proof"
-                    );
+                //
+                // Same generation barrier as the `Built` arm: a defensive
+                // re-broadcast is still a network send for this generation
+                // and must not race wallet teardown.
+                {
+                    let _lifecycle = self.admit_broadcast().await?;
+                    if let Err(e) = self.broadcaster.broadcast(&tx).await {
+                        tracing::debug!(
+                            outpoint = %out_point,
+                            error = %e,
+                            "resume_asset_lock: defensive re-broadcast of a \
+                             Broadcast-status lock returned an error (likely \
+                             already in a mempool or mined); proceeding to wait \
+                             for proof"
+                        );
+                    }
                 }
                 let proof = self.wait_for_proof(out_point, timeout).await?;
                 self.validate_or_upgrade_proof(proof, account_index, out_point)
@@ -364,10 +513,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 dpp::prelude::AssetLockProof::Chain(_) => AssetLockStatus::ChainLocked,
             }
         };
-        let cs = self
+        // Queued by `advance_asset_lock_status` itself, atomically with
+        // the in-memory write.
+        let _cs = self
             .advance_asset_lock_status(out_point, new_status, Some(proof.clone()))
             .await?;
-        self.queue_asset_lock_changeset(cs);
 
         // 4. Re-derive the one-time credit-output derivation path.
         let path = {
@@ -568,7 +718,7 @@ mod tests {
 
     #[tokio::test]
     async fn built_resume_rebroadcasts_original_and_typed_failures_do_not_broadcast() {
-        let (wallet_manager, wallet_id, _balance, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let persistence = Arc::new(RecordingPersistence::default());
         let broadcaster = Arc::new(RecordingBroadcaster::default());
@@ -582,6 +732,7 @@ mod tests {
             sdk,
             Arc::clone(&wallet_manager),
             wallet_id,
+            Arc::clone(&generation),
             Arc::new(Notify::new()),
             Arc::clone(&broadcaster),
             WalletPersister::new(wallet_id, persistence),
@@ -705,7 +856,7 @@ mod tests {
 
         // --- Session 1: build a top-up asset lock. This lazily creates
         // the IdentityTopUp{7} account and must persist its registration.
-        let (wallet_manager, wallet_id, _balance, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let persistence = Arc::new(RecordingPersistence::default());
         // The mock SDK network must match the testnet wallet fixture:
@@ -721,6 +872,7 @@ mod tests {
             Arc::clone(&sdk),
             wallet_manager,
             wallet_id,
+            Arc::clone(&generation),
             Arc::new(Notify::new()),
             Arc::new(AlwaysRejectedBroadcaster),
             WalletPersister::new(
@@ -782,9 +934,10 @@ mod tests {
             accounts.insert(account).expect("insert restored account");
         }
         let restored_wallet = Wallet::new_external_signable(Network::Testnet, wallet_id, accounts);
+        let generation = Arc::new(WalletGeneration::new());
         let mut restored_info = PlatformWalletInfo {
             core_wallet: ManagedWalletInfo::from_wallet(&restored_wallet, 0),
-            generation: Arc::new(WalletGeneration::new()),
+            generation: Arc::clone(&generation),
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
             dpns_name_states: BTreeMap::new(),
@@ -817,6 +970,7 @@ mod tests {
             sdk,
             Arc::new(RwLock::new(wm)),
             wallet_id,
+            generation,
             Arc::new(Notify::new()),
             Arc::new(AlwaysRejectedBroadcaster),
             WalletPersister::new(wallet_id, persistence as Arc<dyn PlatformWalletPersistence>),

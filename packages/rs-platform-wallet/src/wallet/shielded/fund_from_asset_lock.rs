@@ -406,7 +406,9 @@ impl PlatformWallet {
                         .asset_locks
                         .upgrade_to_chain_lock_proof(&out_point, cl_wait)
                         .await?;
-                    let cs = self
+                    // `advance_asset_lock_status` queues the changeset
+                    // itself, atomically with the in-memory write.
+                    let _cs = self
                         .asset_locks
                         .advance_asset_lock_status(
                             &out_point,
@@ -414,7 +416,6 @@ impl PlatformWallet {
                             Some(chain_proof.clone()),
                         )
                         .await?;
-                    self.asset_locks.queue_asset_lock_changeset(cs);
                     submit_with_cl_height_retry(settings, |s| {
                         build_and_broadcast_shielded(
                             sdk.clone(),
