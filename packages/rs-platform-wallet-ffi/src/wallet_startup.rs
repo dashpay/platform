@@ -158,7 +158,12 @@ pub unsafe extern "C" fn platform_wallet_manager_start_wallet_subsystems(
     } else {
         identity_signer_handle as usize
     };
-    let provider = resolver_contact_crypto_provider(mnemonic_resolver_handle, wid, network);
+    // The provider is resolver-backed, so without a resolver every crypto
+    // operation would fail with `NullHandle` and the drain would report zero
+    // while leaving the queue untouched. Pass `None` instead: the sequence then
+    // skips the drain and reports the real pending count.
+    let provider = (!mnemonic_resolver_handle.is_null())
+        .then(|| resolver_contact_crypto_provider(mnemonic_resolver_handle, wid, network));
 
     let opts = WalletStartupOptions {
         budget: if budget_secs == 0 {
@@ -180,7 +185,7 @@ pub unsafe extern "C" fn platform_wallet_manager_start_wallet_subsystems(
                 let signer =
                     (signer_addr != 0).then(|| unsafe { &*(signer_addr as *const VTableSigner) });
                 manager
-                    .start_wallet_subsystems(&wid, master.as_ref(), &provider, signer, opts)
+                    .start_wallet_subsystems(&wid, master.as_ref(), provider.as_ref(), signer, opts)
                     .await
             })
         })

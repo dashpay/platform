@@ -116,7 +116,22 @@ extension PlatformWalletManager {
         let identitySigner: KeychainSigner? = self.modelContainer.map {
             KeychainSigner(modelContainer: $0, network: self.signerNetwork ?? .testnet)
         }
-        let budgetSecs = UInt64((budget ?? 0).rounded())
+        // `0` means "SDK default" across the boundary, so a caller asking for a
+        // deliberately short budget must not round down into it — clamp to one
+        // second instead. Non-finite and negative values are rejected outright
+        // rather than trapping in the `UInt64` initializer, which is reachable
+        // whenever the budget comes out of arithmetic.
+        let budgetSecs: UInt64
+        switch budget {
+        case .none:
+            budgetSecs = 0
+        case .some(let requested) where !requested.isFinite || requested < 0:
+            throw PlatformWalletError.invalidParameter(
+                "budget must be a finite, non-negative number of seconds, got \(requested)"
+            )
+        case .some(let requested):
+            budgetSecs = max(1, UInt64(requested.rounded()))
+        }
 
         return try await Task.detached(priority: .userInitiated) { () -> WalletStartupOutcome in
             try withExtendedLifetime((coreSigner, identitySigner)) {

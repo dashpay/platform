@@ -64,6 +64,20 @@ pub const DEFAULT_STARTUP_BUDGET: Duration = Duration::from_secs(20);
 /// never reaches this schedule — a proof of absence settles on the first pass.
 const DISCOVERY_BACKOFF: [Duration; 2] = [Duration::from_secs(3), Duration::from_secs(8)];
 
+/// Run `future` with whatever is left of the budget, or not at all.
+///
+/// `None` means the deadline passed — either before the step started or while
+/// it ran. Every step in the sequence is abandonable: the work it did not
+/// finish stays queued for the next attempt, and the caller needs Core SPV to
+/// start far more than it needs any one of them to complete.
+async fn within_budget<F: std::future::Future>(deadline: Instant, future: F) -> Option<F::Output> {
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    if remaining.is_zero() {
+        return None;
+    }
+    tokio::time::timeout(remaining, future).await.ok()
+}
+
 /// Knobs for [`PlatformWalletManager::start_wallet_subsystems`].
 #[derive(Debug, Clone, Copy)]
 pub struct WalletStartupOptions {
@@ -100,7 +114,10 @@ pub enum WalletStartupStatus {
     /// own an identity; we do not know yet.
     PartialNoIdentity,
     /// Identity resolved and synced, but contact-account builds are still
-    /// queued — the drain did not finish inside the budget.
+    /// queued. The budget may have run out, the drain may have failed on some
+    /// entries, or no contact-crypto provider was supplied — the count is what
+    /// is certain, not the reason. Either way those contacts' payments wait on
+    /// the DIP-15 rescan.
     PartialAccountsPending,
 }
 
@@ -266,7 +283,7 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
         &self,
         wallet_id: &WalletId,
         master: Option<&ExtendedPrivKey>,
-        contact_crypto: &C,
+        contact_crypto: Option<&C>,
         identity_signer: Option<&S>,
         opts: WalletStartupOptions,
     ) -> Result<WalletStartupOutcome, PlatformWalletError>
@@ -308,40 +325,74 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
         // 2. One contact-request pass, so the deferred builds exist to drain.
         //    Log-and-continue: a prior session may already have queued work
         //    that this call can still complete.
-        if Instant::now() < deadline {
-            match identity_wallet.dashpay().sync_contact_requests().await {
-                Ok(requests) => {
-                    tally.record_sync_ran();
-                    tracing::debug!(
-                        wallet_id = %hex::encode(wallet_id),
-                        requests = requests.len(),
-                        "startup: contact-request pass complete"
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(wallet_id),
-                        error = %e,
-                        "startup: contact-request pass failed; continuing to the drain"
-                    );
-                }
+        match within_budget(deadline, identity_wallet.dashpay().sync_contact_requests()).await {
+            Some(Ok(requests)) => {
+                tally.record_sync_ran();
+                tracing::debug!(
+                    wallet_id = %hex::encode(wallet_id),
+                    requests = requests.len(),
+                    "startup: contact-request pass complete"
+                );
+            }
+            Some(Err(e)) => {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error = %e,
+                    "startup: contact-request pass failed; continuing to the drain"
+                );
+            }
+            None => {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    "startup: budget spent before the contact-request pass finished"
+                );
             }
         }
 
         // 3. The step that actually creates the addresses.
-        let drained = identity_wallet
-            .dashpay()
-            .drain_pending_contact_crypto(contact_crypto)
-            .await;
-        let accepted = match identity_signer {
-            Some(signer) => {
-                identity_wallet
-                    .dashpay()
-                    .drain_auto_accepts(signer, contact_crypto)
+        //
+        // Both drains hit the network, so both are bounded. An abandoned drain
+        // is safe to walk away from: entries it did not complete stay queued
+        // and the next signer-present action retries them.
+        //
+        // Without a provider there is nothing to drain WITH. A caller that
+        // passes `None` gets the sequence's other steps and an honest
+        // `contact_accounts_pending`, rather than a drain that reports zero
+        // because every crypto operation failed.
+        let (drained, accepted) = match contact_crypto {
+            Some(contact_crypto) => {
+                let drained = within_budget(
+                    deadline,
+                    identity_wallet
+                        .dashpay()
+                        .drain_pending_contact_crypto(contact_crypto),
+                )
+                .await
+                .unwrap_or(0);
+                let accepted = match identity_signer {
+                    Some(signer) => within_budget(
+                        deadline,
+                        identity_wallet
+                            .dashpay()
+                            .drain_auto_accepts(signer, contact_crypto),
+                    )
                     .await
+                    .unwrap_or(0),
+                    None => 0,
+                };
+                (drained, accepted)
             }
-            None => 0,
+            None => {
+                tracing::info!(
+                    wallet_id = %hex::encode(wallet_id),
+                    "startup: no contact-crypto provider; skipping the drain"
+                );
+                (0, 0)
+            }
         };
+        // Not budgeted: a local queue-length read with no I/O. Leaving it
+        // unbounded keeps the reported `pending` truthful even when the steps
+        // above ran out of time — which is exactly when it matters most.
         let pending = identity_wallet
             .dashpay()
             .pending_contact_crypto_count()
@@ -531,6 +582,38 @@ mod tests {
         tally.record_proven_absent();
 
         assert!(!tally.has_identity());
+    }
+
+    /// Every network step is abandonable, so `within_budget` must return
+    /// `None` rather than run a future past the deadline. This is the guard for
+    /// the gap review found: bounding only the discovery retries let a stalled
+    /// sync or drain hold Core SPV well past `budget`.
+    #[tokio::test(start_paused = true)]
+    async fn within_budget_abandons_a_step_that_outlasts_the_deadline() {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let slow = async {
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            "finished"
+        };
+        assert_eq!(within_budget(deadline, slow).await, None);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn within_budget_returns_a_step_that_fits() {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let quick = async {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            "finished"
+        };
+        assert_eq!(within_budget(deadline, quick).await, Some("finished"));
+    }
+
+    /// A deadline already in the past must not start the step at all.
+    #[tokio::test(start_paused = true)]
+    async fn within_budget_skips_once_the_deadline_has_passed() {
+        let deadline = Instant::now();
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert_eq!(within_budget(deadline, async { "ran" }).await, None);
     }
 
     #[test]
