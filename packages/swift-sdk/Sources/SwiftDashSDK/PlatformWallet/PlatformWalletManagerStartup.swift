@@ -20,16 +20,33 @@ public enum WalletStartupStatus: UInt8, Sendable {
     /// failure — there is nothing to sync and nothing to drain.
     case noIdentity = 1
     /// The identity scan never reached Platform inside the budget. The wallet
-    /// may well own one; we do not know yet.
+    /// may well own one; we do not know yet, and asking again may answer it.
     case partialNoIdentity = 2
     /// Identity resolved and synced, but contact-account builds are still
-    /// queued — the drain did not finish inside the budget.
+    /// queued. The budget may have run out, the drain may have failed on some
+    /// entries, or no contact-crypto provider was available.
     case partialAccountsPending = 3
+    /// Discovery failed locally — a wallet or persistence fault, not a
+    /// reachability problem. The identity question is unanswered, and another
+    /// scan will not answer it: the same fault is still there.
+    case discoveryFailed = 4
 
-    /// Whether Platform gave a definitive answer about this seed's identity.
+    /// Whether another discovery scan could change the answer.
     ///
-    /// `false` only for ``partialNoIdentity``, the one outcome worth repeating.
-    public var identityIsSettled: Bool { self != .partialNoIdentity }
+    /// True only for ``partialNoIdentity``. The others are terminal for this
+    /// launch — an identity was found, absence was proven, or the failure is
+    /// local and will still be there next time.
+    public var discoveryWorthRetrying: Bool { self == .partialNoIdentity }
+
+    /// Whether the identity question has an answer.
+    ///
+    /// Not the inverse of ``discoveryWorthRetrying``: ``discoveryFailed``
+    /// leaves the question open *and* is not worth retrying. Use this to decide
+    /// what to show, and ``discoveryWorthRetrying`` to decide whether to scan
+    /// again.
+    public var identityIsSettled: Bool {
+        self != .partialNoIdentity && self != .discoveryFailed
+    }
 }
 
 /// What a bring-up did.

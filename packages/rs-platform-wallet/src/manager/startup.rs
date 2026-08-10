@@ -111,8 +111,13 @@ pub enum WalletStartupStatus {
     /// failure: there is nothing to sync and nothing to drain.
     NoIdentity,
     /// The scan never reached Platform within the budget. The wallet may well
-    /// own an identity; we do not know yet.
+    /// own an identity; we do not know yet, and asking again may answer it.
     PartialNoIdentity,
+    /// Discovery failed locally — a wallet-manager or persistence error, not a
+    /// reachability problem. Like [`Self::PartialNoIdentity`] the identity
+    /// question is unanswered, but unlike it another scan will not answer it:
+    /// the same local fault is still there. Terminal for this launch.
+    DiscoveryFailed,
     /// Identity resolved and synced, but contact-account builds are still
     /// queued. The budget may have run out, the drain may have failed on some
     /// entries, or no contact-crypto provider was supplied — the count is what
@@ -122,15 +127,29 @@ pub enum WalletStartupStatus {
 }
 
 impl WalletStartupStatus {
-    /// Whether Platform gave a definitive answer about this seed's identity.
+    /// Whether another discovery scan could change the answer.
     ///
-    /// `false` only for [`Self::PartialNoIdentity`] — the one outcome worth
-    /// repeating. This is the distinction that platform#4352 made expressible:
-    /// before it, "no identity exists" and "we never got through" both arrived
-    /// as an empty success, so clients either retried a proven-empty scan
-    /// forever or cached a network failure as fact.
+    /// True only for [`Self::PartialNoIdentity`]. The other three are terminal
+    /// for different reasons — an identity was found, absence was proven, or
+    /// the failure is local and will still be there next time — and only an
+    /// unreachable Platform is worth asking again.
+    ///
+    /// This is the distinction platform#4352 made expressible: before it, "no
+    /// identity exists" and "we never got through" both arrived as an empty
+    /// success, so clients either retried a proven-empty scan forever or cached
+    /// a network failure as fact.
+    pub fn discovery_worth_retrying(self) -> bool {
+        matches!(self, Self::PartialNoIdentity)
+    }
+
+    /// Whether the identity question has an answer.
+    ///
+    /// Note this is NOT the inverse of [`Self::discovery_worth_retrying`]:
+    /// [`Self::DiscoveryFailed`] leaves the question open *and* is not worth
+    /// retrying. Use this to decide what to display, and
+    /// `discovery_worth_retrying` to decide whether to scan again.
     pub fn identity_is_settled(self) -> bool {
-        !matches!(self, Self::PartialNoIdentity)
+        !matches!(self, Self::PartialNoIdentity | Self::DiscoveryFailed)
     }
 }
 
@@ -170,6 +189,10 @@ pub(crate) struct StartupTally {
     pub proven_no_identity: bool,
     /// The budget ran out while discovery was still unreachable.
     pub discovery_unreachable: bool,
+    /// Discovery hit a local fault (wallet manager, persistence) rather than a
+    /// reachability problem. Tracked apart from `discovery_unreachable`
+    /// because retrying cannot clear it.
+    pub discovery_failed_locally: bool,
     pub discovery_attempts: u32,
     pub dashpay_sync_ran: bool,
     pub contact_accounts_drained: usize,
@@ -204,9 +227,16 @@ impl StartupTally {
         self.discovery_attempts += 1;
     }
 
-    /// The budget expired with discovery still unresolved.
+    /// The budget expired with discovery still unresolved. Retryable.
     pub(crate) fn record_discovery_gave_up(&mut self) {
         self.discovery_unreachable = true;
+    }
+
+    /// Discovery failed on a local fault. Not retryable — the wallet-manager
+    /// or persistence problem behind it is still there on the next attempt, so
+    /// telling the client to rescan would only waste a round trip.
+    pub(crate) fn record_discovery_failed_locally(&mut self) {
+        self.discovery_failed_locally = true;
     }
 
     /// Whether there is an identity to sync and drain for.
@@ -230,6 +260,11 @@ impl StartupTally {
     /// absence outranks the drain counters for the same reason — with no
     /// identity there is nothing to have drained.
     pub(crate) fn status(&self) -> WalletStartupStatus {
+        // A local fault outranks unreachability: both leave the question open,
+        // but only this one tells the client not to bother asking again.
+        if self.discovery_failed_locally {
+            return WalletStartupStatus::DiscoveryFailed;
+        }
         if self.discovery_unreachable {
             return WalletStartupStatus::PartialNoIdentity;
         }
@@ -459,12 +494,13 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
                 }
                 Err(e) => {
                     // Not a reachability question — a wallet/persistence
-                    // failure will not fix itself on the next attempt.
+                    // failure will not fix itself on the next attempt, so this
+                    // is recorded as terminal rather than as "try again".
                     tracing::warn!(
                         error = %e,
                         "startup: identity discovery failed for a non-network reason"
                     );
-                    tally.record_discovery_gave_up();
+                    tally.record_discovery_failed_locally();
                     return;
                 }
             }
@@ -520,6 +556,47 @@ mod tests {
         assert_eq!(tally.status(), WalletStartupStatus::PartialNoIdentity);
         assert!(!tally.status().identity_is_settled());
         assert_eq!(tally.discovery_attempts, 2);
+    }
+
+    /// A local discovery fault is terminal, unlike an unreachable Platform.
+    /// The branch that produces it says the failure will not fix itself, so
+    /// reporting it as retryable would send clients on a futile rescan.
+    #[test]
+    fn a_local_discovery_failure_is_terminal() {
+        let mut tally = StartupTally::default();
+        tally.record_discovery_failed_locally();
+
+        assert_eq!(tally.status(), WalletStartupStatus::DiscoveryFailed);
+        assert!(
+            !tally.status().discovery_worth_retrying(),
+            "the same local fault will still be there next time"
+        );
+        assert!(
+            !tally.status().identity_is_settled(),
+            "terminal is not the same as answered — we still do not know"
+        );
+    }
+
+    /// Both leave the identity question open, but only one is worth asking
+    /// again. Keeping that asymmetry visible is the point of the two methods.
+    #[test]
+    fn only_an_unreachable_platform_is_worth_retrying() {
+        let mut unreachable = StartupTally::default();
+        unreachable.record_unreachable();
+        unreachable.record_discovery_gave_up();
+        assert!(unreachable.status().discovery_worth_retrying());
+
+        for terminal in [
+            WalletStartupStatus::Ready,
+            WalletStartupStatus::NoIdentity,
+            WalletStartupStatus::PartialAccountsPending,
+            WalletStartupStatus::DiscoveryFailed,
+        ] {
+            assert!(
+                !terminal.discovery_worth_retrying(),
+                "{terminal:?} must not ask the client to rescan"
+            );
+        }
     }
 
     /// An unreachable Platform outranks a clean drain: the later steps ran

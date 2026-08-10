@@ -28,6 +28,7 @@ pub enum WalletStartupStatusFFI {
     NoIdentity = 1,
     PartialNoIdentity = 2,
     PartialAccountsPending = 3,
+    DiscoveryFailed = 4,
 }
 
 impl From<WalletStartupStatus> for WalletStartupStatusFFI {
@@ -37,6 +38,7 @@ impl From<WalletStartupStatus> for WalletStartupStatusFFI {
             WalletStartupStatus::NoIdentity => Self::NoIdentity,
             WalletStartupStatus::PartialNoIdentity => Self::PartialNoIdentity,
             WalletStartupStatus::PartialAccountsPending => Self::PartialAccountsPending,
+            WalletStartupStatus::DiscoveryFailed => Self::DiscoveryFailed,
         }
     }
 }
