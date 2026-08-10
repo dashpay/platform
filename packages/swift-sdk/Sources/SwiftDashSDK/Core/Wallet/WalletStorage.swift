@@ -135,10 +135,6 @@ public class WalletStorage {
         return mnemonic
     }
 
-    /// Cheap existence check used by signer preflight paths.
-    ///
-    /// Unlike `retrieveMnemonic(...)`, this does not materialize the
-    /// mnemonic bytes into Swift heap objects.
     /// Three-way answer to "can this wallet's mnemonic be read right now?".
     ///
     /// [`hasMnemonic(for:)`] collapses the last two cases into `false`, which
@@ -175,18 +171,16 @@ public class WalletStorage {
         }
     }
 
+    /// Cheap existence check used by signer preflight paths.
+    ///
+    /// Unlike `retrieveMnemonic(...)`, this does not materialize the
+    /// mnemonic bytes into Swift heap objects.
+    ///
+    /// Answers `false` both for "no such item" and for "could not tell",
+    /// which is what a preflight wants. A caller that has to choose between
+    /// giving up and retrying needs `mnemonicAvailability(for:)` instead.
     public func hasMnemonic(for walletId: Data) -> Bool {
-        let account = perWalletMnemonicAccount(for: walletId)
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: account,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecReturnAttributes as String: true
-        ]
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        return status == errSecSuccess
+        mnemonicAvailability(for: walletId) == .present
     }
 
     /// Attribute-only identity stamp of the wallet's mnemonic Keychain

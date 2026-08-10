@@ -2601,10 +2601,19 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         cleared: &[crate::changeset::PendingContactCryptoKey],
         verify_failed: &[(Identifier, Identifier, Vec<u8>)],
     ) {
-        if !cleared.is_empty() {
-            {
-                let mut wm = self.wallet_manager.write().await;
-                if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+        // Each list is applied on its own. The caller advances both cursors
+        // after this returns, so gating one on the other would discard the
+        // ungated one for good. Not reachable today — every `verify_failed`
+        // push is paired with a `cleared` push — but a future "leave queued,
+        // remember the bad proof" case would lose its marks silently.
+        if cleared.is_empty() && verify_failed.is_empty() {
+            return;
+        }
+
+        {
+            let mut wm = self.wallet_manager.write().await;
+            if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+                if !cleared.is_empty() {
                     // Remove the cleared entries from their owners' queues. Each
                     // cleared key names its owner, and only that owner's queue can
                     // hold it, so retain each affected owner's queue against the
@@ -2624,25 +2633,31 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                                 .retain(|e| !cleared.iter().any(|k| *k == e.key()));
                         }
                     }
-                    // Record permanent verify failures so the next sweep's
-                    // enqueue gate skips the same bad proof (in-memory only —
-                    // retried once per launch; the request stays manually
-                    // acceptable).
-                    for (owner, sender, proof) in verify_failed {
-                        if let Some(managed) = info.identity_manager.managed_identity_mut(owner) {
-                            managed.mark_auto_accept_verify_failed(sender, proof);
-                        }
+                }
+                // Record permanent verify failures so the next sweep's
+                // enqueue gate skips the same bad proof (in-memory only —
+                // retried once per launch; the request stays manually
+                // acceptable).
+                for (owner, sender, proof) in verify_failed {
+                    if let Some(managed) = info.identity_manager.managed_identity_mut(owner) {
+                        managed.mark_auto_accept_verify_failed(sender, proof);
                     }
                 }
             }
-            let changeset = crate::changeset::PlatformWalletChangeSet {
-                pending_contact_crypto_cleared: cleared.to_vec(),
-                ..Default::default()
-            };
-            if let Err(e) = self.persister.store(changeset) {
-                tracing::warn!(error = %e,
-                    "auto-accept: failed to persist cleared entries (in-memory already updated)");
-            }
+        }
+
+        // Only the dequeue is persisted; the verify-failure marks are in-memory
+        // by design.
+        if cleared.is_empty() {
+            return;
+        }
+        let changeset = crate::changeset::PlatformWalletChangeSet {
+            pending_contact_crypto_cleared: cleared.to_vec(),
+            ..Default::default()
+        };
+        if let Err(e) = self.persister.store(changeset) {
+            tracing::warn!(error = %e,
+                "auto-accept: failed to persist cleared entries (in-memory already updated)");
         }
     }
 
