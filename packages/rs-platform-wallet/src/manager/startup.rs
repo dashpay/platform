@@ -70,12 +70,37 @@ const DISCOVERY_BACKOFF: [Duration; 2] = [Duration::from_secs(3), Duration::from
 /// it ran. Every step in the sequence is abandonable: the work it did not
 /// finish stays queued for the next attempt, and the caller needs Core SPV to
 /// start far more than it needs any one of them to complete.
+///
+/// Only for steps that are **safe to drop mid-await**. This drops the future,
+/// so any step that commits side effects before recording that it did must
+/// take the deadline as a parameter and end itself between units of work
+/// instead — that is why the two drains have `_until` variants rather than
+/// being wrapped here.
 async fn within_budget<F: std::future::Future>(deadline: Instant, future: F) -> Option<F::Output> {
     let remaining = deadline.saturating_duration_since(Instant::now());
     if remaining.is_zero() {
         return None;
     }
     tokio::time::timeout(remaining, future).await.ok()
+}
+
+/// Where an identity scan gets its key material — and, importantly, the
+/// difference between not needing any and not being able to get it.
+///
+/// Collapsing the last case into "no master supplied" makes a temporary
+/// problem look permanent: a Keychain-backed wallet would fall through to the
+/// resident-key derive, fail because it deliberately holds no private key, and
+/// be classified [`WalletStartupStatus::DiscoveryFailed`] — which tells the
+/// client never to try again over a device that was merely locked.
+pub enum ScanKey<'a> {
+    /// The wallet holds resident keys; discovery derives in-process.
+    Resident,
+    /// The caller resolved a master xpriv for this call.
+    Master(&'a ExtendedPrivKey),
+    /// Key material was needed but could not be obtained right now — a locked
+    /// device, a denied Keychain read, a transient failure. Discovery is
+    /// skipped and reported as retryable rather than attempted and failed.
+    Unavailable,
 }
 
 /// Knobs for [`PlatformWalletManager::start_wallet_subsystems`].
@@ -322,14 +347,14 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
     ///
     /// # Key material
     ///
-    /// `master` and `contact_crypto` are borrowed for this call only and must
-    /// not be retained by the caller afterwards. `master` is `None` for a
-    /// wallet holding resident keys; `identity_signer` is `None` to skip the
-    /// DIP-15 auto-accept pass.
+    /// `scan_key` and `contact_crypto` are borrowed for this call only and must
+    /// not be retained by the caller afterwards. See [`ScanKey`] for why
+    /// "unavailable" is spelled out rather than folded into "none".
+    /// `identity_signer` is `None` to skip the DIP-15 auto-accept pass.
     pub async fn start_wallet_subsystems<C, S>(
         &self,
         wallet_id: &WalletId,
-        master: Option<&ExtendedPrivKey>,
+        scan_key: ScanKey<'_>,
         contact_crypto: Option<&C>,
         identity_signer: Option<&S>,
         opts: WalletStartupOptions,
@@ -365,7 +390,7 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
             self.discover_identity_with_backoff(
                 wallet_id,
                 identity_wallet,
-                master,
+                scan_key,
                 opts.gap_limit,
                 deadline,
                 &mut tally,
@@ -408,9 +433,14 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
 
         // 3. The step that actually creates the addresses.
         //
-        // Both drains hit the network, so both are bounded. An abandoned drain
-        // is safe to walk away from: entries it did not complete stay queued
-        // and the next signer-present action retries them.
+        // Both drains hit the network, so both are bounded — but by the
+        // deadline they take as a parameter, NOT by `within_budget`. They
+        // commit per-entry side effects as they go and apply the dequeue list
+        // once at the end, so dropping one mid-loop would strand work that
+        // really happened and report it as zero. Bounding them from the inside
+        // stops the loop between entries instead: what they return and what
+        // they dequeue always describe work that completed, and entries they
+        // never reached stay queued for the next signer-present action.
         //
         // Without a provider there is nothing to drain WITH. A caller that
         // passes `None` gets the sequence's other steps and an honest
@@ -418,23 +448,17 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
         // because every crypto operation failed.
         let (drained, accepted) = match contact_crypto {
             Some(contact_crypto) => {
-                let drained = within_budget(
-                    deadline,
-                    identity_wallet
-                        .dashpay()
-                        .drain_pending_contact_crypto(contact_crypto),
-                )
-                .await
-                .unwrap_or(0);
+                let drained = identity_wallet
+                    .dashpay()
+                    .drain_pending_contact_crypto_until(contact_crypto, Some(deadline))
+                    .await;
                 let accepted = match identity_signer {
-                    Some(signer) => within_budget(
-                        deadline,
+                    Some(signer) => {
                         identity_wallet
                             .dashpay()
-                            .drain_auto_accepts(signer, contact_crypto),
-                    )
-                    .await
-                    .unwrap_or(0),
+                            .drain_auto_accepts_until(signer, contact_crypto, Some(deadline))
+                            .await
+                    }
                     None => 0,
                 };
                 (drained, accepted)
@@ -488,11 +512,23 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
         &self,
         wallet_id: &WalletId,
         identity_wallet: &crate::wallet::identity::IdentityWallet,
-        master: Option<&ExtendedPrivKey>,
+        scan_key: ScanKey<'_>,
         gap_limit: Option<u32>,
         deadline: Instant,
         tally: &mut StartupTally,
     ) {
+        // No key, no scan — but this is a "come back later", not a failure.
+        // Attempting it anyway would derive against a wallet that holds no
+        // private key, and the resulting error would be classified terminal.
+        if matches!(scan_key, ScanKey::Unavailable) {
+            tracing::info!(
+                "startup: scan key material unavailable; deferring discovery to a later start"
+            );
+            tally.record_unreachable();
+            tally.record_discovery_gave_up();
+            return;
+        }
+
         let opts = IdentityDiscoveryOptions {
             start_index: Some(0),
             gap_limit: gap_limit.unwrap_or(IdentityDiscoveryOptions::default().gap_limit),
@@ -504,9 +540,13 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
             // steps have — otherwise one attempt can outlast the whole budget
             // this call promises.
             let attempt_future = async {
-                match master {
-                    Some(master) => identity_wallet.discover_from_master(opts, master).await,
-                    None => identity_wallet.discover(opts).await,
+                match scan_key {
+                    ScanKey::Master(master) => {
+                        identity_wallet.discover_from_master(opts, master).await
+                    }
+                    ScanKey::Resident => identity_wallet.discover(opts).await,
+                    // Unreachable: guarded before the loop.
+                    ScanKey::Unavailable => unreachable!(),
                 }
             };
             let Some(result) = within_budget(deadline, attempt_future).await else {

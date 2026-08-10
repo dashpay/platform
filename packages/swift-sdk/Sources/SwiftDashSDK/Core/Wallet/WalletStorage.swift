@@ -139,6 +139,42 @@ public class WalletStorage {
     ///
     /// Unlike `retrieveMnemonic(...)`, this does not materialize the
     /// mnemonic bytes into Swift heap objects.
+    /// Three-way answer to "can this wallet's mnemonic be read right now?".
+    ///
+    /// [`hasMnemonic(for:)`] collapses the last two cases into `false`, which
+    /// is fine where the question is "is this watch-only?" but wrong wherever
+    /// the caller has to decide between giving up and trying again later.
+    public enum MnemonicAvailability: Sendable, Equatable {
+        /// The item exists and its attributes were readable.
+        case present
+        /// The Keychain answered definitively that there is no such item —
+        /// a genuine watch-only wallet.
+        case absent
+        /// The lookup failed for another reason: the device is locked, access
+        /// was denied, the daemon was unavailable. Says nothing about whether
+        /// a mnemonic exists, so callers should retry rather than conclude.
+        case unavailable(OSStatus)
+    }
+
+    /// Whether the wallet's mnemonic is readable, keeping "no such item" apart
+    /// from "could not tell". Attribute-only; no secret is materialized.
+    public func mnemonicAvailability(for walletId: Data) -> MnemonicAvailability {
+        let account = perWalletMnemonicAccount(for: walletId)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: account,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecReturnAttributes as String: true
+        ]
+        var result: AnyObject?
+        switch SecItemCopyMatching(query as CFDictionary, &result) {
+        case errSecSuccess: return .present
+        case errSecItemNotFound: return .absent
+        case let status: return .unavailable(status)
+        }
+    }
+
     public func hasMnemonic(for walletId: Data) -> Bool {
         let account = perWalletMnemonicAccount(for: walletId)
         let query: [String: Any] = [

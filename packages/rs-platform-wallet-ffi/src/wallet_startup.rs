@@ -7,7 +7,7 @@
 //! [`platform_wallet::manager::startup`]; this is the marshalling shell.
 
 use platform_wallet::manager::startup::{
-    WalletStartupOptions, WalletStartupOutcome, WalletStartupStatus,
+    ScanKey, WalletStartupOptions, WalletStartupOutcome, WalletStartupStatus,
 };
 use rs_sdk_ffi::{MnemonicResolverHandle, SignerHandle, VTableSigner};
 use std::time::Duration;
@@ -156,24 +156,33 @@ pub unsafe extern "C" fn platform_wallet_manager_start_wallet_subsystems(
     // and seed in `Zeroizing` buffers and scrubs them before returning; the
     // master itself has no `Drop`, so it is erased explicitly below.
     //
-    // A failure here is NOT returned as an FFI error: this call documents that
-    // only handle and wallet-id problems throw. Without key material the scan
-    // fails and surfaces as `DiscoveryFailed`, which is the structured outcome
-    // for exactly this.
-    let mut master = if mnemonic_resolver_handle.is_null() || !needs_scan_key {
+    // A failure here is NOT returned as an FFI error — this call documents that
+    // only handle and wallet-id problems throw. It becomes `ScanKey::Unavailable`
+    // instead, so a locked device defers the scan rather than failing it
+    // terminally.
+    //
+    // `None` = no key needed (warm launch) or none exists (resident-key
+    // wallet); `Some(Err(()))` = a scan needs one and we could not get it.
+    // Both no-key cases collapse to `None`: nothing to scan for, or a host that
+    // deliberately supplied no resolver (watch-only / resident-key wallet, where
+    // discovery derives in-process). Neither is a failure to obtain a key.
+    let mut master: Option<Result<_, ()>> = if !needs_scan_key || mnemonic_resolver_handle.is_null()
+    {
         None
     } else {
-        match resolve_master_from_resolver(mnemonic_resolver_handle, &wid, network) {
-            Ok(master) => Some(master),
-            Err(_) => {
-                tracing::warn!(
-                    wallet_id = %hex::encode(wid),
-                    "startup: could not resolve the wallet mnemonic; continuing without \
-                     scan key material"
-                );
-                None
-            }
-        }
+        Some(
+            match resolve_master_from_resolver(mnemonic_resolver_handle, &wid, network) {
+                Ok(master) => Ok(master),
+                Err(_) => {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wid),
+                        "startup: could not resolve the wallet mnemonic; deferring the \
+                         identity scan to a later start"
+                    );
+                    Err(())
+                }
+            },
+        )
     };
 
     let signer_addr = if identity_signer_handle.is_null() {
@@ -202,20 +211,26 @@ pub unsafe extern "C" fn platform_wallet_manager_start_wallet_subsystems(
     // so the future cannot satisfy `block_on_worker`'s `'static` bound. The
     // scoped thread also supplies the 8 MB stack the GroveDB proof
     // verification inside discovery needs.
+    let scan_key = match master.as_ref() {
+        Some(Ok(master)) => ScanKey::Master(master),
+        Some(Err(())) => ScanKey::Unavailable,
+        None => ScanKey::Resident,
+    };
+
     let result = run_on_big_stack_thread(|| {
         PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
             crate::runtime::runtime().block_on(async {
                 let signer =
                     (signer_addr != 0).then(|| unsafe { &*(signer_addr as *const VTableSigner) });
                 manager
-                    .start_wallet_subsystems(&wid, master.as_ref(), provider.as_ref(), signer, opts)
+                    .start_wallet_subsystems(&wid, scan_key, provider.as_ref(), signer, opts)
                     .await
             })
         })
     });
 
     // Erase the master before any early return below.
-    if let Some(master) = master.as_mut() {
+    if let Some(Ok(master)) = master.as_mut() {
         master.private_key.non_secure_erase();
     }
 

@@ -124,10 +124,24 @@ extension PlatformWalletManager {
         }
 
         let handle = self.handle
-        // A genuine watch-only wallet has no Keychain mnemonic; Rust then
-        // derives in-process and the resolver is never consulted.
-        let coreSigner: MnemonicResolver? =
-            storage.hasMnemonic(for: walletId) ? MnemonicResolver(storage: storage) : nil
+        // Only a definitive "no such item" means watch-only. A lookup that
+        // failed for another reason — locked device, denied access — must still
+        // hand Rust a resolver: it can then report the scan as deferred rather
+        // than being told the wallet has no seed at all, which would classify a
+        // temporary condition as terminal.
+        let coreSigner: MnemonicResolver?
+        switch storage.mnemonicAvailability(for: walletId) {
+        case .absent:
+            coreSigner = nil
+        case .present:
+            coreSigner = MnemonicResolver(storage: storage)
+        case .unavailable(let status):
+            SDKLogger.log(
+                "startup: mnemonic availability unknown (OSStatus \(status)); "
+                    + "passing a resolver so the scan can defer rather than fail",
+                minimumLevel: .medium)
+            coreSigner = MnemonicResolver(storage: storage)
+        }
         // Identity signer for the DIP-15 auto-accept pass. Nil without a
         // SwiftData container → the drain runs provider-only, matching
         // `unlockWalletFromKeychain`.
