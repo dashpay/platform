@@ -7,7 +7,7 @@
 //! [`platform_wallet::manager::startup`]; this is the marshalling shell.
 
 use platform_wallet::manager::startup::{
-    WalletStartupOptions, WalletStartupOutcome, WalletStartupStatus,
+    ScanKeyError, WalletStartupOptions, WalletStartupOutcome, WalletStartupStatus,
 };
 use rs_sdk_ffi::{MnemonicResolverHandle, SignerHandle, VTableSigner};
 use std::time::Duration;
@@ -16,7 +16,9 @@ use crate::check_ptr;
 use crate::dashpay::resolver_contact_crypto_provider;
 use crate::error::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
 use crate::handle::{Handle, PLATFORM_WALLET_MANAGER_STORAGE};
-use crate::identity_keys_from_mnemonic::resolve_master_from_resolver;
+use crate::identity_keys_from_mnemonic::{
+    resolve_master_from_resolver_classified, ResolveFailureKind,
+};
 use crate::runtime::run_on_big_stack_thread;
 
 /// Discriminants for [`WalletStartupStatus`] across the boundary.
@@ -153,25 +155,33 @@ pub unsafe extern "C" fn platform_wallet_manager_start_wallet_subsystems(
     // it is valid for the duration of this call, which is the only time the
     // closure can run. A null resolver means the host is telling us the wallet
     // holds resident keys (watch-only / in-process derive), so no resolver is
-    // supplied at all — as opposed to one that fails, which the library treats
-    // as a retryable "come back later".
+    // supplied at all — distinct from one that is supplied and fails, which
+    // the library classifies as retryable or terminal per `ScanKeyError`.
     let resolver_addr = mnemonic_resolver_handle as usize;
     let resolve_scan_key = move || {
-        resolve_master_from_resolver(resolver_addr as *mut MnemonicResolverHandle, &wid, network)
-            .map_err(|e| {
-                tracing::warn!(
-                    wallet_id = %hex::encode(wid),
-                    code = ?e.code,
-                    "startup: could not resolve the wallet mnemonic for the identity scan"
-                );
-                // Carried as an error the library can classify, not as an FFI
-                // throw: the documented contract is that only handle and
-                // wallet-id problems throw, and a locked device is neither.
-                platform_wallet::error::PlatformWalletError::KeyDerivation(format!(
-                    "mnemonic resolver failed ({:?})",
-                    e.code
-                ))
-            })
+        resolve_master_from_resolver_classified(
+            resolver_addr as *mut MnemonicResolverHandle,
+            &wid,
+            network,
+        )
+        .map_err(|failure| {
+            tracing::warn!(
+                wallet_id = %hex::encode(wid),
+                code = ?failure.result.code,
+                kind = ?failure.kind,
+                "startup: could not resolve the wallet mnemonic for the identity scan"
+            );
+            // Carried as an outcome the library classifies, not as an FFI
+            // throw: the documented contract is that only handle and wallet-id
+            // problems throw, and a locked device is neither. The permanence
+            // travels with it — a phrase that is not BIP-39 must not be
+            // reported as something the next launch might fix.
+            let detail = format!("mnemonic resolver failed ({:?})", failure.result.code);
+            match failure.kind {
+                ResolveFailureKind::Unavailable => ScanKeyError::Unavailable(detail),
+                ResolveFailureKind::Permanent => ScanKeyError::Invalid(detail),
+            }
+        })
     };
     let scan_key = (!mnemonic_resolver_handle.is_null())
         .then_some(&resolve_scan_key as &(dyn Fn() -> Result<_, _> + Send + Sync));
