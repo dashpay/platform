@@ -896,8 +896,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
 /// by a `MnemonicResolverHandle` — the raw key never crosses the
 /// FFI boundary.
 ///
-/// `account_index` selects the BIP44 Core account whose UTXOs
-/// fund the asset lock. `amount_duffs` is the L1 amount to lock.
+/// `account_index` addresses the standard Core families: the asset
+/// lock POOLS the BIP44 and BIP32 accounts at that index together
+/// with every DashPay receiving account (change returns to BIP44);
+/// the index does not restrict which DashPay receiving accounts
+/// contribute. `amount_duffs` is the L1 amount to lock.
 /// The wallet derives the shielded credit amount internally
 /// (`lock_value − pool_fee`, where `pool_fee = shielded fee +
 /// asset_lock_base_cost`) — callers don't need to know about
@@ -1322,7 +1325,10 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
 ///
 /// `account` is the shielded BIP44 account whose default address receives
 /// each real note (must be bound via `bind_shielded`). `funding_account_index`
-/// is the Core BIP44 account whose UTXOs fund each per-batch asset lock.
+/// is the standard-family source index each per-batch asset lock funds from —
+/// it POOLS the BIP44 and BIP32 accounts at that index with every DashPay
+/// receiving account (change returns to BIP44) and does not restrict which
+/// DashPay receiving accounts contribute.
 ///
 /// # Safety
 /// - `wallet_id_bytes` must point to 32 readable bytes.

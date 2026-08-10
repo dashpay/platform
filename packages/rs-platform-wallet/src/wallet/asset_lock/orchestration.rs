@@ -121,16 +121,24 @@ pub enum AssetLockFunding {
     /// - `AssetLockAddressTopUp` — for platform-address funding flows
     /// - others — see [`AssetLockFundingType`]
     ///
-    /// `account_index` selects which BIP44 *standard* account (by
-    /// BIP44 account index) supplies the UTXOs. This exact-amount form
-    /// is BIP44-only; CoinJoin funding exists solely as the
-    /// whole-balance [`AssetLockFunding::DrainAccountBalance`] form
-    /// (CoinJoin accounts have no change semantics). BIP32 funding
-    /// remains unsupported.
+    /// Funding is POOLED across `ASSET_LOCK_FUNDING_SOURCES`: coin
+    /// selection draws from the union of the BIP44 and BIP32 accounts at
+    /// `account_index` and every DashPay contact-receiving account, so
+    /// the lock does not need its whole amount sitting in one account.
+    /// Change returns to BIP44, the first source. Sources this wallet has
+    /// nothing for are skipped.
+    ///
+    /// CoinJoin is deliberately not in that set — spending mixed outputs
+    /// alongside transparent ones links them and undoes the mixing — so
+    /// CoinJoin funding still exists solely as the whole-balance
+    /// [`AssetLockFunding::DrainAccountBalance`] form (those accounts
+    /// also have no change semantics).
     FromWalletBalance {
         /// Amount to lock (in duffs).
         amount_duffs: u64,
-        /// BIP44 standard-account index to draw the funding UTXOs from.
+        /// Index addressing the standard (BIP44/BIP32) families of the
+        /// pooled source set. DashPay contact-receiving accounts span
+        /// their own indices and are pooled in regardless.
         account_index: u32,
     },
 

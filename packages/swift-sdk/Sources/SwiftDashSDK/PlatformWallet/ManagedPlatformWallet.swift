@@ -3863,13 +3863,13 @@ extension ManagedPlatformWallet {
     /// `KeychainSigner`. Asset-lock proof is built Rust-side from
     /// `amountDuffs` (wallet must have spendable Core UTXOs).
     ///
-    /// `accountIndex` selects which BIP44 *standard* account (by
-    /// BIP44 account index) supplies the funding UTXOs. Only BIP44
-    /// standard accounts are supported today; the caller is
-    /// responsible for filtering its account picker accordingly —
-    /// CoinJoin / BIP32 funding for new-identity registration is not
-    /// yet wired through `create_funded_asset_lock_proof` on the Rust
-    /// side.
+    /// `accountIndex` addresses the *standard* families: the asset
+    /// lock POOLS the BIP44 and BIP32 accounts at that index together
+    /// with every DashPay contact-receiving account (change returns
+    /// to BIP44). The index does NOT restrict which DashPay receiving
+    /// accounts contribute, so the caller must not present it as an
+    /// account-scoped funding or privacy choice. CoinJoin funding
+    /// remains drain-only and is not reachable here.
     ///
     /// Caller MUST pre-derive `identityPubkeys` (typically via
     /// `dash_sdk_derive_identity_keys_from_mnemonic`) AND pre-persist
@@ -4091,9 +4091,12 @@ extension ManagedPlatformWallet {
     /// Simpler than registration: an `IdentityTopUp` creates no identity
     /// keys, so there is no per-identity-key `KeychainSigner` and no pubkey
     /// array — the transition is signed entirely by the asset lock's
-    /// Core-side key via a `MnemonicResolver`. `accountIndex` selects which
-    /// BIP44 *standard* account supplies the funding UTXOs (same constraint
-    /// as registration).
+    /// Core-side key via a `MnemonicResolver`. `accountIndex` addresses the
+    /// *standard* families: the asset lock POOLS the BIP44 and BIP32
+    /// accounts at that index together with every DashPay contact-receiving
+    /// account (change returns to BIP44), and does NOT restrict which
+    /// DashPay receiving accounts contribute — the same contract as
+    /// registration.
     ///
     /// `amountDuffs` must meet the Rust-side minimum top-up asset-lock
     /// balance; a smaller amount is rejected before any lock is broadcast

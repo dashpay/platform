@@ -110,7 +110,12 @@ pub struct TrackedAssetLock {
     /// The outpoint identifying this credit output (txid + vout).
     pub out_point: OutPoint,
     pub transaction: Transaction,
-    /// BIP44 account index that funded this asset lock (UTXO source).
+    /// Index the funding sources were resolved at — the standard
+    /// (BIP44/BIP32) family index handed to the build. NOT a record of
+    /// which accounts ended up supplying inputs: funding is pooled, so a
+    /// lock can be funded wholly out of a DashPay contact account, which
+    /// carries an index of its own. Consumers that need the funding
+    /// transaction search every family (see `funding_tx_record`).
     pub account_index: u32,
     pub funding_type: AssetLockFundingType,
     pub identity_index: u32,
