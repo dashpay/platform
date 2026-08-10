@@ -378,7 +378,7 @@ impl PlatformWallet {
         // bundle, so only the landed attempt's actions are the ones a
         // later scan will recover; `build_and_broadcast_shielded` returns
         // them on success.
-        let submit_result = match submit_with_cl_height_retry(settings, |s| {
+        let (submit_result, effective_proof) = match submit_with_cl_height_retry(settings, |s| {
             build_and_broadcast_shielded(
                 sdk.clone(),
                 recipient,
@@ -395,7 +395,7 @@ impl PlatformWallet {
         })
         .await
         {
-            Ok(actions) => Ok(actions),
+            Ok(actions) => (Ok(actions), proof.clone()),
             Err(e) if is_instant_lock_proof_invalid(&e) => {
                 let out_point = proof_out_point;
                 tracing::warn!(
@@ -416,7 +416,7 @@ impl PlatformWallet {
                     )
                     .await?;
                 self.asset_locks.queue_asset_lock_changeset(cs);
-                submit_with_cl_height_retry(settings, |s| {
+                let submit_result = submit_with_cl_height_retry(settings, |s| {
                     build_and_broadcast_shielded(
                         sdk.clone(),
                         recipient,
@@ -431,9 +431,10 @@ impl PlatformWallet {
                         s,
                     )
                 })
-                .await
+                .await;
+                (submit_result, chain_proof)
             }
-            Err(e) => Err(e),
+            Err(e) => (Err(e), proof.clone()),
         };
 
         let landed_actions: Vec<dpp::shielded::SerializedAction> = match submit_result {
@@ -443,7 +444,7 @@ impl PlatformWallet {
                     &self.asset_locks,
                     e,
                     &proof_out_point,
-                    &proof,
+                    &effective_proof,
                     cl_wait,
                 )
                 .await
@@ -860,7 +861,8 @@ mod tests {
 
     use super::*;
     use crate::changeset::{
-        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+        ClientStartState, PersistenceError, PersistenceErrorKind, PlatformWalletChangeSet,
+        PlatformWalletPersistence,
     };
     use crate::test_support::{funded_wallet_manager, AlwaysRejectedBroadcaster};
     use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
@@ -918,6 +920,7 @@ mod tests {
     struct RecordingPersistence {
         stored: Mutex<Vec<PlatformWalletChangeSet>>,
         fail_next_store: AtomicBool,
+        fail_next_flush: Mutex<Option<PersistenceErrorKind>>,
     }
 
     impl PlatformWalletPersistence for RecordingPersistence {
@@ -939,7 +942,19 @@ mod tests {
         }
 
         fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
-            Ok(())
+            let failure = self
+                .fail_next_flush
+                .lock()
+                .expect("recording persistence mutex")
+                .take();
+            if let Some(kind) = failure {
+                Err(PersistenceError::backend_with_kind(
+                    kind,
+                    "simulated asset-lock flush failure",
+                ))
+            } else {
+                Ok(())
+            }
         }
 
         fn load(&self) -> Result<ClientStartState, PersistenceError> {
@@ -1143,5 +1158,34 @@ mod tests {
             .expect("tracked lock");
         assert_eq!(lock.status, AssetLockStatus::ChainLocked);
         assert_eq!(lock.proof, Some(ctx.proof));
+    }
+
+    #[tokio::test]
+    async fn transient_flush_failure_keeps_buffered_candidate_in_memory() {
+        let ctx = consumption_report_context().await;
+        *ctx.persistence
+            .fail_next_flush
+            .lock()
+            .expect("recording persistence mutex") = Some(PersistenceErrorKind::Transient);
+
+        let error = reconcile_asset_lock_submit_error(
+            &ctx.manager,
+            already_consumed_error(ctx.out_point),
+            &ctx.out_point,
+            &ctx.proof,
+            None,
+        )
+        .await
+        .expect_err("host flush rejection must surface");
+        assert!(matches!(error, PlatformWalletError::Persistence(_)));
+
+        let wm = ctx.wallet_manager.read().await;
+        let lock = wm
+            .get_wallet_info(&ctx.wallet_id)
+            .expect("wallet")
+            .tracked_asset_locks
+            .get(&ctx.out_point)
+            .expect("tracked lock");
+        assert_eq!(lock.status, AssetLockStatus::RecoveredFromChain);
     }
 }

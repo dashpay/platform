@@ -177,10 +177,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// recovery remains possible.
     ///
     /// Unlike the ordinary queued status updates, this user-visible recovery
-    /// marker is persisted synchronously. If the host store rejects it, the
-    /// in-memory mutation is rolled back before returning a typed persistence
-    /// error, so the caller cannot acknowledge reconciliation that will vanish
-    /// after restart.
+    /// marker is stored and flushed synchronously. Non-transient persistence
+    /// failures roll back the in-memory mutation. A transient failure keeps the
+    /// candidate in memory because the persistence contract retains the same
+    /// candidate in its retryable buffer.
     pub(crate) async fn mark_asset_lock_consumption_unknown(
         &self,
         out_point: &OutPoint,
@@ -211,11 +211,17 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             (previous, candidate, cs)
         };
 
-        let persist_result = self.persister.store(PlatformWalletChangeSet {
-            asset_locks: Some(cs.clone()),
-            ..Default::default()
-        });
+        let persist_result = self
+            .persister
+            .store(PlatformWalletChangeSet {
+                asset_locks: Some(cs.clone()),
+                ..Default::default()
+            })
+            .and_then(|()| self.persister.flush());
         if let Err(error) = persist_result {
+            if error.is_transient() {
+                return Err(PlatformWalletError::Persistence(error.to_string()));
+            }
             let mut wm = self.wallet_manager.write().await;
             if let Some(current) = wm
                 .get_wallet_info_mut(&self.wallet_id)
