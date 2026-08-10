@@ -336,11 +336,11 @@ impl IdentityWallet {
         let start_index = opts.start_index.unwrap_or(cached_start_index);
         let gap_limit = opts.gap_limit.max(1);
 
-        let mut consecutive_misses = 0u32;
         let mut identity_index = start_index;
         let mut discovered: Vec<Identity> = Vec::new();
+        let mut tally = ScanTally::default();
 
-        while consecutive_misses < gap_limit {
+        while tally.should_continue(gap_limit) {
             // Derive the MASTER auth pubkey hash for this identity index
             // from whichever source the caller picked. The per-index read
             // lock is only needed for the wallet-internal derive (it reads
@@ -441,10 +441,10 @@ impl IdentityWallet {
                     if is_new {
                         discovered.push(identity.clone());
                     }
-                    consecutive_misses = 0;
+                    tally.record_sighting();
                 }
                 Ok(None) => {
-                    consecutive_misses += 1;
+                    tally.record_miss();
                 }
                 Err(e) => {
                     tracing::warn!(
@@ -452,14 +452,27 @@ impl IdentityWallet {
                         identity_index,
                         e
                     );
-                    // Treat a transient fetch error as a miss so the
-                    // scan eventually terminates; the user can rerun
-                    // to pick up anything we skipped over.
-                    consecutive_misses += 1;
+                    tally.record_failure(e);
                 }
             }
 
             identity_index += 1;
+        }
+
+        if tally.is_trustworthy() {
+            // Found something despite a failed probe: the discovered
+            // identities are already persisted, so return them rather than
+            // discarding the work. The gap is still worth a line — an identity
+            // at the failed index would be missed until the next scan.
+            if tally.failed_probes > 0 {
+                tracing::warn!(
+                    "Identity discovery completed with {} unanswered probe(s); an identity at \
+                     a failed index may be missing until the next scan",
+                    tally.failed_probes
+                );
+            }
+        } else {
+            return Err(tally.into_incomplete_error(start_index, identity_index));
         }
 
         // --- DPNS lookup for all discovered identities ---
@@ -515,10 +528,97 @@ impl IdentityWallet {
     }
 }
 
+/// Running bookkeeping for one gap-limit scan, and the verdict it produces.
+///
+/// A scan answers "which identities does this seed own", and there are three
+/// endings, not two: it found some, it confirmed there are none, or it never
+/// got an answer. The third used to be reported as the second — a failed probe
+/// incremented the same miss counter as an empty index, so a scan that reached
+/// no one at all returned "this seed owns no identity". Callers cannot retry
+/// what they were told is a definitive answer, so a few seconds of network
+/// trouble after restore-from-seed cost a whole session's DashPay state.
+///
+/// The counters live here, rather than as locals in `discover_inner`, so tests
+/// drive the same bookkeeping production does. Asserting on a bare predicate
+/// proved too weak: it kept passing while the scan fed it the wrong number.
+#[derive(Default)]
+struct ScanTally {
+    /// Empty-or-unanswered indices since the last sighting. Terminates the
+    /// scan at the gap limit.
+    consecutive_misses: u32,
+    /// Probes that never reached Platform.
+    failed_probes: u32,
+    /// Every index Platform answered with an identity — including ones the
+    /// manager already tracked, which never reach the returned `discovered`
+    /// list. A rescan from index 0 (what the app's "Find identities" command
+    /// does) re-confirms known identities without adding to `discovered`, so
+    /// judging by that list reports a plainly reachable scan as incomplete the
+    /// moment any later index fails.
+    identities_seen: usize,
+    /// Last probe failure, kept typed so callers can inspect the variant
+    /// rather than parse a rendered string.
+    last_probe_error: Option<dash_sdk::Error>,
+}
+
+impl ScanTally {
+    /// Whether the scan should probe another index.
+    fn should_continue(&self, gap_limit: u32) -> bool {
+        self.consecutive_misses < gap_limit
+    }
+
+    /// Platform answered with an identity at this index.
+    fn record_sighting(&mut self) {
+        self.identities_seen += 1;
+        self.consecutive_misses = 0;
+    }
+
+    /// Platform answered, definitively, that this index holds no identity.
+    fn record_miss(&mut self) {
+        self.consecutive_misses += 1;
+    }
+
+    /// The probe never got an answer. It still advances the miss counter — the
+    /// scan has to terminate when the network is down — but it is remembered
+    /// separately, because the verdict depends on telling the two apart.
+    fn record_failure(&mut self, error: dash_sdk::Error) {
+        self.last_probe_error = Some(error);
+        self.failed_probes += 1;
+        self.consecutive_misses += 1;
+    }
+
+    /// Whether the scan's literal result may be reported as-is.
+    ///
+    /// Emptiness is only trustworthy when every probe was answered. A scan
+    /// that saw an identity is trustworthy either way: it reached Platform and
+    /// the seed demonstrably owns one, and the caller re-scans later for
+    /// anything a failed index hid.
+    fn is_trustworthy(&self) -> bool {
+        self.identities_seen > 0 || self.failed_probes == 0
+    }
+
+    /// The error an untrustworthy scan returns, carrying the last probe
+    /// failure as its `source`.
+    fn into_incomplete_error(self, start_index: u32, next_index: u32) -> PlatformWalletError {
+        PlatformWalletError::IdentityDiscoveryIncomplete {
+            start_index,
+            probed: next_index.saturating_sub(start_index),
+            failed_probes: self.failed_probes,
+            // Unreachable by construction: `is_trustworthy` only returns false
+            // when `failed_probes > 0`, and every failure records its error.
+            // Named rather than papered over with a plausible-looking cause.
+            source: Box::new(self.last_probe_error.unwrap_or_else(|| {
+                dash_sdk::Error::Generic(
+                    "identity discovery reported a failed probe with no recorded error".to_string(),
+                )
+            })),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::identity_handle::derive_ecdsa_identity_auth_keypair_from_master;
-    use super::breadcrumb_decisions;
+    use super::{breadcrumb_decisions, PlatformWalletError, ScanTally};
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::v0::IdentityV0;
@@ -771,5 +871,129 @@ mod tests {
                 "unexpected ownership decision for key {key_id}"
             );
         }
+    }
+
+    fn probe_failure() -> dash_sdk::Error {
+        dash_sdk::Error::Generic("dapi unreachable".to_string())
+    }
+
+    /// Drive a whole scan through the same `ScanTally` production uses, one
+    /// probe outcome per element, stopping at the gap limit exactly as
+    /// `discover_inner`'s loop does. `Some(())` is a sighting, `None` a
+    /// confirmed miss, `Err` an unanswered probe.
+    fn run_scan(
+        gap_limit: u32,
+        outcomes: impl IntoIterator<Item = Result<Option<()>, ()>>,
+    ) -> ScanTally {
+        let mut tally = ScanTally::default();
+        for outcome in outcomes {
+            if !tally.should_continue(gap_limit) {
+                break;
+            }
+            match outcome {
+                Ok(Some(())) => tally.record_sighting(),
+                Ok(None) => tally.record_miss(),
+                Err(()) => tally.record_failure(probe_failure()),
+            }
+        }
+        tally
+    }
+
+    /// The regression this whole distinction exists for: a scan that found
+    /// nothing because it could not reach Platform must not be reported as a
+    /// scan that found nothing because there is nothing.
+    #[test]
+    fn scan_that_never_reached_platform_is_not_trustworthy() {
+        let tally = run_scan(5, [Err(()), Err(()), Err(()), Err(()), Err(())]);
+        assert_eq!(tally.failed_probes, 5);
+        assert_eq!(tally.identities_seen, 0);
+        assert!(!tally.is_trustworthy());
+    }
+
+    /// The genuinely-empty wallet: every probe answered, all of them "none".
+    #[test]
+    fn scan_with_every_probe_answered_empty_is_trustworthy() {
+        let tally = run_scan(5, [Ok(None), Ok(None), Ok(None), Ok(None), Ok(None)]);
+        assert_eq!(tally.failed_probes, 0);
+        assert!(tally.is_trustworthy());
+    }
+
+    /// Discovered identities are already persisted, so a partial failure does
+    /// not discard them — it only means a later scan may find more.
+    #[test]
+    fn scan_that_found_something_is_trustworthy_despite_failures() {
+        let tally = run_scan(
+            5,
+            [Ok(Some(())), Err(()), Ok(None), Err(()), Ok(None), Ok(None)],
+        );
+        assert_eq!(tally.identities_seen, 1);
+        assert_eq!(tally.failed_probes, 2);
+        assert!(tally.is_trustworthy());
+    }
+
+    /// A rescan re-confirms identities the manager already holds, which never
+    /// reach the returned `discovered` list. Judging by that list called a
+    /// scan that plainly reached Platform "incomplete" as soon as a later
+    /// index failed — turning the app's "Find identities" command into an
+    /// error for a wallet whose identity was found successfully.
+    ///
+    /// `discovered` stays empty for the whole scan here, which is exactly the
+    /// value the fixed wiring must NOT be judging by.
+    #[test]
+    fn rescan_of_a_known_identity_is_trustworthy_despite_a_later_failure() {
+        let tally = run_scan(
+            5,
+            [Ok(Some(())), Err(()), Err(()), Err(()), Err(()), Err(())],
+        );
+        assert_eq!(tally.identities_seen, 1, "the known identity was seen");
+        assert!(tally.failed_probes > 0);
+        assert!(tally.is_trustworthy());
+    }
+
+    /// A sighting resets the gap, so an identity past a run of empties is
+    /// still reachable — and the scan does not stop early.
+    #[test]
+    fn a_sighting_resets_the_consecutive_miss_run() {
+        let tally = run_scan(3, [Ok(None), Ok(None), Ok(Some(())), Ok(None), Ok(None)]);
+        assert_eq!(tally.identities_seen, 1);
+        assert_eq!(tally.consecutive_misses, 2);
+        assert!(tally.should_continue(3));
+    }
+
+    /// An unanswered probe still has to stop the scan, or an offline device
+    /// would walk indices forever.
+    #[test]
+    fn unanswered_probes_still_terminate_the_scan() {
+        let tally = run_scan(3, [Err(()), Err(()), Err(()), Err(()), Err(())]);
+        assert!(!tally.should_continue(3));
+        assert_eq!(
+            tally.failed_probes, 3,
+            "stopped at the gap limit, not after 5"
+        );
+    }
+
+    /// The failure reaches the caller typed, not flattened to a string.
+    #[test]
+    fn incomplete_error_carries_the_probe_failure_as_its_source() {
+        use std::error::Error as _;
+
+        let tally = run_scan(2, [Err(()), Err(())]);
+        let error = tally.into_incomplete_error(0, 2);
+        match &error {
+            PlatformWalletError::IdentityDiscoveryIncomplete {
+                start_index,
+                probed,
+                failed_probes,
+                source,
+            } => {
+                assert_eq!(*start_index, 0);
+                assert_eq!(*probed, 2);
+                assert_eq!(*failed_probes, 2);
+                assert!(matches!(**source, dash_sdk::Error::Generic(_)));
+            }
+            other => panic!("expected IdentityDiscoveryIncomplete, got {other:?}"),
+        }
+        assert!(error.source().is_some(), "source must survive for callers");
+        assert!(error.to_string().contains("dapi unreachable"));
     }
 }

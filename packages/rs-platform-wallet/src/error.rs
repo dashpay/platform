@@ -49,6 +49,34 @@ pub enum PlatformWalletError {
     IdentityIndexNotSet(Identifier),
 
     #[error(
+        "Identity discovery incomplete: {failed_probes} of {probed} index probe(s) from {start_index} \
+         could not reach Platform and no identity was found; last error: {source}"
+    )]
+    /// A gap-limit scan ended empty with at least one index left unanswered.
+    /// Distinct from an empty success: it means "we do not know", so the
+    /// caller must retry rather than record that the seed owns no identity.
+    /// Both outcomes used to arrive as `Ok(vec![])`, which is how a transient
+    /// DAPI failure right after restore-from-seed became a whole session
+    /// without an identity.
+    ///
+    /// "Retry" is the contract, not a promise that the cause is transient — a
+    /// probe can also fail on configuration, protocol or proof errors. The
+    /// underlying failure is kept typed in `source` so a Rust caller can
+    /// classify it instead of parsing the rendered message.
+    IdentityDiscoveryIncomplete {
+        /// First index the scan probed.
+        start_index: u32,
+        /// How many indices were probed before the gap limit stopped the scan.
+        probed: u32,
+        /// How many of those probes failed to reach Platform.
+        failed_probes: u32,
+        /// The last probe failure. Boxed to keep this variant from widening
+        /// the enum past the existing `Sdk` variant.
+        #[source]
+        source: Box<dash_sdk::Error>,
+    },
+
+    #[error(
         "DashPay receiving account already exists for identity {identity} with contact {contact} on network {network:?} (account index {account_index})"
     )]
     DashpayReceivingAccountAlreadyExists {
