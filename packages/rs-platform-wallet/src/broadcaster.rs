@@ -70,6 +70,23 @@ pub trait TransactionBroadcaster: Send + Sync {
     /// transport ambiguity, or unverifiable response must be
     /// [`BroadcastError::MaybeSent`].
     async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError>;
+
+    /// Resolve once this broadcaster's transport can actually reach the
+    /// network, or when `timeout` elapses (`None` waits indefinitely).
+    /// Returns whether readiness was reached.
+    ///
+    /// Callers that resume queued work at app start use this to avoid
+    /// racing a transport that is still coming up: a transport-not-ready
+    /// failure is definitive ([`BroadcastError::Rejected`]) and the resume
+    /// paths do not retry, so losing that race strands the transaction for
+    /// the session.
+    ///
+    /// The default is "always ready" — correct for any broadcaster with no
+    /// startup phase of its own, such as [`DapiBroadcaster`], whose gRPC
+    /// requests carry their own connection handling.
+    async fn wait_until_ready(&self, _timeout: Option<Duration>) -> bool {
+        true
+    }
 }
 
 /// Broadcasts transactions via Platform's DAPI gRPC endpoint.
@@ -148,6 +165,11 @@ trait SpvChannel: Send + Sync {
         transaction: &Transaction,
         timeout: Option<Duration>,
     ) -> Result<BroadcastResult, BroadcastError>;
+
+    /// Resolve once the SPV client is started and has at least one
+    /// connected peer — the two conditions whose absence makes
+    /// `broadcast_and_wait` fail before any send.
+    async fn wait_until_ready(&self, timeout: Option<Duration>) -> bool;
 }
 
 #[async_trait]
@@ -159,6 +181,10 @@ impl SpvChannel for SpvRuntime {
     ) -> Result<BroadcastResult, BroadcastError> {
         self.broadcast_transaction_and_wait(transaction, timeout)
             .await
+    }
+
+    async fn wait_until_ready(&self, timeout: Option<Duration>) -> bool {
+        SpvRuntime::wait_until_ready(self, timeout).await
     }
 }
 
@@ -219,6 +245,10 @@ impl TransactionBroadcaster for SpvBroadcaster {
             Err(other) => Err(other),
         }
     }
+
+    async fn wait_until_ready(&self, timeout: Option<Duration>) -> bool {
+        self.spv.wait_until_ready(timeout).await
+    }
 }
 
 #[cfg(test)]
@@ -255,6 +285,10 @@ mod tests {
                 .expect("verdict mutex")
                 .take()
                 .expect("one acceptance check")
+        }
+
+        async fn wait_until_ready(&self, _timeout: Option<Duration>) -> bool {
+            true
         }
     }
 

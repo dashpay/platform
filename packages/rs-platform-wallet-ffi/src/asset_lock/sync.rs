@@ -96,6 +96,14 @@ pub unsafe extern "C" fn asset_lock_manager_resume(
 /// this on a background queue — `runtime().block_on(...)` parks the
 /// calling thread for up to `timeout_secs` (or **indefinitely** when
 /// `timeout_secs == 0`, since a ChainLock is guaranteed finality).
+///
+/// Safe to call before SPV is up. Hosts drive this at wallet load,
+/// which typically precedes `platform_wallet_manager_start_spv`, so a
+/// lock that still needs broadcasting would otherwise take a
+/// definitive never-sent rejection and — nothing retries the catch-up
+/// — stay stranded for the session. `resume_asset_lock` therefore
+/// waits for the SPV transport (within `timeout_secs`) before
+/// broadcasting; callers need no readiness gate of their own.
 #[no_mangle]
 pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
     handle: Handle,

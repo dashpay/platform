@@ -189,6 +189,49 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 // ---------------------------------------------------------------------------
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
+    /// Wait for the broadcaster's transport to come up before a resume
+    /// broadcasts, and return the finality budget left over.
+    ///
+    /// A resume that still needs a broadcast (`Built` / `Broadcast`) is
+    /// typically driven by the app-launch catch-up, which runs while the
+    /// SPV client is still starting. Broadcasting into an unstarted client
+    /// fails as `Rejected` — definitively never sent — and no resume path
+    /// retries, so a `Built` lock that loses this race stays un-broadcast
+    /// across every subsequent session and its funds stay stranded until
+    /// someone retries by hand.
+    ///
+    /// The wait is bounded by the caller's own `timeout` and the time it
+    /// consumes is deducted from it, so the total stays within the budget
+    /// the caller asked for. `None` (the catch-up's unbounded wait for
+    /// finality) waits for the transport indefinitely — no weaker bound
+    /// would help, since the proof that wait is for arrives over the same
+    /// transport.
+    ///
+    /// Timing out is not fatal here: the broadcast is attempted anyway and
+    /// reports the same failure it would have reported without the wait.
+    async fn await_broadcast_ready(
+        &self,
+        out_point: &OutPoint,
+        timeout: Option<Duration>,
+    ) -> Option<Duration> {
+        let started = tokio::time::Instant::now();
+        if !self.broadcaster.wait_until_ready(timeout).await {
+            tracing::warn!(
+                outpoint = %out_point,
+                ?timeout,
+                "resume_asset_lock: broadcast transport still not ready; \
+                 attempting the broadcast anyway"
+            );
+        }
+        let waited = started.elapsed();
+        tracing::debug!(
+            outpoint = %out_point,
+            ?waited,
+            "resume_asset_lock: broadcast transport wait finished"
+        );
+        timeout.map(|t| t.saturating_sub(waited))
+    }
+
     /// Resume a tracked asset lock from whatever stage it's at.
     ///
     /// Looks up the tracked lock by `txid`, then:
@@ -206,6 +249,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// registration or top-up via the `_with_signer` SDK methods. The
     /// caller passes `derivation_path` to the same signer used for the
     /// build phase when the credit output is later consumed on Platform.
+    ///
+    /// The two arms that broadcast first wait for the broadcaster's
+    /// transport to come up (see
+    /// [`await_broadcast_ready`](Self::await_broadcast_ready)), so a resume
+    /// driven by the app-launch catch-up doesn't race the SPV client's
+    /// startup and strand the lock. `InstantSendLocked` / `ChainLocked`
+    /// already hold a proof, broadcast nothing, and so never wait.
     ///
     /// `timeout` is `Option<Duration>` and is only consulted when the lock
     /// still needs a proof (`Built` / `Broadcast`): `None` waits
@@ -252,6 +302,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         let proof = match status {
             AssetLockStatus::Built => {
                 // Re-broadcast and wait for proof.
+                let timeout = self.await_broadcast_ready(out_point, timeout).await;
                 self.broadcaster.broadcast(&tx).await?;
                 let cs = self
                     .advance_asset_lock_status(out_point, AssetLockStatus::Broadcast, None)
@@ -282,6 +333,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // rather than failing the resume on a tx that is actually
                 // fine. If the tx really was mined, `wait_for_proof`
                 // resolves immediately from the SPV/persisted record.
+                let timeout = self.await_broadcast_ready(out_point, timeout).await;
                 if let Err(e) = self.broadcaster.broadcast(&tx).await {
                     tracing::debug!(
                         outpoint = %out_point,
@@ -488,6 +540,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
@@ -831,6 +884,256 @@ mod tests {
         assert_eq!(
             rederived, path,
             "re-derived credit-output path must match the build-time path"
+        );
+    }
+
+    /// Broadcaster whose transport comes up partway through the test, the
+    /// way the SPV client does during app launch. Before `make_ready`, a
+    /// `broadcast` reproduces `SpvRuntime`'s pre-send verdict for an
+    /// unstarted client: `Rejected` — definitively never sent.
+    #[derive(Default)]
+    struct StartingUpBroadcaster {
+        ready: AtomicBool,
+        readiness_waits: AtomicUsize,
+        /// Every broadcast attempt, paired with the readiness state at the
+        /// moment it was attempted.
+        attempts: Mutex<Vec<(Transaction, bool)>>,
+    }
+
+    impl StartingUpBroadcaster {
+        fn make_ready(&self) {
+            self.ready.store(true, Ordering::SeqCst);
+        }
+
+        fn attempts(&self) -> Vec<(Transaction, bool)> {
+            self.attempts.lock().expect("attempts mutex").clone()
+        }
+    }
+
+    #[async_trait]
+    impl TransactionBroadcaster for StartingUpBroadcaster {
+        async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError> {
+            let ready = self.ready.load(Ordering::SeqCst);
+            self.attempts
+                .lock()
+                .expect("attempts mutex")
+                .push((transaction.clone(), ready));
+            if !ready {
+                return Err(BroadcastError::Rejected {
+                    reason: "SPV broadcast not sent: client not started".to_string(),
+                });
+            }
+            Ok(transaction.txid())
+        }
+
+        async fn wait_until_ready(&self, timeout: Option<Duration>) -> bool {
+            self.readiness_waits.fetch_add(1, Ordering::SeqCst);
+            let deadline = timeout.map(|t| tokio::time::Instant::now() + t);
+            loop {
+                if self.ready.load(Ordering::SeqCst) {
+                    return true;
+                }
+                if deadline.is_some_and(|d| tokio::time::Instant::now() >= d) {
+                    return false;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        }
+    }
+
+    /// Build a wallet holding one tracked asset lock at `status`, ready to
+    /// be resumed.
+    async fn tracked_lock_fixture(
+        broadcaster: Arc<StartingUpBroadcaster>,
+        status: AssetLockStatus,
+        proof: Option<dpp::prelude::AssetLockProof>,
+    ) -> (
+        AssetLockManager<StartingUpBroadcaster>,
+        OutPoint,
+        Transaction,
+    ) {
+        let (wallet_manager, wallet_id, _balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_network(Network::Testnet)
+                .build()
+                .expect("mock sdk"),
+        );
+        let manager = AssetLockManager::new(
+            sdk,
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(Notify::new()),
+            broadcaster,
+            WalletPersister::new(wallet_id, Arc::new(RecordingPersistence::default())),
+        );
+        let (transaction, _path) = manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                4,
+                &signer,
+            )
+            .await
+            .expect("build asset lock");
+        let out_point = OutPoint::new(transaction.txid(), 0);
+        {
+            let mut wm = wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet_id)
+                .expect("wallet must remain registered")
+                .tracked_asset_locks
+                .insert(
+                    out_point,
+                    TrackedAssetLock {
+                        out_point,
+                        transaction: transaction.clone(),
+                        account_index: 0,
+                        funding_type: AssetLockFundingType::IdentityRegistration,
+                        identity_index: 4,
+                        amount: 1_000_000,
+                        status,
+                        proof,
+                    },
+                );
+        }
+        (manager, out_point, transaction)
+    }
+
+    /// The app-launch catch-up (`timeout: None`) resumes a `Built` lock
+    /// while the SPV client is still starting. It must hold the broadcast
+    /// until the transport is up rather than spending its one attempt on a
+    /// client that cannot send: the failure is `Rejected` ("never sent"),
+    /// nothing reschedules the catch-up, and a lock left un-broadcast stays
+    /// stranded — with its funds — across every later session.
+    #[tokio::test]
+    async fn built_resume_waits_for_the_broadcast_transport_to_come_up() {
+        let broadcaster = Arc::new(StartingUpBroadcaster::default());
+        let (manager, out_point, transaction) =
+            tracked_lock_fixture(Arc::clone(&broadcaster), AssetLockStatus::Built, None).await;
+
+        // The unbounded wait the catch-up uses. `wait_for_proof` never
+        // resolves here (no IS/CL event is ever fired), so the resume is
+        // observed through the broadcaster rather than by joining it.
+        let resume = tokio::spawn(async move { manager.resume_asset_lock(&out_point, None).await });
+
+        // While the transport is down, the broadcast must not be spent.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(
+            broadcaster.attempts().is_empty(),
+            "a Built resume must not broadcast before the transport is ready"
+        );
+        assert_eq!(
+            broadcaster.readiness_waits.load(Ordering::SeqCst),
+            1,
+            "the Built arm must wait on transport readiness exactly once"
+        );
+
+        broadcaster.make_ready();
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let attempts = loop {
+            let attempts = broadcaster.attempts();
+            if !attempts.is_empty() {
+                break attempts;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "the resume must broadcast once the transport comes up"
+            );
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        };
+
+        assert_eq!(attempts.len(), 1, "exactly one broadcast");
+        let (broadcast_tx, was_ready) = &attempts[0];
+        assert!(
+            was_ready,
+            "the broadcast must land after the transport is ready, not before"
+        );
+        assert_eq!(
+            broadcast_tx, &transaction,
+            "recovery must re-broadcast the original transaction, not a rebuild"
+        );
+
+        resume.abort();
+    }
+
+    /// A bounded caller must not inherit an unbounded park: when the
+    /// transport never comes up, the wait is capped by the caller's own
+    /// timeout and the resume then reports the same never-sent failure it
+    /// would have reported without the wait.
+    #[tokio::test]
+    async fn built_resume_bounds_the_transport_wait_by_the_caller_timeout() {
+        let broadcaster = Arc::new(StartingUpBroadcaster::default());
+        let (manager, out_point, _transaction) =
+            tracked_lock_fixture(Arc::clone(&broadcaster), AssetLockStatus::Built, None).await;
+
+        let started = tokio::time::Instant::now();
+        let error = manager
+            .resume_asset_lock(&out_point, Some(Duration::from_millis(100)))
+            .await
+            .expect_err("a transport that never comes up must fail, not hang");
+        let elapsed = started.elapsed();
+
+        assert!(
+            matches!(error, PlatformWalletError::TransactionBroadcast(_)),
+            "the never-sent verdict must still surface: {error:?}"
+        );
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "the wait must be bounded by the caller's timeout, took {elapsed:?}"
+        );
+        let attempts = broadcaster.attempts();
+        assert_eq!(
+            attempts.len(),
+            1,
+            "the broadcast is still attempted once the wait times out"
+        );
+    }
+
+    /// A lock already at ChainLocked has its proof and needs no broadcast,
+    /// so it must resume without waiting on the transport at all — an
+    /// SPV client that never starts cannot block it.
+    #[tokio::test]
+    async fn chain_locked_resume_does_not_wait_for_the_broadcast_transport() {
+        use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+
+        let broadcaster = Arc::new(StartingUpBroadcaster::default());
+        // The proof has to name the real outpoint, which only exists once
+        // the transaction is built — so stage the lock, then re-stamp it.
+        let (manager, out_point, _transaction) =
+            tracked_lock_fixture(Arc::clone(&broadcaster), AssetLockStatus::Built, None).await;
+        {
+            let proof = dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
+                core_chain_locked_height: 1_234,
+                out_point,
+            });
+            let mut wm = manager.wallet_manager.write().await;
+            let lock = wm
+                .get_wallet_info_mut(&manager.wallet_id)
+                .expect("wallet")
+                .tracked_asset_locks
+                .get_mut(&out_point)
+                .expect("tracked lock");
+            lock.status = AssetLockStatus::ChainLocked;
+            lock.proof = Some(proof);
+        }
+
+        let (proof, _path) = manager
+            .resume_asset_lock(&out_point, None)
+            .await
+            .expect("a chain-locked lock resumes from its own proof");
+
+        assert!(matches!(proof, dpp::prelude::AssetLockProof::Chain(_)));
+        assert_eq!(
+            broadcaster.readiness_waits.load(Ordering::SeqCst),
+            0,
+            "an IS/CL-staged lock needs no broadcast and must not wait on SPV"
+        );
+        assert!(
+            broadcaster.attempts().is_empty(),
+            "an IS/CL-staged lock must not broadcast"
         );
     }
 }

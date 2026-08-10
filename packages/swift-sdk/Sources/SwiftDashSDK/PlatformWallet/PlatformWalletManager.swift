@@ -923,6 +923,14 @@ public class PlatformWalletManager: ObservableObject {
     /// Called from `loadFromPersistor` after every wallet is
     /// inserted. App-foreground / network-reconnect callers can
     /// invoke this directly to retry whatever was still pending.
+    ///
+    /// No SPV readiness gate is needed at this call site, and hosts
+    /// must not add one: load runs before `startSpv`, and a lock at
+    /// `Built` still needs a broadcast, so Rust's `resume_asset_lock`
+    /// waits for the SPV transport itself (within the per-lock
+    /// timeout) rather than spending its one attempt on a client that
+    /// has not started. Gating here would only delay the locks that
+    /// need no broadcast at all.
     public func catchUpStuckAssetLocks(wallets: [ManagedPlatformWallet]) {
         guard let persistenceHandler = persistenceHandler else { return }
         for wallet in wallets {
