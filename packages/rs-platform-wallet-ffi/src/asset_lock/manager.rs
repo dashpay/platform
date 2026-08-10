@@ -12,7 +12,9 @@ pub struct TrackedAssetLockFFI {
     pub txid: [u8; 32],
     /// Outpoint vout.
     pub vout: u32,
-    /// BIP44 account index.
+    /// Family-independent source index of the pooled funding (BIP44 and
+    /// BIP32 at this index plus DashPay receiving accounts). Not a
+    /// BIP44-only selector.
     pub account_index: u32,
     /// Funding type (0=IdentityRegistration, 1=IdentityTopUp, 2=IdentityTopUpNotBound,
     /// 3=IdentityInvitation, 4=AssetLockAddressTopUp, 5=AssetLockShieldedAddressTopUp).

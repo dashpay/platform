@@ -1325,7 +1325,10 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
 ///
 /// `account` is the shielded BIP44 account whose default address receives
 /// each real note (must be bound via `bind_shielded`). `funding_account_index`
-/// is the Core BIP44 account whose UTXOs fund each per-batch asset lock.
+/// is the standard-family source index each per-batch asset lock funds from —
+/// it POOLS the BIP44 and BIP32 accounts at that index with every DashPay
+/// receiving account (change returns to BIP44) and does not restrict which
+/// DashPay receiving accounts contribute.
 ///
 /// # Safety
 /// - `wallet_id_bytes` must point to 32 readable bytes.
