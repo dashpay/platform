@@ -123,7 +123,7 @@ pub enum PlatformWalletError {
     /// was held long enough that its funding reservation may already have been
     /// swept and re-selected by key-wallet's TTL: the wallet's
     /// `last_processed_height` advanced at least
-    /// [`RESERVATION_MAX_AGE_BLOCKS`](crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS)
+    /// `RESERVATION_MAX_AGE_BLOCKS`
     /// blocks past the height the reservation was stamped at
     /// ([`SignedCoreTransaction::reservation_height`](crate::SignedCoreTransaction::reservation_height)).
     /// Broadcasting it could spend against a newer, unrelated reservation, so it
