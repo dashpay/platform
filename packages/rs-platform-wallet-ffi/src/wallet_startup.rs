@@ -89,10 +89,12 @@ impl From<WalletStartupOutcome> for WalletStartupOutcomeFFI {
 /// outcome to `out_outcome`. Intended to be called once per wallet load,
 /// immediately before starting Core SPV.
 ///
-/// Only an invalid manager handle or an unknown `wallet_id` produce an error;
-/// an unreachable Platform, a failed sync pass and an unfinished drain are all
-/// reported through `out_outcome.status`, because a host must be able to start
-/// Core SPV regardless. See [`WalletStartupStatusFFI`].
+/// Errors are limited to the request itself: an invalid manager handle, an
+/// unknown `wallet_id`, or a `budget_secs` so large its deadline is not
+/// representable. Everything about the run — an unreachable Platform, a failed
+/// sync pass, an unfinished drain — is reported through `out_outcome.status`,
+/// because a host must be able to start Core SPV regardless. See
+/// [`WalletStartupStatusFFI`].
 ///
 /// # Arguments
 ///
@@ -143,17 +145,22 @@ pub unsafe extern "C" fn platform_wallet_manager_start_wallet_subsystems(
         );
     };
 
+    // Key material is only needed for a scan, and a wallet whose identity is
+    // already on file will not run one — so a warm launch must not pay for a
+    // Keychain round trip, nor be failed by one that goes wrong. Ask first.
+    let needs_scan_key = !PLATFORM_WALLET_MANAGER_STORAGE
+        .with_item(manager_handle, |m| m.has_local_identity_blocking(&wid))
+        .unwrap_or(false);
+
     // Resolve the master xpriv once, up front. The helper holds the mnemonic
     // and seed in `Zeroizing` buffers and scrubs them before returning; the
     // master itself has no `Drop`, so it is erased explicitly below.
     //
-    // A failure here is NOT returned as an FFI error. This call documents that
-    // only handle and wallet-id problems throw, and the resolver is needed only
-    // when a scan actually runs — a warm launch whose identity is already known
-    // must not be failed by a Keychain hiccup it never needed. If a scan does
-    // turn out to be required, it fails without key material and surfaces as
-    // `DiscoveryFailed`, which is the structured outcome for exactly this.
-    let mut master = if mnemonic_resolver_handle.is_null() {
+    // A failure here is NOT returned as an FFI error: this call documents that
+    // only handle and wallet-id problems throw. Without key material the scan
+    // fails and surfaces as `DiscoveryFailed`, which is the structured outcome
+    // for exactly this.
+    let mut master = if mnemonic_resolver_handle.is_null() || !needs_scan_key {
         None
     } else {
         match resolve_master_from_resolver(mnemonic_resolver_handle, &wid, network) {

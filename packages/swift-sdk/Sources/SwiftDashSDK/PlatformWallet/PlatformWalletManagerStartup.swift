@@ -95,8 +95,9 @@ extension PlatformWalletManager {
     /// - Returns: what the sequence achieved. Start Core SPV regardless of the
     ///   status; inspect `contactAccountsPending` for diagnostics.
     ///
-    /// - Throws: only for an unconfigured manager, a malformed wallet id, or an
-    ///   unknown wallet. An unreachable Platform, a failed sync pass and an
+    /// - Throws: only for a malformed request — an unconfigured manager, a
+    ///   malformed wallet id, an unknown wallet, or a `budget` outside the
+    ///   supported range. An unreachable Platform, a failed sync pass and an
     ///   unfinished drain are all reported through the returned status.
     ///
     /// # Key material

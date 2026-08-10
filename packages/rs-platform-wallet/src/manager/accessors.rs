@@ -458,6 +458,24 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         Some(wm.get_wallet_info(wallet_id)?.core_wallet.network())
     }
 
+    /// Whether this wallet already has an identity on file locally.
+    ///
+    /// Lets a caller skip work that only an identity scan would need — most
+    /// importantly resolving key material, which on iOS means a Keychain round
+    /// trip that a warm launch should not pay for. Blocking and cheap: one
+    /// `RwLock` read, no I/O.
+    pub fn has_local_identity_blocking(&self, wallet_id: &WalletId) -> bool {
+        let wm = self.wallet_manager.blocking_read();
+        wm.get_wallet_info(wallet_id)
+            .map(|info| {
+                !info
+                    .identity_manager
+                    .wallet_identity_ids(wallet_id)
+                    .is_empty()
+            })
+            .unwrap_or(false)
+    }
+
     /// Snapshot of [`PlatformAddressSyncManager`] tunables and last-
     /// pass timestamp. `watch_list_size` is `wallets.len()` — every
     /// registered wallet participates in each pass since the sync

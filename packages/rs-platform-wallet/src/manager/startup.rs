@@ -308,12 +308,17 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
     ///
     /// # Errors
     ///
-    /// Only [`PlatformWalletError::WalletNotFound`]. Every other outcome —
-    /// an unreachable Platform, a failed sync pass, a drain that did not
-    /// finish inside the budget — is reported in [`WalletStartupOutcome`], so
-    /// a client can start Core SPV regardless and let the DIP-15 rescan repair
-    /// whatever is missing. Failing loudly here would trade a data gap for a
-    /// wallet with no balance, which is the worse of the two.
+    /// Two, both about the request rather than its execution:
+    /// [`PlatformWalletError::WalletNotFound`] for an unknown `wallet_id`, and
+    /// [`PlatformWalletError::InvalidParameter`] for a budget whose deadline
+    /// would not be representable.
+    ///
+    /// Everything about the run itself — an unreachable Platform, a failed
+    /// sync pass, a drain that did not finish inside the budget — is reported
+    /// in [`WalletStartupOutcome`], so a client can start Core SPV regardless
+    /// and let the DIP-15 rescan repair whatever is missing. Failing loudly
+    /// there would trade a data gap for a wallet with no balance, which is the
+    /// worse of the two.
     ///
     /// # Key material
     ///
