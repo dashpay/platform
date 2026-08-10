@@ -66,6 +66,32 @@ describe('saveCertificateTaskFactory', () => {
     expect(mode(keyPath)).to.equal(0o600);
   });
 
+  // A node set up before Dashmate chose a mode carries a private key readable
+  // by every local account. Renewal is the only thing that touches the file
+  // again, so preserving what it finds would leave that key exposed for the
+  // life of the node.
+  it('should tighten a private key left group- and world-readable by an older version', async () => {
+    fs.mkdirSync(certificatesDir, { recursive: true });
+    fs.writeFileSync(certificatePath, 'old-certificate');
+    fs.writeFileSync(keyPath, 'old-key');
+    fs.chmodSync(keyPath, 0o644);
+
+    await savePair();
+
+    expect(mode(keyPath)).to.equal(0o600);
+  });
+
+  it('should keep a private key mode stricter than Dashmate would choose', async () => {
+    fs.mkdirSync(certificatesDir, { recursive: true });
+    fs.writeFileSync(certificatePath, 'old-certificate');
+    fs.writeFileSync(keyPath, 'old-key');
+    fs.chmodSync(keyPath, 0o400);
+
+    await savePair();
+
+    expect(mode(keyPath)).to.equal(0o400);
+  });
+
   it('should restore the previous certificate pair and modes when saving the key fails', async function it() {
     fs.mkdirSync(certificatesDir, { recursive: true });
     fs.writeFileSync(certificatePath, 'old-certificate');

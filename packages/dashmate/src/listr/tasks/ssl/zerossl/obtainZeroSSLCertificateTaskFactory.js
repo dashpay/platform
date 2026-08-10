@@ -274,13 +274,26 @@ and all Dash service ports listed above.`);
       },
       {
         title: 'Save certificate private key file',
-        enabled: (ctx) => !ctx.isPrivateKeyFilePresent,
         task: async (ctx, task) => {
-          fs.writeFileSync(ctx.privateKeyFilePath, ctx.privateKeyFile, {
-            encoding: 'utf8',
-            mode: 0o600,
-          });
-          fs.chmodSync(ctx.privateKeyFilePath, 0o600);
+          if (ctx.isPrivateKeyFilePresent) {
+            // A key written before Dashmate set a mode is group- and
+            // world-readable, and reusing it skips the write that would fix
+            // that - so tighten what is already there. An owner that chose
+            // something stricter keeps it. Presence was decided by an earlier
+            // validation step, so confirm it rather than assume it still holds.
+            if (fs.existsSync(ctx.privateKeyFilePath)) {
+              // eslint-disable-next-line no-bitwise
+              const mode = fs.statSync(ctx.privateKeyFilePath).mode & 0o700;
+
+              fs.chmodSync(ctx.privateKeyFilePath, mode);
+            }
+          } else {
+            fs.writeFileSync(ctx.privateKeyFilePath, ctx.privateKeyFile, {
+              encoding: 'utf8',
+              mode: 0o600,
+            });
+            fs.chmodSync(ctx.privateKeyFilePath, 0o600);
+          }
 
           // eslint-disable-next-line no-param-reassign
           task.output = ctx.privateKeyFilePath;

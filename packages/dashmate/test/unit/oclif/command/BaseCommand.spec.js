@@ -18,6 +18,7 @@ describe('BaseCommand', () => {
         readAndMigrate: sinon.stub().returns({ configFile }),
         release: sinon.stub(),
         write: sinon.stub(),
+        isExclusive: () => true,
       };
       const dependencies = {
         configFile,
@@ -149,6 +150,7 @@ describe('BaseCommand', () => {
       };
       configFileRepository = {
         write: this.sinon.stub(),
+        isExclusive: () => true,
       };
       writeConfigTemplates = this.sinon.stub();
       stopAllContainers = this.sinon.stub().resolves();
@@ -183,6 +185,20 @@ describe('BaseCommand', () => {
 
       expect(writeConfigTemplates).to.have.been.calledTwice();
       expect(configFileRepository.write).to.have.been.calledOnceWith(configFile);
+    });
+
+    // Rendering happens before the save, so the save's own exclusivity check
+    // comes too late to stop it. A command whose lock was stolen would write
+    // service files from a snapshot taken before the process that stole it
+    // saved and rendered newer state.
+    it('should not render service files once the lock has been lost', async function it() {
+      configFileRepository.isExclusive = () => false;
+
+      await expect(command.saveConfigAndStopContainers())
+        .to.be.rejectedWith('Lost the configuration lock');
+
+      expect(writeConfigTemplates).to.not.have.been.called();
+      expect(configFileRepository.write).to.not.have.been.called();
     });
 
     it('should stop started containers when a refused config save throws', async function it() {

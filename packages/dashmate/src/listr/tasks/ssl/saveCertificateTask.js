@@ -48,9 +48,13 @@ export default function saveCertificateTaskFactory(homeDir) {
             // eslint-disable-next-line no-bitwise
             ? fs.statSync(crtFile).mode & 0o777
             : 0o644;
+          // Dashmate used to create this file at the process umask, so an
+          // upgraded node carries a group- and world-readable private key.
+          // Dropping those bits repairs it on the next renewal, while an owner
+          // that hardened it further - 0400 - keeps what it chose.
           const keyMode = fs.existsSync(keyFile)
             // eslint-disable-next-line no-bitwise
-            ? fs.statSync(keyFile).mode & 0o777
+            ? fs.statSync(keyFile).mode & 0o700
             : 0o600;
           let certificateReplaced = false;
           const cleanupTempFiles = () => {

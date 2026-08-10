@@ -55,8 +55,13 @@ export default async function renewCertificate({
     }
 
     if (config.isChanged()) {
-      configFileRepository.write(configFile);
+      // Rendering before the save keeps a failure recoverable: nothing is
+      // committed, so the next renewal attempt redoes both. Saving first would
+      // leave the gateway's generated files behind a configuration that already
+      // claims the new certificate, with nothing to trigger a re-render.
       writeConfigTemplates(config);
+
+      configFileRepository.write(configFile);
     }
 
     return { config, renewed: true };

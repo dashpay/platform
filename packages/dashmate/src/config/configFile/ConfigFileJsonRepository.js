@@ -167,12 +167,16 @@ export default class ConfigFileJsonRepository {
    *
    * @param {function(ConfigFile): void} mutate
    * @param {Object} [options={}]
+   * @param {function(ConfigFile): void} [options.beforeSave] - runs while the
+   *   lock is held and before the change is durable, for effects that must be
+   *   in place for it to mean anything: rendering service files. Failing here
+   *   leaves nothing committed, so re-running the command retries both.
    * @param {function(ConfigFile): void} [options.onSaved] - runs after the save
-   *   and before the lock is released, for effects that must not be reordered
-   *   against it: rendering service files, removing a config's directory
+   *   and before the lock is released, for effects that must not happen unless
+   *   the change reached disk: removing a config's directory
    * @returns {void}
    */
-  update(mutate, { onSaved } = {}) {
+  update(mutate, { beforeSave, onSaved } = {}) {
     this.#locked(() => {
       // First run has nothing to read yet, and creating the defaults here rather
       // than separately keeps that on the same locked path as every other change
@@ -182,6 +186,10 @@ export default class ConfigFileJsonRepository {
         : this.createConfigFile();
 
       mutate(configFile);
+
+      if (beforeSave) {
+        beforeSave(configFile);
+      }
 
       this.#save(configFile);
 
@@ -239,6 +247,20 @@ export default class ConfigFileJsonRepository {
 
       return { configFile };
     });
+  }
+
+  /**
+   * Whether this process still holds the lock it took.
+   *
+   * A caller with a side effect of its own to run - rendering service files -
+   * has to know before running it, not after. Losing the lock means another
+   * process may already have saved and rendered newer state, and writing over
+   * that from a stale copy is the lost update this exists to prevent.
+   *
+   * @returns {boolean}
+   */
+  isExclusive() {
+    return !this.#compromised;
   }
 
   /**

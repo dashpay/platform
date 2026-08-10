@@ -162,6 +162,17 @@ export default class BaseCommand extends Command {
           const configFile = this.container.resolve('configFile');
 
           if (configFile.isChanged()) {
+            // Rendering happens before the save, so it must not start once the
+            // lock is gone: another process may already have saved and rendered
+            // newer state, and these files would overwrite it from a snapshot
+            // taken before it existed. Saving refuses for the same reason, but
+            // that check comes too late to stop a render.
+            if (!configFileRepository.isExclusive()) {
+              throw new Error('Lost the configuration lock while this command was running,'
+                + ' so its service files were not written - another process may have changed'
+                + ' configuration in the meantime. Nothing was saved; re-run the command.');
+            }
+
             const changedConfigs = configFile.getAllConfigs()
               .filter((config) => config.isChanged());
 

@@ -73,7 +73,7 @@ Sets a configuration option in the default config
     }, {
       // Rendered inside the lock, so two commands changing the same config
       // cannot save in one order and render in the other.
-      onSaved: (savedConfigFile) => writeConfigTemplates(savedConfigFile.getConfig(configName)),
+      beforeSave: (freshConfigFile) => writeConfigTemplates(freshConfigFile.getConfig(configName)),
     });
 
     // eslint-disable-next-line no-console

@@ -41,7 +41,7 @@ export default class ConfigCreateCommand extends BaseCommand {
     }, {
       // The new config needs its service files, and rendering them inside the
       // lock keeps them consistent with what was saved.
-      onSaved: (savedConfigFile) => writeConfigTemplates(savedConfigFile.getConfig(configName)),
+      beforeSave: (freshConfigFile) => writeConfigTemplates(freshConfigFile.getConfig(configName)),
     });
 
     // eslint-disable-next-line no-console

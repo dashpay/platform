@@ -263,6 +263,47 @@ describe('ConfigFileJsonRepository', () => {
 
     // Effects registered by the caller run before the lock is released, so a
     // concurrent command cannot slip between the save and them.
+    // Service files are what a change actually does; committing the JSON
+    // without them leaves the node running the old value with nothing to make
+    // it try again, because a config read back off disk is clean.
+    it('should commit nothing when rendering service files fails', () => {
+      seedConfigFile();
+
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
+      const before = fs.readFileSync(configFilePath, 'utf8');
+
+      expect(() => repository.update((configFile) => {
+        configFile.getConfig('base').set('description', 'never-committed');
+      }, {
+        beforeSave: () => {
+          throw new Error('template write failed');
+        },
+      })).to.throw('template write failed');
+
+      expect(fs.readFileSync(configFilePath, 'utf8')).to.equal(before);
+      expect(repository.read().getConfig('base').get('description')).to.not.equal('never-committed');
+    });
+
+    it('should render service files before the change reaches disk', () => {
+      seedConfigFile();
+
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
+
+      let onDiskWhenRendering;
+
+      repository.update((configFile) => {
+        configFile.getConfig('base').set('description', 'rendered-first');
+      }, {
+        beforeSave: () => {
+          onDiskWhenRendering = JSON.parse(fs.readFileSync(configFilePath, 'utf8'))
+            .configs.base.description;
+        },
+      });
+
+      expect(onDiskWhenRendering).to.not.equal('rendered-first');
+      expect(repository.read().getConfig('base').get('description')).to.equal('rendered-first');
+    });
+
     it('should run onSaved after saving and while still holding the lock', () => {
       seedConfigFile();
 
