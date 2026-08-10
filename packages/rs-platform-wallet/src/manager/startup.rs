@@ -33,9 +33,54 @@
 //! instead would turn a narrowly-scoped Keychain capability into a standing
 //! one, which is a security-posture change and deliberately not what this is.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::signer::Signer;
+use dpp::identity::IdentityPublicKey;
 use dpp::prelude::Identifier;
+use key_wallet::bip32::ExtendedPrivKey;
+
+use crate::changeset::PlatformWalletPersistence;
+use crate::error::PlatformWalletError;
+use crate::manager::PlatformWalletManager;
+use crate::wallet::identity::network::{ContactCryptoProvider, IdentityDiscoveryOptions};
+use crate::wallet::platform_wallet::WalletId;
+
+/// Whole-sequence budget when the caller does not name one.
+///
+/// Core sync is the wallet's primary function and Platform is not: a Platform
+/// outage must never be able to leave the user without a balance. Twenty
+/// seconds is roughly the window in which a cold quorum endpoint either
+/// answers or has already failed.
+pub const DEFAULT_STARTUP_BUDGET: Duration = Duration::from_secs(20);
+
+/// Backoff between discovery attempts when Platform could not be reached.
+///
+/// Retrying the scan is what helps here, not retrying inside DAPI: every probe
+/// verifies its proof against quorum keys fetched from a single endpoint whose
+/// cache is cold at process start, so a scan that begins before that endpoint
+/// answers fails whole rather than per-node. A wallet that owns no identity
+/// never reaches this schedule — a proof of absence settles on the first pass.
+const DISCOVERY_BACKOFF: [Duration; 2] = [Duration::from_secs(3), Duration::from_secs(8)];
+
+/// Knobs for [`PlatformWalletManager::start_wallet_subsystems`].
+#[derive(Debug, Clone, Copy)]
+pub struct WalletStartupOptions {
+    /// Ceiling for the whole sequence. Expiry is reported, never an error.
+    pub budget: Duration,
+    /// Gap limit for identity discovery; `None` uses the crate default.
+    pub gap_limit: Option<u32>,
+}
+
+impl Default for WalletStartupOptions {
+    fn default() -> Self {
+        Self {
+            budget: DEFAULT_STARTUP_BUDGET,
+            gap_limit: None,
+        }
+    }
+}
 
 /// Why a bring-up stopped where it did.
 ///
@@ -190,6 +235,202 @@ impl StartupTally {
             contact_accounts_pending: self.contact_accounts_pending,
             elapsed,
         }
+    }
+}
+
+impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager<P> {
+    /// Bring one wallet's DashPay state up in dependency order, so the caller
+    /// can start Core SPV against a complete contact-address set.
+    ///
+    /// Runs identity discovery (only when no identity is known locally), then
+    /// one DashPay sync pass, then the signer-present drain that turns queued
+    /// contact-crypto into real accounts. See the module docs for why the
+    /// drain is not optional.
+    ///
+    /// # Errors
+    ///
+    /// Only [`PlatformWalletError::WalletNotFound`]. Every other outcome —
+    /// an unreachable Platform, a failed sync pass, a drain that did not
+    /// finish inside the budget — is reported in [`WalletStartupOutcome`], so
+    /// a client can start Core SPV regardless and let the DIP-15 rescan repair
+    /// whatever is missing. Failing loudly here would trade a data gap for a
+    /// wallet with no balance, which is the worse of the two.
+    ///
+    /// # Key material
+    ///
+    /// `master` and `contact_crypto` are borrowed for this call only and must
+    /// not be retained by the caller afterwards. `master` is `None` for a
+    /// wallet holding resident keys; `identity_signer` is `None` to skip the
+    /// DIP-15 auto-accept pass.
+    pub async fn start_wallet_subsystems<C, S>(
+        &self,
+        wallet_id: &WalletId,
+        master: Option<&ExtendedPrivKey>,
+        contact_crypto: &C,
+        identity_signer: Option<&S>,
+        opts: WalletStartupOptions,
+    ) -> Result<WalletStartupOutcome, PlatformWalletError>
+    where
+        C: ContactCryptoProvider + Sync,
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
+        let started = Instant::now();
+        let deadline = started + opts.budget;
+        let mut tally = StartupTally::default();
+
+        let wallet = self
+            .get_wallet(wallet_id)
+            .await
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?;
+        let identity_wallet = wallet.identity();
+
+        // 1. Local identities first. A warm launch must not pay for a network
+        //    scan it does not need.
+        if let Some(known) = self.local_identity_id(wallet_id).await {
+            tally.record_local_identity(known);
+        } else {
+            self.discover_identity_with_backoff(
+                identity_wallet,
+                master,
+                opts.gap_limit,
+                deadline,
+                &mut tally,
+            )
+            .await;
+        }
+
+        // With no identity there is nothing to sync and nothing to drain, and
+        // that is true whether Platform proved absence or never answered.
+        if !tally.has_identity() {
+            return Ok(tally.into_outcome(started.elapsed()));
+        }
+
+        // 2. One contact-request pass, so the deferred builds exist to drain.
+        //    Log-and-continue: a prior session may already have queued work
+        //    that this call can still complete.
+        if Instant::now() < deadline {
+            match identity_wallet.dashpay().sync_contact_requests().await {
+                Ok(requests) => {
+                    tally.record_sync_ran();
+                    tracing::debug!(
+                        wallet_id = %hex::encode(wallet_id),
+                        requests = requests.len(),
+                        "startup: contact-request pass complete"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        error = %e,
+                        "startup: contact-request pass failed; continuing to the drain"
+                    );
+                }
+            }
+        }
+
+        // 3. The step that actually creates the addresses.
+        let drained = identity_wallet
+            .dashpay()
+            .drain_pending_contact_crypto(contact_crypto)
+            .await;
+        let accepted = match identity_signer {
+            Some(signer) => {
+                identity_wallet
+                    .dashpay()
+                    .drain_auto_accepts(signer, contact_crypto)
+                    .await
+            }
+            None => 0,
+        };
+        let pending = identity_wallet
+            .dashpay()
+            .pending_contact_crypto_count()
+            .await;
+        tally.record_drain(drained + accepted, pending);
+
+        if pending > 0 {
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                pending,
+                "startup: contact-account builds still queued; the DIP-15 rescan will backfill"
+            );
+        }
+
+        Ok(tally.into_outcome(started.elapsed()))
+    }
+
+    /// The first identity this wallet already owns locally, if any.
+    async fn local_identity_id(&self, wallet_id: &WalletId) -> Option<Identifier> {
+        let wm = self.wallet_manager.read().await;
+        let info = wm.get_wallet_info(wallet_id)?;
+        info.identity_manager
+            .wallet_identity_ids(wallet_id)
+            .into_iter()
+            .next()
+    }
+
+    /// Scan for an identity, retrying only while Platform stays unreachable.
+    ///
+    /// An `Ok` result ends the loop whether or not it found anything: Platform
+    /// answered, and an empty answer is a proof of absence that rescanning
+    /// cannot overturn. Only [`PlatformWalletError::IdentityDiscoveryIncomplete`]
+    /// — the error platform#4352 introduced for a scan that never got through
+    /// — is worth another attempt.
+    async fn discover_identity_with_backoff(
+        &self,
+        identity_wallet: &crate::wallet::identity::IdentityWallet,
+        master: Option<&ExtendedPrivKey>,
+        gap_limit: Option<u32>,
+        deadline: Instant,
+        tally: &mut StartupTally,
+    ) {
+        let opts = IdentityDiscoveryOptions {
+            start_index: Some(0),
+            gap_limit: gap_limit.unwrap_or(IdentityDiscoveryOptions::default().gap_limit),
+        };
+
+        for (attempt, backoff) in DISCOVERY_BACKOFF.iter().map(Some).chain([None]).enumerate() {
+            let result = match master {
+                Some(master) => identity_wallet.discover_from_master(opts, master).await,
+                None => identity_wallet.discover(opts).await,
+            };
+
+            match result {
+                Ok(found) => {
+                    match found.first() {
+                        Some(identity) => tally.record_discovered(identity.id()),
+                        None => tally.record_proven_absent(),
+                    }
+                    return;
+                }
+                Err(PlatformWalletError::IdentityDiscoveryIncomplete { .. }) => {
+                    tally.record_unreachable();
+                }
+                Err(e) => {
+                    // Not a reachability question — a wallet/persistence
+                    // failure will not fix itself on the next attempt.
+                    tracing::warn!(
+                        error = %e,
+                        "startup: identity discovery failed for a non-network reason"
+                    );
+                    tally.record_discovery_gave_up();
+                    return;
+                }
+            }
+
+            let Some(backoff) = backoff else { break };
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            tracing::info!(
+                attempt = attempt + 1,
+                "startup: identity discovery could not reach Platform; retrying"
+            );
+            tokio::time::sleep((*backoff).min(remaining)).await;
+        }
+
+        tally.record_discovery_gave_up();
     }
 }
 
