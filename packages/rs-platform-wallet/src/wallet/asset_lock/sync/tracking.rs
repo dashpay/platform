@@ -3,7 +3,9 @@
 use crate::broadcaster::TransactionBroadcaster;
 use dashcore::OutPoint;
 
-use crate::changeset::changeset::{AssetLockChangeSet, PlatformWalletChangeSet};
+use crate::changeset::changeset::AssetLockChangeSet;
+#[cfg(feature = "shielded")]
+use crate::changeset::changeset::PlatformWalletChangeSet;
 use crate::error::PlatformWalletError;
 
 use super::super::manager::AssetLockManager;
@@ -177,10 +179,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// recovery remains possible.
     ///
     /// Unlike the ordinary queued status updates, this user-visible recovery
-    /// marker is stored and flushed synchronously. Non-transient persistence
-    /// failures roll back the in-memory mutation. A transient failure keeps the
-    /// candidate in memory because the persistence contract retains the same
-    /// candidate in its retryable buffer.
+    /// marker is stored and flushed synchronously. A failure rolls back the
+    /// in-memory mutation only when the backend has not committed the store and
+    /// did not retain a transient retry buffer.
+    #[cfg(feature = "shielded")]
     pub(crate) async fn mark_asset_lock_consumption_unknown(
         &self,
         out_point: &OutPoint,
@@ -211,15 +213,19 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             (previous, candidate, cs)
         };
 
-        let persist_result = self
-            .persister
-            .store(PlatformWalletChangeSet {
-                asset_locks: Some(cs.clone()),
-                ..Default::default()
-            })
-            .and_then(|()| self.persister.flush());
-        if let Err(error) = persist_result {
-            if error.is_transient() {
+        let store_commits_inline = self.persister.store_commits_inline();
+        let persist_failure = match self.persister.store(PlatformWalletChangeSet {
+            asset_locks: Some(cs.clone()),
+            ..Default::default()
+        }) {
+            Err(error) => Some((error, true)),
+            Ok(()) => self.persister.flush().err().map(|error| {
+                let may_rollback = !store_commits_inline;
+                (error, may_rollback)
+            }),
+        };
+        if let Some((error, may_rollback)) = persist_failure {
+            if error.is_transient() || !may_rollback {
                 return Err(PlatformWalletError::Persistence(error.to_string()));
             }
             let mut wm = self.wallet_manager.write().await;

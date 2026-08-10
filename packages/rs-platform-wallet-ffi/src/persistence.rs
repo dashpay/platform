@@ -1086,6 +1086,12 @@ impl PlatformWalletPersistence for FFIPersister {
             .intersection(self.callback_capabilities())
     }
 
+    fn store_commits_inline(&self) -> bool {
+        // The end callback commits (or rolls back) the host transaction before
+        // `store` returns. `flush` is only a later general-purpose notification.
+        self.callbacks.on_changeset_end_fn.is_some()
+    }
+
     fn store(
         &self,
         wallet_id: WalletId,
@@ -6092,6 +6098,17 @@ mod tests {
             PersistenceCapabilities::NONE
         );
         assert!(!persister.persists_durably());
+    }
+
+    #[test]
+    fn end_callback_marks_store_as_inline_commit_boundary() {
+        let callbacks = PersistenceCallbacks {
+            on_changeset_end_fn: Some(noop_end),
+            ..PersistenceCallbacks::default()
+        };
+
+        assert!(FFIPersister::new(callbacks).store_commits_inline());
+        assert!(!FFIPersister::new(PersistenceCallbacks::default()).store_commits_inline());
     }
 
     /// Partial callback pairs attest only complete, independently testable

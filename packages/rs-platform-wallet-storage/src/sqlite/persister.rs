@@ -817,6 +817,10 @@ impl Drop for SqlitePersister {
 }
 
 impl PlatformWalletPersistence for SqlitePersister {
+    fn store_commits_inline(&self) -> bool {
+        self.config.flush_mode == FlushMode::Immediate
+    }
+
     fn persistence_capabilities(&self) -> PersistenceCapabilities {
         // Every `flush_inner` applies the complete changeset in one SQLite
         // transaction. The current schema also has lossless token balances,

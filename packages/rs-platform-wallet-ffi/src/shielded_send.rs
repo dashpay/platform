@@ -1111,13 +1111,14 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
             )
             .await
     });
-    if let Err(e) = result {
-        return PlatformWalletFFIResult::err(
+    match result {
+        Ok(()) => PlatformWalletFFIResult::ok(),
+        Err(e @ PlatformWalletError::AssetLockAlreadyConsumed(_)) => e.into(),
+        Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("shielded fund-from-asset-lock failed: {e}"),
-        );
+        ),
     }
-    PlatformWalletFFIResult::ok()
 }
 
 /// Fund the shielded pool by DRAINING the wallet's CoinJoin account

@@ -921,9 +921,14 @@ mod tests {
         stored: Mutex<Vec<PlatformWalletChangeSet>>,
         fail_next_store: AtomicBool,
         fail_next_flush: Mutex<Option<PersistenceErrorKind>>,
+        store_commits_inline: AtomicBool,
     }
 
     impl PlatformWalletPersistence for RecordingPersistence {
+        fn store_commits_inline(&self) -> bool {
+            self.store_commits_inline.load(Ordering::SeqCst)
+        }
+
         fn store(
             &self,
             _wallet_id: WalletId,
@@ -1177,6 +1182,38 @@ mod tests {
         )
         .await
         .expect_err("host flush rejection must surface");
+        assert!(matches!(error, PlatformWalletError::Persistence(_)));
+
+        let wm = ctx.wallet_manager.read().await;
+        let lock = wm
+            .get_wallet_info(&ctx.wallet_id)
+            .expect("wallet")
+            .tracked_asset_locks
+            .get(&ctx.out_point)
+            .expect("tracked lock");
+        assert_eq!(lock.status, AssetLockStatus::RecoveredFromChain);
+    }
+
+    #[tokio::test]
+    async fn fatal_post_commit_flush_failure_keeps_durable_candidate_in_memory() {
+        let ctx = consumption_report_context().await;
+        ctx.persistence
+            .store_commits_inline
+            .store(true, Ordering::SeqCst);
+        *ctx.persistence
+            .fail_next_flush
+            .lock()
+            .expect("recording persistence mutex") = Some(PersistenceErrorKind::Fatal);
+
+        let error = reconcile_asset_lock_submit_error(
+            &ctx.manager,
+            already_consumed_error(ctx.out_point),
+            &ctx.out_point,
+            &ctx.proof,
+            None,
+        )
+        .await
+        .expect_err("post-commit flush rejection must surface");
         assert!(matches!(error, PlatformWalletError::Persistence(_)));
 
         let wm = ctx.wallet_manager.read().await;
