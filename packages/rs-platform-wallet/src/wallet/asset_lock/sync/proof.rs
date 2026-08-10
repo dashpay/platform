@@ -656,6 +656,164 @@ mod tests {
         assert_eq!(found.txid, txid);
     }
 
+    /// BIP32-family regression for [`funding_tx_record`]: a POOLED asset
+    /// lock (`ASSET_LOCK_FUNDING_SOURCES`) may take nothing from BIP44 and
+    /// be funded entirely out of the BIP32 account, filing the record only
+    /// under `standard_bip32_accounts` — the lookup must still see it.
+    #[test]
+    fn funding_tx_record_finds_bip32_only_record() {
+        use key_wallet::test_utils::TestWalletContext;
+
+        let mut ctx = TestWalletContext::new_random();
+        let record = bip32_record_with_txid(0x55);
+        let txid = record.txid;
+        ctx.managed_wallet
+            .first_bip32_managed_account_mut()
+            .expect("default wallet has BIP32 account 0")
+            .transactions_mut()
+            .insert(txid, record);
+
+        let found = funding_tx_record(&ctx.managed_wallet.accounts, 0, &txid)
+            .expect("BIP32-family record must be found by the shared lookup");
+        assert_eq!(found.txid, txid);
+
+        // Unknown txid and unknown account index are clean misses.
+        assert!(
+            funding_tx_record(&ctx.managed_wallet.accounts, 0, &Txid::from([0x02; 32])).is_none()
+        );
+        assert!(funding_tx_record(&ctx.managed_wallet.accounts, 9, &txid).is_none());
+    }
+
+    /// DashPay-family regression for [`funding_tx_record`]: the receiving
+    /// accounts span their own indices, so the lookup searches them by txid
+    /// alone. A record filed only under a contact-receiving account whose
+    /// OWN index (7) differs from the tracked source `account_index` (0)
+    /// must still be found.
+    #[test]
+    fn funding_tx_record_finds_dashpay_receival_record_across_indices() {
+        use key_wallet::account::account_collection::DashpayAccountKey;
+        use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
+        use key_wallet::managed_account::ManagedCoreFundsAccount;
+        use key_wallet::test_utils::TestWalletContext;
+        use key_wallet::{DerivationPath, ManagedAccountType, Network};
+
+        let mut ctx = TestWalletContext::new_random();
+
+        let user_identity_id = [0xAB; 32];
+        let friend_identity_id = [0xCD; 32];
+        let addresses = AddressPool::new(
+            DerivationPath::master(),
+            AddressPoolType::Absent,
+            20,
+            Network::Testnet,
+            &KeySource::NoKeySource,
+        )
+        .expect("single DashPay address pool");
+        let mut account = ManagedCoreFundsAccount::new(
+            ManagedAccountType::DashpayReceivingFunds {
+                index: 7,
+                user_identity_id,
+                friend_identity_id,
+                addresses,
+            },
+            Network::Testnet,
+        );
+
+        let record = dashpay_record_with_txid(0x66, 7, user_identity_id, friend_identity_id);
+        let txid = record.txid;
+        account.transactions_mut().insert(txid, record);
+        ctx.managed_wallet
+            .accounts
+            .dashpay_receival_accounts
+            .insert(
+                DashpayAccountKey {
+                    index: 7,
+                    user_identity_id,
+                    friend_identity_id,
+                },
+                account,
+            );
+
+        // The tracked source index (0) does not match the account's own
+        // index (7), yet the record is found — DashPay receiving accounts
+        // are searched by txid, not by the tracked source index.
+        let found = funding_tx_record(&ctx.managed_wallet.accounts, 0, &txid)
+            .expect("DashPay receival record must be found regardless of account_index");
+        assert_eq!(found.txid, txid);
+
+        // Even an account_index matching no account in any family still
+        // resolves the DashPay record — the search is index-independent.
+        let found_any_index = funding_tx_record(&ctx.managed_wallet.accounts, 9, &txid)
+            .expect("DashPay lookup is index-independent");
+        assert_eq!(found_any_index.txid, txid);
+
+        // Unknown txid is still a clean miss.
+        assert!(
+            funding_tx_record(&ctx.managed_wallet.accounts, 0, &Txid::from([0x03; 32])).is_none()
+        );
+    }
+
+    /// [`record_with_txid`] sibling filed as a BIP32-account record.
+    fn bip32_record_with_txid(seed: u8) -> TransactionRecord {
+        let tx = Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: dashcore::OutPoint::new(Txid::from([seed; 32]), 0),
+                ..Default::default()
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        TransactionRecord::new(
+            tx,
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP32Account,
+            },
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            Vec::new(),
+            Vec::new(),
+            0,
+        )
+    }
+
+    /// [`record_with_txid`] sibling filed as a DashPay contact-receiving
+    /// account record.
+    fn dashpay_record_with_txid(
+        seed: u8,
+        index: u32,
+        user_identity_id: [u8; 32],
+        friend_identity_id: [u8; 32],
+    ) -> TransactionRecord {
+        let tx = Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: dashcore::OutPoint::new(Txid::from([seed; 32]), 0),
+                ..Default::default()
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        TransactionRecord::new(
+            tx,
+            AccountType::DashpayReceivingFunds {
+                index,
+                user_identity_id,
+                friend_identity_id,
+            },
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            Vec::new(),
+            Vec::new(),
+            0,
+        )
+    }
+
     /// [`record_with_txid`] sibling filed as a CoinJoin-account record.
     fn coinjoin_record_with_txid(seed: u8) -> TransactionRecord {
         let tx = Transaction {
