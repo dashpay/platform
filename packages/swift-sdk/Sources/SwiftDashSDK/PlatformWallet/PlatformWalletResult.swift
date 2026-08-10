@@ -137,6 +137,10 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// reference it. Retry after the contest resolves. The message is a
     /// stable JSON detail object carrying the label and the vote end time.
     case errorContestedNameNotTradable = 40
+    /// A Platform-to-shielded operation can no longer cover the requested
+    /// amount plus input 0's retained fee reserve. Refresh the shield
+    /// preflight and ask the user to confirm the new capacity.
+    case errorShieldedInsufficientBalance = 41
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -232,6 +236,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorInsufficientIdentityCredits
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_CONTESTED_NAME_NOT_TRADABLE:
             self = .errorContestedNameNotTradable
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_INSUFFICIENT_BALANCE:
+            self = .errorShieldedInsufficientBalance
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -338,6 +344,10 @@ public enum PlatformWalletError: LocalizedError {
     /// sync reaches a confirmed state. Distinct from `shieldedSpendUnconfirmed`,
     /// which must NOT be retried.
     case shieldedNoRecordedAnchor(String)
+    /// The cached Platform Payment-account suffix cannot cover a shield's
+    /// requested amount plus the fee reserve retained on input 0. Despite the
+    /// historical Rust name, this is not a shielded-pool balance failure.
+    case shieldedInsufficientBalance(String)
     /// A core transaction broadcast was submitted but its outcome is
     /// unknown — the transaction may already be on the network. The wallet
     /// keeps the spent inputs reserved so a retry cannot double-spend; the
@@ -429,7 +439,7 @@ public enum PlatformWalletError: LocalizedError {
              .assetLockFundingMismatch(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
-             .shieldedNoRecordedAnchor(let m),
+             .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
              .transactionBroadcastUnconfirmed(let m),
              .transactionBroadcastRejected(let m),
              .addressNonceMismatch(let m),
@@ -496,6 +506,7 @@ public enum PlatformWalletError: LocalizedError {
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)
         case .errorShieldedSpendUnconfirmed: self = .shieldedSpendUnconfirmed(detail)
         case .errorShieldedNoRecordedAnchor: self = .shieldedNoRecordedAnchor(detail)
+        case .errorShieldedInsufficientBalance: self = .shieldedInsufficientBalance(detail)
         case .errorTransactionBroadcastUnconfirmed:
             self = .transactionBroadcastUnconfirmed(detail)
         case .errorTransactionBroadcastRejected:

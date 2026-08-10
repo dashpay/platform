@@ -27,6 +27,8 @@ pub use platform_addresses::{
 pub use platform_wallet::{
     PlatformWallet, PlatformWalletInfo, WalletId, WalletStateReadGuard, WalletStateWriteGuard,
 };
+#[cfg(feature = "shielded")]
+pub use platform_wallet::{ShieldedShieldPreflight, SHIELDED_SHIELD_FEE_RESERVE_CREDITS};
 pub use provider_key_at_index::{ProviderDerivedKey, ProviderKeyKind};
 pub use signed_payment_registry::{
     RegisterWrongGeneration, ReservationToken, SignedPaymentError, SignedPaymentRegistry,

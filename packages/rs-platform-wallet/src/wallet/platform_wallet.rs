@@ -35,6 +35,183 @@ use dpp::prelude::Identifier;
 /// Unique identifier for a wallet (32-byte hash).
 pub type WalletId = [u8; 32];
 
+/// Conservative balance retained on the lexicographically first shield input.
+///
+/// Type 15 uses `DeductFromInput(0)`, so this amount must remain unclaimed on
+/// input 0 for the transition fee. Both the shield preflight and execution path
+/// use this single constant through the shared input planner below.
+#[cfg(feature = "shielded")]
+pub const SHIELDED_SHIELD_FEE_RESERVE_CREDITS: Credits = 1_000_000_000;
+
+/// Cached capacity snapshot for shielding a Platform Payment account.
+///
+/// The figures are computed from the same lexicographic address ordering and
+/// fee-reserve rules used by [`PlatformWallet::shielded_shield_from_account`].
+/// No DAPI request, signing, proof construction, or broadcast is performed.
+#[cfg(feature = "shielded")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShieldedShieldPreflight {
+    /// Whether the account can shield at least one credit.
+    pub can_shield: bool,
+    /// Sum of all funded candidate addresses in the payment account.
+    pub account_balance_credits: Credits,
+    /// Sum of the usable suffix beginning at the first address whose balance
+    /// is strictly greater than [`SHIELDED_SHIELD_FEE_RESERVE_CREDITS`]. Later
+    /// addresses below the protocol version's minimum input amount are omitted.
+    pub usable_balance_credits: Credits,
+    /// Balance retained on input 0 for the transition fee.
+    pub fee_reserve_credits: Credits,
+    /// Maximum claim accepted by the shared selector:
+    /// `usable_balance_credits - fee_reserve_credits`, floored at zero.
+    pub max_shieldable_credits: Credits,
+    /// Human-readable explanation when [`can_shield`](Self::can_shield) is
+    /// false. Capacity exhaustion is a normal result, not a structural error.
+    pub reason: Option<String>,
+}
+
+#[cfg(feature = "shielded")]
+#[derive(Debug, Clone)]
+struct ShieldedShieldInputPlan {
+    preflight: ShieldedShieldPreflight,
+    usable_candidates: Vec<(PlatformAddress, Credits)>,
+    min_input_amount: Credits,
+}
+
+#[cfg(feature = "shielded")]
+impl ShieldedShieldInputPlan {
+    fn select_inputs(
+        &self,
+        amount: Credits,
+    ) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
+        if amount == 0 {
+            return Err(PlatformWalletError::ShieldedBuildError(
+                "amount must be > 0".to_string(),
+            ));
+        }
+
+        if amount > self.preflight.max_shieldable_credits {
+            let available = if self.usable_candidates.is_empty() {
+                self.preflight.account_balance_credits
+            } else {
+                self.preflight.usable_balance_credits
+            };
+            return Err(PlatformWalletError::ShieldedInsufficientBalance {
+                available,
+                required: amount.saturating_add(self.preflight.fee_reserve_credits),
+            });
+        }
+
+        let mut chosen = BTreeMap::new();
+        let mut accumulated_claim = 0u64;
+        for (index, (address, balance)) in self.usable_candidates.iter().enumerate() {
+            if accumulated_claim >= amount {
+                break;
+            }
+            let max_claim = if index == 0 {
+                balance.saturating_sub(self.preflight.fee_reserve_credits)
+            } else {
+                *balance
+            };
+            let remaining = amount - accumulated_claim;
+            let mut claim = max_claim.min(remaining);
+            // Input 0 receives the shield fee later, so even a tiny base claim
+            // clears the protocol minimum after `reserve_shield_fee_on_input_0`.
+            // Every later input has no such fee addition. If its final greedy
+            // residue is below the versioned minimum, request the minimum
+            // instead. Shield inputs are maximum contributions: their sum may
+            // exceed `amount`, and drive's reallocation leaves the excess on
+            // the source address rather than increasing the shielded output.
+            if index > 0 && claim > 0 && claim < self.min_input_amount {
+                claim = self.min_input_amount;
+            }
+            if claim > 0 {
+                chosen.insert(*address, claim);
+                accumulated_claim = accumulated_claim
+                    .checked_add(claim)
+                    .ok_or(PlatformWalletError::InputSumOverflow)?;
+            }
+        }
+
+        // `max_shieldable_credits` is derived from these exact candidates, so
+        // this is an invariant guard rather than a second capacity rule.
+        if accumulated_claim < amount {
+            return Err(PlatformWalletError::ShieldedInsufficientBalance {
+                available: accumulated_claim,
+                required: amount,
+            });
+        }
+
+        Ok(chosen)
+    }
+}
+
+#[cfg(feature = "shielded")]
+fn checked_credit_sum<'a>(
+    mut balances: impl Iterator<Item = &'a Credits>,
+) -> Result<Credits, PlatformWalletError> {
+    balances.try_fold(0u64, |sum, balance| {
+        sum.checked_add(*balance)
+            .ok_or(PlatformWalletError::InputSumOverflow)
+    })
+}
+
+/// Analyze funded Platform addresses once for both preflight and execution.
+#[cfg(feature = "shielded")]
+fn plan_shield_inputs(
+    mut candidates: Vec<(PlatformAddress, Credits)>,
+    min_input_amount: Credits,
+) -> Result<ShieldedShieldInputPlan, PlatformWalletError> {
+    candidates.sort_by_key(|(address, _)| *address);
+
+    let account_balance_credits =
+        checked_credit_sum(candidates.iter().map(|(_, balance)| balance))?;
+    let viable_input_0 = candidates
+        .iter()
+        .position(|(_, balance)| *balance > SHIELDED_SHIELD_FEE_RESERVE_CREDITS);
+    let usable_candidates = viable_input_0
+        .map(|index| {
+            let mut usable = Vec::with_capacity(candidates.len() - index);
+            // Keep the fee-bearing input 0 regardless of its post-reserve base
+            // capacity: the shield fee is added to its requested claim before
+            // structure validation. Later addresses get no fee addition, so a
+            // full balance below `min_input_amount` can never form a valid
+            // input and must not inflate preflight capacity.
+            usable.push(candidates[index]);
+            usable.extend(
+                candidates[index + 1..]
+                    .iter()
+                    .copied()
+                    .filter(|(_, balance)| *balance >= min_input_amount),
+            );
+            usable
+        })
+        .unwrap_or_default();
+    let usable_balance_credits =
+        checked_credit_sum(usable_candidates.iter().map(|(_, balance)| balance))?;
+    let max_shieldable_credits =
+        usable_balance_credits.saturating_sub(SHIELDED_SHIELD_FEE_RESERVE_CREDITS);
+    let can_shield = max_shieldable_credits > 0;
+    let reason = (!can_shield).then(|| {
+        format!(
+            "Platform payment account has {account_balance_credits} credits, but no address can retain the {}-credit shield fee reserve",
+            SHIELDED_SHIELD_FEE_RESERVE_CREDITS
+        )
+    });
+
+    Ok(ShieldedShieldInputPlan {
+        preflight: ShieldedShieldPreflight {
+            can_shield,
+            account_balance_credits,
+            usable_balance_credits,
+            fee_reserve_credits: SHIELDED_SHIELD_FEE_RESERVE_CREDITS,
+            max_shieldable_credits,
+            reason,
+        },
+        usable_candidates,
+        min_input_amount,
+    })
+}
+
 /// Consolidated mutable state for a platform wallet.
 ///
 /// Lives inside `WalletManager<PlatformWalletInfo>.wallet_infos`. The `Wallet`
@@ -1348,6 +1525,74 @@ impl PlatformWallet {
         Ok(identity_id)
     }
 
+    #[cfg(feature = "shielded")]
+    async fn shielded_shield_plan_for_account(
+        &self,
+        payment_account: u32,
+    ) -> Result<ShieldedShieldInputPlan, PlatformWalletError> {
+        let wallet_manager = self.wallet_manager.read().await;
+        let wallet_info = wallet_manager
+            .get_wallet_info(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let account = wallet_info
+            .core_wallet
+            .platform_payment_managed_account_at_index(payment_account)
+            .ok_or_else(|| {
+                PlatformWalletError::AddressOperation(format!(
+                    "no platform payment account at index {payment_account}"
+                ))
+            })?;
+
+        // Preserve the shield path's existing cached candidate set exactly.
+        // Sorting happens in `plan_shield_inputs`, after conversion, because
+        // the resulting PlatformAddress order is what the BTreeMap and network
+        // use to identify input 0.
+        let candidates = account
+            .addresses
+            .addresses
+            .values()
+            .filter_map(|address_info| {
+                let p2pkh =
+                    key_wallet::PlatformP2PKHAddress::from_address(&address_info.address).ok()?;
+                let balance = account.address_credit_balance(&p2pkh);
+                (balance > 0).then_some((PlatformAddress::P2pkh(p2pkh.to_bytes()), balance))
+            })
+            .collect();
+
+        let min_input_amount = self
+            .sdk
+            .version()
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_input_amount;
+        plan_shield_inputs(candidates, min_input_amount)
+    }
+
+    /// Return a cached capacity snapshot for shielding from one Platform
+    /// Payment account.
+    ///
+    /// This uses the exact planner later executed by
+    /// [`shielded_shield_from_account`](Self::shielded_shield_from_account):
+    /// Platform addresses are sorted lexicographically, the leading prefix
+    /// through the first address able to retain the shared fee reserve is
+    /// analyzed once, later addresses below the versioned minimum input amount
+    /// are omitted, and the maximum claim is reported from that usable suffix.
+    /// It performs no DAPI request, signing, proof construction, or broadcast.
+    /// A normal no-capacity state is returned with
+    /// `can_shield == false`; only missing wallet/account state or arithmetic
+    /// overflow is an error.
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_shield_preflight(
+        &self,
+        payment_account: u32,
+    ) -> Result<ShieldedShieldPreflight, PlatformWalletError> {
+        Ok(self
+            .shielded_shield_plan_for_account(payment_account)
+            .await?
+            .preflight)
+    }
+
     /// Shield credits from a Platform Payment account into the
     /// wallet's shielded pool, with the resulting note assigned
     /// to `shielded_account`'s default Orchard address.
@@ -1356,7 +1601,7 @@ impl PlatformWallet {
     /// account (different concept from `shielded_account` — this
     /// is the BIP-44-style funding account on the transparent
     /// side, not the ZIP-32 Orchard account). Auto-selects input
-    /// addresses from that account in ascending derivation-index
+    /// addresses from that account in lexicographic Platform-address
     /// order until the cumulative balance covers `amount` plus a
     /// conservative fee buffer (the on-chain fee comes off input
     /// 0 via `DeductFromInput(0)`; the buffer absorbs the
@@ -1385,12 +1630,8 @@ impl PlatformWallet {
         S: dpp::identity::signer::Signer<dpp::address_funds::PlatformAddress> + Send + Sync,
         P: dpp::shielded::builder::OrchardProver,
     {
-        // Reject zero amount at the boundary. With `amount == 0`
-        // the selection loop exits immediately (claim 0 >= 0) and
-        // the post-loop insufficient-balance check (`0 < 0`)
-        // doesn't fire, so an empty inputs map would otherwise
-        // flow into the ~30 s Halo 2 proof build and fail deep and
-        // opaquely. Non-Swift FFI hosts don't have the UI guard.
+        // Preserve the boundary behavior for non-Swift hosts and avoid taking
+        // the single-flight/account locks for a request that can never build.
         if amount == 0 {
             return Err(PlatformWalletError::ShieldedBuildError(
                 "amount must be > 0".to_string(),
@@ -1403,77 +1644,14 @@ impl PlatformWallet {
         // a ~30 s proof). Held across selection → build → broadcast.
         let _shield_guard = self.shield_guard.lock().await;
 
-        // The shield transition uses `DeductFromInput(0)` as its fee
-        // strategy. drive-abci interprets that as "after each input
-        // address has had its `claim` deducted, take the fee out of
-        // input 0's *remaining* balance" (see
-        // `deduct_fee_from_outputs_or_remaining_balance_of_inputs_v0`
-        // in rs-dpp). "Input 0" is the smallest-key entry of the
-        // BTreeMap we hand to the builder. Therefore:
-        //
-        //   * we must NOT claim each input's full balance — claiming
-        //     `balance` leaves `remaining = 0`, and the fee
-        //     deduction has nothing to bite into.
-        //   * we must reserve at least `FEE_RESERVE_CREDITS` of
-        //     unclaimed balance specifically on input 0 (the
-        //     BTreeMap-smallest address).
-        //
-        // The flat shielded fee `F = compute_minimum_shielded_fee(2)`
-        // on a Type 15 transition lands at ~1.23e8 credits (~0.0012
-        // DASH); `operations::shield` loads exactly `F` onto input 0's
-        // claim from this reserved headroom. Reserve 1e9 credits
-        // (0.01 DASH) — ~8× headroom over `F`, still trivial relative
-        // to typical balances.
-        const FEE_RESERVE_CREDITS: u64 = 1_000_000_000;
-
-        // Build the inputs map under the wallet-manager read lock,
-        // then drop the lock before re-entering shielded so the
-        // guards don't nest unnecessarily.
-        let inputs: std::collections::BTreeMap<
-            dpp::address_funds::PlatformAddress,
-            dpp::fee::Credits,
-        > = {
-            let wm = self.wallet_manager.read().await;
-            let info = wm
-                .get_wallet_info(&self.wallet_id)
-                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-            let account = info
-                .core_wallet
-                .platform_payment_managed_account_at_index(payment_account)
-                .ok_or_else(|| {
-                    PlatformWalletError::AddressOperation(format!(
-                        "no platform payment account at index {payment_account}"
-                    ))
-                })?;
-
-            // Collect (address, balance) for every funded address,
-            // sorted by address bytes — that determines BTreeMap
-            // key order downstream and therefore which input ends
-            // up at index 0.
-            let candidates: Vec<(dpp::address_funds::PlatformAddress, u64)> = account
-                .addresses
-                .addresses
-                .values()
-                .filter_map(|addr_info| {
-                    let p2pkh =
-                        key_wallet::PlatformP2PKHAddress::from_address(&addr_info.address).ok()?;
-                    let balance = account.address_credit_balance(&p2pkh);
-                    if balance == 0 {
-                        None
-                    } else {
-                        Some((
-                            dpp::address_funds::PlatformAddress::P2pkh(p2pkh.to_bytes()),
-                            balance,
-                        ))
-                    }
-                })
-                .collect();
-            // Selection rules live in `select_shield_inputs` (pure +
-            // unit-tested): sort by address, skip leading dust below the
-            // reserve, reserve fee headroom only on input 0, then claim
-            // in BTreeMap order up to `amount`.
-            select_shield_inputs(candidates, amount, FEE_RESERVE_CREDITS)?
-        };
+        // Planning and amount selection are shared with the cached preflight.
+        // The helper drops the wallet-manager read lock before the expensive
+        // proof path, while the single-flight guard keeps two shields from
+        // planning and broadcasting against the same address nonce.
+        let inputs = self
+            .shielded_shield_plan_for_account(payment_account)
+            .await?
+            .select_inputs(amount)?;
 
         // Clone the account's viewing keys and release the slot before
         // the proof: `shield` runs a Halo 2 proof plus a broadcast, and
@@ -1713,87 +1891,6 @@ impl DerefMut for WalletStateWriteGuard<'_> {
     }
 }
 
-/// Select shield (Type 15) inputs from funded `(address, balance)`
-/// candidates.
-///
-/// Pure and deterministic so the selection rules are unit-testable
-/// independent of the wallet manager — a future refactor can't silently
-/// reintroduce the old `viable_input_0` dust/fee-reserve bug without
-/// tripping a test. The rules:
-///   * sort by address bytes — this fixes which input lands at index 0,
-///     and the network deducts the transition fee from input 0
-///     (`DeductFromInput(0)`);
-///   * skip any leading address with balance `<= fee_reserve` — input 0
-///     must keep at least `fee_reserve` unclaimed for the fee step;
-///   * claim in BTreeMap order only up to `amount`, taking the reserve
-///     headroom off input 0 alone.
-///
-/// Errors with [`PlatformWalletError::ShieldedInsufficientBalance`] when
-/// no viable input 0 exists, when usable balance can't cover
-/// `amount + fee_reserve`, or when the walk can't accumulate `amount`.
-#[cfg(feature = "shielded")]
-fn select_shield_inputs(
-    mut candidates: Vec<(dpp::address_funds::PlatformAddress, u64)>,
-    amount: u64,
-    fee_reserve: u64,
-) -> Result<
-    std::collections::BTreeMap<dpp::address_funds::PlatformAddress, dpp::fee::Credits>,
-    PlatformWalletError,
-> {
-    candidates.sort_by_key(|(addr, _)| *addr);
-
-    let Some(viable_input_0) = candidates
-        .iter()
-        .position(|(_, balance)| *balance > fee_reserve)
-    else {
-        let total: u64 = candidates.iter().map(|(_, b)| b).sum();
-        return Err(PlatformWalletError::ShieldedInsufficientBalance {
-            available: total,
-            required: amount.saturating_add(fee_reserve),
-        });
-    };
-    let usable = &candidates[viable_input_0..];
-
-    let total_usable: u64 = usable.iter().map(|(_, b)| b).sum();
-    let needed = amount.saturating_add(fee_reserve);
-    if total_usable < needed {
-        return Err(PlatformWalletError::ShieldedInsufficientBalance {
-            available: total_usable,
-            required: needed,
-        });
-    }
-
-    let mut chosen: std::collections::BTreeMap<
-        dpp::address_funds::PlatformAddress,
-        dpp::fee::Credits,
-    > = std::collections::BTreeMap::new();
-    let mut accumulated_claim: u64 = 0;
-    for (i, (addr, balance)) in usable.iter().enumerate() {
-        if accumulated_claim >= amount {
-            break;
-        }
-        let max_claim = if i == 0 {
-            balance.saturating_sub(fee_reserve)
-        } else {
-            *balance
-        };
-        let still_need = amount - accumulated_claim;
-        let claim = max_claim.min(still_need);
-        if claim > 0 {
-            chosen.insert(*addr, claim);
-            accumulated_claim = accumulated_claim.saturating_add(claim);
-        }
-    }
-
-    if accumulated_claim < amount {
-        return Err(PlatformWalletError::ShieldedInsufficientBalance {
-            available: accumulated_claim,
-            required: amount,
-        });
-    }
-    Ok(chosen)
-}
-
 /// Verify a bech32m recipient's network class matches `network` before decoding.
 ///
 /// The address decoder is network-agnostic (`tdash` is shared by
@@ -1929,11 +2026,26 @@ mod check_recipient_hrp_tests {
 mod shield_input_selection_tests {
     use super::*;
     use dpp::address_funds::PlatformAddress;
+    use dpp::version::LATEST_PLATFORM_VERSION;
 
-    const RESERVE: u64 = 1_000_000_000;
+    const RESERVE: u64 = SHIELDED_SHIELD_FEE_RESERVE_CREDITS;
 
     fn addr(b: u8) -> PlatformAddress {
         PlatformAddress::P2pkh([b; 20])
+    }
+
+    fn min_input_amount() -> Credits {
+        LATEST_PLATFORM_VERSION
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_input_amount
+    }
+
+    fn plan(
+        candidates: Vec<(PlatformAddress, Credits)>,
+    ) -> Result<ShieldedShieldInputPlan, PlatformWalletError> {
+        plan_shield_inputs(candidates, min_input_amount())
     }
 
     #[test]
@@ -1941,7 +2053,8 @@ mod shield_input_selection_tests {
         // addr(1) sorts first but is dust (== reserve, not > reserve);
         // addr(2) must become input 0.
         let candidates = vec![(addr(1), RESERVE), (addr(2), 5 * RESERVE)];
-        let chosen = select_shield_inputs(candidates, 2 * RESERVE, RESERVE).unwrap();
+        let plan = plan(candidates).unwrap();
+        let chosen = plan.select_inputs(2 * RESERVE).unwrap();
         assert!(
             !chosen.contains_key(&addr(1)),
             "dust leading address must be skipped"
@@ -1954,7 +2067,20 @@ mod shield_input_selection_tests {
         // Strict `> reserve`: a sole address holding exactly the reserve
         // cannot be input 0.
         let candidates = vec![(addr(1), RESERVE)];
-        let err = select_shield_inputs(candidates, 1, RESERVE).unwrap_err();
+        let plan = plan(candidates).unwrap();
+        assert_eq!(
+            plan.preflight,
+            ShieldedShieldPreflight {
+                can_shield: false,
+                account_balance_credits: RESERVE,
+                usable_balance_credits: 0,
+                fee_reserve_credits: RESERVE,
+                max_shieldable_credits: 0,
+                reason: plan.preflight.reason.clone(),
+            }
+        );
+        assert!(plan.preflight.reason.is_some());
+        let err = plan.select_inputs(1).unwrap_err();
         assert!(matches!(
             err,
             PlatformWalletError::ShieldedInsufficientBalance { available, required }
@@ -1968,7 +2094,9 @@ mod shield_input_selection_tests {
         // amount, leaving the full reserve for DeductFromInput(0).
         let amount = 3 * RESERVE;
         let candidates = vec![(addr(1), amount + RESERVE)];
-        let chosen = select_shield_inputs(candidates, amount, RESERVE).unwrap();
+        let plan = plan(candidates).unwrap();
+        assert_eq!(plan.preflight.max_shieldable_credits, amount);
+        let chosen = plan.select_inputs(amount).unwrap();
         assert_eq!(chosen.len(), 1);
         assert_eq!(chosen.get(&addr(1)), Some(&amount));
     }
@@ -1979,7 +2107,8 @@ mod shield_input_selection_tests {
         // input 0 (addr 1) holds 2*reserve → contributes reserve after
         // its headroom; addr 2 covers the rest.
         let candidates = vec![(addr(1), 2 * RESERVE), (addr(2), 5 * RESERVE)];
-        let chosen = select_shield_inputs(candidates, amount, RESERVE).unwrap();
+        let plan = plan(candidates).unwrap();
+        let chosen = plan.select_inputs(amount).unwrap();
         assert_eq!(chosen.get(&addr(1)), Some(&RESERVE));
         assert_eq!(chosen.get(&addr(2)), Some(&(4 * RESERVE)));
         assert_eq!(chosen.values().sum::<u64>(), amount);
@@ -1989,10 +2118,119 @@ mod shield_input_selection_tests {
     fn insufficient_usable_balance_errors() {
         // Needs amount + reserve = 5*reserve, only 2*reserve available.
         let candidates = vec![(addr(1), 2 * RESERVE)];
-        let err = select_shield_inputs(candidates, 4 * RESERVE, RESERVE).unwrap_err();
+        let plan = plan(candidates).unwrap();
+        let err = plan.select_inputs(4 * RESERVE).unwrap_err();
         assert!(matches!(
             err,
             PlatformWalletError::ShieldedInsufficientBalance { .. }
         ));
+    }
+
+    #[test]
+    fn regression_reports_max_from_usable_suffix_not_total_account_balance() {
+        let candidates = vec![
+            (addr(1), 297_264_780),
+            (addr(2), 2_000_000_000),
+            (addr(3), 1_623_849_220),
+        ];
+        let plan = plan(candidates).unwrap();
+
+        assert_eq!(plan.preflight.account_balance_credits, 3_921_114_000);
+        assert_eq!(plan.preflight.usable_balance_credits, 3_623_849_220);
+        assert_eq!(plan.preflight.fee_reserve_credits, RESERVE);
+        assert_eq!(plan.preflight.max_shieldable_credits, 2_623_849_220);
+        assert!(plan.preflight.can_shield);
+        assert_eq!(plan.preflight.reason, None);
+
+        let chosen = plan.select_inputs(2_623_849_220).unwrap();
+        assert!(!chosen.contains_key(&addr(1)));
+        assert_eq!(chosen.values().sum::<u64>(), 2_623_849_220);
+
+        let err = plan.select_inputs(2_623_849_221).unwrap_err();
+        assert!(matches!(
+            err,
+            PlatformWalletError::ShieldedInsufficientBalance { available, required }
+                if available == 3_623_849_220 && required == 3_623_849_221
+        ));
+    }
+
+    #[test]
+    fn no_viable_address_is_a_normal_zero_capacity_preflight() {
+        let plan = plan(vec![(addr(2), 400_000_000), (addr(1), RESERVE)]).unwrap();
+
+        assert!(!plan.preflight.can_shield);
+        assert_eq!(plan.preflight.account_balance_credits, 1_400_000_000);
+        assert_eq!(plan.preflight.usable_balance_credits, 0);
+        assert_eq!(plan.preflight.max_shieldable_credits, 0);
+        assert!(plan
+            .preflight
+            .reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("Platform payment account")));
+    }
+
+    #[test]
+    fn planner_sorts_lexicographically_and_reserves_only_on_input_zero() {
+        let plan = plan(vec![
+            (addr(3), 2 * RESERVE),
+            (addr(1), 200_000_000),
+            (addr(2), 2 * RESERVE),
+        ])
+        .unwrap();
+
+        assert_eq!(plan.preflight.account_balance_credits, 4_200_000_000);
+        assert_eq!(plan.preflight.usable_balance_credits, 4_000_000_000);
+        assert_eq!(plan.preflight.max_shieldable_credits, 3_000_000_000);
+        let chosen = plan.select_inputs(2 * RESERVE).unwrap();
+        assert_eq!(chosen.get(&addr(2)), Some(&RESERVE));
+        assert_eq!(chosen.get(&addr(3)), Some(&RESERVE));
+        assert!(!chosen.contains_key(&addr(1)));
+    }
+
+    #[test]
+    fn planner_rejects_credit_sum_overflow() {
+        let err = plan(vec![(addr(1), u64::MAX), (addr(2), 1)]).unwrap_err();
+        assert!(matches!(err, PlatformWalletError::InputSumOverflow));
+    }
+
+    #[test]
+    fn excludes_later_address_below_versioned_minimum_from_max() {
+        let dust = min_input_amount() - 1;
+        let plan = plan(vec![(addr(1), 2 * RESERVE), (addr(2), dust)]).unwrap();
+
+        assert_eq!(plan.preflight.account_balance_credits, 2 * RESERVE + dust);
+        assert_eq!(plan.preflight.usable_balance_credits, 2 * RESERVE);
+        assert_eq!(plan.preflight.max_shieldable_credits, RESERVE);
+        let chosen = plan.select_inputs(RESERVE).unwrap();
+        assert_eq!(chosen.len(), 1);
+        assert_eq!(chosen.get(&addr(1)), Some(&RESERVE));
+        assert!(!chosen.contains_key(&addr(2)));
+
+        let err = plan.select_inputs(RESERVE + 1).unwrap_err();
+        assert!(matches!(
+            err,
+            PlatformWalletError::ShieldedInsufficientBalance { available, required }
+                if available == 2 * RESERVE && required == 2 * RESERVE + 1
+        ));
+    }
+
+    #[test]
+    fn lifts_non_first_greedy_tail_to_versioned_minimum() {
+        let minimum = min_input_amount();
+        let plan = plan(vec![
+            (addr(1), 2 * RESERVE),
+            (addr(2), minimum.saturating_mul(2)),
+        ])
+        .unwrap();
+
+        let amount = RESERVE + 1;
+        let chosen = plan.select_inputs(amount).unwrap();
+        assert_eq!(chosen.get(&addr(1)), Some(&RESERVE));
+        assert_eq!(chosen.get(&addr(2)), Some(&minimum));
+        assert_eq!(chosen.values().sum::<u64>(), amount + minimum - 1);
+        assert!(chosen
+            .iter()
+            .skip(1)
+            .all(|(_, requested)| *requested >= minimum));
     }
 }

@@ -60,6 +60,7 @@ use crate::error::*;
 use crate::handle::*;
 use crate::identity_registration_with_signer::{decode_identity_pubkeys, IdentityPubkeyFFI};
 use crate::runtime::{block_on_worker, runtime};
+use crate::shielded_types::ShieldedShieldPreflightFFI;
 
 /// A serialized `PlatformAddress` is exactly 21 bytes (1-byte variant tag + 20-byte hash).
 const PLATFORM_ADDRESS_LEN: usize = 21;
@@ -595,6 +596,18 @@ fn map_spend_result(
             PlatformWalletFFIResultCode::ErrorAddressNonceMismatch,
             format!("{operation} failed: {e}"),
         ),
+        // The cached Platform Payment-account suffix no longer covers the
+        // requested claim plus input-0's fee reserve. Keep this distinct from
+        // generic wallet-operation failures so hosts can refresh preflight and
+        // re-confirm a smaller amount instead of retrying unchanged.
+        Err(e @ PlatformWalletError::ShieldedInsufficientBalance { .. })
+            if operation == "shielded shield" =>
+        {
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance,
+                format!("{operation} failed: {e}"),
+            )
+        }
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("{operation} failed: {e}"),
@@ -809,6 +822,62 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
     }
 }
 
+/// Preflight the maximum credits the cached state can shield from one Platform
+/// Payment account.
+///
+/// Uses the exact same Rust planner as
+/// [`platform_wallet_manager_shielded_shield`]: candidates are ordered by
+/// lexicographic `PlatformAddress`, the leading prefix before the first address
+/// whose balance is strictly greater than the shared fee reserve is excluded,
+/// later addresses below the protocol version's minimum input amount are
+/// omitted, and the reserve is retained only on input 0. No DAPI request,
+/// signing, proof construction, or broadcast is performed.
+///
+/// A normal no-capacity result writes all numeric fields (including the total
+/// account balance and zero usable/max capacity), returns `Success`, and carries
+/// an advisory reason in the result message. Bad handles, missing wallets or
+/// accounts, and arithmetic overflow remain FFI errors with `out` untouched.
+///
+/// # Safety
+/// - `wallet_id_bytes` must point to 32 readable bytes.
+/// - `out` must point to a writable `ShieldedShieldPreflightFFI`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_shield_preflight(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    payment_account: u32,
+    out: *mut ShieldedShieldPreflightFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(out);
+
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+    let wallet = match resolve_wallet(handle, &wallet_id) {
+        Ok(wallet) => wallet,
+        Err(result) => return result,
+    };
+
+    let result =
+        block_on_worker(async move { wallet.shielded_shield_preflight(payment_account).await });
+    match result {
+        Ok(preflight) => {
+            *out = ShieldedShieldPreflightFFI {
+                can_shield: preflight.can_shield,
+                account_balance_credits: preflight.account_balance_credits,
+                usable_balance_credits: preflight.usable_balance_credits,
+                fee_reserve_credits: preflight.fee_reserve_credits,
+                max_shieldable_credits: preflight.max_shieldable_credits,
+            };
+            match preflight.reason {
+                Some(reason) => PlatformWalletFFIResult::success_with_message(reason),
+                None => PlatformWalletFFIResult::ok(),
+            }
+        }
+        Err(error) => error.into(),
+    }
+}
+
 /// Shield: spend credits from a Platform Payment account into
 /// the bound shielded sub-wallet's pool.
 ///
@@ -816,7 +885,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
 /// the bound shielded sub-wallet receives the new note.
 /// `payment_account` selects which Platform Payment account on
 /// the transparent side funds the shield (auto-selects input
-/// addresses in ascending derivation order until the cumulative
+/// addresses in lexicographic Platform-address order until the cumulative
 /// balance covers `amount + fee buffer`).
 ///
 /// `signer_address_handle` is a `*mut SignerHandle` produced by
@@ -1434,6 +1503,31 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_seed_pool_notes(
     }
 }
 
+/// Resolve a wallet without requiring shielded coordinator configuration.
+///
+/// Cached capacity preflight needs only the wallet's Platform Payment account;
+/// requiring a bound/configured shielded coordinator here would turn an
+/// otherwise valid balance query into a structural setup error.
+fn resolve_wallet(
+    handle: Handle,
+    wallet_id: &[u8; 32],
+) -> Result<std::sync::Arc<platform_wallet::PlatformWallet>, PlatformWalletFFIResult> {
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(manager.get_wallet(wallet_id))
+    });
+    match option {
+        Some(Some(wallet)) => Ok(wallet),
+        Some(None) => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("wallet not found: {}", hex::encode(wallet_id)),
+        )),
+        None => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+            format!("invalid manager handle: {handle}"),
+        )),
+    }
+}
+
 /// Resolve both the wallet `Arc` and the network-scoped shielded
 /// coordinator `Arc` for the given manager handle. Shielded
 /// spend operations need the coordinator's shared store, so this
@@ -1575,6 +1669,31 @@ mod tests {
         }
     }
 
+    #[test]
+    fn shield_preflight_rejects_null_abi_pointers() {
+        unsafe {
+            let mut out = ShieldedShieldPreflightFFI::default();
+            let missing_wallet_id =
+                platform_wallet_manager_shielded_shield_preflight(0, std::ptr::null(), 0, &mut out);
+            assert_eq!(
+                missing_wallet_id.code,
+                PlatformWalletFFIResultCode::ErrorNullPointer
+            );
+
+            let wallet_id = [0u8; 32];
+            let missing_out = platform_wallet_manager_shielded_shield_preflight(
+                0,
+                wallet_id.as_ptr(),
+                0,
+                std::ptr::null_mut(),
+            );
+            assert_eq!(
+                missing_out.code,
+                PlatformWalletFFIResultCode::ErrorNullPointer
+            );
+        }
+    }
+
     /// Read the Rust-owned message out of an FFI result for assertions.
     fn message_of(result: &PlatformWalletFFIResult) -> String {
         assert!(
@@ -1684,6 +1803,39 @@ mod tests {
         assert!(
             msg.contains("Platform expected 2"),
             "expected nonce must render exactly: {msg}"
+        );
+    }
+
+    #[test]
+    fn map_spend_result_maps_shield_capacity_race_to_dedicated_code() {
+        let shield_result = map_spend_result(
+            Err(PlatformWalletError::ShieldedInsufficientBalance {
+                available: 3_623_849_220,
+                required: 3_623_849_221,
+            }),
+            "shielded shield",
+        );
+
+        assert_eq!(
+            shield_result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance
+        );
+        let message = message_of(&shield_result);
+        assert!(message.contains("available 3623849220"));
+        assert!(message.contains("required 3623849221"));
+
+        let transfer_result = map_spend_result(
+            Err(PlatformWalletError::ShieldedInsufficientBalance {
+                available: 3_623_849_220,
+                required: 3_623_849_221,
+            }),
+            "shielded transfer",
+        );
+
+        assert_eq!(
+            transfer_result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            "the dedicated code is a Platform-to-shielded contract only"
         );
     }
 }

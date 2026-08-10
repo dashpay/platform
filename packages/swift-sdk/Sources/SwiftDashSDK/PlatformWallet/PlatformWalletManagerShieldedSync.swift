@@ -579,10 +579,88 @@ extension PlatformWalletManager {
         }.value
     }
 
+    /// Cached Platform-to-shielded capacity for one payment account.
+    ///
+    /// All values come from the same Rust planner used by `shieldedShield`.
+    /// `reason` is non-nil only for a normal zero-capacity result; bad handles,
+    /// wallet IDs, and missing payment accounts throw instead.
+    public struct ShieldedShieldPreflight: Sendable {
+        public let canShield: Bool
+        public let accountBalanceCredits: UInt64
+        public let usableBalanceCredits: UInt64
+        public let feeReserveCredits: UInt64
+        public let maxShieldableCredits: UInt64
+        public let reason: String?
+    }
+
+    /// Return the cached amount a Platform Payment account can currently
+    /// shield without signing, proving, broadcasting, or querying DAPI.
+    ///
+    /// Rust sorts funded addresses lexicographically, excludes the leading
+    /// prefix before the first address that can retain the fee reserve, and
+    /// omits later addresses below the protocol version's minimum input amount
+    /// before reporting suffix capacity. A fragmented/no-capacity account
+    /// returns `canShield == false` with meaningful numeric fields and a
+    /// reason; it is not thrown as an error.
+    public func shieldedShieldPreflight(
+        walletId: Data,
+        paymentAccount: UInt32 = 0
+    ) async throws -> ShieldedShieldPreflight {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) {
+            () -> ShieldedShieldPreflight in
+            var out = ShieldedShieldPreflightFFI(
+                can_shield: false,
+                account_balance_credits: 0,
+                usable_balance_credits: 0,
+                fee_reserve_credits: 0,
+                max_shieldable_credits: 0
+            )
+            let result = try walletId.withUnsafeBytes { walletIdRaw in
+                guard let walletIdPointer = walletIdRaw.baseAddress?
+                    .assumingMemoryBound(to: UInt8.self)
+                else {
+                    throw PlatformWalletError.invalidParameter(
+                        "walletId baseAddress is nil"
+                    )
+                }
+                return PlatformWalletResult(
+                    platform_wallet_manager_shielded_shield_preflight(
+                        handle,
+                        walletIdPointer,
+                        paymentAccount,
+                        &out
+                    )
+                )
+            }
+            try result.throwIfError()
+            let reason = out.can_shield ? nil : result.message
+            return ShieldedShieldPreflight(
+                canShield: out.can_shield,
+                accountBalanceCredits: out.account_balance_credits,
+                usableBalanceCredits: out.usable_balance_credits,
+                feeReserveCredits: out.fee_reserve_credits,
+                maxShieldableCredits: out.max_shieldable_credits,
+                reason: reason
+            )
+        }.value
+    }
+
     /// Platform → Shielded. Spends credits from a Platform Payment
     /// account on `walletId` into the bound shielded sub-wallet's
     /// pool. Inputs are auto-selected from the account's addresses
-    /// in ascending derivation order until they cover `amount` plus
+    /// in lexicographic Platform-address order until they cover `amount` plus
     /// a conservative on-chain fee buffer; the actual fee is
     /// deducted from input 0 by the network via the shield
     /// transition's fee strategy.

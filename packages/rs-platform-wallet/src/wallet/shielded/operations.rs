@@ -121,6 +121,23 @@ fn address_not_enough_funds(
     }
 }
 
+/// Promote the shield pre-broadcast hard balance check into the typed capacity
+/// error the FFI and Swift layers recognize.
+///
+/// The values are Platform's live per-input view, not the cached planner
+/// snapshot. Their `Display` rendering therefore preserves the actionable
+/// available/required diagnostic while the typed variant lets the host refresh
+/// preflight instead of retrying the stale amount unchanged.
+fn map_shield_input_fetch_error(e: &dash_sdk::Error) -> PlatformWalletError {
+    match address_not_enough_funds(e) {
+        Some(short) => PlatformWalletError::ShieldedInsufficientBalance {
+            available: short.balance(),
+            required: short.required_balance(),
+        },
+        None => PlatformWalletError::ShieldedBuildError(format!("fetch input nonces: {e}")),
+    }
+}
+
 /// Format a one-line `addresses_with_info` summary for diagnostics —
 /// each entry rendered as `<bech32m_addr>=(nonce <n>, <c> credits)`,
 /// matching what the wallet UI shows.
@@ -443,23 +460,9 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
     // nonce — bail loudly here instead).
     use dash_sdk::platform::transition::fetch_inputs_with_nonce;
 
-    let fetched = fetch_inputs_with_nonce(sdk, &inputs).await.map_err(|e| {
-        // The hard balance check is the common pre-broadcast failure;
-        // surface its structured (address, balance, required) info as a
-        // diagnostic string rather than the opaque `{e}` form, matching
-        // the richness of the broadcast-side handler below. The FFI
-        // shape is unchanged (the host still receives a string body).
-        if let Some(short) = address_not_enough_funds(&e) {
-            PlatformWalletError::ShieldedBuildError(format!(
-                "shield input {} has insufficient balance: requires {} credits, has {}",
-                short.address().to_bech32m_string(sdk.network),
-                short.required_balance(),
-                short.balance(),
-            ))
-        } else {
-            PlatformWalletError::ShieldedBuildError(format!("fetch input nonces: {e}"))
-        }
-    })?;
+    let fetched = fetch_inputs_with_nonce(sdk, &inputs)
+        .await
+        .map_err(|error| map_shield_input_fetch_error(&error))?;
 
     let mut inputs_with_nonce: BTreeMap<PlatformAddress, (u32, Credits)> = BTreeMap::new();
     for (addr, (nonce, credits)) in fetched {
@@ -2879,6 +2882,32 @@ mod classify_spend_wait_failure_tests {
             }
             other => panic!("expected AddressNonceMismatch, got {other:?}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod shield_input_fetch_error_tests {
+    use super::*;
+    use dpp::consensus::state::address_funds::AddressNotEnoughFundsError;
+
+    #[test]
+    fn live_address_shortfall_maps_to_typed_shield_capacity_error() {
+        let sdk_error = dash_sdk::Error::from(AddressNotEnoughFundsError::new(
+            PlatformAddress::P2pkh([7; 20]),
+            3_623_849_220,
+            3_623_849_221,
+        ));
+
+        let mapped = map_shield_input_fetch_error(&sdk_error);
+        assert!(matches!(
+            &mapped,
+            PlatformWalletError::ShieldedInsufficientBalance { available, required }
+                if *available == 3_623_849_220 && *required == 3_623_849_221
+        ));
+        assert_eq!(
+            mapped.to_string(),
+            "Insufficient shielded balance: available 3623849220, required 3623849221"
+        );
     }
 }
 

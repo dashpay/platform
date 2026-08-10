@@ -359,6 +359,14 @@ pub enum PlatformWalletFFIResultCode {
     /// `PlatformWalletError.contestedNameNotTradable`.
     ErrorContestedNameNotTradable = 40,
 
+    /// Maps `PlatformWalletError::ShieldedInsufficientBalance`. A shield's
+    /// selected Platform-address suffix cannot cover the requested claim plus
+    /// the fee reserve retained on input 0. The transition was not built or
+    /// broadcast; refresh preflight capacity and ask the user to confirm the
+    /// new amount. Despite the historical Rust variant name, this is a
+    /// Platform Payment-account shortfall, not a shielded-pool shortfall.
+    ErrorShieldedInsufficientBalance = 41,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -545,6 +553,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             | PlatformWalletError::OnlyDustInputs { .. } => {
                 PlatformWalletFFIResultCode::ErrorNoSelectableInputs
             }
+            PlatformWalletError::InputSumOverflow => {
+                PlatformWalletFFIResultCode::ErrorArithmeticOverflow
+            }
             PlatformWalletError::WalletAlreadyExists(..) => {
                 PlatformWalletFFIResultCode::ErrorWalletAlreadyExists
             }
@@ -569,6 +580,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::ShieldedNoRecordedAnchor(..) => {
                 PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor
+            }
+            PlatformWalletError::ShieldedInsufficientBalance { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance
             }
             // The core-transaction sibling of the shielded pair above: the
             // do-not-retry signal must survive the boundary as a typed code
@@ -1156,6 +1170,25 @@ mod tests {
         assert_eq!(msg, rendered, "Display payload must survive verbatim");
     }
 
+    #[test]
+    fn shielded_insufficient_balance_maps_to_dedicated_code() {
+        let error = PlatformWalletError::ShieldedInsufficientBalance {
+            available: 3_623_849_220,
+            required: 3_623_849_221,
+        };
+        let rendered = error.to_string();
+        let result: PlatformWalletFFIResult = error.into();
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance
+        );
+        let message = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(message, rendered);
+    }
+
     /// The ambiguous core-broadcast outcome keeps its typed code across the
     /// boundary — flattening it to `ErrorUnknown` would erase the
     /// do-not-retry signal the variant exists to carry.
@@ -1526,6 +1559,14 @@ mod tests {
         assert_eq!(
             PlatformWalletFFIResultCode::ErrorContestedNameNotTradable as i32,
             40
+        );
+    }
+
+    #[test]
+    fn shielded_insufficient_balance_code_is_pinned_at_41() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance as i32,
+            41
         );
     }
 
