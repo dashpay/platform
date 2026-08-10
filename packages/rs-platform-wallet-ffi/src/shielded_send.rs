@@ -613,6 +613,22 @@ fn map_spend_result(
     }
 }
 
+/// Preserve the idempotent "already consumed" recovery result across the
+/// FFI boundary while keeping every other resume failure on the existing
+/// generic error path.
+fn map_asset_lock_resume_result(
+    result: Result<(), PlatformWalletError>,
+) -> PlatformWalletFFIResult {
+    match result {
+        Ok(()) => PlatformWalletFFIResult::ok(),
+        Err(e @ PlatformWalletError::AssetLockAlreadyConsumed(_)) => e.into(),
+        Err(e) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("shielded resume fund-from-asset-lock failed: {e}"),
+        ),
+    }
+}
+
 /// IdentityCreateFromShieldedPool (Type 20): spend `account`'s shielded notes to fund a brand-new
 /// Platform identity.
 ///
@@ -1360,13 +1376,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
             )
             .await
     });
-    if let Err(e) = result {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("shielded resume fund-from-asset-lock failed: {e}"),
-        );
-    }
-    PlatformWalletFFIResult::ok()
+    map_asset_lock_resume_result(result)
 }
 
 /// Seed the shielded pool's anonymity set up to `target_total_notes` by
@@ -1843,6 +1853,33 @@ mod tests {
             transfer_result.code,
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             "the dedicated code is a Platform-to-shielded contract only"
+        );
+    }
+
+    #[test]
+    fn map_asset_lock_resume_result_preserves_already_consumed_code_only() {
+        let out_point = dashcore::OutPoint {
+            txid: dashcore::Txid::all_zeros(),
+            vout: 7,
+        };
+        let result = map_asset_lock_resume_result(Err(
+            PlatformWalletError::AssetLockAlreadyConsumed(out_point),
+        ));
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed
+        );
+
+        let unrelated =
+            map_asset_lock_resume_result(Err(PlatformWalletError::ShieldedNoUnspentNotes));
+        assert_eq!(
+            unrelated.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+
+        assert_eq!(
+            map_asset_lock_resume_result(Ok(())).code,
+            PlatformWalletFFIResultCode::Success
         );
     }
 }

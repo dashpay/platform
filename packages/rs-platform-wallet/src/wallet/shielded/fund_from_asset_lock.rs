@@ -39,7 +39,7 @@ use crate::wallet::asset_lock::tracked::TrackedAssetLock;
 
 use std::time::Duration;
 
-use crate::error::is_instant_lock_proof_invalid;
+use crate::error::{is_asset_lock_already_consumed, is_instant_lock_proof_invalid};
 use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, submit_with_cl_height_retry, AssetLockFunding, FundingResolution,
     ResolvedFunding,
@@ -376,65 +376,85 @@ impl PlatformWallet {
         // bundle, so only the landed attempt's actions are the ones a
         // later scan will recover; `build_and_broadcast_shielded` returns
         // them on success.
-        let landed_actions: Vec<dpp::shielded::SerializedAction> =
-            match submit_with_cl_height_retry(settings, |s| {
-                build_and_broadcast_shielded(
-                    sdk.clone(),
-                    recipient,
-                    shield_amount,
-                    proof.clone(),
-                    path.clone(),
-                    asset_lock_signer,
-                    &prover,
-                    sender_ovk.clone(),
-                    surplus_output,
-                    dummy_outputs,
-                    s,
-                )
-            })
-            .await
-            {
-                Ok(actions) => actions,
-                Err(e) if is_instant_lock_proof_invalid(&e) => {
-                    let out_point = proof_out_point;
-                    tracing::warn!(
-                        "IS-lock proof rejected by Platform for shielded fund-from-asset-lock \
+        let submit_result = match submit_with_cl_height_retry(settings, |s| {
+            build_and_broadcast_shielded(
+                sdk.clone(),
+                recipient,
+                shield_amount,
+                proof.clone(),
+                path.clone(),
+                asset_lock_signer,
+                &prover,
+                sender_ovk.clone(),
+                surplus_output,
+                dummy_outputs,
+                s,
+            )
+        })
+        .await
+        {
+            Ok(actions) => Ok(actions),
+            Err(e) if is_instant_lock_proof_invalid(&e) => {
+                let out_point = proof_out_point;
+                tracing::warn!(
+                    "IS-lock proof rejected by Platform for shielded fund-from-asset-lock \
                      (tx {}), retrying with ChainLock proof",
-                        out_point.txid
-                    );
-                    let chain_proof = self
-                        .asset_locks
-                        .upgrade_to_chain_lock_proof(&out_point, cl_wait)
-                        .await?;
-                    let cs = self
-                        .asset_locks
-                        .advance_asset_lock_status(
-                            &out_point,
-                            crate::wallet::asset_lock::tracked::AssetLockStatus::ChainLocked,
-                            Some(chain_proof.clone()),
-                        )
-                        .await?;
-                    self.asset_locks.queue_asset_lock_changeset(cs);
-                    submit_with_cl_height_retry(settings, |s| {
-                        build_and_broadcast_shielded(
-                            sdk.clone(),
-                            recipient,
-                            shield_amount,
-                            chain_proof.clone(),
-                            path.clone(),
-                            asset_lock_signer,
-                            &prover,
-                            sender_ovk.clone(),
-                            surplus_output,
-                            dummy_outputs,
-                            s,
-                        )
-                    })
-                    .await
-                    .map_err(PlatformWalletError::Sdk)?
-                }
-                Err(e) => return Err(PlatformWalletError::Sdk(e)),
-            };
+                    out_point.txid
+                );
+                let chain_proof = self
+                    .asset_locks
+                    .upgrade_to_chain_lock_proof(&out_point, cl_wait)
+                    .await?;
+                let cs = self
+                    .asset_locks
+                    .advance_asset_lock_status(
+                        &out_point,
+                        crate::wallet::asset_lock::tracked::AssetLockStatus::ChainLocked,
+                        Some(chain_proof.clone()),
+                    )
+                    .await?;
+                self.asset_locks.queue_asset_lock_changeset(cs);
+                submit_with_cl_height_retry(settings, |s| {
+                    build_and_broadcast_shielded(
+                        sdk.clone(),
+                        recipient,
+                        shield_amount,
+                        chain_proof.clone(),
+                        path.clone(),
+                        asset_lock_signer,
+                        &prover,
+                        sender_ovk.clone(),
+                        surplus_output,
+                        dummy_outputs,
+                        s,
+                    )
+                })
+                .await
+            }
+            Err(e) => Err(e),
+        };
+
+        let landed_actions: Vec<dpp::shielded::SerializedAction> = match submit_result {
+            Ok(actions) => actions,
+            Err(e) if is_asset_lock_already_consumed(&e, &proof_out_point) => {
+                // The exact outpoint was accepted by an earlier attempt, but
+                // that attempt did not reach the local cleanup below. Close
+                // the lifecycle now so persistence and recovery UIs stop
+                // advertising an impossible retry, then preserve the typed
+                // already-consumed outcome across FFI for idempotent hosts.
+                self.asset_locks
+                    .consume_asset_lock(&proof_out_point)
+                    .await?;
+                tracing::info!(
+                    outpoint = %proof_out_point,
+                    "reconciled already-consumed shielded asset lock"
+                );
+                return Err(PlatformWalletError::AssetLockAlreadyConsumed(
+                    proof_out_point,
+                ));
+            }
+            Err(e) => return Err(PlatformWalletError::Sdk(e)),
+        };
 
         // Record a live `ShieldFromAssetLock` activity entry over the
         // landed bundle. One entry per call (= one per seed-pool batch),
