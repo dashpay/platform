@@ -8,6 +8,7 @@ mod load;
 pub mod platform_address_sync;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
+pub mod startup;
 mod wallet_lifecycle;
 
 use std::sync::Arc;
