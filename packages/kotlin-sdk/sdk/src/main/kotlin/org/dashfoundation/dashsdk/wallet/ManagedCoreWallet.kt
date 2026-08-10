@@ -42,11 +42,12 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
      * release. Recover by rebuilding the transaction, which can reselect the
      * freed inputs immediately.
      */
-    fun broadcastTransaction(tx: FinalizedCoreTransaction): String =
+    fun broadcastTransaction(tx: FinalizedCoreTransaction): String = mapNativeErrors {
         WalletManagerNative.coreWalletBroadcastSignedTransaction(
             handle,
             tx.takeForBroadcast(),
         )
+    }
 
     /**
      * Consume a finalized transaction without sending. With the build's owner
