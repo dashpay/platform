@@ -481,11 +481,13 @@ pub struct UtxoRestoreEntryFFI {
 /// not yet observed IS-lock or block confirmation).
 #[repr(C)]
 pub struct UnresolvedAssetLockTxRecordFFI {
-    /// BIP44 account index the funding tx spent UTXOs from — the
-    /// same `account_index` the Rust `TrackedAssetLock` carries.
-    /// Routes the record into the matching
-    /// `standard_bip44_accounts[account_index].transactions_mut()`
-    /// bucket at load time.
+    /// Family-independent source index the funding tx spent UTXOs
+    /// from — the same `account_index` the Rust `TrackedAssetLock`
+    /// carries. A pooled lock can be funded from BIP44, BIP32 or
+    /// DashPay receiving accounts, so load-time routing tries the
+    /// standard families at this index first and falls back to a
+    /// receival account (searched by txid, index-independent) —
+    /// see `restore_unresolved_asset_lock_tx_records`.
     pub account_index: u32,
     /// Consensus-encoded asset-lock transaction body. Same wire
     /// format `dashcore::consensus::encode::serialize` produces, so

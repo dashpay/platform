@@ -170,9 +170,12 @@ const MIN_TOP_UP_DUFFS: u64 = 50_500;
 /// with [`AssetLockFunding::FromWalletBalance`] — the same L2 orchestrator
 /// (funding resolution, IS→CL fallback, asset-lock cleanup) that
 /// [`platform_wallet_register_identity_with_funding_signer`] drives for
-/// registration. `account_index` selects which BIP44 *standard* account
-/// the asset-lock UTXOs are drawn from (only BIP44 standard accounts are
-/// supported today, matching registration).
+/// registration. `account_index` addresses the *standard* families: the
+/// asset lock POOLS the BIP44 and BIP32 accounts at that index together
+/// with every DashPay receiving account (change returns to BIP44). The
+/// index does not restrict which DashPay receiving accounts contribute —
+/// callers must not present this as an account-scoped funding or privacy
+/// choice (matching registration).
 ///
 /// Unlike registration this takes NO identity-key signer: the
 /// `IdentityTopUp` state-transition is signed entirely by the asset lock's

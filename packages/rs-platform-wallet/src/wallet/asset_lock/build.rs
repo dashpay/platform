@@ -891,6 +891,22 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         if let Err(e) = pool_durability {
             tracing::error!(error = %e, "failed to persist asset-lock funding index");
             if funding_type == AssetLockFundingType::IdentityInvitation {
+                // The pooled build reserved every selected input across its
+                // contributing accounts under `reservation_token`. Nothing
+                // was broadcast, so abandon like the drain-floor branch
+                // above: drop the serialization guard, owner-release across
+                // every contributor, THEN surface the durability error —
+                // otherwise an immediate retry cannot reselect the BIP44 /
+                // BIP32 / DashPay inputs until the TTL sweep frees them.
+                drop(build_persist_guard);
+                crate::wallet::reservations::release_reservation_after_rejected_broadcast(
+                    &self.wallet_manager,
+                    &self.wallet_id,
+                    &funding_accounts,
+                    &tx,
+                    reservation_token,
+                )
+                .await;
                 return Err(PlatformWalletError::AssetLockTransaction(format!(
                     "aborted before broadcast: could not durably record the invitation \
                      funding index (broadcasting anyway would risk voucher-key reuse on \
@@ -1761,6 +1777,34 @@ mod tests {
                 >= 1,
             "the invitation gate must have driven flush()"
         );
+
+        // The abort released the pooled reservations across every
+        // contributing account: an IMMEDIATE rebuild must get through coin
+        // selection on the same fixture UTXOs and reach the durability gate
+        // again (the same "aborted before broadcast" error). Stranded
+        // reservations would surface here as a selection failure instead,
+        // stuck until the TTL sweep.
+        let rebuild = manager
+            .create_funded_asset_lock_proof(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityInvitation,
+                0,
+                &signer,
+            )
+            .await;
+        match rebuild {
+            Err(PlatformWalletError::AssetLockTransaction(msg)) => assert!(
+                msg.contains("aborted before broadcast"),
+                "the rebuild must reselect the released inputs and reach the \
+                 durability gate again — a selection failure means the abort \
+                 stranded the pooled reservations; got: {msg}"
+            ),
+            other => panic!(
+                "the rebuild must reach the durability gate again (inputs \
+                 released), got {other:?}"
+            ),
+        }
     }
 
     /// Non-invitation funding types stay best-effort: their one-time keys
