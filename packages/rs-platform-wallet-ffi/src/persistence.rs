@@ -203,14 +203,13 @@ pub struct PersistenceCallbacks {
     /// Fired once at the top of every [`FFIPersister::store`] call,
     /// before any per-kind sub-callback runs. Clients use this as a
     /// hook to open a transaction / begin a batch / snapshot context
-    /// state; paired with `on_changeset_end_fn`. Return value is
-    /// advisory — a non-zero result is logged but does NOT abort the
-    /// round.
+    /// state; paired with `on_changeset_end_fn`. A non-zero result
+    /// aborts the round before any per-kind callback runs.
     pub on_changeset_begin_fn:
         Option<unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8) -> i32>,
     /// Fired once at the bottom of every [`FFIPersister::store`]
-    /// call, after the per-kind phase and any store notification have run.
-    /// `success` is `true` iff all callbacks in the round returned 0; `false`
+    /// call, after every per-kind sub-callback has run. `success`
+    /// is `true` iff every per-kind callback returned 0; `false`
     /// otherwise. Clients use this to commit the round's
     /// accumulated writes (success → flush / save) or roll them
     /// back (failure → discard), making each Rust `store()` a
@@ -220,14 +219,13 @@ pub struct PersistenceCallbacks {
     /// itself failed (e.g. the atomic `save()` threw and the staged
     /// writes were rolled back); `store()` then returns `Err` so the
     /// caller does not advance state against data that never reached
-    /// durable storage. (Unlike `on_changeset_begin_fn`, this return
-    /// is honored, not advisory.)
+    /// durable storage.
     pub on_changeset_end_fn: Option<
         unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8, success: bool) -> i32,
     >,
-    /// Called after all per-kind callbacks succeed, before
-    /// `on_changeset_end_fn` commits their writes. A non-zero result marks the
-    /// round unsuccessful so the end callback can roll it back atomically.
+    /// Legacy post-commit notification fired after `on_changeset_end_fn` and
+    /// the in-memory pending merge. Its return is advisory: a non-zero value is
+    /// logged but cannot invalidate a round that is already durable.
     pub on_store_fn:
         Option<unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8) -> i32>,
     /// Called when flush is requested. Returns 0 on success.
@@ -2221,20 +2219,6 @@ impl PlatformWalletPersistence for FFIPersister {
             }
         }
 
-        // Run the fallible store notification before the commit boundary. A
-        // failure becomes part of `round_success`, allowing the end callback
-        // to roll back the staged per-kind writes instead of reporting an
-        // error only after those writes are already durable.
-        if round_success {
-            if let Some(cb) = self.callbacks.on_store_fn {
-                let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr()) };
-                if result != 0 {
-                    eprintln!("Persistence store callback returned error code {result}");
-                    round_success = false;
-                }
-            }
-        }
-
         // Close the round. Clients use this to commit (if
         // `round_success == true`) or roll back (otherwise) the
         // staged writes accumulated across the per-kind callbacks
@@ -2280,6 +2264,18 @@ impl PlatformWalletPersistence for FFIPersister {
             .entry(wallet_id)
             .and_modify(|existing| existing.merge(changeset.clone()))
             .or_insert(changeset);
+
+        // Preserve the legacy post-commit notification phase. Its return is
+        // advisory because neither the committed host round nor the pending
+        // merge above can be rolled back at this point.
+        if let Some(cb) = self.callbacks.on_store_fn {
+            let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr()) };
+            if result != 0 {
+                eprintln!(
+                    "Persistence store callback returned post-commit error code {result}; ignored"
+                );
+            }
+        }
 
         Ok(())
     }
@@ -7784,15 +7780,19 @@ mod tests {
     }
 
     #[test]
-    fn store_notification_participates_only_in_viable_rounds() {
+    fn store_notification_remains_post_commit_and_advisory() {
         struct StoreNotificationProbe {
+            end_called: AtomicBool,
             store_called: AtomicBool,
-            rollback_observed: AtomicBool,
+            store_saw_end: AtomicBool,
         }
 
         extern "C" fn failing_store(ctx: *mut TestCVoid, _wallet_id: *const u8) -> i32 {
             let probe = unsafe { &*(ctx as *const StoreNotificationProbe) };
             probe.store_called.store(true, Ordering::SeqCst);
+            probe
+                .store_saw_end
+                .store(probe.end_called.load(Ordering::SeqCst), Ordering::SeqCst);
             7
         }
 
@@ -7802,9 +7802,30 @@ mod tests {
             success: bool,
         ) -> i32 {
             let probe = unsafe { &*(ctx as *const StoreNotificationProbe) };
-            probe.rollback_observed.store(!success, Ordering::SeqCst);
+            probe.end_called.store(success, Ordering::SeqCst);
             0
         }
+
+        let probe = StoreNotificationProbe {
+            end_called: AtomicBool::new(false),
+            store_called: AtomicBool::new(false),
+            store_saw_end: AtomicBool::new(false),
+        };
+        let callbacks = PersistenceCallbacks {
+            context: &probe as *const StoreNotificationProbe as *mut TestCVoid,
+            on_store_fn: Some(failing_store),
+            on_changeset_end_fn: Some(recording_end),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new(callbacks);
+
+        persister
+            .store([1u8; 32], PlatformWalletChangeSet::default())
+            .expect("post-commit notification failure must remain advisory");
+
+        assert!(probe.end_called.load(Ordering::SeqCst));
+        assert!(probe.store_called.load(Ordering::SeqCst));
+        assert!(probe.store_saw_end.load(Ordering::SeqCst));
 
         extern "C" fn failing_metadata(
             _ctx: *mut TestCVoid,
@@ -7816,28 +7837,10 @@ mod tests {
             7
         }
 
-        let probe = StoreNotificationProbe {
-            store_called: AtomicBool::new(false),
-            rollback_observed: AtomicBool::new(false),
-        };
-        let callbacks = PersistenceCallbacks {
-            context: &probe as *const StoreNotificationProbe as *mut TestCVoid,
-            on_store_fn: Some(failing_store),
-            on_changeset_end_fn: Some(recording_end),
-            ..PersistenceCallbacks::default()
-        };
-        let persister = FFIPersister::new(callbacks);
-
-        let error = persister
-            .store([1u8; 32], PlatformWalletChangeSet::default())
-            .expect_err("a failing store notification must reject the round");
-
-        assert!(error.to_string().contains("rolled back"));
-        assert!(probe.rollback_observed.load(Ordering::SeqCst));
-
         let rejected_probe = StoreNotificationProbe {
+            end_called: AtomicBool::new(false),
             store_called: AtomicBool::new(false),
-            rollback_observed: AtomicBool::new(false),
+            store_saw_end: AtomicBool::new(false),
         };
         let callbacks = PersistenceCallbacks {
             context: &rejected_probe as *const StoreNotificationProbe as *mut TestCVoid,
@@ -7858,9 +7861,8 @@ mod tests {
 
         persister
             .store([1u8; 32], changeset)
-            .expect_err("the rejected metadata callback must fail the round");
+            .expect_err("a rejected per-kind callback must fail before notification");
         assert!(!rejected_probe.store_called.load(Ordering::SeqCst));
-        assert!(rejected_probe.rollback_observed.load(Ordering::SeqCst));
     }
 
     /// A nonzero `begin` return is fatal: the client failed to open its
