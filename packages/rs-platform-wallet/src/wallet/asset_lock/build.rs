@@ -190,7 +190,21 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 signer,
             )
             .await
-            .map_err(|e| map_builder_error(e, amount_duffs))?;
+            .map_err(|e| {
+                // A drain's credit-output value is a zero placeholder, so it
+                // must not be advertised as the `required` amount of a typed
+                // shortfall (an empty CoinJoin account would report
+                // `available: 0, required: 0`). The shielded flow already
+                // computed the positive floor and threads it through
+                // `DrainAll`; use it so the pair describes the real gap.
+                let required = match amount {
+                    AssetLockBuildAmount::Exact(value) => value,
+                    AssetLockBuildAmount::DrainAll {
+                        minimum_lock_duffs,
+                    } => minimum_lock_duffs.unwrap_or(0),
+                };
+                map_builder_error(e, required)
+            })?;
 
         // 4. Pull the (pubkey, path) for our single credit output.
         //
