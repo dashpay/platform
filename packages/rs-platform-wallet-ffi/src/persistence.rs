@@ -209,8 +209,8 @@ pub struct PersistenceCallbacks {
     pub on_changeset_begin_fn:
         Option<unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8) -> i32>,
     /// Fired once at the bottom of every [`FFIPersister::store`]
-    /// call, after every per-kind sub-callback has run. `success`
-    /// is `true` iff every per-kind callback returned 0; `false`
+    /// call, after the per-kind phase and any store notification have run.
+    /// `success` is `true` iff all callbacks in the round returned 0; `false`
     /// otherwise. Clients use this to commit the round's
     /// accumulated writes (success → flush / save) or roll them
     /// back (failure → discard), making each Rust `store()` a
@@ -225,7 +225,9 @@ pub struct PersistenceCallbacks {
     pub on_changeset_end_fn: Option<
         unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8, success: bool) -> i32,
     >,
-    /// Called when a changeset is stored. Returns 0 on success.
+    /// Called after all per-kind callbacks succeed, before
+    /// `on_changeset_end_fn` commits their writes. A non-zero result marks the
+    /// round unsuccessful so the end callback can roll it back atomically.
     pub on_store_fn:
         Option<unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8) -> i32>,
     /// Called when flush is requested. Returns 0 on success.
@@ -2219,6 +2221,20 @@ impl PlatformWalletPersistence for FFIPersister {
             }
         }
 
+        // Run the fallible store notification before the commit boundary. A
+        // failure becomes part of `round_success`, allowing the end callback
+        // to roll back the staged per-kind writes instead of reporting an
+        // error only after those writes are already durable.
+        if round_success {
+            if let Some(cb) = self.callbacks.on_store_fn {
+                let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr()) };
+                if result != 0 {
+                    eprintln!("Persistence store callback returned error code {result}");
+                    round_success = false;
+                }
+            }
+        }
+
         // Close the round. Clients use this to commit (if
         // `round_success == true`) or roll back (otherwise) the
         // staged writes accumulated across the per-kind callbacks
@@ -2264,17 +2280,6 @@ impl PlatformWalletPersistence for FFIPersister {
             .entry(wallet_id)
             .and_modify(|existing| existing.merge(changeset.clone()))
             .or_insert(changeset);
-
-        // Notify caller.
-        if let Some(cb) = self.callbacks.on_store_fn {
-            let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr()) };
-            if result != 0 {
-                return Err(PersistenceError::backend(format!(
-                    "Persistence store callback returned error code {}",
-                    result
-                )));
-            }
-        }
 
         Ok(())
     }
@@ -7776,6 +7781,86 @@ mod tests {
         // pointer any more.
         drop(persister);
         drop(probe);
+    }
+
+    #[test]
+    fn store_notification_participates_only_in_viable_rounds() {
+        struct StoreNotificationProbe {
+            store_called: AtomicBool,
+            rollback_observed: AtomicBool,
+        }
+
+        extern "C" fn failing_store(ctx: *mut TestCVoid, _wallet_id: *const u8) -> i32 {
+            let probe = unsafe { &*(ctx as *const StoreNotificationProbe) };
+            probe.store_called.store(true, Ordering::SeqCst);
+            7
+        }
+
+        extern "C" fn recording_end(
+            ctx: *mut TestCVoid,
+            _wallet_id: *const u8,
+            success: bool,
+        ) -> i32 {
+            let probe = unsafe { &*(ctx as *const StoreNotificationProbe) };
+            probe.rollback_observed.store(!success, Ordering::SeqCst);
+            0
+        }
+
+        extern "C" fn failing_metadata(
+            _ctx: *mut TestCVoid,
+            _wallet_id: *const u8,
+            _network: FFINetwork,
+            _wallet_group_id: *const u8,
+            _birth_height: u32,
+        ) -> i32 {
+            7
+        }
+
+        let probe = StoreNotificationProbe {
+            store_called: AtomicBool::new(false),
+            rollback_observed: AtomicBool::new(false),
+        };
+        let callbacks = PersistenceCallbacks {
+            context: &probe as *const StoreNotificationProbe as *mut TestCVoid,
+            on_store_fn: Some(failing_store),
+            on_changeset_end_fn: Some(recording_end),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new(callbacks);
+
+        let error = persister
+            .store([1u8; 32], PlatformWalletChangeSet::default())
+            .expect_err("a failing store notification must reject the round");
+
+        assert!(error.to_string().contains("rolled back"));
+        assert!(probe.rollback_observed.load(Ordering::SeqCst));
+
+        let rejected_probe = StoreNotificationProbe {
+            store_called: AtomicBool::new(false),
+            rollback_observed: AtomicBool::new(false),
+        };
+        let callbacks = PersistenceCallbacks {
+            context: &rejected_probe as *const StoreNotificationProbe as *mut TestCVoid,
+            on_persist_wallet_metadata_fn: Some(failing_metadata),
+            on_store_fn: Some(failing_store),
+            on_changeset_end_fn: Some(recording_end),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new(callbacks);
+        let changeset = PlatformWalletChangeSet {
+            wallet_metadata: Some(platform_wallet::changeset::WalletMetadataEntry {
+                network: Network::Testnet,
+                wallet_group_id: [1u8; 32],
+                birth_height: 1,
+            }),
+            ..PlatformWalletChangeSet::default()
+        };
+
+        persister
+            .store([1u8; 32], changeset)
+            .expect_err("the rejected metadata callback must fail the round");
+        assert!(!rejected_probe.store_called.load(Ordering::SeqCst));
+        assert!(rejected_probe.rollback_observed.load(Ordering::SeqCst));
     }
 
     /// A nonzero `begin` return is fatal: the client failed to open its

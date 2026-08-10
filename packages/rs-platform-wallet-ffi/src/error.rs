@@ -197,7 +197,8 @@ pub enum PlatformWalletFFIResultCode {
     ErrorCoreInsufficientFunds = 22,
     /// Existing-lock recovery referenced an outpoint not owned/tracked by the wallet.
     ErrorAssetLockNotTracked = 23,
-    /// Existing-lock recovery referenced a one-shot output already consumed.
+    /// Asset-lock funding cannot reuse this one-shot output; Platform
+    /// completion for the requested operation is unconfirmed.
     ErrorAssetLockAlreadyConsumed = 24,
     /// Existing-lock recovery attempted to use a lock for the wrong funding
     /// family or bound identity index.

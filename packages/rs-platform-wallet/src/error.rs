@@ -259,10 +259,11 @@ pub enum PlatformWalletError {
     #[error("Asset lock {0} is not tracked by this wallet")]
     AssetLockNotTracked(dashcore::OutPoint),
 
-    /// Platform reported that a one-shot asset lock outpoint was already
-    /// consumed. Rejection responses are not quorum-authenticated; callers
-    /// must not infer terminal local state from this signal alone.
-    #[error("Asset lock {0} has already been consumed")]
+    /// A one-shot asset lock outpoint cannot be reused. This can come from a
+    /// local `Consumed` tombstone or an unauthenticated Platform consumption
+    /// report; callers must not infer completion of the requested operation
+    /// from this signal alone.
+    #[error("Asset lock {0} cannot be reused; Platform completion is unconfirmed")]
     AssetLockAlreadyConsumed(dashcore::OutPoint),
 
     /// A tracked outpoint belongs to another funding family or identity

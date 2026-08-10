@@ -613,19 +613,20 @@ fn map_spend_result(
     }
 }
 
-/// Preserve the typed "already consumed" recovery report across the FFI
-/// boundary while keeping every other resume failure on the existing generic
+/// Preserve the typed "already consumed" funding report across the FFI
+/// boundary while keeping every other funding failure on the existing generic
 /// error path. The wallet retains nonterminal consumption-unknown state; the
 /// host must not interpret this code as authenticated completion.
-fn map_asset_lock_resume_result(
+fn map_asset_lock_funding_result(
     result: Result<(), PlatformWalletError>,
+    operation: &str,
 ) -> PlatformWalletFFIResult {
     match result {
         Ok(()) => PlatformWalletFFIResult::ok(),
         Err(e @ PlatformWalletError::AssetLockAlreadyConsumed(_)) => e.into(),
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("shielded resume fund-from-asset-lock failed: {e}"),
+            format!("{operation} failed: {e}"),
         ),
     }
 }
@@ -1111,14 +1112,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
             )
             .await
     });
-    match result {
-        Ok(()) => PlatformWalletFFIResult::ok(),
-        Err(e @ PlatformWalletError::AssetLockAlreadyConsumed(_)) => e.into(),
-        Err(e) => PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("shielded fund-from-asset-lock failed: {e}"),
-        ),
-    }
+    map_asset_lock_funding_result(result, "shielded fund-from-asset-lock")
 }
 
 /// Fund the shielded pool by DRAINING the wallet's CoinJoin account
@@ -1378,7 +1372,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
             )
             .await
     });
-    map_asset_lock_resume_result(result)
+    map_asset_lock_funding_result(result, "shielded resume fund-from-asset-lock")
 }
 
 /// Seed the shielded pool's anonymity set up to `target_total_notes` by
@@ -1859,28 +1853,32 @@ mod tests {
     }
 
     #[test]
-    fn map_asset_lock_resume_result_preserves_already_consumed_code_only() {
+    fn map_asset_lock_funding_result_preserves_already_consumed_code_only() {
         let out_point = dashcore::OutPoint {
             txid: dashcore::Txid::all_zeros(),
             vout: 7,
         };
-        let result = map_asset_lock_resume_result(Err(
-            PlatformWalletError::AssetLockAlreadyConsumed(out_point),
-        ));
+        let result = map_asset_lock_funding_result(
+            Err(PlatformWalletError::AssetLockAlreadyConsumed(out_point)),
+            "shielded fund-from-asset-lock",
+        );
         assert_eq!(
             result.code,
             PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed
         );
+        assert!(message_of(&result).contains("Platform completion is unconfirmed"));
 
-        let unrelated =
-            map_asset_lock_resume_result(Err(PlatformWalletError::ShieldedNoUnspentNotes));
+        let unrelated = map_asset_lock_funding_result(
+            Err(PlatformWalletError::ShieldedNoUnspentNotes),
+            "shielded fund-from-asset-lock",
+        );
         assert_eq!(
             unrelated.code,
             PlatformWalletFFIResultCode::ErrorWalletOperation
         );
 
         assert_eq!(
-            map_asset_lock_resume_result(Ok(())).code,
+            map_asset_lock_funding_result(Ok(()), "shielded fund-from-asset-lock").code,
             PlatformWalletFFIResultCode::Success
         );
     }
