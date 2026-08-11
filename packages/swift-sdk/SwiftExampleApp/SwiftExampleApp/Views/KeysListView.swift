@@ -542,8 +542,23 @@ struct PrivateKeyView: View {
   }
 
   private func forgetPrivateKey() {
-    // Remove from keychain
-    let removed = KeychainManager.shared.deletePrivateKey(identityId: identity.identityId, keyIndex: Int32(keyId))
+    // Two storage schemes coexist (see `getPrivateKey(for:)`): the
+    // legacy `(identityId, keyIndex)` item AND the wallet-derived
+    // `identity_privkey.*` item addressed by the persisted
+    // breadcrumb. Delete BOTH — `deletePrivateKey` reports success
+    // when the legacy item is simply absent, so deleting only it
+    // would clear the SwiftData reference while the wallet-derived
+    // secret stayed retrievable.
+    let km = KeychainManager.shared
+    var removed = km.deletePrivateKey(identityId: identity.identityId, keyIndex: Int32(keyId))
+    if let persistedKey = identity.publicKeys.first(where: { $0.keyId == Int32(keyId) }),
+       let breadcrumbWalletId = persistedKey.walletId,
+       let derivationPath = persistedKey.identityDerivationPath {
+      removed = km.deleteIdentityPrivateKey(
+        walletId: breadcrumbWalletId,
+        derivationPath: derivationPath
+      ) && removed
+    }
 
     if removed {
       // Clear the keychain reference on the matching

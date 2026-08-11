@@ -429,9 +429,10 @@ struct LoadIdentityView: View {
                         existing.identityType = identityType.rawValue
                         existing.network = network
                         existing.lastUpdated = Date()
-                        // Replace public keys wholesale with the
-                        // freshly fetched set.
-                        existing.publicKeys.removeAll()
+                        // Public keys are replaced below via the
+                        // provenance-preserving seam — NOT removed
+                        // here, so an existing wallet-owned row keeps
+                        // its derivation stamps through the reload.
                         row = existing
                     } else {
                         row = PersistentIdentity(
@@ -456,16 +457,19 @@ struct LoadIdentityView: View {
                         )
                     }
 
-                    // Insert PersistentPublicKey rows for every key
-                    // the network returned.
-                    for publicKey in capturedPublicKeys {
-                        if let persistentKey = PersistentPublicKey.from(
-                            publicKey,
+                    // Replace the key rows with the freshly fetched
+                    // set, carrying forward keychain identifiers and
+                    // wallet-derivation breadcrumbs for matching keys
+                    // (the breadcrumb is the restore quarantine's
+                    // ownership evidence — a by-id reload of the
+                    // user's own identity must not strip it).
+                    let freshKeys = capturedPublicKeys.compactMap {
+                        PersistentPublicKey.from(
+                            $0,
                             identityId: validIdData.toHexString()
-                        ) {
-                            row.addPublicKey(persistentKey)
-                        }
+                        )
                     }
+                    row.replacePublicKeysPreservingProvenance(with: freshKeys)
 
                     // Match each user-provided private key to its
                     // public key and stash it in the keychain.

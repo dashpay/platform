@@ -88,26 +88,17 @@ enum IdentityKeyRefresher {
         }
 
         // Replace the PersistentIdentity's public key rows with the
-        // freshly-fetched set, carrying over the keychain identifier
-        // for any key we already knew about so we don't lose the
-        // matching private key reference after a refresh.
-        let identifierByKeyId: [Int32: String] = Dictionary(
-            uniqueKeysWithValues: identity.publicKeys.compactMap { key in
-                guard let identifier = key.privateKeyKeychainIdentifier else { return nil }
-                return (key.keyId, identifier)
-            }
-        )
-        identity.publicKeys.removeAll()
+        // freshly-fetched set via the provenance-preserving seam: it
+        // carries forward the keychain identifier AND the
+        // wallet-derivation breadcrumb (walletId + derivation path)
+        // for matching keys — the breadcrumb is the ownership
+        // evidence the restore quarantine relies on, so a refresh of
+        // a genuine wallet identity must not strip it.
         let identityHex = identity.identityIdBase58
-        for publicKey in parsedPublicKeys {
-            guard let persistentKey = PersistentPublicKey.from(publicKey, identityId: identityHex) else {
-                continue
-            }
-            if let identifier = identifierByKeyId[persistentKey.keyId] {
-                persistentKey.privateKeyKeychainIdentifier = identifier
-            }
-            identity.addPublicKey(persistentKey)
+        let freshKeys = parsedPublicKeys.compactMap {
+            PersistentPublicKey.from($0, identityId: identityHex)
         }
+        identity.replacePublicKeysPreservingProvenance(with: freshKeys)
         try? modelContext.save()
     }
 }

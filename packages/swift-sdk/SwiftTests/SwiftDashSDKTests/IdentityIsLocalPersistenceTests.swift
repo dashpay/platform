@@ -382,6 +382,77 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
         )
     }
 
+    /// Refresh-then-restore regression: refresh flows rebuild the
+    /// public-key rows from freshly fetched (unstamped) data, and
+    /// MUST carry the wallet-derivation breadcrumb forward — dropping
+    /// it would strip a genuine identity of the evidence
+    /// `restorableIdentities` requires and quarantine it from the
+    /// next Rust restore. Provenance transfers only on a full
+    /// (`keyId`, `publicKeyData`) match; different key material must
+    /// not inherit a breadcrumb.
+    func testKeyReplacePreservesProvenanceAndSurvivesRestore() throws {
+        try insertWalletRow()
+        let context = ModelContext(container)
+        let wallet = try XCTUnwrap(
+            try context.fetch(FetchDescriptor<PersistentWallet>()).first
+        )
+        let identity = PersistentIdentity(
+            identityId: ownIdentityId,
+            isLocal: true,
+            network: .testnet
+        )
+        identity.wallet = wallet
+        context.insert(identity)
+        attachKeyRow(to: identity, stampedWalletId: walletId)
+        identity.publicKeys[0].identityDerivationPath = "m/9'/1'/5'/0'/0'"
+        identity.publicKeys[0].privateKeyKeychainIdentifier = "kc-0"
+        try context.save()
+
+        // A refresh delivers the same key unstamped (network data
+        // carries no local provenance) plus a brand-new key.
+        let refreshedSame = PersistentPublicKey(
+            keyId: 0,
+            purpose: .authentication,
+            securityLevel: .master,
+            keyType: .ecdsaSecp256k1,
+            publicKeyData: Data(repeating: 0x11, count: 33),
+            identityId: identity.identityIdString
+        )
+        let brandNew = PersistentPublicKey(
+            keyId: 1,
+            purpose: .authentication,
+            securityLevel: .critical,
+            keyType: .ecdsaSecp256k1,
+            publicKeyData: Data(repeating: 0x22, count: 33),
+            identityId: identity.identityIdString
+        )
+        identity.replacePublicKeysPreservingProvenance(
+            with: [refreshedSame, brandNew]
+        )
+        try context.save()
+
+        let carried = try XCTUnwrap(
+            identity.publicKeys.first { $0.keyId == 0 }
+        )
+        XCTAssertEqual(carried.walletId, walletId, "the derivation stamp survives the refresh")
+        XCTAssertEqual(carried.identityDerivationPath, "m/9'/1'/5'/0'/0'")
+        XCTAssertEqual(carried.privateKeyKeychainIdentifier, "kc-0")
+        let fresh = try XCTUnwrap(
+            identity.publicKeys.first { $0.keyId == 1 }
+        )
+        XCTAssertNil(fresh.walletId, "new key material must not inherit a breadcrumb")
+
+        let slice = PlatformWalletPersistenceHandler.restorableIdentities(
+            [identity],
+            walletId: walletId
+        )
+        XCTAssertEqual(
+            slice.map(\.identityId),
+            [identity.identityId],
+            "a refreshed genuine identity keeps restoring"
+        )
+    }
+
     // MARK: Load-time heal
 
     /// `loadWalletList()` promotes wallet-linked stale-`false` rows

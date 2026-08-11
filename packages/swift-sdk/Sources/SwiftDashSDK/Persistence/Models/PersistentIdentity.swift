@@ -294,6 +294,45 @@ public final class PersistentIdentity {
         lastUpdated = Date()
     }
 
+    /// Replace the persisted public-key rows with `newKeys`, carrying
+    /// per-key provenance forward from the rows being replaced: the
+    /// keychain identifier AND the wallet-derivation breadcrumb
+    /// (`walletId` + `identityDerivationPath`) — the breadcrumb is the
+    /// ownership evidence `hasWalletDerivationEvidence(for:)` (and
+    /// therefore the restore quarantine and the startup heal) relies
+    /// on. Refresh flows MUST use this instead of a bare
+    /// `removeAll()` + re-append: dropping the stamps would strip a
+    /// genuine wallet identity of its evidence and quarantine it from
+    /// the next Rust restore.
+    ///
+    /// Provenance carries over only when the incoming key matches the
+    /// outgoing one on BOTH `keyId` and `publicKeyData` — a breadcrumb
+    /// (or keychain reference) describes exactly one key, and gluing
+    /// it onto different key material would fabricate evidence.
+    /// Incoming keys that already carry their own provenance keep it.
+    public func replacePublicKeysPreservingProvenance(
+        with newKeys: [PersistentPublicKey]
+    ) {
+        let outgoingByKeyId = Dictionary(
+            publicKeys.map { ($0.keyId, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        publicKeys.removeAll()
+        for key in newKeys {
+            if let outgoing = outgoingByKeyId[key.keyId],
+               outgoing.publicKeyData == key.publicKeyData {
+                if key.privateKeyKeychainIdentifier == nil {
+                    key.privateKeyKeychainIdentifier = outgoing.privateKeyKeychainIdentifier
+                }
+                if key.walletId == nil {
+                    key.walletId = outgoing.walletId
+                    key.identityDerivationPath = outgoing.identityDerivationPath
+                }
+            }
+            addPublicKey(key)
+        }
+    }
+
     /// Verified wallet-ownership evidence: at least one persisted
     /// key row carrying THIS wallet's derivation stamp
     /// (`PersistentPublicKey.walletId`), which `persistIdentityKeys`
