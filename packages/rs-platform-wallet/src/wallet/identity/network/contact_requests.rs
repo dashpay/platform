@@ -1929,6 +1929,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         }
 
         let mut cleared: Vec<PendingContactCryptoKey> = Vec::new();
+        // Distinct key-purpose rejections seen this drain, and how many entries
+        // each blocked — summarised once at the end instead of one WARN per
+        // entry. A purpose-rejected entry stays queued by design (the policy,
+        // not the immutable document, is what might change), so per-entry
+        // WARNing repeats every sweep for the life of the wallet: mainnet logs
+        // from one wallet show 396 such lines for 27 contacts in a single
+        // session. Every reason still reaches the log, once, with its count.
+        let mut policy_blocked: std::collections::BTreeMap<String, usize> =
+            std::collections::BTreeMap::new();
         // How much of `cleared` is already dequeued + persisted, and the running
         // total actually removed. Bookkeeping lands per entry, so at most one
         // entry's worth can ever be in flight.
@@ -2044,6 +2053,48 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         }
                     };
 
+                    // Validate OUR key first — it needs nothing but the
+                    // resident identity, so a request that can never be used is
+                    // rejected before spending a Platform round trip on the
+                    // contact. This is the dominant rejection in practice
+                    // (legacy documents reference our AUTHENTICATION/TRANSFER
+                    // key), and because such an entry stays queued the fetch
+                    // below would otherwise repeat on every sweep, forever.
+                    let our_identity = {
+                        let wm = self.wallet_manager.read().await;
+                        wm.get_wallet_info(&self.wallet_id)
+                            .and_then(|info| {
+                                info.identity_manager
+                                    .managed_identity(&entry.owner_identity_id)
+                            })
+                            .map(|m| m.identity.clone())
+                    };
+                    let Some(our_identity) = our_identity else {
+                        tracing::warn!(
+                            owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                            "drain: our identity vanished mid-drain; leaving queued"
+                        );
+                        continue;
+                    };
+                    let recipient_validation =
+                        crate::wallet::identity::crypto::validation::validate_recipient_key(
+                            &our_identity,
+                            *our_decryption_key_index,
+                        );
+                    if !recipient_validation.is_valid {
+                        if self
+                            .apply_drain_validation_failure(
+                                entry,
+                                &recipient_validation,
+                                &mut policy_blocked,
+                            )
+                            .await
+                        {
+                            cleared.push(entry.key());
+                        }
+                        continue;
+                    }
+
                     // Fetch the contact identity (transient on failure → leave).
                     // Bounded: a Platform round trip, and nothing in this entry
                     // has committed yet.
@@ -2077,56 +2128,24 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         }
                     };
 
-                    // Validate key indices (purpose + type) BEFORE ECDH — the
-                    // same gate the resident sweep path applies, so the deferred
-                    // path enforces the identical contract. A purpose-only
-                    // mismatch (e.g. a legacy doc referencing an AUTH key) is left
-                    // queued for a future acceptance-policy change; a hard failure
-                    // (key type / missing / disabled) marks the channel broken and
-                    // clears the entry.
-                    let our_identity = {
-                        let wm = self.wallet_manager.read().await;
-                        wm.get_wallet_info(&self.wallet_id)
-                            .and_then(|info| {
-                                info.identity_manager
-                                    .managed_identity(&entry.owner_identity_id)
-                            })
-                            .map(|m| m.identity.clone())
-                    };
-                    let Some(our_identity) = our_identity else {
-                        tracing::warn!(
-                            owner = %entry.owner_identity_id, contact = %entry.contact_id,
-                            "drain: our identity vanished mid-drain; leaving queued"
-                        );
-                        continue;
-                    };
+                    // The sender half — the checks that need the identity we
+                    // just fetched. Together with the recipient half above this
+                    // is exactly `validate_contact_request`, so the deferred
+                    // path still enforces the identical contract as the
+                    // resident sweep path; only the ORDER differs, to keep the
+                    // fetch off the repeating-rejection path.
                     let validation =
-                        crate::wallet::identity::crypto::validation::validate_contact_request(
+                        crate::wallet::identity::crypto::validation::validate_sender_key(
                             &contact_identity,
                             *contact_encryption_key_index,
-                            &our_identity,
-                            *our_decryption_key_index,
                         );
                     if !validation.is_valid {
-                        if validation.is_purpose_only() {
-                            tracing::warn!(
-                                owner = %entry.owner_identity_id, contact = %entry.contact_id,
-                                errors = ?validation.errors,
-                                "drain: contact request key-purpose mismatch; leaving queued (not marking broken)"
-                            );
-                            continue;
+                        if self
+                            .apply_drain_validation_failure(entry, &validation, &mut policy_blocked)
+                            .await
+                        {
+                            cleared.push(entry.key());
                         }
-                        tracing::warn!(
-                            owner = %entry.owner_identity_id, contact = %entry.contact_id,
-                            errors = ?validation.errors,
-                            "drain: contact request failed key-index validation; marking channel broken"
-                        );
-                        self.mark_contact_channel_broken(
-                            &entry.owner_identity_id,
-                            &entry.contact_id,
-                        )
-                        .await;
-                        cleared.push(entry.key());
                         continue;
                     }
 
@@ -2305,7 +2324,63 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .flush_drained_contact_crypto(&entries, &cleared[flushed..])
             .await;
 
+        // One line for every entry the key-purpose policy turned away, instead
+        // of one per entry per sweep. Kept at WARN and carrying the distinct
+        // reasons: this is the signal that a live on-chain cohort is failing
+        // our acceptance policy, which is exactly how the legacy dashj cohort
+        // was found — it must stay visible in an exported log, just not 27
+        // times a pass.
+        if !policy_blocked.is_empty() {
+            let blocked: usize = policy_blocked.values().sum();
+            tracing::warn!(
+                entries = blocked,
+                reasons = ?policy_blocked,
+                "drain: contact requests left queued by the key-purpose policy \
+                 (not marking broken; they retry when the policy changes)"
+            );
+        }
+
         drained_total
+    }
+
+    /// The drain's validation-failure policy, shared by the recipient-half and
+    /// sender-half checks so both halves classify identically.
+    ///
+    /// - A **purpose-only** failure is counted into `policy_blocked` for the
+    ///   drain's end-of-run summary and left queued: the request is immutable,
+    ///   so what might change is our acceptance policy, and a channel marked
+    ///   broken here would need a superseding request from the contact to heal
+    ///   — an appeal the user cannot file.
+    /// - Anything else (missing key, wrong key type, disabled key) is a real
+    ///   permanent fault: mark the channel broken so the sweep stops
+    ///   collecting it.
+    ///
+    /// Returns `true` when the caller should clear the entry from the queue.
+    async fn apply_drain_validation_failure(
+        &self,
+        entry: &crate::changeset::PendingContactCrypto,
+        validation: &crate::wallet::identity::crypto::validation::ContactRequestValidation,
+        policy_blocked: &mut std::collections::BTreeMap<String, usize>,
+    ) -> bool {
+        if validation.is_purpose_only() {
+            for reason in &validation.errors {
+                *policy_blocked.entry(reason.clone()).or_default() += 1;
+            }
+            tracing::debug!(
+                owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                errors = ?validation.errors,
+                "drain: contact request key-purpose mismatch; leaving queued (not marking broken)"
+            );
+            return false;
+        }
+        tracing::warn!(
+            owner = %entry.owner_identity_id, contact = %entry.contact_id,
+            errors = ?validation.errors,
+            "drain: contact request failed key-index validation; marking channel broken"
+        );
+        self.mark_contact_channel_broken(&entry.owner_identity_id, &entry.contact_id)
+            .await;
+        true
     }
 
     /// Apply the dequeue for entries a drain just completed: remove them from

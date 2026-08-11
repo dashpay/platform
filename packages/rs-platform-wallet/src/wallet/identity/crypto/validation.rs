@@ -166,11 +166,25 @@ pub fn validate_contact_request(
     recipient_identity: &Identity,
     recipient_key_index: u32,
 ) -> ContactRequestValidation {
+    let mut validation = validate_sender_key(sender_identity, sender_key_index);
+    validation.merge(validate_recipient_key(
+        recipient_identity,
+        recipient_key_index,
+    ));
+    validation
+}
+
+/// The sender half of [`validate_contact_request`] — the checks that need the
+/// **counterparty's** identity.
+///
+/// Split out so the deferred-crypto drain can run the recipient half first.
+/// See [`validate_recipient_key`] for why that ordering matters.
+pub fn validate_sender_key(
+    sender_identity: &Identity,
+    sender_key_index: u32,
+) -> ContactRequestValidation {
     let mut validation = ContactRequestValidation::new();
 
-    // -----------------------------------------------------------------------
-    // Sender key validation
-    // -----------------------------------------------------------------------
     match sender_identity.get_public_key_by_id(sender_key_index) {
         Some(key) => {
             // Must be ECDSA_SECP256K1 for ECDH.
@@ -213,9 +227,26 @@ pub fn validate_contact_request(
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Recipient key validation
-    // -----------------------------------------------------------------------
+    validation
+}
+
+/// The recipient half of [`validate_contact_request`] — the checks that need
+/// only **our own** identity, which is always already resident.
+///
+/// Split out because the deferred-crypto drain would otherwise pay a Platform
+/// round trip (`Identity::fetch` of the contact) before it could discover that
+/// the request is unusable for a reason it could have known locally. A
+/// purpose-rejected entry stays queued by design — the policy, not the
+/// immutable document, is what might change — so that fetch was repeating on
+/// every sweep, forever. Mainnet logs from one wallet show 27 contacts and 396
+/// such fetch-then-reject cycles in a single session. Running this half first
+/// costs nothing and removes the network entirely from that loop.
+pub fn validate_recipient_key(
+    recipient_identity: &Identity,
+    recipient_key_index: u32,
+) -> ContactRequestValidation {
+    let mut validation = ContactRequestValidation::new();
+
     match recipient_identity.get_public_key_by_id(recipient_key_index) {
         Some(key) => {
             // Must be an ECDSA variant for ECDH compatibility.

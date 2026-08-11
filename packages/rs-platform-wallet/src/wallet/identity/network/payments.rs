@@ -5026,6 +5026,92 @@ mod tests {
         );
     }
 
+    /// A `RegisterExternal` entry whose fault lies in OUR OWN key is decided
+    /// without a Platform round trip.
+    ///
+    /// The owner here is wallet-owned (so the drain gets past the HD-index
+    /// bail) but carries no keys at all, so `recipientKeyIndex` 0 resolves to
+    /// nothing — a hard, permanent fault that must break the channel. The mock
+    /// SDK has NO contact-identity fetch configured, so this can only pass if
+    /// the recipient half of the validation ran *before* the fetch: the old
+    /// ordering fetched first, failed transiently, and left the channel intact.
+    ///
+    /// That ordering is what keeps a purpose-rejected entry — which stays
+    /// queued by design, and so is retried on every sweep forever — from
+    /// spending a network round trip each time.
+    #[tokio::test]
+    async fn drain_decides_our_own_key_fault_without_fetching_the_contact() {
+        use crate::changeset::{PendingContactCrypto, PendingContactCryptoOp};
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+        use crate::wallet::identity::{ContactRequest, EstablishedContact};
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            // Wallet-owned (HD index 0) but keyless: `recipientKeyIndex` 0
+            // cannot resolve, which is a hard fault, not a purpose mismatch.
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+            let outgoing = ContactRequest::new(owner, contact, 0, 0, 0, vec![0u8; 96], 0, 0);
+            let incoming = ContactRequest::new(contact, owner, 0, 0, 0, vec![0u8; 96], 0, 0);
+            let managed = info
+                .identity_manager
+                .managed_identity_mut(&owner)
+                .expect("owner resident");
+            managed.apply_established_contact(EstablishedContact::new(contact, outgoing, incoming));
+            managed
+                .dashpay_pending_contact_crypto_mut()
+                .push(PendingContactCrypto {
+                    owner_identity_id: owner,
+                    contact_id: contact,
+                    op: PendingContactCryptoOp::RegisterExternal {
+                        encrypted_public_key: vec![7u8; 96],
+                        our_decryption_key_index: 0,
+                        contact_encryption_key_index: 0,
+                    },
+                    enqueued_at_ms: 0,
+                });
+        }
+
+        let provider = SeedCryptoProvider::from_seed(
+            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+                .expect("valid mnemonic")
+                .to_seed(""),
+            Network::Testnet,
+        );
+        let drained = iw.dashpay().drain_pending_contact_crypto(&provider).await;
+
+        assert_eq!(
+            drained, 1,
+            "a hard validation fault must clear the entry rather than retry it forever"
+        );
+        let wm = iw.wallet_manager.read().await;
+        let managed = wm
+            .get_wallet_info(&wallet_id)
+            .expect("info")
+            .identity_manager
+            .managed_identity(&owner)
+            .expect("owner resident");
+        assert!(
+            managed
+                .dashpay()
+                .established_contacts()
+                .get(&contact)
+                .expect("contact resident")
+                .payment_channel_broken,
+            "the channel must be marked broken from our own key alone — reaching this \
+             verdict proves the recipient half ran before the (unconfigured) contact fetch"
+        );
+    }
+
     /// A `RegisterExternal` entry the drain cannot complete (here: the owner
     /// isn't wallet-owned, so no HD index → it bails before any network fetch)
     /// must be **left queued**, never dropped or crashed — so a later drain can
