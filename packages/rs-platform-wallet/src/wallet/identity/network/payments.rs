@@ -5112,6 +5112,121 @@ mod tests {
         );
     }
 
+    /// The whole external-account build works with a **legacy key id and
+    /// purpose** — derivation at that id, ECDH, AES decrypt, compact-xpub
+    /// parse, registration — not just the purpose predicate.
+    ///
+    /// Key id 3 is the TRANSFER slot the legacy dashj cohort references, and
+    /// the widened receive-side policy is what now lets it reach this code at
+    /// all. The two sides are derived independently — our side through the
+    /// production `ContactCryptoProvider::ecdh_shared_secret` at the real
+    /// DIP-9 auth path, the sender's side by hand from our public key at that
+    /// same path — so the asserted symmetry is real and not one value handed
+    /// to both halves.
+    ///
+    /// What this does NOT prove: that a payload produced by **dashj** decrypts
+    /// under our ECDH/AES conventions. That needs a dashj-generated known
+    /// answer, which no fixture in this repo has. It is why the drain treats a
+    /// permanent register fault on a legacy-cohort request as "leave queued"
+    /// rather than "break the channel".
+    #[tokio::test]
+    async fn legacy_key_id_and_purpose_survive_the_whole_external_build() {
+        use crate::wallet::identity::network::contact_requests::{
+            ContactCryptoProvider, SeedCryptoProvider,
+        };
+        use crate::wallet::identity::IdentityWallet;
+        use key_wallet::bip32::KeyDerivationType;
+
+        let (manager, _persister, wallet_id) = make_wallet().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        let owner_id = Identifier::from([0xAA; 32]);
+        let contact_id = Identifier::from([0xBB; 32]);
+
+        // The legacy slot: key id 3, the one dashj documents put in
+        // `recipientKeyIndex` and that the mint-side policy would refuse.
+        const LEGACY_KEY_ID: u32 = 3;
+        let path =
+            IdentityWallet::<crate::broadcaster::SpvBroadcaster>::identity_auth_derivation_path(
+                Network::Testnet,
+                KeyDerivationType::ECDSA,
+                0,
+                LEGACY_KEY_ID,
+            )
+            .expect("auth path at the legacy key id");
+
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+
+        // The contact's encryption keypair (the "sender" of the request).
+        let secp = dashcore::secp256k1::Secp256k1::new();
+        let contact_secret = dashcore::secp256k1::SecretKey::from_slice(&[0x42u8; 32])
+            .expect("valid contact secret");
+        let contact_public =
+            dashcore::secp256k1::PublicKey::from_secret_key(&secp, &contact_secret);
+
+        // Our side, through the production provider.
+        let ours = provider
+            .ecdh_shared_secret(&path, &contact_public)
+            .await
+            .expect("ECDH at the legacy key id");
+
+        // The sender's side, derived independently from our PUBLIC key at the
+        // same path — the direction dashj would compute.
+        let our_public = provider
+            .receiving_xpub(&path)
+            .await
+            .expect("our xpub at the legacy key id")
+            .public_key;
+        let theirs = platform_encryption::derive_shared_key_ecdh(&contact_secret, &our_public);
+        assert_eq!(
+            ours.as_slice(),
+            theirs.as_slice(),
+            "both sides must derive the same secret at a TRANSFER-purpose key id"
+        );
+
+        // The sender encrypts a real compact xpub to that secret.
+        let compact = {
+            let w = key_wallet::wallet::Wallet::from_seed_bytes(
+                seed,
+                Network::Testnet,
+                WalletAccountCreationOptions::None,
+            )
+            .expect("seed wallet");
+            crate::wallet::identity::crypto::dip14::derive_contact_xpub(
+                &w,
+                Network::Testnet,
+                0,
+                &contact_id,
+                &owner_id,
+            )
+            .expect("derive a valid compact xpub")
+            .compact
+            .to_bytes()
+        };
+        let encrypted =
+            platform_encryption::encrypt_extended_public_key(&theirs, &[0x11u8; 16], &compact);
+
+        // The production registration path: decrypt + parse + register.
+        let registration = iw
+            .dashpay()
+            .register_external_contact_account(
+                &owner_id,
+                &bare_identity([0xBB; 32]),
+                &encrypted,
+                ours,
+            )
+            .await
+            .expect("a legacy-key-id payload must build the external account");
+        assert_eq!(
+            registration,
+            crate::wallet::identity::network::contacts::ExternalAccountRegistration::Built,
+            "the account must be built from this payload, not found pre-existing"
+        );
+    }
+
     /// A `RegisterExternal` entry the drain cannot complete (here: the owner
     /// isn't wallet-owned, so no HD index → it bails before any network fetch)
     /// must be **left queued**, never dropped or crashed — so a later drain can
