@@ -2,6 +2,8 @@ import fs from 'fs';
 import graceful from 'node-graceful';
 import HomeDir from '../../../../src/config/HomeDir.js';
 import BaseCommand from '../../../../src/oclif/command/BaseCommand.js';
+import ResetCommand from '../../../../src/commands/reset.js';
+import GroupResetCommand from '../../../../src/commands/group/reset.js';
 
 class MutatingCommand extends BaseCommand {
   static mutatesConfig = true;
@@ -21,7 +23,7 @@ describe('BaseCommand', () => {
         isExclusive: () => true,
         markRenderPending: () => {},
         clearRenderPending: () => {},
-        recoverPendingRender: () => false,
+        recoverPendingRender: sinon.stub().returns(false),
       };
       const dependencies = {
         configFile,
@@ -69,6 +71,15 @@ describe('BaseCommand', () => {
       expect(configFileRepository.release).to.have.been.calledOnce();
     });
 
+    it('should recover pending service files with the production renderer', async function it() {
+      const { command, configFileRepository, container } = createCommandWithContainer(this.sinon);
+
+      await command.init();
+
+      expect(configFileRepository.recoverPendingRender)
+        .to.have.been.calledOnceWith(container.resolve('writeConfigTemplates'));
+    });
+
     it('should release after a failed command', async function it() {
       const { command, configFileRepository } = createCommandWithContainer(this.sinon);
 
@@ -88,6 +99,68 @@ describe('BaseCommand', () => {
 
       expect(configFileRepository.acquire).to.have.been.calledOnce();
       expect(configFileRepository.release).to.have.been.calledOnce();
+    });
+
+    it('should not let an unrelated force flag skip config validation', async function it() {
+      const { command, configFileRepository } = createCommandWithContainer(
+        this.sinon,
+        BaseCommand,
+      );
+      command.parse.resolves({ args: {}, flags: { force: true } });
+
+      await command.init();
+
+      expect(configFileRepository.readAndMigrate.firstCall.args[0])
+        .to.deep.equal({ skipValidation: false });
+    });
+
+    it('should skip validation only for the config replaced by a forced total reset', async function it() {
+      const platformReset = createCommandWithContainer(this.sinon, ResetCommand);
+      platformReset.command.parse.resolves({
+        args: {},
+        flags: {
+          force: true, hard: true, platform: true, config: 'base',
+        },
+      });
+
+      await platformReset.command.init();
+
+      expect(platformReset.configFileRepository.readAndMigrate.firstCall.args[0])
+        .to.deep.equal({ skipValidation: false });
+
+      const totalReset = createCommandWithContainer(this.sinon, ResetCommand);
+      totalReset.command.parse.resolves({
+        args: {},
+        flags: {
+          force: true, hard: true, platform: false, config: 'base',
+        },
+      });
+
+      await totalReset.command.init();
+
+      const { skipValidation } = totalReset.configFileRepository.readAndMigrate.firstCall.args[0];
+
+      expect(skipValidation).to.be.a('function');
+      expect(skipValidation({ name: 'base', configFileData: {} })).to.be.true();
+      expect(skipValidation({ name: 'node1', configFileData: {} })).to.be.false();
+    });
+
+    it('should skip validation only for configs replaced by a forced group reset', async function it() {
+      const groupReset = createCommandWithContainer(this.sinon, GroupResetCommand);
+      groupReset.command.parse.resolves({
+        args: {},
+        flags: {
+          force: true, hard: true, platform: false, group: 'local',
+        },
+      });
+
+      await groupReset.command.init();
+
+      const { skipValidation } = groupReset.configFileRepository.readAndMigrate.firstCall.args[0];
+
+      expect(skipValidation).to.be.a('function');
+      expect(skipValidation({ options: { group: 'local' }, configFileData: {} })).to.be.true();
+      expect(skipValidation({ options: { group: 'other' }, configFileData: {} })).to.be.false();
     });
 
     it('should keep the command lease while graceful container cleanup runs', async function it() {
@@ -117,7 +190,7 @@ describe('BaseCommand', () => {
         await exitHandler();
 
         expect(release).to.not.have.been.called();
-        expect(fs.existsSync(homeDir.joinPath('config.json.lock'))).to.be.true();
+        expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.true();
       } finally {
         if (release) {
           release.wrappedMethod.call(repository);

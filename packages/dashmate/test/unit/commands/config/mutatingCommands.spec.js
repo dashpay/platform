@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import writeFileAtomic from 'write-file-atomic';
 import HomeDir from '../../../../src/config/HomeDir.js';
 import ConfigFile from '../../../../src/config/configFile/ConfigFile.js';
 import ConfigFileJsonRepository from '../../../../src/config/configFile/ConfigFileJsonRepository.js';
@@ -60,11 +61,53 @@ describe('Config mutating commands', () => {
         loadedConfigFile,
         configFileRepository,
         noTemplates,
+        homeDir,
       );
 
       expect(reread().isConfigExists('node1')).to.be.true();
       expect(loadedConfigFile.isConfigExists('node1')).to.be.false();
       expect(loadedConfigFile.isChanged()).to.be.false();
+    });
+
+    it('should reject a service directory that is not owned by config.json', async () => {
+      const keyPath = homeDir.joinPath('node1', 'platform', 'gateway', 'ssl', 'private.key');
+
+      fs.mkdirSync(path.dirname(keyPath), { recursive: true });
+      fs.writeFileSync(keyPath, 'interrupted-create-private-key');
+
+      await expect(new ConfigCreateCommand().runWithDependencies(
+        { config: 'node1', from: 'base' },
+        flags,
+        loadedConfigFile,
+        configFileRepository,
+        noTemplates,
+        homeDir,
+      )).to.be.rejectedWith('dashmate config remove node1');
+
+      expect(reread().isConfigExists('node1')).to.be.false();
+      expect(fs.readFileSync(keyPath, 'utf8')).to.equal('interrupted-create-private-key');
+
+      await new ConfigRemoveCommand().runWithDependencies(
+        { config: 'node1' },
+        flags,
+        loadedConfigFile,
+        { has: () => false },
+        homeDir,
+        configFileRepository,
+      );
+
+      expect(fs.existsSync(homeDir.joinPath('node1'))).to.be.false();
+
+      await new ConfigCreateCommand().runWithDependencies(
+        { config: 'node1', from: 'base' },
+        flags,
+        loadedConfigFile,
+        configFileRepository,
+        noTemplates,
+        homeDir,
+      );
+
+      expect(reread().isConfigExists('node1')).to.be.true();
     });
   });
 
@@ -78,6 +121,7 @@ describe('Config mutating commands', () => {
         loadedConfigFile,
         configFileRepository,
         noTemplates,
+        homeDir,
       );
 
       expect(reread().getDefaultConfigName()).to.equal('base');
@@ -103,6 +147,7 @@ describe('Config mutating commands', () => {
         loadedConfigFile,
         configFileRepository,
         noTemplates,
+        homeDir,
       );
 
       fs.mkdirSync(homeDir.joinPath('node1'), { recursive: true });
@@ -122,79 +167,64 @@ describe('Config mutating commands', () => {
       expect(fs.existsSync(homeDir.joinPath('node1'))).to.be.false();
     });
 
-    it('should leave the service directory alone when the removal cannot be saved', async () => {
-      const failingRepository = {
-        update: () => {
-          throw new Error('write failed');
-        },
-      };
-      let thrownError;
-
-      try {
-        await new ConfigRemoveCommand().runWithDependencies(
-          { config: 'node1' },
-          flags,
-          loadedConfigFile,
-          { has: () => false },
-          homeDir,
-          failingRepository,
-        );
-      } catch (e) {
-        thrownError = e;
-      }
-
-      expect(thrownError).to.be.an('error');
-      expect(thrownError.message).to.equal('write failed');
-      expect(fs.existsSync(homeDir.joinPath('node1'))).to.be.true();
-      expect(reread().isConfigExists('node1')).to.be.true();
-    });
-
-    // The removal is durable before the files are gone, so a delete that fails
-    // cannot be retried - `config remove` would report the config is not there.
-    // What must not survive is a directory under a name that is now free to
-    // re-create, because the next config of that name would inherit the
-    // previous node's TLS private key.
-    it('should not leave the removed service directory under a re-creatable name', async () => {
+    it('should keep private files live until the removal is durable', async function it() {
       const keyPath = homeDir.joinPath('node1', 'platform', 'gateway', 'ssl', 'private.key');
 
       fs.mkdirSync(path.dirname(keyPath), { recursive: true });
       fs.writeFileSync(keyPath, 'previous-node-private-key');
 
-      const repositoryFailingToDelete = new ConfigFileJsonRepository(
-        (data) => data,
+      this.sinon.stub(writeFileAtomic, 'sync').callsFake(() => {
+        expect(fs.readFileSync(keyPath, 'utf8')).to.equal('previous-node-private-key');
+
+        throw new Error('write failed');
+      });
+
+      await expect(new ConfigRemoveCommand().runWithDependencies(
+        { config: 'node1' },
+        flags,
+        loadedConfigFile,
+        { has: () => false },
         homeDir,
-        () => null,
-      );
-      const { rmSync } = fs;
+        configFileRepository,
+      )).to.be.rejectedWith('write failed');
 
-      // Stand in for a delete that cannot complete - a permission denied, or a
-      // file the platform will not unlink.
-      fs.rmSync = (target, options) => {
-        if (String(target).includes('node1')) {
-          throw new Error('directory is busy');
-        }
+      expect(reread().isConfigExists('node1')).to.be.true();
+      expect(fs.readFileSync(keyPath, 'utf8')).to.equal('previous-node-private-key');
+    });
 
-        return rmSync(target, options);
-      };
+    it('should retry cleanup after the config is already absent', async function it() {
+      const keyPath = homeDir.joinPath('node1', 'platform', 'gateway', 'ssl', 'private.key');
 
-      try {
-        await expect(new ConfigRemoveCommand().runWithDependencies(
-          { config: 'node1' },
-          flags,
-          loadedConfigFile,
-          { has: () => false },
-          homeDir,
-          repositoryFailingToDelete,
-        )).to.be.rejectedWith('directory is busy');
-      } finally {
-        fs.rmSync = rmSync;
-      }
+      fs.mkdirSync(path.dirname(keyPath), { recursive: true });
+      fs.writeFileSync(keyPath, 'previous-node-private-key');
+
+      const rmSync = this.sinon.stub(fs, 'rmSync');
+      rmSync.onFirstCall().throws(new Error('directory is busy'));
+      rmSync.callThrough();
+
+      await expect(new ConfigRemoveCommand().runWithDependencies(
+        { config: 'node1' },
+        flags,
+        loadedConfigFile,
+        { has: () => false },
+        homeDir,
+        configFileRepository,
+      )).to.be.rejectedWith('directory is busy');
 
       expect(reread().isConfigExists('node1')).to.be.false();
-      expect(
-        fs.existsSync(homeDir.joinPath('node1')),
-        'nothing may remain under the name that is now free to re-create',
-      ).to.be.false();
+      expect(fs.existsSync(homeDir.joinPath('node1'))).to.be.true();
+
+      await new ConfigRemoveCommand().runWithDependencies(
+        { config: 'node1' },
+        flags,
+        loadedConfigFile,
+        { has: () => false },
+        homeDir,
+        configFileRepository,
+      );
+
+      expect(reread().isConfigExists('node1')).to.be.false();
+      expect(fs.existsSync(homeDir.joinPath('node1'))).to.be.false();
     });
   });
 });

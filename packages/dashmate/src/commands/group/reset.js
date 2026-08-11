@@ -9,6 +9,19 @@ export default class GroupResetCommand extends GroupBaseCommand {
   // partly irreversible work, so it holds the config lock for its whole run.
   static mutatesConfig = true;
 
+  // A total reset can repair configs whose old options no longer validate.
+  static shouldSkipConfigValidation({
+    force, hard, platform, group,
+  }) {
+    if (!force || !hard || platform) {
+      return false;
+    }
+
+    return ({ options, configFileData }) => (
+      options?.group === (group ?? configFileData.defaultGroupName)
+    );
+  }
+
   static description = 'Reset group nodes';
 
   static flags = {

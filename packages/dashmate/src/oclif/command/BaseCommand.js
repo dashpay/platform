@@ -60,10 +60,13 @@ export default class BaseCommand extends Command {
       // Load config collection from config file, saving it again if loading
       // migrated it - under one lock, so the migrated shape cannot revert a
       // change saved in between.
-      // Skip per-config validation when --force flag is passed (e.g., for reset command)
+      const skipValidation = this.constructor.shouldSkipConfigValidation?.(
+        this.parsedFlags,
+      ) ?? false;
+
       ({ configFile } = configFileRepository.readAndMigrate(
         {
-          skipValidation: Boolean(this.parsedFlags.force),
+          skipValidation,
         },
         (migratedConfigs) => {
           const writeConfigTemplates = this.container.resolve('writeConfigTemplates');
@@ -191,7 +194,7 @@ export default class BaseCommand extends Command {
 
             // Being killed between the render and the save would leave the
             // generated files ahead of the config file with nothing to say so.
-            configFileRepository.markRenderPending();
+            const renderPendingPath = configFileRepository.markRenderPending();
 
             changedConfigs.forEach(writeConfigTemplates);
 
@@ -199,7 +202,9 @@ export default class BaseCommand extends Command {
             // fails, the unchanged format version makes the next command retry it.
             configFileRepository.write(configFile);
 
-            configFileRepository.clearRenderPending();
+            if (configFileRepository.isExclusive()) {
+              configFileRepository.clearRenderPending(renderPendingPath);
+            }
           }
         }
       } catch (e) {

@@ -25,6 +25,8 @@ export default async function renewCertificate({
   configFileRepository.acquire();
 
   try {
+    configFileRepository.recoverPendingRender(writeConfigTemplates);
+
     const { configFile } = configFileRepository.readAndMigrate(
       {},
       (migratedConfigs) => migratedConfigs.forEach(writeConfigTemplates),
@@ -70,13 +72,15 @@ export default async function renewCertificate({
       // leave the gateway's generated files behind a configuration that already
       // claims the new certificate, with nothing to trigger a re-render. The
       // marker covers the helper being killed between the two.
-      configFileRepository.markRenderPending();
+      const renderPendingPath = configFileRepository.markRenderPending();
 
       writeConfigTemplates(config);
 
       configFileRepository.write(configFile);
 
-      configFileRepository.clearRenderPending();
+      if (configFileRepository.isExclusive()) {
+        configFileRepository.clearRenderPending(renderPendingPath);
+      }
     }
 
     return { config, renewed: true };

@@ -6,6 +6,43 @@ import obtainLetsEncryptCertificateTaskFactory from '../../../../src/listr/tasks
 import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFactory.js';
 
 describe('obtainLetsEncryptCertificateTaskFactory', () => {
+  it('should reject a plaintext ACME directory before lego starts', async function it() {
+    const homeDir = HomeDir.createTemp();
+
+    try {
+      const config = getBaseConfigFactory(homeDir)();
+      const options = config.getStoredOptions();
+      options.externalIp = '127.0.0.1';
+      options.platform.gateway.ssl.providerConfigs.letsencrypt.email = 'operator@example.com';
+      options.platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl = 'http://acme.example/directory';
+      config.setOptions(options, true);
+
+      const missingContainerError = new Error('container not found');
+      missingContainerError.statusCode = 404;
+      const docker = {
+        getContainer: this.sinon.stub().rejects(missingContainerError),
+        createContainer: this.sinon.stub().throws(new Error('lego was started')),
+      };
+      const obtainCertificateTask = obtainLetsEncryptCertificateTaskFactory(
+        docker,
+        this.sinon.stub().resolves(),
+        { addContainer: this.sinon.stub() },
+        homeDir,
+        this.sinon.stub(),
+        this.sinon.stub(),
+        null,
+        {},
+      )(config);
+
+      await expect(obtainCertificateTask.run({ force: true }))
+        .to.be.rejectedWith('ACME directory URL must use HTTPS');
+
+      expect(docker.createContainer).to.not.have.been.called();
+    } finally {
+      homeDir.remove();
+    }
+  });
+
   it('should not change config when a valid certificate pair is already installed', async function it() {
     const homeDir = HomeDir.createTemp();
 

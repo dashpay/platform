@@ -9,6 +9,19 @@ export default class ResetCommand extends ConfigBaseCommand {
   // partly irreversible work, so it holds the config lock for its whole run.
   static mutatesConfig = true;
 
+  // A total reset can repair a config whose old options no longer validate.
+  static shouldSkipConfigValidation({
+    force, hard, platform, config,
+  }) {
+    if (!force || !hard || platform) {
+      return false;
+    }
+
+    return ({ name, configFileData }) => (
+      name === (config ?? configFileData.defaultConfigName)
+    );
+  }
+
   static description = 'Reset node data';
 
   static flags = {

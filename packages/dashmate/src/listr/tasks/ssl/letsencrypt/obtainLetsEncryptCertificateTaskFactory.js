@@ -146,6 +146,17 @@ export default function obtainLetsEncryptCertificateTaskFactory(
         task: async (ctx, task) => {
           const { uid, gid } = os.userInfo();
 
+          let acmeDirectoryUrl;
+          try {
+            acmeDirectoryUrl = new URL(ctx.acmeDirectoryUrl);
+          } catch {
+            throw new Error('ACME directory URL must use HTTPS');
+          }
+
+          if (acmeDirectoryUrl.protocol !== 'https:') {
+            throw new Error('ACME directory URL must use HTTPS');
+          }
+
           // Determine if this is initial run or renewal
           const command = ctx.isRenewal ? 'renew' : 'run';
 
@@ -153,7 +164,7 @@ export default function obtainLetsEncryptCertificateTaskFactory(
           // --disable-cn is needed for IP address certificates
           // --key-type rsa2048 is needed because node-forge doesn't support ECDSA
           const legoArgs = [
-            `--server=${ctx.acmeDirectoryUrl}`,
+            `--server=${acmeDirectoryUrl.toString()}`,
             '--email', ctx.email,
             '--accept-tos',
             '--http',

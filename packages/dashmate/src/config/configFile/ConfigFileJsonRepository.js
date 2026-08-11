@@ -1,6 +1,7 @@
 import fs from 'fs';
 import Ajv from 'ajv';
 import path from 'path';
+import { randomUUID } from 'crypto';
 import lockfile from 'proper-lockfile';
 import semver from 'semver';
 import writeFileAtomic from 'write-file-atomic';
@@ -92,18 +93,21 @@ export default class ConfigFileJsonRepository {
     this.ajv = new Ajv();
     this.lockStaleMs = configFileLockOptions.stale ?? LOCK_STALE_MS;
     this.lockAcquireTimeoutMs = configFileLockOptions.acquireTimeout ?? LOCK_ACQUIRE_TIMEOUT_MS;
+    this.homeDirPath = homeDir.getPath();
     this.configFilePath = homeDir.joinPath('config.json');
     // Locking a sibling rather than the config file itself keeps first run
     // working, where there is no config file to lock yet.
-    this.lockFilePath = homeDir.joinPath('config.json.lock');
-    this.renderPendingPath = homeDir.joinPath('config.json.render-pending');
+    this.lockFilePath = homeDir.joinPath('.config.json.lock');
+    this.renderPendingPrefix = '.config.json.render-pending-';
+    this.legacyRenderPendingPath = homeDir.joinPath('config.json.render-pending');
   }
 
   /**
    * Load configs from file
    *
    * @param {Object} [options={}]
-   * @param {boolean} [options.skipValidation=false] - Skip per-config schema validation
+   * @param {boolean|function(Object): boolean} [options.skipValidation=false]
+   *   Skip per-config schema validation globally or for configs selected by a predicate
    * @returns {ConfigFile}
    */
   read(options = {}) {
@@ -142,7 +146,17 @@ export default class ConfigFileJsonRepository {
     let configs;
     try {
       configs = Object.entries(migratedConfigFileData.configs)
-        .map(([name, opts]) => new Config(name, opts, skipValidation));
+        .map(([name, opts]) => {
+          const isValidationSkipped = typeof skipValidation === 'function'
+            ? skipValidation({
+              name,
+              options: opts,
+              configFileData: migratedConfigFileData,
+            })
+            : skipValidation;
+
+          return new Config(name, opts, isValidationSkipped);
+        });
     } catch (e) {
       throw new InvalidConfigFileFormatError(this.configFilePath, e);
     }
@@ -180,8 +194,9 @@ export default class ConfigFileJsonRepository {
    * @param {Object} [options={}]
    * @param {function(ConfigFile): void} [options.beforeSave] - runs while the
    *   lock is held and before the change is durable, for effects that must be
-   *   in place for it to mean anything: rendering service files. Failing here
-   *   leaves nothing committed, so re-running the command retries both.
+   *   in place for it to mean anything: rendering service files. It may run a
+   *   second time with the last durable ConfigFile after a save failure, so it
+   *   must be idempotent across both inputs.
    * @param {function(ConfigFile): void} [options.onSaved] - runs after the save
    *   and before the lock is released, for effects that must not happen unless
    *   the change reached disk: removing a config's directory
@@ -198,23 +213,38 @@ export default class ConfigFileJsonRepository {
 
       mutate(configFile);
 
+      if (!this.isExclusive()) {
+        // Preserve the pending JSON through the normal lost-lock rescue path,
+        // but do not render service files from a stale snapshot.
+        this.#save(configFile);
+      }
+
+      let renderPendingPath;
+
       if (beforeSave) {
-        this.markRenderPending();
+        renderPendingPath = this.markRenderPending();
 
         beforeSave(configFile);
       }
 
       try {
         this.#save(configFile);
+
+        if (!this.isExclusive()) {
+          throw new Error('Lost the configuration lock after saving the config file;'
+            + ' follow-up filesystem changes were not run. Re-run the command.');
+        }
       } catch (e) {
         // The generated files now describe a change that did not survive.
         // Nothing else records that they are ahead, so re-render them from the
         // state that is still there rather than leave the two disagreeing.
-        if (beforeSave && fs.existsSync(this.configFilePath)) {
+        if (beforeSave && this.isExclusive() && fs.existsSync(this.configFilePath)) {
           try {
             beforeSave(this.read());
 
-            this.clearRenderPending();
+            if (this.isExclusive()) {
+              this.clearRenderPending(renderPendingPath);
+            }
           } catch {
             // Keep the save failure - it is the one the caller has to act on -
             // and leave the marker, so the next command renders again.
@@ -224,7 +254,9 @@ export default class ConfigFileJsonRepository {
         throw e;
       }
 
-      this.clearRenderPending();
+      if (renderPendingPath !== undefined) {
+        this.clearRenderPending(renderPendingPath);
+      }
 
       if (onSaved) {
         onSaved(configFile);
@@ -266,6 +298,10 @@ export default class ConfigFileJsonRepository {
     }
 
     return this.#locked(() => {
+      if (!this.isExclusive()) {
+        throw new Error('Lost the configuration lock before the config file was migrated.');
+      }
+
       // Another process may have migrated or changed the file while this
       // process waited, so never save the result of the unlocked probe.
       const result = readResult();
@@ -332,19 +368,30 @@ export default class ConfigFileJsonRepository {
    *
    * Caller must hold the lock.
    *
-   * @returns {void}
+   * Each render gets its own file, so a process can clear only the debt it
+   * created even if its lock is compromised and another writer starts.
+   *
+   * @returns {string} path to the caller-owned debt record
    */
   markRenderPending() {
-    fs.writeFileSync(this.renderPendingPath, '', 'utf8');
+    const renderPendingPath = path.join(
+      this.homeDirPath,
+      `${this.renderPendingPrefix}${randomUUID()}`,
+    );
+
+    fs.writeFileSync(renderPendingPath, '', 'utf8');
+
+    return renderPendingPath;
   }
 
   /**
    * Drop the marker once the config file and the service files agree again.
    *
+   * @param {string} renderPendingPath
    * @returns {void}
    */
-  clearRenderPending() {
-    fs.rmSync(this.renderPendingPath, { force: true });
+  clearRenderPending(renderPendingPath) {
+    fs.rmSync(renderPendingPath, { force: true });
   }
 
   /**
@@ -353,7 +400,7 @@ export default class ConfigFileJsonRepository {
    * @returns {boolean}
    */
   isRenderPending() {
-    return fs.existsSync(this.renderPendingPath);
+    return this.#getRenderPendingPaths().length > 0;
   }
 
   /**
@@ -367,24 +414,57 @@ export default class ConfigFileJsonRepository {
    * @returns {boolean} whether anything was re-rendered
    */
   recoverPendingRender(render) {
-    if (!this.isRenderPending()) {
+    if (this.#getRenderPendingPaths().length === 0) {
       return false;
     }
 
     return this.#locked(() => {
       // Another process may have finished the recovery while this one waited.
-      if (!this.isRenderPending() || !fs.existsSync(this.configFilePath)) {
-        this.clearRenderPending();
+      const renderPendingPaths = this.#getRenderPendingPaths();
+
+      if (renderPendingPaths.length === 0) {
+        return false;
+      }
+
+      if (!this.isExclusive()) {
+        throw new Error('Lost the configuration lock before pending service files were recovered.');
+      }
+
+      if (!fs.existsSync(this.configFilePath)) {
+        renderPendingPaths.forEach((renderPendingPath) => {
+          this.clearRenderPending(renderPendingPath);
+        });
 
         return false;
       }
 
       this.read().getAllConfigs().forEach(render);
 
-      this.clearRenderPending();
+      if (!this.isExclusive()) {
+        throw new Error('Lost the configuration lock while pending service files were recovered.');
+      }
+
+      renderPendingPaths.forEach((renderPendingPath) => {
+        this.clearRenderPending(renderPendingPath);
+      });
 
       return true;
     });
+  }
+
+  /**
+   * @returns {string[]}
+   */
+  #getRenderPendingPaths() {
+    const legacyRenderPendingPaths = fs.existsSync(this.legacyRenderPendingPath)
+      && fs.statSync(this.legacyRenderPendingPath).isFile()
+      ? [this.legacyRenderPendingPath]
+      : [];
+
+    return fs.readdirSync(this.homeDirPath)
+      .filter((name) => name.startsWith(this.renderPendingPrefix))
+      .map((name) => path.join(this.homeDirPath, name))
+      .concat(legacyRenderPendingPaths);
   }
 
   /**

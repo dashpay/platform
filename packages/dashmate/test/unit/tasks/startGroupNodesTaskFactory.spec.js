@@ -56,7 +56,7 @@ describe('startGroupNodesTaskFactory', () => {
     renderedWhileLocked = false;
     writeConfigTemplates = this.sinon.stub().callsFake((config) => {
       renderedConfig = config;
-      renderedWhileLocked = fs.existsSync(homeDir.joinPath('config.json.lock'));
+      renderedWhileLocked = fs.existsSync(homeDir.joinPath('.config.json.lock'));
     });
 
     startGroupNodesTask = startGroupNodesTaskFactory(

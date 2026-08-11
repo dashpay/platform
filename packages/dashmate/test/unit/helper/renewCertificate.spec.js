@@ -57,7 +57,7 @@ describe('renewCertificate', () => {
 
       return {
         run: this.sinon.stub().callsFake(async () => {
-          expect(fs.existsSync(homeDir.joinPath('config.json.lock'))).to.be.true();
+          expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.true();
           config.set(
             'platform.gateway.ssl.providerConfigs.zerossl.id',
             'renewed-certificate-id-0000000000',
@@ -66,7 +66,7 @@ describe('renewCertificate', () => {
       };
     });
     const writeConfigTemplates = this.sinon.stub().callsFake((config) => {
-      expect(fs.existsSync(homeDir.joinPath('config.json.lock'))).to.be.true();
+      expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.true();
       config.markAsSaved();
     });
 
@@ -90,7 +90,40 @@ describe('renewCertificate', () => {
       .to.equal('renewed-certificate-id-0000000000');
     expect(obtainCertificateTask).to.have.been.calledOnce();
     expect(writeConfigTemplates).to.have.been.calledOnceWith(renewedConfig);
-    expect(fs.existsSync(homeDir.joinPath('config.json.lock'))).to.be.false();
+    expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.false();
+  });
+
+  it('should discharge older render debt before renewing one config', async function it() {
+    repository.update((configFile) => {
+      configFile.createConfig('node1', configName);
+    });
+    repository.markRenderPending();
+
+    const obtainCertificateTask = this.sinon.stub().callsFake((config) => ({
+      run: this.sinon.stub().callsFake(async () => {
+        config.set(
+          'platform.gateway.ssl.providerConfigs.zerossl.id',
+          'renewed-certificate-id-0000000000',
+        );
+      }),
+    }));
+    const renderedNames = [];
+    const writeConfigTemplates = this.sinon.stub().callsFake((config) => {
+      renderedNames.push(config.getName());
+      config.markAsSaved();
+    });
+
+    await renewCertificate({
+      configName,
+      provider: 'zerossl',
+      expirationDays: 30,
+      obtainCertificateTask,
+      configFileRepository: repository,
+      writeConfigTemplates,
+    });
+
+    expect(renderedNames).to.deep.equal([configName, 'node1', configName]);
+    expect(repository.isRenderPending()).to.be.false();
   });
 
   it('should not renew when the provider changed after helper startup', async function it() {
@@ -116,7 +149,7 @@ describe('renewCertificate', () => {
     expect(writeConfigTemplates).to.not.have.been.called();
     expect(repository.read().getConfig(configName)
       .get('platform.gateway.ssl.provider')).to.equal('self-signed');
-    expect(fs.existsSync(homeDir.joinPath('config.json.lock'))).to.be.false();
+    expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.false();
   });
 
   it('should not write or render when the obtain task changes nothing', async function it() {
@@ -203,6 +236,6 @@ describe('renewCertificate', () => {
       .to.equal('pending-certificate-id-00000000000');
     expect(persisted.get('platform.gateway.ssl.enabled')).to.be.true();
     expect(writeConfigTemplates).to.not.have.been.called();
-    expect(fs.existsSync(homeDir.joinPath('config.json.lock'))).to.be.false();
+    expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.false();
   });
 });
