@@ -313,23 +313,35 @@ public final class PersistentIdentity {
     public func replacePublicKeysPreservingProvenance(
         with newKeys: [PersistentPublicKey]
     ) {
+        let outgoing = publicKeys
         let outgoingByKeyId = Dictionary(
-            publicKeys.map { ($0.keyId, $0) },
+            outgoing.map { ($0.keyId, $0) },
             uniquingKeysWith: { first, _ in first }
         )
         publicKeys.removeAll()
         for key in newKeys {
-            if let outgoing = outgoingByKeyId[key.keyId],
-               outgoing.publicKeyData == key.publicKeyData {
+            if let previous = outgoingByKeyId[key.keyId],
+               previous.publicKeyData == key.publicKeyData {
                 if key.privateKeyKeychainIdentifier == nil {
-                    key.privateKeyKeychainIdentifier = outgoing.privateKeyKeychainIdentifier
+                    key.privateKeyKeychainIdentifier = previous.privateKeyKeychainIdentifier
                 }
                 if key.walletId == nil {
-                    key.walletId = outgoing.walletId
-                    key.identityDerivationPath = outgoing.identityDerivationPath
+                    key.walletId = previous.walletId
+                    key.identityDerivationPath = previous.identityDerivationPath
                 }
             }
             addPublicKey(key)
+        }
+        // Delete the replaced rows outright: removing them from the
+        // relationship only detaches (`.cascade` fires on parent
+        // deletion, not on collection removal), and detached orphans
+        // sharing `(publicKeyData, keyId)` with live keys have
+        // misdirected the breadcrumb backfill before. Their
+        // provenance was already copied onto the replacements.
+        if let context = modelContext {
+            for replaced in outgoing {
+                context.delete(replaced)
+            }
         }
     }
 

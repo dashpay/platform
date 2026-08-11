@@ -480,6 +480,13 @@ public class PlatformWalletManager: ObservableObject {
         }
         let w = ManagedPlatformWallet(handle: walletHandle, walletId: idData)
         self.wallets[idData] = w
+        // Establish verified signing capability for the fresh wallet now
+        // (minting the seed-binding marker when a Keychain mnemonic backs
+        // it) — identities registered this session would otherwise defer
+        // their `isLocal` promotion until the next launch's unlock runs
+        // the verification. Best-effort: a failure only delays promotion,
+        // it can't mis-classify.
+        try? verifySeedBinding(w)
         return w
     }
 
@@ -529,6 +536,13 @@ public class PlatformWalletManager: ObservableObject {
         }
         let w = ManagedPlatformWallet(handle: walletHandle, walletId: idData)
         self.wallets[idData] = w
+        // Establish verified signing capability for the fresh wallet now
+        // (minting the seed-binding marker when a Keychain mnemonic backs
+        // it) — identities registered this session would otherwise defer
+        // their `isLocal` promotion until the next launch's unlock runs
+        // the verification. Best-effort: a failure only delays promotion,
+        // it can't mis-classify.
+        try? verifySeedBinding(w)
         return w
     }
 
@@ -759,12 +773,25 @@ public class PlatformWalletManager: ObservableObject {
         }
 
         // A genuine watch-only wallet (imported by xpub, never holding a
-        // seed) has no Keychain mnemonic — stays watch-only. Existence-only
-        // check; the plaintext is never materialized in Swift.
-        guard walletStorage.hasMnemonic(for: walletId) else {
-            // No mnemonic is no longer a mismatch: a wallet whose seed failed
-            // to bind and whose Keychain item was then removed must not keep
-            // publishing the banner for a seed that is no longer there.
+        // seed) has no Keychain mnemonic — stays watch-only. Tri-state on
+        // purpose: definitive absence is a capability REVOCATION (a wallet
+        // whose seed was removed must not keep its identities classified
+        // Local on a marker minted for the departed seed), while a
+        // transient Keychain failure preserves all state — "couldn't look"
+        // never concludes. The plaintext is never materialized in Swift.
+        switch walletStorage.mnemonicAvailability(for: walletId) {
+        case .present:
+            break
+        case .absent:
+            // No mnemonic is no longer a mismatch banner-wise: a wallet
+            // whose seed failed to bind and whose Keychain item was then
+            // removed must not keep publishing the banner for a seed that
+            // is no longer there. But the stale verification marker and
+            // any wallet-arm `isLocal` promotions must go with the seed.
+            setDashPaySeedMismatch(walletId, false)
+            persistenceHandler?.handleSeedBindingMismatch(walletId: walletId)
+            return .watchOnly
+        case .unavailable:
             setDashPaySeedMismatch(walletId, false)
             return .watchOnly
         }

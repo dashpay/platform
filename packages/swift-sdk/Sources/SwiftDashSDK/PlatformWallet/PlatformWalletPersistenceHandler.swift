@@ -1841,21 +1841,25 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 entry.walletId ?? (entry.identityIndex != nil ? walletId : nil)
             if let ownerWallet = fetchWalletForLink(walletId: ownerWalletId) {
                 row.wallet = ownerWallet
-                // Wallet linkage PROMOTES to local — but only when
-                // the wallet actually holds signing material: a
-                // watch-only wallet can own the identity on paper yet
-                // cannot act as it, and "Local" gates mutation
-                // controls. Absence never demotes: an identity can be
-                // local without a wallet (imported masternode
-                // voting/owner/payout keys, pasted user keys —
-                // LoadIdentityView sets those rows local itself).
-                // One-way stamp only; `loadWalletList()` applies the
-                // same upward-only heal at startup for rows this path
+                // Wallet linkage PROMOTES to local — but only with
+                // identity-level derivation evidence AND wallet
+                // signing capability. The evidence requirement holds
+                // even though the entry declares ownership: a
+                // restore-launder loop (mislink restored as owned →
+                // re-emitted with wallet_id set) produces exactly
+                // this shape, and only the absence of stamped key
+                // rows distinguishes it. A FRESH registration's
+                // identity row has no key rows yet at this point in
+                // the round — its promotion rides the paired
+                // `persistIdentityKeys` callback moments later, once
+                // the stamps exist. Absence never demotes; the heal
+                // and marker-write promotion cover rows this path
                 // never touches again.
-                if walletSigningMaterialProbe(
-                    ownerWallet.walletId,
-                    ownerWallet.seedBindingVerifiedMarker
-                ) == true {
+                if Self.walletKeyEvidence(row, walletId: ownerWallet.walletId),
+                   walletSigningMaterialProbe(
+                       ownerWallet.walletId,
+                       ownerWallet.seedBindingVerifiedMarker
+                   ) == true {
                     row.isLocal = true
                 }
             } else if let declaredOwnerId = ownerWalletId {
@@ -2268,6 +2272,25 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 row.walletId = resolvedWalletId
                 if let path = identityAuthPath(walletId: resolvedWalletId, indices: indices) {
                     row.identityDerivationPath = path
+                }
+                // The stamp just written IS the ownership evidence
+                // the promotion gates require — and for a fresh
+                // registration this is the first moment in the round
+                // it exists (the identities callback ran before the
+                // keys arrived). Promote the parent row here, under
+                // the same capability probe, so a new identity is
+                // Local within its own persist round instead of
+                // waiting for the startup heal.
+                if let parent = row.identity,
+                   !parent.isLocal,
+                   let ownerWallet = parent.wallet,
+                   ownerWallet.walletId == resolvedWalletId,
+                   walletSigningMaterialProbe(
+                       ownerWallet.walletId,
+                       ownerWallet.seedBindingVerifiedMarker
+                   ) == true {
+                    parent.isLocal = true
+                    parent.lastUpdated = Date()
                 }
             }
 
@@ -3041,18 +3064,37 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
             )
             let candidates = (try? backgroundContext.fetch(descriptor)) ?? []
-            guard let row = candidates.first(where: { candidate in
-                if let metaIdentityId {
+            let selected: PersistentPublicKey?
+            if let metaIdentityId {
+                selected = candidates.first { candidate in
                     if let linked = candidate.identity {
                         return linked.identityId == metaIdentityId
                     }
                     return Self.canonicalIdentityId(candidate.identityId) == metaIdentityId
                 }
-                if let linked = candidate.identity {
-                    return linked.identityIndex == meta.identityIndex
+            } else {
+                // Placeholder metadata ("pending"): prefer an
+                // unambiguous LINKED candidate whose identity index
+                // corroborates. When linked candidates exist but none
+                // corroborates, do NOT fall through to an unlinked
+                // row — orphans detached by old key replacements can
+                // share (publicKeyData, keyId) with the live key, and
+                // stamping the orphan would leave the live identity
+                // without evidence. Unlinked rows are acceptable only
+                // when no linked candidate exists at all (legacy
+                // stores that predate the relationship).
+                let linked = candidates.filter { $0.identity != nil }
+                if let match = linked.first(where: {
+                    $0.identity?.identityIndex == meta.identityIndex
+                }) {
+                    selected = match
+                } else if linked.isEmpty {
+                    selected = candidates.first
+                } else {
+                    selected = nil
                 }
-                return true
-            }) else {
+            }
+            guard let row = selected else {
                 // No row yet (e.g. store rebuilt before discovery re-ran).
                 // Discovery re-materializes and writes the column itself;
                 // nothing for the backfill to heal here.
@@ -4369,33 +4411,83 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         onQueue {
             guard let wallet = findWalletRecord(walletId: walletId) else { return }
             wallet.seedBindingVerifiedMarker = marker
+            // The verification that minted this marker proves the
+            // wallet's signing capability NOW — promote its evidenced
+            // identities in-session instead of waiting for the next
+            // launch's heal (which already ran, before verification).
+            promoteEvidencedIdentitiesLocked(wallet: wallet)
             wallet.lastUpdated = Date()
             try? backgroundContext.save()
         }
     }
 
-    /// React to a FAILED seed-binding verification: the mnemonic item
-    /// exists but does not bind to this wallet, so the persisted
+    /// React to a definitive loss of wallet signing capability — a
+    /// FAILED seed-binding verification (mnemonic exists but doesn't
+    /// bind to this wallet) or confirmed seed removal. The persisted
     /// verification marker is stale and every `isLocal` promoted from
     /// this wallet's linkage is wrong. The second sanctioned demotion
     /// path (alongside explicit key removal): the wallet arm is
     /// removed from each identity's locality, leaving only what
-    /// imported key material still proves. A later successful verify
-    /// re-writes the marker and the upsert/heal promotions return.
+    /// imported key material still proves — verified against LIVE
+    /// Keychain state via the strict tri-state probes, because stored
+    /// identifiers can outlive wiped items (a wrong seed plus stale
+    /// references must not keep a row Local). An UNANSWERABLE probe
+    /// preserves that arm rather than concluding. A later successful
+    /// verify re-writes the marker and promotions return.
     public func handleSeedBindingMismatch(walletId: Data) {
         onQueue {
             guard let wallet = findWalletRecord(walletId: walletId) else { return }
             wallet.seedBindingVerifiedMarker = nil
+            let keychain = KeychainManager.shared
             for row in wallet.identities where row.isLocal {
-                row.isLocal =
-                    row.publicKeys.contains { $0.privateKeyKeychainIdentifier != nil }
-                    || row.votingPrivateKeyIdentifier != nil
-                    || row.ownerPrivateKeyIdentifier != nil
-                    || row.payoutPrivateKeyIdentifier != nil
+                var stillLocal = false
+                for key in row.publicKeys where key.privateKeyKeychainIdentifier != nil {
+                    let present = keychain.identityScalarConfirmedPresent(
+                        identityId: row.identityId,
+                        keyIndex: key.keyId,
+                        publicKeyHex: key.publicKeyData.toHexString()
+                    )
+                    // Present → local; unknown → preserve the claim.
+                    if present != false { stillLocal = true; break }
+                }
+                if !stillLocal, row.votingPrivateKeyIdentifier != nil,
+                   keychain.specialKeyConfirmedPresent(
+                       identityId: row.identityId, keyType: .voting
+                   ) != false {
+                    stillLocal = true
+                }
+                if !stillLocal, row.ownerPrivateKeyIdentifier != nil,
+                   keychain.specialKeyConfirmedPresent(
+                       identityId: row.identityId, keyType: .owner
+                   ) != false {
+                    stillLocal = true
+                }
+                if !stillLocal, row.payoutPrivateKeyIdentifier != nil,
+                   keychain.specialKeyConfirmedPresent(
+                       identityId: row.identityId, keyType: .payout
+                   ) != false {
+                    stillLocal = true
+                }
+                row.isLocal = stillLocal
                 row.lastUpdated = Date()
             }
             wallet.lastUpdated = Date()
             try? backgroundContext.save()
+        }
+    }
+
+    /// In-session promotion after a seed-binding verification WRITES
+    /// its marker: the startup heal runs before `verifySeedBinding`,
+    /// so without this a just-verified wallet's evidenced identities
+    /// would stay non-local until an unrelated upsert or the next
+    /// launch. Same gates as the heal (derivation evidence; the
+    /// wallet's capability was proven by the verification that minted
+    /// the marker).
+    private func promoteEvidencedIdentitiesLocked(wallet: PersistentWallet) {
+        for row in wallet.identities
+        where !row.isLocal && Self.walletKeyEvidence(row, walletId: wallet.walletId) {
+            row.isLocal = true
+            row.lastUpdated = Date()
         }
     }
 

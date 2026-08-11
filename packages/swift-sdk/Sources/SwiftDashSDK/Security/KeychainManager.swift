@@ -459,7 +459,7 @@ public final class KeychainManager: Sendable {
         return "privkey_\(identityId.toHexString())_\(keyIndex)"
     }
 
-    private func generateSpecialKeyIdentifier(identityId: Data, keyType: SpecialKeyType) -> String {
+    private nonisolated func generateSpecialKeyIdentifier(identityId: Data, keyType: SpecialKeyType) -> String {
         return "specialkey_\(identityId.toHexString())_\(keyType.rawValue)"
     }
 }
@@ -1029,6 +1029,54 @@ extension KeychainManager {
             }
         }
         return accounts
+    }
+
+    /// Strict tri-state presence probe for one identity key's
+    /// materialized scalar across BOTH storage schemes: `true` = at
+    /// least one item confirmed present, `false` = both schemes
+    /// confirmed absent, `nil` = a lookup failed (locked/inaccessible
+    /// Keychain) — callers must preserve their current state on
+    /// `nil`, never conclude. Attributes-only.
+    public nonisolated func identityScalarConfirmedPresent(
+        identityId: Data,
+        keyIndex: Int32,
+        publicKeyHex: String?
+    ) -> Bool? {
+        guard let legacyAbsent = legacyPrivateKeyConfirmedAbsent(
+            identityId: identityId, keyIndex: keyIndex
+        ) else { return nil }
+        if !legacyAbsent { return true }
+        guard let publicKeyHex, !publicKeyHex.isEmpty else { return false }
+        guard let derived = identityPrivateKeyAccountsForForget(
+            matching: publicKeyHex
+        ) else { return nil }
+        return derived.isEmpty ? false : true
+    }
+
+    /// Strict tri-state presence probe for a voting/owner/payout
+    /// special key. Same contract as
+    /// `identityScalarConfirmedPresent`: `nil` means "couldn't look".
+    public nonisolated func specialKeyConfirmedPresent(
+        identityId: Data,
+        keyType: SpecialKeyType
+    ) -> Bool? {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecAttrAccount as String: generateSpecialKeyIdentifier(
+                identityId: identityId, keyType: keyType
+            ),
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecReturnAttributes as String: true,
+        ]
+        if let accessGroup = accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecSuccess { return true }
+        if status == errSecItemNotFound { return false }
+        return nil
     }
 
     /// Strict absence probe for the legacy `(identityId, keyIndex)`

@@ -121,28 +121,65 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
 
     // MARK: Upsert derivation
 
-    /// A wallet-owned entry (Rust stamps `wallet_id` on every
-    /// `add_identity` / load / discovery emission) links the wallet
-    /// relationship AND persists `isLocal == true`.
-    func testWalletOwnedEntryPersistsIsLocalTrue() throws {
+    /// A wallet-owned entry links the wallet relationship, and once
+    /// the identity's derivation-stamped key rows exist (they land in
+    /// the same persist round via the paired keys callback), the
+    /// upsert promotes `isLocal == true`. Promotion is
+    /// evidence-gated on purpose: a bare wallet_id declaration can be
+    /// laundered through restore, so a fresh row with no key rows is
+    /// linked but not yet Local.
+    func testWalletOwnedEntryPromotesOnceEvidenceExists() throws {
         try insertWalletRow()
         applyIdentities([
             makeEntry(identityId: ownIdentityId, identityIndex: 0, walletId: walletId)
         ])
 
-        let row = try XCTUnwrap(try fetchIdentity(ownIdentityId))
-        XCTAssertEqual(row.wallet?.walletId, walletId)
+        let created = try XCTUnwrap(try fetchIdentity(ownIdentityId))
+        XCTAssertEqual(created.wallet?.walletId, walletId)
+        XCTAssertFalse(
+            created.isLocal,
+            "no key rows yet — a bare ownership declaration must not promote"
+        )
+
+        // The paired keys callback stamps the rows; the next entry
+        // re-emit (same round in production) promotes.
+        let context = ModelContext(container)
+        let row = try XCTUnwrap(
+            try context.fetch(
+                FetchDescriptor<PersistentIdentity>(
+                    predicate: #Predicate { $0.identityId == ownIdentityId }
+                )
+            ).first
+        )
+        attachKeyRow(to: row, stampedWalletId: walletId)
+        try context.save()
+        applyIdentities([
+            makeEntry(identityId: ownIdentityId, identityIndex: 0, walletId: walletId)
+        ])
+
+        let promoted = try XCTUnwrap(try fetchIdentity(ownIdentityId))
         XCTAssertTrue(
-            row.isLocal,
+            promoted.isLocal,
             "the wallet's own identity must persist isLocal == true (the mainnet field bug)"
         )
     }
 
     /// A wallet-derived entry that arrives without its own
     /// `wallet_id` but WITH an identity index (create-flow corner
-    /// case) falls back to the changeset's scope wallet.
+    /// case) falls back to the changeset's scope wallet, and an
+    /// evidenced row promotes through that fallback linkage.
     func testIndexOnlyEntryFallsBackToScopeWallet() throws {
         try insertWalletRow()
+        let context = ModelContext(container)
+        let seeded = PersistentIdentity(
+            identityId: ownIdentityId,
+            isLocal: false,
+            network: .testnet
+        )
+        context.insert(seeded)
+        attachKeyRow(to: seeded, stampedWalletId: walletId)
+        try context.save()
+
         applyIdentities([
             makeEntry(identityId: ownIdentityId, identityIndex: 0, walletId: nil)
         ])
@@ -191,6 +228,7 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
         )
         staleOwn.wallet = wallet
         context.insert(staleOwn)
+        attachKeyRow(to: staleOwn, stampedWalletId: walletId)
         // Mislinked by the old fallback AND marked local (as an
         // imported-keys identity would be).
         let mislinkedLocal = PersistentIdentity(
