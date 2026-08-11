@@ -485,6 +485,13 @@ pub enum PlatformWalletError {
     #[error("Insufficient shielded balance: available {available}, required {required}")]
     ShieldedInsufficientBalance { available: u64, required: u64 },
 
+    /// A Platform Payment-account shield cannot be represented from the
+    /// wallet's deterministic address-input set at the requested amount.
+    /// Distinct from [`ShieldedInsufficientBalance`](Self::ShieldedInsufficientBalance),
+    /// which refers exclusively to private note selection.
+    #[error("Platform shield capacity exceeded: available {available}, required {required}")]
+    PlatformShieldCapacityExceeded { available: u64, required: u64 },
+
     #[error("Shielded build error: {0}")]
     ShieldedBuildError(String),
 

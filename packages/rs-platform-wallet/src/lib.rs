@@ -81,7 +81,11 @@ pub use wallet::identity::{
     RegistrationIndex, DEFAULT_CONTACT_GAP_LIMIT,
 };
 pub use wallet::platform_wallet::PlatformWalletInfo;
+#[cfg(feature = "shielded")]
+pub use wallet::platform_wallet::ShieldedShieldPreflight;
 pub use wallet::provider_key_at_index::{ProviderDerivedKey, ProviderKeyKind};
+#[cfg(feature = "shielded")]
+pub use wallet::shielded::operations::shield_fee_reserve_credits;
 pub use wallet::PlatformAddressTag;
 pub use wallet::PlatformWallet;
 
