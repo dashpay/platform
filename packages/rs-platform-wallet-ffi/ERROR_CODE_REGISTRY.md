@@ -586,8 +586,10 @@ since and the frontier has moved on — see the frontier note):
   #4256's missing raw cases — have both been closed.
 
 PR heads of record — a **historical snapshot, read 2026-08-04 (fork era)**
-and retained as record; every non-merged PR below has since been closed and,
-where still needed, recreated in-repository (see the migration note above):
+and retained as record. Most non-merged PRs below have since been closed and,
+where still needed, recreated in-repository (see the migration note above) —
+the exceptions being **#3968 and #4243, which GitHub still reports OPEN** (each
+row notes its live status):
 
 | PR | Head | Note |
 | --- | --- | --- |
