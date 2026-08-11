@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 import HomeDir from '../../../../src/config/HomeDir.js';
 import ConfigFile from '../../../../src/config/configFile/ConfigFile.js';
 import ConfigFileJsonRepository from '../../../../src/config/configFile/ConfigFileJsonRepository.js';
@@ -146,6 +147,54 @@ describe('Config mutating commands', () => {
       expect(thrownError.message).to.equal('write failed');
       expect(fs.existsSync(homeDir.joinPath('node1'))).to.be.true();
       expect(reread().isConfigExists('node1')).to.be.true();
+    });
+
+    // The removal is durable before the files are gone, so a delete that fails
+    // cannot be retried - `config remove` would report the config is not there.
+    // What must not survive is a directory under a name that is now free to
+    // re-create, because the next config of that name would inherit the
+    // previous node's TLS private key.
+    it('should not leave the removed service directory under a re-creatable name', async () => {
+      const keyPath = homeDir.joinPath('node1', 'platform', 'gateway', 'ssl', 'private.key');
+
+      fs.mkdirSync(path.dirname(keyPath), { recursive: true });
+      fs.writeFileSync(keyPath, 'previous-node-private-key');
+
+      const repositoryFailingToDelete = new ConfigFileJsonRepository(
+        (data) => data,
+        homeDir,
+        () => null,
+      );
+      const { rmSync } = fs;
+
+      // Stand in for a delete that cannot complete - a permission denied, or a
+      // file the platform will not unlink.
+      fs.rmSync = (target, options) => {
+        if (String(target).includes('node1')) {
+          throw new Error('directory is busy');
+        }
+
+        return rmSync(target, options);
+      };
+
+      try {
+        await expect(new ConfigRemoveCommand().runWithDependencies(
+          { config: 'node1' },
+          flags,
+          loadedConfigFile,
+          { has: () => false },
+          homeDir,
+          repositoryFailingToDelete,
+        )).to.be.rejectedWith('directory is busy');
+      } finally {
+        fs.rmSync = rmSync;
+      }
+
+      expect(reread().isConfigExists('node1')).to.be.false();
+      expect(
+        fs.existsSync(homeDir.joinPath('node1')),
+        'nothing may remain under the name that is now free to re-create',
+      ).to.be.false();
     });
   });
 });

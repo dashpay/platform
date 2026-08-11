@@ -40,19 +40,57 @@ export default class ConfigRemoveCommand extends BaseCommand {
 
     const serviceConfigsPath = resolveConfigDirectory(homeDir, configName);
 
-    // Read, change and save in one locked step. Removing from the state loaded
-    // at startup would revert anything another command saved in the meantime,
-    // and removing a config another command already removed now fails here
-    // instead of writing.
-    configFileRepository.update((freshConfigFile) => {
-      freshConfigFile.removeConfig(configName);
-    }, {
-      // Only once the removal is saved, and while the lock is still held:
-      // deleting first would leave the service files gone while config.json
-      // still listed the config if saving failed, and deleting after releasing
-      // could remove files a concurrent re-creation had just written.
-      onSaved: () => fs.rmSync(serviceConfigsPath, { recursive: true, force: true }),
-    });
+    // Deleting the directory outright has no safe moment. Before the save, a
+    // failed save leaves a config listed with its files gone; after it, a failed
+    // delete leaves files behind under a name that is now free to re-create -
+    // including the previous node's TLS private key, which a new config of the
+    // same name would inherit. Moving it aside first separates the two: the move
+    // is reversible, and what is left behind is named so it cannot be mistaken
+    // for a live config.
+    const tombstonePath = `${serviceConfigsPath}.removed-${process.pid}`;
+
+    try {
+      // Read, change and save in one locked step. Removing from the state loaded
+      // at startup would revert anything another command saved in the meantime,
+      // and removing a config another command already removed now fails here
+      // instead of writing.
+      configFileRepository.update((freshConfigFile) => {
+        freshConfigFile.removeConfig(configName);
+      }, {
+        // Under the lock, so a concurrent re-creation cannot write into the
+        // directory between the move and the save. Guarded on existence so
+        // running it again after a failed save is a no-op.
+        beforeSave: () => {
+          if (fs.existsSync(serviceConfigsPath)) {
+            fs.renameSync(serviceConfigsPath, tombstonePath);
+          }
+        },
+        // Only once the removal is durable. A failure here leaves the tombstone
+        // rather than a directory under a re-creatable name.
+        onSaved: () => fs.rmSync(tombstonePath, { recursive: true, force: true }),
+      });
+    } catch (e) {
+      // Which failure this was decides what to do with the moved directory. If
+      // the removal never reached disk the config is still listed and needs its
+      // files back. If it did, and only the delete failed, putting them back
+      // would restore them under a name that is now free to re-create - so the
+      // tombstone stays, out of reach of a new config of the same name.
+      let isStillListed = false;
+
+      try {
+        isStillListed = configFileRepository.read().isConfigExists(configName);
+      } catch {
+        // Unable to tell. Leaving the tombstone is the recoverable direction:
+        // an operator can move it back, where a wrong restore would quietly
+        // hand the previous node's keys to the next config of this name.
+      }
+
+      if (isStillListed && fs.existsSync(tombstonePath) && !fs.existsSync(serviceConfigsPath)) {
+        fs.renameSync(tombstonePath, serviceConfigsPath);
+      }
+
+      throw e;
+    }
 
     // eslint-disable-next-line no-console
     console.log(`${configName} removed`);
