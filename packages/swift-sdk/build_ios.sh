@@ -13,6 +13,7 @@ export MACOSX_DEPLOYMENT_TARGET
 # -------------------------------
 RED="\033[0;31m"
 GREEN="\033[0;32m"
+YELLOW="\033[0;33m"
 NC="\033[0m"
 
 # -------------------------------
@@ -23,7 +24,7 @@ ROOT_DIR="$SCRIPT_DIR/../../"
 TARGET_DIR="$ROOT_DIR/target"
 PACKAGE="rs-unified-sdk-ffi"
 XCFRAMEWORK="$SCRIPT_DIR/DashSDKFFI.xcframework"
-PROFILE="dev"
+PROFILE="release"
 PRUNE_CARGO_TARGETS="${PRUNE_CARGO_TARGETS:-0}"
 STAGING_DIR=""
 
@@ -47,6 +48,7 @@ CLEAN=false
 
 log_info() { echo -e "${GREEN}$1${NC}"; }
 log_error() { echo -e "${RED}$1${NC}"; }
+log_warn() { echo -e "${YELLOW}$1${NC}"; }
 
 cleanup_staging_dir() {
   if [ -n "$STAGING_DIR" ]; then
@@ -87,8 +89,11 @@ show_help() {
   echo "  tests       -> targets needed by run_tests.sh (sim + mac)"
   echo ""
   echo "Profile:"
-  echo "  dev (default)"
-  echo "  release"
+  echo "  release (default) -> ships: optimized, no debug assertions"
+  echo "  dev               -> local iteration: fast to build, debug"
+  echo "                       assertions ON, tokio-metrics ON. A dev"
+  echo "                       build turns every internal invariant into"
+  echo "                       an abort() and must never be distributed."
   echo ""
   echo "Examples:"
   echo "  $0 --target sim --profile release"
@@ -153,6 +158,18 @@ OUTPUT_DIR="$PROFILE"
 
 log_info "Package: $PACKAGE"
 log_info "Profile: $PROFILE"
+
+# `dev-ios` inherits Cargo's `dev` defaults, so debug assertions are live —
+# and it pairs them with `panic = "abort"`. Any debug_assert! in dash-spv,
+# key-wallet or platform-wallet therefore terminates the host process rather
+# than degrading. That is what a dev build is for locally, and exactly why one
+# must not reach testers; a shipped dev build has already crashed a TestFlight
+# release this way. Loud on purpose, since the failure is invisible until a
+# device aborts weeks later.
+if [ "$PROFILE" = "dev-ios" ]; then
+  log_warn "dev profile: debug assertions ON (panic = abort) — NOT distributable"
+  log_warn "  build shipping artifacts with: $0 --target all --profile release"
+fi
 
 if [ "$PRUNE_CARGO_TARGETS" = "1" ]; then
   STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dash-sdk-ffi.XXXXXX")"
