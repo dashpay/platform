@@ -551,7 +551,9 @@ Compiled 2026-08-01 against `v4.2-dev` at `ed4116b26c`, re-verified 2026-08-02
 against `v4.2-dev` at `5d68612a45` (where `ErrorShutdownIncomplete = 27`,
 PR #4268 `429667e723`, entered the merged table), re-verified 2026-08-03 against
 that same base, and **re-verified again 2026-08-04 against `v4.2-dev` at
-`97904ed2fc`**, which is the current head.
+`97904ed2fc`** (the head on that date; the branch has advanced substantially
+since — this whole section is the dated survey, and its merged/frontier
+conclusions are superseded by the merged table and frontier note above).
 
 The base moved on 2026-08-04, which is what made that pass necessary: four PRs
 merged into `v4.2-dev` that day — **#4191** (`0e2282b586`), **#4183**
