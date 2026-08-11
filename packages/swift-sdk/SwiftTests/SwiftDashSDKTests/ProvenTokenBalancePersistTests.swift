@@ -97,8 +97,10 @@ final class ProvenTokenBalancePersistTests: XCTestCase {
         let identityId = Data(repeating: 0x03, count: 32)
 
         // A local identity row exists for this id → first persist links
-        // the relationship.
-        let identity = PersistentIdentity(identityId: identityId, network: .testnet)
+        // the relationship. `isLocal: true` explicitly — the fixture
+        // documents a local identity, and the initializer default is
+        // now `false` (observed).
+        let identity = PersistentIdentity(identityId: identityId, isLocal: true, network: .testnet)
         context.insert(identity)
         try context.save()
 

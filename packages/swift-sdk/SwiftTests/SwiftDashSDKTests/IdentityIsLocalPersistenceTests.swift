@@ -93,6 +93,25 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
         ).first
     }
 
+    /// Wallet-derivation key evidence as `persistIdentityKeys` writes
+    /// it: a `PersistentPublicKey` stamped with the owning wallet id.
+    private func attachEvidenceKey(
+        to identity: PersistentIdentity,
+        walletId: Data,
+        in context: ModelContext
+    ) {
+        let key = PersistentPublicKey(
+            keyId: 0,
+            purpose: .authentication,
+            securityLevel: .master,
+            keyType: .ecdsaSecp256k1,
+            publicKeyData: Data(repeating: 0x11, count: 33),
+            identityId: identity.identityIdString
+        )
+        key.walletId = walletId
+        identity.publicKeys.append(key)
+    }
+
     // MARK: Upsert derivation
 
     /// A wallet-owned entry (Rust stamps `wallet_id` on every
@@ -193,6 +212,39 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
         )
     }
 
+    /// An entry that DECLARES an owner whose wallet row fails to
+    /// resolve (e.g. absent on this handler's network scope) is not
+    /// an out-of-wallet observation — the existing scope-wallet link
+    /// must survive the fetch miss.
+    func testDeclaredOwnerFetchMissDoesNotUnlink() throws {
+        try insertWalletRow()
+        let context = ModelContext(container)
+        let wallet = try XCTUnwrap(
+            try context.fetch(FetchDescriptor<PersistentWallet>()).first
+        )
+        let row = PersistentIdentity(
+            identityId: ownIdentityId,
+            isLocal: true,
+            network: .testnet
+        )
+        row.wallet = wallet
+        context.insert(row)
+        try context.save()
+
+        // Entry declares an owner wallet that has no row in the store.
+        let unresolvedOwnerId = Data(repeating: 0xCC, count: 32)
+        applyIdentities([
+            makeEntry(identityId: ownIdentityId, identityIndex: 0, walletId: unresolvedOwnerId)
+        ])
+
+        let fetched = try XCTUnwrap(try fetchIdentity(ownIdentityId))
+        XCTAssertEqual(
+            fetched.wallet?.walletId,
+            walletId,
+            "a declared-owner entry whose wallet lookup misses must not strip the existing link"
+        )
+    }
+
     /// "Out-of-wallet" is relative to the EMITTING manager: wallet A
     /// can resolve wallet B's identity via
     /// `load_identity_by_dpns_name`, whose `add_out_of_wallet_identity`
@@ -234,8 +286,11 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
     /// Two rows claiming the same `identityIndex` (a real index-0
     /// identity + a legacy mislink carrying the placeholder `0`) must
     /// not both reach Rust's per-index BTreeMap — the row with
-    /// wallet-derivation key evidence wins; unique indexes pass
-    /// through untouched.
+    /// wallet-derivation key evidence wins the collision. A
+    /// collision-free row restores even WITHOUT evidence: a
+    /// legitimately-owned row from an older store era may lack the
+    /// key stamp, and dropping it would silently skip its
+    /// contact/payment restore.
     func testRestorableIdentitiesPrefersKeyEvidenceOnIndexCollision() throws {
         try insertWalletRow()
         let context = ModelContext(container)
@@ -243,27 +298,17 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
             try context.fetch(FetchDescriptor<PersistentWallet>()).first
         )
 
-        // Genuine index-0 identity: persister-written key evidence
-        // (PersistentPublicKey.walletId stamped by persistIdentityKeys
-        // for wallet-derivable keys). Its id sorts AFTER the mislink's
-        // so the sort alone would pick the wrong row.
+        // Genuine index-0 identity with persister-written evidence.
+        // Its id sorts AFTER the mislink's so ordering alone would
+        // pick the wrong row.
         let genuine = PersistentIdentity(
             identityId: Data(repeating: 0x0F, count: 32),
             isLocal: true,
             network: .testnet
         )
         genuine.wallet = wallet
-        let evidenceKey = PersistentPublicKey(
-            keyId: 0,
-            purpose: .authentication,
-            securityLevel: .master,
-            keyType: .ecdsaSecp256k1,
-            publicKeyData: Data(repeating: 0x11, count: 33),
-            identityId: genuine.identityIdString
-        )
-        evidenceKey.walletId = walletId
         context.insert(genuine)
-        genuine.publicKeys.append(evidenceKey)
+        attachEvidenceKey(to: genuine, walletId: walletId, in: context)
 
         // Legacy mislink: linked to the same wallet, placeholder
         // index 0, no key evidence, lexicographically-smaller id.
@@ -275,7 +320,8 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
         mislinked.wallet = wallet
         context.insert(mislinked)
 
-        // A healthy second identity at a unique index passes through.
+        // A collision-free identity at a unique index passes through
+        // WITHOUT key evidence (older-era rows must keep restoring).
         let second = PersistentIdentity(
             identityId: Data(repeating: 0x02, count: 32),
             isLocal: true,
@@ -297,16 +343,22 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
             genuine.identityId,
             "the key-evidence row wins the index-0 collision"
         )
-        XCTAssertEqual(slice[1].identityId, second.identityId)
+        XCTAssertEqual(
+            slice[1].identityId,
+            second.identityId,
+            "a collision-free row restores even without key evidence"
+        )
     }
 
     // MARK: Load-time heal
 
     /// `loadWalletList()` promotes wallet-linked stale-`false` rows
-    /// to `isLocal == true`. UPWARD ONLY: a walletless row carrying
+    /// to `isLocal == true` — but only with wallet-derivation key
+    /// evidence, so a legacy mislink (linked, no key rows) is never
+    /// promoted to "signable". UPWARD ONLY: a walletless row carrying
     /// `true` (imported-key identity — masternode voting keys, pasted
     /// user keys) is left alone.
-    func testLoadWalletListPromotesButNeverDemotesIsLocal() throws {
+    func testLoadWalletListPromotesOnlyEvidencedRowsAndNeverDemotes() throws {
         try insertWalletRow()
         let context = ModelContext(container)
         let wallet = try XCTUnwrap(
@@ -319,12 +371,20 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
         )
         staleOwn.wallet = wallet
         context.insert(staleOwn)
+        attachEvidenceKey(to: staleOwn, walletId: walletId, in: context)
         let walletlessLocal = PersistentIdentity(
             identityId: observedIdentityId,
             isLocal: true,
             network: .testnet
         )
         context.insert(walletlessLocal)
+        let mislinkedNoEvidence = PersistentIdentity(
+            identityId: Data(repeating: 0x03, count: 32),
+            isLocal: false,
+            network: .testnet
+        )
+        mislinkedNoEvidence.wallet = wallet
+        context.insert(mislinkedNoEvidence)
         try context.save()
 
         // The fixture wallet has no restorable accounts, so the
@@ -334,12 +394,23 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
         XCTAssertFalse(result.errored)
 
         let ownRow = try XCTUnwrap(try fetchIdentity(ownIdentityId))
-        XCTAssertTrue(ownRow.isLocal, "wallet-linked row heals to isLocal == true")
+        XCTAssertTrue(
+            ownRow.isLocal,
+            "wallet-linked row with key evidence heals to isLocal == true"
+        )
 
         let walletlessRow = try XCTUnwrap(try fetchIdentity(observedIdentityId))
         XCTAssertTrue(
             walletlessRow.isLocal,
             "walletless local row (imported keys) must survive the heal"
+        )
+
+        let mislinkedRow = try XCTUnwrap(
+            try fetchIdentity(Data(repeating: 0x03, count: 32))
+        )
+        XCTAssertFalse(
+            mislinkedRow.isLocal,
+            "an evidence-less legacy mislink must not be promoted to signable"
         )
     }
 }

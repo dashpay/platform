@@ -541,6 +541,10 @@ struct PrivateKeyView: View {
         where: { $0.keyId == Int32(keyId) }
       ) {
         persistedKey.privateKeyKeychainIdentifier = nil
+        // Forgetting the last imported key can end the identity's
+        // local status — recompute from what remains (wallet
+        // linkage / other key material).
+        identity.recomputeIsLocalAfterKeyRemoval()
         try? modelContext.save()
       }
       dismiss()

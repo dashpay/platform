@@ -1834,18 +1834,24 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 // same upward-only heal at startup for rows this path
                 // never touches again.
                 row.isLocal = true
-            } else if row.wallet?.walletId == walletId {
-                // An out-of-wallet entry unlinks ONLY a relationship
-                // to this changeset's scope wallet — the one the old
-                // unconditional fallback could have fabricated.
-                // "Out-of-wallet" is relative to the emitting Rust
-                // manager: wallet A resolving wallet B's identity via
-                // `load_identity_by_dpns_name` emits the nil/nil
-                // shape from A's manager, and the row is globally
-                // keyed by identityId — wallet B's valid relationship
-                // must survive that emission. `isLocal` is left
-                // untouched either way (imported keys keep a row
-                // local without any wallet).
+            } else if ownerWalletId == nil, row.wallet?.walletId == walletId {
+                // A genuinely out-of-wallet entry (no owner declared)
+                // unlinks ONLY a relationship to this changeset's
+                // scope wallet — the one the old unconditional
+                // fallback could have fabricated. Both conditions
+                // matter:
+                // - `ownerWalletId == nil`: an entry that DECLARED an
+                //   owner whose wallet row merely failed to resolve
+                //   (network-scoped fetch miss) is not an observation
+                //   and must not strip the existing link;
+                // - scope match: "out-of-wallet" is relative to the
+                //   emitting Rust manager — wallet A resolving wallet
+                //   B's identity via `load_identity_by_dpns_name`
+                //   emits the nil/nil shape from A's manager, and the
+                //   row is globally keyed by identityId, so wallet
+                //   B's valid relationship must survive.
+                // `isLocal` is left untouched either way (imported
+                // keys keep a row local without any wallet).
                 row.wallet = nil
             }
         }
@@ -4662,30 +4668,24 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
     // MARK: - Watch-only Restore: Load
 
-    /// Enumerate persisted wallets into heap-allocated `WalletRestoreEntryFFI[]`.
-    ///
-    /// Ownership: Swift owns every allocation returned and retains them
-    /// on `self.loadAllocations` keyed by the entries pointer. Rust
-    /// calls `loadWalletListFree` exactly once after it's done reading,
-    /// at which point we release the allocations.
-    ///
-    /// A wallet is "restorable" when it has at least one
-    /// `PersistentAccount` row with non-empty
-    /// `accountExtendedPubKeyBytes`. The Rust side reconstructs the
-    /// watch-only `Wallet` via `Wallet::new_watch_only(network,
-    /// wallet_id, accounts)`; accounts come directly from the spec
-    /// array, wallet id from the top-level struct.
-    ///
     /// One-shot self-heal: promote `PersistentIdentity.isLocal` to
-    /// `true` on every wallet-linked row still carrying `false`.
-    /// Historical stores need this because the persister used to write
-    /// `isLocal: false` unconditionally — the wallet's own identities
-    /// carried `false` (the mainnet field bug). UPWARD ONLY:
-    /// a `true` on an unlinked row is left alone — an identity can be
-    /// local without a wallet (imported masternode voting/owner/payout
-    /// keys, pasted user keys), and this pass cannot tell those apart
-    /// from stale rows. Idempotent — a store with nothing to promote
-    /// is left untouched (no save).
+    /// `true` on wallet-linked rows still carrying `false` — but only
+    /// when the linkage is corroborated by wallet-derivation key
+    /// evidence (`walletKeyEvidence`). Historical stores need this
+    /// because the persister used to write `isLocal: false`
+    /// unconditionally — the wallet's own identities carried `false`
+    /// (the mainnet field bug). The evidence gate keeps the same era's
+    /// OTHER defect out: rows the old unconditional fallback mislinked
+    /// to the wallet carry no derivation-stamped keys and must not be
+    /// promoted to "signable". A genuinely-owned row that somehow
+    /// lacks evidence is merely deferred — its next entry re-emit
+    /// promotes it on the upsert path with the entry's own authority.
+    ///
+    /// UPWARD ONLY: a `true` on an unlinked row is left alone — an
+    /// identity can be local without a wallet (imported masternode
+    /// voting/owner/payout keys, pasted user keys), and this pass
+    /// cannot tell those apart from stale rows. Idempotent — a store
+    /// with nothing to promote is left untouched (no save).
     ///
     /// Cross-network on purpose: the promotion is intrinsic to the
     /// row, so healing another network's rows from this handler is
@@ -4701,7 +4701,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             FetchDescriptor<PersistentIdentity>()
         ) else { return }
         var healed = 0
-        for row in rows where row.wallet != nil && !row.isLocal {
+        for row in rows {
+            guard let ownerWalletId = row.wallet?.walletId,
+                  !row.isLocal,
+                  Self.walletKeyEvidence(row, walletId: ownerWalletId)
+            else { continue }
             row.isLocal = true
             healed += 1
         }
@@ -4724,27 +4728,44 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    /// Wallet-derivation key evidence: at least one persisted
+    /// `PersistentPublicKey` stamped with this wallet's id.
+    /// `persistIdentityKeys` writes that stamp only for keys Rust
+    /// derived from the wallet's DIP-9 tree, out-of-wallet entries
+    /// never produce key rows at all, and `add_identity` emits the
+    /// identity row and its keys in ONE atomic changeset round — so
+    /// every genuinely wallet-owned row carries evidence while a row
+    /// mislinked by the old unconditional fallback cannot.
+    static func walletKeyEvidence(
+        _ row: PersistentIdentity,
+        walletId: Data
+    ) -> Bool {
+        row.publicKeys.contains { $0.walletId == walletId }
+    }
+
     /// Order and de-collide one wallet's identity rows for the
-    /// restore buffer.
+    /// restore buffer: sorted by `identityIndex` then `identityId`
+    /// (deterministic rehydrated order — the explorer paginates by
+    /// index), with same-index collisions resolved BEFORE the rows
+    /// reach Rust's `build_wallet_identity_bucket`, whose per-index
+    /// `BTreeMap` would silently keep only the last insert.
     ///
-    /// Sorted by `identityIndex` then `identityId` (deterministic
-    /// rehydrated order — the explorer paginates by index). Rows that
-    /// SHARE an `identityIndex` cannot both be marshalled: Rust's
-    /// `build_wallet_identity_bucket` keys a `BTreeMap` on the index,
-    /// so the last insert would silently replace the first. Duplicate
-    /// indexes shouldn't exist for genuinely wallet-owned rows, but
-    /// the pre-fix persister could mislink an observed identity to
-    /// this wallet with the placeholder index `0`, where it would
-    /// collide with the real index-0 identity. On a collision, keep
-    /// the row with wallet-derivation key evidence — a
-    /// `PersistentPublicKey` whose `walletId` matches this wallet;
-    /// `persistIdentityKeys` stamps that only for keys Rust derived
-    /// from this wallet's DIP-9 tree, and out-of-wallet entries never
-    /// get key rows. Ties (several evidence rows, or none) resolve to
-    /// the sort winner. Skipped rows are only omitted
-    /// from THIS restore slice; their store rows are untouched, and
-    /// the upsert path's scope-unlink repairs the mislink when the
-    /// identity re-emits.
+    /// Collisions shouldn't exist between genuinely-owned rows, but a
+    /// row the old unconditional fallback mislinked carries the
+    /// placeholder index `0` and can collide with the real index-0
+    /// identity — the row with `walletKeyEvidence` wins that fight,
+    /// falling back to the sort winner when no (or every) contender
+    /// has evidence. Deliberately NOT a blanket evidence quarantine:
+    /// a collision-free row restores even without key rows, because a
+    /// legitimately-owned row from an older store era could lack the
+    /// stamp and dropping it would silently skip its contact/payment
+    /// restore (a sole evidence-less mislink at index 0 is instead
+    /// displaced organically when the wallet's genuine identity is
+    /// next loaded — `add_identity` replaces the bucket slot — and
+    /// the evidence-gated heal keeps it from presenting as signable
+    /// meanwhile). Skipped rows are only omitted from THIS slice;
+    /// their store rows are untouched, and the upsert path's
+    /// scope-unlink repairs a mislink when its identity re-emits.
     static func restorableIdentities(
         _ identities: [PersistentIdentity],
         walletId: Data
@@ -4769,9 +4790,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 result.append(group[0])
                 continue
             }
-            let winner = group.first { row in
-                row.publicKeys.contains { $0.walletId == walletId }
-            } ?? group[0]
+            let winner = group.first { walletKeyEvidence($0, walletId: walletId) }
+                ?? group[0]
             result.append(winner)
             for skipped in group where skipped !== winner {
                 NSLog(
@@ -4786,6 +4806,20 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         return result
     }
 
+    /// Enumerate persisted wallets into heap-allocated `WalletRestoreEntryFFI[]`.
+    ///
+    /// Ownership: Swift owns every allocation returned and retains them
+    /// on `self.loadAllocations` keyed by the entries pointer. Rust
+    /// calls `loadWalletListFree` exactly once after it's done reading,
+    /// at which point we release the allocations.
+    ///
+    /// A wallet is "restorable" when it has at least one
+    /// `PersistentAccount` row with non-empty
+    /// `accountExtendedPubKeyBytes`. The Rust side reconstructs the
+    /// watch-only `Wallet` via `Wallet::new_watch_only(network,
+    /// wallet_id, accounts)`; accounts come directly from the spec
+    /// array, wallet id from the top-level struct.
+    ///
     /// Returns `(nil, 0)` if nothing is restorable.
     func loadWalletList() -> (entries: UnsafePointer<WalletRestoreEntryFFI>?, count: Int, errored: Bool) {
         onQueue {

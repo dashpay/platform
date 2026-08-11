@@ -295,9 +295,13 @@ struct IdentityDetailView: View {
                         }
                     }
 
-                    // Register name button — registration signs with
-                    // the identity's wallet keys, so wallet-owned only.
-                    if identity.isLocal {
+                    // Register name button — `RegisterNameView`
+                    // resolves `identity.wallet` plus a loaded
+                    // Platform wallet immediately, so gate on exactly
+                    // that (NOT `isLocal`, which also covers
+                    // walletless imported-key identities the
+                    // registration flow can't serve yet).
+                    if hasLoadedWallet(for: identity) {
                         Button(action: { showingRegisterName = true }) {
                             HStack {
                                 Image(systemName: "plus.circle")
@@ -747,12 +751,18 @@ struct IdentityDetailView: View {
                     }
                 }
 
-                Button {
-                    showingProfileEditor = true
-                } label: {
-                    HStack {
-                        Image(systemName: "pencil")
-                        Text("Edit Profile")
+                // Mutations submit a state transition through the
+                // owning wallet's manager — read-only display stays
+                // available for walletless/observed identities, the
+                // editor does not.
+                if hasLoadedWallet(for: identity) {
+                    Button {
+                        showingProfileEditor = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "pencil")
+                            Text("Edit Profile")
+                        }
                     }
                 }
             }
@@ -781,12 +791,17 @@ struct IdentityDetailView: View {
                     }
                 }
 
-                Button {
-                    showingProfileEditor = true
-                } label: {
-                    HStack {
-                        Image(systemName: "pencil")
-                        Text("Set up profile")
+                // Same wallet gate as the Edit button above —
+                // creating a profile broadcasts through the owning
+                // wallet's manager.
+                if hasLoadedWallet(for: identity) {
+                    Button {
+                        showingProfileEditor = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "pencil")
+                            Text("Set up profile")
+                        }
                     }
                 }
             }
@@ -1143,10 +1158,11 @@ private extension String {
 /// parent view can adopt it without re-fetching.
 struct DashPayProfileEditorView: View {
     let identityId: Data
-    /// Wallet that owns `identityId`. When `nil` the editor falls
-    /// back to `walletManager.firstWallet` — acceptable for the
-    /// current single-wallet UI but will need tightening once the
-    /// app supports multiple concurrent wallets.
+    /// Wallet that owns `identityId`. Required to resolve the
+    /// submitting manager — a `nil` (or unloaded) wallet surfaces an
+    /// error rather than falling back to an arbitrary wallet that
+    /// doesn't manage this identity. Presenting views gate the editor
+    /// on `hasLoadedWallet`, so the error path is belt-and-braces.
     let walletId: Data?
     let existing: DashPayProfile?
     let onSaved: (DashPayProfile) -> Void
@@ -1313,13 +1329,12 @@ struct DashPayProfileEditorView: View {
                     avatarBytes: avatarBytes
                 )
 
-                // Resolve the wallet via the identity's `walletId`;
-                // fall back to `firstWallet` for legacy data rows
-                // that predate walletId denormalization.
-                let wallet = walletId.flatMap { walletManager.wallet(for: $0) }
-                    ?? walletManager.firstWallet
-                guard let wallet else {
-                    errorMessage = "No wallet available for this identity"
+                // Resolve the wallet via the identity's `walletId`
+                // only — an arbitrary fallback wallet doesn't manage
+                // this identity and would fail (or worse, submit
+                // through the wrong manager).
+                guard let wallet = walletId.flatMap({ walletManager.wallet(for: $0) }) else {
+                    errorMessage = "This identity's wallet isn't loaded, so the profile can't be submitted"
                     return
                 }
                 // Construct a fresh `KeychainSigner` for this submit

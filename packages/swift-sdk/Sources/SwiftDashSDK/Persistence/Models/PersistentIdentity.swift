@@ -293,6 +293,24 @@ public final class PersistentIdentity {
         publicKeys.removeAll { $0.keyId == keyId }
         lastUpdated = Date()
     }
+
+    /// Recompute `isLocal` after an explicit key-removal flow from
+    /// what this row can still prove: wallet linkage or remaining
+    /// imported key material. This is the ONE sanctioned demotion
+    /// path — the persister and the startup heal never demote because
+    /// they can't see keychain state, but a removal flow just changed
+    /// that state and can. Without this, forgetting the last imported
+    /// key leaves a walletless identity displaying "Local" (and
+    /// passing `isLocal` action gates) while simultaneously showing
+    /// "No Keys".
+    public func recomputeIsLocalAfterKeyRemoval() {
+        isLocal = wallet != nil
+            || publicKeys.contains { $0.privateKeyKeychainIdentifier != nil }
+            || votingPrivateKeyIdentifier != nil
+            || ownerPrivateKeyIdentifier != nil
+            || payoutPrivateKeyIdentifier != nil
+        lastUpdated = Date()
+    }
 }
 
 
