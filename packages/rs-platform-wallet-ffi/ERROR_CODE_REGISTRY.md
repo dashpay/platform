@@ -117,25 +117,32 @@ the only allocation source and a new code takes 38.
 Not yet ABI. Numbers here may still move; they move by agreement recorded in
 this file.
 
+**Ownership migrated 2026-08-11.** The fork-era PRs that originally held these
+allocations (#4184, #4185, #4204, #4247, #4256) were closed and recreated
+in-repository per repo policy; the owners below are the active successors.
+Fork-era numbers remain in the collision history, which is immutable record.
+
 | Code | Name | Owning PR | Status |
 | ---: | --- | --- | --- |
 | 28 | *(reserved — vacated)* | — | Vacated by #4185/#4256 on 2026-08-02; RESERVED, not reissuable — the next-free frontier is the only allocation source |
-| 29 | `ErrorAssetLockInsufficientFunds` | #4184 | In review — **keeps 29** (collision resolved) |
+| 29 | `ErrorAssetLockInsufficientFunds` | #4316 | In review — **keeps 29** (collision resolved; successor of fork-era #4184) |
 | 30 | *(reserved — vacated)* | — | Vacated by #4185/#4256 on 2026-08-02; RESERVED, not reissuable — the next-free frontier is the only allocation source |
-| 32 | `ErrorTransactionBuild` | #4247 | In review (also carried by #4256) |
-| 33 | `ErrorTransactionSigning` | #4256 | In review |
-| 34 | `ErrorStaleReservationToken` | #4185 | In review — **moved 27 → 34** (also carried by #4256 and, post-restack, #4196) |
-| 35 | `ErrorReservationTokenConsumed` | #4185 | In review — **moved 28 → 35** (also carried by #4256) |
-| 36 | `ErrorReservationWalletMismatch` | #4185 | In review — **moved 30 → 36** (also carried by #4256) |
-| 37 | `ErrorShieldedInviteAlreadyClaimed` | #4204 | In review — **moved 32 → 37** (collided with #4247's `ErrorTransactionBuild`; see below) |
+| 32 | `ErrorTransactionBuild` | #4310 | In review (also carried by #4311; successor of fork-era #4247) |
+| 33 | `ErrorTransactionSigning` | #4311 | In review (successor of fork-era #4256) |
+| 34 | `ErrorStaleReservationToken` | #4308 | In review — **moved 27 → 34** (also carried by #4309, #4310 and #4311; successor of fork-era #4185) |
+| 35 | `ErrorReservationTokenConsumed` | #4308 | In review — **moved 28 → 35** (also carried by #4309, #4310 and #4311; successor of fork-era #4185) |
+| 36 | `ErrorReservationWalletMismatch` | #4308 | In review — **moved 30 → 36** (also carried by #4309, #4310 and #4311; successor of fork-era #4185) |
+| 37 | `ErrorShieldedInviteAlreadyClaimed` | #4313 | In review — **moved 32 → 37** (collided with fork-era #4247's `ErrorTransactionBuild`; see below; successor of fork-era #4204) |
 
 **Code 31 left this table on 2026-08-04.** `ErrorSigningKeyUnavailable` sat here
 as #4183's proposal until #4183 merged (`189a3abb1c`); it is now in the merged
 table above and rule 3 applies to it in full. Nothing else in this table has
 merged, and the frontier is unchanged at 38.
 
-Open PRs that touch `rs-platform-wallet-ffi` but claim **no** new code, verified
-2026-08-04 against each PR's file list and the `error.rs` at its head:
+PRs that touch `rs-platform-wallet-ffi` but claim **no** new code, verified
+2026-08-04 against each PR's file list and the `error.rs` at its head (a
+fork-era snapshot; #4186, #4194, #4195 and #4243 have since been closed and
+recreated in-repository, carrying the same no-code property):
 `#3417`, `#3549`, `#3992`, `#4186`, `#4194`, `#4195`, `#4243`.
 
 Five entries this list used to carry have been removed, each for a stated
@@ -192,9 +199,11 @@ allocation of record.
 
 A rebase is a precondition, not the remedy. `#3968`'s head does contain the
 2026-08-01 base `ed4116b26c` (merge commit `debf67bdae` brought it in), so it is
-not simply an un-rebased branch; it is behind the *current* base `97904ed2fc`,
-which is where both #4268's merged `ErrorShutdownIncomplete = 27` and #4183's
-merged `ErrorSigningKeyUnavailable = 31` live. Rebasing
+not simply an un-rebased branch; it is behind the 2026-08-06 base
+`97904ed2fc` (current when this analysis was recorded — the base has moved
+since, which changes nothing below), which is where both #4268's merged
+`ErrorShutdownIncomplete = 27` and #4183's merged
+`ErrorSigningKeyUnavailable = 31` live. Rebasing
 picks those up, but rebasing alone will not resolve anything below, because git
 sees no conflict in any of it — the branch has to **edit its own enum**.
 
