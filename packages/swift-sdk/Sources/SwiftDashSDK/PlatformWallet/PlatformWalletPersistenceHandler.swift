@@ -139,6 +139,20 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// like all other mutable handler state.
     private var deferredPaymentUpserts: [(ownerIdentityId: Data, payments: [DashPayPayment])] = []
 
+    /// Signing-material probe consulted before promoting `isLocal`
+    /// from a wallet linkage: linkage alone doesn't imply the user
+    /// can ACT as the identity — a genuinely watch-only wallet
+    /// (imported xpub, no mnemonic) fails `KeychainSigner` yet would
+    /// otherwise present its identities as "Local" with mutation
+    /// controls enabled. The default reads the Keychain-backed
+    /// `WalletStorage`; injectable because unit tests can't reach the
+    /// real Keychain (simulator entitlement). Confined to
+    /// `serialQueue` like the rest of the handler's mutable state —
+    /// override before first use.
+    var walletSigningMaterialProbe: (Data) -> Bool = { walletId in
+        WalletStorage().hasMnemonic(for: walletId)
+    }
+
     public init(modelContainer: ModelContainer, network: Network? = nil) {
         self.modelContainer = modelContainer
         self.network = network
@@ -1824,34 +1838,45 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 entry.walletId ?? (entry.identityIndex != nil ? walletId : nil)
             if let ownerWallet = fetchWalletForLink(walletId: ownerWalletId) {
                 row.wallet = ownerWallet
-                // Wallet linkage PROMOTES to local — the wallet's
-                // DIP-9 tree can re-derive the identity's keys — but
-                // its absence must not demote: an identity can be
+                // Wallet linkage PROMOTES to local — but only when
+                // the wallet actually holds signing material: a
+                // watch-only wallet can own the identity on paper yet
+                // cannot act as it, and "Local" gates mutation
+                // controls. Absence never demotes: an identity can be
                 // local without a wallet (imported masternode
                 // voting/owner/payout keys, pasted user keys —
                 // LoadIdentityView sets those rows local itself).
                 // One-way stamp only; `loadWalletList()` applies the
                 // same upward-only heal at startup for rows this path
                 // never touches again.
-                row.isLocal = true
-            } else if ownerWalletId == nil, row.wallet?.walletId == walletId {
+                if walletSigningMaterialProbe(ownerWallet.walletId) {
+                    row.isLocal = true
+                }
+            } else if let declaredOwnerId = ownerWalletId {
+                // The entry DECLARED an owner whose wallet row didn't
+                // resolve (e.g. absent on this handler's network
+                // scope). Keep the existing link only when it already
+                // points at that declared owner — a link to any OTHER
+                // wallet contradicts the entry's declared ownership
+                // (the declaration is Rust's current truth) and is
+                // cleared; the row relinks when the declared owner's
+                // wallet row is resolvable.
+                if row.wallet?.walletId != declaredOwnerId {
+                    row.wallet = nil
+                }
+            } else if row.wallet?.walletId == walletId {
                 // A genuinely out-of-wallet entry (no owner declared)
                 // unlinks ONLY a relationship to this changeset's
                 // scope wallet — the one the old unconditional
-                // fallback could have fabricated. Both conditions
-                // matter:
-                // - `ownerWalletId == nil`: an entry that DECLARED an
-                //   owner whose wallet row merely failed to resolve
-                //   (network-scoped fetch miss) is not an observation
-                //   and must not strip the existing link;
-                // - scope match: "out-of-wallet" is relative to the
-                //   emitting Rust manager — wallet A resolving wallet
-                //   B's identity via `load_identity_by_dpns_name`
-                //   emits the nil/nil shape from A's manager, and the
-                //   row is globally keyed by identityId, so wallet
-                //   B's valid relationship must survive.
-                // `isLocal` is left untouched either way (imported
-                // keys keep a row local without any wallet).
+                // fallback could have fabricated. "Out-of-wallet" is
+                // relative to the emitting Rust manager — wallet A
+                // resolving wallet B's identity via
+                // `load_identity_by_dpns_name` emits the nil/nil
+                // shape from A's manager, and the row is globally
+                // keyed by identityId, so wallet B's valid
+                // relationship must survive. `isLocal` is left
+                // untouched either way (imported keys keep a row
+                // local without any wallet).
                 row.wallet = nil
             }
         }
@@ -4668,6 +4693,26 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
     // MARK: - Watch-only Restore: Load
 
+    /// Stamp derivation breadcrumbs onto pre-breadcrumb key rows from
+    /// Keychain metadata for EVERY wallet, synchronously, before the
+    /// restore slices are built. This is the load-time application of
+    /// the same `backfillCore` the unlock path schedules — run here so
+    /// the evidence-based quarantine in `restorableIdentities` never
+    /// judges a genuinely-owned row before its stamp had a chance to
+    /// be written (the unlock backfill fires after restore, too late
+    /// for this launch's slices). Idempotent; must run on
+    /// `serialQueue` outside a changeset round.
+    private func backfillAllWalletBreadcrumbsForLoad() {
+        guard !inChangeset else { return }
+        let allMetadata = KeychainManager.shared.allIdentityPrivateKeyMetadata()
+        guard !allMetadata.isEmpty else { return }
+        let byWallet = Dictionary(grouping: allMetadata) { $0.walletId.lowercased() }
+        for (walletIdHex, items) in byWallet {
+            guard let walletId = Data(hexString: walletIdHex) else { continue }
+            _ = backfillCore(walletId: walletId, items: items)
+        }
+    }
+
     /// One-shot self-heal: promote `PersistentIdentity.isLocal` to
     /// `true` on wallet-linked rows still carrying `false` — but only
     /// when the linkage is corroborated by wallet-derivation key
@@ -4704,11 +4749,19 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             FetchDescriptor<PersistentIdentity>()
         ) else { return }
         var healed = 0
+        var signable: [Data: Bool] = [:]
         for row in rows {
             guard let ownerWalletId = row.wallet?.walletId,
                   !row.isLocal,
                   Self.walletKeyEvidence(row, walletId: ownerWalletId)
             else { continue }
+            // Same signing-material gate as the upsert promotion —
+            // a watch-only wallet's identity must not heal to
+            // "Local". Probed once per wallet.
+            if signable[ownerWalletId] == nil {
+                signable[ownerWalletId] = walletSigningMaterialProbe(ownerWalletId)
+            }
+            guard signable[ownerWalletId] == true else { continue }
             row.isLocal = true
             healed += 1
         }
@@ -4836,12 +4889,15 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// Returns `(nil, 0)` if nothing is restorable.
     func loadWalletList() -> (entries: UnsafePointer<WalletRestoreEntryFFI>?, count: Int, errored: Bool) {
         onQueue {
-        // Heal `isLocal` before handing rows to Rust: rows persisted
-        // while the flag was written as a constant `false` (or
-        // mislinked by the old unconditional wallet fallback) get
-        // re-derived from the wallet relationship. Runs here because
-        // load is the one guaranteed pass over the store per launch,
-        // outside any changeset round.
+        // Ordering matters on the first launch after upgrade:
+        // 1. stamp pre-breadcrumb key rows from Keychain metadata —
+        //    the unlock-time backfill also does this, but it fires
+        //    AFTER restore, which would leave genuinely-owned
+        //    unstamped rows quarantined for this whole launch;
+        // 2. heal `isLocal` (evidence- and signability-gated);
+        // 3. build the restore slices, whose quarantine consults the
+        //    stamps written in step 1.
+        backfillAllWalletBreadcrumbsForLoad()
         healIdentityIsLocalFlags()
         // Scope the fetch to the handler's bound network so a
         // per-network manager only sees its own wallets. If

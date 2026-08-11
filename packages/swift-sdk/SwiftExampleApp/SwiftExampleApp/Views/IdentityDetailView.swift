@@ -338,19 +338,25 @@ struct IdentityDetailView: View {
                             .foregroundColor(.secondary)
                     } else {
                         ForEach(tokenBalances) { entry in
-                            // Tapping a token here opens the
-                            // permissions view pinned to *this*
-                            // identity — the call site already
-                            // knows whose tokens these are, so we
-                            // skip the generic identity picker
-                            // inside `TokenActionPermissionsView`.
-                            NavigationLink(
-                                destination: TokenActionPermissionsView(
-                                    token: entry.token,
-                                    identity: identity,
-                                    initialBalance: entry.balance
-                                )
-                            ) {
+                            // Tapping a token opens the permissions
+                            // view pinned to *this* identity — but
+                            // ONLY for local identities: pinning an
+                            // observed one would bypass the view's
+                            // wallet-owned query and present mutation
+                            // and group-action screens the user
+                            // cannot sign for. Observed identities
+                            // get the read-only row.
+                            if identity.isLocal {
+                                NavigationLink(
+                                    destination: TokenActionPermissionsView(
+                                        token: entry.token,
+                                        identity: identity,
+                                        initialBalance: entry.balance
+                                    )
+                                ) {
+                                    IdentityTokenRow(entry: entry)
+                                }
+                            } else {
                                 IdentityTokenRow(entry: entry)
                             }
                         }

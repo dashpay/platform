@@ -581,6 +581,7 @@ struct PrivateKeyView: View {
         // irreversible), so a silent save failure would leave a
         // stale reference + isLocal on the next launch with no way
         // to re-run this flow. Surface it and keep the sheet open.
+        modelContext.rollback()
         forgetError = "The key was removed from the Keychain, but saving the change failed: \(error.localizedDescription)"
         return
       }

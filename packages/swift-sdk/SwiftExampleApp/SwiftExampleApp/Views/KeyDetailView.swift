@@ -279,6 +279,32 @@ struct KeyDetailView: View {
                 print("🔑 Storage result: \(stored != nil ? "Success" : "Failed")")
 
                 await MainActor.run {
+                    // A nil identifier means the Keychain write
+                    // failed — report that, don't claim success.
+                    guard let stored else {
+                        validationError = "The key validated but could not be stored in the Keychain"
+                        isValidating = false
+                        return
+                    }
+                    // Persist the identifier on the matching key row
+                    // (the reveal/forget flows and the isLocal
+                    // recompute all key off it) and promote — an
+                    // imported key makes the identity actable, same
+                    // as LoadIdentityView's import path.
+                    if let persistedKey = identity.publicKeys.first(
+                        where: { $0.keyId == Int32(publicKey.id) }
+                    ) {
+                        persistedKey.privateKeyKeychainIdentifier = stored
+                    }
+                    identity.isLocal = true
+                    do {
+                        try modelContext.save()
+                    } catch {
+                        modelContext.rollback()
+                        validationError = "The key was stored, but saving the reference failed: \(error.localizedDescription)"
+                        isValidating = false
+                        return
+                    }
                     showSuccessAlert = true
                     isValidating = false
                 }
@@ -389,6 +415,7 @@ struct KeyDetailView: View {
                 // would leave a stale reference + isLocal on the
                 // next launch with no way to re-run this flow.
                 // Surface it and keep the sheet open.
+                modelContext.rollback()
                 forgetError = "The key was removed from the Keychain, but saving the change failed: \(error.localizedDescription)"
                 return
             }

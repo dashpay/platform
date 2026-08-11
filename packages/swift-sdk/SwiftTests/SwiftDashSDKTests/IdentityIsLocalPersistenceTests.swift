@@ -35,6 +35,10 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
             modelContainer: container,
             network: .testnet
         )
+        // The real probe reads the Keychain-backed WalletStorage,
+        // which the simulator test host can't reach. Fixture wallets
+        // hold signing material unless a test says otherwise.
+        handler.walletSigningMaterialProbe = { _ in true }
     }
 
     override func tearDown() {
@@ -216,13 +220,49 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
     }
 
     /// An entry that DECLARES an owner whose wallet row fails to
-    /// resolve (e.g. absent on this handler's network scope) is not
-    /// an out-of-wallet observation — the existing scope-wallet link
-    /// must survive the fetch miss.
-    func testDeclaredOwnerFetchMissDoesNotUnlink() throws {
+    /// resolve keeps the existing link ONLY when that link already
+    /// points at the declared owner (the network-scoped fetch-miss
+    /// case — here the owner's row exists on another network). A
+    /// matching link surviving the miss is correct; anything else
+    /// would codify a contradiction.
+    func testDeclaredOwnerFetchMissKeepsMatchingLink() throws {
+        // Owner wallet row exists but on .mainnet — the .testnet
+        // scoped `fetchWalletForLink` misses it, while the
+        // relationship can still point at the row.
+        let otherWalletId = Data(repeating: 0xCC, count: 32)
+        let context = ModelContext(container)
+        let mainnetWallet = PersistentWallet(walletId: otherWalletId, network: .mainnet)
+        context.insert(mainnetWallet)
+        let row = PersistentIdentity(
+            identityId: ownIdentityId,
+            isLocal: true,
+            network: .testnet
+        )
+        row.wallet = mainnetWallet
+        context.insert(row)
+        try context.save()
+
+        applyIdentities([
+            makeEntry(identityId: ownIdentityId, identityIndex: 0, walletId: otherWalletId)
+        ])
+
+        let fetched = try XCTUnwrap(try fetchIdentity(ownIdentityId))
+        XCTAssertEqual(
+            fetched.wallet?.walletId,
+            otherWalletId,
+            "a link matching the declared owner survives a network-scoped fetch miss"
+        )
+    }
+
+    /// When the declared owner doesn't resolve AND the existing link
+    /// points at a DIFFERENT wallet, the link is cleared — the
+    /// entry's declaration is Rust's current truth, and keeping the
+    /// contradicting relationship would preserve exactly the kind of
+    /// stale ownership this PR unwinds.
+    func testDeclaredOwnerMismatchClearsContradictingLink() throws {
         try insertWalletRow()
         let context = ModelContext(container)
-        let wallet = try XCTUnwrap(
+        let scopeWallet = try XCTUnwrap(
             try context.fetch(FetchDescriptor<PersistentWallet>()).first
         )
         let row = PersistentIdentity(
@@ -230,21 +270,41 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
             isLocal: true,
             network: .testnet
         )
-        row.wallet = wallet
+        row.wallet = scopeWallet
         context.insert(row)
         try context.save()
 
-        // Entry declares an owner wallet that has no row in the store.
-        let unresolvedOwnerId = Data(repeating: 0xCC, count: 32)
+        // Entry declares an owner with no wallet row anywhere; the
+        // existing link points at the scope wallet instead.
+        let unresolvedOwnerId = Data(repeating: 0xDD, count: 32)
         applyIdentities([
             makeEntry(identityId: ownIdentityId, identityIndex: 0, walletId: unresolvedOwnerId)
         ])
 
         let fetched = try XCTUnwrap(try fetchIdentity(ownIdentityId))
-        XCTAssertEqual(
-            fetched.wallet?.walletId,
-            walletId,
-            "a declared-owner entry whose wallet lookup misses must not strip the existing link"
+        XCTAssertNil(
+            fetched.wallet,
+            "a link contradicting the entry's declared owner is cleared"
+        )
+        XCTAssertTrue(fetched.isLocal, "clearing the link never demotes isLocal")
+    }
+
+    /// Wallet linkage is not signing capability: a watch-only wallet
+    /// (no mnemonic — the probe reports no signing material) links
+    /// its identities but must NOT promote them to "Local", which
+    /// gates mutation controls the wallet cannot sign for.
+    func testWatchOnlyWalletLinksWithoutPromotingIsLocal() throws {
+        try insertWalletRow()
+        handler.walletSigningMaterialProbe = { _ in false }
+        applyIdentities([
+            makeEntry(identityId: ownIdentityId, identityIndex: 0, walletId: walletId)
+        ])
+
+        let row = try XCTUnwrap(try fetchIdentity(ownIdentityId))
+        XCTAssertEqual(row.wallet?.walletId, walletId, "ownership is still recorded")
+        XCTAssertFalse(
+            row.isLocal,
+            "a wallet without signing material must not present its identities as Local"
         )
     }
 

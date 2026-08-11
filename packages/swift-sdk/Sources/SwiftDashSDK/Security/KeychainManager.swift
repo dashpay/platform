@@ -935,6 +935,10 @@ extension KeychainManager {
         breadcrumbWalletId: Data? = nil,
         derivationPath: String? = nil
     ) -> Bool {
+        // An unresolved public key would make the derived-scheme
+        // sweep a vacuous no-op that still "verifies" — refuse
+        // instead so the caller keeps its reference.
+        guard !publicKeyHex.isEmpty else { return false }
         var ok = deletePrivateKey(identityId: identityId, keyIndex: keyIndex)
         if let breadcrumbWalletId, let derivationPath {
             ok = deleteIdentityPrivateKey(
@@ -942,58 +946,54 @@ extension KeychainManager {
                 derivationPath: derivationPath
             ) && ok
         }
-        // Breadcrumb-independent sweep by metadata public key. Looped
-        // because several accounts can carry the same public key
-        // (walletId-prefixed + legacy rows); each successful delete
-        // removes one, so the lookup converges to nil. A delete error
-        // breaks out — `ok` goes false and the verification below
-        // fails closed.
-        while let account = identityPrivateKeyAccount(publicKeyHex: publicKeyHex) {
-            do {
-                try deleteGenericPassword(account: account)
-            } catch {
-                ok = false
-                break
+        // Sweep every derived-scheme row EITHER selector can reach —
+        // metadata public-key match (the account lookup's selector)
+        // or kSecAttrLabel match (retrieval's selector, which never
+        // decodes metadata) — with STRICT error handling: a lookup
+        // that fails for any reason other than not-found (Keychain
+        // locked, inaccessible, misconfigured) fails the forget.
+        // "Couldn't look" must never read as "absent". Bounded
+        // re-enumeration: each pass deletes everything it saw, so the
+        // next pass must come back empty; the bound is defensive.
+        var passes = 0
+        while true {
+            guard let accounts = identityPrivateKeyAccountsForForget(
+                matching: publicKeyHex
+            ) else { return false }
+            if accounts.isEmpty { break }
+            passes += 1
+            if passes > 4 { return false }
+            for account in accounts {
+                do {
+                    try deleteGenericPassword(account: account)
+                } catch {
+                    return false
+                }
             }
         }
-        // Label-selector sweep — the SAME selector
-        // `retrieveIdentityPrivateKey` uses (service + kSecAttrLabel),
-        // which never decodes metadata. A row with a matching label
-        // but missing/corrupt metadata is invisible to the metadata
-        // sweep above yet still readable by the signer, so it must be
-        // deleted (and verified) by the retrieval's own selector.
-        for account in identityPrivateKeyAccounts(labeledWith: publicKeyHex) {
-            do {
-                try deleteGenericPassword(account: account)
-            } catch {
-                ok = false
-                break
-            }
-        }
-        // Verify with BOTH selectors retrieval can serve from —
-        // success here is the caller's licence to drop its handle.
+        // Legacy scheme verified by a strict exact-account probe —
+        // only a confirmed not-found counts as absent.
+        guard legacyPrivateKeyConfirmedAbsent(
+            identityId: identityId,
+            keyIndex: keyIndex
+        ) == true else { return false }
         return ok
-            && !hasIdentityPrivateKey(publicKeyHex: publicKeyHex)
-            && identityPrivateKeyAccounts(labeledWith: publicKeyHex).isEmpty
-            && !hasPrivateKey(identityId: identityId, keyIndex: keyIndex)
     }
 
-    /// Accounts of every keychain item matching the retrieval
-    /// selector for a wallet-derived identity key — `service` +
-    /// `kSecAttrLabel == publicKeyHex.lowercased()`, exactly as
-    /// `retrieveIdentityPrivateKey` queries. Attributes-only: the
-    /// secret bytes never enter Swift memory. Exists because the
-    /// metadata-based `identityPrivateKeyAccount` skips rows whose
-    /// metadata blob is missing or undecodable while the label-based
-    /// retrieval still serves them — deletion and its postcondition
-    /// must see everything retrieval can see.
-    private nonisolated func identityPrivateKeyAccounts(
-        labeledWith publicKeyHex: String
-    ) -> [String] {
+    /// Every service item reachable by EITHER derived-scheme selector
+    /// for `publicKeyHex`: a decoded-metadata `publicKey` match (the
+    /// account lookup's selector) or a `kSecAttrLabel` match
+    /// (retrieval's selector — served even when the metadata blob is
+    /// missing or corrupt). Attributes-only; the secret bytes never
+    /// enter Swift memory. Returns `[]` when the Keychain confirms
+    /// nothing matches, and `nil` on any other error so callers fail
+    /// closed instead of mistaking "couldn't look" for "absent".
+    private nonisolated func identityPrivateKeyAccountsForForget(
+        matching publicKeyHex: String
+    ) -> [String]? {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
-            kSecAttrLabel as String: publicKeyHex.lowercased(),
             kSecMatchLimit as String: kSecMatchLimitAll,
             kSecReturnAttributes as String: true,
         ]
@@ -1002,10 +1002,61 @@ extension KeychainManager {
         }
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return [] }
         guard status == errSecSuccess, let items = result as? [[String: Any]] else {
-            return []
+            return nil
         }
-        return items.compactMap { $0[kSecAttrAccount as String] as? String }
+        let target = publicKeyHex.lowercased()
+        let decoder = JSONDecoder()
+        var accounts: [String] = []
+        for item in items {
+            guard let account = item[kSecAttrAccount as String] as? String else {
+                continue
+            }
+            let labelMatches =
+                (item[kSecAttrLabel as String] as? String)?.lowercased() == target
+            var metadataMatches = false
+            if account.hasPrefix("identity_privkey."),
+               let blob = item[kSecAttrGeneric as String] as? Data,
+               let metadata = try? decoder.decode(
+                   IdentityPrivateKeyMetadata.self, from: blob
+               ),
+               metadata.publicKey.caseInsensitiveCompare(publicKeyHex) == .orderedSame {
+                metadataMatches = true
+            }
+            if labelMatches || metadataMatches {
+                accounts.append(account)
+            }
+        }
+        return accounts
+    }
+
+    /// Strict absence probe for the legacy `(identityId, keyIndex)`
+    /// item: `true` = the Keychain confirmed not-found, `false` = the
+    /// item exists, `nil` = the lookup itself failed (locked or
+    /// inaccessible Keychain) — callers must treat `nil` as "cannot
+    /// verify", never as absence.
+    private nonisolated func legacyPrivateKeyConfirmedAbsent(
+        identityId: Data,
+        keyIndex: Int32
+    ) -> Bool? {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecAttrAccount as String: generateKeyIdentifier(
+                identityId: identityId, keyIndex: keyIndex
+            ),
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecReturnAttributes as String: true,
+        ]
+        if let accessGroup = accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return true }
+        if status == errSecSuccess { return false }
+        return nil
     }
 
     /// Best-effort delete of the legacy (no-walletId) keychain
