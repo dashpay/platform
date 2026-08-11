@@ -2166,7 +2166,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         if self
                             .apply_drain_validation_failure(
                                 entry,
-                                &recipient_validation,
+                                recipient_validation,
                                 &mut policy_blocked,
                             )
                             .await
@@ -2229,7 +2229,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         );
                     if !validation.is_valid {
                         if self
-                            .apply_drain_validation_failure(entry, &validation, &mut policy_blocked)
+                            .apply_drain_validation_failure(entry, validation, &mut policy_blocked)
                             .await
                         {
                             cleared.push(entry.key());
@@ -2504,21 +2504,27 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///   collecting it.
     ///
     /// Returns `true` when the caller should clear the entry from the queue.
+    ///
+    /// Takes `validation` by value: a purpose-rejected entry stays queued by
+    /// design and comes back through here on every sweep, so cloning its
+    /// reasons into the summary would allocate once per contact per pass for
+    /// the life of the wallet. Moving them costs nothing — neither caller uses
+    /// the result afterwards.
     async fn apply_drain_validation_failure(
         &self,
         entry: &crate::changeset::PendingContactCrypto,
-        validation: &crate::wallet::identity::crypto::validation::ContactRequestValidation,
+        validation: crate::wallet::identity::crypto::validation::ContactRequestValidation,
         policy_blocked: &mut std::collections::BTreeMap<String, usize>,
     ) -> bool {
         if validation.is_purpose_only() {
-            for reason in &validation.errors {
-                *policy_blocked.entry(reason.clone()).or_default() += 1;
-            }
             tracing::debug!(
                 owner = %entry.owner_identity_id, contact = %entry.contact_id,
                 errors = ?validation.errors,
                 "drain: contact request key-purpose mismatch; leaving queued (not marking broken)"
             );
+            for reason in validation.errors {
+                *policy_blocked.entry(reason).or_default() += 1;
+            }
             return false;
         }
         tracing::warn!(
