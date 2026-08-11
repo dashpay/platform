@@ -406,18 +406,22 @@ public final class PersistentIdentity {
         // scalar is being forgotten must come out non-local even
         // though its stamps remain.
         var walletArm = false
-        if let ownerWalletId = wallet?.walletId {
-            switch WalletSigningCapability.probe(walletId: ownerWalletId) {
+        if let ownerWallet = wallet {
+            switch WalletSigningCapability.probe(
+                walletId: ownerWallet.walletId,
+                verifiedBindingMarker: ownerWallet.seedBindingVerifiedMarker
+            ) {
             case .some(true):
                 walletArm = true
             case .some(false):
                 walletArm = false
             case .none:
-                // The Keychain couldn't answer — every arm of this
-                // recompute depends on Keychain truth, so deciding
-                // against unknowns risks persisting a wrong
-                // classification. Leave the flag as it stands; a
-                // later pass (or the startup heal) decides.
+                // The Keychain couldn't answer (or the binding was
+                // never verified) — every arm of this recompute
+                // depends on Keychain truth, so deciding against
+                // unknowns risks persisting a wrong classification.
+                // Leave the flag as it stands; a later pass (or the
+                // startup heal) decides.
                 return
             }
         }

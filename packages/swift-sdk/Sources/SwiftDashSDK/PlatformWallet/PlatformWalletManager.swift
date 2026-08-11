@@ -855,6 +855,12 @@ public class PlatformWalletManager: ObservableObject {
         } catch let error as PlatformWalletError {
             if case .invalidParameter = error {
                 setDashPaySeedMismatch(walletId, true)
+                // A failed binding must not leave this wallet's
+                // identities classified as Local: clear the stale
+                // verification marker (blocking future promotions)
+                // and demote each identity to whatever its imported
+                // key material still proves.
+                persistenceHandler?.handleSeedBindingMismatch(walletId: walletId)
             }
             throw error
         }

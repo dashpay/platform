@@ -21,10 +21,25 @@ import Foundation
 /// at unlock and gates actual signing — this probe only gates the
 /// persisted classification.
 public enum WalletSigningCapability {
-    public static func probe(walletId: Data) -> Bool? {
+    /// `verifiedBindingMarker` is the wallet row's
+    /// `seedBindingVerifiedMarker` — persisted only after
+    /// `verifySeedBinding` ran a FULL verification that bound the
+    /// mnemonic item to this wallet's account-0 xpub. Mere item
+    /// presence is not capability: a mnemonic can exist without
+    /// binding to this wallet (restored backups, replaced items), and
+    /// promoting on presence alone would expose mutation controls
+    /// that actual signing rejects. A present-but-never-verified
+    /// mnemonic therefore DEFERS (`nil`) — the first successful
+    /// unlock writes the marker and promotion follows; a binding
+    /// MISMATCH clears the marker and demotes via
+    /// `handleSeedBindingMismatch`.
+    public static func probe(
+        walletId: Data,
+        verifiedBindingMarker: String?
+    ) -> Bool? {
         switch WalletStorage().mnemonicAvailability(for: walletId) {
         case .present:
-            return true
+            return verifiedBindingMarker != nil ? true : nil
         case .absent:
             return false
         case .unavailable:

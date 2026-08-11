@@ -152,8 +152,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// unit tests can't reach the real Keychain. Confined to
     /// `serialQueue` like the rest of the handler's mutable state —
     /// override before first use.
-    var walletSigningMaterialProbe: (Data) -> Bool? = { walletId in
-        WalletSigningCapability.probe(walletId: walletId)
+    var walletSigningMaterialProbe: (_ walletId: Data, _ verifiedBindingMarker: String?) -> Bool? = {
+        WalletSigningCapability.probe(walletId: $0, verifiedBindingMarker: $1)
     }
 
     public init(modelContainer: ModelContainer, network: Network? = nil) {
@@ -1852,7 +1852,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 // One-way stamp only; `loadWalletList()` applies the
                 // same upward-only heal at startup for rows this path
                 // never touches again.
-                if walletSigningMaterialProbe(ownerWallet.walletId) == true {
+                if walletSigningMaterialProbe(
+                    ownerWallet.walletId,
+                    ownerWallet.seedBindingVerifiedMarker
+                ) == true {
                     row.isLocal = true
                 }
             } else if let declaredOwnerId = ownerWalletId {
@@ -3015,12 +3018,22 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // imports, refreshes of observed identities) would let a
             // `.first` pick stamp the WRONG row with this wallet's
             // breadcrumb — which downstream ownership checks would
-            // then trust as evidence. `keyId` rides the predicate;
-            // the identity is verified through the relationship when
-            // both sides carry a canonical id, falling back to the
-            // string column (whose historical encodings vary) for
-            // rows persisted without the relationship.
-            let metaIdentityId = Data.identifier(fromBase58: meta.identityId)
+            // then trust as evidence. `keyId` rides the predicate.
+            //
+            // Identity binding is NORMALIZED to a canonical 32-byte
+            // id first, because the historical encodings disagree:
+            // metadata is written base58 by the persister but
+            // `"pending"` by the registration-time
+            // `IdentityKeyPersister`, and the row's string column has
+            // both base58 and hex writers (`Data.identifier` happily
+            // decodes short garbage, so raw compares silently fail).
+            // With a canonical metadata id: relationship compare when
+            // linked, canonical string-column compare otherwise. With
+            // PLACEHOLDER metadata (no canonical id): corroborate the
+            // linked identity's index when a relationship exists;
+            // otherwise (publicKey, keyId) plus the derivation-path
+            // self-check below carry the binding.
+            let metaIdentityId = Self.canonicalIdentityId(meta.identityId)
             let metaKeyId = Int32(bitPattern: meta.keyId)
             let descriptor = FetchDescriptor<PersistentPublicKey>(
                 predicate: #Predicate<PersistentPublicKey> {
@@ -3029,10 +3042,16 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             )
             let candidates = (try? backgroundContext.fetch(descriptor)) ?? []
             guard let row = candidates.first(where: { candidate in
-                if let linked = candidate.identity, let metaIdentityId {
-                    return linked.identityId == metaIdentityId
+                if let metaIdentityId {
+                    if let linked = candidate.identity {
+                        return linked.identityId == metaIdentityId
+                    }
+                    return Self.canonicalIdentityId(candidate.identityId) == metaIdentityId
                 }
-                return candidate.identityId == meta.identityId
+                if let linked = candidate.identity {
+                    return linked.identityIndex == meta.identityIndex
+                }
+                return true
             }) else {
                 // No row yet (e.g. store rebuilt before discovery re-ran).
                 // Discovery re-materializes and writes the column itself;
@@ -4355,6 +4374,31 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    /// React to a FAILED seed-binding verification: the mnemonic item
+    /// exists but does not bind to this wallet, so the persisted
+    /// verification marker is stale and every `isLocal` promoted from
+    /// this wallet's linkage is wrong. The second sanctioned demotion
+    /// path (alongside explicit key removal): the wallet arm is
+    /// removed from each identity's locality, leaving only what
+    /// imported key material still proves. A later successful verify
+    /// re-writes the marker and the upsert/heal promotions return.
+    public func handleSeedBindingMismatch(walletId: Data) {
+        onQueue {
+            guard let wallet = findWalletRecord(walletId: walletId) else { return }
+            wallet.seedBindingVerifiedMarker = nil
+            for row in wallet.identities where row.isLocal {
+                row.isLocal =
+                    row.publicKeys.contains { $0.privateKeyKeychainIdentifier != nil }
+                    || row.votingPrivateKeyIdentifier != nil
+                    || row.ownerPrivateKeyIdentifier != nil
+                    || row.payoutPrivateKeyIdentifier != nil
+                row.lastUpdated = Date()
+            }
+            wallet.lastUpdated = Date()
+            try? backgroundContext.save()
+        }
+    }
+
     /// Count `PersistentWallet` rows for `walletId` across ALL
     /// networks (deliberately ignores `self.network`). The mnemonic /
     /// metadata in the Keychain are shared by every network's row, so
@@ -4716,6 +4760,23 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
     // MARK: - Watch-only Restore: Load
 
+    /// Canonical 32-byte identity id from a string in EITHER
+    /// historical encoding — base58 (the persister's form) or hex
+    /// (`identityIdString` writers). `nil` for placeholders
+    /// (`"pending"`) and anything that doesn't decode to exactly 32
+    /// bytes: `Data.identifier(fromBase58:)` has no length check, so
+    /// a short decode of a placeholder must never be compared against
+    /// a real id.
+    static func canonicalIdentityId(_ string: String) -> Data? {
+        if let decoded = Data.identifier(fromBase58: string), decoded.count == 32 {
+            return decoded
+        }
+        if let decoded = Data(hexString: string), decoded.count == 32 {
+            return decoded
+        }
+        return nil
+    }
+
     /// Stamp derivation breadcrumbs onto pre-breadcrumb key rows from
     /// Keychain metadata for EVERY wallet, synchronously, before the
     /// restore slices are built. This is the load-time application of
@@ -4774,19 +4835,23 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         var healed = 0
         var probed: [Data: Bool?] = [:]
         for row in rows {
-            guard let ownerWalletId = row.wallet?.walletId,
+            guard let ownerWallet = row.wallet,
                   !row.isLocal,
-                  Self.walletKeyEvidence(row, walletId: ownerWalletId)
+                  Self.walletKeyEvidence(row, walletId: ownerWallet.walletId)
             else { continue }
             // Same signing-material gate as the upsert promotion — a
             // watch-only wallet's identity must not heal to "Local",
             // and an UNANSWERABLE probe (`nil`) defers rather than
             // concludes. Probed once per wallet.
+            let ownerWalletId = ownerWallet.walletId
             let capability: Bool?
             if let cached = probed[ownerWalletId] {
                 capability = cached
             } else {
-                capability = walletSigningMaterialProbe(ownerWalletId)
+                capability = walletSigningMaterialProbe(
+                    ownerWalletId,
+                    ownerWallet.seedBindingVerifiedMarker
+                )
                 probed[ownerWalletId] = capability
             }
             guard capability == true else { continue }

@@ -532,14 +532,15 @@ struct LoadIdentityView: View {
                         try modelContext.save()
                     } catch {
                         // The Keychain secrets above are already
-                        // stored; claiming success with the SwiftData
-                        // rows unsaved would leave the two stores
-                        // contradictory with no visible symptom. Roll
-                        // the context back and surface the failure —
-                        // re-running the load is safe (Keychain
-                        // writes are idempotent upserts).
-                        modelContext.rollback()
-                        errorMessage = "Identity fetched, but saving it failed: \(error.localizedDescription). Please try again."
+                        // stored — do NOT roll back: reverting would
+                        // discard the identifiers/`isLocal` that
+                        // point at those secrets, orphaning them
+                        // (same two-store failure the forget/import
+                        // flows guard against). Keep the truthful
+                        // in-memory rows (the main context autosaves,
+                        // so persistence retries) and surface the
+                        // failure instead of claiming success.
+                        errorMessage = "Identity fetched, but saving it failed: \(error.localizedDescription). It will be re-saved automatically."
                         isLoading = false
                         return
                     }

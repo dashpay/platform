@@ -38,7 +38,7 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
         // The real probe reads the Keychain-backed WalletStorage,
         // which the simulator test host can't reach. Fixture wallets
         // hold signing material unless a test says otherwise.
-        handler.walletSigningMaterialProbe = { _ in true }
+        handler.walletSigningMaterialProbe = { _, _ in true }
     }
 
     override func tearDown() {
@@ -295,7 +295,7 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
     /// gates mutation controls the wallet cannot sign for.
     func testWatchOnlyWalletLinksWithoutPromotingIsLocal() throws {
         try insertWalletRow()
-        handler.walletSigningMaterialProbe = { _ in false }
+        handler.walletSigningMaterialProbe = { _, _ in false }
         applyIdentities([
             makeEntry(identityId: ownIdentityId, identityIndex: 0, walletId: walletId)
         ])
