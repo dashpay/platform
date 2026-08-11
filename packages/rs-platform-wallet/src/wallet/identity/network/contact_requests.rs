@@ -2065,6 +2065,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     // (legacy documents reference our AUTHENTICATION/TRANSFER
                     // key), and because such an entry stays queued the fetch
                     // below would otherwise repeat on every sweep, forever.
+                    //
+                    // Deciding here means a MIXED failure — our key
+                    // purpose-rejected and the contact's key hard-faulted —
+                    // now leaves the entry queued where the composed validator
+                    // would have marked the channel broken. Deliberate: see
+                    // `validate_recipient_key`. Marking broken is unappealable
+                    // by the user, and the retry it avoids no longer costs a
+                    // fetch.
                     let our_identity = {
                         let wm = self.wallet_manager.read().await;
                         wm.get_wallet_info(&self.wallet_id)

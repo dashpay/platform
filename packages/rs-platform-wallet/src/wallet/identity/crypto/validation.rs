@@ -177,9 +177,11 @@ pub fn validate_contact_request(
 /// The sender half of [`validate_contact_request`] — the checks that need the
 /// **counterparty's** identity.
 ///
-/// Split out so the deferred-crypto drain can run the recipient half first.
-/// See [`validate_recipient_key`] for why that ordering matters.
-pub fn validate_sender_key(
+/// Crate-private: external callers go through the complete
+/// [`validate_contact_request`] contract. Split out so the deferred-crypto
+/// drain can run the recipient half first — see [`validate_recipient_key`] for
+/// why that ordering matters, and what it changes for a mixed failure.
+pub(crate) fn validate_sender_key(
     sender_identity: &Identity,
     sender_key_index: u32,
 ) -> ContactRequestValidation {
@@ -241,7 +243,25 @@ pub fn validate_sender_key(
 /// every sweep, forever. Mainnet logs from one wallet show 27 contacts and 396
 /// such fetch-then-reject cycles in a single session. Running this half first
 /// costs nothing and removes the network entirely from that loop.
-pub fn validate_recipient_key(
+///
+/// # What this changes for a MIXED failure
+///
+/// Deciding on this half alone is a real policy change, not just a reordering.
+/// When our key is purpose-rejected AND the sender's key carries a hard fault
+/// (missing / disabled / wrong type), the composed [`validate_contact_request`]
+/// would merge both, see `hard_error`, and mark the channel permanently
+/// broken. Stopping here classifies it purpose-only and leaves it queued.
+///
+/// That is the intended outcome. The `hard_error` precedence exists to stop a
+/// genuinely permanent fault from becoming a retry-forever loop — but the
+/// forever-loop it guards against was expensive precisely because each retry
+/// fetched. With the fetch gone, a purpose-rejected entry costs a map lookup
+/// per sweep, while marking the channel broken is unappealable by the user:
+/// only a fresh request from the CONTACT clears it. Deferring the broken mark
+/// until the fault is one we can see locally trades a cheap retry for an
+/// irreversible one. A sender-side hard fault still marks the channel broken
+/// the moment our own key stops being the blocker.
+pub(crate) fn validate_recipient_key(
     recipient_identity: &Identity,
     recipient_key_index: u32,
 ) -> ContactRequestValidation {

@@ -5026,6 +5026,152 @@ mod tests {
         );
     }
 
+    /// An unaccepted recipient PURPOSE — the actual repeating case — is decided
+    /// locally, and a co-occurring sender-side hard fault does not change that.
+    ///
+    /// This is the discriminating test for both halves of the change:
+    ///
+    /// * The contact identity IS configured on the mock, and its key at the
+    ///   sender index is missing — a hard fault. Under the old composed
+    ///   validation the drain would fetch, merge both halves, see `hard_error`,
+    ///   mark the channel broken and clear the entry. Asserting the entry is
+    ///   still queued and the channel still intact therefore proves the fetch
+    ///   never happened; a "hard faults only" short-circuit that still fetched
+    ///   for purpose mismatches would fail here.
+    /// * It pins the deliberate mixed-failure policy change: purpose-rejected
+    ///   on our side wins, and the entry stays recoverable.
+    ///
+    /// Drained twice, because the cost this PR removes is per sweep, not once.
+    #[tokio::test]
+    async fn unaccepted_recipient_purpose_never_fetches_and_stays_recoverable() {
+        use crate::changeset::{PendingContactCrypto, PendingContactCryptoOp};
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+        use crate::wallet::identity::{ContactRequest, EstablishedContact};
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::{IdentityPublicKey, IdentityV0, KeyType, Purpose, SecurityLevel};
+
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+
+        // Our key at the referenced index: valid ECDSA, but a purpose the
+        // receive-side policy does not accept — a purpose-only rejection.
+        let our_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::VOTING,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: dashcore::secp256k1::PublicKey::from_secret_key(
+                &dashcore::secp256k1::Secp256k1::new(),
+                &dashcore::secp256k1::SecretKey::from_slice(&[0x24u8; 32]).expect("secret"),
+            )
+            .serialize()
+            .to_vec()
+            .into(),
+            disabled_at: None,
+        });
+        let our_identity = Identity::V0(IdentityV0 {
+            id: owner,
+            public_keys: [(0u32, our_key)].into_iter().collect(),
+            balance: 0,
+            revision: 0,
+        });
+
+        // The contact identity the drain WOULD fetch: keyless, so the sender
+        // index is a hard fault. Configured on the mock so that a fetch, if it
+        // happened, would succeed and escalate the verdict to "broken".
+        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+        sdk.mock()
+            .expect_fetch::<Identity, Identifier>(contact, Some(bare_identity([0xBB; 32])))
+            .await
+            .expect("set the contact-identity fetch expectation");
+        let sdk = Arc::new(sdk);
+
+        let persister = Arc::new(RecordingPersister::default());
+        let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::clone(&persister),
+            handler,
+        ));
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let wallet_id = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("wallet creation")
+            .wallet_id();
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(our_identity, 0, wallet_id, &p)
+                .expect("add owner");
+            let outgoing = ContactRequest::new(owner, contact, 0, 0, 0, vec![0u8; 96], 0, 0);
+            let incoming = ContactRequest::new(contact, owner, 0, 0, 0, vec![0u8; 96], 0, 0);
+            let managed = info
+                .identity_manager
+                .managed_identity_mut(&owner)
+                .expect("owner resident");
+            managed.apply_established_contact(EstablishedContact::new(contact, outgoing, incoming));
+            managed
+                .dashpay_pending_contact_crypto_mut()
+                .push(PendingContactCrypto {
+                    owner_identity_id: owner,
+                    contact_id: contact,
+                    op: PendingContactCryptoOp::RegisterExternal {
+                        encrypted_public_key: vec![7u8; 96],
+                        our_decryption_key_index: 0,
+                        contact_encryption_key_index: 0,
+                    },
+                    enqueued_at_ms: 0,
+                });
+        }
+
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        for pass in 1..=2 {
+            let drained = iw.dashpay().drain_pending_contact_crypto(&provider).await;
+            assert_eq!(
+                drained, 0,
+                "pass {pass}: a purpose-rejected entry must stay queued, not be cleared"
+            );
+        }
+
+        let wm = iw.wallet_manager.read().await;
+        let managed = wm
+            .get_wallet_info(&wallet_id)
+            .expect("info")
+            .identity_manager
+            .managed_identity(&owner)
+            .expect("owner resident");
+        assert_eq!(
+            managed.dashpay().pending_contact_crypto.len(),
+            1,
+            "the entry must survive repeated drains so a policy change can still pick it up"
+        );
+        assert!(
+            !managed
+                .dashpay()
+                .established_contacts()
+                .get(&contact)
+                .expect("contact resident")
+                .payment_channel_broken,
+            "the channel must stay intact — reaching this verdict without the configured \
+             fetch being consumed is what proves no Platform round trip was spent"
+        );
+    }
+
     /// A `RegisterExternal` entry whose fault lies in OUR OWN key is decided
     /// without a Platform round trip.
     ///
