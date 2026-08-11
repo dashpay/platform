@@ -128,12 +128,12 @@ this file.
 
 **Ownership migrated 2026-08-11, then largely settled the same week.** The
 fork-era PRs that originally held these allocations (#4184, #4185, #4204,
-#4247, #4256) were closed and recreated in-repository per repo policy. Of the
-successors: #4308 **merged** (the trio, 34–36 — now in the merged table);
-#4316, #4310 and #4311 **closed without merging** (29, 32, 33 lapse to
-RESERVED); and #4313 (the shielded-invite claim) lost 37 to merged #4348 and
-takes the frontier when it revives. Fork-era numbers remain in the collision
-history, which is immutable record.
+plus #4247 and #4256) were closed and recreated in-repository per repo
+policy. Of the successors: #4308 **merged** (the trio, 34–36 — now in the
+merged table); three others — #4316, #4310 and #4311 — **closed without
+merging** (29, 32, 33 lapse to RESERVED); and #4313 (the shielded-invite
+claim) lost 37 to merged #4348 and takes the frontier when it revives.
+Fork-era numbers remain in the collision history, which is immutable record.
 
 | Code | Name | Owning PR | Status |
 | ---: | --- | --- | --- |
