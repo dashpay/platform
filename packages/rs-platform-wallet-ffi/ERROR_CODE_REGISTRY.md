@@ -84,7 +84,7 @@ These are shipped ABI. Do not renumber.
 | 10 | `ErrorInvalidIdentifier` | |
 | 11 | `ErrorMemoryAllocation` | |
 | 12 | `ErrorUtf8Conversion` | |
-| 13 | `ErrorArithmeticOverflow` | Produced in-tree by `shielded_send.rs` (the shielded-send amount/fee overflow guard). The variant's own rustdoc still calls it a reserved slot with no producer and credits #3549 with the eventual mapping — that comment is stale and should be corrected by whichever PR touches it next |
+| 13 | `ErrorArithmeticOverflow` | Produced in-tree by `shielded_send.rs` (the shielded-send amount/fee overflow guard). Its rustdoc was corrected by #4360 (`e0b8baa850`), which documents the `PlatformWalletError::InputSumOverflow` mapping — the stale no-producer comment this row used to track is gone |
 | 14 | `ErrorNoSelectableInputs` | |
 | 15 | `ErrorWalletAlreadyExists` | |
 | 16 | `ErrorShieldedBroadcastFailed` | |
@@ -156,8 +156,9 @@ frontier only from the frontier note above (43 as of 2026-08-11).
 
 PRs that touch `rs-platform-wallet-ffi` but claim **no** new code, verified
 2026-08-04 against each PR's file list and the `error.rs` at its head (a
-fork-era snapshot; #4186, #4194, #4195 and #4243 have since been closed and
-recreated in-repository, carrying the same no-code property):
+fork-era snapshot; #4186, #4194 and #4195 have since been closed and
+recreated in-repository, carrying the same no-code property, while #4243
+remains open at its fork-era head):
 `#3417`, `#3549`, `#3992`, `#4186`, `#4194`, `#4195`, `#4243`.
 
 Five entries this list used to carry have been removed, each for a stated
@@ -452,14 +453,15 @@ key, restored from a typed signer completion code — whereas #4256's
 `BuilderError::SigningFailed` also covers unresolved derivation paths, sighash
 failures, and malformed signature encodings.
 
-**That question is now half-settled by merging, not by agreement.** #4183 merged
-on 2026-08-04, so **31 is ABI** and rule 3 forbids renumbering or retiring it;
-it also ships with complete Swift and Kotlin mirrors, so hosts already
-distinguish it. The only decision still open is #4256's: whether 33 stays a
-separate code or `BuilderError::SigningFailed` is instead routed onto the
-existing 31. That is #4256's alone to make now, and if it is made it should be
-recorded here. What is no longer available is collapsing the pair *into* 33, or
-moving 31 anywhere.
+**That question is now fully settled — by merging and by closure, not by
+agreement.** #4183 merged on 2026-08-04, so **31 is ABI** and rule 3 forbids
+renumbering or retiring it; it ships with complete Swift and Kotlin mirrors.
+The other side of the decision died with its owners: #4256 closed unmerged on
+2026-08-06 and its in-repository successor #4311 closed unmerged on
+2026-08-10, so no open PR holds the `BuilderError::SigningFailed` mapping and
+33 sits RESERVED in the allocation table above. A future PR that revives that
+mapping chooses fresh: route onto the existing 31 where the contract fits, or
+claim a new code from the frontier — 33 itself is not reissuable.
 
 ## Collision history — the 27 / 28 / 30 → 34 / 35 / 36 move
 
