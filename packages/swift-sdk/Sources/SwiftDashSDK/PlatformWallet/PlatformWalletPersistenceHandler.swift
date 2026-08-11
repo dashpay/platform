@@ -4674,12 +4674,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// evidence (`walletKeyEvidence`). Historical stores need this
     /// because the persister used to write `isLocal: false`
     /// unconditionally — the wallet's own identities carried `false`
-    /// (the mainnet field bug). The evidence gate keeps the same era's
-    /// OTHER defect out: rows the old unconditional fallback mislinked
-    /// to the wallet carry no derivation-stamped keys and must not be
-    /// promoted to "signable". A genuinely-owned row that somehow
-    /// lacks evidence is merely deferred — its next entry re-emit
-    /// promotes it on the upsert path with the entry's own authority.
+    /// (the mainnet field bug). The evidence spans key-persistence
+    /// eras (pre-breadcrumb rows count via their unstamped key rows —
+    /// see `walletKeyEvidence`), while keeping the same era's OTHER
+    /// defect out: rows the old unconditional fallback mislinked to
+    /// the wallet carry no key rows at all and must not be promoted
+    /// to "signable". A genuinely-owned row that somehow lacks any
+    /// key row is merely deferred — its next entry re-emit promotes
+    /// it on the upsert path with the entry's own authority.
     ///
     /// UPWARD ONLY: a `true` on an unlinked row is left alone — an
     /// identity can be local without a wallet (imported masternode
@@ -4728,19 +4730,26 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
-    /// Wallet-derivation key evidence: at least one persisted
-    /// `PersistentPublicKey` stamped with this wallet's id.
-    /// `persistIdentityKeys` writes that stamp only for keys Rust
-    /// derived from the wallet's DIP-9 tree, out-of-wallet entries
-    /// never produce key rows at all, and `add_identity` emits the
-    /// identity row and its keys in ONE atomic changeset round — so
-    /// every genuinely wallet-owned row carries evidence while a row
-    /// mislinked by the old unconditional fallback cannot.
+    /// Ownership evidence for a wallet-linked row, spanning every
+    /// key-persistence era:
+    /// - **strong**: a persisted `PersistentPublicKey` stamped with
+    ///   THIS wallet's id — `persistIdentityKeys` writes that stamp
+    ///   only for keys Rust derived from the wallet's DIP-9 tree;
+    /// - **era fallback**: a key row with NO wallet stamp —
+    ///   `PersistentPublicKey.walletId` is optional precisely because
+    ///   rows persisted before the derivation-breadcrumb columns
+    ///   existed have none, and those identities are genuinely owned.
+    ///
+    /// A row the old unconditional fallback mislinked can satisfy
+    /// neither arm: out-of-wallet entries never produce key rows at
+    /// all (Rust emits identity + keys in one atomic changeset round
+    /// for owned identities only). A key stamped for a DIFFERENT
+    /// wallet is evidence of the opposite and never counts.
     static func walletKeyEvidence(
         _ row: PersistentIdentity,
         walletId: Data
     ) -> Bool {
-        row.publicKeys.contains { $0.walletId == walletId }
+        row.publicKeys.contains { $0.walletId == walletId || $0.walletId == nil }
     }
 
     /// Order and de-collide one wallet's identity rows for the
@@ -4750,27 +4759,38 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// reach Rust's `build_wallet_identity_bucket`, whose per-index
     /// `BTreeMap` would silently keep only the last insert.
     ///
-    /// Collisions shouldn't exist between genuinely-owned rows, but a
-    /// row the old unconditional fallback mislinked carries the
-    /// placeholder index `0` and can collide with the real index-0
-    /// identity — the row with `walletKeyEvidence` wins that fight,
-    /// falling back to the sort winner when no (or every) contender
-    /// has evidence. Deliberately NOT a blanket evidence quarantine:
-    /// a collision-free row restores even without key rows, because a
-    /// legitimately-owned row from an older store era could lack the
-    /// stamp and dropping it would silently skip its contact/payment
-    /// restore (a sole evidence-less mislink at index 0 is instead
-    /// displaced organically when the wallet's genuine identity is
-    /// next loaded — `add_identity` replaces the bucket slot — and
-    /// the evidence-gated heal keeps it from presenting as signable
-    /// meanwhile). Skipped rows are only omitted from THIS slice;
-    /// their store rows are untouched, and the upsert path's
-    /// scope-unlink repairs a mislink when its identity re-emits.
+    /// Rows without `walletKeyEvidence` are quarantined — Rust stamps
+    /// every restored identity `wallet_id = Some(wallet)` and Swift
+    /// mutation gates trust the relationship, so restoring a row the
+    /// old unconditional fallback mislinked would make the corruption
+    /// durable (once restored as owned, it never re-emits in the
+    /// nil/nil shape that lets the upsert path unlink it). The
+    /// evidence spans key-persistence eras (see `walletKeyEvidence`),
+    /// so genuinely-owned rows — including pre-breadcrumb and
+    /// watch-only ones, whose PUBLIC key rows exist regardless of
+    /// private-key material — all pass; only key-less linked rows,
+    /// which no owned-identity flow can produce, are held back.
+    /// Collisions between surviving rows prefer the strongly-stamped
+    /// contender, then the sort winner. Skipped rows are only omitted
+    /// from THIS slice; their store rows are untouched, and the
+    /// upsert path's scope-unlink repairs a mislink when its identity
+    /// re-emits.
     static func restorableIdentities(
         _ identities: [PersistentIdentity],
         walletId: Data
     ) -> [PersistentIdentity] {
-        let sorted = identities.sorted {
+        let restorable = identities.filter { row in
+            let hasEvidence = walletKeyEvidence(row, walletId: walletId)
+            if !hasEvidence {
+                NSLog(
+                    "[persistor-load:swift] identity %@ linked to wallet %@ with no key rows — quarantined from the restore slice",
+                    row.identityIdBase58,
+                    walletId.toHexString()
+                )
+            }
+            return hasEvidence
+        }
+        let sorted = restorable.sorted {
             if $0.identityIndex != $1.identityIndex {
                 return $0.identityIndex < $1.identityIndex
             }
@@ -4790,8 +4810,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 result.append(group[0])
                 continue
             }
-            let winner = group.first { walletKeyEvidence($0, walletId: walletId) }
-                ?? group[0]
+            let winner = group.first { row in
+                row.publicKeys.contains { $0.walletId == walletId }
+            } ?? group[0]
             result.append(winner)
             for skipped in group where skipped !== winner {
                 NSLog(

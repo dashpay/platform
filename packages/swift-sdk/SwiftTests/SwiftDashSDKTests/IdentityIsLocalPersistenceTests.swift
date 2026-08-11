@@ -93,22 +93,24 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
         ).first
     }
 
-    /// Wallet-derivation key evidence as `persistIdentityKeys` writes
-    /// it: a `PersistentPublicKey` stamped with the owning wallet id.
-    private func attachEvidenceKey(
+    /// A persisted key row. With `walletId` set this is the strong
+    /// derivation stamp `persistIdentityKeys` writes for DIP-9-derived
+    /// keys; with `walletId == nil` it models a pre-breadcrumb-era key
+    /// row (the columns didn't exist yet), which also counts as
+    /// ownership evidence — only key-LESS linked rows are suspect.
+    private func attachKeyRow(
         to identity: PersistentIdentity,
-        walletId: Data,
-        in context: ModelContext
+        stampedWalletId: Data?
     ) {
         let key = PersistentPublicKey(
-            keyId: 0,
+            keyId: Int32(identity.publicKeys.count),
             purpose: .authentication,
             securityLevel: .master,
             keyType: .ecdsaSecp256k1,
             publicKeyData: Data(repeating: 0x11, count: 33),
             identityId: identity.identityIdString
         )
-        key.walletId = walletId
+        key.walletId = stampedWalletId
         identity.publicKeys.append(key)
     }
 
@@ -308,7 +310,7 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
         )
         genuine.wallet = wallet
         context.insert(genuine)
-        attachEvidenceKey(to: genuine, walletId: walletId, in: context)
+        attachKeyRow(to: genuine, stampedWalletId: walletId)
 
         // Legacy mislink: linked to the same wallet, placeholder
         // index 0, no key evidence, lexicographically-smaller id.
@@ -320,8 +322,10 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
         mislinked.wallet = wallet
         context.insert(mislinked)
 
-        // A collision-free identity at a unique index passes through
-        // WITHOUT key evidence (older-era rows must keep restoring).
+        // A pre-breadcrumb-era identity at a unique index: its key
+        // row carries no wallet stamp (the column didn't exist), and
+        // it must keep restoring — the era fallback in
+        // `walletKeyEvidence` covers it.
         let second = PersistentIdentity(
             identityId: Data(repeating: 0x02, count: 32),
             isLocal: true,
@@ -330,6 +334,7 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
         )
         second.wallet = wallet
         context.insert(second)
+        attachKeyRow(to: second, stampedWalletId: nil)
         try context.save()
 
         let slice = PlatformWalletPersistenceHandler.restorableIdentities(
@@ -341,12 +346,43 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
         XCTAssertEqual(
             slice[0].identityId,
             genuine.identityId,
-            "the key-evidence row wins the index-0 collision"
+            "the key-less mislink is quarantined; the stamped index-0 row survives"
         )
         XCTAssertEqual(
             slice[1].identityId,
             second.identityId,
-            "a collision-free row restores even without key evidence"
+            "a pre-breadcrumb row (unstamped key) restores via the era fallback"
+        )
+    }
+
+    /// A SOLE key-less linked row — the exact product of the old
+    /// unconditional fallback, with no genuine competitor — must not
+    /// be restored as wallet-owned either: Rust would stamp it
+    /// `wallet_id = Some(wallet)` and the corruption would become
+    /// durable. Quarantine leaves the store row untouched.
+    func testRestorableIdentitiesQuarantinesSoleKeylessMislink() throws {
+        try insertWalletRow()
+        let context = ModelContext(container)
+        let wallet = try XCTUnwrap(
+            try context.fetch(FetchDescriptor<PersistentWallet>()).first
+        )
+        let mislinked = PersistentIdentity(
+            identityId: observedIdentityId,
+            isLocal: false,
+            network: .testnet
+        )
+        mislinked.wallet = wallet
+        context.insert(mislinked)
+        try context.save()
+
+        let slice = PlatformWalletPersistenceHandler.restorableIdentities(
+            [mislinked],
+            walletId: walletId
+        )
+
+        XCTAssertTrue(
+            slice.isEmpty,
+            "a sole key-less linked row must not be marshalled as wallet-owned"
         )
     }
 
@@ -371,7 +407,7 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
         )
         staleOwn.wallet = wallet
         context.insert(staleOwn)
-        attachEvidenceKey(to: staleOwn, walletId: walletId, in: context)
+        attachKeyRow(to: staleOwn, stampedWalletId: walletId)
         let walletlessLocal = PersistentIdentity(
             identityId: observedIdentityId,
             isLocal: true,
@@ -385,6 +421,17 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
         )
         mislinkedNoEvidence.wallet = wallet
         context.insert(mislinkedNoEvidence)
+        // Pre-breadcrumb-era genuine row: linked, stale false, key row
+        // without a wallet stamp — must be promoted via the era arm.
+        let preBreadcrumb = PersistentIdentity(
+            identityId: Data(repeating: 0x04, count: 32),
+            isLocal: false,
+            network: .testnet,
+            identityIndex: 1
+        )
+        preBreadcrumb.wallet = wallet
+        context.insert(preBreadcrumb)
+        attachKeyRow(to: preBreadcrumb, stampedWalletId: nil)
         try context.save()
 
         // The fixture wallet has no restorable accounts, so the
@@ -410,7 +457,15 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
         )
         XCTAssertFalse(
             mislinkedRow.isLocal,
-            "an evidence-less legacy mislink must not be promoted to signable"
+            "a key-less legacy mislink must not be promoted to signable"
+        )
+
+        let preBreadcrumbRow = try XCTUnwrap(
+            try fetchIdentity(Data(repeating: 0x04, count: 32))
+        )
+        XCTAssertTrue(
+            preBreadcrumbRow.isLocal,
+            "a pre-breadcrumb row (unstamped key) heals via the era fallback"
         )
     }
 }

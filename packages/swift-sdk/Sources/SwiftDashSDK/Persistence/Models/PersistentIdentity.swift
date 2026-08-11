@@ -303,7 +303,41 @@ public final class PersistentIdentity {
     /// key leaves a walletless identity displaying "Local" (and
     /// passing `isLocal` action gates) while simultaneously showing
     /// "No Keys".
+    ///
+    /// Identifiers can outlive wiped Keychain items (same reason the
+    /// identity list's "No Keys" badge probes the Keychain directly),
+    /// so each stored reference is verified against LIVE Keychain
+    /// state first and cleared when the backing item is gone — a
+    /// stale identifier must not keep the row "Local".
+    ///
+    /// `@MainActor` because the Keychain probes are — matching the
+    /// UI key-removal flows this is built for.
+    @MainActor
     public func recomputeIsLocalAfterKeyRemoval() {
+        let keychain = KeychainManager.shared
+        for key in publicKeys where key.privateKeyKeychainIdentifier != nil {
+            let alive = keychain.hasPrivateKey(
+                identityId: identityId,
+                keyIndex: key.keyId
+            ) || keychain.hasIdentityPrivateKey(
+                publicKeyHex: key.publicKeyData.toHexString()
+            )
+            if !alive {
+                key.privateKeyKeychainIdentifier = nil
+            }
+        }
+        if votingPrivateKeyIdentifier != nil,
+           !keychain.hasSpecialKey(identityId: identityId, keyType: .voting) {
+            votingPrivateKeyIdentifier = nil
+        }
+        if ownerPrivateKeyIdentifier != nil,
+           !keychain.hasSpecialKey(identityId: identityId, keyType: .owner) {
+            ownerPrivateKeyIdentifier = nil
+        }
+        if payoutPrivateKeyIdentifier != nil,
+           !keychain.hasSpecialKey(identityId: identityId, keyType: .payout) {
+            payoutPrivateKeyIdentifier = nil
+        }
         isLocal = wallet != nil
             || publicKeys.contains { $0.privateKeyKeychainIdentifier != nil }
             || votingPrivateKeyIdentifier != nil
