@@ -253,6 +253,15 @@ impl IdentityWallet {
             }
 
             if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
+                // Fold the freshly fetched on-chain state into an
+                // already-known identity too — the add above only runs for
+                // new ones, and without this a re-load kept serving the
+                // stale key set (keys added from another device never
+                // appeared, and contact requests referencing them failed
+                // key-index validation). Same replace `refresh_identity`
+                // does; the `set_status` below persists the full snapshot
+                // changeset, so the updated keys reach the store.
+                managed.identity = identity.clone();
                 managed.set_status(IdentityStatus::Active, &self.persister);
                 managed.wallet_id = Some(wallet_id);
                 // Breadcrumbs for every re-derivable key (was MASTER-only). A
