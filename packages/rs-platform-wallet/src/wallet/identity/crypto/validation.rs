@@ -3,10 +3,12 @@
 //! Validates that the sender and recipient identities have the correct key
 //! types and purposes before a contact request is submitted to the platform.
 
-use dash_sdk::platform::dashpay::recipient_key_purpose_is_valid;
+use dash_sdk::platform::dashpay::{
+    recipient_key_purpose_is_acceptable_on_receive, sender_key_purpose_is_acceptable_on_receive,
+};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::{Identity, KeyType, Purpose};
+use dpp::identity::{Identity, KeyType};
 
 /// Result of validating a contact request before it is sent.
 #[derive(Debug, Clone)]
@@ -110,31 +112,50 @@ impl ContactRequestValidation {
 
 /// Validate a contact request against the verified on-chain envelope.
 ///
-/// The empirical testnet census (368 docs) shows two live
-/// honest cohorts: the dominant mobile population references an **unbound
-/// ENCRYPTION key for BOTH indices** (mobile identities carry no DECRYPTION
-/// key), and the newest cohort uses bound **ENCRYPTION(sender) /
-/// DECRYPTION(recipient)** — our original convention. Consensus enforces
-/// neither purpose nor boundedness on these integer fields. This validator is
-/// therefore *liberal on receive*: it accepts the purposes mobile actually
-/// uses while keeping the ECDSA key-*type* gate (every observed key is
-/// ECDSA_SECP256K1) and the disabled-key check.
+/// Consensus enforces neither purpose nor boundedness on `senderKeyIndex` /
+/// `recipientKeyIndex`, and a `contactRequest` document is immutable — so this
+/// validator is *liberal on receive* by necessity. Rejecting a document is not
+/// a retry, it is a permanent sentence on a contact relationship the user
+/// cannot renegotiate. What it keeps strict is what actually carries weight:
+/// the ECDSA key-*type* gate (ECDH needs the full secp256k1 key) and the
+/// disabled-key check.
+///
+/// Three live cohorts are known:
+/// - **Newest** — bound `ENCRYPTION(sender)` / `DECRYPTION(recipient)`, our
+///   original convention.
+/// - **Mobile** — an unbound `ENCRYPTION` key for BOTH indices; these
+///   identities carry no DECRYPTION key at all. (Both of the above come from
+///   a 368-document *testnet* census.)
+/// - **Legacy Android/dashj** — references the recipient's `AUTHENTICATION`
+///   (key ids 0-2) or `TRANSFER` (key id 3) key, sometimes pairing it with an
+///   `AUTHENTICATION` sender key. Absent from the testnet census and
+///   discovered only from **mainnet** device logs (2026-08): 27 of one
+///   wallet's 29 contacts, every one of them established before the iOS
+///   client existed. Under the previous, testnet-calibrated policy all 27
+///   were permanently unpayable.
 ///
 /// # Checks performed
 ///
 /// **Sender key:**
 /// - Key at `sender_key_index` exists on the sender identity.
 /// - Key type is `ECDSA_SECP256K1` (required for ECDH).
-/// - Key purpose is `ENCRYPTION` (bound or unbound) — a non-ENCRYPTION
-///   purpose is flagged as a `purpose_mismatch` (non-permanent).
+/// - Key purpose is `ENCRYPTION` or `AUTHENTICATION` (bound or unbound) —
+///   anything else is flagged as a `purpose_mismatch` (non-permanent).
 /// - Key is not disabled.
 ///
 /// **Recipient key (our key):**
 /// - Key at `recipient_key_index` exists on the recipient identity.
 /// - Key type is compatible (`ECDSA_SECP256K1` or `ECDSA_HASH160`).
-/// - Key purpose is `ENCRYPTION` **or** `DECRYPTION` — anything else
-///   (AUTHENTICATION/MASTER/TRANSFER) is flagged as a `purpose_mismatch`.
+/// - Key purpose is `DECRYPTION`, `ENCRYPTION`, `AUTHENTICATION` or
+///   `TRANSFER` — the node-operational purposes (`SYSTEM`, `VOTING`,
+///   `OWNER`) are flagged as a `purpose_mismatch`.
 /// - Key is not disabled.
+///
+/// The accepted sets live in `dash_sdk::platform::dashpay` as
+/// `*_key_purpose_is_acceptable_on_receive`, deliberately separate from the
+/// stricter `recipient_key_purpose_is_valid` that governs the requests we
+/// *mint*: accepting history is not the same decision as choosing a key for a
+/// new document, and only the latter can still practice key separation.
 ///
 /// A failure whose *only* cause is a purpose mismatch sets
 /// [`ContactRequestValidation::purpose_mismatch`], signalling callers to skip
@@ -161,12 +182,15 @@ pub fn validate_contact_request(
                 ));
             }
 
-            // Must have ENCRYPTION purpose (bound or unbound — both live
-            // cohorts use ENCRYPTION for the sender). A non-ENCRYPTION
-            // purpose is a non-permanent purpose mismatch.
-            if key.purpose() != Purpose::ENCRYPTION {
+            // ENCRYPTION is the modern convention; legacy dashj documents
+            // reference an AUTHENTICATION key. Both are accepted on receive —
+            // the document is immutable, so rejecting it is a permanent
+            // sentence on a contact the user cannot appeal. Anything else is
+            // still a non-permanent purpose mismatch (skip and retry).
+            if !sender_key_purpose_is_acceptable_on_receive(key.purpose()) {
                 validation.add_purpose_error(format!(
-                    "Sender key {} has purpose {:?}, but ENCRYPTION is required for contact requests",
+                    "Sender key {} has purpose {:?}, but ENCRYPTION or AUTHENTICATION is \
+                     required for contact requests",
                     sender_key_index,
                     key.purpose(),
                 ));
@@ -214,18 +238,22 @@ pub fn validate_contact_request(
                 }
             }
 
-            // Purpose must be ENCRYPTION or DECRYPTION: the mobile
-            // cohort's recipientKeyIndex points at an ENCRYPTION key, the
-            // newest cohort's at a DECRYPTION key — both honest. Anything
-            // else (AUTHENTICATION/MASTER/TRANSFER) is a non-permanent purpose
-            // mismatch: legacy 2024 docs reference AUTHENTICATION keys, so we
-            // skip-and-retry rather than permanently break the channel. The
-            // accepted cohort is owned by the shared SDK predicate so this
-            // validator and the recipient-key selector cannot disagree.
-            if !recipient_key_purpose_is_valid(key.purpose()) {
+            // Four honest cohorts reach this point: the newest references our
+            // DECRYPTION key, the mobile population our ENCRYPTION key, and
+            // the legacy Android/dashj population our AUTHENTICATION (key ids
+            // 0-2) or TRANSFER (key id 3) key. Purpose is not a security
+            // boundary here — ECDH is defined over the secp256k1 keypair and
+            // DIP-9 indexes the identity-key tree by type and id, never by
+            // purpose — so the type and disabled-key gates around this block
+            // are what actually protect the derivation. The node-operational
+            // purposes (SYSTEM/VOTING/OWNER) stay out — nothing on chain
+            // references them for DashPay — and remain a non-permanent purpose
+            // mismatch: skip and retry, never break the channel, so a later
+            // evidence-driven widening can still pick those contacts up.
+            if !recipient_key_purpose_is_acceptable_on_receive(key.purpose()) {
                 validation.add_purpose_error(format!(
-                    "Recipient key {} has purpose {:?}, but ENCRYPTION or DECRYPTION is \
-                     required for contact requests",
+                    "Recipient key {} has purpose {:?}, which is not accepted for contact \
+                     requests",
                     recipient_key_index,
                     key.purpose(),
                 ));
@@ -373,11 +401,11 @@ mod tests {
 
     #[test]
     fn test_sender_wrong_purpose() {
-        let sender = make_identity(vec![make_key(
-            0,
-            KeyType::ECDSA_SECP256K1,
-            Purpose::AUTHENTICATION,
-        )]);
+        // VOTING, not AUTHENTICATION: the legacy dashj cohort pairs an
+        // AUTHENTICATION sender key with an AUTHENTICATION recipient key and
+        // is now accepted on receive, so AUTHENTICATION no longer exercises
+        // the sender-side rejection this test is about.
+        let sender = make_identity(vec![make_key(0, KeyType::ECDSA_SECP256K1, Purpose::VOTING)]);
         let recipient = make_identity(vec![make_key(
             0,
             KeyType::ECDSA_SECP256K1,
@@ -460,9 +488,13 @@ mod tests {
     // references an UNBOUND ENCRYPTION key for BOTH senderKeyIndex and
     // recipientKeyIndex (mobile identities carry no DECRYPTION key); the
     // newest cohort uses bound ENCRYPTION(sender)/DECRYPTION(recipient).
-    // Consensus enforces neither purpose nor boundedness. So the validator
-    // must accept ENCRYPTION for the sender and ENCRYPTION-or-DECRYPTION for
-    // the recipient, keep the ECDSA type gate, and reject AUTHENTICATION.
+    // Consensus enforces neither purpose nor boundedness, and mainnet adds a
+    // third, legacy Android/dashj cohort referencing AUTHENTICATION/TRANSFER
+    // keys. So the validator accepts ENCRYPTION-or-AUTHENTICATION for the
+    // sender and everything but the node-operational purposes for the
+    // recipient, while keeping the
+    // ECDSA type gate and the disabled-key check — those are the checks that
+    // actually protect the ECDH.
     // -----------------------------------------------------------------------
 
     /// Mobile-cohort shape: sender references an ENCRYPTION key, recipient
@@ -493,35 +525,81 @@ mod tests {
         assert!(!result.purpose_mismatch);
     }
 
-    /// A recipient key of purpose AUTHENTICATION must FAIL validation (legacy
-    /// 2024 cohort / test-noise shape). Without the recipient-purpose gate an
-    /// AUTHENTICATION recipient key is silently accepted and a wrong shared
-    /// secret could be derived.
+    /// Legacy Android/dashj shape: the inbound request references OUR
+    /// AUTHENTICATION or TRANSFER key. Both must validate.
+    ///
+    /// This is the regression guard for the mainnet bug where 27 of a
+    /// wallet's 29 contacts — every one established before the iOS client
+    /// existed — were permanently unpayable. The deferred account build kept
+    /// failing `key-purpose mismatch`, so `send_payment` found no
+    /// `DashpayExternalAccount` and the user saw "call
+    /// register_external_contact_account first" forever. The documents are
+    /// immutable: no user action could have fixed it.
     #[test]
-    fn recipient_authentication_key_is_rejected_as_purpose_mismatch() {
+    fn legacy_dashj_recipient_key_purposes_are_accepted() {
+        for purpose in [Purpose::AUTHENTICATION, Purpose::TRANSFER] {
+            let sender = make_identity(vec![make_key(
+                0,
+                KeyType::ECDSA_SECP256K1,
+                Purpose::ENCRYPTION,
+            )]);
+            let recipient = make_identity(vec![make_key(0, KeyType::ECDSA_SECP256K1, purpose)]);
+
+            let result = validate_contact_request(&sender, 0, &recipient, 0);
+            assert!(
+                result.is_valid,
+                "a {purpose:?} recipient key must be accepted from an immutable on-chain \
+                 document, errors: {:?}",
+                result.errors
+            );
+            assert!(!result.purpose_mismatch);
+        }
+    }
+
+    /// The whole legacy pair — AUTHENTICATION sender against AUTHENTICATION
+    /// recipient — is the exact shape 15 of the logged mainnet failures took.
+    #[test]
+    fn legacy_dashj_authentication_pair_is_accepted() {
+        let sender = make_identity(vec![make_key(
+            1,
+            KeyType::ECDSA_SECP256K1,
+            Purpose::AUTHENTICATION,
+        )]);
+        let recipient = make_identity(vec![make_key(
+            1,
+            KeyType::ECDSA_SECP256K1,
+            Purpose::AUTHENTICATION,
+        )]);
+
+        let result = validate_contact_request(&sender, 1, &recipient, 1);
+        assert!(result.is_valid, "errors: {:?}", result.errors);
+        assert!(!result.purpose_mismatch);
+    }
+
+    /// The node-operational purposes are the ones still refused for a
+    /// recipient key — and they must stay a non-permanent purpose mismatch, so
+    /// a future evidence-driven widening can still pick those contacts up
+    /// instead of finding them broken.
+    #[test]
+    fn recipient_node_operational_key_is_rejected_as_purpose_mismatch() {
         let sender = make_identity(vec![make_key(
             0,
             KeyType::ECDSA_SECP256K1,
             Purpose::ENCRYPTION,
         )]);
-        let recipient = make_identity(vec![make_key(
-            0,
-            KeyType::ECDSA_SECP256K1,
-            Purpose::AUTHENTICATION,
-        )]);
+        for purpose in [Purpose::SYSTEM, Purpose::VOTING, Purpose::OWNER] {
+            let recipient = make_identity(vec![make_key(0, KeyType::ECDSA_SECP256K1, purpose)]);
 
-        let result = validate_contact_request(&sender, 0, &recipient, 0);
-        assert!(
-            !result.is_valid,
-            "an AUTHENTICATION recipient key must be rejected"
-        );
-        assert!(
-            result.purpose_mismatch,
-            "an AUTHENTICATION recipient is a PURPOSE mismatch (non-permanent skip), not a hard/permanent failure"
-        );
-        assert!(result.errors.iter().any(|e| e.contains("ENCRYPTION")
-            || e.contains("DECRYPTION")
-            || e.contains("purpose")));
+            let result = validate_contact_request(&sender, 0, &recipient, 0);
+            assert!(
+                !result.is_valid,
+                "a {purpose:?} recipient key must be rejected"
+            );
+            assert!(
+                result.purpose_mismatch && !result.hard_error,
+                "{purpose:?} must be a PURPOSE mismatch (non-permanent skip), not a hard failure"
+            );
+        }
     }
 
     /// Sender ENCRYPTION + recipient DECRYPTION (our existing convention,
@@ -544,15 +622,17 @@ mod tests {
         assert!(!result.purpose_mismatch);
     }
 
-    /// A sender key of purpose AUTHENTICATION is a purpose mismatch (the
-    /// classification flag must be set so the sweep/accept paths skip rather
-    /// than permanently break the channel).
+    /// A sender purpose outside the accepted set stays a purpose mismatch —
+    /// the classification flag must be set so the sweep/accept paths skip
+    /// rather than permanently break the channel. TRANSFER stands in for
+    /// AUTHENTICATION here: the latter is now an accepted legacy shape, but
+    /// no observed document puts TRANSFER on the sender side.
     #[test]
-    fn sender_authentication_key_is_a_purpose_mismatch() {
+    fn unaccepted_sender_purpose_is_a_purpose_mismatch() {
         let sender = make_identity(vec![make_key(
             0,
             KeyType::ECDSA_SECP256K1,
-            Purpose::AUTHENTICATION,
+            Purpose::TRANSFER,
         )]);
         let recipient = make_identity(vec![make_key(
             0,

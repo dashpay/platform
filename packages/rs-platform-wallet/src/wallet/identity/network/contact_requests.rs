@@ -977,39 +977,49 @@ fn external_account_needs_rebuild(contact: &EstablishedContact, has_external: bo
 /// 2. Fall back to the recipient's first `ECDSA_SECP256K1` **ENCRYPTION** key.
 /// 3. Error only if the recipient has neither.
 ///
-/// No AUTHENTICATION fallback: no live client population needs it, and reusing
-/// signing keys for ECDH is poor key separation. `ECDSA_SECP256K1` is required
-/// either way (every observed key is that type, and ECDH needs the full key).
+/// No AUTHENTICATION or TRANSFER fallback: reusing a signing or
+/// fund-authorizing key for ECDH is poor key separation, and nothing forces us
+/// to when we are the one choosing. `ECDSA_SECP256K1` is required either way
+/// (every observed key is that type, and ECDH needs the full key).
 ///
-/// The accepted cohort (DECRYPTION or ENCRYPTION) is the shared
-/// [`dash_sdk::platform::dashpay::recipient_key_purpose_is_valid`] membership
-/// policy; only the preference ORDER below (DECRYPTION first, ENCRYPTION
-/// second) is local to the selector.
+/// That mainnet's legacy Android/dashj population *does* reference
+/// AUTHENTICATION/TRANSFER keys is a fact about immutable history, handled by
+/// the wider receive-side policy
+/// ([`dash_sdk::platform::dashpay::recipient_key_purpose_is_acceptable_on_receive`]).
+/// It must not relax what we mint: this selector calls
+/// [`dash_sdk::platform::dashpay::recipient_key_purpose_is_valid`] for
+/// membership, so the cohort cannot drift from the SDK's request-creation
+/// gate. Only the preference ORDER below (DECRYPTION first, ENCRYPTION second)
+/// is local to the selector.
 fn select_recipient_key_index(recipient_identity: &Identity) -> Result<u32, PlatformWalletError> {
+    // Membership comes from the shared mint predicate, never from a purpose
+    // list repeated here — a local copy is exactly how the SDK's
+    // request-creation gate and this selector would drift apart on the next
+    // policy change.
+    //
     // Skip disabled (revoked) keys: encrypting the DIP-15 compact xpub to a
     // key whose private half may be compromised would hand the contact's
     // payment xpub to whoever holds the revoked key. `disabled_at().is_none()`
     // mirrors the validator's disabled-key gate.
-    // Prefer a DECRYPTION key.
-    if let Some((id, _)) = recipient_identity.public_keys().iter().find(|(_, k)| {
-        k.purpose() == Purpose::DECRYPTION
-            && k.key_type() == KeyType::ECDSA_SECP256K1
-            && k.disabled_at().is_none()
-    }) {
-        return Ok(*id);
-    }
-    // Fall back to an ENCRYPTION key (mobile cohort).
-    if let Some((id, _)) = recipient_identity.public_keys().iter().find(|(_, k)| {
-        k.purpose() == Purpose::ENCRYPTION
-            && k.key_type() == KeyType::ECDSA_SECP256K1
-            && k.disabled_at().is_none()
-    }) {
-        return Ok(*id);
-    }
-    Err(PlatformWalletError::InvalidIdentityData(
-        "Recipient identity has no enabled ECDSA_SECP256K1 DECRYPTION or ENCRYPTION key"
-            .to_string(),
-    ))
+    let mut eligible: Vec<(&u32, &dpp::identity::IdentityPublicKey)> = recipient_identity
+        .public_keys()
+        .iter()
+        .filter(|(_, k)| {
+            dash_sdk::platform::dashpay::recipient_key_purpose_is_valid(k.purpose())
+                && k.key_type() == KeyType::ECDSA_SECP256K1
+                && k.disabled_at().is_none()
+        })
+        .collect();
+    // The only policy local to this selector: DECRYPTION before ENCRYPTION,
+    // then lowest key id (which `public_keys()`'s BTreeMap order already
+    // gives, and the stable sort preserves).
+    eligible.sort_by_key(|(_, k)| k.purpose() != Purpose::DECRYPTION);
+    eligible.first().map(|(id, _)| **id).ok_or_else(|| {
+        PlatformWalletError::InvalidIdentityData(
+            "Recipient identity has no enabled ECDSA_SECP256K1 DECRYPTION or ENCRYPTION key"
+                .to_string(),
+        )
+    })
 }
 
 /// Select our OWN ECDH root key: the first **enabled** `ECDSA_SECP256K1`
@@ -1923,6 +1933,56 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             return 0;
         }
 
+        // Our identity's key inventory, once per drain that has external
+        // builds queued. The whole legacy-cohort bug is a statement about this
+        // layout — an identity minted before DashPay encryption keys existed
+        // carries only AUTHENTICATION/TRANSFER slots, so inbound requests
+        // reference those ids and nothing downstream makes sense without
+        // knowing that. Reading it back off an exported log beats asking the
+        // user to query Platform. On-chain public metadata only; no key data.
+        {
+            use dpp::identity::accessors::IdentityGettersV0;
+            use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+            let owners: std::collections::BTreeSet<Identifier> = entries
+                .iter()
+                .filter(|e| matches!(e.op, PendingContactCryptoOp::RegisterExternal { .. }))
+                .map(|e| e.owner_identity_id)
+                .collect();
+            if !owners.is_empty() {
+                let wm = self.wallet_manager.read().await;
+                if let Some(info) = wm.get_wallet_info(&self.wallet_id) {
+                    for owner in owners {
+                        let Some(managed) = info.identity_manager.managed_identity(&owner) else {
+                            continue;
+                        };
+                        let keys: Vec<String> = managed
+                            .identity
+                            .public_keys()
+                            .iter()
+                            .map(|(id, k)| {
+                                format!(
+                                    "{id}:{:?}/{:?}{}",
+                                    k.purpose(),
+                                    k.key_type(),
+                                    if k.disabled_at().is_some() {
+                                        "/DISABLED"
+                                    } else {
+                                        ""
+                                    }
+                                )
+                            })
+                            .collect();
+                        tracing::info!(
+                            owner = %owner,
+                            identity_index = ?managed.identity_index,
+                            keys = %keys.join(" "),
+                            "drain: our identity key inventory (id:purpose/type)"
+                        );
+                    }
+                }
+            }
+        }
+
         let mut cleared: Vec<PendingContactCryptoKey> = Vec::new();
         // How much of `cleared` is already dequeued + persisted, and the running
         // total actually removed. Bookkeeping lands per entry, so at most one
@@ -2095,6 +2155,38 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         );
                         continue;
                     };
+                    // Did only the widened receive-side policy let this
+                    // request through — i.e. does EITHER referenced key name a
+                    // purpose we would never mint ourselves? That marks it as
+                    // the legacy dashj cohort, whose ECDH/AES byte
+                    // compatibility with our implementation has not been
+                    // cross-validated against a dashj-produced payload. Used
+                    // below to keep a decrypt failure from being charged to the
+                    // document.
+                    //
+                    // BOTH sides matter: the widening moved the sender policy
+                    // from ENCRYPTION-only to ENCRYPTION-or-AUTHENTICATION too,
+                    // so an AUTHENTICATION sender paired with a mint-valid
+                    // recipient is just as much an unverified legacy payload as
+                    // the recipient-side case, and equally must not have a
+                    // convention gap charged to it.
+                    let accepted_by_legacy_widening = {
+                        let recipient_widened = our_identity
+                            .get_public_key_by_id(*our_decryption_key_index)
+                            .map(|k| {
+                                !dash_sdk::platform::dashpay::recipient_key_purpose_is_valid(
+                                    k.purpose(),
+                                )
+                            })
+                            .unwrap_or(false);
+                        // The mint-side sender rule is ENCRYPTION-only; anything
+                        // else reaching here was admitted by the widening.
+                        let sender_widened = contact_identity
+                            .get_public_key_by_id(*contact_encryption_key_index)
+                            .map(|k| k.purpose() != Purpose::ENCRYPTION)
+                            .unwrap_or(false);
+                        recipient_widened || sender_widened
+                    };
                     let validation =
                         crate::wallet::identity::crypto::validation::validate_contact_request(
                             &contact_identity,
@@ -2165,6 +2257,38 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         }
                     };
 
+                    // Everything the external build is about to depend on, in
+                    // one line, BEFORE it can fail. Recorded at INFO because
+                    // the legacy cohort's viability is an open question that
+                    // only real mainnet wallets can answer, and an exported log
+                    // is the only channel we get: without this, a failure below
+                    // says what broke but not what it was working from.
+                    //
+                    // Public metadata only — key ids, purposes, types and
+                    // lengths. Never the shared secret, and never the
+                    // decrypted xpub.
+                    {
+                        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+                        let our_key = our_identity.get_public_key_by_id(*our_decryption_key_index);
+                        let their_key =
+                            contact_identity.get_public_key_by_id(*contact_encryption_key_index);
+                        tracing::info!(
+                            owner = %entry.owner_identity_id,
+                            contact = %entry.contact_id,
+                            identity_index,
+                            our_key_id = *our_decryption_key_index,
+                            our_key_purpose = ?our_key.map(|k| k.purpose()),
+                            our_key_type = ?our_key.map(|k| k.key_type()),
+                            their_key_id = *contact_encryption_key_index,
+                            their_key_purpose = ?their_key.map(|k| k.purpose()),
+                            their_key_type = ?their_key.map(|k| k.key_type()),
+                            ciphertext_len = encrypted_public_key.len(),
+                            legacy_widened = accepted_by_legacy_widening,
+                            ecdh_path = %path,
+                            "drain: building external account"
+                        );
+                    }
+
                     // ECDH via the Keychain-backed provider (scalar stays in the
                     // signer; we only get the shared secret).
                     // Bounded: the last step before the external-account
@@ -2226,6 +2350,25 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             )
                             .await;
                             cleared.push(entry.key());
+                        }
+                        // A permanent fault on a legacy-cohort request is NOT
+                        // charged to the document. Decrypt and compact-xpub
+                        // parse are the only gates on the plaintext, so an
+                        // ECDH/AES convention gap between us and dashj would
+                        // surface here as a "permanent" fault and break every
+                        // legacy channel at once — and a broken channel only
+                        // heals when the CONTACT sends a fresh request, an
+                        // appeal the user cannot file. Leaving it queued keeps
+                        // a later convention fix able to recover it, and costs
+                        // only a retry.
+                        Err(e) if e.is_permanent() && accepted_by_legacy_widening => {
+                            tracing::warn!(
+                                owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                                error = %e.into_inner(),
+                                "drain: legacy-cohort external register failed; leaving queued \
+                                 (not marking broken — may be our own convention gap)"
+                            );
+                            continue;
                         }
                         Err(e) if e.is_permanent() => {
                             tracing::warn!(
@@ -2299,6 +2442,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         drained_total += self
             .flush_drained_contact_crypto(&entries, &cleared[flushed..])
             .await;
+
+        // One-line verdict for the pass. "Did the legacy contacts build?" is
+        // answerable from this alone, without counting per-entry lines across a
+        // multi-megabyte export.
+        tracing::info!(
+            entries = entries.len(),
+            drained = drained_total,
+            still_queued = entries.len().saturating_sub(drained_total),
+            "drain: pass complete"
+        );
 
         drained_total
     }
