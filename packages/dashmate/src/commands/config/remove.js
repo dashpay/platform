@@ -3,6 +3,25 @@ import { Args } from '@oclif/core';
 import BaseCommand from '../../oclif/command/BaseCommand.js';
 import resolveConfigDirectory, { isConfigNameAvailable } from '../../config/resolve-config-directory.js';
 
+/**
+ * Whether two paths are the same file on this filesystem.
+ *
+ * @param {string} left
+ * @param {string} right
+ * @return {boolean}
+ */
+function isSameFile(left, right) {
+  try {
+    const a = fs.statSync(left);
+    const b = fs.statSync(right);
+
+    return a.dev === b.dev && a.ino === b.ino;
+  } catch {
+    // One of them is not there, so nothing can be destroyed by mistake.
+    return false;
+  }
+}
+
 export default class ConfigRemoveCommand extends BaseCommand {
   static description = 'Remove config';
 
@@ -40,12 +59,15 @@ export default class ConfigRemoveCommand extends BaseCommand {
 
     const serviceConfigsPath = resolveConfigDirectory(homeDir, configName);
 
-    // A name Dashmate owns resolves to one of its own files rather than to a
-    // service directory - `config.json` resolves to the config file itself.
-    // Deleting that would take every configuration with it, so the directory is
-    // never touched for such a name. An entry left under one by an older
-    // version is still removable: the listing goes, the file stays.
-    const isRepositoryOwnedPath = !isConfigNameAvailable(configName);
+    // A name Dashmate owns can resolve to one of its own files rather than to a
+    // service directory - `config.json` resolves to the config file itself, and
+    // deleting that takes every configuration with it. Whether it actually does
+    // depends on the filesystem: `CONFIG.JSON` is the same file on macOS and a
+    // separate directory on Linux, and that separate directory holds TLS keys
+    // and a dash.conf carrying masternode and spork private keys. So compare
+    // the resolved paths rather than trusting the name.
+    const isRepositoryOwnedPath = !isConfigNameAvailable(configName)
+      && isSameFile(serviceConfigsPath, homeDir.joinPath('config.json'));
 
     // An absent config is a cleanup retry after a previous post-save delete
     // failed. The create command rejects this directory until cleanup succeeds.

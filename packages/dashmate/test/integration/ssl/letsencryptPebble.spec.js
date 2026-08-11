@@ -28,9 +28,17 @@ const PEBBLE_HOSTNAME = 'pebble';
 const PEBBLE_ACME_PORT = 14000;
 
 // lego asks for a certificate covering a fixed address and Pebble connects back
-// to it, so both need known addresses - but hardcoding the pool they come from
-// fails on any machine already using it. Docker picks the pool; the addresses
-// are taken from whatever it picked.
+// to it, so both need addresses known before they start. Docker only honours a
+// requested address on a network whose subnet was configured explicitly, so the
+// pool cannot simply be left to it - instead a candidate is tried and the next
+// one used if the machine is already occupying it.
+const CANDIDATE_SUBNETS = [
+  '172.29.0.0/24',
+  '172.30.0.0/24',
+  '172.31.0.0/24',
+  '10.229.0.0/24',
+  '10.230.0.0/24',
+];
 
 describe('Let\'s Encrypt certificate against a local ACME server', function main() {
   this.timeout(5 * 60 * 1000);
@@ -99,16 +107,34 @@ describe('Let\'s Encrypt certificate against a local ACME server', function main
     pebbleConfig.pebble.httpPort = 80;
     fs.writeFileSync(pebbleConfigPath, JSON.stringify(pebbleConfig), 'utf8');
 
-    network = await docker.createNetwork({ Name: networkName });
+    let lastError;
 
-    const { IPAM } = await network.inspect();
-    const [assignedSubnet] = IPAM.Config.map(({ Subnet }) => Subnet);
-    const [poolPrefix] = assignedSubnet.split('/');
-    const octets = poolPrefix.split('.');
+    for (const subnet of CANDIDATE_SUBNETS) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        network = await docker.createNetwork({
+          Name: networkName,
+          IPAM: { Config: [{ Subnet: subnet }] },
+        });
+      } catch (e) {
+        // Docker refuses a pool that overlaps a network already on the machine.
+        lastError = e;
+        continue;
+      }
 
-    // .1 is the gateway Docker assigns itself.
-    pebbleIp = [...octets.slice(0, 3), '2'].join('.');
-    legoIp = [...octets.slice(0, 3), '3'].join('.');
+      const [prefix] = subnet.split('/');
+      const octets = prefix.split('.');
+
+      // .1 is the gateway Docker assigns itself.
+      pebbleIp = [...octets.slice(0, 3), '2'].join('.');
+      legoIp = [...octets.slice(0, 3), '3'].join('.');
+      break;
+    }
+
+    if (!network) {
+      throw new Error('No candidate subnet was free for the ACME test network:'
+        + ` ${lastError && lastError.message}`);
+    }
 
     pebbleContainer = await docker.createContainer({
       Image: PEBBLE_IMAGE,

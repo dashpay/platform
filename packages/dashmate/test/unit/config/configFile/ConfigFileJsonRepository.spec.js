@@ -825,7 +825,7 @@ describe('ConfigFileJsonRepository', () => {
 
         expect(error).to.be.instanceOf(Error);
         expect(error.message).to.include('Lost the lock');
-        expect(error.message).to.include('.config.json.rescue');
+        expect(error.message).to.include('.config.json.rescue-');
         expect(renders, 'a lost owner must not render stale service files').to.equal(0);
         expect(repository.isRenderPending(), 'no render means no recovery debt').to.be.false();
 
@@ -848,7 +848,9 @@ describe('ConfigFileJsonRepository', () => {
 
       expect(reread.getConfig('base').get('description')).to.not.equal('must-not-be-saved');
 
-      const rescuePath = homeDir.joinPath('.config.json.rescue');
+      const [rescueName] = fs.readdirSync(homeDir.getPath())
+        .filter((n) => n.startsWith('.config.json.rescue-'));
+      const rescuePath = homeDir.joinPath(rescueName);
       expect(JSON.parse(fs.readFileSync(rescuePath, 'utf8'))
         .configs.base.description).to.equal('must-not-be-saved');
       // eslint-disable-next-line no-bitwise

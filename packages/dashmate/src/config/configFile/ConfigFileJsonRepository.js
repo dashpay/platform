@@ -588,7 +588,11 @@ export default class ConfigFileJsonRepository {
     const configFileJSON = `${JSON.stringify(configFile.toObject(), undefined, 2)}\n`;
 
     if (this.#compromised) {
-      const rescuePath = path.join(this.homeDirPath, '.config.json.rescue');
+      // One path per rescue. A later command that also loses its lease must not
+      // replace a copy nobody has looked at yet - it may be the only record of
+      // an operator key typed into a setup that already registered a masternode
+      // on chain.
+      const rescuePath = path.join(this.homeDirPath, `.config.json.rescue-${randomUUID()}`);
 
       try {
         writeFileAtomic.sync(rescuePath, configFileJSON, {

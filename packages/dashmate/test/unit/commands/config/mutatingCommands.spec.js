@@ -72,20 +72,30 @@ describe('Config mutating commands', () => {
     // `config.json` resolves to the repository's own file, not to a service
     // directory. The cleanup-retry path reaches names no config is listed
     // under, so without a guard this deletes every configuration and reports
-    // success.
-    it('should refuse to remove a name that resolves to the config file itself', async () => {
+    // success. Whether an alias spelling reaches the same file depends on the
+    // filesystem, so what is asserted is the invariant: the file survives.
+    it('should never delete the config file itself, whatever the name resolves to', async () => {
       const before = fs.readFileSync(homeDir.joinPath('config.json'), 'utf8');
 
-      for (const name of ['config.json', 'CONFIG.JSON', 'config.json.']) {
+      await expect(new ConfigRemoveCommand().runWithDependencies(
+        { config: 'config.json' },
+        flags,
+        loadedConfigFile,
+        { has: () => false },
+        homeDir,
+        configFileRepository,
+      )).to.be.rejectedWith('reserves for its own files');
+
+      for (const name of ['CONFIG.JSON', 'config.json.']) {
         // eslint-disable-next-line no-await-in-loop
-        await expect(new ConfigRemoveCommand().runWithDependencies(
+        await new ConfigRemoveCommand().runWithDependencies(
           { config: name },
           flags,
           loadedConfigFile,
           { has: () => false },
           homeDir,
           configFileRepository,
-        ), name).to.be.rejectedWith('reserves for its own files');
+        ).catch(() => {});
       }
 
       expect(fs.existsSync(homeDir.joinPath('config.json'))).to.be.true();
