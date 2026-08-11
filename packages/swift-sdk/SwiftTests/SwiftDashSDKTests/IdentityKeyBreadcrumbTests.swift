@@ -130,7 +130,7 @@ final class IdentityKeyBreadcrumbTests: XCTestCase {
         // row to attach to; the backfill target key is matched by pubkey.
         let ownerId = Data(repeating: 0x01, count: 32)
         let counterpartyId = Data(repeating: 0x02, count: 32)
-        seed.insert(PersistentIdentity(identityId: ownerId, isLocal: false, network: .testnet))
+        seed.insert(PersistentIdentity(identityId: ownerId, network: .testnet))
         let pubKey = Data(repeating: 0x77, count: 33)
         seed.insert(makeRow(keyId: 0, publicKeyData: pubKey, identityId: "id1",
                             keychainId: "identity_privkey.x"))

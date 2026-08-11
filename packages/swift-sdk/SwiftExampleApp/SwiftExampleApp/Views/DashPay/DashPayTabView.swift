@@ -104,8 +104,8 @@ struct DashPayTabView: View {
 
     /// Identities the DashPay tab can act as: backed by a wallet
     /// that's currently loaded in the manager — every DashPay FFI
-    /// call resolves through that wallet handle. (The wallet linkage
-    /// implies `isLocal`; every persisted row is Platform-confirmed.)
+    /// call resolves through that wallet handle. (Every persisted row
+    /// is Platform-confirmed; the linkage is the ownership check.)
     private var eligibleIdentities: [PersistentIdentity] {
         identities.filter { identity in
             guard let walletId = identity.wallet?.walletId else { return false }

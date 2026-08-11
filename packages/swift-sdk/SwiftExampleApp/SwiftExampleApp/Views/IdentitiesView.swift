@@ -99,11 +99,11 @@ struct IdentityRow: View {
                     }
                 }
 
-                // `isLocal` mirrors the wallet linkage: wallet-owned
-                // (can sign) vs observed read-only. The balance
-                // refresh is a plain Platform fetch, valid for both.
+                // Wallet-owned (can sign) vs observed read-only. The
+                // balance refresh is a plain Platform fetch, valid
+                // for both.
                 HStack {
-                    if identity.isLocal {
+                    if identity.isWalletOwned {
                         Image(systemName: "wallet.pass")
                             .font(.caption2)
                         Text("In Wallet")
@@ -132,7 +132,7 @@ struct IdentityRow: View {
                     }
                     .buttonStyle(BorderlessButtonStyle())
                 }
-                .foregroundColor(identity.isLocal ? .green : .secondary)
+                .foregroundColor(identity.isWalletOwned ? .green : .secondary)
             }
             .padding(.vertical, 4)
         }

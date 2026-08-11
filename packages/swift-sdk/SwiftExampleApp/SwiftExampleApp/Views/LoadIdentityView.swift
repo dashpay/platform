@@ -421,11 +421,11 @@ struct LoadIdentityView: View {
                     if let existing = existing {
                         existing.balance = Int64(bitPattern: fetchedBalance)
                         existing.alias = trimmedAlias
-                        // `isLocal` mirrors the wallet linkage — an
-                        // existing row may be wallet-owned (the user
-                        // can paste their own identity id), so leave
-                        // the flag to the persister/heal rather than
-                        // forcing `false` here.
+                        // Ownership travels on the `wallet`
+                        // relationship, which this by-id load never
+                        // touches — an existing row may be
+                        // wallet-owned (the user can paste their own
+                        // identity id) and keeps that linkage.
                         existing.identityType = identityType.rawValue
                         existing.network = network
                         existing.lastUpdated = Date()
@@ -438,7 +438,6 @@ struct LoadIdentityView: View {
                             identityId: validIdData,
                             balance: Int64(bitPattern: fetchedBalance),
                             revision: 0,
-                            isLocal: false,
                             alias: trimmedAlias,
                             dpnsName: nil,
                             mainDpnsName: nil,

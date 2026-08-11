@@ -3,18 +3,19 @@ import SwiftData
 import DashSDKFFI
 @testable import SwiftDashSDK
 
-// MARK: - `PersistentIdentity.isLocal` ⟺ wallet-linkage invariant
+// MARK: - `PersistentIdentity.wallet` linkage on the persister path
 //
-// `isLocal` denormalizes the `wallet` relationship: `true` iff the
-// identity belongs to a wallet on this device. Historically the
-// persister wrote a constant `false`, so a wallet's own identity
-// (correct `wallet` relationship, identityIndex 0) persisted as
-// `isLocal == false` — observed on a mainnet device 2026-08-12, where
-// it hid the identity-key refresh affordances in dashwallet-ios.
-// These tests pin the derivation on the upsert path, the gating of
-// the scope-wallet fallback, and the load-time heal.
+// The `wallet` relationship is the single source of truth for
+// identity ownership (`isWalletOwned` / `walletOwnedIdentitiesPredicate`
+// are views over it). A stored `isLocal` flag used to shadow it and
+// drifted — nothing ever wrote `true`, so a wallet's own identity
+// persisted as "not local" (observed on a mainnet device 2026-08-12,
+// where it hid the identity-key refresh affordances in dashwallet-ios).
+// The flag is gone; these tests pin the linkage itself: who gets
+// attached to the scope wallet, who must not, and how a mislinked row
+// heals on re-emit.
 
-final class IdentityIsLocalPersistenceTests: XCTestCase {
+final class IdentityWalletLinkageTests: XCTestCase {
 
     private var container: ModelContainer!
     private var handler: PlatformWalletPersistenceHandler!
@@ -88,12 +89,12 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
         ).first
     }
 
-    // MARK: Upsert derivation
+    // MARK: Linkage derivation
 
     /// A wallet-owned entry (Rust stamps `wallet_id` on every
     /// `add_identity` / load / discovery emission) links the wallet
-    /// relationship AND persists `isLocal == true`.
-    func testWalletOwnedEntryPersistsIsLocalTrue() throws {
+    /// relationship, which `isWalletOwned` reflects.
+    func testWalletOwnedEntryLinksWallet() throws {
         try insertWalletRow()
         applyIdentities([
             makeEntry(identityId: ownIdentityId, identityIndex: 0, walletId: walletId)
@@ -101,10 +102,7 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
 
         let row = try XCTUnwrap(try fetchIdentity(ownIdentityId))
         XCTAssertEqual(row.wallet?.walletId, walletId)
-        XCTAssertTrue(
-            row.isLocal,
-            "the wallet's own identity must persist isLocal == true (2026-08-12 field bug)"
-        )
+        XCTAssertTrue(row.isWalletOwned)
     }
 
     /// A wallet-derived entry that arrives without its own
@@ -118,13 +116,12 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
 
         let row = try XCTUnwrap(try fetchIdentity(ownIdentityId))
         XCTAssertEqual(row.wallet?.walletId, walletId)
-        XCTAssertTrue(row.isLocal)
     }
 
     /// An out-of-wallet (observed) entry — `identity_index == nil`
     /// and `wallet_id == nil`, the `add_out_of_wallet_identity`
     /// shape — must NOT be linked to the scope wallet by the
-    /// fallback, and stays `isLocal == false`.
+    /// fallback.
     func testObservedEntryDoesNotLinkScopeWallet() throws {
         try insertWalletRow()
         applyIdentities([
@@ -136,30 +133,27 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
             row.wallet,
             "observed identities must not inherit the changeset's scope wallet"
         )
-        XCTAssertFalse(row.isLocal)
+        XCTAssertFalse(row.isWalletOwned)
     }
 
-    /// Re-emitting an entry heals a stale row in place: a
-    /// wallet-linked row persisted with `isLocal == false` (written
-    /// before the flag tracked linkage) flips to `true`, and a row
-    /// mislinked by the old unconditional fallback is unlinked when
-    /// its entry re-arrives as out-of-wallet.
-    func testUpsertRestampsStaleRows() throws {
+    /// Re-emitting an entry heals linkage in place: a row mislinked
+    /// by the old unconditional fallback is unlinked when its entry
+    /// re-arrives as out-of-wallet, and a wallet-owned row keeps its
+    /// linkage.
+    func testUpsertRestampsLinkage() throws {
         try insertWalletRow()
         let context = ModelContext(container)
         let wallet = try XCTUnwrap(
             try context.fetch(FetchDescriptor<PersistentWallet>()).first
         )
-        let staleOwn = PersistentIdentity(
+        let ownRowSeed = PersistentIdentity(
             identityId: ownIdentityId,
-            isLocal: false,
             network: .testnet
         )
-        staleOwn.wallet = wallet
-        context.insert(staleOwn)
+        ownRowSeed.wallet = wallet
+        context.insert(ownRowSeed)
         let mislinkedObserved = PersistentIdentity(
             identityId: observedIdentityId,
-            isLocal: true,
             network: .testnet
         )
         mislinkedObserved.wallet = wallet
@@ -172,51 +166,10 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
         ])
 
         let ownRow = try XCTUnwrap(try fetchIdentity(ownIdentityId))
-        XCTAssertTrue(ownRow.isLocal)
         XCTAssertEqual(ownRow.wallet?.walletId, walletId)
 
         let observedRow = try XCTUnwrap(try fetchIdentity(observedIdentityId))
-        XCTAssertFalse(observedRow.isLocal)
         XCTAssertNil(observedRow.wallet)
-    }
-
-    // MARK: Load-time heal
-
-    /// `loadWalletList()` re-derives `isLocal` from the wallet
-    /// relationship for rows the upsert path never touches again —
-    /// both directions (stale `false` on a linked row, stale `true`
-    /// on an unlinked one).
-    func testLoadWalletListHealsStaleIsLocalFlags() throws {
-        try insertWalletRow()
-        let context = ModelContext(container)
-        let wallet = try XCTUnwrap(
-            try context.fetch(FetchDescriptor<PersistentWallet>()).first
-        )
-        let staleOwn = PersistentIdentity(
-            identityId: ownIdentityId,
-            isLocal: false,
-            network: .testnet
-        )
-        staleOwn.wallet = wallet
-        context.insert(staleOwn)
-        let staleObserved = PersistentIdentity(
-            identityId: observedIdentityId,
-            isLocal: true,
-            network: .testnet
-        )
-        context.insert(staleObserved)
-        try context.save()
-
-        // The fixture wallet has no restorable accounts, so the
-        // returned list is empty — the heal runs regardless.
-        let result = handler.loadWalletList()
-        XCTAssertNil(result.entries)
-        XCTAssertFalse(result.errored)
-
-        let ownRow = try XCTUnwrap(try fetchIdentity(ownIdentityId))
-        XCTAssertTrue(ownRow.isLocal, "wallet-linked row heals to isLocal == true")
-
-        let observedRow = try XCTUnwrap(try fetchIdentity(observedIdentityId))
-        XCTAssertFalse(observedRow.isLocal, "unlinked row heals to isLocal == false")
+        XCTAssertFalse(observedRow.isWalletOwned)
     }
 }

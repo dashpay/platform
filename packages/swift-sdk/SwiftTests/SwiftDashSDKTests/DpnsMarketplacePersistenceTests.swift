@@ -59,7 +59,6 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
     func testMarketplaceColumnsHaveMigrationSafeDefaults() {
         let identity = PersistentIdentity(
             identityId: ownerId,
-            isLocal: false,
             network: .testnet
         )
         let row = PersistentDPNSName(identity: identity, label: "Alice")
@@ -79,7 +78,6 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
         let context = ModelContext(container)
         let owner = PersistentIdentity(
             identityId: ownerId,
-            isLocal: false,
             dpnsName: "Alice",
             mainDpnsName: "Alice",
             network: .testnet
@@ -159,7 +157,7 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
     func testMarketplaceCallbackCannotRestoreOwnershipRemovedByCanonicalSnapshot() throws {
         let documentId = Data(repeating: 0x35, count: 32).toBase58String()
         let context = ModelContext(container)
-        let owner = PersistentIdentity(identityId: ownerId, isLocal: false, network: .testnet)
+        let owner = PersistentIdentity(identityId: ownerId, network: .testnet)
         let row = PersistentDPNSName(identity: owner, label: "Alice")
         row.documentIdBase58 = documentId
         context.insert(owner)
@@ -214,10 +212,9 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
     func testSameWalletTransferRebindsSingleCanonicalRowToNewOwner() throws {
         let documentId = Data(repeating: 0x36, count: 32).toBase58String()
         let context = ModelContext(container)
-        let oldOwner = PersistentIdentity(identityId: ownerId, isLocal: false, network: .testnet)
+        let oldOwner = PersistentIdentity(identityId: ownerId, network: .testnet)
         let nextOwner = PersistentIdentity(
             identityId: nextOwnerId,
-            isLocal: false,
             network: .testnet
         )
         let row = PersistentDPNSName(identity: oldOwner, label: "Alice")
@@ -281,7 +278,7 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
     func testMarketplaceRemovalClearsOnlyMarketplaceColumns() throws {
         let documentId = Data(repeating: 0x37, count: 32).toBase58String()
         let context = ModelContext(container)
-        let owner = PersistentIdentity(identityId: ownerId, isLocal: false, network: .testnet)
+        let owner = PersistentIdentity(identityId: ownerId, network: .testnet)
         let row = PersistentDPNSName(identity: owner, label: "Alice", acquiredAt: 40)
         row.documentIdBase58 = documentId
         row.priceCredits = 12_345

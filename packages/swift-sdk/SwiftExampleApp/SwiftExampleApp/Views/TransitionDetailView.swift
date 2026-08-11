@@ -618,7 +618,6 @@ struct TransitionDetailView: View {
         identityId: idData,
         balance: Int64(bitPattern: balance),
         revision: 0,
-        isLocal: false,
         alias: formInputs["alias"],
         network: appState.currentNetwork
       )

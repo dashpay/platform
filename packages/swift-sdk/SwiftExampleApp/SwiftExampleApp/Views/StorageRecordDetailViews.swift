@@ -91,7 +91,7 @@ struct IdentityStorageDetailView: View {
                 FieldRow(label: "ID (Hex)", value: record.identityIdString)
                 FieldRow(label: "Balance", value: record.formattedBalance)
                 FieldRow(label: "Revision", value: "\(record.revision)")
-                FieldRow(label: "Is Local", value: record.isLocal ? "Yes" : "No")
+                FieldRow(label: "Wallet-Owned", value: record.isWalletOwned ? "Yes" : "No")
                 FieldRow(label: "Network", value: record.network.displayName)
                 // `identityIndex` is the DIP-9 index the owning
                 // wallet registered this identity at. Only

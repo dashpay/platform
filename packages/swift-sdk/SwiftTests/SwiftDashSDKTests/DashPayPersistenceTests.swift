@@ -36,7 +36,6 @@ final class DashPayContactPersistenceTests: XCTestCase {
         let context = ModelContext(container)
         let owner = PersistentIdentity(
             identityId: ownerId,
-            isLocal: false,
             network: .testnet
         )
         context.insert(owner)
@@ -734,10 +733,10 @@ final class DashPayPaymentPersistenceTests: XCTestCase {
         )
         let context = ModelContext(container)
         context.insert(
-            PersistentIdentity(identityId: ownerId, isLocal: false, network: .testnet)
+            PersistentIdentity(identityId: ownerId, network: .testnet)
         )
         context.insert(
-            PersistentIdentity(identityId: secondOwnerId, isLocal: false, network: .testnet)
+            PersistentIdentity(identityId: secondOwnerId, network: .testnet)
         )
         try context.save()
     }
@@ -1062,7 +1061,7 @@ final class DashPayPaymentPersistenceTests: XCTestCase {
         // the failed round's parked rows must NOT resurrect.
         let context = ModelContext(container)
         context.insert(
-            PersistentIdentity(identityId: unknownOwner, isLocal: false, network: .testnet)
+            PersistentIdentity(identityId: unknownOwner, network: .testnet)
         )
         try context.save()
         handler.beginChangeset(walletId: walletId)

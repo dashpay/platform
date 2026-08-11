@@ -13,19 +13,6 @@ public final class PersistentIdentity {
     @Attribute(.unique) public var identityId: Data
     public var balance: Int64
     public var revision: Int64
-    /// `true` iff this identity belongs to a wallet on this device —
-    /// i.e. its keys derive from a local wallet's DIP-9 tree and the
-    /// user can sign/act as it. `false` for observed identities
-    /// (DashPay contacts, DPNS lookups, payment counterparties).
-    ///
-    /// Denormalizes the `wallet` relationship into a scalar so
-    /// `#Predicate` filters don't need a relationship traversal; the
-    /// persister re-stamps it from the linkage on every identity
-    /// upsert, and `loadWalletList()` heals stale rows at startup
-    /// (rows written while this flag was a constant `false`).
-    /// `wallet != nil` remains the authoritative check
-    /// (`walletOwnedIdentitiesPredicate`).
-    public var isLocal: Bool
     public var alias: String?
     /// User's chosen primary display label (the one rendered on
     /// list rows and avatars). Populated only when the user selects a
@@ -85,6 +72,16 @@ public final class PersistentIdentity {
     // (`identities`, with `inverse: \PersistentIdentity.wallet`),
     // so this is a plain stored property.
     public var wallet: PersistentWallet?
+
+    /// `true` iff this identity belongs to a wallet on this device —
+    /// its keys derive from that wallet's DIP-9 tree and the user can
+    /// sign/act as it. `false` for observed identities (DashPay
+    /// contacts, DPNS lookups, payment counterparties). Computed from
+    /// the `wallet` relationship so it can never drift; predicates
+    /// use `walletOwnedIdentitiesPredicate` instead. Replaces the
+    /// removed stored `isLocal` flag, which nothing ever set `true`.
+    public var isWalletOwned: Bool { wallet != nil }
+
     /// DIP-9 identity index within the owning wallet. Mirrors the
     /// `identity_index` carried on `IdentityEntryFFI` from Rust.
     /// Only meaningful when `wallet != nil`; defaults to 0
@@ -175,7 +172,6 @@ public final class PersistentIdentity {
         identityId: Data,
         balance: Int64 = 0,
         revision: Int64 = 0,
-        isLocal: Bool = false,
         alias: String? = nil,
         dpnsName: String? = nil,
         mainDpnsName: String? = nil,
@@ -189,7 +185,6 @@ public final class PersistentIdentity {
         self.identityId = identityId
         self.balance = balance
         self.revision = revision
-        self.isLocal = isLocal
         self.alias = alias
         self.dpnsName = dpnsName
         self.mainDpnsName = mainDpnsName
@@ -304,13 +299,11 @@ extension PersistentIdentity {
     /// `wallet` relationship. Use this for views that should only
     /// surface identities the user can act as / sign for.
     ///
-    /// The `isLocal` scalar denormalizes exactly this predicate
-    /// (`wallet != nil`) for filters that can't afford the
-    /// relationship traversal; this relationship check remains the
-    /// authoritative form. (Historical note: `isLocal` once read as a
-    /// "Local Only vs On Network" badge, but no writer ever set it
-    /// `true`, so a wallet's own identity persisted as `false` — the
-    /// two are now defined to agree.)
+    /// This is the predicate form of `isWalletOwned`. (Historical
+    /// note: a stored `isLocal` flag once shadowed this check, but no
+    /// writer ever set it `true`, so a wallet's own identity persisted
+    /// as `false`; the flag has been removed in favor of the
+    /// relationship.)
     public static var walletOwnedIdentitiesPredicate: Predicate<PersistentIdentity> {
         #Predicate<PersistentIdentity> { identity in
             identity.wallet != nil

@@ -182,23 +182,30 @@ public final class PersistentDocument {
     }
 
     // MARK: - Identity Linking
-    public func linkToLocalIdentityIfNeeded(in modelContext: ModelContext) {
+
+    /// Attach `ownerIdentity` to the persisted identity row matching
+    /// `ownerIdData`, if one exists. Any persisted identity qualifies —
+    /// the relationship records who owns the document, not whether this
+    /// device can sign for them. (An `isLocal == true` clause used to
+    /// gate this, but the stored flag was never written `true`, so the
+    /// link never fired; the flag has since been removed.)
+    public func linkToOwnerIdentityIfNeeded(in modelContext: ModelContext) {
         guard ownerIdentity == nil else { return }
 
         let ownerIdToMatch = self.ownerIdData
         let identityPredicate = #Predicate<PersistentIdentity> { identity in
-            identity.identityId == ownerIdToMatch && identity.isLocal == true
+            identity.identityId == ownerIdToMatch
         }
 
         let descriptor = FetchDescriptor<PersistentIdentity>(predicate: identityPredicate)
 
         do {
-            if let localIdentity = try modelContext.fetch(descriptor).first {
-                self.ownerIdentity = localIdentity
+            if let ownerRow = try modelContext.fetch(descriptor).first {
+                self.ownerIdentity = ownerRow
                 self.localUpdatedAt = Date()
             }
         } catch {
-            print("Failed to link document to local identity: \(error)")
+            print("Failed to link document to owner identity: \(error)")
         }
     }
 }

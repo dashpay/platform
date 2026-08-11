@@ -1351,9 +1351,9 @@ enum DocumentPersistence {
         document.ownerId = newOwnerId.toBase58String()
         document.ownerIdData = newOwnerId
         document.revision = nextRevision(from: canonicalJSON, fallback: document.revision)
-        // Re-link the owner relationship if the new owner is local.
+        // Re-link the owner relationship to the new owner's row.
         document.ownerIdentity = nil
-        document.linkToLocalIdentityIfNeeded(in: modelContext)
+        document.linkToOwnerIdentityIfNeeded(in: modelContext)
         return save(modelContext)
     }
 
@@ -1798,7 +1798,7 @@ struct CreateDocumentView: View {
         // contract-scoped document list picks it up.
         document.dataContract = parentContract
         modelContext.insert(document)
-        document.linkToLocalIdentityIfNeeded(in: modelContext)
+        document.linkToOwnerIdentityIfNeeded(in: modelContext)
         do {
             try modelContext.save()
         } catch {

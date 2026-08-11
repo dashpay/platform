@@ -221,15 +221,14 @@ struct IdentityDetailView: View {
                                       identity.identityTypeEnum == .masternode ? .purple : .orange)
                 }
 
-                // Ownership row — `isLocal` mirrors the wallet
-                // linkage (wallet-owned/signable vs observed).
+                // Ownership row — wallet-owned/signable vs observed.
                 HStack {
                     Label(
                         "Ownership",
-                        systemImage: identity.isLocal ? "wallet.pass" : "eye"
+                        systemImage: identity.isWalletOwned ? "wallet.pass" : "eye"
                     )
                     Spacer()
-                    Text(identity.isLocal ? "In Wallet" : "Observed")
+                    Text(identity.isWalletOwned ? "In Wallet" : "Observed")
                         .foregroundColor(.secondary)
                 }
             }
@@ -295,7 +294,7 @@ struct IdentityDetailView: View {
 
                     // Register name button — registration signs with
                     // the identity's wallet keys, so wallet-owned only.
-                    if identity.isLocal {
+                    if identity.isWalletOwned {
                         Button(action: { showingRegisterName = true }) {
                             HStack {
                                 Image(systemName: "plus.circle")
@@ -473,7 +472,7 @@ struct IdentityDetailView: View {
                 .environmentObject(walletManager)
         }
         .onAppear {
-            print("🔵 IdentityDetailView onAppear - dpnsName: \(identity.dpnsName ?? "nil"), isLocal: \(identity.isLocal)")
+            print("🔵 IdentityDetailView onAppear - dpnsName: \(identity.dpnsName ?? "nil"), walletOwned: \(identity.isWalletOwned)")
 
             // Load DPNS names from network if we don't have any cached or if they're empty
             if dpnsNames.isEmpty && contestedDpnsNames.isEmpty {
