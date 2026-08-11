@@ -642,9 +642,19 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
     gap_limit: jni::sys::jint,
 ) {
     guard(&mut env, (), |env| {
-        let Some(account_type) = core_account_type(account_type) else {
-            throw_sdk_exception(env, 1, "accountType out of range (expected 0..=2)");
-            return;
+        // A gap limit belongs to ONE account's address pools; the
+        // AllSpendable aggregate (3) has no pool of its own, so reject it
+        // here rather than letting the per-account FFI fail opaquely.
+        let account_type = match core_account_type(account_type) {
+            Some(platform_wallet_ffi::CoreAccountTypeFFI::AllSpendable) | None => {
+                throw_sdk_exception(
+                    env,
+                    1,
+                    "accountType must be a concrete account (0=BIP44, 1=BIP32, 2=CoinJoin)",
+                );
+                return;
+            }
+            Some(concrete) => concrete,
         };
         if account_index < 0 {
             throw_sdk_exception(env, 1, "accountIndex must be non-negative");
