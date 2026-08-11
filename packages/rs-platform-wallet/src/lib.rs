@@ -80,8 +80,10 @@ pub use wallet::identity::{
 };
 pub use wallet::platform_wallet::PlatformWalletInfo;
 #[cfg(feature = "shielded")]
-pub use wallet::platform_wallet::{ShieldedShieldPreflight, SHIELDED_SHIELD_FEE_RESERVE_CREDITS};
+pub use wallet::platform_wallet::ShieldedShieldPreflight;
 pub use wallet::provider_key_at_index::{ProviderDerivedKey, ProviderKeyKind};
+#[cfg(feature = "shielded")]
+pub use wallet::shielded::operations::shield_fee_reserve_credits;
 pub use wallet::PlatformAddressTag;
 pub use wallet::PlatformWallet;
 
