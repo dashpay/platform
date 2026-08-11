@@ -956,9 +956,56 @@ extension KeychainManager {
                 break
             }
         }
+        // Label-selector sweep — the SAME selector
+        // `retrieveIdentityPrivateKey` uses (service + kSecAttrLabel),
+        // which never decodes metadata. A row with a matching label
+        // but missing/corrupt metadata is invisible to the metadata
+        // sweep above yet still readable by the signer, so it must be
+        // deleted (and verified) by the retrieval's own selector.
+        for account in identityPrivateKeyAccounts(labeledWith: publicKeyHex) {
+            do {
+                try deleteGenericPassword(account: account)
+            } catch {
+                ok = false
+                break
+            }
+        }
+        // Verify with BOTH selectors retrieval can serve from —
+        // success here is the caller's licence to drop its handle.
         return ok
             && !hasIdentityPrivateKey(publicKeyHex: publicKeyHex)
+            && identityPrivateKeyAccounts(labeledWith: publicKeyHex).isEmpty
             && !hasPrivateKey(identityId: identityId, keyIndex: keyIndex)
+    }
+
+    /// Accounts of every keychain item matching the retrieval
+    /// selector for a wallet-derived identity key — `service` +
+    /// `kSecAttrLabel == publicKeyHex.lowercased()`, exactly as
+    /// `retrieveIdentityPrivateKey` queries. Attributes-only: the
+    /// secret bytes never enter Swift memory. Exists because the
+    /// metadata-based `identityPrivateKeyAccount` skips rows whose
+    /// metadata blob is missing or undecodable while the label-based
+    /// retrieval still serves them — deletion and its postcondition
+    /// must see everything retrieval can see.
+    private nonisolated func identityPrivateKeyAccounts(
+        labeledWith publicKeyHex: String
+    ) -> [String] {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecAttrLabel as String: publicKeyHex.lowercased(),
+            kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecReturnAttributes as String: true,
+        ]
+        if let accessGroup = accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess, let items = result as? [[String: Any]] else {
+            return []
+        }
+        return items.compactMap { $0[kSecAttrAccount as String] as? String }
     }
 
     /// Best-effort delete of the legacy (no-walletId) keychain
