@@ -2106,20 +2106,37 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         continue;
                     };
                     // Did only the widened receive-side policy let this
-                    // request through — i.e. does it name a key purpose we
-                    // would never mint ourselves? That marks it as the legacy
-                    // dashj cohort, whose ECDH/AES byte compatibility with our
-                    // implementation has not been cross-validated against a
-                    // dashj-produced payload. Used below to keep a decrypt
-                    // failure from being treated as the document's fault.
-                    let accepted_by_legacy_widening = our_identity
-                        .get_public_key_by_id(*our_decryption_key_index)
-                        .map(|k| {
-                            !dash_sdk::platform::dashpay::recipient_key_purpose_is_valid(
-                                k.purpose(),
-                            )
-                        })
-                        .unwrap_or(false);
+                    // request through — i.e. does EITHER referenced key name a
+                    // purpose we would never mint ourselves? That marks it as
+                    // the legacy dashj cohort, whose ECDH/AES byte
+                    // compatibility with our implementation has not been
+                    // cross-validated against a dashj-produced payload. Used
+                    // below to keep a decrypt failure from being charged to the
+                    // document.
+                    //
+                    // BOTH sides matter: the widening moved the sender policy
+                    // from ENCRYPTION-only to ENCRYPTION-or-AUTHENTICATION too,
+                    // so an AUTHENTICATION sender paired with a mint-valid
+                    // recipient is just as much an unverified legacy payload as
+                    // the recipient-side case, and equally must not have a
+                    // convention gap charged to it.
+                    let accepted_by_legacy_widening = {
+                        let recipient_widened = our_identity
+                            .get_public_key_by_id(*our_decryption_key_index)
+                            .map(|k| {
+                                !dash_sdk::platform::dashpay::recipient_key_purpose_is_valid(
+                                    k.purpose(),
+                                )
+                            })
+                            .unwrap_or(false);
+                        // The mint-side sender rule is ENCRYPTION-only; anything
+                        // else reaching here was admitted by the widening.
+                        let sender_widened = contact_identity
+                            .get_public_key_by_id(*contact_encryption_key_index)
+                            .map(|k| k.purpose() != Purpose::ENCRYPTION)
+                            .unwrap_or(false);
+                        recipient_widened || sender_widened
+                    };
                     let validation =
                         crate::wallet::identity::crypto::validation::validate_contact_request(
                             &contact_identity,
