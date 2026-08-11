@@ -13,8 +13,8 @@ import DashSDKFFI
 //
 // Historically the persister wrote a constant `false`, so a wallet's
 // own identity (correct `wallet` relationship, identityIndex 0)
-// persisted as `isLocal == false` — observed on a mainnet device
-// 2026-08-12, where it hid the identity-key refresh affordances in
+// persisted as `isLocal == false` — field-observed on a mainnet
+// device, where it hid the identity-key refresh affordances in
 // dashwallet-ios. These tests pin the promotion on the upsert path,
 // the gating of the scope-wallet fallback, the preservation of
 // walletless-local rows, and the load-time heal.
@@ -108,7 +108,7 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
         XCTAssertEqual(row.wallet?.walletId, walletId)
         XCTAssertTrue(
             row.isLocal,
-            "the wallet's own identity must persist isLocal == true (2026-08-12 field bug)"
+            "the wallet's own identity must persist isLocal == true (the mainnet field bug)"
         )
     }
 
@@ -191,6 +191,113 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
             observedRow.isLocal,
             "losing the wallet link must not demote isLocal — imported-key identities are local without a wallet"
         )
+    }
+
+    /// "Out-of-wallet" is relative to the EMITTING manager: wallet A
+    /// can resolve wallet B's identity via
+    /// `load_identity_by_dpns_name`, whose `add_out_of_wallet_identity`
+    /// emits the nil/nil shape from A's manager. The globally-keyed
+    /// row must keep wallet B's valid relationship — the unlink only
+    /// applies to a link to the SCOPE wallet (the one the old
+    /// fallback could have fabricated).
+    func testObservedEntryPreservesAnotherWalletsLinkage() throws {
+        try insertWalletRow()
+        let otherWalletId = Data(repeating: 0xBB, count: 32)
+        let context = ModelContext(container)
+        let otherWallet = PersistentWallet(walletId: otherWalletId, network: .testnet)
+        context.insert(otherWallet)
+        let ownedByOther = PersistentIdentity(
+            identityId: observedIdentityId,
+            isLocal: true,
+            network: .testnet
+        )
+        ownedByOther.wallet = otherWallet
+        context.insert(ownedByOther)
+        try context.save()
+
+        // Scope wallet A emits B's identity as observed.
+        applyIdentities([
+            makeEntry(identityId: observedIdentityId, identityIndex: nil, walletId: nil)
+        ])
+
+        let row = try XCTUnwrap(try fetchIdentity(observedIdentityId))
+        XCTAssertEqual(
+            row.wallet?.walletId,
+            otherWalletId,
+            "an observed emission from wallet A must not strip wallet B's ownership"
+        )
+        XCTAssertTrue(row.isLocal)
+    }
+
+    // MARK: Restore-slice collision guard
+
+    /// Two rows claiming the same `identityIndex` (a real index-0
+    /// identity + a legacy mislink carrying the placeholder `0`) must
+    /// not both reach Rust's per-index BTreeMap — the row with
+    /// wallet-derivation key evidence wins; unique indexes pass
+    /// through untouched.
+    func testRestorableIdentitiesPrefersKeyEvidenceOnIndexCollision() throws {
+        try insertWalletRow()
+        let context = ModelContext(container)
+        let wallet = try XCTUnwrap(
+            try context.fetch(FetchDescriptor<PersistentWallet>()).first
+        )
+
+        // Genuine index-0 identity: persister-written key evidence
+        // (PersistentPublicKey.walletId stamped by persistIdentityKeys
+        // for wallet-derivable keys). Its id sorts AFTER the mislink's
+        // so the sort alone would pick the wrong row.
+        let genuine = PersistentIdentity(
+            identityId: Data(repeating: 0x0F, count: 32),
+            isLocal: true,
+            network: .testnet
+        )
+        genuine.wallet = wallet
+        let evidenceKey = PersistentPublicKey(
+            keyId: 0,
+            purpose: .authentication,
+            securityLevel: .master,
+            keyType: .ecdsaSecp256k1,
+            publicKeyData: Data(repeating: 0x11, count: 33),
+            identityId: genuine.identityIdString
+        )
+        evidenceKey.walletId = walletId
+        context.insert(genuine)
+        genuine.publicKeys.append(evidenceKey)
+
+        // Legacy mislink: linked to the same wallet, placeholder
+        // index 0, no key evidence, lexicographically-smaller id.
+        let mislinked = PersistentIdentity(
+            identityId: Data(repeating: 0x01, count: 32),
+            isLocal: false,
+            network: .testnet
+        )
+        mislinked.wallet = wallet
+        context.insert(mislinked)
+
+        // A healthy second identity at a unique index passes through.
+        let second = PersistentIdentity(
+            identityId: Data(repeating: 0x02, count: 32),
+            isLocal: true,
+            network: .testnet,
+            identityIndex: 1
+        )
+        second.wallet = wallet
+        context.insert(second)
+        try context.save()
+
+        let slice = PlatformWalletPersistenceHandler.restorableIdentities(
+            [mislinked, second, genuine],
+            walletId: walletId
+        )
+
+        XCTAssertEqual(slice.map(\.identityIndex), [0, 1])
+        XCTAssertEqual(
+            slice[0].identityId,
+            genuine.identityId,
+            "the key-evidence row wins the index-0 collision"
+        )
+        XCTAssertEqual(slice[1].identityId, second.identityId)
     }
 
     // MARK: Load-time heal

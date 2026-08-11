@@ -1822,17 +1822,31 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // behind by the old unconditional fallback.
             let ownerWalletId: Data? =
                 entry.walletId ?? (entry.identityIndex != nil ? walletId : nil)
-            row.wallet = fetchWalletForLink(walletId: ownerWalletId)
-            // Wallet linkage PROMOTES to local — the wallet's DIP-9
-            // tree can re-derive the identity's keys — but its absence
-            // must not demote: an identity can be local without a
-            // wallet (imported masternode voting/owner/payout keys,
-            // pasted user keys — LoadIdentityView sets those rows
-            // local itself). One-way stamp only; `loadWalletList()`
-            // applies the same upward-only heal at startup for rows
-            // this path never touches again.
-            if row.wallet != nil {
+            if let ownerWallet = fetchWalletForLink(walletId: ownerWalletId) {
+                row.wallet = ownerWallet
+                // Wallet linkage PROMOTES to local — the wallet's
+                // DIP-9 tree can re-derive the identity's keys — but
+                // its absence must not demote: an identity can be
+                // local without a wallet (imported masternode
+                // voting/owner/payout keys, pasted user keys —
+                // LoadIdentityView sets those rows local itself).
+                // One-way stamp only; `loadWalletList()` applies the
+                // same upward-only heal at startup for rows this path
+                // never touches again.
                 row.isLocal = true
+            } else if row.wallet?.walletId == walletId {
+                // An out-of-wallet entry unlinks ONLY a relationship
+                // to this changeset's scope wallet — the one the old
+                // unconditional fallback could have fabricated.
+                // "Out-of-wallet" is relative to the emitting Rust
+                // manager: wallet A resolving wallet B's identity via
+                // `load_identity_by_dpns_name` emits the nil/nil
+                // shape from A's manager, and the row is globally
+                // keyed by identityId — wallet B's valid relationship
+                // must survive that emission. `isLocal` is left
+                // untouched either way (imported keys keep a row
+                // local without any wallet).
+                row.wallet = nil
             }
         }
 
@@ -4666,7 +4680,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// `true` on every wallet-linked row still carrying `false`.
     /// Historical stores need this because the persister used to write
     /// `isLocal: false` unconditionally — the wallet's own identities
-    /// carried `false` (the 2026-08-12 mainnet field bug). UPWARD ONLY:
+    /// carried `false` (the mainnet field bug). UPWARD ONLY:
     /// a `true` on an unlinked row is left alone — an identity can be
     /// local without a wallet (imported masternode voting/owner/payout
     /// keys, pasted user keys), and this pass cannot tell those apart
@@ -4708,6 +4722,68 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 String(describing: error)
             )
         }
+    }
+
+    /// Order and de-collide one wallet's identity rows for the
+    /// restore buffer.
+    ///
+    /// Sorted by `identityIndex` then `identityId` (deterministic
+    /// rehydrated order — the explorer paginates by index). Rows that
+    /// SHARE an `identityIndex` cannot both be marshalled: Rust's
+    /// `build_wallet_identity_bucket` keys a `BTreeMap` on the index,
+    /// so the last insert would silently replace the first. Duplicate
+    /// indexes shouldn't exist for genuinely wallet-owned rows, but
+    /// the pre-fix persister could mislink an observed identity to
+    /// this wallet with the placeholder index `0`, where it would
+    /// collide with the real index-0 identity. On a collision, keep
+    /// the row with wallet-derivation key evidence — a
+    /// `PersistentPublicKey` whose `walletId` matches this wallet;
+    /// `persistIdentityKeys` stamps that only for keys Rust derived
+    /// from this wallet's DIP-9 tree, and out-of-wallet entries never
+    /// get key rows. Ties (several evidence rows, or none) resolve to
+    /// the sort winner. Skipped rows are only omitted
+    /// from THIS restore slice; their store rows are untouched, and
+    /// the upsert path's scope-unlink repairs the mislink when the
+    /// identity re-emits.
+    static func restorableIdentities(
+        _ identities: [PersistentIdentity],
+        walletId: Data
+    ) -> [PersistentIdentity] {
+        let sorted = identities.sorted {
+            if $0.identityIndex != $1.identityIndex {
+                return $0.identityIndex < $1.identityIndex
+            }
+            return $0.identityId.lexicographicallyPrecedes($1.identityId)
+        }
+        var result: [PersistentIdentity] = []
+        result.reserveCapacity(sorted.count)
+        var i = 0
+        while i < sorted.count {
+            let index = sorted[i].identityIndex
+            var group: [PersistentIdentity] = []
+            while i < sorted.count && sorted[i].identityIndex == index {
+                group.append(sorted[i])
+                i += 1
+            }
+            if group.count == 1 {
+                result.append(group[0])
+                continue
+            }
+            let winner = group.first { row in
+                row.publicKeys.contains { $0.walletId == walletId }
+            } ?? group[0]
+            result.append(winner)
+            for skipped in group where skipped !== winner {
+                NSLog(
+                    "[persistor-load:swift] identityIndex %u collision in wallet %@ — skipping %@ from the restore slice (kept %@)",
+                    index,
+                    walletId.toHexString(),
+                    skipped.identityIdBase58,
+                    winner.identityIdBase58
+                )
+            }
+        }
+        return result
     }
 
     /// Returns `(nil, 0)` if nothing is restorable.
@@ -4954,12 +5030,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // `identityId` so the rehydrated `IndexMap` order is
             // deterministic across launches; the explorer paginates by
             // index, so the order matters for stable rendering.
-            let sortedIdentities = w.identities.sorted {
-                if $0.identityIndex != $1.identityIndex {
-                    return $0.identityIndex < $1.identityIndex
-                }
-                return $0.identityId.lexicographicallyPrecedes($1.identityId)
-            }
+            // `restorableIdentities` also resolves `identityIndex`
+            // collisions before the rows reach Rust's per-index
+            // BTreeMap (last insert wins there) — see its doc.
+            let sortedIdentities = Self.restorableIdentities(
+                w.identities,
+                walletId: w.walletId
+            )
             let identitiesBuffer = buildIdentityRestoreBuffer(
                 identities: sortedIdentities,
                 allocation: allocation
