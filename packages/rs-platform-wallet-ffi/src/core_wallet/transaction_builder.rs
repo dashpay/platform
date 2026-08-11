@@ -923,9 +923,43 @@ pub unsafe extern "C" fn core_wallet_transaction_free(tx: *mut FFICoreTransactio
 
 #[cfg(test)]
 mod tests {
-    use super::sole_deliverable_value;
+    use super::{sole_deliverable_value, CoreAccountTypeFFI};
     use dashcore::blockdata::script::ScriptBuf;
     use dashcore::TxOut;
+    use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
+
+    /// What a DRAIN spans, per selector. `SelectionStrategy::All` takes every
+    /// UTXO each named source offers, so this list IS the sweep scope — the
+    /// claim the Kotlin `SelectionStrategy.ALL` doc makes to callers.
+    ///
+    /// The pooled selector is the DEFAULT for a send, so a caller who asks for
+    /// a drain without naming an account type sweeps all three families at
+    /// once, contact-receiving funds included. Pinned here so that widening
+    /// cannot happen silently: anything added to `SEND_FUNDING_SOURCES`
+    /// enlarges every defaulted drain, and this test is where that shows up.
+    #[test]
+    fn a_drains_scope_is_whatever_the_selector_names() {
+        assert_eq!(
+            CoreAccountTypeFFI::BIP44.funding_sources(),
+            &[AccountTypePreference::BIP44],
+            "a single-family selector drains exactly one account"
+        );
+        assert_eq!(
+            CoreAccountTypeFFI::CoinJoin.funding_sources(),
+            &[AccountTypePreference::CoinJoin],
+            "CoinJoin stays its own privacy domain, never pooled"
+        );
+        assert_eq!(
+            CoreAccountTypeFFI::AllSpendable.funding_sources(),
+            &[
+                AccountTypePreference::BIP44,
+                AccountTypePreference::BIP32,
+                AccountTypePreference::AllDashpayReceivingFunds,
+            ],
+            "the DEFAULT selector drains BIP44 + BIP32 + every DashPay \
+             receiving account; BIP44 must stay first, as it supplies change"
+        );
+    }
 
     /// A spendable output. The script only has to NOT be an OP_RETURN.
     fn destination(value: u64) -> TxOut {

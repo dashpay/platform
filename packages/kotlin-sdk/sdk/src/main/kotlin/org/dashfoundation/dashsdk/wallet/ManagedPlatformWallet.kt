@@ -384,6 +384,17 @@ class ManagedPlatformWallet internal constructor(
      *   [SignedCoreTransaction.deliverableAmountDuffs] BEFORE broadcasting —
      *   that is the only way to learn the engine-computed amount, and it is
      *   what a swap quote must be taken from.
+     *
+     *   **A drain's scope is [accountType], which defaults to
+     *   [CoreTransactionBuilder.AccountType.ALL_SPENDABLE].** Combined with
+     *   `ALL`, a call that does not name an account type sweeps BIP44, BIP32
+     *   AND every DashPay contact-receiving account into one transaction,
+     *   change returning to BIP44. That is the intended shape: "send
+     *   everything" means everything the wallet can sign for, which before
+     *   the pooled selector required sweeping accounts together on-chain
+     *   first. Name a single [CoreTransactionBuilder.AccountType] only for a
+     *   drain genuinely scoped to one family, such as a CoinJoin sweep that
+     *   must not leave its privacy domain.
      */
     suspend fun buildSignedPayment(
         recipients: List<Pair<String, Long>>,
