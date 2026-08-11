@@ -15,6 +15,16 @@ const RESERVED_CONFIG_NAMES = new Set([
 ]);
 
 /**
+ * Normalize names that portable local filesystems can map to the same path.
+ *
+ * @param {string} name
+ * @returns {string}
+ */
+export function getPortableConfigName(name) {
+  return name.replace(/\.+$/u, '').toLowerCase();
+}
+
+/**
  * Require a config or group name to be one portable path-safe segment.
  *
  * Rejecting a reserved name is checked separately, on the way in. A config file
@@ -39,7 +49,7 @@ export function assertSafeConfigName(name) {
  * @param {string} name
  */
 export function isConfigNameAvailable(name) {
-  return !RESERVED_CONFIG_NAMES.has(name.replace(/\.+$/u, '').toLowerCase());
+  return !RESERVED_CONFIG_NAMES.has(getPortableConfigName(name));
 }
 
 /**
@@ -53,7 +63,7 @@ export function isConfigNameAvailable(name) {
 export function assertConfigNameAvailable(name) {
   assertSafeConfigName(name);
 
-  const canonicalName = name.replace(/\.+$/u, '').toLowerCase();
+  const canonicalName = getPortableConfigName(name);
 
   if (RESERVED_CONFIG_NAMES.has(canonicalName)) {
     throw new Error(`Config name '${name}' is reserved by Dashmate`);

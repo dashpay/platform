@@ -71,9 +71,9 @@ Sets a configuration option in the default config
     configFileRepository.update((freshConfigFile) => {
       freshConfigFile.getConfig(configName).set(optionPath, value);
     }, {
-      // Rendered inside the lock, so two commands changing the same config
-      // cannot save in one order and render in the other.
-      beforeSave: (freshConfigFile) => writeConfigTemplates(freshConfigFile.getConfig(configName)),
+      // Rendered after saving and inside the lock, so two commands changing the
+      // same config cannot save in one order and render in the other.
+      onSaved: (freshConfigFile) => writeConfigTemplates(freshConfigFile.getConfig(configName)),
     });
 
     // eslint-disable-next-line no-console

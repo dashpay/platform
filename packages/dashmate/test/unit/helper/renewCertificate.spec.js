@@ -93,12 +93,7 @@ describe('renewCertificate', () => {
     expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.false();
   });
 
-  it('should discharge older render debt before renewing one config', async function it() {
-    repository.update((configFile) => {
-      configFile.createConfig('node1', configName);
-    });
-    repository.markRenderPending();
-
+  it('should keep renewed state saved when service-file rendering fails', async function it() {
     const obtainCertificateTask = this.sinon.stub().callsFake((config) => ({
       run: this.sinon.stub().callsFake(async () => {
         config.set(
@@ -107,23 +102,21 @@ describe('renewCertificate', () => {
         );
       }),
     }));
-    const renderedNames = [];
-    const writeConfigTemplates = this.sinon.stub().callsFake((config) => {
-      renderedNames.push(config.getName());
-      config.markAsSaved();
-    });
+    const writeConfigTemplates = this.sinon.stub().throws(new Error('template write failed'));
 
-    await renewCertificate({
+    await expect(renewCertificate({
       configName,
       provider: 'zerossl',
       expirationDays: 30,
       obtainCertificateTask,
       configFileRepository: repository,
       writeConfigTemplates,
-    });
+    })).to.be.rejectedWith('template write failed');
 
-    expect(renderedNames).to.deep.equal([configName, 'node1', configName]);
-    expect(repository.isRenderPending()).to.be.false();
+    expect(repository.read().getConfig(configName)
+      .get('platform.gateway.ssl.providerConfigs.zerossl.id'))
+      .to.equal('renewed-certificate-id-0000000000');
+    expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.false();
   });
 
   it('should not renew when the provider changed after helper startup', async function it() {

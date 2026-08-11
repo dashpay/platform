@@ -67,6 +67,11 @@ describe('Config set command', () => {
 
   describe('#platform', () => {
     it('should allow setting strings', async () => {
+      writeConfigTemplates = (renderedConfig) => {
+        expect(persisted('core.docker.image'))
+          .to.equal(renderedConfig.get('core.docker.image'));
+      };
+
       await run('core.docker.image', 'fake_image');
 
       expect(persisted('core.docker.image')).to.equal('fake_image');

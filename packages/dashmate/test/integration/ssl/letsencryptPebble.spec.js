@@ -40,6 +40,112 @@ const CANDIDATE_SUBNETS = [
   '10.230.0.0/24',
 ];
 
+const DOCKER_SUBNET_OVERLAP_MESSAGE = 'Pool overlaps with other one on this address space';
+
+/**
+ * @param {Error & {reason?: string, json?: {message?: string}}} error
+ * @return {boolean}
+ */
+function isDockerSubnetOverlapError(error) {
+  return [error.message, error.reason, error.json && error.json.message]
+    .some((message) => typeof message === 'string'
+      && message.includes(DOCKER_SUBNET_OVERLAP_MESSAGE));
+}
+
+/**
+ * Create the test network from the first candidate Docker accepts.
+ *
+ * @param {Docker} docker
+ * @param {string} networkName
+ * @param {string[]} candidateSubnets
+ * @return {Promise<{network: Object, subnet: string}>}
+ */
+async function createNetworkFromCandidateSubnets(docker, networkName, candidateSubnets) {
+  let lastError;
+
+  for (const subnet of candidateSubnets) {
+    try {
+      const network = await docker.createNetwork({
+        Name: networkName,
+        IPAM: { Config: [{ Subnet: subnet }] },
+      });
+
+      return { network, subnet };
+    } catch (e) {
+      if (!isDockerSubnetOverlapError(e)) {
+        throw e;
+      }
+
+      lastError = e;
+    }
+  }
+
+  throw new Error('No candidate subnet was free for the ACME test network:'
+    + ` ${lastError && lastError.message}`);
+}
+
+describe('Pebble candidate network selection', () => {
+  const overlapErrors = [
+    ['message', () => new Error(DOCKER_SUBNET_OVERLAP_MESSAGE)],
+    ['reason', () => Object.assign(new Error('network creation failed'), {
+      reason: DOCKER_SUBNET_OVERLAP_MESSAGE,
+    })],
+    ['json.message', () => Object.assign(new Error('network creation failed'), {
+      json: { message: DOCKER_SUBNET_OVERLAP_MESSAGE },
+    })],
+  ];
+
+  overlapErrors.forEach(([field, createOverlapError]) => {
+    it(`should try the next candidate when Docker reports overlap in ${field}`, async function it() {
+      const network = {};
+      const docker = {
+        createNetwork: this.sinon.stub(),
+      };
+      docker.createNetwork.onFirstCall().rejects(createOverlapError());
+      docker.createNetwork.onSecondCall().resolves(network);
+
+      const result = await createNetworkFromCandidateSubnets(
+        docker,
+        'acme-test',
+        ['172.29.0.0/24', '172.30.0.0/24'],
+      );
+
+      expect(result).to.deep.equal({ network, subnet: '172.30.0.0/24' });
+    });
+  });
+
+  it('should not hide an unrelated Docker failure', async function it() {
+    const permissionError = new Error('permission denied');
+    const docker = {
+      createNetwork: this.sinon.stub(),
+    };
+    docker.createNetwork.onFirstCall().rejects(permissionError);
+    docker.createNetwork.onSecondCall().resolves({});
+
+    await expect(createNetworkFromCandidateSubnets(
+      docker,
+      'acme-test',
+      ['172.29.0.0/24', '172.30.0.0/24'],
+    )).to.be.rejectedWith(permissionError);
+
+    expect(docker.createNetwork).to.have.been.calledOnce();
+  });
+
+  it('should report exhaustion after every candidate overlaps', async function it() {
+    const docker = {
+      createNetwork: this.sinon.stub().rejects(new Error(DOCKER_SUBNET_OVERLAP_MESSAGE)),
+    };
+
+    await expect(createNetworkFromCandidateSubnets(
+      docker,
+      'acme-test',
+      ['172.29.0.0/24', '172.30.0.0/24'],
+    )).to.be.rejectedWith('No candidate subnet was free for the ACME test network');
+
+    expect(docker.createNetwork).to.have.been.calledTwice();
+  });
+});
+
 describe('Let\'s Encrypt certificate against a local ACME server', function main() {
   this.timeout(5 * 60 * 1000);
 
@@ -107,34 +213,19 @@ describe('Let\'s Encrypt certificate against a local ACME server', function main
     pebbleConfig.pebble.httpPort = 80;
     fs.writeFileSync(pebbleConfigPath, JSON.stringify(pebbleConfig), 'utf8');
 
-    let lastError;
+    const selected = await createNetworkFromCandidateSubnets(
+      docker,
+      networkName,
+      CANDIDATE_SUBNETS,
+    );
+    network = selected.network;
 
-    for (const subnet of CANDIDATE_SUBNETS) {
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        network = await docker.createNetwork({
-          Name: networkName,
-          IPAM: { Config: [{ Subnet: subnet }] },
-        });
-      } catch (e) {
-        // Docker refuses a pool that overlaps a network already on the machine.
-        lastError = e;
-        continue;
-      }
+    const [prefix] = selected.subnet.split('/');
+    const octets = prefix.split('.');
 
-      const [prefix] = subnet.split('/');
-      const octets = prefix.split('.');
-
-      // .1 is the gateway Docker assigns itself.
-      pebbleIp = [...octets.slice(0, 3), '2'].join('.');
-      legoIp = [...octets.slice(0, 3), '3'].join('.');
-      break;
-    }
-
-    if (!network) {
-      throw new Error('No candidate subnet was free for the ACME test network:'
-        + ` ${lastError && lastError.message}`);
-    }
+    // .1 is the gateway Docker assigns itself.
+    pebbleIp = [...octets.slice(0, 3), '2'].join('.');
+    legoIp = [...octets.slice(0, 3), '3'].join('.');
 
     pebbleContainer = await docker.createContainer({
       Image: PEBBLE_IMAGE,

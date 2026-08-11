@@ -269,153 +269,6 @@ describe('ConfigFileJsonRepository', () => {
       expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.false();
     });
 
-    // Service files and the config file are two writes. A process killed
-    // between them leaves the generated files describing a value the config
-    // file never got, and nothing in either file says so.
-    describe('interrupted between rendering and saving', () => {
-      it('should record that a render is owed while it is in flight', () => {
-        seedConfigFile();
-
-        const repository = new ConfigFileJsonRepository(
-          identityMigration,
-          homeDir,
-          createDefaults,
-          CURRENT_FORMAT_VERSION,
-        );
-
-        let markedWhileRendering;
-
-        repository.update((configFile) => {
-          configFile.getConfig('base').set('description', 'rendered');
-        }, {
-          beforeSave: () => {
-            markedWhileRendering = repository.isRenderPending();
-          },
-        });
-
-        expect(markedWhileRendering, 'marker should exist while rendering').to.be.true();
-        expect(repository.isRenderPending(), 'marker should be gone once saved').to.be.false();
-      });
-
-      it('should clear only the render debt owned by the caller', () => {
-        const repository = new ConfigFileJsonRepository(
-          identityMigration,
-          homeDir,
-          createDefaults,
-          CURRENT_FORMAT_VERSION,
-        );
-
-        const firstDebt = repository.markRenderPending();
-        const secondDebt = repository.markRenderPending();
-
-        expect(firstDebt).to.not.equal(secondDebt);
-
-        repository.clearRenderPending(firstDebt);
-
-        expect(repository.isRenderPending()).to.be.true();
-
-        repository.clearRenderPending(secondDebt);
-
-        expect(repository.isRenderPending()).to.be.false();
-      });
-
-      it('should re-render from the config file that survived', () => {
-        const seeded = seedConfigFile();
-
-        const repository = new ConfigFileJsonRepository(
-          identityMigration,
-          homeDir,
-          createDefaults,
-          CURRENT_FORMAT_VERSION,
-        );
-
-        // Exactly the state a kill between the render and the save leaves: the
-        // marker present, the config file untouched.
-        repository.markRenderPending();
-
-        const rendered = [];
-
-        expect(repository.recoverPendingRender((config) => rendered.push(config.getName())))
-          .to.be.true();
-
-        expect(rendered).to.deep.equal(['base']);
-        expect(fs.readFileSync(configFilePath, 'utf8')).to.equal(seeded);
-        expect(repository.isRenderPending()).to.be.false();
-      });
-
-      it('should do nothing and take no lock when no render is owed', () => {
-        seedConfigFile();
-
-        const repository = new ConfigFileJsonRepository(
-          identityMigration,
-          homeDir,
-          createDefaults,
-          CURRENT_FORMAT_VERSION,
-        );
-
-        let lockedDuringRecovery = false;
-
-        expect(repository.recoverPendingRender(() => {
-          lockedDuringRecovery = true;
-        })).to.be.false();
-
-        expect(lockedDuringRecovery).to.be.false();
-        expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.false();
-      });
-
-      it('should keep the marker when the save fails and re-rendering also fails', () => {
-        seedConfigFile();
-
-        const repository = new ConfigFileJsonRepository(
-          identityMigration,
-          homeDir,
-          createDefaults,
-          CURRENT_FORMAT_VERSION,
-        );
-
-        let renders = 0;
-
-        expect(() => repository.update((configFile) => {
-          configFile.getConfig('base').set('description', 'never-saved');
-        }, {
-          beforeSave: () => {
-            renders += 1;
-
-            if (renders === 1) {
-              // Simulate the atomic replace failing after the render.
-              fs.chmodSync(homeDir.getPath(), 0o500);
-            } else {
-              throw new Error('render failed too');
-            }
-          },
-        })).to.throw();
-
-        fs.chmodSync(homeDir.getPath(), 0o755);
-
-        expect(repository.isRenderPending(), 'marker must outlive a failed recovery').to.be.true();
-      });
-
-      it('should retry recovery when rendering fails', () => {
-        seedConfigFile();
-
-        const repository = new ConfigFileJsonRepository(
-          identityMigration,
-          homeDir,
-          createDefaults,
-          CURRENT_FORMAT_VERSION,
-        );
-        repository.markRenderPending();
-
-        expect(() => repository.recoverPendingRender(() => {
-          throw new Error('render failed');
-        })).to.throw('render failed');
-        expect(repository.isRenderPending()).to.be.true();
-
-        expect(repository.recoverPendingRender(() => {})).to.be.true();
-        expect(repository.isRenderPending()).to.be.false();
-      });
-    });
-
     it('should retry migration rendering when the first render fails', () => {
       seedConfigFile();
 
@@ -476,30 +329,25 @@ describe('ConfigFileJsonRepository', () => {
       expect(renderedWhileLocked).to.be.true();
     });
 
-    // Effects registered by the caller run before the lock is released, so a
-    // concurrent command cannot slip between the save and them.
-    // Service files are what a change actually does; committing the JSON
-    // without them leaves the node running the old value with nothing to make
-    // it try again, because a config read back off disk is clean.
-    it('should commit nothing when rendering service files fails', () => {
+    // JSON is the authoritative state. If rendering fails after it is saved,
+    // service files remain stale until the operator explicitly renders them.
+    it('should keep the saved config when rendering service files fails', () => {
       seedConfigFile();
 
       const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
-      const before = fs.readFileSync(configFilePath, 'utf8');
 
       expect(() => repository.update((configFile) => {
-        configFile.getConfig('base').set('description', 'never-committed');
+        configFile.getConfig('base').set('description', 'saved-before-render');
       }, {
-        beforeSave: () => {
+        onSaved: () => {
           throw new Error('template write failed');
         },
       })).to.throw('template write failed');
 
-      expect(fs.readFileSync(configFilePath, 'utf8')).to.equal(before);
-      expect(repository.read().getConfig('base').get('description')).to.not.equal('never-committed');
+      expect(repository.read().getConfig('base').get('description')).to.equal('saved-before-render');
     });
 
-    it('should render service files before the change reaches disk', () => {
+    it('should render service files after the change reaches disk', () => {
       seedConfigFile();
 
       const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
@@ -507,16 +355,16 @@ describe('ConfigFileJsonRepository', () => {
       let onDiskWhenRendering;
 
       repository.update((configFile) => {
-        configFile.getConfig('base').set('description', 'rendered-first');
+        configFile.getConfig('base').set('description', 'saved-first');
       }, {
-        beforeSave: () => {
+        onSaved: () => {
           onDiskWhenRendering = JSON.parse(fs.readFileSync(configFilePath, 'utf8'))
             .configs.base.description;
         },
       });
 
-      expect(onDiskWhenRendering).to.not.equal('rendered-first');
-      expect(repository.read().getConfig('base').get('description')).to.equal('rendered-first');
+      expect(onDiskWhenRendering).to.equal('saved-first');
+      expect(repository.read().getConfig('base').get('description')).to.equal('saved-first');
     });
 
     it('should keep repository locks outside the config-name namespace', () => {
@@ -527,7 +375,7 @@ describe('ConfigFileJsonRepository', () => {
       repository.update((configFile) => {
         configFile.getConfig('base').set('description', 'changed');
       }, {
-        beforeSave: () => {
+        onSaved: () => {
           expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.true();
           expect(fs.existsSync(homeDir.joinPath('config.json.lock'))).to.be.false();
         },
@@ -815,7 +663,7 @@ describe('ConfigFileJsonRepository', () => {
           repository.update((configFile) => {
             configFile.getConfig('base').set('description', 'must-not-be-saved');
           }, {
-            beforeSave: () => {
+            onSaved: () => {
               renders += 1;
             },
           });
@@ -827,7 +675,6 @@ describe('ConfigFileJsonRepository', () => {
         expect(error.message).to.include('Lost the lock');
         expect(error.message).to.include('.config.json.rescue-');
         expect(renders, 'a lost owner must not render stale service files').to.equal(0);
-        expect(repository.isRenderPending(), 'no render means no recovery debt').to.be.false();
 
         repository.migrateConfigFile = (data) => ({
           ...data,

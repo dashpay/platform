@@ -25,8 +25,6 @@ export default async function renewCertificate({
   configFileRepository.acquire();
 
   try {
-    configFileRepository.recoverPendingRender(writeConfigTemplates);
-
     const { configFile } = configFileRepository.readAndMigrate(
       {},
       (migratedConfigs) => migratedConfigs.forEach(writeConfigTemplates),
@@ -67,20 +65,11 @@ export default async function renewCertificate({
           + ' obtained; re-run renewal once no other command is changing configuration.');
       }
 
-      // Rendering before the save keeps a failure recoverable: nothing is
-      // committed, so the next renewal attempt redoes both. Saving first would
-      // leave the gateway's generated files behind a configuration that already
-      // claims the new certificate, with nothing to trigger a re-render. The
-      // marker covers the helper being killed between the two.
-      const renderPendingPath = configFileRepository.markRenderPending();
-
-      writeConfigTemplates(config);
-
+      // JSON is authoritative. If rendering fails or the helper is killed next,
+      // an explicit config render repairs the stale gateway service files.
       configFileRepository.write(configFile);
 
-      if (configFileRepository.isExclusive()) {
-        configFileRepository.clearRenderPending(renderPendingPath);
-      }
+      writeConfigTemplates(config);
     }
 
     return { config, renewed: true };

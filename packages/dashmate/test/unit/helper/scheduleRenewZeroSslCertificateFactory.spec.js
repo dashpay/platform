@@ -28,9 +28,6 @@ describe('scheduleRenewZeroSslCertificateFactory', () => {
       }),
       acquire: this.sinon.stub(),
       isExclusive: () => true,
-      markRenderPending: () => {},
-      clearRenderPending: () => {},
-      recoverPendingRender: this.sinon.stub().returns(false),
       readAndMigrate: this.sinon.stub().returns({
         configFile: {
           getConfig: this.sinon.stub().returns(config),

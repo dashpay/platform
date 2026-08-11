@@ -98,8 +98,6 @@ export default class ConfigFileJsonRepository {
     // Locking a sibling rather than the config file itself keeps first run
     // working, where there is no config file to lock yet.
     this.lockFilePath = homeDir.joinPath('.config.json.lock');
-    this.renderPendingPrefix = '.config.json.render-pending-';
-    this.legacyRenderPendingPath = homeDir.joinPath('config.json.render-pending');
   }
 
   /**
@@ -192,17 +190,11 @@ export default class ConfigFileJsonRepository {
    *
    * @param {function(ConfigFile): void} mutate
    * @param {Object} [options={}]
-   * @param {function(ConfigFile): void} [options.beforeSave] - runs while the
-   *   lock is held and before the change is durable, for effects that must be
-   *   in place for it to mean anything: rendering service files. It may run a
-   *   second time with the last durable ConfigFile after a save failure, so it
-   *   must be idempotent across both inputs.
    * @param {function(ConfigFile): void} [options.onSaved] - runs after the save
-   *   and before the lock is released, for effects that must not happen unless
-   *   the change reached disk: removing a config's directory
+   *   and before the lock is released
    * @returns {void}
    */
-  update(mutate, { beforeSave, onSaved } = {}) {
+  update(mutate, { onSaved } = {}) {
     this.#locked(() => {
       // First run has nothing to read yet, and creating the defaults here rather
       // than separately keeps that on the same locked path as every other change
@@ -213,49 +205,11 @@ export default class ConfigFileJsonRepository {
 
       mutate(configFile);
 
+      this.#save(configFile);
+
       if (!this.isExclusive()) {
-        // Preserve the pending JSON through the normal lost-lock rescue path,
-        // but do not render service files from a stale snapshot.
-        this.#save(configFile);
-      }
-
-      let renderPendingPath;
-
-      if (beforeSave) {
-        renderPendingPath = this.markRenderPending();
-
-        beforeSave(configFile);
-      }
-
-      try {
-        this.#save(configFile);
-
-        if (!this.isExclusive()) {
-          throw new Error('Lost the configuration lock after saving the config file;'
-            + ' follow-up filesystem changes were not run. Re-run the command.');
-        }
-      } catch (e) {
-        // The generated files now describe a change that did not survive.
-        // Nothing else records that they are ahead, so re-render them from the
-        // state that is still there rather than leave the two disagreeing.
-        if (beforeSave && this.isExclusive() && fs.existsSync(this.configFilePath)) {
-          try {
-            beforeSave(this.read());
-
-            if (this.isExclusive()) {
-              this.clearRenderPending(renderPendingPath);
-            }
-          } catch {
-            // Keep the save failure - it is the one the caller has to act on -
-            // and leave the marker, so the next command renders again.
-          }
-        }
-
-        throw e;
-      }
-
-      if (renderPendingPath !== undefined) {
-        this.clearRenderPending(renderPendingPath);
+        throw new Error('Lost the configuration lock after saving the config file;'
+          + ' follow-up filesystem changes were not run. Re-run the command.');
       }
 
       if (onSaved) {
@@ -355,116 +309,6 @@ export default class ConfigFileJsonRepository {
     }
 
     return semver.lt(recordedVersion, this.configFormatVersion);
-  }
-
-  /**
-   * Record that service files are being written for a change not yet saved.
-   *
-   * Service files and the config file are two separate writes, and a process
-   * killed between them leaves the generated files describing a value the
-   * config file does not have, with nothing to say so. Rendering derives
-   * entirely from the config file, so re-running it is always safe - this
-   * marker is only there to say that it is owed.
-   *
-   * Caller must hold the lock.
-   *
-   * Each render gets its own file, so a process can clear only the debt it
-   * created even if its lock is compromised and another writer starts.
-   *
-   * @returns {string} path to the caller-owned debt record
-   */
-  markRenderPending() {
-    const renderPendingPath = path.join(
-      this.homeDirPath,
-      `${this.renderPendingPrefix}${randomUUID()}`,
-    );
-
-    fs.writeFileSync(renderPendingPath, '', 'utf8');
-
-    return renderPendingPath;
-  }
-
-  /**
-   * Drop the marker once the config file and the service files agree again.
-   *
-   * @param {string} renderPendingPath
-   * @returns {void}
-   */
-  clearRenderPending(renderPendingPath) {
-    fs.rmSync(renderPendingPath, { force: true });
-  }
-
-  /**
-   * Whether a render was interrupted before its change reached disk.
-   *
-   * @returns {boolean}
-   */
-  isRenderPending() {
-    return this.#getRenderPendingPaths().length > 0;
-  }
-
-  /**
-   * Re-render every config when a previous attempt was interrupted.
-   *
-   * Reads under the lock so the state rendered from is the current one, and
-   * does nothing at all in the ordinary case - the marker is absent, and no
-   * lock is taken.
-   *
-   * @param {function(Config): void} render
-   * @returns {boolean} whether anything was re-rendered
-   */
-  recoverPendingRender(render) {
-    if (this.#getRenderPendingPaths().length === 0) {
-      return false;
-    }
-
-    return this.#locked(() => {
-      // Another process may have finished the recovery while this one waited.
-      const renderPendingPaths = this.#getRenderPendingPaths();
-
-      if (renderPendingPaths.length === 0) {
-        return false;
-      }
-
-      if (!this.isExclusive()) {
-        throw new Error('Lost the configuration lock before pending service files were recovered.');
-      }
-
-      if (!fs.existsSync(this.configFilePath)) {
-        renderPendingPaths.forEach((renderPendingPath) => {
-          this.clearRenderPending(renderPendingPath);
-        });
-
-        return false;
-      }
-
-      this.read().getAllConfigs().forEach(render);
-
-      if (!this.isExclusive()) {
-        throw new Error('Lost the configuration lock while pending service files were recovered.');
-      }
-
-      renderPendingPaths.forEach((renderPendingPath) => {
-        this.clearRenderPending(renderPendingPath);
-      });
-
-      return true;
-    });
-  }
-
-  /**
-   * @returns {string[]}
-   */
-  #getRenderPendingPaths() {
-    const legacyRenderPendingPaths = fs.existsSync(this.legacyRenderPendingPath)
-      && fs.statSync(this.legacyRenderPendingPath).isFile()
-      ? [this.legacyRenderPendingPath]
-      : [];
-
-    return fs.readdirSync(this.homeDirPath)
-      .filter((name) => name.startsWith(this.renderPendingPrefix))
-      .map((name) => path.join(this.homeDirPath, name))
-      .concat(legacyRenderPendingPaths);
   }
 
   /**

@@ -95,14 +95,6 @@ export default class BaseCommand extends Command {
       configFile: asValue(configFile),
     });
 
-    // A previous command killed between rendering its service files and saving
-    // the change left them describing a value the config file never got. The
-    // files derive from the config file, so rendering again from it is what
-    // makes the two agree. Costs an existence check when nothing is owed.
-    configFileRepository.recoverPendingRender(
-      this.container.resolve('writeConfigTemplates'),
-    );
-
     // Graceful exit
     const stopAllContainers = this.container.resolve('stopAllContainers');
     const startedContainers = this.container.resolve('startedContainers');
@@ -173,11 +165,9 @@ export default class BaseCommand extends Command {
           const configFile = this.container.resolve('configFile');
 
           if (configFile.isChanged()) {
-            // Rendering happens before the save, so it must not start once the
-            // lock is gone: another process may already have saved and rendered
-            // newer state, and these files would overwrite it from a snapshot
-            // taken before it existed. Saving refuses for the same reason, but
-            // that check comes too late to stop a render.
+            // Rendering must not start once the lock is gone: another process
+            // may already have saved and rendered newer state, and these files
+            // would overwrite it from a snapshot taken before it existed.
             if (!configFileRepository.isExclusive()) {
               // Saving refuses too, but on the way it writes what this command
               // produced to a rescue file - which for setup or a reindex is the
@@ -195,19 +185,11 @@ export default class BaseCommand extends Command {
              */
             const writeConfigTemplates = this.container.resolve('writeConfigTemplates');
 
-            // Being killed between the render and the save would leave the
-            // generated files ahead of the config file with nothing to say so.
-            const renderPendingPath = configFileRepository.markRenderPending();
-
-            changedConfigs.forEach(writeConfigTemplates);
-
-            // Persist only after every generated file is current. If rendering
-            // fails, the unchanged format version makes the next command retry it.
+            // JSON is authoritative. If rendering fails or the process is killed
+            // next, an explicit config render repairs the stale service files.
             configFileRepository.write(configFile);
 
-            if (configFileRepository.isExclusive()) {
-              configFileRepository.clearRenderPending(renderPendingPath);
-            }
+            changedConfigs.forEach(writeConfigTemplates);
           }
         }
       } catch (e) {

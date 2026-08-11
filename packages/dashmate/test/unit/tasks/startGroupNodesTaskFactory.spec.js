@@ -14,6 +14,7 @@ describe('startGroupNodesTaskFactory', () => {
   let writeConfigTemplates;
   let renderedConfig;
   let renderedWhileLocked;
+  let renderedAfterSave;
 
   function createMinerConfig(address) {
     const config = getBaseConfigFactory(homeDir)();
@@ -54,9 +55,13 @@ describe('startGroupNodesTaskFactory', () => {
     };
     renderedConfig = null;
     renderedWhileLocked = false;
+    renderedAfterSave = false;
     writeConfigTemplates = this.sinon.stub().callsFake((config) => {
       renderedConfig = config;
       renderedWhileLocked = fs.existsSync(homeDir.joinPath('.config.json.lock'));
+      renderedAfterSave = configFileRepository.read()
+        .getConfig(config.getName())
+        .get('core.miner.address') === config.get('core.miner.address');
     });
 
     startGroupNodesTask = startGroupNodesTaskFactory(
@@ -94,6 +99,7 @@ describe('startGroupNodesTaskFactory', () => {
     expect(writeConfigTemplates).to.have.been.calledOnce();
     expect(renderedConfig.get('core.miner.address')).to.equal(persistedAddress);
     expect(renderedWhileLocked).to.be.true();
+    expect(renderedAfterSave).to.be.true();
   });
 
   it('should use an address set after the command loaded its config', async () => {

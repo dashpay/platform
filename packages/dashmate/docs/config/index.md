@@ -218,3 +218,32 @@ migration that must be saved.
 
 Graceful termination releases the lock. After `SIGKILL` or a power loss, the next writer
 takes over after about a minute.
+
+### Recovering interrupted filesystem work
+
+`config.json` is the authoritative configuration. For normal configuration changes and
+certificate renewal, Dashmate saves it before writing the derived service files. If a
+command reports a service-file rendering error, or is killed after saving, those files can
+still describe the previous configuration. Repair the affected config explicitly:
+
+```bash
+dashmate config render --config=<name>
+```
+
+Removing a config also saves `config.json` before deleting its service directory. If the
+directory deletion fails, Dashmate leaves the orphan in place and will refuse to create a
+new config with that name. Inspect `~/.dashmate/<name>` for keys or other state that must be
+kept, then move or delete the directory manually before retrying `dashmate config create`.
+An absent name passed to `dashmate config remove` is rejected; it is not an orphan-cleanup
+command.
+
+If a command loses its lock before saving, Dashmate preserves the pending JSON in a private
+`~/.dashmate/.config.json.rescue-<id>` file and reports that path. Compare it with
+`config.json` and retain any needed values. Delete the rescue file manually only after its
+contents have been acknowledged; Dashmate does not remove rescue files automatically.
+
+The lock coordinates versions of Dashmate that implement this protocol. An older Dashmate
+process that does not use the lock can still write concurrently, so finish rolling out the
+new version before relying on this guarantee. The protocol is intended for a Dashmate home
+directory on a local filesystem; network filesystems may not provide the required lock and
+atomic-replacement semantics.

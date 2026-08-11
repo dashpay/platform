@@ -119,7 +119,7 @@ export default function startGroupNodesTaskFactory(
                 freshMinerConfig.set('core.miner.address', minerAddress);
               }
             }, {
-              beforeSave: (configFile) => writeConfigTemplates(
+              onSaved: (configFile) => writeConfigTemplates(
                 configFile.getConfig(minerConfig.getName()),
               ),
             });

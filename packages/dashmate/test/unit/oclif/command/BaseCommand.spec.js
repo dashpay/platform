@@ -21,9 +21,6 @@ describe('BaseCommand', () => {
         release: sinon.stub(),
         write: sinon.stub(),
         isExclusive: () => true,
-        markRenderPending: () => {},
-        clearRenderPending: () => {},
-        recoverPendingRender: sinon.stub().returns(false),
       };
       const dependencies = {
         configFile,
@@ -71,13 +68,12 @@ describe('BaseCommand', () => {
       expect(configFileRepository.release).to.have.been.calledOnce();
     });
 
-    it('should recover pending service files with the production renderer', async function it() {
-      const { command, configFileRepository, container } = createCommandWithContainer(this.sinon);
+    it('should leave service-file repair to explicit config render', async function it() {
+      const { command, container } = createCommandWithContainer(this.sinon);
 
       await command.init();
 
-      expect(configFileRepository.recoverPendingRender)
-        .to.have.been.calledOnceWith(container.resolve('writeConfigTemplates'));
+      expect(container.resolve('writeConfigTemplates')).to.not.have.been.called();
     });
 
     it('should release after a failed command', async function it() {
@@ -227,9 +223,6 @@ describe('BaseCommand', () => {
       configFileRepository = {
         write: this.sinon.stub(),
         isExclusive: () => true,
-        markRenderPending: () => {},
-        clearRenderPending: () => {},
-        recoverPendingRender: () => false,
       };
       writeConfigTemplates = this.sinon.stub();
       stopAllContainers = this.sinon.stub().resolves();
@@ -252,24 +245,23 @@ describe('BaseCommand', () => {
       };
     });
 
-    it('should leave the config unsaved so template rendering is retried after failure', async function it() {
+    it('should keep the saved config when template rendering fails', async function it() {
+      configFileRepository.write.callsFake(() => {
+        configFile.isChanged.returns(false);
+      });
       writeConfigTemplates.onFirstCall().throws(new Error('template write failed'));
 
       await expect(command.saveConfigAndStopContainers())
         .to.be.rejectedWith('template write failed');
 
-      expect(configFileRepository.write).to.not.have.been.called();
-
-      await command.saveConfigAndStopContainers();
-
-      expect(writeConfigTemplates).to.have.been.calledTwice();
       expect(configFileRepository.write).to.have.been.calledOnceWith(configFile);
+      expect(writeConfigTemplates).to.have.been.calledOnceWith(config);
+      this.sinon.assert.callOrder(configFileRepository.write, writeConfigTemplates);
     });
 
-    // Rendering happens before the save, so the save's own exclusivity check
-    // comes too late to stop it. A command whose lock was stolen would write
-    // service files from a snapshot taken before the process that stole it
-    // saved and rendered newer state.
+    // Check exclusivity before saving so a command whose lock was stolen does
+    // not persist or render its stale snapshot. With a live lease, JSON is
+    // saved before the derived service files are rendered.
     it('should not render service files once the lock has been lost', async function it() {
       configFileRepository.isExclusive = () => false;
       // What saving does when the lease is gone: refuse, but first put the

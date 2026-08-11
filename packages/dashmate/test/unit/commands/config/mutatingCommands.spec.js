@@ -55,12 +55,16 @@ describe('Config mutating commands', () => {
 
   describe('config create', () => {
     it('should save the new config without touching the config file loaded at startup', async () => {
+      const writeConfigTemplates = (config) => {
+        expect(reread().isConfigExists(config.getName())).to.be.true();
+      };
+
       await new ConfigCreateCommand().runWithDependencies(
         { config: 'node1', from: 'base' },
         flags,
         loadedConfigFile,
         configFileRepository,
-        noTemplates,
+        writeConfigTemplates,
         homeDir,
       );
 
@@ -69,34 +73,19 @@ describe('Config mutating commands', () => {
       expect(loadedConfigFile.isChanged()).to.be.false();
     });
 
-    // `config.json` resolves to the repository's own file, not to a service
-    // directory. The cleanup-retry path reaches names no config is listed
-    // under, so without a guard this deletes every configuration and reports
-    // success. Whether an alias spelling reaches the same file depends on the
-    // filesystem, so what is asserted is the invariant: the file survives.
-    it('should never delete the config file itself, whatever the name resolves to', async () => {
+    it('should reject absent reserved names without deleting the config file', async () => {
       const before = fs.readFileSync(homeDir.joinPath('config.json'), 'utf8');
 
-      await expect(new ConfigRemoveCommand().runWithDependencies(
-        { config: 'config.json' },
-        flags,
-        loadedConfigFile,
-        { has: () => false },
-        homeDir,
-        configFileRepository,
-      )).to.be.rejectedWith('reserves for its own files');
-
-      for (const name of ['CONFIG.JSON', 'config.json.']) {
-        // eslint-disable-next-line no-await-in-loop
-        await new ConfigRemoveCommand().runWithDependencies(
+      await Promise.all(['config.json', 'CONFIG.JSON', 'config.json.'].map(async (name) => {
+        await expect(new ConfigRemoveCommand().runWithDependencies(
           { config: name },
           flags,
           loadedConfigFile,
           { has: () => false },
           homeDir,
           configFileRepository,
-        ).catch(() => {});
-      }
+        )).to.be.rejectedWith(`Config with name '${name}' is not present`);
+      }));
 
       expect(fs.existsSync(homeDir.joinPath('config.json'))).to.be.true();
       expect(fs.readFileSync(homeDir.joinPath('config.json'), 'utf8')).to.equal(before);
@@ -115,19 +104,12 @@ describe('Config mutating commands', () => {
         configFileRepository,
         noTemplates,
         homeDir,
-      )).to.be.rejectedWith('dashmate config remove node1');
+      )).to.be.rejectedWith(`Inspect '${homeDir.joinPath('node1')}' and move or delete it manually`);
 
       expect(reread().isConfigExists('node1')).to.be.false();
       expect(fs.readFileSync(keyPath, 'utf8')).to.equal('interrupted-create-private-key');
 
-      await new ConfigRemoveCommand().runWithDependencies(
-        { config: 'node1' },
-        flags,
-        loadedConfigFile,
-        { has: () => false },
-        homeDir,
-        configFileRepository,
-      );
+      fs.rmSync(homeDir.joinPath('node1'), { recursive: true });
 
       expect(fs.existsSync(homeDir.joinPath('node1'))).to.be.false();
 
@@ -141,6 +123,33 @@ describe('Config mutating commands', () => {
       );
 
       expect(reread().isConfigExists('node1')).to.be.true();
+    });
+
+    it('should reject a portable-name alias after a saved create fails to render', async () => {
+      await expect(new ConfigCreateCommand().runWithDependencies(
+        { config: 'node1', from: 'base' },
+        flags,
+        loadedConfigFile,
+        configFileRepository,
+        () => {
+          throw new Error('template write failed');
+        },
+        homeDir,
+      )).to.be.rejectedWith('template write failed');
+
+      expect(reread().isConfigExists('node1')).to.be.true();
+      expect(fs.existsSync(homeDir.joinPath('node1'))).to.be.false();
+
+      await expect(new ConfigCreateCommand().runWithDependencies(
+        { config: 'NODE1', from: 'base' },
+        flags,
+        loadedConfigFile,
+        configFileRepository,
+        noTemplates,
+        homeDir,
+      )).to.be.rejectedWith("Config with name 'NODE1' already present");
+
+      expect(reread().isConfigExists('NODE1')).to.be.false();
     });
   });
 
@@ -225,7 +234,7 @@ describe('Config mutating commands', () => {
       expect(fs.readFileSync(keyPath, 'utf8')).to.equal('previous-node-private-key');
     });
 
-    it('should retry cleanup after the config is already absent', async function it() {
+    it('should preserve an orphan after removal until the operator clears it', async function it() {
       const keyPath = homeDir.joinPath('node1', 'platform', 'gateway', 'ssl', 'private.key');
 
       fs.mkdirSync(path.dirname(keyPath), { recursive: true });
@@ -247,6 +256,48 @@ describe('Config mutating commands', () => {
       expect(reread().isConfigExists('node1')).to.be.false();
       expect(fs.existsSync(homeDir.joinPath('node1'))).to.be.true();
 
+      await expect(new ConfigRemoveCommand().runWithDependencies(
+        { config: 'node1' },
+        flags,
+        loadedConfigFile,
+        { has: () => false },
+        homeDir,
+        configFileRepository,
+      )).to.be.rejectedWith("Config with name 'node1' is not present");
+
+      expect(reread().isConfigExists('node1')).to.be.false();
+      expect(fs.readFileSync(keyPath, 'utf8')).to.equal('previous-node-private-key');
+    });
+
+    it('should not remove a differently-cased listed config or its private files', async () => {
+      const keyPath = homeDir.joinPath('node1', 'platform', 'gateway', 'ssl', 'private.key');
+
+      fs.mkdirSync(path.dirname(keyPath), { recursive: true });
+      fs.writeFileSync(keyPath, 'listed-node-private-key');
+
+      await expect(new ConfigRemoveCommand().runWithDependencies(
+        { config: 'NODE1' },
+        flags,
+        loadedConfigFile,
+        { has: () => false },
+        homeDir,
+        configFileRepository,
+      )).to.be.rejectedWith("Config with name 'NODE1' is not present");
+
+      expect(reread().isConfigExists('node1')).to.be.true();
+      expect(fs.readFileSync(keyPath, 'utf8')).to.equal('listed-node-private-key');
+    });
+
+    it('should preserve service files used by a surviving portable-name alias', async () => {
+      const configFilePath = homeDir.joinPath('config.json');
+      const data = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
+      const keyPath = homeDir.joinPath('node1', 'platform', 'gateway', 'ssl', 'private.key');
+
+      data.configs.NODE1 = data.configs.node1;
+      fs.writeFileSync(configFilePath, `${JSON.stringify(data, undefined, 2)}\n`, 'utf8');
+      fs.mkdirSync(path.dirname(keyPath), { recursive: true });
+      fs.writeFileSync(keyPath, 'shared-node-private-key');
+
       await new ConfigRemoveCommand().runWithDependencies(
         { config: 'node1' },
         flags,
@@ -257,7 +308,54 @@ describe('Config mutating commands', () => {
       );
 
       expect(reread().isConfigExists('node1')).to.be.false();
-      expect(fs.existsSync(homeDir.joinPath('node1'))).to.be.false();
+      expect(reread().isConfigExists('NODE1')).to.be.true();
+      expect(fs.readFileSync(keyPath, 'utf8')).to.equal('shared-node-private-key');
+    });
+
+    it('should not delete config.json when it appears immediately before the locked read', async function it() {
+      const configFilePath = homeDir.joinPath('config.json');
+      const configFileJson = fs.readFileSync(configFilePath, 'utf8');
+      const update = configFileRepository.update.bind(configFileRepository);
+
+      fs.rmSync(configFilePath);
+      this.sinon.stub(configFileRepository, 'update').callsFake((...args) => {
+        fs.writeFileSync(configFilePath, configFileJson, 'utf8');
+
+        return update(...args);
+      });
+
+      await expect(new ConfigRemoveCommand().runWithDependencies(
+        { config: 'config.json' },
+        flags,
+        loadedConfigFile,
+        { has: () => false },
+        homeDir,
+        configFileRepository,
+      )).to.be.rejectedWith("Config with name 'config.json' is not present");
+
+      expect(fs.existsSync(configFilePath)).to.be.true();
+      expect(reread().isConfigExists('node1')).to.be.true();
+    });
+
+    it('should remove a listed legacy reserved name without deleting repository files', async () => {
+      const configFilePath = homeDir.joinPath('config.json');
+      const data = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
+
+      data.configs['config.json'] = data.configs.node1;
+      fs.writeFileSync(configFilePath, `${JSON.stringify(data, undefined, 2)}\n`, 'utf8');
+
+      await new ConfigRemoveCommand().runWithDependencies(
+        { config: 'config.json' },
+        flags,
+        loadedConfigFile,
+        { has: () => false },
+        homeDir,
+        configFileRepository,
+      );
+
+      expect(fs.existsSync(configFilePath)).to.be.true();
+      expect(reread().isConfigExists('config.json')).to.be.false();
+      expect(reread().isConfigExists('node1')).to.be.true();
     });
   });
 });
