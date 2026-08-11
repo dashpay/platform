@@ -18,43 +18,51 @@ pub(crate) enum GuardedDispatch {
 }
 
 impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
-    /// Age-check and dispatch as ONE observation under the wallet-manager
-    /// READ lock.
+    /// Age-check under the wallet-manager READ lock, then dispatch
+    /// immediately after releasing it.
     ///
-    /// The two writers this orders against are key-wallet's
-    /// `ReservationSet` TTL sweep — it runs inside coin selection, which
-    /// mutates wallet state under the manager WRITE lock — and
-    /// `last_processed_height` advancement (same lock). Held across the
-    /// check AND the broadcaster await, the read guard makes "the
-    /// reservation is unexpired" and "dispatch has begun" a single atomic
-    /// observation: neither a sweep nor a height advance can interleave
-    /// between them. Ownership needs no separate probe: key-wallet's TTL
-    /// exceeds `RESERVATION_MAX_AGE_BLOCKS` on the same clock, so a
-    /// reservation that passes the age check under this guard cannot
-    /// already have been swept, and self-releases only run on this
-    /// transaction's own rejection/abandon paths, which are sequenced
-    /// after this call returns.
+    /// The age check orders against key-wallet's `ReservationSet` TTL
+    /// sweep — it runs inside coin selection, which mutates wallet state
+    /// under the manager WRITE lock — and `last_processed_height`
+    /// advancement (same lock): a reservation that passes the check under
+    /// this guard cannot already have been swept, because key-wallet's TTL
+    /// exceeds `RESERVATION_MAX_AGE_BLOCKS` on the same height clock, and
+    /// self-releases only run on this transaction's own rejection/abandon
+    /// paths, which are sequenced after this call returns.
     ///
-    /// Deliberate cost: writers (height catch-up, finalization) queue
-    /// behind the network await, bounded by the broadcaster's own timeout.
-    /// That is the price of the ordering invariant without a
-    /// key-wallet-side in-broadcast pin.
+    /// The guard is deliberately DROPPED before the broadcaster await. The
+    /// production `SpvBroadcaster` waits on dash-spv's mempool pipeline,
+    /// and that pipeline's local-transaction handler takes `wallet.write()`
+    /// on this same manager lock before it can process the very
+    /// echo/IS-lock/confirmation events the wait needs — held across the
+    /// await, the guard starves the pipeline and every dispatch rides the
+    /// full acceptance timeout to an ambiguous verdict while the whole
+    /// manager stalls behind tokio's write-preferring queue. Check-to-wire
+    /// is therefore a small non-atomic gap rather than an invariant; it is
+    /// covered by the same TTL margin as the propagation phase that follows
+    /// (the guard never spanned rebroadcasts either), and dropping early is
+    /// strictly stronger afterwards: the mempool pipeline marks the inputs
+    /// spent in the wallet's own view within milliseconds instead of after
+    /// the timeout. (Same lock-free shape as
+    /// `broadcast_releasing_on_rejection`.)
     ///
     /// Callers do their stale/rejection reconciliation AFTER this returns:
-    /// those paths retake manager locks and must not run under this guard
-    /// (tokio's write-preferring `RwLock` would deadlock a re-entrant read
-    /// behind a queued writer).
+    /// those paths retake manager locks.
     pub(crate) async fn dispatch_unexpired(
         &self,
         reservation_height: u32,
         transaction: &Transaction,
     ) -> GuardedDispatch {
-        let wm = self.wallet_manager.read().await;
-        let height = wm
-            .get_wallet_and_info(&self.wallet_id)
-            .map(|(_, info)| info.core_wallet.last_processed_height());
-        if reservation_expired(reservation_height, height) {
-            return GuardedDispatch::Stale;
+        {
+            let wm = self.wallet_manager.read().await;
+            let height = wm
+                .get_wallet_and_info(&self.wallet_id)
+                .map(|(_, info)| info.core_wallet.last_processed_height());
+            if reservation_expired(reservation_height, height) {
+                return GuardedDispatch::Stale;
+            }
+            // Guard dropped here — see above: holding it across the await
+            // starves the SPV pipeline that must complete the wait.
         }
         GuardedDispatch::Sent(self.broadcaster.broadcast(transaction).await)
     }
@@ -103,13 +111,15 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         &self,
         transaction: &SignedCoreTransaction,
     ) -> Result<dashcore::Txid, PlatformWalletError> {
-        // Check and dispatch are one guarded observation — see
-        // [`Self::dispatch_unexpired`]. A plain check-then-send here let
-        // sync catch-up age the reservation and a concurrent finalization
-        // sweep + re-reserve the same inputs between the two steps, so the
-        // old signed transaction could hit the wire against reassigned
-        // UTXOs. Reconciliation stays OUTSIDE the guard (it retakes
-        // manager locks).
+        // The age check happens at dispatch time, inside
+        // [`Self::dispatch_unexpired`] — not out here, where it would go
+        // stale before the send (sync catch-up can age the reservation and
+        // a concurrent finalization can sweep + re-reserve the same inputs
+        // in the gap, letting the old signed transaction hit the wire
+        // against reassigned UTXOs). The residual check-to-wire gap and
+        // why the manager guard must not span the broadcaster await are
+        // documented on `dispatch_unexpired`. Reconciliation retakes
+        // manager locks after it returns.
         match self
             .dispatch_unexpired(transaction.reservation_height(), transaction.transaction())
             .await
@@ -486,18 +496,19 @@ mod tests {
         }
     }
 
-    /// The age bound is validated ATOMICALLY with dispatch, not merely
-    /// before it: [`CoreWallet::dispatch_unexpired`] samples the height and
-    /// reaches the broadcaster under ONE wallet-manager read guard, so a
-    /// height advance (a manager WRITE) can never interleave between a
-    /// passed check and the send. The single-threaded proof of that
-    /// ordering: the same handle's inputs dispatch while fresh, and the
-    /// identical call refuses — broadcaster untouched — once catch-up
-    /// advances the clock past the bound. The verdict is derived from the
-    /// state observed INSIDE the guard at each dispatch, never from a
-    /// caller-side pre-check that could go stale in the gap.
+    /// The age bound is validated by [`CoreWallet::dispatch_unexpired`]
+    /// itself, immediately before the send — never by a caller-side
+    /// pre-check that could go stale in the gap. The height sample and the
+    /// expiry verdict happen under a wallet-manager read guard that is
+    /// dropped before the broadcaster await (holding it across the await
+    /// starves the SPV mempool pipeline — see `dispatch_unexpired`'s doc);
+    /// the residual check-to-wire gap is covered by key-wallet's TTL
+    /// margin, the same margin that covers the propagation phase. The
+    /// single-threaded proof here: the same handle's inputs dispatch while
+    /// fresh, and the identical call refuses — broadcaster untouched —
+    /// once catch-up advances the clock past the bound.
     #[tokio::test]
-    async fn guarded_dispatch_rechecks_age_inside_the_guard() {
+    async fn guarded_dispatch_rechecks_age_at_dispatch() {
         let (core, signer, outputs) = funded_core_wallet(
             account_type_standard(AccountTypePreference::BIP44),
             Arc::new(AlwaysOkBroadcaster),
@@ -515,7 +526,7 @@ mod tests {
             .await;
         assert!(
             matches!(fresh, GuardedDispatch::Sent(Ok(_))),
-            "a fresh reservation must dispatch under the guard"
+            "a fresh reservation must dispatch"
         );
 
         // Catch-up advances the clock past the bound; the identical call now
@@ -527,7 +538,7 @@ mod tests {
             .await;
         assert!(
             matches!(stale, GuardedDispatch::Stale),
-            "an aged reservation must refuse inside the guard, not dispatch"
+            "an aged reservation must refuse at the check, not dispatch"
         );
 
         core.abandon_transaction(&finalized).await;

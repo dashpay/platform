@@ -472,12 +472,13 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
         // immediate rebuild, an ambiguous outcome keeps it, and the release is
         // bound to the token's own wallet generation.
         //
-        // The age bound is NOT pre-checked here: it is re-validated
-        // atomically with dispatch, under the wallet-manager read guard
-        // inside `broadcast_payment_releasing_reservation` — a check made
-        // out here is stale by the time the send begins (catch-up can
-        // advance the clock, and a concurrent finalization can sweep +
-        // re-reserve the inputs in the gap). On the stale outcome the
+        // The age bound is NOT pre-checked here: it is re-validated at
+        // dispatch time inside `broadcast_payment_releasing_reservation`
+        // (height sampled under the manager read guard, which drops before
+        // the broadcaster await) — a check made out here is stale by the
+        // time the send begins (catch-up can advance the clock, and a
+        // concurrent finalization can sweep + re-reserve the inputs in
+        // the gap). On the stale outcome the
         // broadcaster was never touched and the entry is reconciled below
         // exactly as the old pre-check did: with the build's owner token
         // present the release is safe at ANY age
