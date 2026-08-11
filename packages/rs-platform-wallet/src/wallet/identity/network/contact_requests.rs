@@ -2268,16 +2268,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             }
                         }
                         None => {
+                            // Left queued, not broken: the contact's identity
+                            // can gain this key later, exactly as ours can, and
+                            // the document that names it cleared consensus and
+                            // cannot be re-minted. Breaking here would end the
+                            // relationship over a gap that may close by itself.
                             tracing::warn!(
                                 owner = %entry.owner_identity_id, contact = %entry.contact_id,
-                                "drain: contact encryption key missing; marking channel broken"
+                                key_index = *contact_encryption_key_index,
+                                "drain: contact has no key at the referenced index yet; \
+                                 leaving queued (not marking broken)"
                             );
-                            self.mark_contact_channel_broken(
-                                &entry.owner_identity_id,
-                                &entry.contact_id,
-                            )
-                            .await;
-                            cleared.push(entry.key());
                             continue;
                         }
                     };
@@ -2499,14 +2500,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// The drain's validation-failure policy, shared by the recipient-half and
     /// sender-half checks so both halves classify identically.
     ///
-    /// - A **purpose-only** failure is counted into `policy_blocked` for the
-    ///   drain's end-of-run summary and left queued: the request is immutable,
-    ///   so what might change is our acceptance policy, and a channel marked
-    ///   broken here would need a superseding request from the contact to heal
-    ///   — an appeal the user cannot file.
-    /// - Anything else (missing key, wrong key type, disabled key) is a real
-    ///   permanent fault: mark the channel broken so the sweep stops
-    ///   collecting it.
+    /// - A failure that can still resolve — a purpose mismatch (our acceptance
+    ///   policy might change) or an absent key id (identities gain keys) — is
+    ///   counted into `policy_blocked` and left queued. The `contactRequest`
+    ///   cleared consensus and is immutable; a channel marked broken here needs
+    ///   a superseding request from the CONTACT to heal, an appeal the user
+    ///   cannot file.
+    /// - Only a fault that immutable facts make permanent — a key type that
+    ///   cannot do ECDH, a key we disabled — breaks the channel, so the sweep
+    ///   stops collecting it.
     ///
     /// Returns `true` when the caller should clear the entry from the queue.
     ///
@@ -2521,7 +2523,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         validation: crate::wallet::identity::crypto::validation::ContactRequestValidation,
         policy_blocked: &mut std::collections::BTreeMap<String, usize>,
     ) -> bool {
-        if validation.is_purpose_only() {
+        if !validation.is_permanent() {
             tracing::debug!(
                 owner = %entry.owner_identity_id, contact = %entry.contact_id,
                 errors = ?validation.errors,

@@ -1795,6 +1795,44 @@ mod tests {
         .xpub
     }
 
+    /// An identity carrying exactly one key, for the validation paths that
+    /// turn on a key's type or purpose rather than its presence.
+    fn identity_with_key(
+        id_bytes: [u8; 32],
+        key_id: u32,
+        key_type: dpp::identity::KeyType,
+        purpose: dpp::identity::Purpose,
+    ) -> Identity {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::{IdentityPublicKey, SecurityLevel};
+        let data = dashcore::secp256k1::PublicKey::from_secret_key(
+            &dashcore::secp256k1::Secp256k1::new(),
+            &dashcore::secp256k1::SecretKey::from_slice(&[0x37u8; 32]).expect("secret"),
+        )
+        .serialize()
+        .to_vec();
+        Identity::V0(IdentityV0 {
+            id: Identifier::from(id_bytes),
+            public_keys: [(
+                key_id,
+                IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                    id: key_id,
+                    purpose,
+                    security_level: SecurityLevel::HIGH,
+                    contract_bounds: None,
+                    key_type,
+                    read_only: false,
+                    data: data.into(),
+                    disabled_at: None,
+                }),
+            )]
+            .into_iter()
+            .collect(),
+            balance: 0,
+            revision: 0,
+        })
+    }
+
     fn bare_identity(id_bytes: [u8; 32]) -> Identity {
         Identity::V0(IdentityV0 {
             id: Identifier::from(id_bytes),
@@ -5078,12 +5116,22 @@ mod tests {
             revision: 0,
         });
 
-        // The contact identity the drain WOULD fetch: keyless, so the sender
-        // index is a hard fault. Configured on the mock so that a fetch, if it
-        // happened, would succeed and escalate the verdict to "broken".
+        // The contact identity the drain WOULD fetch: its key at the sender
+        // index is BLS, a permanent fault. Configured on the mock so that a
+        // fetch, if it happened, would succeed and escalate the verdict to
+        // "broken". (A keyless contact would not work as the discriminator —
+        // an absent key is retryable by design.)
         let mut sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
         sdk.mock()
-            .expect_fetch::<Identity, Identifier>(contact, Some(bare_identity([0xBB; 32])))
+            .expect_fetch::<Identity, Identifier>(
+                contact,
+                Some(identity_with_key(
+                    [0xBB; 32],
+                    0,
+                    KeyType::BLS12_381,
+                    Purpose::ENCRYPTION,
+                )),
+            )
             .await
             .expect("set the contact-identity fetch expectation");
         let sdk = Arc::new(sdk);
@@ -5176,11 +5224,14 @@ mod tests {
     /// without a Platform round trip.
     ///
     /// The owner here is wallet-owned (so the drain gets past the HD-index
-    /// bail) but carries no keys at all, so `recipientKeyIndex` 0 resolves to
-    /// nothing — a hard, permanent fault that must break the channel. The mock
-    /// SDK has NO contact-identity fetch configured, so this can only pass if
-    /// the recipient half of the validation ran *before* the fetch: the old
-    /// ordering fetched first, failed transiently, and left the channel intact.
+    /// bail) and its key at `recipientKeyIndex` 0 is BLS — a type that can
+    /// never do ECDH, so this is one of the few genuinely permanent faults and
+    /// must break the channel. (An *absent* key would not do: identities gain
+    /// keys, so that is deliberately retryable.) The mock SDK has NO
+    /// contact-identity fetch configured, so this can only pass if the
+    /// recipient half of the validation ran *before* the fetch: the old
+    /// ordering fetched first, failed transiently, and left the channel
+    /// intact.
     ///
     /// That ordering is what keeps a purpose-rejected entry — which stays
     /// queued by design, and so is retried on every sweep forever — from
@@ -5190,6 +5241,7 @@ mod tests {
         use crate::changeset::{PendingContactCrypto, PendingContactCryptoOp};
         use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
         use crate::wallet::identity::{ContactRequest, EstablishedContact};
+        use dpp::identity::{KeyType, Purpose};
 
         let (manager, persister, wallet_id) = make_wallet().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
@@ -5201,10 +5253,15 @@ mod tests {
         {
             let mut wm = iw.wallet_manager.write().await;
             let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
-            // Wallet-owned (HD index 0) but keyless: `recipientKeyIndex` 0
-            // cannot resolve, which is a hard fault, not a purpose mismatch.
+            // Wallet-owned (HD index 0) with a BLS key at index 0: the
+            // referenced key exists but its type rules out ECDH permanently.
             info.identity_manager
-                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .add_identity(
+                    identity_with_key([0xAA; 32], 0, KeyType::BLS12_381, Purpose::ENCRYPTION),
+                    0,
+                    wallet_id,
+                    &p,
+                )
                 .expect("add owner");
             let outgoing = ContactRequest::new(owner, contact, 0, 0, 0, vec![0u8; 96], 0, 0);
             let incoming = ContactRequest::new(contact, owner, 0, 0, 0, vec![0u8; 96], 0, 0);

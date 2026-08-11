@@ -71,6 +71,14 @@ impl ContactRequestValidation {
         self.hard_error = true;
     }
 
+    /// Add an ABSENT-KEY error: the referenced key id does not exist on the
+    /// identity *today*. Sets `is_valid = false` but NOT `hard_error`, because
+    /// identities gain keys — see [`is_permanent`](Self::is_permanent).
+    pub fn add_absent_key_error(&mut self, error: String) {
+        self.errors.push(error);
+        self.is_valid = false;
+    }
+
     /// Add a key-PURPOSE error: sets `is_valid = false` AND flags
     /// `purpose_mismatch` so callers can downgrade a *purpose-only* failure
     /// to a non-permanent skip rather than a permanent broken-channel mark.
@@ -89,9 +97,29 @@ impl ContactRequestValidation {
     /// Whether the *sole* cause of invalidity is a key-purpose mismatch —
     /// the only case that may be downgraded to a non-permanent skip.
     /// A purpose mismatch that co-occurs with a hard error (disabled /
-    /// missing / wrong-type key) is NOT purpose-only and must stay permanent.
+    /// wrong-type key) is NOT purpose-only and must stay permanent.
     pub fn is_purpose_only(&self) -> bool {
         self.purpose_mismatch && !self.hard_error
+    }
+
+    /// Whether this failure can never resolve on its own — the only kind that
+    /// may permanently break a contact's payment channel.
+    ///
+    /// The distinction is not "did validation fail" but "can the world change
+    /// such that it stops failing". A `contactRequest` clears consensus without
+    /// consensus checking anything about the keys it names, so a document can
+    /// reference a key id our identity does not have *yet*: identities gain
+    /// keys (that is what the DashPay enablement flow does, and what
+    /// dashwallet-ios#981 exists to notice when it happened on another device).
+    /// Recording that as permanent turns a temporary gap into a relationship
+    /// the user cannot repair — only a fresh request from the CONTACT clears
+    /// the flag.
+    ///
+    /// So an absent key is retryable, alongside a purpose mismatch. What stays
+    /// permanent is what immutable facts make impossible: a key whose *type*
+    /// cannot do ECDH, and a key we have deliberately disabled.
+    pub fn is_permanent(&self) -> bool {
+        self.hard_error
     }
 
     /// Merge another validation result into this one.
@@ -221,7 +249,7 @@ pub(crate) fn validate_sender_key(
             }
         }
         None => {
-            validation.add_error(format!(
+            validation.add_absent_key_error(format!(
                 "Sender key index {} not found on identity {}",
                 sender_key_index,
                 sender_identity.id(),
@@ -319,7 +347,7 @@ pub(crate) fn validate_recipient_key(
             }
         }
         None => {
-            validation.add_error(format!(
+            validation.add_absent_key_error(format!(
                 "Recipient key index {} not found on identity {}",
                 recipient_key_index,
                 recipient_identity.id(),
@@ -625,6 +653,51 @@ mod tests {
         let result = validate_contact_request(&sender, 1, &recipient, 1);
         assert!(result.is_valid, "errors: {:?}", result.errors);
         assert!(!result.purpose_mismatch);
+    }
+
+    /// A key id the identity does not have **yet** must not be permanent.
+    ///
+    /// Identities gain keys — that is what the DashPay enablement flow does,
+    /// and dashwallet-ios#981 exists to notice it happening on another device.
+    /// A `contactRequest` clears consensus without consensus checking anything
+    /// about the keys it names, and it can never be re-minted, so recording
+    /// "we have no key 5 today" as a permanent verdict ends a relationship over
+    /// a gap that may close on its own — and only the CONTACT can clear the
+    /// flag, so the user cannot appeal it.
+    #[test]
+    fn an_absent_key_is_not_a_permanent_fault() {
+        let sender = make_identity(vec![make_key(
+            0,
+            KeyType::ECDSA_SECP256K1,
+            Purpose::ENCRYPTION,
+        )]);
+        let recipient = make_identity(vec![]);
+
+        let result = validate_contact_request(&sender, 0, &recipient, 0);
+        assert!(!result.is_valid, "an absent key still fails validation");
+        assert!(
+            !result.is_permanent(),
+            "but it must be retryable: the identity can gain the key later"
+        );
+    }
+
+    /// A key type that cannot do ECDH is permanent — a key's type is fixed for
+    /// its lifetime, so no future state makes this request usable.
+    #[test]
+    fn a_non_ecdh_key_type_is_a_permanent_fault() {
+        let sender = make_identity(vec![make_key(
+            0,
+            KeyType::ECDSA_SECP256K1,
+            Purpose::ENCRYPTION,
+        )]);
+        let recipient = make_identity(vec![make_key(0, KeyType::BLS12_381, Purpose::ENCRYPTION)]);
+
+        let result = validate_contact_request(&sender, 0, &recipient, 0);
+        assert!(!result.is_valid);
+        assert!(
+            result.is_permanent(),
+            "a BLS key can never do secp256k1 ECDH, so this one may break the channel"
+        );
     }
 
     /// The node-operational purposes are the ones still refused for a
