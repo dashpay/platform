@@ -6219,6 +6219,72 @@ mod tests {
         );
     }
 
+    /// A rejected broadcast releases the UTXO reservation on EVERY account
+    /// that funded the payment, not just BIP44.
+    ///
+    /// Pooling made this reachable: before it, one account funded the send and
+    /// releasing that one was complete. Now inputs can come from a BIP32 or
+    /// contact-receiving account too, and a release that still named only
+    /// BIP44 would leave those reserved until the TTL backstop — so the
+    /// immediate retry a user makes after "payment rejected" would fail with a
+    /// spurious insufficient-funds on money that is demonstrably theirs.
+    ///
+    /// Neither account can cover the payment alone here, so a successful retry
+    /// is only possible if BOTH were released.
+    #[tokio::test]
+    async fn rejected_broadcast_releases_every_pooled_funding_account() {
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+
+        let (manager, _persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+
+        // 60_000 + 60_000, for a 100_000 payment: neither side alone is
+        // enough, so selection must take from both and a retry must find both
+        // free again.
+        fund_bip44_account_0(&manager, wallet_id, 0xC1, 60_000).await;
+        iw.dashpay()
+            .register_contact_account(
+                &owner_id,
+                &contact_id,
+                0,
+                test_receiving_xpub(&owner_id, &contact_id),
+            )
+            .await
+            .expect("register receiving account");
+        plant_receival_utxo(&manager, wallet_id, owner_id, contact_id, 0xC2, 60_000).await;
+
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let signer = SeedSigner::new(seed, Network::Testnet);
+
+        let rejecting = with_rejecting_broadcaster(iw);
+        let err = rejecting
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 100_000, None, &signer, &provider)
+            .await
+            .expect_err("the rejecting broadcaster must fail the send");
+        assert!(
+            matches!(err, PlatformWalletError::TransactionBroadcast(_)),
+            "the send must reach the broadcast (so inputs were reserved), got: {err:?}"
+        );
+
+        // The retry is the assertion: it needs inputs from both accounts, so
+        // it can only succeed if the rejection released both reservations.
+        let accepting = with_accepting_broadcaster(iw);
+        accepting
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 100_000, None, &signer, &provider)
+            .await
+            .expect(
+                "an immediate retry must reselect every pooled input — a reservation left \
+                 on the contact-receiving account strands funds until the TTL backstop",
+            );
+    }
+
     /// A definitively rejected broadcast must return the consumed payment
     /// address to the pool AND persist the revert — unlike a failed build,
     /// the used flip was already persisted before the broadcast attempt, so
