@@ -1098,7 +1098,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // re-acquires that (non-reentrant) lock internally.
         self.drain_pending_contact_crypto(provider).await;
 
-        let (payment_address, used_flip_changeset, tx, fee) = {
+        let (payment_address, used_flip_changeset, tx, fee, funding_accounts) = {
             let mut wm = self.wallet_manager.write().await;
 
             // Resolve the external account's xpub so we can derive addresses.
@@ -1199,31 +1199,71 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
             let current_height = info.core_wallet.synced_height();
 
-            let managed_account = info
-                .core_wallet
-                .accounts
-                .standard_bip44_accounts
-                .get_mut(&0)
-                .ok_or_else(|| {
-                    PlatformWalletError::TransactionBuild(
-                        "BIP-44 managed account 0 not found".to_string(),
-                    )
-                })?;
-            let account = wallet
-                .accounts
-                .standard_bip44_accounts
-                .get(&0)
-                .ok_or_else(|| {
-                    PlatformWalletError::TransactionBuild(
-                        "BIP-44 account 0 not found in wallet".to_string(),
-                    )
-                })?;
-
-            let builder = TransactionBuilder::new()
+            // Pool the same funding set as a plain send (#4329): BIP44 +
+            // BIP32 + every DashPay receiving account. Pinning this path to
+            // BIP44 alone was the reason a wallet whose balance had moved into
+            // contact-receiving accounts hit "Insufficient funds" on a screen
+            // showing plenty — the exact symptom #4329 fixed for the core send
+            // path, which this path never picked up (it only took that PR's
+            // `set_funding` → `add_funding` rename).
+            //
+            // Order is load-bearing: BIP44 is offered first, and the builder
+            // takes the change address from the first funding source, so
+            // change keeps returning to BIP44 as before. CoinJoin stays out by
+            // construction — spending mixed outputs alongside transparent ones
+            // links them and undoes the mixing — and so do the contact
+            // *external* accounts, which hold the counterparty's xpub and no
+            // key this wallet can sign with.
+            let mut builder = TransactionBuilder::new()
                 .set_current_height(current_height)
                 .set_selection_strategy(SelectionStrategy::LargestFirst)
-                .add_funding(managed_account, account)
                 .add_output(&payment_address, amount_duffs);
+
+            // Derivation paths for every offered UTXO, since the signer closure
+            // below can no longer resolve them from one account.
+            let mut funding_paths: std::collections::HashMap<
+                dashcore::Address,
+                key_wallet::bip32::DerivationPath,
+            > = std::collections::HashMap::new();
+            // Accounts whose UTXOs were OFFERED to selection. A superset of the
+            // contributors — releasing a reservation on an account that
+            // supplied nothing is a no-op, and the superset is what keeps the
+            // rejection path from stranding inputs in an account we forgot.
+            let mut offered_accounts: Vec<key_wallet::account::AccountType> = Vec::new();
+
+            for &preference in crate::SEND_FUNDING_SOURCES.iter() {
+                for at in crate::wallet::core::resolve_source_accounts(
+                    &info.core_wallet.accounts,
+                    preference,
+                    account_index,
+                ) {
+                    if offered_accounts.contains(&at) {
+                        continue;
+                    }
+                    // A source the wallet simply does not have contributes
+                    // nothing rather than failing the send — a wallet with no
+                    // BIP32 account, or no contacts, still pays from BIP44.
+                    let (Some(account), Some(managed)) = (
+                        wallet.accounts.account_of_type(at),
+                        info.core_wallet.accounts.funds_account_mut(&at),
+                    ) else {
+                        continue;
+                    };
+                    for utxo in managed.utxos.values() {
+                        if let Some(path) = managed.address_derivation_path(&utxo.address) {
+                            funding_paths.insert(utxo.address.clone(), path);
+                        }
+                    }
+                    builder = builder.add_funding(managed, account);
+                    offered_accounts.push(at);
+                }
+            }
+            if offered_accounts.is_empty() {
+                return Err(PlatformWalletError::TransactionBuild(
+                    "no spendable funding account (BIP44/BIP32/DashPay receiving) found"
+                        .to_string(),
+                ));
+            }
 
             // Sign through the injected signer (blanket
             // `impl<S: Signer> TransactionSigner for S`) rather than the
@@ -1235,9 +1275,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             // rust-dashcore#872 (pinned above). No caller-side
             // recomputation needed.
             let (tx, fee) = match builder
-                .build_signed(signer, |addr| {
-                    managed_account.address_derivation_path(&addr)
-                })
+                .build_signed(signer, |addr| funding_paths.get(&addr).cloned())
                 .await
             {
                 Ok(built) => built,
@@ -1269,7 +1307,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 }
             };
 
-            (payment_address, used_flip_changeset, tx, fee)
+            (
+                payment_address,
+                used_flip_changeset,
+                tx,
+                fee,
+                offered_accounts,
+            )
         };
 
         // Persist the payment-address used flip now that the wallet-manager
@@ -1291,16 +1335,28 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
         // --- 3. Broadcast the transaction, releasing the build's UTXO
         // reservation if the broadcast is definitively rejected pre-send. ---
-        let txid = match crate::wallet::reservations::broadcast_releasing_on_rejection(
-            self.broadcaster.as_ref(),
-            &self.wallet_manager,
-            &self.wallet_id,
-            key_wallet::account::account_type::StandardAccountType::BIP44Account,
-            0,
-            &tx,
-        )
-        .await
-        {
+        // Release across EVERY account that offered inputs, not just BIP44:
+        // now that the build pools funding, a rejected broadcast whose inputs
+        // came from a BIP32 or contact-receiving account would otherwise leave
+        // those reserved until the TTL backstop, and an immediate retry would
+        // fail with a spurious insufficient-funds.
+        let broadcast_result = match self.broadcaster.broadcast(&tx).await {
+            Err(e) if matches!(e, crate::broadcaster::BroadcastError::Rejected { .. }) => {
+                crate::wallet::reservations::release_reservation_after_rejected_broadcast(
+                    &self.wallet_manager,
+                    &self.wallet_id,
+                    &funding_accounts,
+                    &tx,
+                    // This path does not thread the build's reservation token
+                    // either; keep the historical unconditional release.
+                    None,
+                )
+                .await;
+                Err(e)
+            }
+            other => other,
+        };
+        let txid = match broadcast_result {
             Ok(txid) => txid,
             Err(e) => {
                 // A definitive rejection means the transaction never reached
@@ -5949,6 +6005,110 @@ mod tests {
         }
     }
 
+    /// A contact payment funds from a DashPay **receiving** account when BIP44
+    /// alone cannot cover it — the pooled funding set a plain send has used
+    /// since #4329.
+    ///
+    /// This path kept its BIP44-only pin through that PR (it took only the
+    /// `set_funding` → `add_funding` rename), so a wallet whose balance had
+    /// moved into contact-receiving accounts saw the funds in its total and got
+    /// `Insufficient funds` trying to pay a contact. Reported from mainnet
+    /// after 8 successful contact payments drained BIP44: `available 41505,
+    /// required 100000`, on a screen showing plenty.
+    ///
+    /// BIP44 is left empty here, so reaching the signer at all proves the
+    /// receiving account was offered to selection.
+    #[tokio::test]
+    async fn contact_payment_funds_from_a_dashpay_receiving_account() {
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+
+        let owner_id = Identifier::from([0x11; 32]);
+        let contact_id = Identifier::from([0x22; 32]);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(
+                    bare_identity([0x11; 32]),
+                    0,
+                    wallet_id,
+                    &WalletPersister::new(wallet_id, Arc::clone(&persister) as _),
+                )
+                .expect("add owner");
+        }
+
+        // The receiving side: register the account, then give it the wallet's
+        // only money. BIP44 stays empty.
+        iw.dashpay()
+            .register_contact_account(
+                &owner_id,
+                &contact_id,
+                0,
+                test_receiving_xpub(&owner_id, &contact_id),
+            )
+            .await
+            .expect("register receiving account");
+        plant_receival_utxo(&manager, wallet_id, owner_id, contact_id, 0x21, 1_000_000).await;
+
+        // The sending side, so the external-account lookup passes.
+        let shared_key = [0x55u8; 32];
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("mnemonic")
+            .to_seed("");
+        let compact = {
+            let w = key_wallet::wallet::Wallet::from_seed_bytes(
+                seed,
+                Network::Testnet,
+                WalletAccountCreationOptions::None,
+            )
+            .expect("seed wallet");
+            crate::wallet::identity::crypto::dip14::derive_contact_xpub(
+                &w,
+                Network::Testnet,
+                0,
+                &owner_id,
+                &contact_id,
+            )
+            .expect("derive a valid compact xpub")
+            .compact
+            .to_bytes()
+        };
+        let encrypted =
+            platform_encryption::encrypt_extended_public_key(&shared_key, &[0x11u8; 16], &compact);
+        iw.dashpay()
+            .register_external_contact_account(
+                &owner_id,
+                &bare_identity([0x22; 32]),
+                &encrypted,
+                zeroize::Zeroizing::new(shared_key),
+            )
+            .await
+            .expect("register external account");
+
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let signer = SeedSigner::new(seed, Network::Testnet);
+        let result = iw
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 100_000, None, &signer, &provider)
+            .await;
+
+        // Whatever happens later (this wallet has no live broadcaster), the one
+        // outcome the fix rules out is coin selection refusing for lack of
+        // funds while a funded receiving account sits right there.
+        if let Err(e) = &result {
+            let msg = e.to_string();
+            assert!(
+                !msg.contains("Insufficient funds") && !msg.contains("No UTXOs available"),
+                "the contact-receiving account's 1_000_000 duffs must be offered to \
+                 selection — BIP44-only funding is the bug this pins, got: {msg}"
+            );
+        }
+    }
+
     /// A failed `build_signed` must return the consumed payment address to
     /// the pool. Without the rollback every failed build (insufficient
     /// funds, a refusing signer) permanently advances the next index by one:
@@ -6057,6 +6217,72 @@ mod tests {
             pool.highest_used, None,
             "no on-chain use happened, so the pool's used high-water must stay unset"
         );
+    }
+
+    /// A rejected broadcast releases the UTXO reservation on EVERY account
+    /// that funded the payment, not just BIP44.
+    ///
+    /// Pooling made this reachable: before it, one account funded the send and
+    /// releasing that one was complete. Now inputs can come from a BIP32 or
+    /// contact-receiving account too, and a release that still named only
+    /// BIP44 would leave those reserved until the TTL backstop — so the
+    /// immediate retry a user makes after "payment rejected" would fail with a
+    /// spurious insufficient-funds on money that is demonstrably theirs.
+    ///
+    /// Neither account can cover the payment alone here, so a successful retry
+    /// is only possible if BOTH were released.
+    #[tokio::test]
+    async fn rejected_broadcast_releases_every_pooled_funding_account() {
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+
+        let (manager, _persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+
+        // 60_000 + 60_000, for a 100_000 payment: neither side alone is
+        // enough, so selection must take from both and a retry must find both
+        // free again.
+        fund_bip44_account_0(&manager, wallet_id, 0xC1, 60_000).await;
+        iw.dashpay()
+            .register_contact_account(
+                &owner_id,
+                &contact_id,
+                0,
+                test_receiving_xpub(&owner_id, &contact_id),
+            )
+            .await
+            .expect("register receiving account");
+        plant_receival_utxo(&manager, wallet_id, owner_id, contact_id, 0xC2, 60_000).await;
+
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let signer = SeedSigner::new(seed, Network::Testnet);
+
+        let rejecting = with_rejecting_broadcaster(iw);
+        let err = rejecting
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 100_000, None, &signer, &provider)
+            .await
+            .expect_err("the rejecting broadcaster must fail the send");
+        assert!(
+            matches!(err, PlatformWalletError::TransactionBroadcast(_)),
+            "the send must reach the broadcast (so inputs were reserved), got: {err:?}"
+        );
+
+        // The retry is the assertion: it needs inputs from both accounts, so
+        // it can only succeed if the rejection released both reservations.
+        let accepting = with_accepting_broadcaster(iw);
+        accepting
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 100_000, None, &signer, &provider)
+            .await
+            .expect(
+                "an immediate retry must reselect every pooled input — a reservation left \
+                 on the contact-receiving account strands funds until the TTL backstop",
+            );
     }
 
     /// A definitively rejected broadcast must return the consumed payment
