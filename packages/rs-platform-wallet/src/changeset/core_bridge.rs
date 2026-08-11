@@ -34,7 +34,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use dashcore::blockdata::transaction::{txout::TxOut, OutPoint};
 use dashcore::ScriptBuf;
@@ -294,10 +294,16 @@ async fn run_wallet_event_adapter<P>(
     P: PlatformWalletPersistence + 'static,
 {
     tracing::debug!("wallet-event adapter task started");
-    let mut fault = AdapterFaultState::default();
+    // Both live behind handles rather than as locals because the commit runs
+    // on a blocking thread (see the `spawn_blocking` below) and has to be able
+    // to carry its state across drains. Moving them into the closure by value
+    // would lose a wallet's frozen watermark if that thread ever panicked —
+    // un-freezing a wallet that failed verification is the one outcome the
+    // fail-closed guard exists to prevent.
+    let fault = Arc::new(Mutex::new(AdapterFaultState::default()));
     // One-shot latch so the hard "watermark frozen" line hits logcat exactly
     // once per session rather than once per faulted batch.
-    let mut freeze_logged = false;
+    let freeze_logged = Arc::new(AtomicBool::new(false));
 
     loop {
         // Block for the first event of a batch. Everything already sitting in
@@ -360,14 +366,60 @@ async fn run_wallet_event_adapter<P>(
         // Commit the folded batch. The channel is lossless, so the only way a
         // watermark is held back is a rejected `store()` (the fail-closed
         // backstop inside `commit_batch`).
-        let diag = commit_batch(
-            &*persister,
-            batch,
-            folded,
-            &mut fault,
-            &sync_fault,
-            &mut freeze_logged,
-        );
+        // Commit on a blocking thread, never on the async worker.
+        //
+        // `store()` is synchronous and, for the SQLite backend, commits a real
+        // transaction per call — its own docs warn that a slow write blocks
+        // every other wallet accessor for its duration. Called inline here it
+        // blocked a tokio worker instead: a field restore showed one drain of
+        // 512 folded events park the runtime long enough for the metrics tick
+        // covering it to report a 1.4s mean poll, with the whole sync stalled
+        // for minutes at a time and the durable watermark left hundreds of
+        // thousands of blocks behind the chain tip.
+        //
+        // The handle is awaited rather than raced against `cancel`: a store
+        // that has started must be allowed to finish, and dropping the handle
+        // would not stop the thread anyway. Shutdown is observed at the next
+        // `recv` instead.
+        let persister_for_commit = Arc::clone(&persister);
+        let sync_fault_for_commit = Arc::clone(&sync_fault);
+        let fault_for_commit = Arc::clone(&fault);
+        let freeze_for_commit = Arc::clone(&freeze_logged);
+        let committed = tokio::task::spawn_blocking(move || {
+            // The lock is uncontended by construction — this task is the only
+            // writer, and one drain commits at a time — so it never blocks;
+            // it exists to carry the state, not to arbitrate.
+            let mut fault = fault_for_commit
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut freeze_logged = freeze_for_commit.load(Ordering::Relaxed);
+            let diag = commit_batch(
+                &*persister_for_commit,
+                batch,
+                folded,
+                &mut fault,
+                &sync_fault_for_commit,
+                &mut freeze_logged,
+            );
+            freeze_for_commit.store(freeze_logged, Ordering::Relaxed);
+            diag
+        })
+        .await;
+
+        let diag = match committed {
+            Ok(diag) => diag,
+            // The commit thread panicked. The fault state survives (it lives
+            // behind the handle above), but this batch's outcome is unknown,
+            // so it is reported rather than silently folded into the next one.
+            Err(join_error) => {
+                tracing::error!(
+                    error = %join_error,
+                    folded,
+                    "wallet-event commit thread failed; batch outcome unknown"
+                );
+                continue;
+            }
+        };
 
         // One structured line per drain via the `log` facade so a tester
         // logcat is unambiguous about whether the watermark is advancing.
