@@ -1003,11 +1003,14 @@ async fn is_chain_locked(
 /// the derived-address rows, and `derive_spent_utxos` (so a contact
 /// spending an output persisted *before* this fix still clears the
 /// stale row).
+///
+/// The predicate itself is canonical upstream
+/// ([`AccountType::is_contact_owned`], dashpay/rust-dashcore#952): its
+/// exhaustive match forces any future account type to declare whether
+/// its coins are the wallet's or a contact's, so this seam and #926's
+/// cannot drift apart.
 fn is_contact_watch_only(record: &TransactionRecord) -> bool {
-    matches!(
-        record.account_type,
-        AccountType::DashpayExternalAccount { .. }
-    )
+    record.account_type.is_contact_owned()
 }
 
 /// Derive the "ours" UTXOs created by a transaction's outputs.
