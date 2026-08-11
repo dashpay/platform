@@ -179,9 +179,12 @@ export default class BaseCommand extends Command {
             // taken before it existed. Saving refuses for the same reason, but
             // that check comes too late to stop a render.
             if (!configFileRepository.isExclusive()) {
-              throw new Error('Lost the configuration lock while this command was running,'
-                + ' so its service files were not written - another process may have changed'
-                + ' configuration in the meantime. Nothing was saved; re-run the command.');
+              // Saving refuses too, but on the way it writes what this command
+              // produced to a rescue file - which for setup or a reindex is the
+              // only copy of work that already happened out in the world. Going
+              // through it rather than throwing here keeps that, and it still
+              // stops before anything is rendered.
+              configFileRepository.write(configFile);
             }
 
             const changedConfigs = configFile.getAllConfigs()

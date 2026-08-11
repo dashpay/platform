@@ -115,7 +115,10 @@ describe('ConfigFileJsonRepository', () => {
       expect(after.ino).to.equal(ino);
     });
 
-    it('should reject a persisted config that aliases repository state', () => {
+    // A name Dashmate would refuse to create today may already be in a config
+    // file written before the rule existed. Refusing to load the collection
+    // would leave no way to run the command that removes the entry.
+    it('should still load a persisted config whose name would be refused today', () => {
       const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
 
       for (const name of ['config.json.lock', 'CONFIG.JSON', 'config.json.']) {
@@ -125,7 +128,8 @@ describe('ConfigFileJsonRepository', () => {
         data.configs[name] = data.configs.base;
         fs.writeFileSync(configFilePath, `${JSON.stringify(data, undefined, 2)}\n`, 'utf8');
 
-        expect(() => repository.read(), name).to.throw('reserved by Dashmate');
+        expect(() => repository.read(), name).to.not.throw();
+        expect(repository.read().isConfigExists(name), name).to.be.true();
       }
     });
 
@@ -821,7 +825,7 @@ describe('ConfigFileJsonRepository', () => {
 
         expect(error).to.be.instanceOf(Error);
         expect(error.message).to.include('Lost the lock');
-        expect(error.message).to.include(`${configFilePath}.rescue`);
+        expect(error.message).to.include('.config.json.rescue');
         expect(renders, 'a lost owner must not render stale service files').to.equal(0);
         expect(repository.isRenderPending(), 'no render means no recovery debt').to.be.false();
 
@@ -844,7 +848,7 @@ describe('ConfigFileJsonRepository', () => {
 
       expect(reread.getConfig('base').get('description')).to.not.equal('must-not-be-saved');
 
-      const rescuePath = `${configFilePath}.rescue`;
+      const rescuePath = homeDir.joinPath('.config.json.rescue');
       expect(JSON.parse(fs.readFileSync(rescuePath, 'utf8'))
         .configs.base.description).to.equal('must-not-be-saved');
       // eslint-disable-next-line no-bitwise

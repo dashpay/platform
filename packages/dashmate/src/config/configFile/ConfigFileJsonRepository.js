@@ -588,7 +588,7 @@ export default class ConfigFileJsonRepository {
     const configFileJSON = `${JSON.stringify(configFile.toObject(), undefined, 2)}\n`;
 
     if (this.#compromised) {
-      const rescuePath = `${this.configFilePath}.rescue`;
+      const rescuePath = path.join(this.homeDirPath, '.config.json.rescue');
 
       try {
         writeFileAtomic.sync(rescuePath, configFileJSON, {

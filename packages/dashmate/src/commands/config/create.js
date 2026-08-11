@@ -1,7 +1,7 @@
 import fs from 'fs';
 import { Args } from '@oclif/core';
 import BaseCommand from '../../oclif/command/BaseCommand.js';
-import resolveConfigDirectory from '../../config/resolve-config-directory.js';
+import resolveConfigDirectory, { assertConfigNameAvailable } from '../../config/resolve-config-directory.js';
 
 export default class ConfigCreateCommand extends BaseCommand {
   static description = 'Create new config';
@@ -40,6 +40,8 @@ export default class ConfigCreateCommand extends BaseCommand {
     writeConfigTemplates,
     homeDir,
   ) {
+    assertConfigNameAvailable(configName);
+
     const serviceConfigsPath = resolveConfigDirectory(homeDir, configName);
 
     // Read, change and save in one locked step, so a config created here cannot

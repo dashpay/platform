@@ -272,12 +272,20 @@ describe('BaseCommand', () => {
     // saved and rendered newer state.
     it('should not render service files once the lock has been lost', async function it() {
       configFileRepository.isExclusive = () => false;
+      // What saving does when the lease is gone: refuse, but first put the
+      // pending configuration somewhere the operator can get it back from.
+      configFileRepository.write.throws(new Error('Lost the lock; rescue written'));
 
       await expect(command.saveConfigAndStopContainers())
-        .to.be.rejectedWith('Lost the configuration lock');
+        .to.be.rejectedWith('Lost the lock; rescue written');
 
+      // The rescue is the only copy of work a completed setup already did out
+      // in the world, so the save has to be attempted even though it fails.
+      expect(configFileRepository.write).to.have.been.calledOnceWith(configFile);
+
+      // Rendering would overwrite service files the process that took the lock
+      // has already written from newer state.
       expect(writeConfigTemplates).to.not.have.been.called();
-      expect(configFileRepository.write).to.not.have.been.called();
     });
 
     it('should stop started containers when a refused config save throws', async function it() {
