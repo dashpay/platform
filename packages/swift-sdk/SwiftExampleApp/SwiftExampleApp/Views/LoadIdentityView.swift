@@ -421,7 +421,11 @@ struct LoadIdentityView: View {
                     if let existing = existing {
                         existing.balance = Int64(bitPattern: fetchedBalance)
                         existing.alias = trimmedAlias
-                        existing.isLocal = false
+                        // `isLocal` mirrors the wallet linkage — an
+                        // existing row may be wallet-owned (the user
+                        // can paste their own identity id), so leave
+                        // the flag to the persister/heal rather than
+                        // forcing `false` here.
                         existing.identityType = identityType.rawValue
                         existing.network = network
                         existing.lastUpdated = Date()

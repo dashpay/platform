@@ -1711,15 +1711,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 // `.testnet` so we never block the write path on a
                 // missing network column (the CreateIdentity flow
                 // restamps the network on return anyway).
-                let resolvedWalletId = entry.walletId ?? walletId
-                let network = walletNetwork(walletId: resolvedWalletId) ?? .testnet
-                // `isLocal` is the "Local Only" badge in the UI —
-                // identities the user created locally but Platform
-                // hasn't confirmed yet. The persister fires *after*
-                // Platform has confirmed, so any row created here
-                // is by definition on-network. Wallet ownership
-                // travels on `row.wallet` (the relationship set
-                // below), not on this flag.
+                let networkWalletId = entry.walletId ?? walletId
+                let network = walletNetwork(walletId: networkWalletId) ?? .testnet
+                // `isLocal` mirrors the wallet linkage (stamped after
+                // the relationship attach at the bottom of this loop);
+                // seed `false` here so a row whose linkage resolution
+                // fails never claims wallet ownership.
                 row = PersistentIdentity(
                     identityId: entry.identityId,
                     balance: Int64(bitPattern: entry.balance),
@@ -1802,28 +1799,36 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             }
 
             // Attach the identity to its owning `PersistentWallet`
-            // via the relationship. This is the sole wallet-side
-            // association on the row — there is no denormalized
-            // scalar — so downstream `@Query` views traverse
-            // `identity.wallet?.walletId` when they need the raw
-            // id. `deleteRule: .nullify` on the inverse nulls this
-            // out cleanly if the wallet row is ever removed.
+            // via the relationship. `deleteRule: .nullify` on the
+            // inverse nulls this out cleanly if the wallet row is
+            // ever removed.
             //
             // Wallet id resolution: prefer the per-entry
             // `walletId` when Rust sets it (covers corner cases
             // where a changeset carries identities anchored to a
             // different wallet — e.g. a BLAST pass that surfaces
-            // foreign identities the local wallet observes). Fall
-            // back to the scope `walletId` that parameterised this
-            // callback, which is always the wallet whose
-            // changeset we're applying. The fallback matters for
-            // the "create new identity" flow: Rust emits the
-            // identity entry with `wallet_id_is_some == false`
-            // (the identity wasn't wallet-linked in its own Rust
-            // struct at emit time), and without the fallback we'd
-            // orphan the just-registered row.
-            let resolvedWalletId = entry.walletId ?? walletId
-            row.wallet = fetchWalletForLink(walletId: resolvedWalletId)
+            // foreign identities the local wallet observes). An
+            // entry with no `walletId` but a real `identityIndex`
+            // falls back to the scope `walletId` that
+            // parameterised this callback — a wallet-derived
+            // identity whose Rust struct wasn't wallet-stamped at
+            // emit time; without the fallback we'd orphan the row.
+            // An entry with NEITHER is an out-of-wallet (observed)
+            // identity — `add_out_of_wallet_identity` emits with
+            // `wallet_id == None && identity_index == None` — and
+            // must NOT link to the scope wallet: assigning `nil`
+            // here both prevents the mislink and clears one left
+            // behind by the old unconditional fallback.
+            let ownerWalletId: Data? =
+                entry.walletId ?? (entry.identityIndex != nil ? walletId : nil)
+            row.wallet = fetchWalletForLink(walletId: ownerWalletId)
+            // `isLocal` denormalizes the wallet linkage: `true` iff
+            // this identity belongs to a wallet on this device (the
+            // wallet's DIP-9 tree can re-derive its keys / sign).
+            // Re-stamped on every upsert so rows persisted before
+            // this flag tracked linkage self-heal as entries
+            // re-emit; `loadWalletList()` heals the rest at startup.
+            row.isLocal = row.wallet != nil
         }
 
         for identityId in removed {
@@ -4652,9 +4657,65 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// wallet_id, accounts)`; accounts come directly from the spec
     /// array, wallet id from the top-level struct.
     ///
+    /// One-shot self-heal: re-derive `PersistentIdentity.isLocal`
+    /// from the wallet relationship for every row where the two
+    /// disagree. Historical stores need this twice over: the persister
+    /// used to write `isLocal: false` unconditionally (so the wallet's
+    /// own identities carried `false` — the 2026-08-12 mainnet field
+    /// bug), and before that nothing wrote the flag from the changeset
+    /// path at all. Idempotent — a store where every row already
+    /// matches is left untouched (no save).
+    ///
+    /// Cross-network on purpose: `isLocal ⟺ wallet != nil` is
+    /// intrinsic to the row, so healing another network's rows from
+    /// this handler is safe and saves the other manager the pass.
+    ///
+    /// Must run on `serialQueue`, outside a changeset round (it
+    /// saves) — `loadWalletList` satisfies both. If a round is
+    /// somehow open, skip; the per-upsert re-stamp in
+    /// `persistIdentities` and the next launch's load cover it.
+    private func healIdentityIsLocalFlags() {
+        guard !inChangeset else { return }
+        guard let rows = try? backgroundContext.fetch(
+            FetchDescriptor<PersistentIdentity>()
+        ) else { return }
+        var healed = 0
+        for row in rows {
+            let shouldBeLocal = row.wallet != nil
+            if row.isLocal != shouldBeLocal {
+                row.isLocal = shouldBeLocal
+                healed += 1
+            }
+        }
+        guard healed > 0 else { return }
+        do {
+            try backgroundContext.save()
+            NSLog(
+                "[persistor-load:swift] healed isLocal on %d identity row(s)",
+                healed
+            )
+        } catch {
+            // Non-fatal: the store still holds the pre-heal values and
+            // the next launch retries. Roll back so the failed heal
+            // can't bleed into the restore fetches below.
+            backgroundContext.rollback()
+            NSLog(
+                "[persistor-load:swift] isLocal heal save failed: %@",
+                String(describing: error)
+            )
+        }
+    }
+
     /// Returns `(nil, 0)` if nothing is restorable.
     func loadWalletList() -> (entries: UnsafePointer<WalletRestoreEntryFFI>?, count: Int, errored: Bool) {
         onQueue {
+        // Heal `isLocal` before handing rows to Rust: rows persisted
+        // while the flag was written as a constant `false` (or
+        // mislinked by the old unconditional wallet fallback) get
+        // re-derived from the wallet relationship. Runs here because
+        // load is the one guaranteed pass over the store per launch,
+        // outside any changeset round.
+        healIdentityIsLocalFlags()
         // Scope the fetch to the handler's bound network so a
         // per-network manager only sees its own wallets. If
         // `network` is `nil` (legacy callers that haven't threaded
