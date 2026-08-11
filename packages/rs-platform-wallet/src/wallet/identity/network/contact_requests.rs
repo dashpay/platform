@@ -2105,6 +2105,21 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         );
                         continue;
                     };
+                    // Did only the widened receive-side policy let this
+                    // request through — i.e. does it name a key purpose we
+                    // would never mint ourselves? That marks it as the legacy
+                    // dashj cohort, whose ECDH/AES byte compatibility with our
+                    // implementation has not been cross-validated against a
+                    // dashj-produced payload. Used below to keep a decrypt
+                    // failure from being treated as the document's fault.
+                    let accepted_by_legacy_widening = our_identity
+                        .get_public_key_by_id(*our_decryption_key_index)
+                        .map(|k| {
+                            !dash_sdk::platform::dashpay::recipient_key_purpose_is_valid(
+                                k.purpose(),
+                            )
+                        })
+                        .unwrap_or(false);
                     let validation =
                         crate::wallet::identity::crypto::validation::validate_contact_request(
                             &contact_identity,
@@ -2236,6 +2251,25 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             )
                             .await;
                             cleared.push(entry.key());
+                        }
+                        // A permanent fault on a legacy-cohort request is NOT
+                        // charged to the document. Decrypt and compact-xpub
+                        // parse are the only gates on the plaintext, so an
+                        // ECDH/AES convention gap between us and dashj would
+                        // surface here as a "permanent" fault and break every
+                        // legacy channel at once — and a broken channel only
+                        // heals when the CONTACT sends a fresh request, an
+                        // appeal the user cannot file. Leaving it queued keeps
+                        // a later convention fix able to recover it, and costs
+                        // only a retry.
+                        Err(e) if e.is_permanent() && accepted_by_legacy_widening => {
+                            tracing::warn!(
+                                owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                                error = %e.into_inner(),
+                                "drain: legacy-cohort external register failed; leaving queued \
+                                 (not marking broken — may be our own convention gap)"
+                            );
+                            continue;
                         }
                         Err(e) if e.is_permanent() => {
                             tracing::warn!(
