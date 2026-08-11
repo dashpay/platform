@@ -1933,6 +1933,56 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             return 0;
         }
 
+        // Our identity's key inventory, once per drain that has external
+        // builds queued. The whole legacy-cohort bug is a statement about this
+        // layout — an identity minted before DashPay encryption keys existed
+        // carries only AUTHENTICATION/TRANSFER slots, so inbound requests
+        // reference those ids and nothing downstream makes sense without
+        // knowing that. Reading it back off an exported log beats asking the
+        // user to query Platform. On-chain public metadata only; no key data.
+        {
+            use dpp::identity::accessors::IdentityGettersV0;
+            use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+            let owners: std::collections::BTreeSet<Identifier> = entries
+                .iter()
+                .filter(|e| matches!(e.op, PendingContactCryptoOp::RegisterExternal { .. }))
+                .map(|e| e.owner_identity_id)
+                .collect();
+            if !owners.is_empty() {
+                let wm = self.wallet_manager.read().await;
+                if let Some(info) = wm.get_wallet_info(&self.wallet_id) {
+                    for owner in owners {
+                        let Some(managed) = info.identity_manager.managed_identity(&owner) else {
+                            continue;
+                        };
+                        let keys: Vec<String> = managed
+                            .identity
+                            .public_keys()
+                            .iter()
+                            .map(|(id, k)| {
+                                format!(
+                                    "{id}:{:?}/{:?}{}",
+                                    k.purpose(),
+                                    k.key_type(),
+                                    if k.disabled_at().is_some() {
+                                        "/DISABLED"
+                                    } else {
+                                        ""
+                                    }
+                                )
+                            })
+                            .collect();
+                        tracing::info!(
+                            owner = %owner,
+                            identity_index = ?managed.identity_index,
+                            keys = %keys.join(" "),
+                            "drain: our identity key inventory (id:purpose/type)"
+                        );
+                    }
+                }
+            }
+        }
+
         let mut cleared: Vec<PendingContactCryptoKey> = Vec::new();
         // How much of `cleared` is already dequeued + persisted, and the running
         // total actually removed. Bookkeeping lands per entry, so at most one
@@ -2207,6 +2257,38 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         }
                     };
 
+                    // Everything the external build is about to depend on, in
+                    // one line, BEFORE it can fail. Recorded at INFO because
+                    // the legacy cohort's viability is an open question that
+                    // only real mainnet wallets can answer, and an exported log
+                    // is the only channel we get: without this, a failure below
+                    // says what broke but not what it was working from.
+                    //
+                    // Public metadata only — key ids, purposes, types and
+                    // lengths. Never the shared secret, and never the
+                    // decrypted xpub.
+                    {
+                        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+                        let our_key = our_identity.get_public_key_by_id(*our_decryption_key_index);
+                        let their_key =
+                            contact_identity.get_public_key_by_id(*contact_encryption_key_index);
+                        tracing::info!(
+                            owner = %entry.owner_identity_id,
+                            contact = %entry.contact_id,
+                            identity_index,
+                            our_key_id = *our_decryption_key_index,
+                            our_key_purpose = ?our_key.map(|k| k.purpose()),
+                            our_key_type = ?our_key.map(|k| k.key_type()),
+                            their_key_id = *contact_encryption_key_index,
+                            their_key_purpose = ?their_key.map(|k| k.purpose()),
+                            their_key_type = ?their_key.map(|k| k.key_type()),
+                            ciphertext_len = encrypted_public_key.len(),
+                            legacy_widened = accepted_by_legacy_widening,
+                            ecdh_path = %path,
+                            "drain: building external account"
+                        );
+                    }
+
                     // ECDH via the Keychain-backed provider (scalar stays in the
                     // signer; we only get the shared secret).
                     // Bounded: the last step before the external-account
@@ -2360,6 +2442,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         drained_total += self
             .flush_drained_contact_crypto(&entries, &cleared[flushed..])
             .await;
+
+        // One-line verdict for the pass. "Did the legacy contacts build?" is
+        // answerable from this alone, without counting per-entry lines across a
+        // multi-megabyte export.
+        tracing::info!(
+            entries = entries.len(),
+            drained = drained_total,
+            still_queued = entries.len().saturating_sub(drained_total),
+            "drain: pass complete"
+        );
 
         drained_total
     }

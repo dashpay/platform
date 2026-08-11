@@ -449,12 +449,24 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         }
 
         // --- 2. Decrypt the contact's xpub with the signer-derived secret. ---
+        //
+        // This failing is the single most diagnostic event on the whole path,
+        // so the message carries what tells the two hypotheses apart. AES-CBC
+        // with a WRONG key yields pseudorandom bytes, and PKCS7 then rejects
+        // them ~99.6% of the time — so a failure here means the ECDH shared
+        // secret did not match the sender's, i.e. a key-derivation or
+        // ECDH-convention gap, NOT a corrupt document. (A failure at step 3
+        // below means the opposite: the secret was right and the plaintext
+        // layout is what differs.) The ciphertext length is included because a
+        // non-96-byte blob would instead point at a malformed document, which
+        // the contract's minItems/maxItems: 96 should already have prevented.
         let decrypted_xpub_bytes =
             platform_encryption::decrypt_extended_public_key(&shared_key, contact_encrypted_xpub)
                 .map_err(|e| {
                 Permanent(PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to decrypt contact xpub: {}",
-                    e
+                    "Failed to decrypt contact xpub ({e}); ciphertext {} bytes — the ECDH \
+                     shared secret did not match the sender's (PKCS7 rejected the plaintext)",
+                    contact_encrypted_xpub.len()
                 )))
             })?;
 
@@ -479,9 +491,18 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .map_err(Permanent)?,
             Err(_) => {
                 key_wallet::bip32::ExtendedPubKey::decode(&decrypted_xpub_bytes).map_err(|e| {
+                    // Reaching here means the DECRYPT succeeded — PKCS7 unpadded
+                    // cleanly, so the shared secret was almost certainly right —
+                    // and only the plaintext LAYOUT is unexpected. The decrypted
+                    // length is the discriminator, so it leads the message. The
+                    // bytes themselves are never logged: they are the contact's
+                    // payment xpub, and this text reaches an exported log.
                     Permanent(PlatformWalletError::InvalidIdentityData(format!(
-                        "Decrypted contact xpub is neither a 69-byte DIP-15 compact form \
-                         nor a 78/107-byte BIP32/DIP-14 serialization: {e}"
+                        "Decrypted contact xpub is {} bytes — neither a 69-byte DIP-15 compact \
+                         form nor a 78/107-byte BIP32/DIP-14 serialization ({e}). The decrypt \
+                         itself SUCCEEDED, so the shared secret matched and it is the plaintext \
+                         layout that differs",
+                        decrypted_xpub_bytes.len()
                     )))
                 })?
             }
