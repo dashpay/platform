@@ -194,7 +194,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
 /// Find the first outpoint of `lock`'s transaction that some **other,
 /// confirmed** transaction of this wallet already spent, returning
-/// `(conflicting_input, spending_txid, spender_height)`.
+/// `(conflicting_input, spending_txid, spender_height,
+/// spender_chain_locked)`.
 ///
 /// A hit means the asset lock is a double spend of a settled outpoint.
 /// Peers reject such a transaction at the mempool boundary and relay
@@ -204,17 +205,34 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 /// [`PlatformWalletError::AssetLockInputConflict`] instead of
 /// (re-)broadcasting into that void.
 ///
+/// **The gate is `is_confirmed()`, deliberately not `is_chain_locked()`.**
+/// Under the default `keep-finalized-transactions = OFF` build,
+/// `apply_chain_lock` evicts a record the moment a chainlock buries it and
+/// retains only the txid, so a chainlocked spender essentially never
+/// appears in `transaction_history()` at all: demanding ChainLock finality
+/// here would make the whole screen dead code in production while leaving
+/// the very failure it exists for — an old, long-settled spender — reported
+/// as an unbounded proof wait.
+///
+/// Condemning the lock on a merely-`InBlock` sibling is fund-safe. That
+/// sibling is necessarily one of this wallet's own transactions (nobody
+/// else can sign this wallet's outpoints), so the value it carries is
+/// already the wallet's; discarding the conflicted lock strands nothing.
+/// Even in the freak case where a reorg unmines the sibling, the inputs
+/// return to this wallet's spendable set and fund a fresh lock — whereas
+/// the conflicted lock itself would still be unrelayable for as long as
+/// the sibling stood. `spender_chain_locked` is reported alongside the hit
+/// purely so a host can express confidence in what it shows the user; it
+/// is not a gate on raising the error.
+///
 /// **Best-effort in one direction only.** A hit is conclusive: the
 /// spender is a confirmed transaction sitting in this wallet's own
 /// history, and confirmed spends of an outpoint are mutually exclusive.
-/// A miss proves nothing. Under the default
-/// `keep-finalized-transactions = OFF` feature, key-wallet evicts the
-/// full `TransactionRecord` once a chainlock buries it and retains only
-/// the txid, so precisely the oldest — and therefore most likely —
-/// conflicts are invisible here. A lock that clears this scan may still
-/// be a double spend, and the existing timeout path remains its only
-/// backstop. Do not restructure callers to treat "no conflict" as proof
-/// of liveness.
+/// A miss proves nothing — for the same eviction reason above, precisely
+/// the oldest and therefore most likely conflicts are invisible here. A
+/// lock that clears this scan may still be a double spend, and the
+/// existing timeout path remains its only backstop. Do not restructure
+/// callers to treat "no conflict" as proof of liveness.
 ///
 /// Confirmation is required rather than mere presence: an unconfirmed
 /// sibling that spends the same outpoint is a competing candidate, not a
@@ -224,7 +242,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 fn first_confirmed_input_conflict(
     info: &PlatformWalletInfo,
     lock: &TrackedAssetLock,
-) -> Option<(OutPoint, Txid, Option<CoreBlockHeight>)> {
+) -> Option<(OutPoint, Txid, Option<CoreBlockHeight>, bool)> {
     let lock_txid = lock.transaction.txid();
     let lock_inputs: BTreeSet<OutPoint> = lock
         .transaction
@@ -232,6 +250,15 @@ fn first_confirmed_input_conflict(
         .iter()
         .map(|input| input.previous_output)
         .collect();
+    // A record surviving in history is usually still `InBlock` even when
+    // the wallet's chainlock boundary has moved past its height — the
+    // promotion is what evicts it. Consulting the boundary as well as the
+    // record's own context is what keeps the reported finality honest for
+    // the window between the two.
+    let chain_locked_height = info
+        .core_wallet
+        .last_applied_chain_lock()
+        .map(|chain_lock| chain_lock.block_height);
 
     info.core_wallet
         .transaction_history()
@@ -244,7 +271,12 @@ fn first_confirmed_input_conflict(
                 .iter()
                 .map(|input| input.previous_output)
                 .find(|outpoint| lock_inputs.contains(outpoint))?;
-            Some((conflicting_input, record.txid, record.height()))
+            let height = record.height();
+            let spender_chain_locked = record.context.is_chain_locked()
+                || chain_locked_height
+                    .zip(height)
+                    .is_some_and(|(boundary, spender_height)| spender_height <= boundary);
+            Some((conflicting_input, record.txid, height, spender_chain_locked))
         })
 }
 
@@ -339,12 +371,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // funding flows — would never return. The typed error is what lets
         // a host offer to discard the lock instead of showing a spinner
         // forever.
-        if let Some((input, spent_by, height)) = input_conflict {
+        if let Some((input, spent_by, height, spender_chain_locked)) = input_conflict {
             tracing::warn!(
                 outpoint = %out_point,
                 %input,
                 %spent_by,
                 ?height,
+                spender_chain_locked,
                 "resume_asset_lock: asset lock double-spends an outpoint \
                  already consumed by a confirmed transaction; it can never \
                  confirm"
@@ -354,6 +387,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 input,
                 spent_by,
                 height,
+                spender_chain_locked,
             });
         }
 
@@ -1244,6 +1278,14 @@ mod tests {
         ))
     }
 
+    fn chain_locked_at(height: u32) -> TransactionContext {
+        TransactionContext::InChainLockedBlock(BlockInfo::new(
+            height,
+            BlockHash::all_zeros(),
+            1_700_000_000,
+        ))
+    }
+
     /// The incident this screen exists for: a restored wallet re-spends an
     /// outpoint one of its own earlier, already-confirmed transactions
     /// consumed long ago. Peers drop the double spend without a reply, so
@@ -1251,6 +1293,13 @@ mod tests {
     /// the user-facing funding flows — could never terminate. The resume
     /// must fail with the typed terminal error and must not touch the
     /// network on the way out.
+    ///
+    /// The spender here is merely `InBlock`, which is the shape the screen
+    /// actually meets in production: under the default
+    /// `keep-finalized-transactions = OFF` build a chainlocked record is
+    /// evicted from history, so a chainlock gate would never fire. The
+    /// error is raised all the same, reporting the weaker finality rather
+    /// than withholding the verdict.
     #[tokio::test]
     async fn broadcast_resume_reports_input_conflict_when_a_confirmed_tx_spent_the_input() {
         let fixture = ConflictFixture::new().await;
@@ -1273,14 +1322,68 @@ mod tests {
                 input,
                 spent_by,
                 height,
+                spender_chain_locked,
             } => {
                 assert_eq!(out_point, fixture.out_point);
                 assert_eq!(input, fixture.funded_input());
                 assert_eq!(spent_by, spender_txid);
                 assert_eq!(height, Some(1_234));
+                assert!(
+                    !spender_chain_locked,
+                    "an InBlock spender under no applied chainlock must \
+                     report the weaker finality, not claim ChainLock"
+                );
             }
             other => panic!("expected AssetLockInputConflict, got {other:?}"),
         }
+        assert_eq!(
+            fixture.broadcast_count(),
+            0,
+            "the screen must short-circuit ahead of the defensive re-broadcast"
+        );
+    }
+
+    /// The same verdict with the strongest available evidence behind it: a
+    /// spender sitting in a chain-locked block. Hosts render the difference
+    /// as confidence, so the flag has to travel out with the error rather
+    /// than being re-derived from the message.
+    #[tokio::test]
+    async fn input_conflict_reports_a_chain_locked_spender_as_chain_locked() {
+        let fixture = ConflictFixture::new().await;
+        fixture.track(AssetLockStatus::Broadcast, None).await;
+
+        let spender = transaction_spending(fixture.funded_input());
+        let spender_txid = spender.txid();
+        fixture
+            .file_record(record_for(spender, chain_locked_at(1_234)))
+            .await;
+
+        let error = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect_err("a double-spent asset lock must fail, not wait");
+        let rendered = error.to_string();
+        match error {
+            PlatformWalletError::AssetLockInputConflict {
+                spent_by,
+                height,
+                spender_chain_locked,
+                ..
+            } => {
+                assert_eq!(spent_by, spender_txid);
+                assert_eq!(height, Some(1_234));
+                assert!(
+                    spender_chain_locked,
+                    "an InChainLockedBlock spender must report ChainLock finality"
+                );
+            }
+            other => panic!("expected AssetLockInputConflict, got {other:?}"),
+        }
+        assert!(
+            rendered.contains("chainlocked: true"),
+            "the rendered Display must carry the spender's finality: {rendered}"
+        );
         assert_eq!(
             fixture.broadcast_count(),
             0,

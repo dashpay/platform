@@ -4,6 +4,7 @@ use crate::error::*;
 use crate::handle::*;
 use crate::runtime::runtime;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
+use platform_wallet::PlatformWalletError;
 use std::ffi::CString;
 use std::os::raw::c_char;
 use std::time::Duration;
@@ -146,10 +147,18 @@ pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
                 error = %e,
                 "asset_lock_manager_catch_up_blocking: resume_asset_lock failed"
             );
-            PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                format!("{}", e),
-            )
+            match e {
+                // Terminal double spend: route through the typed conversion
+                // so the host still receives ErrorAssetLockInputConflict
+                // (42) — the one code that authorises discarding a tracked
+                // lock. Flattening it to ErrorWalletOperation here would
+                // leave the host with a spinner it can never resolve.
+                conflict @ PlatformWalletError::AssetLockInputConflict { .. } => conflict.into(),
+                other => PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorWalletOperation,
+                    format!("{}", other),
+                ),
+            }
         }
     }
 }

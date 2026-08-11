@@ -617,6 +617,13 @@ fn map_spend_result(
 /// boundary while keeping every other funding failure on the existing generic
 /// error path. The wallet retains nonterminal consumption-unknown state; the
 /// host must not interpret this code as authenticated completion.
+///
+/// The terminal double-spend report rides the same typed conversion (both the
+/// fresh-build and resume entry points funnel through here, and the resume is
+/// where the pre-broadcast conflict screen actually fires). Its
+/// `ErrorAssetLockInputConflict` (42) is the only code that authorises a host
+/// to discard a tracked lock, so flattening it to `ErrorWalletOperation` would
+/// strand the user on a lock that can never confirm.
 fn map_asset_lock_funding_result(
     result: Result<(), PlatformWalletError>,
     operation: &str,
@@ -624,6 +631,7 @@ fn map_asset_lock_funding_result(
     match result {
         Ok(()) => PlatformWalletFFIResult::ok(),
         Err(e @ PlatformWalletError::AssetLockAlreadyConsumed(_)) => e.into(),
+        Err(e @ PlatformWalletError::AssetLockInputConflict { .. }) => e.into(),
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("{operation} failed: {e}"),
@@ -1852,8 +1860,13 @@ mod tests {
         );
     }
 
+    /// The two terminal asset-lock verdicts keep their own codes through
+    /// this wrapper — both funding entry points (fresh build and resume)
+    /// flatten everything else to `ErrorWalletOperation`, and a host that
+    /// saw the flattened code could neither hold the consumption-unknown
+    /// state nor offer to discard a lock that can never confirm.
     #[test]
-    fn map_asset_lock_funding_result_preserves_already_consumed_code_only() {
+    fn map_asset_lock_funding_result_preserves_terminal_asset_lock_codes() {
         let out_point = dashcore::OutPoint {
             txid: dashcore::Txid::all_zeros(),
             vout: 7,
@@ -1867,6 +1880,35 @@ mod tests {
             PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed
         );
         assert!(message_of(&result).contains("Platform completion is unconfirmed"));
+
+        // The resume endpoint is where the pre-broadcast conflict screen
+        // fires, and it funnels through this same wrapper.
+        let conflict = map_asset_lock_funding_result(
+            Err(PlatformWalletError::AssetLockInputConflict {
+                out_point,
+                input: dashcore::OutPoint {
+                    txid: dashcore::Txid::all_zeros(),
+                    vout: 3,
+                },
+                spent_by: dashcore::Txid::all_zeros(),
+                height: Some(1_234),
+                spender_chain_locked: false,
+            }),
+            "shielded resume fund-from-asset-lock",
+        );
+        assert_eq!(
+            conflict.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockInputConflict
+        );
+        let conflict_message = message_of(&conflict);
+        assert!(
+            conflict_message.contains("can never confirm"),
+            "the typed Display must survive the wrapper: {conflict_message}"
+        );
+        assert!(
+            conflict_message.contains("chainlocked: false"),
+            "the spender's finality must reach the host: {conflict_message}"
+        );
 
         let unrelated = map_asset_lock_funding_result(
             Err(PlatformWalletError::ShieldedNoUnspentNotes),

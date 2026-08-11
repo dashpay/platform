@@ -116,6 +116,29 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorAssetLockInputConflict` (native code 42). The tracked
+         * asset-lock transaction spends an outpoint that a different,
+         * already-confirmed transaction of the same wallet spent first —
+         * typically a restored wallet whose rescan resurrected a UTXO one of
+         * its own earlier asset locks had already consumed. Peers drop such a
+         * double spend without replying, so the lock can never confirm and its
+         * proof wait would hang. The conflict screen stops the current resume
+         * before it broadcasts again or enters the proof wait (a
+         * `Broadcast`-status lock was sent on an earlier call).
+         *
+         * TERMINAL and NOT retryable: this is the one code that lets a host
+         * offer to discard the asset lock and rebuild it from currently-unspent
+         * inputs — a fund-safe action, because the confirmed spender is this
+         * wallet's own transaction, so the value either stays in the sibling
+         * or (after a freak reorg) returns to the spendable set. Its absence is
+         * not proof of liveness: the Rust-side scan cannot see conflicts whose
+         * spender was already pruned. The Android analog of Swift's
+         * `PlatformWalletError.assetLockInputConflict`.
+         */
+        class AssetLockInputConflict(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * `ErrorShieldedNoRecordedAnchor` (native code 19). A shielded spend
          * could not be built against a Platform-recorded anchor because the
          * local commitment tree is mid-block. Nothing was broadcast and the
@@ -526,6 +549,7 @@ sealed class DashSdkError(
                 }.getOrNull()
             } ?: PlatformWallet.Generic(code, message, cause)
             41 -> PlatformWallet.PlatformShieldCapacityExceeded(message, cause)
+            42 -> PlatformWallet.AssetLockInputConflict(message, cause) // ErrorAssetLockInputConflict
             // ErrorSigningKeyUnavailable — the STRUCTURED signer
             // discriminator (dashpay/platform#4060 finding 7): the typed
             // completion code rides the whole Rust round-trip, no message

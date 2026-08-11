@@ -437,13 +437,18 @@ public enum PlatformWalletError: LocalizedError {
     case contestedNameNotTradable(label: String, endsAtMs: UInt64)
     /// The tracked asset lock spends an outpoint a different,
     /// already-confirmed transaction spent first, so it is a double spend no
-    /// peer will relay and it can never confirm. Nothing was broadcast and
-    /// nothing is in flight. TERMINAL: unlike `transactionBroadcastUnconfirmed`
-    /// — where the transaction may well be alive and discarding it would
-    /// strand real funds — this is the one asset-lock error that lets a host
-    /// offer to discard the lock and rebuild it from currently-unspent inputs.
-    /// The message names the lock's outpoint, the conflicting input, and the
-    /// confirmed spender, so a host can say *which* lock died.
+    /// peer will relay and it can never confirm. The screen stops the current
+    /// resume before it broadcasts again or enters the proof wait — a
+    /// `Broadcast`-status lock was already sent on an earlier call, so this is
+    /// not a claim that nothing ever reached the network. TERMINAL: unlike
+    /// `transactionBroadcastUnconfirmed` — where the transaction may well be
+    /// alive and discarding it would strand real funds — this is the one
+    /// asset-lock error that lets a host offer to discard the lock and rebuild
+    /// it from currently-unspent inputs, because the confirmed spender is this
+    /// wallet's own transaction and the value therefore stays reachable either
+    /// way. The message names the lock's outpoint, the conflicting input, the
+    /// confirmed spender, and whether that spender is chainlocked, so a host
+    /// can say *which* lock died and how firmly.
     case assetLockInputConflict(String)
     /// The named thing does not exist. For the deferred payment calls this is
     /// the wallet-was-REMOVED case: the token's wallet (or the wallet a payment
@@ -589,13 +594,13 @@ public enum PlatformWalletError: LocalizedError {
             } else {
                 self = .unknown(detail)
             }
-        // Code 41 carries the typed `Display` rendering, not a JSON detail
+        // Code 42 carries the typed `Display` rendering, not a JSON detail
         // object: it already names the asset-lock outpoint, the conflicting
-        // input, and the confirmed spender's txid, and reads as a sentence, so
-        // it passes through like the other prose-message codes. The terminal
-        // "discard and rebuild" verdict is the CODE's meaning, not the
-        // string's — hosts must key their discard affordance off the case, not
-        // off text matching.
+        // input, the confirmed spender's txid and that spender's finality, and
+        // reads as a sentence, so it passes through like the other
+        // prose-message codes. The terminal "discard and rebuild" verdict is
+        // the CODE's meaning, not the string's — hosts must key their discard
+        // affordance off the case, not off text matching.
         case .errorAssetLockInputConflict:
             self = .assetLockInputConflict(detail)
         case .notFound:               self = .notFound(detail)

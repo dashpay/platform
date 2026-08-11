@@ -1626,6 +1626,49 @@ mod tests {
         );
     }
 
+    /// The terminal double-spend verdict is the one code a host may act on
+    /// destructively (discard the tracked lock), so both halves of the
+    /// contract are pinned: the number the Swift/Kotlin mirrors decode, and
+    /// the conversion that keeps it from flattening to `ErrorUnknown`. The
+    /// message must carry the typed `Display` — including the spender's
+    /// finality — since that is the only detail channel the frozen
+    /// `{ code, message }` ABI has.
+    #[test]
+    fn asset_lock_input_conflict_code_is_pinned_at_42() {
+        use dashcore::OutPoint;
+
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorAssetLockInputConflict as i32,
+            42
+        );
+
+        let out_point = OutPoint::null();
+        let result: PlatformWalletFFIResult = PlatformWalletError::AssetLockInputConflict {
+            out_point,
+            input: OutPoint {
+                txid: out_point.txid,
+                vout: 3,
+            },
+            spent_by: out_point.txid,
+            height: Some(1_234),
+            spender_chain_locked: true,
+        }
+        .into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockInputConflict
+        );
+        let message = message_of(&result);
+        assert!(
+            message.contains("can never confirm"),
+            "the typed Display must survive the conversion: {message}"
+        );
+        assert!(
+            message.contains("chainlocked: true"),
+            "the spender's finality must reach the host: {message}"
+        );
+    }
+
     /// `MessageSigningFailed` is intentionally unmapped: its causes are
     /// internal invariant breaks, which should read as a bug rather than as a
     /// key-repair prompt, so it falls through to ErrorUnknown carrying the

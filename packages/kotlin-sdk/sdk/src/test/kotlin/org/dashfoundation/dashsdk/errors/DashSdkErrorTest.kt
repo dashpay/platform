@@ -191,6 +191,35 @@ class DashSdkErrorTest {
     }
 
     @Test
+    fun assetLockInputConflictCode42MapsTyped() {
+        // TERMINAL: the one platform-wallet code that authorises a host to
+        // discard a tracked asset lock (fund-safe — the confirmed spender is
+        // the wallet's own transaction). It must never fall through to
+        // Generic, or the host is left waiting on a lock that can never
+        // confirm.
+        val message =
+            "Asset lock a:0 can never confirm: it spends b:1, which was already spent by " +
+                "confirmed transaction c (block height Some(1234), chainlocked: false) — " +
+                "the lock is a double spend and no peer will relay it"
+        val mapped = DashSdkError.fromNative(
+            DashSDKException(
+                DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 42,
+                message,
+            ),
+        )
+
+        assertTrue(
+            "code 42 must not fall through to Generic",
+            mapped is DashSdkError.PlatformWallet.AssetLockInputConflict,
+        )
+        assertEquals(message, mapped.message)
+        assertFalse(
+            "AssetLockInputConflict is terminal — rebuild from unspent inputs, do not retry",
+            mapped.isRetryable,
+        )
+    }
+
+    @Test
     fun signingKeyUnavailableCode31MapsTyped() {
         // The STRUCTURED discriminator (dashpay/platform#4060 finding 7):
         // PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable (31) maps

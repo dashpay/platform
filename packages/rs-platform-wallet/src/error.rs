@@ -302,7 +302,20 @@ pub enum PlatformWalletError {
     /// Terminal, not retryable: the funds behind `input` are gone into
     /// `spent_by`, so the only recovery is to discard this lock and build
     /// a new one from currently-unspent inputs. `height` is the block
-    /// height of the confirmed spender when the record carries block info.
+    /// height of the confirmed spender when the record carries block info,
+    /// and `spender_chain_locked` reports whether that spender has reached
+    /// ChainLock finality — hosts show it as confidence, never as a gate.
+    ///
+    /// A merely-`InBlock` spender is enough to condemn the lock, and the
+    /// verdict stays fund-safe even then. Confirmed spends of one outpoint
+    /// are mutually exclusive, and the spender is necessarily this wallet's
+    /// OWN transaction — only this wallet can sign its outpoints — so the
+    /// value is never lost by discarding the conflicted lock: it either
+    /// lives on in the sibling, or, in the freak case where a reorg unmines
+    /// the sibling, the inputs simply return to this wallet's spendable set
+    /// and fund a fresh lock. Waiting for `spender_chain_locked` before
+    /// reporting would buy no safety and would in practice never fire (see
+    /// the detection helper).
     ///
     /// Raising this error is a definite verdict; NOT raising it proves
     /// nothing — see the detection helper in
@@ -311,13 +324,15 @@ pub enum PlatformWalletError {
     #[error(
         "Asset lock {out_point} can never confirm: it spends {input}, which was \
          already spent by confirmed transaction {spent_by} (block height \
-         {height:?}) — the lock is a double spend and no peer will relay it"
+         {height:?}, chainlocked: {spender_chain_locked}) — the lock is a \
+         double spend and no peer will relay it"
     )]
     AssetLockInputConflict {
         out_point: dashcore::OutPoint,
         input: dashcore::OutPoint,
         spent_by: dashcore::Txid,
         height: Option<CoreBlockHeight>,
+        spender_chain_locked: bool,
     },
 
     #[error("SDK error: {0}")]
