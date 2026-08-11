@@ -151,8 +151,8 @@ Fork-era numbers remain in the collision history, which is immutable record.
 as #4183's proposal until #4183 merged (`189a3abb1c`); it is now in the merged
 table above and rule 3 applies to it in full. It has since had company: the
 reservation trio (34–36, #4308) and the 37–41 block (#4348, #4360) also
-merged out of proposal, and the frontier now sits at 42 — see the merged
-table and the frontier note above.
+merged out of proposal — see the merged table, and take the current
+frontier only from the frontier note above (43 as of 2026-08-11).
 
 PRs that touch `rs-platform-wallet-ffi` but claim **no** new code, verified
 2026-08-04 against each PR's file list and the `error.rs` at its head (a
