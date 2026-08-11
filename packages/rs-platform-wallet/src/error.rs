@@ -301,11 +301,13 @@ pub enum PlatformWalletError {
     ///
     /// On a *drain* build (whole-account funding, e.g. the CoinJoin → shielded
     /// migration) the requested target is the zero credit-output placeholder
-    /// that key-wallet rewrites to `Σ inputs − fee`, so an empty account
-    /// surfaces here as `available: 0, required: 0` — the "this account has
-    /// nothing to drain" signal. The real floor for a drain is the Type 18 pool
-    /// fee, enforced downstream against the built payload once the lock value
-    /// is known.
+    /// that key-wallet rewrites to `Σ inputs − fee`, so `required` reports the
+    /// caller's drain floor instead: an empty account surfaces as
+    /// `available: 0, required: <minimum_lock_duffs>` (the shielded flow
+    /// installs the positive Type 18 pool-fee floor before building), and only
+    /// a floor-less drain reports `required: 0`. The floor is additionally
+    /// enforced downstream against the built payload once the lock value is
+    /// known.
     #[error(
         "asset lock coin selection is short: available {available} duffs, \
          required {required} duffs"

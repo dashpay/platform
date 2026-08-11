@@ -1051,10 +1051,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 ///     `requested` target, keeping the empty candidate set on the same
 ///     structured path.
 ///
-/// `requested` is the caller's target in duffs. On a drain build it is the
-/// zero credit-output placeholder (key-wallet rewrites the value to
-/// `Σ inputs − fee`), so an empty account reports `available: 0, required: 0`
-/// — "nothing to drain". A drain's real floor is the pool fee, enforced
+/// `requested` is the caller's target in duffs. On a drain build the target is
+/// the zero credit-output placeholder (key-wallet rewrites the value to
+/// `Σ inputs − fee`), so the mapper substitutes the drain floor —
+/// `minimum_lock_duffs.unwrap_or(0)` — as `required`: an empty account reports
+/// `available: 0` against the configured floor (positive for the shielded
+/// flow, which installs the Type 18 pool-fee floor before building), and 0
+/// only when no floor was supplied. The floor is additionally enforced
 /// downstream by `broadcast_funded_asset_lock_with_funding` against the built
 /// payload.
 ///
