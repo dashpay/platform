@@ -19,6 +19,9 @@ describe('BaseCommand', () => {
         release: sinon.stub(),
         write: sinon.stub(),
         isExclusive: () => true,
+        markRenderPending: () => {},
+        clearRenderPending: () => {},
+        recoverPendingRender: () => false,
       };
       const dependencies = {
         configFile,
@@ -151,6 +154,9 @@ describe('BaseCommand', () => {
       configFileRepository = {
         write: this.sinon.stub(),
         isExclusive: () => true,
+        markRenderPending: () => {},
+        clearRenderPending: () => {},
+        recoverPendingRender: () => false,
       };
       writeConfigTemplates = this.sinon.stub();
       stopAllContainers = this.sinon.stub().resolves();

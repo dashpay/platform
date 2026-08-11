@@ -97,6 +97,12 @@ async function removeOrphanedSslContainers(docker) {
     (migratedConfigs) => migratedConfigs.forEach(writeConfigTemplates),
   );
 
+  // A renewal killed between rendering the gateway's files and saving the
+  // certificate it obtained left the two describing different things. The
+  // helper is restarted whenever the node is, so this is where that gets
+  // noticed on a node nobody is running commands against.
+  configFileRepository.recoverPendingRender(writeConfigTemplates);
+
   const config = configFile.getConfig(configName);
 
   // Register config collection in the container

@@ -92,6 +92,14 @@ export default class BaseCommand extends Command {
       configFile: asValue(configFile),
     });
 
+    // A previous command killed between rendering its service files and saving
+    // the change left them describing a value the config file never got. The
+    // files derive from the config file, so rendering again from it is what
+    // makes the two agree. Costs an existence check when nothing is owed.
+    configFileRepository.recoverPendingRender(
+      this.container.resolve('writeConfigTemplates'),
+    );
+
     // Graceful exit
     const stopAllContainers = this.container.resolve('stopAllContainers');
     const startedContainers = this.container.resolve('startedContainers');
@@ -181,11 +189,17 @@ export default class BaseCommand extends Command {
              */
             const writeConfigTemplates = this.container.resolve('writeConfigTemplates');
 
+            // Being killed between the render and the save would leave the
+            // generated files ahead of the config file with nothing to say so.
+            configFileRepository.markRenderPending();
+
             changedConfigs.forEach(writeConfigTemplates);
 
             // Persist only after every generated file is current. If rendering
             // fails, the unchanged format version makes the next command retry it.
             configFileRepository.write(configFile);
+
+            configFileRepository.clearRenderPending();
           }
         }
       } catch (e) {

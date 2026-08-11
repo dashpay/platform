@@ -96,6 +96,7 @@ export default class ConfigFileJsonRepository {
     // Locking a sibling rather than the config file itself keeps first run
     // working, where there is no config file to lock yet.
     this.lockFilePath = homeDir.joinPath('config.json.lock');
+    this.renderPendingPath = homeDir.joinPath('config.json.render-pending');
   }
 
   /**
@@ -198,6 +199,8 @@ export default class ConfigFileJsonRepository {
       mutate(configFile);
 
       if (beforeSave) {
+        this.markRenderPending();
+
         beforeSave(configFile);
       }
 
@@ -205,19 +208,23 @@ export default class ConfigFileJsonRepository {
         this.#save(configFile);
       } catch (e) {
         // The generated files now describe a change that did not survive.
-        // Nothing on disk records that they are ahead, so re-render them from
-        // the state that is still there rather than leave the two disagreeing.
+        // Nothing else records that they are ahead, so re-render them from the
+        // state that is still there rather than leave the two disagreeing.
         if (beforeSave && fs.existsSync(this.configFilePath)) {
           try {
             beforeSave(this.read());
+
+            this.clearRenderPending();
           } catch {
-            // Keep the save failure - it is the one the caller has to act on,
-            // and it already says nothing was written.
+            // Keep the save failure - it is the one the caller has to act on -
+            // and leave the marker, so the next command renders again.
           }
         }
 
         throw e;
       }
+
+      this.clearRenderPending();
 
       if (onSaved) {
         onSaved(configFile);
@@ -312,6 +319,72 @@ export default class ConfigFileJsonRepository {
     }
 
     return semver.lt(recordedVersion, this.configFormatVersion);
+  }
+
+  /**
+   * Record that service files are being written for a change not yet saved.
+   *
+   * Service files and the config file are two separate writes, and a process
+   * killed between them leaves the generated files describing a value the
+   * config file does not have, with nothing to say so. Rendering derives
+   * entirely from the config file, so re-running it is always safe - this
+   * marker is only there to say that it is owed.
+   *
+   * Caller must hold the lock.
+   *
+   * @returns {void}
+   */
+  markRenderPending() {
+    fs.writeFileSync(this.renderPendingPath, '', 'utf8');
+  }
+
+  /**
+   * Drop the marker once the config file and the service files agree again.
+   *
+   * @returns {void}
+   */
+  clearRenderPending() {
+    fs.rmSync(this.renderPendingPath, { force: true });
+  }
+
+  /**
+   * Whether a render was interrupted before its change reached disk.
+   *
+   * @returns {boolean}
+   */
+  isRenderPending() {
+    return fs.existsSync(this.renderPendingPath);
+  }
+
+  /**
+   * Re-render every config when a previous attempt was interrupted.
+   *
+   * Reads under the lock so the state rendered from is the current one, and
+   * does nothing at all in the ordinary case - the marker is absent, and no
+   * lock is taken.
+   *
+   * @param {function(Config): void} render
+   * @returns {boolean} whether anything was re-rendered
+   */
+  recoverPendingRender(render) {
+    if (!this.isRenderPending()) {
+      return false;
+    }
+
+    return this.#locked(() => {
+      // Another process may have finished the recovery while this one waited.
+      if (!this.isRenderPending() || !fs.existsSync(this.configFilePath)) {
+        this.clearRenderPending();
+
+        return false;
+      }
+
+      this.read().getAllConfigs().forEach(render);
+
+      this.clearRenderPending();
+
+      return true;
+    });
   }
 
   /**

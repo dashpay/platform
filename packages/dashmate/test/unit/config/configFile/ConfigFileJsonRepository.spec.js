@@ -229,6 +229,111 @@ describe('ConfigFileJsonRepository', () => {
       expect(fs.existsSync(homeDir.joinPath('config.json.lock'))).to.be.false();
     });
 
+    // Service files and the config file are two writes. A process killed
+    // between them leaves the generated files describing a value the config
+    // file never got, and nothing in either file says so.
+    describe('interrupted between rendering and saving', () => {
+      it('should record that a render is owed while it is in flight', () => {
+        seedConfigFile();
+
+        const repository = new ConfigFileJsonRepository(
+          identityMigration,
+          homeDir,
+          createDefaults,
+          CURRENT_FORMAT_VERSION,
+        );
+
+        let markedWhileRendering;
+
+        repository.update((configFile) => {
+          configFile.getConfig('base').set('description', 'rendered');
+        }, {
+          beforeSave: () => {
+            markedWhileRendering = repository.isRenderPending();
+          },
+        });
+
+        expect(markedWhileRendering, 'marker should exist while rendering').to.be.true();
+        expect(repository.isRenderPending(), 'marker should be gone once saved').to.be.false();
+      });
+
+      it('should re-render from the config file that survived', () => {
+        const seeded = seedConfigFile();
+
+        const repository = new ConfigFileJsonRepository(
+          identityMigration,
+          homeDir,
+          createDefaults,
+          CURRENT_FORMAT_VERSION,
+        );
+
+        // Exactly the state a kill between the render and the save leaves: the
+        // marker present, the config file untouched.
+        repository.markRenderPending();
+
+        const rendered = [];
+
+        expect(repository.recoverPendingRender((config) => rendered.push(config.getName())))
+          .to.be.true();
+
+        expect(rendered).to.deep.equal(['base']);
+        expect(fs.readFileSync(configFilePath, 'utf8')).to.equal(seeded);
+        expect(repository.isRenderPending()).to.be.false();
+      });
+
+      it('should do nothing and take no lock when no render is owed', () => {
+        seedConfigFile();
+
+        const repository = new ConfigFileJsonRepository(
+          identityMigration,
+          homeDir,
+          createDefaults,
+          CURRENT_FORMAT_VERSION,
+        );
+
+        let lockedDuringRecovery = false;
+
+        expect(repository.recoverPendingRender(() => {
+          lockedDuringRecovery = true;
+        })).to.be.false();
+
+        expect(lockedDuringRecovery).to.be.false();
+        expect(fs.existsSync(homeDir.joinPath('config.json.lock'))).to.be.false();
+      });
+
+      it('should keep the marker when the save fails and re-rendering also fails', () => {
+        seedConfigFile();
+
+        const repository = new ConfigFileJsonRepository(
+          identityMigration,
+          homeDir,
+          createDefaults,
+          CURRENT_FORMAT_VERSION,
+        );
+
+        let renders = 0;
+
+        expect(() => repository.update((configFile) => {
+          configFile.getConfig('base').set('description', 'never-saved');
+        }, {
+          beforeSave: () => {
+            renders += 1;
+
+            if (renders === 1) {
+              // Simulate the atomic replace failing after the render.
+              fs.chmodSync(homeDir.getPath(), 0o500);
+            } else {
+              throw new Error('render failed too');
+            }
+          },
+        })).to.throw();
+
+        fs.chmodSync(homeDir.getPath(), 0o755);
+
+        expect(repository.isRenderPending(), 'marker must outlive a failed recovery').to.be.true();
+      });
+    });
+
     it('should retry migration rendering when the first render fails', () => {
       seedConfigFile();
 

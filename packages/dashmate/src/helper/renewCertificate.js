@@ -68,10 +68,15 @@ export default async function renewCertificate({
       // Rendering before the save keeps a failure recoverable: nothing is
       // committed, so the next renewal attempt redoes both. Saving first would
       // leave the gateway's generated files behind a configuration that already
-      // claims the new certificate, with nothing to trigger a re-render.
+      // claims the new certificate, with nothing to trigger a re-render. The
+      // marker covers the helper being killed between the two.
+      configFileRepository.markRenderPending();
+
       writeConfigTemplates(config);
 
       configFileRepository.write(configFile);
+
+      configFileRepository.clearRenderPending();
     }
 
     return { config, renewed: true };
