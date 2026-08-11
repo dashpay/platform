@@ -6188,7 +6188,7 @@ mod tests {
     }
 
     #[test]
-    fn shielded_asset_lock_reconciliation_requires_every_callback_leg() {
+    fn asset_lock_reconciliation_requires_every_callback_leg() {
         fn complete_callbacks() -> PersistenceCallbacks {
             PersistenceCallbacks {
                 on_changeset_begin_fn: Some(noop_begin),
@@ -6200,7 +6200,7 @@ mod tests {
             }
         }
 
-        let required = PersistenceCapabilities::SHIELDED_ASSET_LOCK_RECONCILIATION;
+        let required = PersistenceCapabilities::ASSET_LOCK_RECONCILIATION;
         assert!(declared_persister(complete_callbacks(), required)
             .persistence_capabilities()
             .contains(required));

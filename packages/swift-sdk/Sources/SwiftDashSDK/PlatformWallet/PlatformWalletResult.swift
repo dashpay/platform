@@ -317,6 +317,9 @@ public enum PlatformWalletError: LocalizedError {
     case noSelectableInputs(String)
     case coreInsufficientFunds(String)
     case assetLockNotTracked(String)
+    /// The one-shot output cannot be reused. This may come from a retained
+    /// local tombstone or an unauthenticated Platform report, so it does not
+    /// prove that the requested operation completed.
     case assetLockAlreadyConsumed(String)
     case assetLockFundingMismatch(String)
     case walletAlreadyExists(String)

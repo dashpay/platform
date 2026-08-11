@@ -39,9 +39,7 @@ use crate::wallet::asset_lock::tracked::TrackedAssetLock;
 
 use std::time::Duration;
 
-use crate::broadcaster::TransactionBroadcaster;
-use crate::error::{is_asset_lock_already_consumed, is_instant_lock_proof_invalid};
-use crate::wallet::asset_lock::manager::AssetLockManager;
+use crate::error::is_instant_lock_proof_invalid;
 use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, submit_with_cl_height_retry, AssetLockFunding, FundingResolution,
     ResolvedFunding,
@@ -437,19 +435,15 @@ impl PlatformWallet {
             Err(e) => (Err(e), proof.clone()),
         };
 
-        let landed_actions: Vec<dpp::shielded::SerializedAction> = match submit_result {
-            Ok(actions) => actions,
-            Err(e) => {
-                return reconcile_asset_lock_submit_error(
-                    &self.asset_locks,
-                    e,
-                    &proof_out_point,
-                    &effective_proof,
-                    cl_wait,
-                )
-                .await
-            }
-        };
+        let landed_actions: Vec<dpp::shielded::SerializedAction> = self
+            .asset_locks
+            .reconcile_asset_lock_submit_result(
+                submit_result,
+                &proof_out_point,
+                &effective_proof,
+                cl_wait,
+            )
+            .await?;
 
         // Record a live `ShieldFromAssetLock` activity entry over the
         // landed bundle. One entry per call (= one per seed-pool batch),
@@ -690,45 +684,6 @@ async fn lookup_asset_lock_value_credits(
     })
 }
 
-/// Map a failed shield-from-asset-lock submit while keeping the trust boundary
-/// explicit.
-///
-/// A matching `already consumed` consensus error is not quorum-authenticated,
-/// so it cannot justify terminal `Consumed` state. Before returning the
-/// existing typed signal to the host, promote the Core proof to an SPV-backed
-/// ChainLock if necessary and durably mark the lock `RecoveredFromChain` —
-/// final on Core, consumption unknown on Platform, proof retained for a future
-/// explicit retry. Unrelated SDK errors remain unchanged.
-async fn reconcile_asset_lock_submit_error<B: TransactionBroadcaster + ?Sized>(
-    asset_locks: &AssetLockManager<B>,
-    error: dash_sdk::Error,
-    out_point: &dashcore::OutPoint,
-    proof: &AssetLockProof,
-    chain_lock_timeout: Option<Duration>,
-) -> Result<(), PlatformWalletError> {
-    if !is_asset_lock_already_consumed(&error, out_point) {
-        return Err(PlatformWalletError::Sdk(error));
-    }
-
-    let chain_proof = match proof {
-        AssetLockProof::Chain(_) => proof.clone(),
-        AssetLockProof::Instant(_) => {
-            asset_locks
-                .upgrade_to_chain_lock_proof(out_point, chain_lock_timeout)
-                .await?
-        }
-    };
-    asset_locks
-        .mark_asset_lock_consumption_unknown(out_point, chain_proof)
-        .await?;
-    tracing::warn!(
-        outpoint = %out_point,
-        "recorded unauthenticated already-consumed report as consumption unknown"
-    );
-
-    Err(PlatformWalletError::AssetLockAlreadyConsumed(*out_point))
-}
-
 /// Build the Type 18 transition and broadcast-and-wait.
 ///
 /// Extracted so `submit_with_cl_height_retry`'s closure stays compact
@@ -865,6 +820,7 @@ mod tests {
         PlatformWalletChangeSet, PlatformWalletPersistence,
     };
     use crate::test_support::{funded_wallet_manager, AlwaysRejectedBroadcaster};
+    use crate::wallet::asset_lock::manager::AssetLockManager;
     use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
     use crate::wallet::persister::WalletPersister;
     use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -934,7 +890,7 @@ mod tests {
             if self.omit_reconciliation_capabilities.load(Ordering::SeqCst) {
                 PersistenceCapabilities::NONE
             } else {
-                PersistenceCapabilities::SHIELDED_ASSET_LOCK_RECONCILIATION
+                PersistenceCapabilities::ASSET_LOCK_RECONCILIATION
             }
         }
 
@@ -986,6 +942,12 @@ mod tests {
     }
 
     async fn consumption_report_context() -> ConsumptionReportContext {
+        consumption_report_context_for(AssetLockFundingType::AssetLockShieldedAddressTopUp).await
+    }
+
+    async fn consumption_report_context_for(
+        funding_type: AssetLockFundingType,
+    ) -> ConsumptionReportContext {
         let (wallet_manager, wallet_id, _generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let persistence = Arc::new(RecordingPersistence::default());
@@ -1029,7 +991,7 @@ mod tests {
                     out_point,
                     transaction,
                     account_index: 0,
-                    funding_type: AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                    funding_type,
                     identity_index: 0,
                     amount: 1_000_000,
                     status: AssetLockStatus::ChainLocked,
@@ -1059,18 +1021,97 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn successful_submit_result_passes_through_without_mutation() {
+        let ctx = consumption_report_context().await;
+        let stored_before = ctx
+            .persistence
+            .stored
+            .lock()
+            .expect("recording persistence mutex")
+            .len();
+
+        let value = ctx
+            .manager
+            .reconcile_asset_lock_submit_result(
+                Ok::<_, dash_sdk::Error>(42u64),
+                &ctx.out_point,
+                &ctx.proof,
+                None,
+            )
+            .await
+            .expect("successful submission must pass through");
+        assert_eq!(value, 42);
+
+        let wm = ctx.wallet_manager.read().await;
+        let lock = wm
+            .get_wallet_info(&ctx.wallet_id)
+            .expect("wallet")
+            .tracked_asset_locks
+            .get(&ctx.out_point)
+            .expect("tracked lock");
+        assert_eq!(lock.status, AssetLockStatus::ChainLocked);
+        assert_eq!(lock.proof, Some(ctx.proof));
+        assert_eq!(
+            ctx.persistence
+                .stored
+                .lock()
+                .expect("recording persistence mutex")
+                .len(),
+            stored_before
+        );
+    }
+
+    #[tokio::test]
+    async fn consumed_report_reconciliation_is_funding_role_agnostic() {
+        for funding_type in [
+            AssetLockFundingType::IdentityRegistration,
+            AssetLockFundingType::IdentityTopUp,
+            AssetLockFundingType::IdentityInvitation,
+            AssetLockFundingType::AssetLockAddressTopUp,
+            AssetLockFundingType::AssetLockShieldedAddressTopUp,
+        ] {
+            let ctx = consumption_report_context_for(funding_type).await;
+            let error = ctx
+                .manager
+                .reconcile_asset_lock_submit_result::<()>(
+                    Err(already_consumed_error(ctx.out_point)),
+                    &ctx.out_point,
+                    &ctx.proof,
+                    None,
+                )
+                .await
+                .expect_err("already-consumed report must stay a typed error");
+            assert!(matches!(
+                error,
+                PlatformWalletError::AssetLockAlreadyConsumed(actual)
+                    if actual == ctx.out_point
+            ));
+            let wm = ctx.wallet_manager.read().await;
+            let lock = wm
+                .get_wallet_info(&ctx.wallet_id)
+                .expect("wallet")
+                .tracked_asset_locks
+                .get(&ctx.out_point)
+                .expect("tracked lock");
+            assert_eq!(lock.funding_type, funding_type);
+            assert_eq!(lock.status, AssetLockStatus::RecoveredFromChain);
+        }
+    }
+
+    #[tokio::test]
     async fn consumed_report_returns_typed_error_and_persists_nonterminal_state() {
         let ctx = consumption_report_context().await;
 
-        let error = reconcile_asset_lock_submit_error(
-            &ctx.manager,
-            already_consumed_error(ctx.out_point),
-            &ctx.out_point,
-            &ctx.proof,
-            None,
-        )
-        .await
-        .expect_err("already-consumed report remains a typed host signal");
+        let error = ctx
+            .manager
+            .reconcile_asset_lock_submit_result::<()>(
+                Err(already_consumed_error(ctx.out_point)),
+                &ctx.out_point,
+                &ctx.proof,
+                None,
+            )
+            .await
+            .expect_err("already-consumed report remains a typed host signal");
         assert!(matches!(
             error,
             PlatformWalletError::AssetLockAlreadyConsumed(actual) if actual == ctx.out_point
@@ -1107,15 +1148,16 @@ mod tests {
             .omit_reconciliation_capabilities
             .store(true, Ordering::SeqCst);
 
-        let error = reconcile_asset_lock_submit_error(
-            &ctx.manager,
-            already_consumed_error(ctx.out_point),
-            &ctx.out_point,
-            &ctx.proof,
-            None,
-        )
-        .await
-        .expect_err("unsupported persistence must fail before reconciliation");
+        let error = ctx
+            .manager
+            .reconcile_asset_lock_submit_result::<()>(
+                Err(already_consumed_error(ctx.out_point)),
+                &ctx.out_point,
+                &ctx.proof,
+                None,
+            )
+            .await
+            .expect_err("unsupported persistence must fail before reconciliation");
         assert!(matches!(error, PlatformWalletError::Persistence(_)));
 
         let wm = ctx.wallet_manager.read().await;
@@ -1149,15 +1191,16 @@ mod tests {
             dash_sdk::Error::Generic("unrelated".to_string()),
             already_consumed_error(OutPoint::new(ctx.out_point.txid, ctx.out_point.vout + 1)),
         ] {
-            let mapped = reconcile_asset_lock_submit_error(
-                &ctx.manager,
-                error,
-                &ctx.out_point,
-                &ctx.proof,
-                None,
-            )
-            .await
-            .expect_err("submit error must remain an error");
+            let mapped = ctx
+                .manager
+                .reconcile_asset_lock_submit_result::<()>(
+                    Err(error),
+                    &ctx.out_point,
+                    &ctx.proof,
+                    None,
+                )
+                .await
+                .expect_err("submit error must remain an error");
             assert!(matches!(mapped, PlatformWalletError::Sdk(_)));
         }
 
@@ -1187,15 +1230,16 @@ mod tests {
             .fail_next_store
             .store(true, Ordering::SeqCst);
 
-        let error = reconcile_asset_lock_submit_error(
-            &ctx.manager,
-            already_consumed_error(ctx.out_point),
-            &ctx.out_point,
-            &ctx.proof,
-            None,
-        )
-        .await
-        .expect_err("host persistence rejection must surface");
+        let error = ctx
+            .manager
+            .reconcile_asset_lock_submit_result::<()>(
+                Err(already_consumed_error(ctx.out_point)),
+                &ctx.out_point,
+                &ctx.proof,
+                None,
+            )
+            .await
+            .expect_err("host persistence rejection must surface");
         assert!(matches!(error, PlatformWalletError::Persistence(_)));
 
         let wm = ctx.wallet_manager.read().await;
@@ -1217,15 +1261,16 @@ mod tests {
             .lock()
             .expect("recording persistence mutex") = Some(PersistenceErrorKind::Transient);
 
-        let error = reconcile_asset_lock_submit_error(
-            &ctx.manager,
-            already_consumed_error(ctx.out_point),
-            &ctx.out_point,
-            &ctx.proof,
-            None,
-        )
-        .await
-        .expect_err("host flush rejection must surface");
+        let error = ctx
+            .manager
+            .reconcile_asset_lock_submit_result::<()>(
+                Err(already_consumed_error(ctx.out_point)),
+                &ctx.out_point,
+                &ctx.proof,
+                None,
+            )
+            .await
+            .expect_err("host flush rejection must surface");
         assert!(matches!(error, PlatformWalletError::Persistence(_)));
 
         let wm = ctx.wallet_manager.read().await;
@@ -1249,15 +1294,16 @@ mod tests {
             .lock()
             .expect("recording persistence mutex") = Some(PersistenceErrorKind::Fatal);
 
-        let error = reconcile_asset_lock_submit_error(
-            &ctx.manager,
-            already_consumed_error(ctx.out_point),
-            &ctx.out_point,
-            &ctx.proof,
-            None,
-        )
-        .await
-        .expect_err("post-commit flush rejection must surface");
+        let error = ctx
+            .manager
+            .reconcile_asset_lock_submit_result::<()>(
+                Err(already_consumed_error(ctx.out_point)),
+                &ctx.out_point,
+                &ctx.proof,
+                None,
+            )
+            .await
+            .expect_err("post-commit flush rejection must surface");
         assert!(matches!(error, PlatformWalletError::Persistence(_)));
 
         let wm = ctx.wallet_manager.read().await;

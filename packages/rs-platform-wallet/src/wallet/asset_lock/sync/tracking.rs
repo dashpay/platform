@@ -4,9 +4,7 @@ use crate::broadcaster::TransactionBroadcaster;
 use dashcore::OutPoint;
 
 use crate::changeset::changeset::AssetLockChangeSet;
-#[cfg(feature = "shielded")]
 use crate::changeset::changeset::PlatformWalletChangeSet;
-#[cfg(feature = "shielded")]
 use crate::changeset::PersistenceCapabilities;
 use crate::error::PlatformWalletError;
 
@@ -185,7 +183,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// in-memory mutation only when the backend has not committed the store and
     /// did not retain a transient retry buffer. Before mutating, the backend
     /// must attest atomic tracked-asset-lock persistence and restart restore.
-    #[cfg(feature = "shielded")]
     pub(crate) async fn mark_asset_lock_consumption_unknown(
         &self,
         out_point: &OutPoint,
@@ -199,11 +196,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         }
 
         let capabilities = self.persister.persistence_capabilities();
-        let required = PersistenceCapabilities::SHIELDED_ASSET_LOCK_RECONCILIATION;
+        let required = PersistenceCapabilities::ASSET_LOCK_RECONCILIATION;
         if !capabilities.contains(required) {
             let missing = capabilities.missing(required);
             return Err(PlatformWalletError::Persistence(format!(
-                "shielded asset-lock reconciliation requires persistence capabilities {:?} \
+                "asset-lock reconciliation requires persistence capabilities {:?} \
                  (missing mask 0x{:x})",
                 missing.names(),
                 missing.bits(),

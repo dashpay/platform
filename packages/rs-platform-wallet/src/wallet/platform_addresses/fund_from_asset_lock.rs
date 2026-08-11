@@ -204,7 +204,7 @@ impl PlatformAddressWallet {
         let proof_out_point = out_point_from_proof(&proof);
         // `proof_height` is the broadcast proof's committed block — the
         // height pin for the reconciled absolutes below.
-        let (address_infos, proof_height) = match submit_with_cl_height_retry(settings, |s| {
+        let (submit_result, effective_proof) = match submit_with_cl_height_retry(settings, |s| {
             addresses.top_up_with_signers(
                 &self.sdk,
                 proof.clone(),
@@ -217,7 +217,7 @@ impl PlatformAddressWallet {
         })
         .await
         {
-            Ok(infos) => infos,
+            Ok(infos) => (Ok(infos), proof.clone()),
             Err(e) if is_instant_lock_proof_invalid(&e) => {
                 let out_point = proof_out_point;
                 tracing::warn!(
@@ -247,7 +247,7 @@ impl PlatformAddressWallet {
                     )
                     .await?;
                 self.asset_locks.queue_asset_lock_changeset(cs);
-                submit_with_cl_height_retry(settings, |s| {
+                let submit_result = submit_with_cl_height_retry(settings, |s| {
                     addresses.top_up_with_signers(
                         &self.sdk,
                         chain_proof.clone(),
@@ -258,11 +258,20 @@ impl PlatformAddressWallet {
                         s,
                     )
                 })
-                .await
-                .map_err(PlatformWalletError::Sdk)?
+                .await;
+                (submit_result, chain_proof)
             }
-            Err(e) => return Err(PlatformWalletError::Sdk(e)),
+            Err(e) => (Err(e), proof.clone()),
         };
+        let (address_infos, proof_height) = self
+            .asset_locks
+            .reconcile_asset_lock_submit_result(
+                submit_result,
+                &proof_out_point,
+                &effective_proof,
+                None,
+            )
+            .await?;
 
         // Step 4: bookkeeping + cleanup. Write the proof-attested
         // balances back into ManagedPlatformAccount, then consume the

@@ -39,7 +39,6 @@ impl WalletPersister {
         self.inner.flush(self.wallet_id)
     }
 
-    #[cfg(feature = "shielded")]
     pub(crate) fn store_commits_inline(&self) -> bool {
         self.inner.store_commits_inline()
     }

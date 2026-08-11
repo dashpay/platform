@@ -66,7 +66,7 @@ impl PersistenceCapabilities {
 
     /// Capabilities required to durably reconcile an asset-lock status and
     /// restore that exact row after process restart.
-    pub const SHIELDED_ASSET_LOCK_RECONCILIATION: Self =
+    pub const ASSET_LOCK_RECONCILIATION: Self =
         Self(Self::ATOMIC_CHANGESETS.0 | Self::TRACKED_ASSET_LOCKS.0 | Self::WALLET_RESTORE.0);
 
     pub const fn from_bits_retain(bits: u64) -> Self {
@@ -161,7 +161,7 @@ mod tests {
         assert_eq!(PersistenceCapabilities::DPNS_NAME_STATES.bits(), 0x100);
         assert_eq!(PersistenceCapabilities::TRACKED_ASSET_LOCKS.bits(), 0x200);
         assert_eq!(
-            PersistenceCapabilities::SHIELDED_ASSET_LOCK_RECONCILIATION.bits(),
+            PersistenceCapabilities::ASSET_LOCK_RECONCILIATION.bits(),
             0x281
         );
     }
