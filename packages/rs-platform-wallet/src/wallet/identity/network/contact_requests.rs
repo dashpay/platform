@@ -1940,7 +1940,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // reference those ids and nothing downstream makes sense without
         // knowing that. Reading it back off an exported log beats asking the
         // user to query Platform. On-chain public metadata only; no key data.
-        {
+        // Gated on the level: the block allocates a set, a string per key and a
+        // join, and takes the wallet-manager read lock. Purpose-rejected
+        // entries stay queued and revisit this path every sweep, so leaving
+        // that work unconditional would add recurring cost to the very path
+        // this change exists to make cheap.
+        if tracing::enabled!(tracing::Level::INFO) {
             use dpp::identity::accessors::IdentityGettersV0;
             use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
             let owners: std::collections::BTreeSet<Identifier> = entries
