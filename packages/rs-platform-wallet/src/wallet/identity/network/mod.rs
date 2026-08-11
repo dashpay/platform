@@ -42,7 +42,9 @@ mod contact_requests;
 mod contacts;
 mod dashpay_view;
 mod invitation;
-pub use invitation::{Invitation, MAX_INVITATION_DUFFS, MAX_INVITATION_TTL_SECS};
+pub use invitation::{
+    Invitation, MAX_INVITATION_DUFFS, MAX_INVITATION_TTL_SECS, MIN_INVITATION_DUFFS,
+};
 mod payment_handler;
 pub(crate) use payment_handler::DashPayPaymentHandler;
 // Re-exported for the payments unit tests, which drive the hooks

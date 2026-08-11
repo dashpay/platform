@@ -34,7 +34,9 @@ use platform_wallet::wallet::identity::crypto::{
 };
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
 
-use platform_wallet::wallet::identity::network::MAX_INVITATION_TTL_SECS;
+use platform_wallet::wallet::identity::network::{
+    MAX_INVITATION_DUFFS, MAX_INVITATION_TTL_SECS, MIN_INVITATION_DUFFS,
+};
 
 use crate::core_wallet_types::OutPointFFI;
 use crate::dashpay::resolver_contact_crypto_provider;
@@ -43,6 +45,28 @@ use crate::handle::*;
 use crate::identity_registration_with_signer::{decode_identity_pubkeys, IdentityPubkeyFFI};
 use crate::runtime::block_on_worker;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
+
+/// The maximum amount (duffs) an invitation voucher may lock.
+///
+/// The cap is enforced Rust-side by [`platform_wallet_create_invitation`] — it
+/// bounds the blast radius of a leaked bearer link. Clients read it through
+/// this getter to pre-validate and label the amount field; mirroring the value
+/// client-side lets the UI reject amounts Rust accepts the moment the constant
+/// moves.
+#[no_mangle]
+pub extern "C" fn platform_wallet_invitation_max_duffs() -> u64 {
+    MAX_INVITATION_DUFFS
+}
+
+/// The minimum amount (duffs) an invitation voucher may lock.
+///
+/// A voucher below this floor can fund neither a claim nor a register-reclaim,
+/// so [`platform_wallet_create_invitation`] rejects it Rust-side. Read through
+/// this getter for the same reason as the cap: no client-side mirror to drift.
+#[no_mangle]
+pub extern "C" fn platform_wallet_invitation_min_duffs() -> u64 {
+    MIN_INVITATION_DUFFS
+}
 
 /// Create a DashPay invitation: fund a one-time asset-lock voucher at the
 /// DIP-13 invitation path and return a shareable `dashpay://invite` link.
@@ -792,5 +816,15 @@ mod tests {
         assert_eq!(r.code, PlatformWalletFFIResultCode::Success);
         assert!(!preview.structurally_valid);
         assert!(preview.inviter_username.is_null());
+    }
+
+    /// The amount-bound getters hand back the library constants verbatim. This
+    /// bridge exists precisely so clients stop mirroring the values, so a drift
+    /// here would silently reinstate the mirror it replaced.
+    #[test]
+    fn invitation_amount_bound_getters_match_library_constants() {
+        assert_eq!(platform_wallet_invitation_max_duffs(), MAX_INVITATION_DUFFS);
+        assert_eq!(platform_wallet_invitation_min_duffs(), MIN_INVITATION_DUFFS);
+        assert!(platform_wallet_invitation_min_duffs() < platform_wallet_invitation_max_duffs());
     }
 }

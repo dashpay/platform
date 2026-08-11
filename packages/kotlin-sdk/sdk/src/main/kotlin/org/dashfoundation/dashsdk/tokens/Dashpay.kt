@@ -417,7 +417,7 @@ class Dashpay internal constructor(private val walletHandle: Long,
      * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/ManagedPlatformWallet.swift).
      *
      * Amount bounds (`MIN_INVITATION_DUFFS = 300_000`,
-     * `MAX_INVITATION_DUFFS = 5_000_000`) are enforced in Rust — a voucher
+     * `MAX_INVITATION_DUFFS = 26_000_000`) are enforced in Rust — a voucher
      * below the floor could fund neither a claim nor a reclaim.
      *
      * Pass a non-null [inviterIdentityId] (32 bytes) + [inviterUsername]
