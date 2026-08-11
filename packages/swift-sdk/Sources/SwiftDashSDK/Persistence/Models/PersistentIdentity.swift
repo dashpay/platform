@@ -13,6 +13,24 @@ public final class PersistentIdentity {
     @Attribute(.unique) public var identityId: Data
     public var balance: Int64
     public var revision: Int64
+    /// `true` iff the user can act as this identity from this device.
+    /// Two ways to be local:
+    /// - wallet-owned: `wallet != nil`, keys re-derivable from the
+    ///   wallet's DIP-9 tree (`wallet != nil` ⟹ `isLocal`);
+    /// - imported key material with NO wallet: masternode/evonode
+    ///   voting/owner/payout keys or pasted user private keys
+    ///   (keychain-backed — see `LoadIdentityView`'s import flow).
+    ///
+    /// `false` for observed identities (DashPay contacts, DPNS
+    /// lookups, payment counterparties).
+    ///
+    /// Writers promote, never demote: the persister sets `true` when
+    /// it attaches the wallet relationship (and `loadWalletList()`
+    /// heals wallet-linked stale-`false` rows at startup), import
+    /// flows set `true` when key material lands. Nothing flips a
+    /// `true` back — the flag outlives what any single writer can
+    /// see. For strictly wallet-owned filtering use
+    /// `walletOwnedIdentitiesPredicate`, which is narrower.
     public var isLocal: Bool
     public var alias: String?
     /// User's chosen primary display label (the one rendered on
@@ -163,7 +181,7 @@ public final class PersistentIdentity {
         identityId: Data,
         balance: Int64 = 0,
         revision: Int64 = 0,
-        isLocal: Bool = true,
+        isLocal: Bool = false,
         alias: String? = nil,
         dpnsName: String? = nil,
         mainDpnsName: String? = nil,
@@ -292,12 +310,14 @@ extension PersistentIdentity {
     /// `wallet` relationship. Use this for views that should only
     /// surface identities the user can act as / sign for.
     ///
-    /// Distinct from the `isLocal` flag — that drives the
-    /// "Local Only" / "On Network" UI badge (Platform-confirmed vs
-    /// pending broadcast). Wallet ownership is orthogonal: an
-    /// identity can be wallet-owned and `isLocal` (just registered,
-    /// not yet confirmed), wallet-owned and on-network (confirmed),
-    /// or out-of-wallet (DashPay contact / payment recipient).
+    /// Narrower than `isLocal`: wallet-owned identities are a subset
+    /// of local ones (an identity with imported masternode/user keys
+    /// is local but has no wallet row). Use this predicate when the
+    /// operation needs the wallet's DIP-9 tree specifically (identity
+    /// reload, DashPay), and `isLocal` when it merely needs signing
+    /// capability. (Historical note: `isLocal` once read as a
+    /// "Local Only vs On Network" badge, but no writer ever set it
+    /// `true`, so a wallet's own identity persisted as `false`.)
     public static var walletOwnedIdentitiesPredicate: Predicate<PersistentIdentity> {
         #Predicate<PersistentIdentity> { identity in
             identity.wallet != nil

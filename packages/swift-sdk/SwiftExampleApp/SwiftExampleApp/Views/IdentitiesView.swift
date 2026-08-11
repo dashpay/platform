@@ -99,39 +99,40 @@ struct IdentityRow: View {
                     }
                 }
 
-                if identity.isLocal {
-                    HStack {
-                        Image(systemName: "location")
+                // Local (can sign — wallet-owned OR imported keys) vs
+                // observed read-only. The balance refresh is a plain
+                // Platform fetch, valid for both.
+                HStack {
+                    if identity.isLocal {
+                        Image(systemName: "key.fill")
                             .font(.caption2)
-                        Text("Local Only")
+                        Text("Local")
+                            .font(.caption2)
+                    } else {
+                        Image(systemName: "eye")
+                            .font(.caption2)
+                        Text("Observed")
                             .font(.caption2)
                     }
-                    .foregroundColor(.orange)
-                } else {
-                    HStack {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.caption2)
-                        Text("On Network")
-                            .font(.caption2)
 
-                        Spacer()
+                    Spacer()
 
-                        Button(action: {
-                            isRefreshing = true
-                            Task {
-                                await refreshBalance()
-                                isRefreshing = false
-                            }
-                        }) {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.caption)
-                                .foregroundColor(.blue)
-                                .rotationEffect(.degrees(isRefreshing ? 360 : 0))
-                                .animation(isRefreshing ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isRefreshing)
+                    Button(action: {
+                        isRefreshing = true
+                        Task {
+                            await refreshBalance()
+                            isRefreshing = false
                         }
-                        .buttonStyle(BorderlessButtonStyle())
+                    }) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                            .rotationEffect(.degrees(isRefreshing ? 360 : 0))
+                            .animation(isRefreshing ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isRefreshing)
                     }
+                    .buttonStyle(BorderlessButtonStyle())
                 }
+                .foregroundColor(identity.isLocal ? .green : .secondary)
             }
             .padding(.vertical, 4)
         }
@@ -187,11 +188,12 @@ struct IdentityRow: View {
 
             try? modelContext.save()
         } catch {
-            if !identity.isLocal {
-                appState.showError(
-                    message: "Failed to refresh balance: \(error.localizedDescription)"
-                )
-            }
+            // Every persisted row exists on Platform (the persister
+            // fires post-confirmation), so a failed refresh is worth
+            // surfacing for wallet-owned and observed rows alike.
+            appState.showError(
+                message: "Failed to refresh balance: \(error.localizedDescription)"
+            )
         }
     }
 }
