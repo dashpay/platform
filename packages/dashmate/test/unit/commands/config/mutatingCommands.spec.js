@@ -69,6 +69,29 @@ describe('Config mutating commands', () => {
       expect(loadedConfigFile.isChanged()).to.be.false();
     });
 
+    // `config.json` resolves to the repository's own file, not to a service
+    // directory. The cleanup-retry path reaches names no config is listed
+    // under, so without a guard this deletes every configuration and reports
+    // success.
+    it('should refuse to remove a name that resolves to the config file itself', async () => {
+      const before = fs.readFileSync(homeDir.joinPath('config.json'), 'utf8');
+
+      for (const name of ['config.json', 'CONFIG.JSON', 'config.json.']) {
+        // eslint-disable-next-line no-await-in-loop
+        await expect(new ConfigRemoveCommand().runWithDependencies(
+          { config: name },
+          flags,
+          loadedConfigFile,
+          { has: () => false },
+          homeDir,
+          configFileRepository,
+        ), name).to.be.rejectedWith('reserves for its own files');
+      }
+
+      expect(fs.existsSync(homeDir.joinPath('config.json'))).to.be.true();
+      expect(fs.readFileSync(homeDir.joinPath('config.json'), 'utf8')).to.equal(before);
+    });
+
     it('should reject a service directory that is not owned by config.json', async () => {
       const keyPath = homeDir.joinPath('node1', 'platform', 'gateway', 'ssl', 'private.key');
 

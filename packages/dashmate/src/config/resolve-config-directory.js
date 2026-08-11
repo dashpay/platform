@@ -38,6 +38,18 @@ export function assertSafeConfigName(name) {
  *
  * @param {string} name
  */
+export function isConfigNameAvailable(name) {
+  return !RESERVED_CONFIG_NAMES.has(name.replace(/\.+$/u, '').toLowerCase());
+}
+
+/**
+ * Reject a name Dashmate cannot give a directory to.
+ *
+ * Applied where a name is chosen - creating a config or a group - rather than
+ * where one is loaded.
+ *
+ * @param {string} name
+ */
 export function assertConfigNameAvailable(name) {
   assertSafeConfigName(name);
 

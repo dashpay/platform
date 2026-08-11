@@ -27,11 +27,10 @@ const PEBBLE_IMAGE = 'ghcr.io/letsencrypt/pebble:latest';
 const PEBBLE_HOSTNAME = 'pebble';
 const PEBBLE_ACME_PORT = 14000;
 
-// A subnet of its own, so a busy machine cannot collide with the fixed address
-// lego needs.
-const NETWORK_SUBNET = '172.29.0.0/16';
-const PEBBLE_IP = '172.29.0.2';
-const LEGO_IP = '172.29.0.3';
+// lego asks for a certificate covering a fixed address and Pebble connects back
+// to it, so both need known addresses - but hardcoding the pool they come from
+// fails on any machine already using it. Docker picks the pool; the addresses
+// are taken from whatever it picked.
 
 describe('Let\'s Encrypt certificate against a local ACME server', function main() {
   this.timeout(5 * 60 * 1000);
@@ -40,6 +39,8 @@ describe('Let\'s Encrypt certificate against a local ACME server', function main
   const networkName = `dashmate-acme-test-${crypto.randomBytes(4).toString('hex')}`;
 
   let network;
+  let pebbleIp;
+  let legoIp;
   let pebbleContainer;
   let pebbleDir;
   let homeDir;
@@ -98,10 +99,16 @@ describe('Let\'s Encrypt certificate against a local ACME server', function main
     pebbleConfig.pebble.httpPort = 80;
     fs.writeFileSync(pebbleConfigPath, JSON.stringify(pebbleConfig), 'utf8');
 
-    network = await docker.createNetwork({
-      Name: networkName,
-      IPAM: { Config: [{ Subnet: NETWORK_SUBNET }] },
-    });
+    network = await docker.createNetwork({ Name: networkName });
+
+    const { IPAM } = await network.inspect();
+    const [assignedSubnet] = IPAM.Config.map(({ Subnet }) => Subnet);
+    const [poolPrefix] = assignedSubnet.split('/');
+    const octets = poolPrefix.split('.');
+
+    // .1 is the gateway Docker assigns itself.
+    pebbleIp = [...octets.slice(0, 3), '2'].join('.');
+    legoIp = [...octets.slice(0, 3), '3'].join('.');
 
     pebbleContainer = await docker.createContainer({
       Image: PEBBLE_IMAGE,
@@ -116,7 +123,7 @@ describe('Let\'s Encrypt certificate against a local ACME server', function main
       NetworkingConfig: {
         EndpointsConfig: {
           [networkName]: {
-            IPAMConfig: { IPv4Address: PEBBLE_IP },
+            IPAMConfig: { IPv4Address: pebbleIp },
             Aliases: [PEBBLE_HOSTNAME],
           },
         },
@@ -142,7 +149,7 @@ describe('Let\'s Encrypt certificate against a local ACME server', function main
         },
         NetworkingConfig: {
           EndpointsConfig: {
-            [networkName]: { IPAMConfig: { IPv4Address: LEGO_IP } },
+            [networkName]: { IPAMConfig: { IPv4Address: legoIp } },
           },
         },
       }),
@@ -151,7 +158,7 @@ describe('Let\'s Encrypt certificate against a local ACME server', function main
     config = getBaseConfigFactory(homeDir)();
     // lego asks for a certificate covering this address, and Pebble connects
     // back to it to validate - so it has to be the address lego answers on.
-    config.set('externalIp', LEGO_IP);
+    config.set('externalIp', legoIp);
     config.set('platform.gateway.ssl.providerConfigs.letsencrypt.email', 'test@dash.org');
     config.set(
       'platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl',
@@ -206,7 +213,7 @@ describe('Let\'s Encrypt certificate against a local ACME server', function main
     // The certificate has to cover the address the node is reached on. Dashmate
     // passes --disable-cn, so the IP is only ever in the SAN.
     const certificate = new crypto.X509Certificate(fs.readFileSync(certificatePath));
-    expect(certificate.subjectAltName).to.equal(`IP Address:${LEGO_IP}`);
+    expect(certificate.subjectAltName).to.equal(`IP Address:${legoIp}`);
 
     // A private key readable by anyone on the host is the regression this
     // guards - it is not visible in any command output.
