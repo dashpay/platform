@@ -986,35 +986,40 @@ fn external_account_needs_rebuild(contact: &EstablishedContact, has_external: bo
 /// AUTHENTICATION/TRANSFER keys is a fact about immutable history, handled by
 /// the wider receive-side policy
 /// ([`dash_sdk::platform::dashpay::recipient_key_purpose_is_acceptable_on_receive`]).
-/// It must not relax what we mint: this selector stays on the
-/// [`dash_sdk::platform::dashpay::recipient_key_purpose_is_valid`] membership
-/// policy, and only the preference ORDER below (DECRYPTION first, ENCRYPTION
-/// second) is local to the selector.
+/// It must not relax what we mint: this selector calls
+/// [`dash_sdk::platform::dashpay::recipient_key_purpose_is_valid`] for
+/// membership, so the cohort cannot drift from the SDK's request-creation
+/// gate. Only the preference ORDER below (DECRYPTION first, ENCRYPTION second)
+/// is local to the selector.
 fn select_recipient_key_index(recipient_identity: &Identity) -> Result<u32, PlatformWalletError> {
+    // Membership comes from the shared mint predicate, never from a purpose
+    // list repeated here — a local copy is exactly how the SDK's
+    // request-creation gate and this selector would drift apart on the next
+    // policy change.
+    //
     // Skip disabled (revoked) keys: encrypting the DIP-15 compact xpub to a
     // key whose private half may be compromised would hand the contact's
     // payment xpub to whoever holds the revoked key. `disabled_at().is_none()`
     // mirrors the validator's disabled-key gate.
-    // Prefer a DECRYPTION key.
-    if let Some((id, _)) = recipient_identity.public_keys().iter().find(|(_, k)| {
-        k.purpose() == Purpose::DECRYPTION
-            && k.key_type() == KeyType::ECDSA_SECP256K1
-            && k.disabled_at().is_none()
-    }) {
-        return Ok(*id);
-    }
-    // Fall back to an ENCRYPTION key (mobile cohort).
-    if let Some((id, _)) = recipient_identity.public_keys().iter().find(|(_, k)| {
-        k.purpose() == Purpose::ENCRYPTION
-            && k.key_type() == KeyType::ECDSA_SECP256K1
-            && k.disabled_at().is_none()
-    }) {
-        return Ok(*id);
-    }
-    Err(PlatformWalletError::InvalidIdentityData(
-        "Recipient identity has no enabled ECDSA_SECP256K1 DECRYPTION or ENCRYPTION key"
-            .to_string(),
-    ))
+    let mut eligible: Vec<(&u32, &dpp::identity::IdentityPublicKey)> = recipient_identity
+        .public_keys()
+        .iter()
+        .filter(|(_, k)| {
+            dash_sdk::platform::dashpay::recipient_key_purpose_is_valid(k.purpose())
+                && k.key_type() == KeyType::ECDSA_SECP256K1
+                && k.disabled_at().is_none()
+        })
+        .collect();
+    // The only policy local to this selector: DECRYPTION before ENCRYPTION,
+    // then lowest key id (which `public_keys()`'s BTreeMap order already
+    // gives, and the stable sort preserves).
+    eligible.sort_by_key(|(_, k)| k.purpose() != Purpose::DECRYPTION);
+    eligible.first().map(|(id, _)| **id).ok_or_else(|| {
+        PlatformWalletError::InvalidIdentityData(
+            "Recipient identity has no enabled ECDSA_SECP256K1 DECRYPTION or ENCRYPTION key"
+                .to_string(),
+        )
+    })
 }
 
 /// Select our OWN ECDH root key: the first **enabled** `ECDSA_SECP256K1`
