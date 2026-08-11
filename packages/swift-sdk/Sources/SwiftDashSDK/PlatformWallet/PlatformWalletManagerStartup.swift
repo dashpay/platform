@@ -97,8 +97,11 @@ extension PlatformWalletManager {
     ///
     /// - Throws: only for a malformed request — an unconfigured manager, a
     ///   malformed wallet id, an unknown wallet, or a `budget` outside the
-    ///   supported range. An unreachable Platform, a failed sync pass and an
-    ///   unfinished drain are all reported through the returned status.
+    ///   supported range — or when the stored seed does not bind to this
+    ///   wallet, which is a malformed pairing of the two and the one condition
+    ///   under which none of this may run at all. An unreachable Platform, a
+    ///   failed sync pass and an unfinished drain are all reported through the
+    ///   returned status instead, because Core sync must start regardless.
     ///
     /// # Key material
     ///
@@ -122,6 +125,27 @@ extension PlatformWalletManager {
                 "walletId must be 32 bytes, got \(walletId.count)"
             )
         }
+
+        // Nothing below may run on a seed that does not own this wallet.
+        // Everything this call does with key material is unauthenticated —
+        // the resolver derives whatever the Keychain holds, and
+        // `register_contact_account` keys its existence check on the contact
+        // pair rather than the xpub, so a wrong receiving xpub is written
+        // once and no later correct-seed pass revisits it. The wallet then
+        // watches addresses nobody pays to, with no symptom but payments that
+        // never arrive.
+        //
+        // Enforced here rather than left to the host: a client that has to
+        // remember to gate this call is a client that will eventually forget,
+        // and the published `seedMismatch` flag cannot be that gate anyway —
+        // hosts commonly kick the unlock off asynchronously, so the flag
+        // races this call. The verify is marker-cached, so the common path
+        // costs a string comparison.
+        //
+        // Against `storage`, not a default one: the resolver below reads that
+        // store, and verifying a different Keychain than the work will use
+        // would approve one mnemonic while another derives the accounts.
+        try verifySeedBinding(wallet, storage: storage)
 
         let handle = self.handle
         // Only a definitive "no such item" means watch-only. A lookup that
