@@ -111,15 +111,16 @@ These are shipped ABI. Do not renumber.
 | 98 | `NotFound` | Sentinel — `Option` returned as an error |
 | 99 | `ErrorUnknown` | Sentinel — unmapped/flattened errors |
 
-**Next allocatable integer: 42** — 27–41 are all claimed (27, 31, 34–41
-merged; 29 proposed by active #4361; 28, 30, 32 and 33 reserved). **28, 30,
+**Next allocatable integer: 43** — 27–42 are all claimed (27, 31, 34–41
+merged; 29 proposed by active #4361; 42 proposed by active #4356; 28, 30,
+32 and 33 reserved). **28, 30,
 32 and 33 are RESERVED, not free**: 28 and 30 were vacated when the
 reservation trio moved to 34–36; 32 and 33 lapsed when their in-repo owners
 (#4310, #4311) closed without merging. All four are deliberately left
 unclaimed rather than back-filled, so no number is reused within a single
 review cycle. Rule 1's "do not reuse a gap unless this file marks it free"
 applies — this file does **not** mark any of them free, so the frontier is
-the only allocation source and a new code takes 42.
+the only allocation source and a new code takes 43.
 
 ## Proposed allocations (open PRs)
 
@@ -140,10 +141,11 @@ Fork-era numbers remain in the collision history, which is immutable record.
 | ---: | --- | --- | --- |
 | 28 | *(reserved — vacated)* | — | Vacated by #4185/#4256 on 2026-08-02; RESERVED, not reissuable — the next-free frontier is the only allocation source |
 | 29 | `ErrorAssetLockInsufficientFunds` | #4361 | In review — **keeps 29**. Lineage: fork-era #4184 → #4316 (closed unmerged) → carried live by #4361's typed asset-lock shortfall (`ErrorAssetLockInsufficientFunds = 29` at its head) |
+| 42 | `ErrorAssetLockInputConflict` | #4356 | In review — claimed from the frontier with complete Swift/Kotlin mappings at head `7d9be71a08` |
 | 30 | *(reserved — vacated)* | — | Vacated by #4185/#4256 on 2026-08-02; RESERVED, not reissuable — the next-free frontier is the only allocation source |
 | 32 | *(reserved — lapsed)* | — | Owner #4310 (successor of fork-era #4247) closed without merging; RESERVED, not reissuable |
 | 33 | *(reserved — lapsed)* | — | Owner #4311 (successor of fork-era #4256) closed without merging; RESERVED, not reissuable |
-| 37→(frontier) | `ErrorShieldedInviteAlreadyClaimed` | #4313 | On hold — its claim of 37 (a 32 → 37 move; successor of fork-era #4204) was **taken by merged #4348** (`ErrorDocumentNotForSale = 37`, ABI since 2026-08-09). It holds **no number** while on hold: on revival it renumbers its Rust discriminant and Swift/Kotlin mappings to whatever this file's frontier is at that moment, recording the claim here first. 42 stays the public frontier until then |
+| 37→(frontier) | `ErrorShieldedInviteAlreadyClaimed` | #4313 | On hold — its claim of 37 (a 32 → 37 move; successor of fork-era #4204) was **taken by merged #4348** (`ErrorDocumentNotForSale = 37`, ABI since 2026-08-09). It holds **no number** while on hold: on revival it renumbers its Rust discriminant and Swift/Kotlin mappings to whatever this file's frontier is at that moment, recording the claim here first. The frontier (see the frontier note above) stays public until then |
 
 **Code 31 left this table on 2026-08-04.** `ErrorSigningKeyUnavailable` sat here
 as #4183's proposal until #4183 merged (`189a3abb1c`); it is now in the merged
@@ -234,7 +236,7 @@ PR `#3968` is the serious one: rule 3 forbids renumbering a code that has
 shipped, and `ErrorTransactionBroadcastRejected = 26` is merged ABI. Moving it
 to 28 would silently reinterpret every 26 an already-compiled host returns.
 PR #3968 must keep 26 where it is and take fresh integers **from the
-frontier (42+ as of 2026-08-11 — check the frontier note above)** for its two
+frontier (43+ as of 2026-08-11 — check the frontier note above)** for its two
 persister codes. Its 27 is now doubly wrong: 27 is merged
 ABI (`ErrorShutdownIncomplete`), so rule 3 protects it too. Note that 28 is
 reserved, not free — it is not available to #3968 either.
@@ -392,7 +394,7 @@ The detail behind those rows:
   simply the merged base's, and there is no second claim to reconcile.
 
 PR `#3968` needs a rebase onto current `v4.2-dev` **and** fresh integers from
-the frontier (**42+**, per the frontier note above). It must leave 26 alone; 27 is no longer available to it
+the frontier (**43+**, per the frontier note above). It must leave 26 alone; 27 is no longer available to it
 either (merged ABI now), and neither are the reserved 28 and 30.
 
 ### 26 — RESOLVED: #4196 restacked onto #4185 and is on 34 / 35 / 36
@@ -561,7 +563,7 @@ The 2026-08-04 pass re-read the discriminants directly, in-tree and at the
 `PlatformWalletResult.swift`, and separately re-checked each PR's file list. It
 confirmed — a **2026-08-04 verification snapshot, retained as record** (the
 merged table and frontier note above are the current state; 34–41 have merged
-since and the frontier is 42):
+since and the frontier has moved on — see the frontier note):
 
 * in-tree at `97904ed2fc`, `error.rs` runs 0–27 contiguously and then **31**,
   with 28, 29, 30 and everything from 32 up absent. So 31 is the only number
