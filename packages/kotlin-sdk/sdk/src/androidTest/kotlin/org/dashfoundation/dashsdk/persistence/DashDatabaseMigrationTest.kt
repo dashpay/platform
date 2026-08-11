@@ -394,13 +394,59 @@ class DashDatabaseMigrationTest {
         db.close()
     }
 
+    /**
+     * v10 → v11 drops the dead `identities.isLocal` column via the
+     * rebuild pattern. Every other column — including the `walletId`
+     * ownership FK — must survive on the migrated rows, and the
+     * validated v11 schema no longer carries the column.
+     */
+    @Test
+    fun migrate10To11DropsIsLocalAndKeepsRows() {
+        helper.createDatabase(dbName, 10).apply {
+            execSQL(
+                "INSERT INTO wallets (walletId, walletGroupId, networkRaw, name, birthHeight, " +
+                    "syncedHeight, lastSynced, isImported, createdAt, lastUpdated) " +
+                    "VALUES (x'01', x'02', 1, 'w', 0, 0, 0, 0, 0, 0)",
+            )
+            // One wallet-owned row (isLocal mistakenly 0 — the field bug
+            // this migration retires) and one observed row.
+            execSQL(
+                "INSERT INTO identities (identityId, balance, revision, isLocal, alias, " +
+                    "identityType, createdAt, lastUpdated, networkRaw, identityIndex, walletId) " +
+                    "VALUES (x'0A', 777, 3, 0, 'mine', 'User', 0, 0, 1, 0, x'01')",
+            )
+            execSQL(
+                "INSERT INTO identities (identityId, balance, revision, isLocal, identityType, " +
+                    "createdAt, lastUpdated, networkRaw, identityIndex) " +
+                    "VALUES (x'0B', 5, 1, 0, 'User', 0, 0, 1, 0)",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 11, true, DashDatabase.MIGRATION_10_11)
+
+        db.query(
+            "SELECT balance, alias, walletId FROM identities WHERE identityId = x'0A'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(777L, cursor.getLong(0))
+            assertEquals("mine", cursor.getString(1))
+            assertTrue(byteArrayOf(0x01).contentEquals(cursor.getBlob(2)))
+        }
+        db.query("SELECT COUNT(*) FROM identities").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(2, cursor.getInt(0))
+        }
+        db.close()
+    }
+
     /** The requested contiguous path from the pre-u64 v4 schema to latest. */
     @Test
     fun migrate4ToLatest() {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            10,
+            11,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
@@ -408,16 +454,17 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_7_8,
             DashDatabase.MIGRATION_8_9,
             DashDatabase.MIGRATION_9_10,
+            DashDatabase.MIGRATION_10_11,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v10 schema. */
+    /** The full chain from v1 must also land on a valid v11 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            10,
+            11,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -428,6 +475,7 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_7_8,
             DashDatabase.MIGRATION_8_9,
             DashDatabase.MIGRATION_9_10,
+            DashDatabase.MIGRATION_10_11,
         ).close()
     }
 }

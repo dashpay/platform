@@ -119,9 +119,15 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * document id, ownership/sale state, counterparty, document timestamps and
  * marketplace reconciliation watermark. Defaults keep every legacy label an
  * owned, unlisted row until the first native marketplace sync refreshes it.
+ *
+ * Version 11 (drop `identities.isLocal`): the flag was a dead constant —
+ * the persister only ever wrote `0`, so a wallet's own identity carried
+ * "not local" and consumers gating on it misclassified it (same bug as the
+ * Swift port, dashpay/platform#4375). Ownership travels on the `walletId`
+ * FK; the column is removed rather than healed.
  */
 @Database(
-    version = 10,
+    version = 11,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -557,6 +563,67 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v10 → v11: drop the dead `isLocal` column from `identities`.
+         * Nothing ever wrote `true` through the persister (the Swift port
+         * had the same bug — a wallet's own identity persisted as
+         * `isLocal = 0`), and ownership travels on the `walletId` FK.
+         * SQLite `DROP COLUMN` needs 3.35+, which older Android bundles
+         * lack, so use the standard rebuild: create the v11-shaped table,
+         * copy every surviving column, swap, and recreate the indexes
+         * (same pattern as the `platform_addresses` / `token_balances`
+         * rebuilds above).
+         */
+        val MIGRATION_10_11: Migration = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `_new_identities` (" +
+                        "`identityId` BLOB NOT NULL, " +
+                        "`balance` INTEGER NOT NULL, " +
+                        "`revision` INTEGER NOT NULL, " +
+                        "`alias` TEXT, " +
+                        "`dpnsName` TEXT, " +
+                        "`mainDpnsName` TEXT, " +
+                        "`identityType` TEXT NOT NULL, " +
+                        "`votingPrivateKeyIdentifier` TEXT, " +
+                        "`ownerPrivateKeyIdentifier` TEXT, " +
+                        "`payoutPrivateKeyIdentifier` TEXT, " +
+                        "`createdAt` INTEGER NOT NULL, " +
+                        "`lastUpdated` INTEGER NOT NULL, " +
+                        "`lastSyncedAt` INTEGER, " +
+                        "`networkRaw` INTEGER NOT NULL, " +
+                        "`walletId` BLOB, " +
+                        "`identityIndex` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`identityId`), " +
+                        "FOREIGN KEY(`walletId`) REFERENCES `wallets`(`walletId`) " +
+                        "ON UPDATE NO ACTION ON DELETE SET NULL )",
+                )
+                db.execSQL(
+                    "INSERT INTO `_new_identities` (" +
+                        "`identityId`, `balance`, `revision`, `alias`, `dpnsName`, " +
+                        "`mainDpnsName`, `identityType`, `votingPrivateKeyIdentifier`, " +
+                        "`ownerPrivateKeyIdentifier`, `payoutPrivateKeyIdentifier`, " +
+                        "`createdAt`, `lastUpdated`, `lastSyncedAt`, `networkRaw`, " +
+                        "`walletId`, `identityIndex`) " +
+                        "SELECT `identityId`, `balance`, `revision`, `alias`, `dpnsName`, " +
+                        "`mainDpnsName`, `identityType`, `votingPrivateKeyIdentifier`, " +
+                        "`ownerPrivateKeyIdentifier`, `payoutPrivateKeyIdentifier`, " +
+                        "`createdAt`, `lastUpdated`, `lastSyncedAt`, `networkRaw`, " +
+                        "`walletId`, `identityIndex` FROM `identities`",
+                )
+                db.execSQL("DROP TABLE `identities`")
+                db.execSQL("ALTER TABLE `_new_identities` RENAME TO `identities`")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_identities_networkRaw` " +
+                        "ON `identities` (`networkRaw`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_identities_walletId` " +
+                        "ON `identities` (`walletId`)",
+                )
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -574,6 +641,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_7_8,
                     MIGRATION_8_9,
                     MIGRATION_9_10,
+                    MIGRATION_10_11,
                 )
                 .build()
 

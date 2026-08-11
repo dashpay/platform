@@ -43,7 +43,6 @@ data class IdentityEntity(
     /** Credits balance; Swift stores `Int64` (bit-pattern of the u64). */
     val balance: Long = 0,
     val revision: Long = 0,
-    val isLocal: Boolean = true,
     val alias: String? = null,
     /** "Show this one in the cell" hint; full labels live in `dpns_names`. */
     val dpnsName: String? = null,

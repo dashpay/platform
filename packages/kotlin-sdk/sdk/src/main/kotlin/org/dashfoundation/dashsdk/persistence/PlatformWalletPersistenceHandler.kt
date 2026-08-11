@@ -1018,7 +1018,6 @@ class PlatformWalletPersistenceHandler(
             val row = (existing ?: IdentityEntity(
                 identityId = identityId,
                 networkRaw = networkRaw,
-                isLocal = false,
             )).copy(
                 balance = balance,
                 revision = revision,

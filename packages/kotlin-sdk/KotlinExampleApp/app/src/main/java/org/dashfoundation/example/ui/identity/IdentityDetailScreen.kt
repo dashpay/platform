@@ -65,7 +65,7 @@ internal sealed interface ContestedNamesOwnership {
     data object External : ContestedNamesOwnership
 }
 
-/** Durable ownership comes from the wallet FK; `isLocal` is presentation metadata only. */
+/** Durable ownership comes from the wallet FK (the stored `isLocal` hint is gone). */
 internal fun contestedNamesOwnership(identity: IdentityEntity): ContestedNamesOwnership =
     identity.walletId?.let { ContestedNamesOwnership.WalletOwned(it.copyOf()) }
         ?: ContestedNamesOwnership.External
@@ -124,7 +124,7 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
     // transfer credits the *recipient* identity, but nothing on this device
     // observes that until we re-fetch, so a loaded/received-into identity
     // otherwise shows a stale balance (e.g. ID-14 A→B). `updateBalance` is a
-    // targeted UPDATE, so isLocal / alias / keys are preserved.
+    // targeted UPDATE, so alias / keys / wallet linkage are preserved.
     val scope = rememberCoroutineScope()
     var isRefreshing by remember { mutableStateOf(false) }
     var refreshError by remember { mutableStateOf<String?>(null) }
@@ -240,7 +240,7 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
                     fontFamily = FontFamily.Monospace,
                     modifier = Modifier.padding(top = 4.dp).testTag("identityDetail.idHex"),
                 )
-                if (identity?.isLocal == false) {
+                if (identity?.walletId == null) {
                     Text(
                         "Loaded (read-only)",
                         style = MaterialTheme.typography.bodySmall,

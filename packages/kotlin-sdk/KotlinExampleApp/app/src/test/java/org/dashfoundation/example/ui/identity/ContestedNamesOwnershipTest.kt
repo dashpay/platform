@@ -7,9 +7,9 @@ import org.junit.Test
 class ContestedNamesOwnershipTest {
 
     @Test
-    fun `persisted wallet association permits sync even when isLocal is false`() {
+    fun `persisted wallet association permits sync`() {
         val walletId = ByteArray(32) { 7 }
-        val identity = identity(isLocal = false, walletId = walletId)
+        val identity = identity(walletId = walletId)
 
         val ownership = contestedNamesOwnership(identity)
 
@@ -18,20 +18,15 @@ class ContestedNamesOwnershipTest {
     }
 
     @Test
-    fun `identity without wallet association remains external regardless of isLocal hint`() {
+    fun `identity without wallet association remains external`() {
         assertTrue(
-            contestedNamesOwnership(identity(isLocal = true, walletId = null)) ===
-                ContestedNamesOwnership.External,
-        )
-        assertTrue(
-            contestedNamesOwnership(identity(isLocal = false, walletId = null)) ===
+            contestedNamesOwnership(identity(walletId = null)) ===
                 ContestedNamesOwnership.External,
         )
     }
 
-    private fun identity(isLocal: Boolean, walletId: ByteArray?) = IdentityEntity(
+    private fun identity(walletId: ByteArray?) = IdentityEntity(
         identityId = ByteArray(32) { 9 },
-        isLocal = isLocal,
         networkRaw = 1,
         walletId = walletId,
     )

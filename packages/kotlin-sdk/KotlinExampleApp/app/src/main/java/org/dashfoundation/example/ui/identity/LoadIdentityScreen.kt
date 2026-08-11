@@ -50,8 +50,8 @@ import org.dashfoundation.example.util.Base58
 /**
  * Load an existing identity by id — port of `LoadIdentityView.swift`. Paste
  * or scan an identity id, fetch it via `sdk.identities.fetch`, and persist a
- * Room [IdentityEntity] with `isLocal = false` (matching the Swift
- * `PersistentIdentity(isLocal: false)` on load). Key-material import (voting /
+ * Room [IdentityEntity] with no `walletId` (an observed read-only row — this
+ * by-id load has no derivation context). Key-material import (voting /
  * owner / payout / user private keys) rides the key-management milestone.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -160,7 +160,6 @@ fun LoadIdentityScreen(navController: NavHostController) {
                             IdentityEntity(
                                 identityId = idBytes,
                                 balance = balance,
-                                isLocal = false,
                                 alias = alias.trim().ifBlank { null },
                                 networkRaw = network.ffiValue,
                             ),

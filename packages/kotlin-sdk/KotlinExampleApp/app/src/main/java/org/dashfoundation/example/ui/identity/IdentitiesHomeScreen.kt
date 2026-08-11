@@ -228,7 +228,7 @@ fun IdentitiesHomeScreen(navController: NavHostController) {
                         title = identity.mainDpnsName
                             ?: identity.alias
                             ?: identity.identityId.toHexString().take(16),
-                        subtitle = if (identity.isLocal) {
+                        subtitle = if (identity.walletId != null) {
                             "${identity.balance} credits"
                         } else {
                             "${identity.balance} credits · loaded"
