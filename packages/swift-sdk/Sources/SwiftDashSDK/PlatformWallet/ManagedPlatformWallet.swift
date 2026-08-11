@@ -2029,6 +2029,22 @@ extension ManagedPlatformWallet {
 
     // MARK: - DashPay invitations (DIP-13)
 
+    /// Upper bound, in duffs, on the amount an invitation voucher may lock —
+    /// the Rust-enforced cap `createInvitation` rejects above. Read it rather
+    /// than restating it: Rust owns the value, and a client-side copy diverges
+    /// the moment the constant moves.
+    public static var maxInvitationDuffs: UInt64 {
+        platform_wallet_invitation_max_duffs()
+    }
+
+    /// Lower bound, in duffs, on the amount an invitation voucher may lock —
+    /// the Rust-enforced floor `createInvitation` rejects below (a smaller
+    /// voucher can fund neither a claim nor a reclaim). Read it rather than
+    /// restating it, for the same reason as the cap.
+    public static var minInvitationDuffs: UInt64 {
+        platform_wallet_invitation_min_duffs()
+    }
+
     /// Read-only preview of a `dashpay://invite` link, decoded via
     /// `parseInvitation(uri:)` without claiming it. Drives the claim sheet's
     /// pre-claim summary + the contact-bootstrap decision.
