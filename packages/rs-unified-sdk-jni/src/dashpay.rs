@@ -903,6 +903,30 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_sendCon
 // interpolated into a thrown exception message, log line, or debug output —
 // error text names the argument, never its value.
 
+/// Rust-enforced cap on the amount an invitation voucher may lock, in
+/// duffs (bridges `platform_wallet_invitation_max_duffs`). Clients read
+/// the bound through this getter to pre-validate and label the amount
+/// field — a client-side copy diverges the moment the constant moves.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_invitationMaxDuffs(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jlong {
+    platform_wallet_ffi::platform_wallet_invitation_max_duffs() as jlong
+}
+
+/// Rust-enforced floor on the amount an invitation voucher may lock, in
+/// duffs (bridges `platform_wallet_invitation_min_duffs`) — a smaller
+/// voucher can fund neither a claim nor a reclaim. Read through this
+/// getter for the same reason as the cap: no client-side mirror to drift.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_invitationMinDuffs(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jlong {
+    platform_wallet_ffi::platform_wallet_invitation_min_duffs() as jlong
+}
+
 /// Decode a `dashpay://invite` link into a read-only preview (bridges
 /// `platform_wallet_parse_invitation` — no wallet handle, no network, no
 /// side effects). Returns a compact JSON object:
