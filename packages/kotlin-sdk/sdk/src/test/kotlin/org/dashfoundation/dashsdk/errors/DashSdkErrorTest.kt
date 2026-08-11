@@ -197,6 +197,25 @@ class DashSdkErrorTest {
     }
 
     @Test
+    fun platformShieldCapacityCode41MapsTyped() {
+        val message =
+            "Platform shield capacity exceeded: available 3623849220, required 3623849221"
+        val mapped = DashSdkError.fromNative(
+            DashSDKException(
+                DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 41,
+                message,
+            ),
+        )
+
+        assertTrue(mapped is DashSdkError.PlatformWallet.PlatformShieldCapacityExceeded)
+        assertEquals(message, mapped.message)
+        assertFalse(
+            "unchanged amount must not be retried without refreshing preflight",
+            mapped.isRetryable,
+        )
+    }
+
+    @Test
     fun signingKeyUnavailableCode31MapsTyped() {
         // The STRUCTURED discriminator (dashpay/platform#4060 finding 7):
         // PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable (31) maps

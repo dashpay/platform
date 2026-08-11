@@ -609,7 +609,7 @@
           "host": "kotlin",
           "kind": "unit",
           "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/dashpay/InvitationReclaimLogicTest.kt",
-          "id": "consensusConsumedWithMarkerIsExplicitlyAmbiguousNeverReclaimed",
+          "id": "consensusConsumedWithMarkerIsUnknown",
           "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*InvitationReclaimLogicTest*'",
           "covers_restart": false
         },

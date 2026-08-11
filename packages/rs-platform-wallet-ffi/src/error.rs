@@ -110,9 +110,9 @@ pub enum PlatformWalletFFIResultCode {
     ErrorInvalidIdentifier = 10,
     ErrorMemoryAllocation = 11,
     ErrorUtf8Conversion = 12,
-    /// Reserved slot for the arithmetic-overflow mapping arriving via #3549 —
-    /// no in-tree producer today. Holding the slot here keeps language-mirror
-    /// enums (Swift, Kotlin) numerically aligned with the eventual producer.
+    /// Maps `PlatformWalletError::InputSumOverflow`: summing candidate input
+    /// balances overflowed `u64`. Nothing was built or broadcast; retrying the
+    /// same inconsistent wallet state cannot succeed.
     ErrorArithmeticOverflow = 13,
     /// Auto-select had no candidate inputs. Covers all three "can't-select-inputs"
     /// wallet variants: `NoSpendableInputs` (account has nothing spendable),
@@ -197,7 +197,8 @@ pub enum PlatformWalletFFIResultCode {
     ErrorCoreInsufficientFunds = 22,
     /// Existing-lock recovery referenced an outpoint not owned/tracked by the wallet.
     ErrorAssetLockNotTracked = 23,
-    /// Existing-lock recovery referenced a one-shot output already consumed.
+    /// Asset-lock funding cannot reuse this one-shot output; Platform
+    /// completion for the requested operation is unconfirmed.
     ErrorAssetLockAlreadyConsumed = 24,
     /// Existing-lock recovery attempted to use a lock for the wrong funding
     /// family or bound identity index.
@@ -376,6 +377,15 @@ pub enum PlatformWalletFFIResultCode {
     /// means the vote's end time was unavailable. Swift mirror:
     /// `PlatformWalletError.contestedNameNotTradable`.
     ErrorContestedNameNotTradable = 40,
+
+    /// Maps `PlatformWalletError::PlatformShieldCapacityExceeded`. A shield's
+    /// selected Platform-address set cannot cover the requested claim plus the
+    /// fee reserve retained on input 0. The transition was not built or
+    /// broadcast; refresh preflight capacity and ask the user to confirm the
+    /// new amount. The public C spelling is retained for numeric ABI and
+    /// language-surface compatibility; it is a Platform Payment-account
+    /// shortfall, not a shielded-note shortfall.
+    ErrorShieldedInsufficientBalance = 41,
 
     /// The named thing does not exist.
     ///
@@ -563,6 +573,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             | PlatformWalletError::OnlyDustInputs { .. } => {
                 PlatformWalletFFIResultCode::ErrorNoSelectableInputs
             }
+            PlatformWalletError::InputSumOverflow => {
+                PlatformWalletFFIResultCode::ErrorArithmeticOverflow
+            }
             PlatformWalletError::WalletAlreadyExists(..) => {
                 PlatformWalletFFIResultCode::ErrorWalletAlreadyExists
             }
@@ -587,6 +600,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::ShieldedNoRecordedAnchor(..) => {
                 PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor
+            }
+            PlatformWalletError::PlatformShieldCapacityExceeded { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance
             }
             // The core-transaction sibling of the shielded pair above: the
             // do-not-retry signal must survive the boundary as a typed code
@@ -1237,6 +1253,37 @@ mod tests {
         assert_eq!(msg, rendered, "Display payload must survive verbatim");
     }
 
+    #[test]
+    fn platform_shield_capacity_maps_to_dedicated_code_without_claiming_note_shortfalls() {
+        let error = PlatformWalletError::PlatformShieldCapacityExceeded {
+            available: 3_623_849_220,
+            required: 3_623_849_221,
+        };
+        let rendered = error.to_string();
+        let result: PlatformWalletFFIResult = error.into();
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance
+        );
+        let message = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(message, rendered);
+
+        let note_shortfall: PlatformWalletFFIResult =
+            PlatformWalletError::ShieldedInsufficientBalance {
+                available: 100,
+                required: 200,
+            }
+            .into();
+        assert_eq!(
+            note_shortfall.code,
+            PlatformWalletFFIResultCode::ErrorUnknown,
+            "shielded-note selection must not claim the Platform funding code"
+        );
+    }
+
     /// The ambiguous core-broadcast outcome keeps its typed code across the
     /// boundary — flattening it to `ErrorUnknown` would erase the
     /// do-not-retry signal the variant exists to carry.
@@ -1607,6 +1654,14 @@ mod tests {
         assert_eq!(
             PlatformWalletFFIResultCode::ErrorContestedNameNotTradable as i32,
             40
+        );
+    }
+
+    #[test]
+    fn shielded_insufficient_balance_code_is_pinned_at_41() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance as i32,
+            41
         );
     }
 

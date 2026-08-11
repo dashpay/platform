@@ -30,21 +30,21 @@ class InvitationReclaimLogicTest {
     // ── Outcome matrix ────────────────────────────────────────────────
 
     @Test
-    fun typedTombstoneRecoversReclaimedRegardlessOfMarker() {
+    fun typedAlreadyConsumedIsUnknownRegardlessOfMarker() {
         assertEquals(
-            ReclaimOutcome.RECLAIMED,
+            ReclaimOutcome.CONSUMPTION_UNKNOWN,
             InvitationReclaimLogic.classifyReclaimFailure(typedTombstone(), false),
         )
         assertEquals(
-            ReclaimOutcome.RECLAIMED,
+            ReclaimOutcome.CONSUMPTION_UNKNOWN,
             InvitationReclaimLogic.classifyReclaimFailure(typedTombstone(), true),
         )
     }
 
     @Test
-    fun consensusConsumedWithoutMarkerIsAForeignClaim() {
+    fun consensusConsumedWithoutMarkerIsUnknown() {
         assertEquals(
-            ReclaimOutcome.CLAIMED,
+            ReclaimOutcome.CONSUMPTION_UNKNOWN,
             InvitationReclaimLogic.classifyReclaimFailure(
                 RuntimeException(consumedMessage), hadPriorReclaimInFlight = false,
             ),
@@ -52,9 +52,9 @@ class InvitationReclaimLogicTest {
     }
 
     @Test
-    fun consensusConsumedWithMarkerIsExplicitlyAmbiguousNeverReclaimed() {
+    fun consensusConsumedWithMarkerIsUnknown() {
         assertEquals(
-            ReclaimOutcome.CONSUMED_AMBIGUOUS,
+            ReclaimOutcome.CONSUMPTION_UNKNOWN,
             InvitationReclaimLogic.classifyReclaimFailure(
                 RuntimeException(consumedMessage), hadPriorReclaimInFlight = true,
             ),
@@ -123,8 +123,8 @@ class InvitationReclaimLogicTest {
     fun alreadyConsumedMatchesTheExactCanonicalPhraseOnly() {
         assertTrue(InvitationReclaimLogic.isAlreadyConsumed(consumedMessage))
         assertTrue(InvitationReclaimLogic.isAlreadyConsumed(consumedMessage.uppercase()))
-        // Broader wordings must NOT match — a false positive would wrongly
-        // flip the row to Claimed.
+        // Broader wordings must NOT match — a false positive would hide an
+        // unrelated failure behind consumption-unknown recovery guidance.
         assertFalse(InvitationReclaimLogic.isAlreadyConsumed("asset lock already consumed"))
         assertFalse(InvitationReclaimLogic.isAlreadyConsumed("output already used"))
         assertFalse(InvitationReclaimLogic.isAlreadyConsumed("completely unrelated"))

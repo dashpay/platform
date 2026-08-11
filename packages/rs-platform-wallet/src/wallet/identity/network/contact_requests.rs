@@ -910,6 +910,42 @@ fn retain_drained_by_snapshot(
     removed
 }
 
+/// Await `future`, giving up once `deadline` has passed. `None` deadline is
+/// the unbounded behaviour; a `None` return means the budget is spent.
+///
+/// **Why the drains bound themselves rather than being wrapped in a
+/// `tokio::time::timeout` by their caller.** Both drains commit per-entry side
+/// effects as they go (`register_contact_account`, `mark_contact_channel_broken`,
+/// the reciprocal send) while accumulating the dequeue list in a local `cleared`
+/// vec applied once at the end. Dropping the drain future mid-loop — which is
+/// exactly what an outer `timeout` does — discards that vec, so entries whose
+/// work really landed stay queued and the returned count reports zero for work
+/// that happened. The queue is at-least-once, so nothing is corrupted, but the
+/// count is a lie precisely when a caller has a budget to report against.
+///
+/// Threading the deadline inside keeps the loop the only thing that ever ends
+/// early: it stops **between** entries, and within an entry only the reads that
+/// precede its first commit are bounded. Every commit still runs to completion.
+async fn bounded<F: std::future::Future>(
+    deadline: Option<std::time::Instant>,
+    future: F,
+) -> Option<F::Output> {
+    let Some(deadline) = deadline else {
+        return Some(future.await);
+    };
+    let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+    if remaining.is_zero() {
+        return None;
+    }
+    tokio::time::timeout(remaining, future).await.ok()
+}
+
+/// Whether `deadline` has passed. Checked at the top of each drain iteration so
+/// a spent budget ends the loop between entries, never inside one.
+fn budget_spent(deadline: Option<std::time::Instant>) -> bool {
+    deadline.is_some_and(|d| std::time::Instant::now() >= d)
+}
+
 /// Whether a registered outbound `DashpayExternalAccount` for `contact`
 /// must be torn down + rebuilt because it was NOT built from the contact's
 /// current `incoming_request.account_reference`.
@@ -1852,6 +1888,21 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         &self,
         provider: &P,
     ) -> usize {
+        self.drain_pending_contact_crypto_until(provider, None)
+            .await
+    }
+
+    /// [`Self::drain_pending_contact_crypto`], stopping once `deadline` passes.
+    ///
+    /// The drain ends between entries, so the count it returns and the queue
+    /// removals it persists always describe work that actually completed —
+    /// see [`bounded`] for why this cannot be an outer timeout. Entries it
+    /// never reached stay queued for the next drain.
+    pub async fn drain_pending_contact_crypto_until<P: ContactCryptoProvider + Sync>(
+        &self,
+        provider: &P,
+        deadline: Option<std::time::Instant>,
+    ) -> usize {
         use crate::changeset::{PendingContactCryptoKey, PendingContactCryptoOp};
 
         // Snapshot every resident identity's queue into one flat owned Vec
@@ -1873,7 +1924,30 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         }
 
         let mut cleared: Vec<PendingContactCryptoKey> = Vec::new();
+        // How much of `cleared` is already dequeued + persisted, and the running
+        // total actually removed. Bookkeeping lands per entry, so at most one
+        // entry's worth can ever be in flight.
+        let mut flushed: usize = 0;
+        let mut drained_total: usize = 0;
         for entry in &entries {
+            // Land the previous entry's dequeue before starting any new work.
+            if cleared.len() > flushed {
+                drained_total += self
+                    .flush_drained_contact_crypto(&entries, &cleared[flushed..])
+                    .await;
+                flushed = cleared.len();
+            }
+            // Stop between entries, never inside one: an entry that has already
+            // committed its side effect must reach the `cleared.push` that
+            // records it.
+            if budget_spent(deadline) {
+                tracing::info!(
+                    processed = cleared.len(),
+                    total = entries.len(),
+                    "drain: budget spent; leaving the rest queued"
+                );
+                break;
+            }
             match &entry.op {
                 PendingContactCryptoOp::RegisterReceiving => {
                     // Build the friendship path in Rust; the provider derives
@@ -1893,7 +1967,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             continue;
                         }
                     };
-                    match provider.receiving_xpub(&path).await {
+                    // Bounded: the derive is the last step before this entry
+                    // commits anything, so abandoning it changes no state.
+                    let Some(xpub) = bounded(deadline, provider.receiving_xpub(&path)).await else {
+                        tracing::info!(
+                            owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                            "drain: budget spent deriving the receiving xpub; leaving queued"
+                        );
+                        continue;
+                    };
+                    match xpub {
                         Ok(xpub) => match self
                             .register_contact_account(
                                 &entry.owner_identity_id,
@@ -1957,9 +2040,20 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     };
 
                     // Fetch the contact identity (transient on failure → leave).
+                    // Bounded: a Platform round trip, and nothing in this entry
+                    // has committed yet.
                     let contact_identity = {
                         use dash_sdk::platform::Fetch;
-                        match Identity::fetch(&self.sdk, entry.contact_id).await {
+                        let fetched =
+                            bounded(deadline, Identity::fetch(&self.sdk, entry.contact_id)).await;
+                        let Some(fetched) = fetched else {
+                            tracing::info!(
+                                owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                                "drain: budget spent fetching the contact identity; leaving queued"
+                            );
+                            continue;
+                        };
+                        match fetched {
                             Ok(Some(id)) => id,
                             Ok(None) => {
                                 tracing::warn!(
@@ -2073,7 +2167,18 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
                     // ECDH via the Keychain-backed provider (scalar stays in the
                     // signer; we only get the shared secret).
-                    let shared = match provider.ecdh_shared_secret(&path, &peer).await {
+                    // Bounded: the last step before the external-account
+                    // registration commits.
+                    let Some(shared) =
+                        bounded(deadline, provider.ecdh_shared_secret(&path, &peer)).await
+                    else {
+                        tracing::info!(
+                            owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                            "drain: budget spent on ECDH; leaving queued"
+                        );
+                        continue;
+                    };
+                    let shared = match shared {
                         Ok(s) => s,
                         Err(e) => {
                             tracing::warn!(
@@ -2147,10 +2252,24 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     // the signer (the op carries no payload, so the latest
                     // published version always wins). The owner-ownership /
                     // confused-deputy guard lives in `drain_contact_info_decrypt`.
-                    match self
-                        .drain_contact_info_decrypt(&entry.owner_identity_id, provider)
-                        .await
-                    {
+                    // Bounded as a whole: its apply runs under a single write
+                    // lock with no await between persist and the in-memory
+                    // mutation, so abandoning it either leaves nothing applied
+                    // or leaves it fully applied and still queued — and a
+                    // re-run re-fetches the latest published version anyway.
+                    let decrypted = bounded(
+                        deadline,
+                        self.drain_contact_info_decrypt(&entry.owner_identity_id, provider),
+                    )
+                    .await;
+                    let Some(decrypted) = decrypted else {
+                        tracing::info!(
+                            owner = %entry.owner_identity_id,
+                            "drain: budget spent decrypting contactInfo; leaving queued"
+                        );
+                        continue;
+                    };
+                    match decrypted {
                         Ok(applied) => {
                             tracing::debug!(
                                 owner = %entry.owner_identity_id, applied,
@@ -2176,6 +2295,29 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             }
         }
 
+        // Land whatever the last entry completed.
+        drained_total += self
+            .flush_drained_contact_crypto(&entries, &cleared[flushed..])
+            .await;
+
+        drained_total
+    }
+
+    /// Apply the dequeue for entries a drain just completed: remove them from
+    /// their owners' in-memory queues and persist the removal. Returns how many
+    /// were actually removed.
+    ///
+    /// Called after **each** completed entry rather than once per drain. The
+    /// per-entry side effects (`register_contact_account`, the reciprocal send)
+    /// commit as the loop runs, so batching the bookkeeping to the end means a
+    /// drain that stops — its budget, or a caller that drops the future —
+    /// leaves work it really finished still queued and reported as zero. One
+    /// entry's work and one entry's dequeue now land together.
+    async fn flush_drained_contact_crypto(
+        &self,
+        entries: &[crate::changeset::PendingContactCrypto],
+        cleared: &[crate::changeset::PendingContactCryptoKey],
+    ) -> usize {
         if cleared.is_empty() {
             return 0;
         }
@@ -2196,7 +2338,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // entry still value-equal to the snapshot's — a mid-drain upsert
         // (changed payload) is left queued for the next drain rather than
         // clobbered by this stale snapshot.
-        let removed: Vec<PendingContactCryptoKey> = {
+        let removed: Vec<crate::changeset::PendingContactCryptoKey> = {
             let mut wm = self.wallet_manager.write().await;
             match wm.get_wallet_info_mut(&self.wallet_id) {
                 Some(info) => {
@@ -2258,6 +2400,24 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         S: Signer<IdentityPublicKey> + Send + Sync,
         P: ContactCryptoProvider + Sync,
     {
+        self.drain_auto_accepts_until(signer, provider, None).await
+    }
+
+    /// [`Self::drain_auto_accepts`], stopping once `deadline` passes.
+    ///
+    /// Ends between entries, so a reciprocal that was sent is always recorded
+    /// as accepted — see [`bounded`] for why an outer timeout would not hold
+    /// that. Entries it never reached stay queued.
+    pub async fn drain_auto_accepts_until<S, P>(
+        &self,
+        signer: &S,
+        provider: &P,
+        deadline: Option<std::time::Instant>,
+    ) -> usize
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+        P: ContactCryptoProvider + Sync,
+    {
         use crate::changeset::{PendingContactCryptoKey, PendingContactCryptoOp};
         use crate::wallet::identity::crypto::auto_accept::{
             auto_accept_derivation_path, auto_accept_proof_expiry,
@@ -2296,8 +2456,32 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // failure) are NOT pushed here so they stay retryable.
         let mut verify_failed: Vec<(Identifier, Identifier, Vec<u8>)> = Vec::new();
         let mut accepted: usize = 0;
+        // How much of each has already been applied — see the loop head.
+        let mut flushed: usize = 0;
+        let mut verify_flushed: usize = 0;
 
         for entry in &entries {
+            // Land the previous entry's dequeue + verify-failure marks before
+            // starting new work, so a stop can strand at most one entry's.
+            if cleared.len() > flushed || verify_failed.len() > verify_flushed {
+                self.flush_cleared_auto_accepts(
+                    &cleared[flushed..],
+                    &verify_failed[verify_flushed..],
+                )
+                .await;
+                flushed = cleared.len();
+                verify_flushed = verify_failed.len();
+            }
+            // Stop between entries: an accept whose reciprocal already went out
+            // must reach its `cleared.push` / `accepted += 1`.
+            if budget_spent(deadline) {
+                tracing::info!(
+                    processed = cleared.len(),
+                    total = entries.len(),
+                    "auto-accept: budget spent; leaving the rest queued"
+                );
+                break;
+            }
             let owner = entry.owner_identity_id; // us (the QR owner / recipient)
             let sender = entry.contact_id; // the scanner (request $ownerId)
 
@@ -2354,7 +2538,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     continue;
                 }
             };
-            let pubkey = match provider.receiving_xpub(&path).await {
+            // Bounded: the local verify and the accept both come after this,
+            // so abandoning the derive commits nothing.
+            let Some(derived) = bounded(deadline, provider.receiving_xpub(&path)).await else {
+                tracing::info!(owner = %owner, sender = %sender,
+                    "auto-accept: budget spent deriving our proof key; leaving queued");
+                continue;
+            };
+            let pubkey = match derived {
                 Ok(xpub) => xpub.public_key,
                 Err(e) => {
                     tracing::warn!(owner = %owner, sender = %sender, error = %e,
@@ -2393,10 +2584,36 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             }
         }
 
-        if !cleared.is_empty() {
-            {
-                let mut wm = self.wallet_manager.write().await;
-                if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+        // Land whatever the last entry resolved.
+        self.flush_cleared_auto_accepts(&cleared[flushed..], &verify_failed[verify_flushed..])
+            .await;
+
+        accepted
+    }
+
+    /// Dequeue the `AutoAccept` entries a drain just resolved and record the
+    /// permanent verify failures among them. Called after each resolved entry,
+    /// for the same reason as [`Self::flush_drained_contact_crypto`]: a
+    /// reciprocal that has already been broadcast must not be able to end up
+    /// still queued because the drain stopped before its bookkeeping ran.
+    async fn flush_cleared_auto_accepts(
+        &self,
+        cleared: &[crate::changeset::PendingContactCryptoKey],
+        verify_failed: &[(Identifier, Identifier, Vec<u8>)],
+    ) {
+        // Each list is applied on its own. The caller advances both cursors
+        // after this returns, so gating one on the other would discard the
+        // ungated one for good. Not reachable today — every `verify_failed`
+        // push is paired with a `cleared` push — but a future "leave queued,
+        // remember the bad proof" case would lose its marks silently.
+        if cleared.is_empty() && verify_failed.is_empty() {
+            return;
+        }
+
+        {
+            let mut wm = self.wallet_manager.write().await;
+            if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+                if !cleared.is_empty() {
                     // Remove the cleared entries from their owners' queues. Each
                     // cleared key names its owner, and only that owner's queue can
                     // hold it, so retain each affected owner's queue against the
@@ -2416,28 +2633,32 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                                 .retain(|e| !cleared.iter().any(|k| *k == e.key()));
                         }
                     }
-                    // Record permanent verify failures so the next sweep's
-                    // enqueue gate skips the same bad proof (in-memory only —
-                    // retried once per launch; the request stays manually
-                    // acceptable).
-                    for (owner, sender, proof) in &verify_failed {
-                        if let Some(managed) = info.identity_manager.managed_identity_mut(owner) {
-                            managed.mark_auto_accept_verify_failed(sender, proof);
-                        }
+                }
+                // Record permanent verify failures so the next sweep's
+                // enqueue gate skips the same bad proof (in-memory only —
+                // retried once per launch; the request stays manually
+                // acceptable).
+                for (owner, sender, proof) in verify_failed {
+                    if let Some(managed) = info.identity_manager.managed_identity_mut(owner) {
+                        managed.mark_auto_accept_verify_failed(sender, proof);
                     }
                 }
             }
-            let changeset = crate::changeset::PlatformWalletChangeSet {
-                pending_contact_crypto_cleared: cleared,
-                ..Default::default()
-            };
-            if let Err(e) = self.persister.store(changeset) {
-                tracing::warn!(error = %e,
-                    "auto-accept: failed to persist cleared entries (in-memory already updated)");
-            }
         }
 
-        accepted
+        // Only the dequeue is persisted; the verify-failure marks are in-memory
+        // by design.
+        if cleared.is_empty() {
+            return;
+        }
+        let changeset = crate::changeset::PlatformWalletChangeSet {
+            pending_contact_crypto_cleared: cleared.to_vec(),
+            ..Default::default()
+        };
+        if let Err(e) = self.persister.store(changeset) {
+            tracing::warn!(error = %e,
+                "auto-accept: failed to persist cleared entries (in-memory already updated)");
+        }
     }
 
     /// Build a DIP-15 auto-accept QR URI (`dash:?du=<username>&dapk=<key_blob>`),
@@ -4448,5 +4669,55 @@ mod stamp_race_tests {
             Some(7),
             "a stamp from the live payload records the tracked reference"
         );
+    }
+}
+
+#[cfg(test)]
+mod drain_budget_tests {
+    use super::{bounded, budget_spent};
+    use std::time::{Duration, Instant};
+
+    #[tokio::test]
+    async fn no_deadline_always_runs_the_future_to_completion() {
+        // The shape every pre-existing caller relies on: an unbounded drain
+        // must not acquire an early-exit path just because one caller wanted
+        // a budget.
+        assert!(!budget_spent(None));
+        assert_eq!(bounded(None, async { 7 }).await, Some(7));
+    }
+
+    #[tokio::test]
+    async fn a_spent_deadline_refuses_before_polling_the_future() {
+        // Not merely "returns None": the future must never start, because in
+        // the drains it is the step that precedes a commit.
+        let past = Instant::now() - Duration::from_secs(1);
+        assert!(budget_spent(Some(past)));
+
+        let mut polled = false;
+        let result = bounded(Some(past), async {
+            polled = true;
+            7
+        })
+        .await;
+        assert_eq!(result, None);
+        assert!(!polled, "a spent budget must not start the work");
+    }
+
+    #[tokio::test]
+    async fn a_live_deadline_lets_a_finished_future_through() {
+        let future = Instant::now() + Duration::from_secs(30);
+        assert!(!budget_spent(Some(future)));
+        assert_eq!(bounded(Some(future), async { 7 }).await, Some(7));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_deadline_that_passes_mid_await_abandons_the_step() {
+        let deadline = Instant::now() + Duration::from_millis(50);
+        let result = bounded(deadline.into(), async {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            7
+        })
+        .await;
+        assert_eq!(result, None, "the step outlasted the budget");
     }
 }

@@ -82,6 +82,7 @@ pub mod utils;
 pub mod wallet;
 pub mod wallet_registration_persistence;
 pub mod wallet_restore_types;
+pub mod wallet_startup;
 pub mod xpub_render;
 
 // Re-exports

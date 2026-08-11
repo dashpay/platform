@@ -62,6 +62,9 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// counterparty) are mirrored durably. Mirrors
     /// `PersistenceCapabilities::DPNS_NAME_STATES`.
     public static let dpnsNameStates: UInt64 = 1 << 8
+    /// Tracked asset-lock rows, including status and proof updates, can be
+    /// persisted. Restart hydration is separately attested by `walletRestore`.
+    public static let trackedAssetLocks: UInt64 = 1 << 9
 
     public let version: UInt32
     public let bits: UInt64
@@ -250,8 +253,11 @@ public class PlatformWalletManager: ObservableObject {
     /// `KeychainSigner` (the identity document signer) for the unlock-time
     /// auto-accept drain. Nil when configured without persistence (no Keychain
     /// signing possible → the drain runs provider-only).
-    private var modelContainer: ModelContainer?
-    private var signerNetwork: Network?
+    /// `internal`, not `private`: the ordered bring-up in
+    /// `PlatformWalletManagerStartup` builds the same signer for the same
+    /// drain, and reusing these beats duplicating the construction there.
+    var modelContainer: ModelContainer?
+    var signerNetwork: Network?
 
     /// Convenience reference; the FFI callback context's lifetime is
     /// owned by Rust (retained reference transferred at `configure`,
@@ -1342,7 +1348,9 @@ public class PlatformWalletManager: ObservableObject {
 
     // MARK: - Internals
 
-    private func ensureConfigured() throws {
+    /// `internal` so the extensions in sibling files gate on the same check
+    /// rather than re-implementing it.
+    func ensureConfigured() throws {
         if !isConfigured || handle == NULL_HANDLE {
             throw PlatformWalletError.invalidHandle(
                 "PlatformWalletManager not configured"

@@ -58,6 +58,7 @@ use dpp::shielded::compute_minimum_shielded_fee;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::StateTransition;
+use dpp::version::PlatformVersion;
 use dpp::withdrawal::Pooling;
 use grovedb_commitment_tree::{Anchor, PaymentAddress};
 use tokio::sync::RwLock;
@@ -74,6 +75,41 @@ use tracing::{debug, info, trace, warn};
 /// `F = compute_minimum_shielded_fee(actions.len())` from the on-wire action
 /// count, so the wallet's fee reservation must use the same count.
 const SHIELD_NUM_ACTIONS: usize = 2;
+
+/// Multiplier applied to the versioned minimum shield fee when sizing the
+/// planner's input-0 reserve.
+///
+/// Execution deducts the ACTUAL fee — the GroveDB-metered storage/processing
+/// of the note/nullifier writes plus `compute_shielded_verification_fee` —
+/// from input 0's post-reallocation residue, and rejects the shield when the
+/// residue can't cover it. `compute_minimum_shielded_fee` estimates that
+/// actual fee with a flat per-action storage term the client cannot meter
+/// itself, so the reserve keeps one extra fee of headroom for metering
+/// variance. The reserve is NOT what satisfies the structure gate
+/// (`Σ claims ≥ amount + fee`) — `reserve_shield_fee_on_input_0` loads the
+/// claimed fee for that — so it needs no allowance beyond metering variance.
+const SHIELD_FEE_RESERVE_MULTIPLIER: u64 = 2;
+
+/// Versioned balance the shield planner keeps unclaimed on the
+/// lexicographically first (fee-paying) input.
+///
+/// The preflight and the execution path both derive capacity from this one
+/// value, so it directly sets three host-visible numbers: the viability
+/// threshold an address must exceed to serve as input 0, the account's
+/// `max_shieldable_credits`, and the residue a Max shield leaves transparent
+/// (`reserve − actual fee`). Deriving it from the versioned fee formula keeps
+/// all three tracking fee-constant bumps instead of freezing a magic number
+/// that overstates the fee and understates capacity.
+pub fn shield_fee_reserve_credits(
+    platform_version: &PlatformVersion,
+) -> Result<Credits, PlatformWalletError> {
+    let fee = compute_minimum_shielded_fee(SHIELD_NUM_ACTIONS, platform_version)
+        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+    fee.checked_mul(SHIELD_FEE_RESERVE_MULTIPLIER)
+        .ok_or_else(|| {
+            PlatformWalletError::ShieldedBuildError("shield fee reserve overflows u64".to_string())
+        })
+}
 
 /// Try to extract a structured `AddressesNotEnoughFundsError` from
 /// a broadcast error so the shield path can format a diagnostic
@@ -118,6 +154,23 @@ fn address_not_enough_funds(
     match consensus {
         ConsensusError::StateError(StateError::AddressNotEnoughFundsError(err)) => Some(err),
         _ => None,
+    }
+}
+
+/// Promote the shield pre-broadcast hard balance check into the typed capacity
+/// error the FFI and Swift layers recognize.
+///
+/// The values are Platform's live per-input view, not the cached planner
+/// snapshot. Their `Display` rendering therefore preserves the actionable
+/// available/required diagnostic while the typed variant lets the host refresh
+/// preflight instead of retrying the stale amount unchanged.
+fn map_shield_input_fetch_error(e: &dash_sdk::Error) -> PlatformWalletError {
+    match address_not_enough_funds(e) {
+        Some(short) => PlatformWalletError::PlatformShieldCapacityExceeded {
+            available: short.balance(),
+            required: short.required_balance(),
+        },
+        None => PlatformWalletError::ShieldedBuildError(format!("fetch input nonces: {e}")),
     }
 }
 
@@ -422,9 +475,10 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
     //
     // The fee is loaded onto the smallest-key input — the `DeductFromInput(0)`
     // fee-strategy payer (input 0 == BTreeMap-smallest address). The caller
-    // (`shielded_shield_from_account`) reserves ~1e9 credits of unclaimed
-    // headroom on input 0 specifically for this, and `F` (~1.2e8 credits)
-    // fits well within it. Inflating the claim BEFORE the fetch lets the
+    // (`shielded_shield_from_account`) reserves `shield_fee_reserve_credits`
+    // (a small multiple of this same versioned fee) of unclaimed headroom on
+    // input 0 specifically for this, so `F` always fits within the reserve.
+    // Inflating the claim BEFORE the fetch lets the
     // single hard balance check below validate the fee-inclusive claim
     // against the on-chain balance in one shot — no second round-trip and
     // no claim that outruns its balance check.
@@ -443,23 +497,9 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
     // nonce — bail loudly here instead).
     use dash_sdk::platform::transition::fetch_inputs_with_nonce;
 
-    let fetched = fetch_inputs_with_nonce(sdk, &inputs).await.map_err(|e| {
-        // The hard balance check is the common pre-broadcast failure;
-        // surface its structured (address, balance, required) info as a
-        // diagnostic string rather than the opaque `{e}` form, matching
-        // the richness of the broadcast-side handler below. The FFI
-        // shape is unchanged (the host still receives a string body).
-        if let Some(short) = address_not_enough_funds(&e) {
-            PlatformWalletError::ShieldedBuildError(format!(
-                "shield input {} has insufficient balance: requires {} credits, has {}",
-                short.address().to_bech32m_string(sdk.network),
-                short.required_balance(),
-                short.balance(),
-            ))
-        } else {
-            PlatformWalletError::ShieldedBuildError(format!("fetch input nonces: {e}"))
-        }
-    })?;
+    let fetched = fetch_inputs_with_nonce(sdk, &inputs)
+        .await
+        .map_err(|error| map_shield_input_fetch_error(&error))?;
 
     let mut inputs_with_nonce: BTreeMap<PlatformAddress, (u32, Credits)> = BTreeMap::new();
     for (addr, (nonce, credits)) in fetched {
@@ -2883,8 +2923,35 @@ mod classify_spend_wait_failure_tests {
 }
 
 #[cfg(test)]
+mod shield_input_fetch_error_tests {
+    use super::*;
+    use dpp::consensus::state::address_funds::AddressNotEnoughFundsError;
+
+    #[test]
+    fn live_address_shortfall_maps_to_typed_shield_capacity_error() {
+        let sdk_error = dash_sdk::Error::from(AddressNotEnoughFundsError::new(
+            PlatformAddress::P2pkh([7; 20]),
+            3_623_849_220,
+            3_623_849_221,
+        ));
+
+        let mapped = map_shield_input_fetch_error(&sdk_error);
+        assert!(matches!(
+            &mapped,
+            PlatformWalletError::PlatformShieldCapacityExceeded { available, required }
+                if *available == 3_623_849_220 && *required == 3_623_849_221
+        ));
+        assert_eq!(
+            mapped.to_string(),
+            "Platform shield capacity exceeded: available 3623849220, required 3623849221"
+        );
+    }
+}
+
+#[cfg(test)]
 mod reserve_shield_fee_tests {
     use super::*;
+    use dpp::version::LATEST_PLATFORM_VERSION;
 
     fn addr(b: u8) -> PlatformAddress {
         PlatformAddress::P2pkh([b; 20])
@@ -2909,6 +2976,37 @@ mod reserve_shield_fee_tests {
         );
         // Σ claims grew by exactly `fee`, satisfying `Σ inputs >= amount + F`.
         assert_eq!(out.values().sum::<u64>(), 6_000_000 + fee);
+    }
+
+    #[test]
+    fn versioned_fee_keeps_input_zero_valid_and_reserve_tracks_the_fee() {
+        let min_input_amount = LATEST_PLATFORM_VERSION
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_input_amount;
+        let shield_fee = compute_minimum_shielded_fee(SHIELD_NUM_ACTIONS, LATEST_PLATFORM_VERSION)
+            .expect("latest shield fee must be computable");
+        let reserve = shield_fee_reserve_credits(LATEST_PLATFORM_VERSION)
+            .expect("latest shield fee reserve must be computable");
+        let smallest_fee_inclusive_claim = shield_fee
+            .checked_add(1)
+            .expect("latest shield fee plus one credit must fit");
+
+        assert!(
+            smallest_fee_inclusive_claim >= min_input_amount,
+            "adding the fee must lift even input 0's smallest positive base claim above the protocol minimum"
+        );
+        assert!(
+            reserve >= shield_fee,
+            "the retained input-0 headroom must cover the versioned shield fee"
+        );
+        assert!(
+            reserve <= shield_fee.saturating_mul(4),
+            "the reserve must stay a small multiple of the versioned fee — an oversized \
+             reserve silently understates preflight capacity and strands the excess \
+             below the input-0 viability threshold after a Max shield"
+        );
     }
 
     #[test]

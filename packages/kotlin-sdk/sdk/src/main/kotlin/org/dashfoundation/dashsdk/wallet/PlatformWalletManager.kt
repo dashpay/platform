@@ -59,6 +59,7 @@ data class PlatformWalletPersistenceCapabilities(
         const val PENDING_CONTACT_CRYPTO: Long = 1L shl 6
         const val WALLET_RESTORE: Long = 1L shl 7
         const val DPNS_NAME_STATES: Long = 1L shl 8
+        const val TRACKED_ASSET_LOCKS: Long = 1L shl 9
     }
 }
 

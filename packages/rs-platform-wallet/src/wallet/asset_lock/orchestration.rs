@@ -1,6 +1,6 @@
 //! Submission-side orchestration shared across asset-lock-funded
 //! flows (identity registration, identity top-up, platform-address
-//! funding).
+//! funding, and shielded funding).
 //!
 //! The asset-lock acquisition pipeline (build tx → wait IS/CL) lives
 //! in [`crate::wallet::asset_lock::build`] /
@@ -39,7 +39,9 @@ use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundin
 use dash_sdk::platform::transition::put_settings::PutSettings;
 
 use crate::broadcaster::TransactionBroadcaster;
-use crate::error::{as_asset_lock_proof_cl_height_too_low, PlatformWalletError};
+use crate::error::{
+    as_asset_lock_proof_cl_height_too_low, is_asset_lock_already_consumed, PlatformWalletError,
+};
 use crate::wallet::asset_lock::manager::AssetLockManager;
 
 // ---------------------------------------------------------------------------
@@ -121,16 +123,24 @@ pub enum AssetLockFunding {
     /// - `AssetLockAddressTopUp` — for platform-address funding flows
     /// - others — see [`AssetLockFundingType`]
     ///
-    /// `account_index` selects which BIP44 *standard* account (by
-    /// BIP44 account index) supplies the UTXOs. This exact-amount form
-    /// is BIP44-only; CoinJoin funding exists solely as the
-    /// whole-balance [`AssetLockFunding::DrainAccountBalance`] form
-    /// (CoinJoin accounts have no change semantics). BIP32 funding
-    /// remains unsupported.
+    /// Funding is POOLED across `ASSET_LOCK_FUNDING_SOURCES`: coin
+    /// selection draws from the union of the BIP44 and BIP32 accounts at
+    /// `account_index` and every DashPay contact-receiving account, so
+    /// the lock does not need its whole amount sitting in one account.
+    /// Change returns to BIP44, the first source. Sources this wallet has
+    /// nothing for are skipped.
+    ///
+    /// CoinJoin is deliberately not in that set — spending mixed outputs
+    /// alongside transparent ones links them and undoes the mixing — so
+    /// CoinJoin funding still exists solely as the whole-balance
+    /// [`AssetLockFunding::DrainAccountBalance`] form (those accounts
+    /// also have no change semantics).
     FromWalletBalance {
         /// Amount to lock (in duffs).
         amount_duffs: u64,
-        /// BIP44 standard-account index to draw the funding UTXOs from.
+        /// Index addressing the standard (BIP44/BIP32) families of the
+        /// pooled source set. DashPay contact-receiving accounts span
+        /// their own indices and are pooled in regardless.
         account_index: u32,
     },
 
@@ -380,6 +390,45 @@ pub(crate) fn out_point_from_proof(proof: &AssetLockProof) -> OutPoint {
 // ---------------------------------------------------------------------------
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
+    /// Normalize the final result of an asset-lock-funded Platform submit.
+    ///
+    /// A matching `already consumed` consensus response is not authenticated,
+    /// so it cannot prove that the requested operation completed. Promote the
+    /// lock to an SPV-backed ChainLock proof, durably retain it as
+    /// consumption-unknown, and preserve the typed host signal. Successful and
+    /// unrelated results pass through unchanged.
+    pub(crate) async fn reconcile_asset_lock_submit_result<T>(
+        &self,
+        result: Result<T, dash_sdk::Error>,
+        out_point: &OutPoint,
+        effective_proof: &AssetLockProof,
+        chain_lock_timeout: Option<Duration>,
+    ) -> Result<T, PlatformWalletError> {
+        let error = match result {
+            Ok(value) => return Ok(value),
+            Err(error) => error,
+        };
+        if !is_asset_lock_already_consumed(&error, out_point) {
+            return Err(PlatformWalletError::Sdk(error));
+        }
+
+        let chain_proof = match effective_proof {
+            AssetLockProof::Chain(_) => effective_proof.clone(),
+            AssetLockProof::Instant(_) => {
+                self.upgrade_to_chain_lock_proof(out_point, chain_lock_timeout)
+                    .await?
+            }
+        };
+        self.mark_asset_lock_consumption_unknown(out_point, chain_proof)
+            .await?;
+        tracing::warn!(
+            outpoint = %out_point,
+            "recorded unauthenticated already-consumed report as consumption unknown"
+        );
+
+        Err(PlatformWalletError::AssetLockAlreadyConsumed(*out_point))
+    }
+
     /// Resolve an [`AssetLockFunding`] to a concrete proof + path +
     /// (optional) tracked outpoint, capturing the IS-lock timeout case
     /// as a structured outcome so the caller can drive a CL retry.

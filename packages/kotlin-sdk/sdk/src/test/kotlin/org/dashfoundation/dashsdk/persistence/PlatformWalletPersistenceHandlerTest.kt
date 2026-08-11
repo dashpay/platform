@@ -65,7 +65,7 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(0L, noOpBridge.persistenceCapabilitiesBits())
 
         assertEquals(1, handler.persistenceCapabilitiesVersion())
-        assertEquals(0x1bfL, handler.persistenceCapabilitiesBits())
+        assertEquals(0x3bfL, handler.persistenceCapabilitiesBits())
         // Android has no pending-contact-crypto callback, so it must not
         // attest that semantic contract.
         assertEquals(0L, handler.persistenceCapabilitiesBits() and 0x40L)
@@ -77,6 +77,7 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.ATOMIC_CHANGESETS))
         assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.INVITATIONS))
         assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.DPNS_NAME_STATES))
+        assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.TRACKED_ASSET_LOCKS))
     }
 
     // ── Standalone (non-bracketed) writes ─────────────────────────────

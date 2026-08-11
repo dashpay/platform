@@ -55,12 +55,17 @@ pub enum AssetLockStatus {
     /// (amount, identity index, funding tx) but is excluded from any
     /// "still actionable" predicate.
     Consumed,
-    /// Reconstructed from a **chain-locked** on-chain record rather
-    /// than tracked live through the build → broadcast → proof
-    /// pipeline — the restore-scan path
-    /// (`wallet::asset_lock::sync::reconstruction`) emits this for
-    /// finalized asset-lock transactions whose credit outputs pay this
-    /// wallet's funding accounts. Non-final detections (mempool /
+    /// Core finality is authenticated, but Platform-side consumption is
+    /// unknown. Most entries reach this state after reconstruction from a
+    /// **chain-locked** on-chain record rather than live tracking through the
+    /// build → broadcast → proof pipeline. It is also the safe state after an
+    /// explicit retry receives an unauthenticated "already consumed" report:
+    /// the wallet first obtains a ChainLock proof, retains it, and records no
+    /// claim that Platform actually consumed the output.
+    ///
+    /// The restore-scan path (`wallet::asset_lock::sync::reconstruction`)
+    /// emits this for finalized asset-lock transactions whose credit outputs
+    /// pay this wallet's funding accounts. Non-final detections (mempool /
     /// unconfirmed-block sightings) enter as
     /// [`Broadcast`](Self::Broadcast) /
     /// [`InstantSendLocked`](Self::InstantSendLocked) like any other
@@ -110,7 +115,12 @@ pub struct TrackedAssetLock {
     /// The outpoint identifying this credit output (txid + vout).
     pub out_point: OutPoint,
     pub transaction: Transaction,
-    /// BIP44 account index that funded this asset lock (UTXO source).
+    /// Index the funding sources were resolved at — the standard
+    /// (BIP44/BIP32) family index handed to the build. NOT a record of
+    /// which accounts ended up supplying inputs: funding is pooled, so a
+    /// lock can be funded wholly out of a DashPay contact account, which
+    /// carries an index of its own. Consumers that need the funding
+    /// transaction search every family (see `funding_tx_record`).
     pub account_index: u32,
     pub funding_type: AssetLockFundingType,
     pub identity_index: u32,
