@@ -398,14 +398,30 @@ public final class PersistentIdentity {
            !keychain.hasSpecialKey(identityId: identityId, keyType: .payout) {
             payoutPrivateKeyIdentifier = nil
         }
-        // The wallet relationship counts only when corroborated by
-        // derivation evidence — a stale mislink (old unconditional
-        // fallback) must not resurrect "Local" the moment the last
-        // imported key is forgotten.
-        let walletEvidence = wallet.map {
-            hasWalletDerivationEvidence(for: $0.walletId)
-        } ?? false
-        isLocal = walletEvidence
+        // The wallet arm uses the SAME capability resolver as the
+        // persister's promotion gate — current signing material, not
+        // derivation evidence. A stamped key proves the wallet ONCE
+        // derived this identity's keys (ownership), not that it can
+        // sign today: a watch-only linked identity whose one imported
+        // scalar is being forgotten must come out non-local even
+        // though its stamps remain.
+        var walletArm = false
+        if let ownerWalletId = wallet?.walletId {
+            switch WalletSigningCapability.probe(walletId: ownerWalletId) {
+            case .some(true):
+                walletArm = true
+            case .some(false):
+                walletArm = false
+            case .none:
+                // The Keychain couldn't answer — every arm of this
+                // recompute depends on Keychain truth, so deciding
+                // against unknowns risks persisting a wrong
+                // classification. Leave the flag as it stands; a
+                // later pass (or the startup heal) decides.
+                return
+            }
+        }
+        isLocal = walletArm
             || publicKeys.contains { $0.privateKeyKeychainIdentifier != nil }
             || votingPrivateKeyIdentifier != nil
             || ownerPrivateKeyIdentifier != nil

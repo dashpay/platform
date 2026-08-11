@@ -102,13 +102,16 @@ struct DashPayTabView: View {
         )
     }
 
-    /// Identities the DashPay tab can act as: backed by a wallet
-    /// that's currently loaded in the manager — every DashPay FFI
-    /// call resolves through that wallet handle. (The wallet linkage
-    /// implies `isLocal`; every persisted row is Platform-confirmed.)
+    /// Identities the DashPay tab can act as: `isLocal` (signable —
+    /// a watch-only wallet's identity deliberately stays non-local)
+    /// AND backed by a wallet that's currently loaded in the manager,
+    /// because every DashPay FFI mutation resolves through that
+    /// wallet handle and then signs. Either half alone exposes
+    /// controls that fail at signer/handle resolution.
     private var eligibleIdentities: [PersistentIdentity] {
         identities.filter { identity in
-            guard let walletId = identity.wallet?.walletId else { return false }
+            guard identity.isLocal,
+                  let walletId = identity.wallet?.walletId else { return false }
             return walletManager.wallet(for: walletId) != nil
         }
     }

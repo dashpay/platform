@@ -44,6 +44,17 @@ struct IdentityDetailView: View {
         return walletManager.wallet(for: walletId) != nil
     }
 
+    /// Gate for manager-backed mutations (top-up, DPNS registration,
+    /// marketplace, profile edit, token actions): they resolve the
+    /// owning wallet's handle AND sign, so both halves are required —
+    /// `isLocal` alone admits walletless imported-key identities that
+    /// have no manager handle, and a loaded handle alone admits a
+    /// watch-only wallet's identities that cannot sign. Read-only
+    /// presentation stays gated separately (or not at all).
+    private func canMutate(as identity: PersistentIdentity) -> Bool {
+        identity.isLocal && hasLoadedWallet(for: identity)
+    }
+
     @State private var isRefreshing = false
     @State private var showingEditAlias = false
     @State private var newAlias = ""
@@ -158,12 +169,12 @@ struct IdentityDetailView: View {
                         .fontWeight(.medium)
                 }
 
-                // Top-up entry point. Hidden for identities whose
-                // owning wallet isn't loaded into the manager — that
-                // path would just surface a confusing error from the
-                // FFI layer.
-                if let walletId = identity.wallet?.walletId,
-                   walletManager.wallet(for: walletId) != nil {
+                // Top-up / transfer / withdraw entry points. These
+                // submit signed state transitions through the owning
+                // wallet's manager handle — gate on both signability
+                // and a loaded wallet (`canMutate`), or the controls
+                // just surface signer/handle errors from the FFI.
+                if canMutate(as: identity) {
                     Button {
                         showingTopUp = true
                     } label: {
@@ -239,7 +250,7 @@ struct IdentityDetailView: View {
             // DPNS Names Section — every persisted identity exists on
             // Platform, so the section always renders.
             Section("DPNS Names") {
-                    if hasLoadedWallet(for: identity) {
+                    if canMutate(as: identity) {
                         NavigationLink(destination: DpnsMarketplaceView(identity: identity)) {
                             Label("Username Marketplace", systemImage: "storefront")
                         }
@@ -301,7 +312,7 @@ struct IdentityDetailView: View {
                     // that (NOT `isLocal`, which also covers
                     // walletless imported-key identities the
                     // registration flow can't serve yet).
-                    if hasLoadedWallet(for: identity) {
+                    if canMutate(as: identity) {
                         Button(action: { showingRegisterName = true }) {
                             HStack {
                                 Image(systemName: "plus.circle")
@@ -346,7 +357,7 @@ struct IdentityDetailView: View {
                             // and group-action screens the user
                             // cannot sign for. Observed identities
                             // get the read-only row.
-                            if identity.isLocal {
+                            if canMutate(as: identity) {
                                 NavigationLink(
                                     destination: TokenActionPermissionsView(
                                         token: entry.token,
@@ -761,7 +772,7 @@ struct IdentityDetailView: View {
                 // owning wallet's manager — read-only display stays
                 // available for walletless/observed identities, the
                 // editor does not.
-                if hasLoadedWallet(for: identity) {
+                if canMutate(as: identity) {
                     Button {
                         showingProfileEditor = true
                     } label: {
@@ -800,7 +811,7 @@ struct IdentityDetailView: View {
                 // Same wallet gate as the Edit button above —
                 // creating a profile broadcasts through the owning
                 // wallet's manager.
-                if hasLoadedWallet(for: identity) {
+                if canMutate(as: identity) {
                     Button {
                         showingProfileEditor = true
                     } label: {

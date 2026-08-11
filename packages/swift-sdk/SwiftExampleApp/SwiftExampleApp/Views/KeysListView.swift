@@ -548,12 +548,20 @@ struct PrivateKeyView: View {
     // whose breadcrumb columns are still nil — and verifies nothing
     // remains retrievable before we clear the stored reference.
     let persistedKey = identity.publicKeys.first { $0.keyId == Int32(keyId) }
-    let publicKeyHex = persistedKey?.publicKeyData.toHexString()
+    let resolvedPublicKeyHex = persistedKey?.publicKeyData.toHexString()
       ?? identity.identityPublicKeys.first { $0.id == keyId }?.data.toHexString()
+    // Fail closed before touching anything: an empty hex would make
+    // the derived-scheme sweep vacuous (the seam also rejects it, but
+    // refusing here gives the user an actionable message and runs no
+    // legacy delete at all).
+    guard let publicKeyHex = resolvedPublicKeyHex, !publicKeyHex.isEmpty else {
+      forgetError = "Could not resolve this key's public key — nothing was changed."
+      return
+    }
     let removed = KeychainManager.shared.forgetIdentityKeyMaterial(
       identityId: identity.identityId,
       keyIndex: Int32(keyId),
-      publicKeyHex: publicKeyHex ?? "",
+      publicKeyHex: publicKeyHex,
       breadcrumbWalletId: persistedKey?.walletId,
       derivationPath: persistedKey?.identityDerivationPath
     )
@@ -565,26 +573,24 @@ struct PrivateKeyView: View {
       return
     }
 
-    // Clear the keychain reference on the matching
-    // PersistentPublicKey. The @Query observing the parent
-    // identity will re-render this row automatically.
-    if let persistedKey {
-      persistedKey.privateKeyKeychainIdentifier = nil
-      // Forgetting the last imported key can end the identity's
-      // local status — recompute from what remains (wallet
-      // linkage / other key material).
-      identity.recomputeIsLocalAfterKeyRemoval()
-      do {
-        try modelContext.save()
-      } catch {
-        // The Keychain item is already gone (that delete is
-        // irreversible), so a silent save failure would leave a
-        // stale reference + isLocal on the next launch with no way
-        // to re-run this flow. Surface it and keep the sheet open.
-        modelContext.rollback()
-        forgetError = "The key was removed from the Keychain, but saving the change failed: \(error.localizedDescription)"
-        return
-      }
+    // Clear the keychain reference and recompute locality — OUTSIDE
+    // the persistedKey conditional, because a legacy-scheme key can
+    // be forgotten without a matching SwiftData key row and the
+    // identity's locality still needs repair.
+    persistedKey?.privateKeyKeychainIdentifier = nil
+    identity.recomputeIsLocalAfterKeyRemoval()
+    do {
+      try modelContext.save()
+    } catch {
+      // The Keychain delete is irreversible, so the corrective model
+      // mutation must NOT be rolled back — reverting would restore a
+      // reference to a secret that no longer exists, the live probes
+      // would then hide the Forget control, and the stale state
+      // would have no repair path. Keep the truthful in-memory
+      // state (the main context autosaves, so it retries
+      // persistence) and tell the user what happened.
+      forgetError = "The key was removed from the Keychain, but saving the change failed: \(error.localizedDescription). The change will be re-saved automatically."
+      return
     }
     dismiss()
   }

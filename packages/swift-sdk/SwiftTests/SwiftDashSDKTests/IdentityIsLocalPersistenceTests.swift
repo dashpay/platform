@@ -406,39 +406,50 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
         XCTAssertEqual(slice[1].identityId, second.identityId)
     }
 
-    /// A SOLE mislinked row with no genuine competitor must not be
-    /// restored as wallet-owned either: Rust would stamp it
-    /// `wallet_id = Some(wallet)` and the corruption would become
-    /// durable. Crucially this holds even when the row CARRIES key
-    /// rows — an unstamped one (by-id import / key refresh persist
-    /// those for observed identities too) and one stamped for a
-    /// DIFFERENT wallet — neither of which is evidence for THIS
-    /// wallet. Quarantine leaves the store row untouched.
-    func testRestorableIdentitiesQuarantinesSoleMislinkWithForeignKeys() throws {
+    /// A SOLE linked row without this wallet's stamp RESTORES as
+    /// ownership-unknown — quarantining it permanently excludes
+    /// genuine legacy populations (watch-only/xpub wallets can never
+    /// earn a stamp; identity keys are hardened-path and underivable
+    /// from an xpub). The safety story lives elsewhere: the heal
+    /// refuses to promote such a row to Local (asserted here), a
+    /// mislink presents as Observed with no mutation controls, and
+    /// the upsert path unlinks it when its identity re-emits
+    /// out-of-wallet.
+    func testSoleUnstampedRowRestoresAsOwnershipUnknownButNeverLocal() throws {
         try insertWalletRow()
         let context = ModelContext(container)
         let wallet = try XCTUnwrap(
             try context.fetch(FetchDescriptor<PersistentWallet>()).first
         )
-        let mislinked = PersistentIdentity(
+        let unproven = PersistentIdentity(
             identityId: observedIdentityId,
             isLocal: false,
             network: .testnet
         )
-        mislinked.wallet = wallet
-        context.insert(mislinked)
-        attachKeyRow(to: mislinked, stampedWalletId: nil)
-        attachKeyRow(to: mislinked, stampedWalletId: Data(repeating: 0xBB, count: 32))
+        unproven.wallet = wallet
+        context.insert(unproven)
+        attachKeyRow(to: unproven, stampedWalletId: nil)
+        attachKeyRow(to: unproven, stampedWalletId: Data(repeating: 0xBB, count: 32))
         try context.save()
 
         let slice = PlatformWalletPersistenceHandler.restorableIdentities(
-            [mislinked],
+            [unproven],
             walletId: walletId
         )
+        XCTAssertEqual(
+            slice.map(\.identityId),
+            [unproven.identityId],
+            "a sole ownership-unknown row must keep restoring (watch-only/legacy stores)"
+        )
 
-        XCTAssertTrue(
-            slice.isEmpty,
-            "unstamped or foreign-stamped keys must not qualify a sole mislink for wallet-owned restore"
+        // The heal must still refuse to promote it: unstamped and
+        // foreign-stamped keys are not evidence for THIS wallet.
+        let result = handler.loadWalletList()
+        XCTAssertFalse(result.errored)
+        let row = try XCTUnwrap(try fetchIdentity(observedIdentityId))
+        XCTAssertFalse(
+            row.isLocal,
+            "ownership-unknown rows restore but never present as Local"
         )
     }
 

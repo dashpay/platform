@@ -144,13 +144,16 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// can ACT as the identity — a genuinely watch-only wallet
     /// (imported xpub, no mnemonic) fails `KeychainSigner` yet would
     /// otherwise present its identities as "Local" with mutation
-    /// controls enabled. The default reads the Keychain-backed
-    /// `WalletStorage`; injectable because unit tests can't reach the
-    /// real Keychain (simulator entitlement). Confined to
+    /// controls enabled. Tri-state (see `WalletSigningCapability`):
+    /// `nil` means the Keychain couldn't answer — promotion is simply
+    /// deferred to a later pass, never persisted as non-signability
+    /// (the writers here promote one-way, so a transient failure
+    /// costs a delay, not a wrong classification). Injectable because
+    /// unit tests can't reach the real Keychain. Confined to
     /// `serialQueue` like the rest of the handler's mutable state —
     /// override before first use.
-    var walletSigningMaterialProbe: (Data) -> Bool = { walletId in
-        WalletStorage().hasMnemonic(for: walletId)
+    var walletSigningMaterialProbe: (Data) -> Bool? = { walletId in
+        WalletSigningCapability.probe(walletId: walletId)
     }
 
     public init(modelContainer: ModelContainer, network: Network? = nil) {
@@ -1849,7 +1852,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 // One-way stamp only; `loadWalletList()` applies the
                 // same upward-only heal at startup for rows this path
                 // never touches again.
-                if walletSigningMaterialProbe(ownerWallet.walletId) {
+                if walletSigningMaterialProbe(ownerWallet.walletId) == true {
                     row.isLocal = true
                 }
             } else if let declaredOwnerId = ownerWalletId {
@@ -3007,10 +3010,30 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 failed += 1
                 continue
             }
+            // Match the FULL metadata tuple, not the public-key bytes
+            // alone: duplicate/reused key bytes across rows (by-id
+            // imports, refreshes of observed identities) would let a
+            // `.first` pick stamp the WRONG row with this wallet's
+            // breadcrumb — which downstream ownership checks would
+            // then trust as evidence. `keyId` rides the predicate;
+            // the identity is verified through the relationship when
+            // both sides carry a canonical id, falling back to the
+            // string column (whose historical encodings vary) for
+            // rows persisted without the relationship.
+            let metaIdentityId = Data.identifier(fromBase58: meta.identityId)
+            let metaKeyId = Int32(bitPattern: meta.keyId)
             let descriptor = FetchDescriptor<PersistentPublicKey>(
-                predicate: #Predicate<PersistentPublicKey> { $0.publicKeyData == pubKeyData }
+                predicate: #Predicate<PersistentPublicKey> {
+                    $0.publicKeyData == pubKeyData && $0.keyId == metaKeyId
+                }
             )
-            guard let row = try? backgroundContext.fetch(descriptor).first else {
+            let candidates = (try? backgroundContext.fetch(descriptor)) ?? []
+            guard let row = candidates.first(where: { candidate in
+                if let linked = candidate.identity, let metaIdentityId {
+                    return linked.identityId == metaIdentityId
+                }
+                return candidate.identityId == meta.identityId
+            }) else {
                 // No row yet (e.g. store rebuilt before discovery re-ran).
                 // Discovery re-materializes and writes the column itself;
                 // nothing for the backfill to heal here.
@@ -4749,19 +4772,24 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             FetchDescriptor<PersistentIdentity>()
         ) else { return }
         var healed = 0
-        var signable: [Data: Bool] = [:]
+        var probed: [Data: Bool?] = [:]
         for row in rows {
             guard let ownerWalletId = row.wallet?.walletId,
                   !row.isLocal,
                   Self.walletKeyEvidence(row, walletId: ownerWalletId)
             else { continue }
-            // Same signing-material gate as the upsert promotion —
-            // a watch-only wallet's identity must not heal to
-            // "Local". Probed once per wallet.
-            if signable[ownerWalletId] == nil {
-                signable[ownerWalletId] = walletSigningMaterialProbe(ownerWalletId)
+            // Same signing-material gate as the upsert promotion — a
+            // watch-only wallet's identity must not heal to "Local",
+            // and an UNANSWERABLE probe (`nil`) defers rather than
+            // concludes. Probed once per wallet.
+            let capability: Bool?
+            if let cached = probed[ownerWalletId] {
+                capability = cached
+            } else {
+                capability = walletSigningMaterialProbe(ownerWalletId)
+                probed[ownerWalletId] = capability
             }
-            guard signable[ownerWalletId] == true else { continue }
+            guard capability == true else { continue }
             row.isLocal = true
             healed += 1
         }
@@ -4805,36 +4833,32 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// reach Rust's `build_wallet_identity_bucket`, whose per-index
     /// `BTreeMap` would silently keep only the last insert.
     ///
-    /// Rows without `walletKeyEvidence` (this wallet's derivation
-    /// stamp — the only accepted form; unstamped keys exist on
-    /// observed identities too) are quarantined: Rust stamps every
-    /// restored identity `wallet_id = Some(wallet)` and Swift
-    /// mutation gates trust the relationship, so restoring a row the
-    /// old unconditional fallback mislinked would make the corruption
-    /// durable (once restored as owned, it never re-emits in the
-    /// nil/nil shape that lets the upsert path unlink it). A
-    /// genuinely-owned row without a stamp (pre-breadcrumb era) sits
-    /// out at most until the Keychain breadcrumb backfill or its next
-    /// owned re-emit stamps it — a recoverable deferral, unlike a
-    /// durably restored mislink. Collisions between surviving rows
-    /// resolve to the sort winner. Skipped rows are only omitted from
-    /// THIS slice; their store rows are untouched.
+    /// Ownership-unknown rows RESTORE; only same-index collisions are
+    /// resolved here. Three review rounds converged on this shape:
+    /// requiring derivation-stamp evidence for every row permanently
+    /// excludes genuine legacy populations that can never earn a
+    /// stamp — watch-only/xpub wallets (identity keys are
+    /// hardened-path, underivable from an xpub, so no
+    /// `identity_privkey.*` metadata ever exists) and
+    /// direct-key-scheme-only stores — and an identity omitted from
+    /// the Rust bucket has no guaranteed owned re-emission to repair
+    /// it. So absence of evidence is treated as UNKNOWN ownership,
+    /// not disproof: the row restores (Rust records the claimed
+    /// linkage), while everything user-facing stays gated on real
+    /// proof — `isLocal` promotion requires stamp + signing material,
+    /// so a restored mislink presents as Observed with no mutation
+    /// controls, and the upsert path unlinks it when its identity
+    /// re-emits out-of-wallet or under a different declared owner.
+    /// On an index collision (a fallback-era mislink carries the
+    /// placeholder `0` next to the real index-0 identity, and Rust's
+    /// per-index BTreeMap keeps only the last insert) the stamped row
+    /// wins; ties resolve to the sort winner. Skipped rows are only
+    /// omitted from THIS slice; their store rows are untouched.
     static func restorableIdentities(
         _ identities: [PersistentIdentity],
         walletId: Data
     ) -> [PersistentIdentity] {
-        let restorable = identities.filter { row in
-            let hasEvidence = walletKeyEvidence(row, walletId: walletId)
-            if !hasEvidence {
-                NSLog(
-                    "[persistor-load:swift] identity %@ linked to wallet %@ with no key rows — quarantined from the restore slice",
-                    row.identityIdBase58,
-                    walletId.toHexString()
-                )
-            }
-            return hasEvidence
-        }
-        let sorted = restorable.sorted {
+        let sorted = identities.sorted {
             if $0.identityIndex != $1.identityIndex {
                 return $0.identityIndex < $1.identityIndex
             }
@@ -4854,10 +4878,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 result.append(group[0])
                 continue
             }
-            // Every surviving row carries the derivation stamp, so
-            // there is no evidence tiebreak left — deterministic sort
-            // order decides.
-            let winner = group[0]
+            // The stamped contender wins the slot; with no (or every)
+            // stamp present, deterministic sort order decides.
+            let winner = group.first { walletKeyEvidence($0, walletId: walletId) }
+                ?? group[0]
             result.append(winner)
             for skipped in group where skipped !== winner {
                 NSLog(
