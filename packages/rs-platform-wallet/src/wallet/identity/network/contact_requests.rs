@@ -977,13 +977,18 @@ fn external_account_needs_rebuild(contact: &EstablishedContact, has_external: bo
 /// 2. Fall back to the recipient's first `ECDSA_SECP256K1` **ENCRYPTION** key.
 /// 3. Error only if the recipient has neither.
 ///
-/// No AUTHENTICATION fallback: no live client population needs it, and reusing
-/// signing keys for ECDH is poor key separation. `ECDSA_SECP256K1` is required
-/// either way (every observed key is that type, and ECDH needs the full key).
+/// No AUTHENTICATION or TRANSFER fallback: reusing a signing or
+/// fund-authorizing key for ECDH is poor key separation, and nothing forces us
+/// to when we are the one choosing. `ECDSA_SECP256K1` is required either way
+/// (every observed key is that type, and ECDH needs the full key).
 ///
-/// The accepted cohort (DECRYPTION or ENCRYPTION) is the shared
+/// That mainnet's legacy Android/dashj population *does* reference
+/// AUTHENTICATION/TRANSFER keys is a fact about immutable history, handled by
+/// the wider receive-side policy
+/// ([`dash_sdk::platform::dashpay::recipient_key_purpose_is_acceptable_on_receive`]).
+/// It must not relax what we mint: this selector stays on the
 /// [`dash_sdk::platform::dashpay::recipient_key_purpose_is_valid`] membership
-/// policy; only the preference ORDER below (DECRYPTION first, ENCRYPTION
+/// policy, and only the preference ORDER below (DECRYPTION first, ENCRYPTION
 /// second) is local to the selector.
 fn select_recipient_key_index(recipient_identity: &Identity) -> Result<u32, PlatformWalletError> {
     // Skip disabled (revoked) keys: encrypting the DIP-15 compact xpub to a
