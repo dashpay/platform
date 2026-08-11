@@ -523,66 +523,33 @@ impl IdentityWallet {
             revision: 0,
         });
 
-        // Submit the primary proof, wrapped in the shared CL-height-too-low retry
-        // (Platform's observed Core tip briefly behind the proof's chain-locked
-        // height — the same transient the register/top-up paths absorb; harmless
-        // for an IS proof, which never triggers it).
-        //
-        // If Platform rejects the primary IS proof with
-        // `InvalidInstantAssetLockProofSignatureError` (the islock is stale — its
-        // signing quorum rotated out, or it is no longer "recent"; Platform's own
-        // message asks us to "try chain asset lock proof instead"), resubmit the
-        // ChainLock proof over the SAME credit output. This mirrors
-        // `register_identity_with_funding`'s IS→CL fallback, except the CL proof is
-        // rebuilt from the refetched tx: the invitee tracks no asset lock of its
-        // own, so there is no `upgrade_to_chain_lock_proof` to call.
-        let identity = match submit_with_cl_height_retry(settings, |s| {
-            placeholder.put_to_platform_and_wait_for_response_with_private_key(
-                &self.sdk,
-                primary.clone(),
-                &voucher_priv.0,
-                identity_signer,
-                s,
-            )
-        })
-        .await
-        {
-            Ok(identity) => identity,
-            // Coverage note (#4240 review): the unit tests pin proof assembly
-            // (IS primary + optional CL fallback) but not this resubmission arm
-            // itself — exercising it needs an injectable submission seam, so
-            // until one exists regressions here surface only in live claims.
-            Err(e) if is_instant_lock_proof_invalid(&e) => {
-                let Some(chain_proof) = chain_fallback else {
-                    // The islock was rejected but the funding tx is not yet
-                    // chain-locked, so no ChainLock proof can be built. Surface a
-                    // clear retry signal rather than the raw consensus error.
-                    return Err(PlatformWalletError::AssetLockNotChainLocked(
-                        "invitation islock proof was rejected by Platform (stale — quorum \
-                         rotated or no longer recent) and the funding transaction is not yet \
-                         chain-locked, so no ChainLock fallback is possible; retry once the \
-                         funding block is chain-locked"
-                            .to_string(),
-                    ));
-                };
-                tracing::warn!(
-                    "invitation IS-lock proof rejected by Platform on claim; retrying with a \
-                     ChainLock proof over the same funding outpoint"
-                );
-                submit_with_cl_height_retry(settings, |s| {
+        // Submit through the stale-islock fallback seam: the primary proof
+        // first and — only on Platform's stale-islock rejection — the ChainLock
+        // fallback over the SAME credit output (or `AssetLockNotChainLocked`
+        // when none could be built). Each submission is wrapped in the shared
+        // CL-height-too-low retry (Platform's observed Core tip briefly behind
+        // the proof's chain-locked height — the same transient the
+        // register/top-up paths absorb; harmless for an IS proof, which never
+        // triggers it). This mirrors `register_identity_with_funding`'s IS→CL
+        // fallback, except the CL proof was rebuilt from the refetched tx: the
+        // invitee tracks no asset lock of its own, so there is no
+        // `upgrade_to_chain_lock_proof` to call.
+        let sdk = &self.sdk;
+        let placeholder = &placeholder;
+        let voucher_priv = &voucher_priv;
+        let identity =
+            submit_claim_with_stale_islock_fallback(primary, chain_fallback, move |proof| {
+                submit_with_cl_height_retry(settings, move |s| {
                     placeholder.put_to_platform_and_wait_for_response_with_private_key(
-                        &self.sdk,
-                        chain_proof.clone(),
+                        sdk,
+                        proof.clone(),
                         &voucher_priv.0,
                         identity_signer,
                         s,
                     )
                 })
-                .await
-                .map_err(PlatformWalletError::Sdk)?
-            }
-            Err(e) => return Err(PlatformWalletError::Sdk(e)),
-        };
+            })
+            .await?;
 
         // Best-effort local bookkeeping — Platform has already accepted the
         // registration, so a local failure must NOT propagate (mirrors
@@ -737,6 +704,53 @@ where
         }
     }
     Ok(None)
+}
+
+/// Submit the claim's reconstructed proof with the stale-islock → ChainLock
+/// fallback — the injectable orchestration seam of the claim submission (tests
+/// script `submit`; production passes the placeholder-identity put wrapped in
+/// `submit_with_cl_height_retry`).
+///
+/// `primary` is submitted first. Exactly ONE recovery is attempted, and only
+/// for the one rejection that indicts the proof kind rather than the claim:
+/// `is_instant_lock_proof_invalid` (Platform rejected a stale islock — its
+/// signing quorum rotated out, or it is no longer "recent"; Platform's own
+/// message asks us to "try chain asset lock proof instead"). On that rejection
+/// the ChainLock `chain_fallback` over the SAME credit output is submitted —
+/// or, when the funding tx was not yet chain-locked so no fallback could be
+/// built, `AssetLockNotChainLocked` surfaces a clear retry signal instead of
+/// the raw consensus error. Every other error — from the primary or from the
+/// fallback itself — propagates as [`PlatformWalletError::Sdk`] with no
+/// further submission.
+async fn submit_claim_with_stale_islock_fallback<T, F, Fut>(
+    primary: AssetLockProof,
+    chain_fallback: Option<AssetLockProof>,
+    mut submit: F,
+) -> Result<T, PlatformWalletError>
+where
+    F: FnMut(AssetLockProof) -> Fut,
+    Fut: std::future::Future<Output = Result<T, dash_sdk::Error>>,
+{
+    match submit(primary).await {
+        Ok(created) => Ok(created),
+        Err(e) if is_instant_lock_proof_invalid(&e) => {
+            let Some(chain_proof) = chain_fallback else {
+                return Err(PlatformWalletError::AssetLockNotChainLocked(
+                    "invitation islock proof was rejected by Platform (stale — quorum \
+                     rotated or no longer recent) and the funding transaction is not yet \
+                     chain-locked, so no ChainLock fallback is possible; retry once the \
+                     funding block is chain-locked"
+                        .to_string(),
+                ));
+            };
+            tracing::warn!(
+                "invitation IS-lock proof rejected by Platform on claim; retrying with a \
+                 ChainLock proof over the same funding outpoint"
+            );
+            submit(chain_proof).await.map_err(PlatformWalletError::Sdk)
+        }
+        Err(e) => Err(PlatformWalletError::Sdk(e)),
+    }
 }
 
 /// The claim's reconstructed funding proof, plus an optional ChainLock fallback.
@@ -1291,6 +1305,170 @@ mod tests {
             );
             assert_eq!(calls.len(), 3, "no lookup may follow the error");
             assert_eq!(delays, 1);
+        }
+    }
+
+    // --- submit_claim_with_stale_islock_fallback: the claim submission seam ---
+
+    mod claim_submission {
+        use std::collections::VecDeque;
+        use std::sync::{Arc, Mutex};
+
+        use super::super::submit_claim_with_stale_islock_fallback;
+        use super::{funding_tx, voucher_secret};
+        use crate::PlatformWalletError;
+        use dpp::consensus::basic::identity::InvalidInstantAssetLockProofSignatureError;
+        use dpp::dashcore::InstantLock;
+        use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+        use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+        use dpp::prelude::AssetLockProof;
+
+        /// The one rejection the seam recovers from: Platform's stale-islock
+        /// consensus error, in the `Protocol(ConsensusError)` shape
+        /// `is_instant_lock_proof_invalid` matches.
+        fn stale_islock_rejection() -> dash_sdk::Error {
+            dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
+                InvalidInstantAssetLockProofSignatureError::new().into(),
+            )))
+        }
+
+        /// Any error the seam must NOT treat as a stale islock.
+        fn unrelated_sdk_error() -> dash_sdk::Error {
+            dash_sdk::Error::Config("simulated unrelated rejection".to_string())
+        }
+
+        /// An InstantSend primary — the variant is what the assertions key on,
+        /// so a scripted submission log reads as primary-vs-fallback directly.
+        fn instant_primary() -> AssetLockProof {
+            AssetLockProof::Instant(InstantAssetLockProof::new(
+                InstantLock::default(),
+                funding_tx(&voucher_secret()),
+                0,
+            ))
+        }
+
+        fn chain_fallback_proof() -> AssetLockProof {
+            AssetLockProof::Chain(ChainAssetLockProof::new(100, [0u8; 36]))
+        }
+
+        /// Drive the seam with a scripted submit: each call records the proof
+        /// it was handed and pops the next scripted result.
+        async fn run(
+            chain_fallback: Option<AssetLockProof>,
+            script: Vec<Result<u32, dash_sdk::Error>>,
+        ) -> (Result<u32, PlatformWalletError>, Vec<AssetLockProof>) {
+            let queue: Arc<Mutex<VecDeque<Result<u32, dash_sdk::Error>>>> =
+                Arc::new(Mutex::new(script.into_iter().collect()));
+            let submitted: Arc<Mutex<Vec<AssetLockProof>>> = Arc::new(Mutex::new(Vec::new()));
+            let (queue_f, submitted_f) = (Arc::clone(&queue), Arc::clone(&submitted));
+            let result = submit_claim_with_stale_islock_fallback(
+                instant_primary(),
+                chain_fallback,
+                move |proof| {
+                    let queue = Arc::clone(&queue_f);
+                    let submitted = Arc::clone(&submitted_f);
+                    async move {
+                        submitted.lock().expect("submitted").push(proof);
+                        queue
+                            .lock()
+                            .expect("script")
+                            .pop_front()
+                            .expect("script exhausted — the seam submitted more than scripted")
+                    }
+                },
+            )
+            .await;
+            let recorded = submitted.lock().expect("submitted").clone();
+            (result, recorded)
+        }
+
+        /// A successful primary submission returns immediately: one submission,
+        /// and the ChainLock fallback is never touched even though it exists.
+        #[tokio::test]
+        async fn primary_success_never_submits_fallback() {
+            let (result, submitted) = run(Some(chain_fallback_proof()), vec![Ok(7)]).await;
+            assert_eq!(result.expect("primary success"), 7);
+            assert_eq!(submitted.len(), 1, "exactly one submission");
+            assert!(
+                matches!(submitted[0], AssetLockProof::Instant(_)),
+                "the IS primary must be what was submitted"
+            );
+        }
+
+        /// A stale-islock rejection of the primary resubmits the ChainLock
+        /// fallback over the same outpoint, and the fallback's success is the
+        /// claim's success.
+        #[tokio::test]
+        async fn stale_islock_resubmits_chain_fallback() {
+            let (result, submitted) = run(
+                Some(chain_fallback_proof()),
+                vec![Err(stale_islock_rejection()), Ok(9)],
+            )
+            .await;
+            assert_eq!(result.expect("fallback success"), 9);
+            assert_eq!(submitted.len(), 2, "primary then fallback");
+            assert!(
+                matches!(submitted[0], AssetLockProof::Instant(_)),
+                "the IS primary must be tried first"
+            );
+            assert!(
+                matches!(submitted[1], AssetLockProof::Chain(_)),
+                "the resubmission must carry the ChainLock fallback"
+            );
+        }
+
+        /// A stale-islock rejection with NO fallback (funding tx not yet
+        /// chain-locked) surfaces `AssetLockNotChainLocked` — the clear retry
+        /// signal — after exactly one submission.
+        #[tokio::test]
+        async fn stale_islock_without_fallback_surfaces_retry_signal() {
+            let (result, submitted) = run(None, vec![Err(stale_islock_rejection())]).await;
+            assert!(
+                matches!(result, Err(PlatformWalletError::AssetLockNotChainLocked(_))),
+                "expected the not-chain-locked retry signal, got {result:?}"
+            );
+            assert_eq!(
+                submitted.len(),
+                1,
+                "no second submission is possible without a fallback"
+            );
+        }
+
+        /// An unrelated SDK error propagates unchanged after one submission:
+        /// the fallback exists but must NOT be tried for it.
+        #[tokio::test]
+        async fn unrelated_error_propagates_without_second_submission() {
+            let (result, submitted) = run(
+                Some(chain_fallback_proof()),
+                vec![Err(unrelated_sdk_error())],
+            )
+            .await;
+            assert!(
+                matches!(result, Err(PlatformWalletError::Sdk(_))),
+                "the unrelated error must propagate as Sdk, got {result:?}"
+            );
+            assert_eq!(
+                submitted.len(),
+                1,
+                "an unrelated error must not trigger the fallback"
+            );
+        }
+
+        /// The recovery is attempted exactly once: a fallback rejection — even
+        /// one wearing the stale-islock shape again — propagates rather than
+        /// looping.
+        #[tokio::test]
+        async fn fallback_rejection_is_not_recovered_again() {
+            let (result, submitted) = run(
+                Some(chain_fallback_proof()),
+                vec![Err(stale_islock_rejection()), Err(stale_islock_rejection())],
+            )
+            .await;
+            assert!(
+                matches!(result, Err(PlatformWalletError::Sdk(_))),
+                "the fallback's own rejection must propagate as Sdk, got {result:?}"
+            );
+            assert_eq!(submitted.len(), 2, "no third submission may follow");
         }
     }
 
