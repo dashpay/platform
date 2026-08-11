@@ -121,10 +121,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// **Why queue internally** (unlike `track_asset_lock` /
     /// `advance_asset_lock_status`, which return a changeset and let
     /// the caller queue it): `queue_asset_lock_changeset` is
-    /// `pub(super)` to the `asset_lock` module, so the only callers
-    /// of `consume_asset_lock` — the identity registration and
-    /// top-up flows in `wallet/identity/network/registration.rs` —
-    /// can't queue the changeset themselves. The other mutators are
+    /// `pub(super)` to the `asset_lock` module, so the callers of
+    /// `consume_asset_lock` outside it — the identity registration
+    /// and top-up success paths in
+    /// `wallet/identity/network/registration.rs` (the failure paths
+    /// go through [`settle_reported_consumed`](Self::settle_reported_consumed))
+    /// — can't queue the changeset themselves. The other mutators are
     /// only called from inside `asset_lock/build.rs`, which IS in
     /// the module and queues at the call site. Queueing here closes
     /// the gap without widening the `pub(super)` visibility.
@@ -165,6 +167,66 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         };
         self.queue_asset_lock_changeset(cs.clone());
         Ok(cs)
+    }
+
+    /// Classify a Platform rejection of a funded submission that carried
+    /// `submitted`'s proof, settling the tracked lock when — and only
+    /// when — Platform's "already completely used" verdict names that
+    /// same outpoint.
+    ///
+    /// The verdict arrives as an unauthenticated consensus error relayed
+    /// by a single DAPI node, so it is trusted no further than the lock
+    /// whose proof this very submission carried: a verdict naming any
+    /// *other* outpoint is passed through as a plain
+    /// [`Sdk`](PlatformWalletError::Sdk) error instead of tombstoning an
+    /// unrelated lock (which would wipe its proof and strand real burned
+    /// funds on a fabricated answer).
+    ///
+    /// On a bound verdict the credits the lock paid for already landed —
+    /// an earlier attempt succeeded and the client never learned. Marking
+    /// the lock [`Consumed`](AssetLockStatus::Consumed) takes it out of
+    /// the resumable set, which is what stops a recovery worker retrying
+    /// it against the same deterministic rejection on every pass (and,
+    /// for clients that block new funding while a lock is unresolved,
+    /// unblocks the next purchase). Returns
+    /// [`AssetLockAlreadyConsumed`](PlatformWalletError::AssetLockAlreadyConsumed)
+    /// — the same typed error a resume of a consumed lock raises, so
+    /// callers need one terminal case, not a Platform error-string match.
+    /// A bookkeeping failure here can only be `WalletNotFound`; it is
+    /// logged rather than returned, because the verdict itself is what
+    /// the caller must act on.
+    pub(crate) async fn settle_reported_consumed(
+        &self,
+        error: dash_sdk::Error,
+        submitted: &OutPoint,
+    ) -> PlatformWalletError {
+        match crate::error::asset_lock_already_consumed_out_point(&error) {
+            Some(reported) if reported == *submitted => {
+                tracing::info!(
+                    outpoint = %reported,
+                    "Platform rejected the asset lock as already completely used — its \
+                     credits landed on an earlier attempt; marking the lock consumed"
+                );
+                if let Err(e) = self.consume_asset_lock(&reported).await {
+                    tracing::warn!(
+                        outpoint = %reported,
+                        error = %e,
+                        "consume_asset_lock failed after Platform's already-used rejection"
+                    );
+                }
+                PlatformWalletError::AssetLockAlreadyConsumed(reported)
+            }
+            Some(reported) => {
+                tracing::warn!(
+                    reported = %reported,
+                    submitted = %submitted,
+                    "Platform's already-used verdict names a different outpoint than the \
+                     one submitted; not settling any local lock"
+                );
+                PlatformWalletError::Sdk(error)
+            }
+            None => PlatformWalletError::Sdk(error),
+        }
     }
 
     /// Advance the status of a tracked asset lock and optionally attach the proof.

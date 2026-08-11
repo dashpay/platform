@@ -65,9 +65,7 @@ use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
 
-use crate::error::{
-    asset_lock_already_consumed_out_point, is_instant_lock_proof_invalid, PlatformWalletError,
-};
+use crate::error::{is_instant_lock_proof_invalid, PlatformWalletError};
 use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, submit_with_cl_height_retry, FundingResolution, ResolvedFunding,
 };
@@ -250,7 +248,13 @@ impl IdentityWallet {
                     .asset_locks
                     .upgrade_to_chain_lock_proof(&out_point, None)
                     .await?;
-                submit_with_cl_height_retry(settings, |s| {
+                // The CL resubmit can draw the same "already completely
+                // used" verdict as the first attempt (e.g. the IS submit
+                // was ambiguous but actually committed), so its rejection
+                // is classified identically — a bare `Sdk` error here
+                // would leave the lock resumable and reachable by the
+                // endless-retry loop the settlement exists to end.
+                match submit_with_cl_height_retry(settings, |s| {
                     placeholder.put_to_platform_and_wait_for_response_with_signer(
                         &self.sdk,
                         chain_proof.clone(),
@@ -261,16 +265,24 @@ impl IdentityWallet {
                     )
                 })
                 .await
-                .map_err(PlatformWalletError::Sdk)?
+                {
+                    Ok(identity) => identity,
+                    Err(e) => {
+                        return Err(self
+                            .asset_locks
+                            .settle_reported_consumed(e, &proof_out_point)
+                            .await)
+                    }
+                }
             }
             // See the matching arm in `top_up_identity_with_funding`: a
             // credit output Platform already spent is terminal, and this is
             // the only place that can record it locally on the failure path.
             Err(e) => {
-                if let Some(out_point) = asset_lock_already_consumed_out_point(&e) {
-                    return Err(self.settle_already_consumed_lock(out_point).await);
-                }
-                return Err(PlatformWalletError::Sdk(e));
+                return Err(self
+                    .asset_locks
+                    .settle_reported_consumed(e, &proof_out_point)
+                    .await)
             }
         };
 
@@ -490,7 +502,10 @@ impl IdentityWallet {
                     .asset_locks
                     .upgrade_to_chain_lock_proof(&out_point, None)
                     .await?;
-                submit_with_cl_height_retry(settings, |s| {
+                // Classified like the first attempt: the CL resubmit can
+                // draw the same terminal "already completely used" verdict
+                // (see the registration flow's matching arm).
+                match submit_with_cl_height_retry(settings, |s| {
                     identity.top_up_identity_with_signer(
                         &self.sdk,
                         chain_proof.clone(),
@@ -500,19 +515,27 @@ impl IdentityWallet {
                     )
                 })
                 .await
-                .map_err(PlatformWalletError::Sdk)?
+                {
+                    Ok(balance) => balance,
+                    Err(e) => {
+                        return Err(self
+                            .asset_locks
+                            .settle_reported_consumed(e, &proof_out_point)
+                            .await)
+                    }
+                }
             }
             // Platform says this credit output was already spent — the
             // top-up it would have paid for landed earlier. Record that
             // locally (nothing else ever does: the success path is the only
-            // other caller of `consume_asset_lock`) so the lock leaves the
+            // other consumer of the tracked lock) so the lock leaves the
             // resumable set instead of being retried against the same
             // deterministic rejection forever.
             Err(e) => {
-                if let Some(out_point) = asset_lock_already_consumed_out_point(&e) {
-                    return Err(self.settle_already_consumed_lock(out_point).await);
-                }
-                return Err(PlatformWalletError::Sdk(e));
+                return Err(self
+                    .asset_locks
+                    .settle_reported_consumed(e, &proof_out_point)
+                    .await)
             }
         };
 
@@ -568,43 +591,6 @@ impl IdentityWallet {
         }
 
         Ok(new_balance)
-    }
-}
-
-impl IdentityWallet {
-    /// Record Platform's "already completely used" verdict for `out_point`
-    /// locally and return the typed error describing it.
-    ///
-    /// The credits this lock paid for exist on chain — an earlier attempt
-    /// succeeded and the client never learned. Marking it
-    /// [`Consumed`](crate::wallet::asset_lock::tracked::AssetLockStatus::Consumed)
-    /// takes it out of the resumable set, which is what stops a recovery
-    /// worker retrying it on every pass (and, for clients that block new
-    /// funding while a lock is unresolved, unblocks the next purchase).
-    ///
-    /// Returns [`AssetLockAlreadyConsumed`](PlatformWalletError::AssetLockAlreadyConsumed)
-    /// — the same typed error a resume of an already-consumed lock raises, so
-    /// callers need one terminal case, not a Platform error-string match.
-    /// A bookkeeping failure here can only be `WalletNotFound`; it is logged
-    /// rather than returned, because the verdict itself is what the caller
-    /// must act on.
-    async fn settle_already_consumed_lock(
-        &self,
-        out_point: dashcore::OutPoint,
-    ) -> PlatformWalletError {
-        tracing::info!(
-            outpoint = %out_point,
-            "Platform rejected the asset lock as already completely used — its \
-             credits landed on an earlier attempt; marking the lock consumed"
-        );
-        if let Err(e) = self.asset_locks.consume_asset_lock(&out_point).await {
-            tracing::warn!(
-                outpoint = %out_point,
-                error = %e,
-                "consume_asset_lock failed after Platform's already-used rejection"
-            );
-        }
-        PlatformWalletError::AssetLockAlreadyConsumed(out_point)
     }
 }
 

@@ -925,4 +925,120 @@ mod tests {
             "re-derived credit-output path must match the build-time path"
         );
     }
+
+    /// Platform's "already completely used" verdict is an unauthenticated
+    /// error relayed by one DAPI node: `settle_reported_consumed` must
+    /// tombstone the tracked lock only when the verdict names the outpoint
+    /// this very submission carried, and pass every other rejection through
+    /// untouched — a fabricated verdict naming a different outpoint must
+    /// not strand an unrelated lock.
+    #[tokio::test]
+    async fn already_used_verdict_settles_only_the_submitted_outpoint() {
+        fn already_consumed_error(out_point: OutPoint) -> dash_sdk::Error {
+            use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyConsumedError;
+            use dpp::consensus::basic::BasicError;
+            use dpp::consensus::ConsensusError;
+            dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
+                ConsensusError::BasicError(
+                    BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(
+                        IdentityAssetLockTransactionOutPointAlreadyConsumedError::new(
+                            out_point.txid,
+                            out_point.vout as usize,
+                        ),
+                    ),
+                ),
+            )))
+        }
+
+        let (wallet_manager, wallet_id, _balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_network(Network::Testnet)
+                .build()
+                .expect("mock sdk"),
+        );
+        let manager = AssetLockManager::new(
+            sdk,
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::new(RecordingBroadcaster::default()),
+            WalletPersister::new(wallet_id, Arc::new(RecordingPersistence::default())),
+        );
+        let (transaction, _path) = manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityTopUp,
+                4,
+                &signer,
+            )
+            .await
+            .expect("build asset lock");
+        let out_point = OutPoint::new(transaction.txid(), 0);
+        {
+            let mut wm = wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet_id)
+                .expect("wallet must remain registered")
+                .tracked_asset_locks
+                .insert(
+                    out_point,
+                    TrackedAssetLock {
+                        out_point,
+                        transaction,
+                        account_index: 0,
+                        funding_type: AssetLockFundingType::IdentityTopUp,
+                        identity_index: 4,
+                        amount: 1_000_000,
+                        status: AssetLockStatus::Built,
+                        proof: None,
+                    },
+                );
+        }
+        let lock_status = || async {
+            wallet_manager
+                .read()
+                .await
+                .get_wallet_info(&wallet_id)
+                .expect("wallet")
+                .tracked_asset_locks
+                .get(&out_point)
+                .expect("lock stays tracked")
+                .status
+                .clone()
+        };
+
+        // A verdict naming a DIFFERENT outpoint passes through untouched.
+        let foreign = OutPoint::new(Txid::from_byte_array([9u8; 32]), 0);
+        let unbound = manager
+            .settle_reported_consumed(already_consumed_error(foreign), &out_point)
+            .await;
+        assert!(
+            matches!(unbound, PlatformWalletError::Sdk(_)),
+            "an unbound verdict must surface as a plain SDK error: {unbound:?}"
+        );
+        assert_eq!(
+            lock_status().await,
+            AssetLockStatus::Built,
+            "an unbound verdict must not settle the local lock"
+        );
+
+        // A rejection that is no consumed-verdict at all passes through too.
+        let unrelated = manager
+            .settle_reported_consumed(dash_sdk::Error::Generic("boom".to_string()), &out_point)
+            .await;
+        assert!(matches!(unrelated, PlatformWalletError::Sdk(_)));
+        assert_eq!(lock_status().await, AssetLockStatus::Built);
+
+        // The bound verdict settles: typed terminal error + Consumed tombstone.
+        let bound = manager
+            .settle_reported_consumed(already_consumed_error(out_point), &out_point)
+            .await;
+        assert!(matches!(
+            bound,
+            PlatformWalletError::AssetLockAlreadyConsumed(actual) if actual == out_point
+        ));
+        assert_eq!(lock_status().await, AssetLockStatus::Consumed);
+    }
 }

@@ -525,8 +525,11 @@ pub fn is_instant_lock_proof_invalid(error: &dash_sdk::Error) -> bool {
 /// [`Consumed`](crate::wallet::asset_lock::tracked::AssetLockStatus::Consumed)
 /// and stop resuming it — rather than as a failure to retry.
 ///
-/// Returns the outpoint Platform named, which identifies the local tracked
-/// lock without trusting the caller's bookkeeping.
+/// Returns the outpoint Platform named. The verdict is an unauthenticated
+/// error relayed by a single DAPI node — callers must bind it to the
+/// outpoint they actually submitted before settling anything
+/// ([`AssetLockManager::settle_reported_consumed`](crate::wallet::asset_lock::manager::AssetLockManager::settle_reported_consumed)
+/// does), or a fabricated verdict could tombstone an unrelated lock.
 ///
 /// Companion to [`is_instant_lock_proof_invalid`]: both classify a Platform
 /// rejection of an asset-lock proof, but that one is retryable via a CL
@@ -946,5 +949,68 @@ mod address_nonce_tests {
         let got = as_address_invalid_nonce(&wrapped).expect("must unwrap the retry envelope");
         assert_eq!(got.provided_nonce(), 9);
         assert_eq!(got.expected_nonce(), 10);
+    }
+
+    /// Platform's "already completely used" rejection naming `out_point`,
+    /// as the raw consensus error both wire shapes carry.
+    fn already_consumed_cause(out_point: dashcore::OutPoint) -> dpp::consensus::ConsensusError {
+        use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyConsumedError;
+        use dpp::consensus::basic::BasicError;
+        use dpp::consensus::ConsensusError;
+        ConsensusError::BasicError(
+            BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(
+                IdentityAssetLockTransactionOutPointAlreadyConsumedError::new(
+                    out_point.txid,
+                    out_point.vout as usize,
+                ),
+            ),
+        )
+    }
+
+    fn already_consumed_test_out_point() -> dashcore::OutPoint {
+        use dashcore::hashes::Hash as _;
+        dashcore::OutPoint {
+            txid: dashcore::Txid::from_byte_array([7u8; 32]),
+            vout: 3,
+        }
+    }
+
+    #[test]
+    fn extracts_already_consumed_out_point_from_both_shapes() {
+        let out_point = already_consumed_test_out_point();
+        let protocol = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
+            already_consumed_cause(out_point),
+        )));
+        // The gRPC broadcast/wait rejection shape; the classifier reads only
+        // the cause, so the code and message are inert.
+        let broadcast =
+            dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
+                code: 10504,
+                message: "asset lock already completely used".to_string(),
+                cause: Some(already_consumed_cause(out_point)),
+            });
+        for err in [protocol, broadcast] {
+            assert_eq!(asset_lock_already_consumed_out_point(&err), Some(out_point));
+        }
+    }
+
+    #[test]
+    fn already_consumed_classifier_ignores_unrelated_and_causeless_errors() {
+        // A plainly unrelated SDK error.
+        assert!(
+            asset_lock_already_consumed_out_point(&dash_sdk::Error::Generic("boom".to_string()))
+                .is_none()
+        );
+        // A different consensus rejection (address-nonce) must not read as a
+        // consumed verdict.
+        assert!(asset_lock_already_consumed_out_point(&protocol_shape(1, 2)).is_none());
+        // The DAPI wait-timeout shape: no consensus cause, no verdict.
+        let causeless =
+            dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
+                code: 0,
+                message: "timeout".to_string(),
+                cause: None,
+            });
+        assert!(asset_lock_already_consumed_out_point(&causeless).is_none());
     }
 }

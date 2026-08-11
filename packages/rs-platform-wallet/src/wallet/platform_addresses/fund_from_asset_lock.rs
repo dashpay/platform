@@ -247,7 +247,10 @@ impl PlatformAddressWallet {
                     )
                     .await?;
                 self.asset_locks.queue_asset_lock_changeset(cs);
-                submit_with_cl_height_retry(settings, |s| {
+                // Classified like the first attempt: the CL resubmit can
+                // draw the same terminal "already completely used" verdict
+                // (see `register_identity_with_funding`'s matching arm).
+                match submit_with_cl_height_retry(settings, |s| {
                     addresses.top_up_with_signers(
                         &self.sdk,
                         chain_proof.clone(),
@@ -259,9 +262,25 @@ impl PlatformAddressWallet {
                     )
                 })
                 .await
-                .map_err(PlatformWalletError::Sdk)?
+                {
+                    Ok(infos) => infos,
+                    Err(e) => {
+                        return Err(self
+                            .asset_locks
+                            .settle_reported_consumed(e, &proof_out_point)
+                            .await)
+                    }
+                }
             }
-            Err(e) => return Err(PlatformWalletError::Sdk(e)),
+            // A credit output Platform already spent is terminal for this
+            // flow too — settle the tracked lock (outpoint-bound) instead
+            // of leaving it resumable against a deterministic rejection.
+            Err(e) => {
+                return Err(self
+                    .asset_locks
+                    .settle_reported_consumed(e, &proof_out_point)
+                    .await)
+            }
         };
 
         // Step 4: bookkeeping + cleanup. Write the proof-attested
