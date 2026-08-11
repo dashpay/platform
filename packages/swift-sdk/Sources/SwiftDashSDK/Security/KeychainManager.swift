@@ -911,6 +911,56 @@ extension KeychainManager {
         return ok
     }
 
+    /// Forget every materialized copy of ONE identity key across both
+    /// storage schemes, independent of SwiftData breadcrumbs:
+    /// - the legacy `(identityId, keyIndex)` item;
+    /// - the wallet-derived `identity_privkey.*` item — via the
+    ///   caller's breadcrumb when it has one, and ALWAYS via a
+    ///   metadata public-key sweep too, because pre-migration rows
+    ///   carry `nil` breadcrumb columns until the backfill runs while
+    ///   their secret is still revealable by public-key lookup.
+    ///
+    /// Returns `true` only when nothing remains retrievable under
+    /// either scheme afterward (verified with `hasIdentityPrivateKey`
+    /// + `hasPrivateKey`) — a caller must NOT clear its stored key
+    /// reference on `false`, or the secret would outlive every handle
+    /// to it. Note this forgets the MATERIALIZED secret; a
+    /// wallet-derivable key can still be re-derived from the seed on
+    /// demand.
+    @discardableResult
+    public func forgetIdentityKeyMaterial(
+        identityId: Data,
+        keyIndex: Int32,
+        publicKeyHex: String,
+        breadcrumbWalletId: Data? = nil,
+        derivationPath: String? = nil
+    ) -> Bool {
+        var ok = deletePrivateKey(identityId: identityId, keyIndex: keyIndex)
+        if let breadcrumbWalletId, let derivationPath {
+            ok = deleteIdentityPrivateKey(
+                walletId: breadcrumbWalletId,
+                derivationPath: derivationPath
+            ) && ok
+        }
+        // Breadcrumb-independent sweep by metadata public key. Looped
+        // because several accounts can carry the same public key
+        // (walletId-prefixed + legacy rows); each successful delete
+        // removes one, so the lookup converges to nil. A delete error
+        // breaks out — `ok` goes false and the verification below
+        // fails closed.
+        while let account = identityPrivateKeyAccount(publicKeyHex: publicKeyHex) {
+            do {
+                try deleteGenericPassword(account: account)
+            } catch {
+                ok = false
+                break
+            }
+        }
+        return ok
+            && !hasIdentityPrivateKey(publicKeyHex: publicKeyHex)
+            && !hasPrivateKey(identityId: identityId, keyIndex: keyIndex)
+    }
+
     /// Best-effort delete of the legacy (no-walletId) keychain
     /// entry for `derivationPath`, gated on its decoded
     /// `IdentityPrivateKeyMetadata.walletId` matching `walletIdHex`.

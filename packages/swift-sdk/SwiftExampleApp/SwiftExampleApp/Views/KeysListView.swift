@@ -542,49 +542,50 @@ struct PrivateKeyView: View {
   }
 
   private func forgetPrivateKey() {
-    // Two storage schemes coexist (see `getPrivateKey(for:)`): the
-    // legacy `(identityId, keyIndex)` item AND the wallet-derived
-    // `identity_privkey.*` item addressed by the persisted
-    // breadcrumb. Delete BOTH — `deletePrivateKey` reports success
-    // when the legacy item is simply absent, so deleting only it
-    // would clear the SwiftData reference while the wallet-derived
-    // secret stayed retrievable.
-    let km = KeychainManager.shared
-    var removed = km.deletePrivateKey(identityId: identity.identityId, keyIndex: Int32(keyId))
-    if let persistedKey = identity.publicKeys.first(where: { $0.keyId == Int32(keyId) }),
-       let breadcrumbWalletId = persistedKey.walletId,
-       let derivationPath = persistedKey.identityDerivationPath {
-      removed = km.deleteIdentityPrivateKey(
-        walletId: breadcrumbWalletId,
-        derivationPath: derivationPath
-      ) && removed
+    // Two storage schemes coexist (see `getPrivateKey(for:)`).
+    // `forgetIdentityKeyMaterial` deletes under BOTH — including a
+    // breadcrumb-independent public-key sweep for pre-migration rows
+    // whose breadcrumb columns are still nil — and verifies nothing
+    // remains retrievable before we clear the stored reference.
+    let persistedKey = identity.publicKeys.first { $0.keyId == Int32(keyId) }
+    let publicKeyHex = persistedKey?.publicKeyData.toHexString()
+      ?? identity.identityPublicKeys.first { $0.id == keyId }?.data.toHexString()
+    let removed = KeychainManager.shared.forgetIdentityKeyMaterial(
+      identityId: identity.identityId,
+      keyIndex: Int32(keyId),
+      publicKeyHex: publicKeyHex ?? "",
+      breadcrumbWalletId: persistedKey?.walletId,
+      derivationPath: persistedKey?.identityDerivationPath
+    )
+    guard removed else {
+      // Keep the stored reference — clearing it while the secret is
+      // still retrievable would leave the key orphaned in the
+      // Keychain with no handle pointing at it.
+      forgetError = "The private key could not be fully removed from the Keychain — nothing was changed."
+      return
     }
 
-    if removed {
-      // Clear the keychain reference on the matching
-      // PersistentPublicKey. The @Query observing the parent
-      // identity will re-render this row automatically.
-      if let persistedKey = identity.publicKeys.first(
-        where: { $0.keyId == Int32(keyId) }
-      ) {
-        persistedKey.privateKeyKeychainIdentifier = nil
-        // Forgetting the last imported key can end the identity's
-        // local status — recompute from what remains (wallet
-        // linkage / other key material).
-        identity.recomputeIsLocalAfterKeyRemoval()
-        do {
-          try modelContext.save()
-        } catch {
-          // The Keychain item is already gone (that delete is
-          // irreversible), so a silent save failure would leave a
-          // stale reference + isLocal on the next launch with no way
-          // to re-run this flow. Surface it and keep the sheet open.
-          forgetError = "The key was removed from the Keychain, but saving the change failed: \(error.localizedDescription)"
-          return
-        }
+    // Clear the keychain reference on the matching
+    // PersistentPublicKey. The @Query observing the parent
+    // identity will re-render this row automatically.
+    if let persistedKey {
+      persistedKey.privateKeyKeychainIdentifier = nil
+      // Forgetting the last imported key can end the identity's
+      // local status — recompute from what remains (wallet
+      // linkage / other key material).
+      identity.recomputeIsLocalAfterKeyRemoval()
+      do {
+        try modelContext.save()
+      } catch {
+        // The Keychain item is already gone (that delete is
+        // irreversible), so a silent save failure would leave a
+        // stale reference + isLocal on the next launch with no way
+        // to re-run this flow. Surface it and keep the sheet open.
+        forgetError = "The key was removed from the Keychain, but saving the change failed: \(error.localizedDescription)"
+        return
       }
-      dismiss()
     }
+    dismiss()
   }
 
   @MainActor
