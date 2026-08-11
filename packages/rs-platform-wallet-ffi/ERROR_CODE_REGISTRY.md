@@ -142,7 +142,7 @@ Fork-era numbers remain in the collision history, which is immutable record.
 | 30 | *(reserved — vacated)* | — | Vacated by #4185/#4256 on 2026-08-02; RESERVED, not reissuable — the next-free frontier is the only allocation source |
 | 32 | *(reserved — lapsed)* | — | Owner #4310 (successor of fork-era #4247) closed without merging; RESERVED, not reissuable |
 | 33 | *(reserved — lapsed)* | — | Owner #4311 (successor of fork-era #4256) closed without merging; RESERVED, not reissuable |
-| 37→42 | `ErrorShieldedInviteAlreadyClaimed` | #4313 | On hold — its claim of 37 (a 32 → 37 move; successor of fork-era #4204) was **taken by merged #4348** (`ErrorDocumentNotForSale = 37`, ABI since 2026-08-09). On revival #4313 renumbers its Rust discriminant and Swift/Kotlin mappings to the frontier (42 at time of writing) |
+| 37→(frontier) | `ErrorShieldedInviteAlreadyClaimed` | #4313 | On hold — its claim of 37 (a 32 → 37 move; successor of fork-era #4204) was **taken by merged #4348** (`ErrorDocumentNotForSale = 37`, ABI since 2026-08-09). It holds **no number** while on hold: on revival it renumbers its Rust discriminant and Swift/Kotlin mappings to whatever this file's frontier is at that moment, recording the claim here first. 42 stays the public frontier until then |
 
 **Code 31 left this table on 2026-08-04.** `ErrorSigningKeyUnavailable` sat here
 as #4183's proposal until #4183 merged (`189a3abb1c`); it is now in the merged
