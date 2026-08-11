@@ -24,8 +24,8 @@ pub struct TrackedAssetLockFFI {
     /// Amount in duffs.
     pub amount: u64,
     /// Status (0=Built, 1=Broadcast, 2=InstantSendLocked, 3=ChainLocked,
-    /// 4=Consumed, 5=RecoveredFromChain — finality proven by the restore
-    /// scan, Platform-side consumption unknown).
+    /// 4=Consumed, 5=RecoveredFromChain — Core finality proven by restore
+    /// reconstruction or live reconciliation, Platform-side consumption unknown).
     pub status: u32,
     /// Whether a proof is attached.
     pub has_proof: bool,

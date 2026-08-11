@@ -55,12 +55,17 @@ pub enum AssetLockStatus {
     /// (amount, identity index, funding tx) but is excluded from any
     /// "still actionable" predicate.
     Consumed,
-    /// Reconstructed from a **chain-locked** on-chain record rather
-    /// than tracked live through the build → broadcast → proof
-    /// pipeline — the restore-scan path
-    /// (`wallet::asset_lock::sync::reconstruction`) emits this for
-    /// finalized asset-lock transactions whose credit outputs pay this
-    /// wallet's funding accounts. Non-final detections (mempool /
+    /// Core finality is authenticated, but Platform-side consumption is
+    /// unknown. Most entries reach this state after reconstruction from a
+    /// **chain-locked** on-chain record rather than live tracking through the
+    /// build → broadcast → proof pipeline. It is also the safe state after an
+    /// explicit retry receives an unauthenticated "already consumed" report:
+    /// the wallet first obtains a ChainLock proof, retains it, and records no
+    /// claim that Platform actually consumed the output.
+    ///
+    /// The restore-scan path (`wallet::asset_lock::sync::reconstruction`)
+    /// emits this for finalized asset-lock transactions whose credit outputs
+    /// pay this wallet's funding accounts. Non-final detections (mempool /
     /// unconfirmed-block sightings) enter as
     /// [`Broadcast`](Self::Broadcast) /
     /// [`InstantSendLocked`](Self::InstantSendLocked) like any other

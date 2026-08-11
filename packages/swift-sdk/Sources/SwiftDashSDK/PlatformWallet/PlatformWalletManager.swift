@@ -62,6 +62,9 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// counterparty) are mirrored durably. Mirrors
     /// `PersistenceCapabilities::DPNS_NAME_STATES`.
     public static let dpnsNameStates: UInt64 = 1 << 8
+    /// Tracked asset-lock rows, including status and proof updates, can be
+    /// persisted. Restart hydration is separately attested by `walletRestore`.
+    public static let trackedAssetLocks: UInt64 = 1 << 9
 
     public let version: UInt32
     public let bits: UInt64

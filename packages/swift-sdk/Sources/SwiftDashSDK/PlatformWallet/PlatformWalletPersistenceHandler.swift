@@ -1476,6 +1476,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 | PlatformWalletPersistenceCapabilities.unsignedTokenStorage
                 | PlatformWalletPersistenceCapabilities.walletRestore
                 | PlatformWalletPersistenceCapabilities.dpnsNameStates
+                | PlatformWalletPersistenceCapabilities.trackedAssetLocks
         )
     }
 

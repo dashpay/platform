@@ -114,6 +114,7 @@ pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DEFERRED_CONTACT_CRYPTO: u64 =
     PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PENDING_CONTACT_CRYPTO;
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_WALLET_RESTORE: u64 = 1 << 7;
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DPNS_NAME_STATES: u64 = 1 << 8;
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_TRACKED_ASSET_LOCKS: u64 = 1 << 9;
 
 /// Version of [`PersistenceCallbacksExtension`]. The extension is deliberately
 /// separate from [`PersistenceCallbacks`]: existing hosts pass the latter by
@@ -203,9 +204,8 @@ pub struct PersistenceCallbacks {
     /// Fired once at the top of every [`FFIPersister::store`] call,
     /// before any per-kind sub-callback runs. Clients use this as a
     /// hook to open a transaction / begin a batch / snapshot context
-    /// state; paired with `on_changeset_end_fn`. Return value is
-    /// advisory — a non-zero result is logged but does NOT abort the
-    /// round.
+    /// state; paired with `on_changeset_end_fn`. A non-zero result
+    /// aborts the round before any per-kind callback runs.
     pub on_changeset_begin_fn:
         Option<unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8) -> i32>,
     /// Fired once at the bottom of every [`FFIPersister::store`]
@@ -220,12 +220,15 @@ pub struct PersistenceCallbacks {
     /// itself failed (e.g. the atomic `save()` threw and the staged
     /// writes were rolled back); `store()` then returns `Err` so the
     /// caller does not advance state against data that never reached
-    /// durable storage. (Unlike `on_changeset_begin_fn`, this return
-    /// is honored, not advisory.)
+    /// durable storage.
     pub on_changeset_end_fn: Option<
         unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8, success: bool) -> i32,
     >,
-    /// Called when a changeset is stored. Returns 0 on success.
+    /// Legacy notification fired after `on_changeset_end_fn` and the in-memory
+    /// pending merge. When an end callback committed the round, this return is
+    /// advisory because the durable write cannot be rolled back. Without that
+    /// atomic boundary, a non-zero value retains the legacy `store()` error
+    /// contract.
     pub on_store_fn:
         Option<unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8) -> i32>,
     /// Called when flush is requested. Returns 0 on success.
@@ -1047,6 +1050,9 @@ impl FFIPersister {
         if wallet_restore {
             capabilities = capabilities.union(PersistenceCapabilities::WALLET_RESTORE);
         }
+        if self.callbacks.on_persist_asset_locks_fn.is_some() {
+            capabilities = capabilities.union(PersistenceCapabilities::TRACKED_ASSET_LOCKS);
+        }
         if self.callbacks.on_persist_wallet_changeset_fn.is_some()
             && wallet_restore
             && capabilities.contains(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
@@ -1084,6 +1090,12 @@ impl PlatformWalletPersistence for FFIPersister {
     fn persistence_capabilities(&self) -> PersistenceCapabilities {
         self.declared_capabilities
             .intersection(self.callback_capabilities())
+    }
+
+    fn store_commits_inline(&self) -> bool {
+        // The end callback commits (or rolls back) the host transaction before
+        // `store` returns. `flush` is only a later general-purpose notification.
+        self.callbacks.on_changeset_end_fn.is_some()
     }
 
     fn store(
@@ -2259,14 +2271,24 @@ impl PlatformWalletPersistence for FFIPersister {
             .and_modify(|existing| existing.merge(changeset.clone()))
             .or_insert(changeset);
 
-        // Notify caller.
+        // Preserve the legacy notification phase. With an end callback, the
+        // host transaction is already committed and a notification failure is
+        // advisory. Without that atomic boundary, preserve the established
+        // `store()` error contract for legacy hosts that use this callback as
+        // their durable-write boundary.
         if let Some(cb) = self.callbacks.on_store_fn {
             let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr()) };
             if result != 0 {
-                return Err(PersistenceError::backend(format!(
-                    "Persistence store callback returned error code {}",
-                    result
-                )));
+                if self.callbacks.on_changeset_end_fn.is_some() {
+                    eprintln!(
+                        "Persistence store callback returned post-commit error code {result}; \
+                         ignored"
+                    );
+                } else {
+                    return Err(PersistenceError::backend(format!(
+                        "Persistence store callback returned error code {result}"
+                    )));
+                }
             }
         }
 
@@ -5971,6 +5993,16 @@ mod tests {
     ) -> i32 {
         0
     }
+    unsafe extern "C" fn noop_asset_locks(
+        _ctx: *mut c_void,
+        _wallet_id: *const u8,
+        _upserts_ptr: *const AssetLockEntryFFI,
+        _upserts_count: usize,
+        _removed_ptr: *const [u8; 36],
+        _removed_count: usize,
+    ) -> i32 {
+        0
+    }
     unsafe extern "C" fn noop_load_wallets(
         _ctx: *mut c_void,
         out_entries: *mut *const WalletRestoreEntryFFI,
@@ -6094,6 +6126,17 @@ mod tests {
         assert!(!persister.persists_durably());
     }
 
+    #[test]
+    fn end_callback_marks_store_as_inline_commit_boundary() {
+        let callbacks = PersistenceCallbacks {
+            on_changeset_end_fn: Some(noop_end),
+            ..PersistenceCallbacks::default()
+        };
+
+        assert!(FFIPersister::new(callbacks).store_commits_inline());
+        assert!(!FFIPersister::new(PersistenceCallbacks::default()).store_commits_inline());
+    }
+
     /// Partial callback pairs attest only complete, independently testable
     /// contracts. Atomicity must not imply invitation support, and a pool
     /// callback without its registration callback must not attest pools.
@@ -6144,6 +6187,48 @@ mod tests {
         assert!(!capabilities.contains(PersistenceCapabilities::WALLET_RESTORE));
     }
 
+    #[test]
+    fn asset_lock_reconciliation_requires_every_callback_leg() {
+        fn complete_callbacks() -> PersistenceCallbacks {
+            PersistenceCallbacks {
+                on_changeset_begin_fn: Some(noop_begin),
+                on_changeset_end_fn: Some(noop_end),
+                on_persist_asset_locks_fn: Some(noop_asset_locks),
+                on_load_wallet_list_fn: Some(noop_load_wallets),
+                on_load_wallet_list_free_fn: Some(noop_free_wallets),
+                ..Default::default()
+            }
+        }
+
+        let required = PersistenceCapabilities::ASSET_LOCK_RECONCILIATION;
+        assert!(declared_persister(complete_callbacks(), required)
+            .persistence_capabilities()
+            .contains(required));
+
+        let mut missing_begin = complete_callbacks();
+        missing_begin.on_changeset_begin_fn = None;
+        let mut missing_end = complete_callbacks();
+        missing_end.on_changeset_end_fn = None;
+        let mut missing_asset_locks = complete_callbacks();
+        missing_asset_locks.on_persist_asset_locks_fn = None;
+        let mut missing_load = complete_callbacks();
+        missing_load.on_load_wallet_list_fn = None;
+        let mut missing_load_free = complete_callbacks();
+        missing_load_free.on_load_wallet_list_free_fn = None;
+
+        for callbacks in [
+            missing_begin,
+            missing_end,
+            missing_asset_locks,
+            missing_load,
+            missing_load_free,
+        ] {
+            assert!(!declared_persister(callbacks, required)
+                .persistence_capabilities()
+                .contains(required));
+        }
+    }
+
     /// A complete non-shielded vtable exposes every capability representable
     /// by its callbacks. Deferred contact crypto remains absent because the
     /// vtable has no callback contract for that queue.
@@ -6155,12 +6240,14 @@ mod tests {
             .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
             .union(PersistenceCapabilities::PROVIDER_TRANSACTIONS)
             .union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE)
-            .union(PersistenceCapabilities::WALLET_RESTORE);
+            .union(PersistenceCapabilities::WALLET_RESTORE)
+            .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS);
         cb.on_changeset_begin_fn = Some(noop_begin);
         cb.on_changeset_end_fn = Some(noop_end);
         cb.on_persist_account_registrations_fn = Some(noop_registrations);
         cb.on_persist_account_address_pools_fn = Some(noop_pools);
         cb.on_persist_invitations_fn = Some(noop_invitations);
+        cb.on_persist_asset_locks_fn = Some(noop_asset_locks);
         cb.on_load_wallet_list_fn = Some(noop_load_wallets);
         cb.on_load_wallet_list_free_fn = Some(noop_free_wallets);
         cb.on_persist_wallet_changeset_fn = Some(noop_wallet_changeset);
@@ -6280,6 +6367,10 @@ mod tests {
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DPNS_NAME_STATES,
             PersistenceCapabilities::DPNS_NAME_STATES.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_TRACKED_ASSET_LOCKS,
+            PersistenceCapabilities::TRACKED_ASSET_LOCKS.bits()
         );
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ACCOUNT_ADDRESS_POOLS,
@@ -7759,6 +7850,108 @@ mod tests {
         // pointer any more.
         drop(persister);
         drop(probe);
+    }
+
+    #[test]
+    fn store_notification_remains_post_commit_and_advisory() {
+        struct StoreNotificationProbe {
+            end_called: AtomicBool,
+            store_called: AtomicBool,
+            store_saw_end: AtomicBool,
+        }
+
+        extern "C" fn failing_store(ctx: *mut TestCVoid, _wallet_id: *const u8) -> i32 {
+            let probe = unsafe { &*(ctx as *const StoreNotificationProbe) };
+            probe.store_called.store(true, Ordering::SeqCst);
+            probe
+                .store_saw_end
+                .store(probe.end_called.load(Ordering::SeqCst), Ordering::SeqCst);
+            7
+        }
+
+        extern "C" fn recording_end(
+            ctx: *mut TestCVoid,
+            _wallet_id: *const u8,
+            success: bool,
+        ) -> i32 {
+            let probe = unsafe { &*(ctx as *const StoreNotificationProbe) };
+            probe.end_called.store(success, Ordering::SeqCst);
+            0
+        }
+
+        let probe = StoreNotificationProbe {
+            end_called: AtomicBool::new(false),
+            store_called: AtomicBool::new(false),
+            store_saw_end: AtomicBool::new(false),
+        };
+        let callbacks = PersistenceCallbacks {
+            context: &probe as *const StoreNotificationProbe as *mut TestCVoid,
+            on_store_fn: Some(failing_store),
+            on_changeset_end_fn: Some(recording_end),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new(callbacks);
+
+        persister
+            .store([1u8; 32], PlatformWalletChangeSet::default())
+            .expect("post-commit notification failure must remain advisory");
+
+        assert!(probe.end_called.load(Ordering::SeqCst));
+        assert!(probe.store_called.load(Ordering::SeqCst));
+        assert!(probe.store_saw_end.load(Ordering::SeqCst));
+
+        let legacy_probe = StoreNotificationProbe {
+            end_called: AtomicBool::new(false),
+            store_called: AtomicBool::new(false),
+            store_saw_end: AtomicBool::new(false),
+        };
+        let callbacks = PersistenceCallbacks {
+            context: &legacy_probe as *const StoreNotificationProbe as *mut TestCVoid,
+            on_store_fn: Some(failing_store),
+            ..PersistenceCallbacks::default()
+        };
+        FFIPersister::new(callbacks)
+            .store([1u8; 32], PlatformWalletChangeSet::default())
+            .expect_err("legacy notification failure must retain its store error contract");
+        assert!(legacy_probe.store_called.load(Ordering::SeqCst));
+        assert!(!legacy_probe.store_saw_end.load(Ordering::SeqCst));
+
+        extern "C" fn failing_metadata(
+            _ctx: *mut TestCVoid,
+            _wallet_id: *const u8,
+            _network: FFINetwork,
+            _wallet_group_id: *const u8,
+            _birth_height: u32,
+        ) -> i32 {
+            7
+        }
+
+        let rejected_probe = StoreNotificationProbe {
+            end_called: AtomicBool::new(false),
+            store_called: AtomicBool::new(false),
+            store_saw_end: AtomicBool::new(false),
+        };
+        let callbacks = PersistenceCallbacks {
+            context: &rejected_probe as *const StoreNotificationProbe as *mut TestCVoid,
+            on_persist_wallet_metadata_fn: Some(failing_metadata),
+            on_store_fn: Some(failing_store),
+            on_changeset_end_fn: Some(recording_end),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new(callbacks);
+        let changeset = PlatformWalletChangeSet {
+            wallet_metadata: Some(platform_wallet::changeset::WalletMetadataEntry {
+                network: Network::Testnet,
+                wallet_group_id: [1u8; 32],
+                birth_height: 1,
+            }),
+            ..PlatformWalletChangeSet::default()
+        };
+
+        persister
+            .store([1u8; 32], changeset)
+            .expect_err("a rejected per-kind callback must fail before notification");
+        assert!(!rejected_probe.store_called.load(Ordering::SeqCst));
     }
 
     /// A nonzero `begin` return is fatal: the client failed to open its

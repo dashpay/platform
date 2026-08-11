@@ -259,9 +259,11 @@ pub enum PlatformWalletError {
     #[error("Asset lock {0} is not tracked by this wallet")]
     AssetLockNotTracked(dashcore::OutPoint),
 
-    /// A one-shot asset lock has already funded a successful Platform
-    /// transition and cannot be resumed again.
-    #[error("Asset lock {0} has already been consumed")]
+    /// A one-shot asset lock outpoint cannot be reused. This can come from a
+    /// local `Consumed` tombstone or an unauthenticated Platform consumption
+    /// report; callers must not infer completion of the requested operation
+    /// from this signal alone.
+    #[error("Asset lock {0} cannot be reused; Platform completion is unconfirmed")]
     AssetLockAlreadyConsumed(dashcore::OutPoint),
 
     /// A tracked outpoint belongs to another funding family or identity
@@ -749,6 +751,31 @@ fn consensus_error_of(error: &dash_sdk::Error) -> Option<&dpp::consensus::Consen
     }
 }
 
+/// Whether Platform rejected a transition because the exact asset-lock
+/// outpoint it submitted has already been consumed.
+///
+/// Matches the structured consensus error carried by both CheckTx
+/// (`Protocol(ConsensusError)`) and wait-stream
+/// (`StateTransitionBroadcastError`) failures. The outpoint comparison is
+/// deliberate: callers may only recognize a report for the tracked lock they
+/// actually submitted, never an unrelated outpoint mentioned by a malformed
+/// error. This signal alone does not authenticate terminal consumption.
+pub fn is_asset_lock_already_consumed(
+    error: &dash_sdk::Error,
+    out_point: &dashcore::OutPoint,
+) -> bool {
+    use dpp::consensus::basic::BasicError;
+    use dpp::consensus::ConsensusError;
+
+    matches!(
+        consensus_error_of(error),
+        Some(ConsensusError::BasicError(
+            BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(e),
+        )) if e.transaction_id() == out_point.txid
+            && e.output_index() == out_point.vout as usize
+    )
+}
+
 /// Promote a document-trade consensus rejection to its typed
 /// [`PlatformWalletError`] so callers get structured data instead of a
 /// stringified verdict:
@@ -1069,5 +1096,89 @@ mod address_nonce_tests {
         let got = as_address_invalid_nonce(&wrapped).expect("must unwrap the retry envelope");
         assert_eq!(got.provided_nonce(), 9);
         assert_eq!(got.expected_nonce(), 10);
+    }
+}
+
+#[cfg(test)]
+mod asset_lock_already_consumed_tests {
+    use super::*;
+    use dash_sdk::error::StateTransitionBroadcastError;
+    use dashcore::hashes::Hash;
+    use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyConsumedError;
+    use dpp::consensus::basic::UnsupportedProtocolVersionError;
+
+    fn out_point() -> dashcore::OutPoint {
+        dashcore::OutPoint::new(dashcore::Txid::all_zeros(), 7)
+    }
+
+    fn consensus_error() -> dpp::consensus::ConsensusError {
+        let out_point = out_point();
+        IdentityAssetLockTransactionOutPointAlreadyConsumedError::new(
+            out_point.txid,
+            out_point.vout as usize,
+        )
+        .into()
+    }
+
+    fn unrelated_consensus_error() -> dpp::consensus::ConsensusError {
+        UnsupportedProtocolVersionError::new(2, 1).into()
+    }
+
+    #[test]
+    fn recognizes_protocol_consensus_error_for_exact_outpoint() {
+        let error = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
+            consensus_error(),
+        )));
+
+        assert!(is_asset_lock_already_consumed(&error, &out_point()));
+    }
+
+    #[test]
+    fn recognizes_broadcast_consensus_error_for_exact_outpoint() {
+        let error = dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
+            code: 10504,
+            message: "asset lock already consumed".to_string(),
+            cause: Some(consensus_error()),
+        });
+
+        assert!(is_asset_lock_already_consumed(&error, &out_point()));
+    }
+
+    #[test]
+    fn ignores_unrelated_errors_and_different_outpoints() {
+        let error = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
+            consensus_error(),
+        )));
+        let different_out_point = dashcore::OutPoint::new(dashcore::Txid::all_zeros(), 8);
+
+        assert!(!is_asset_lock_already_consumed(
+            &error,
+            &different_out_point
+        ));
+        assert!(!is_asset_lock_already_consumed(
+            &dash_sdk::Error::Generic("boom".to_string()),
+            &out_point()
+        ));
+
+        let unrelated_protocol = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(
+            Box::new(unrelated_consensus_error()),
+        ));
+        assert!(!is_asset_lock_already_consumed(
+            &unrelated_protocol,
+            &out_point()
+        ));
+
+        let unrelated_broadcast =
+            dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
+                code: 10504,
+                // Deliberately resembles the target message: matching must
+                // depend on the structured cause, never this display text.
+                message: "asset lock output already completely used".to_string(),
+                cause: Some(unrelated_consensus_error()),
+            });
+        assert!(!is_asset_lock_already_consumed(
+            &unrelated_broadcast,
+            &out_point()
+        ));
     }
 }

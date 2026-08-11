@@ -119,10 +119,10 @@ public final class PersistentAssetLock {
     /// compares against 0/1/2/3 and the resumable-locks filter against
     /// 4 to hide already-spent rows).
     ///
-    /// `5` (RecoveredFromChain) rows are written by the SDK's
-    /// restore-scan reconstruction: the lock is confirmed on chain but
-    /// its Platform-side consumption is unknown, so UIs must treat it
-    /// as neither pending (1…3) nor done (4).
+    /// `5` (RecoveredFromChain) rows are written by restore reconstruction or
+    /// live reconciliation of an unauthenticated already-consumed report. The
+    /// lock is confirmed on Core but its Platform-side consumption is unknown,
+    /// so UIs must treat it as neither pending (1…3) nor done (4).
     public var statusRaw: Int
 
     /// Bincode-encoded `AssetLockProof` (`dpp::bincode::config::standard()`).

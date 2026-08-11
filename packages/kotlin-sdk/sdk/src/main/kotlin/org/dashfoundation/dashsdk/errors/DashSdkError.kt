@@ -104,6 +104,11 @@ sealed class DashSdkError(
         class AssetLockNotTracked(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
 
+        /**
+         * The one-shot output cannot be reused. This may be a retained local
+         * tombstone or an unauthenticated Platform report; operation completion
+         * must not be inferred from this signal.
+         */
         class AssetLockAlreadyConsumed(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
 
