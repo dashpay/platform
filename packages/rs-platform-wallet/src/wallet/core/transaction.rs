@@ -266,7 +266,7 @@ pub const ASSET_LOCK_FUNDING_SOURCES: [AccountTypePreference; 3] = SEND_FUNDING_
 /// DashPay source. A set selector matching nothing resolves to an empty list,
 /// not an error — a wallet with no contacts still sends from its standard
 /// accounts.
-fn resolve_source_accounts(
+pub(crate) fn resolve_source_accounts(
     accounts: &key_wallet::account::ManagedAccountCollection,
     preference: AccountTypePreference,
     source_index: u32,
