@@ -5373,6 +5373,153 @@ mod tests {
         );
     }
 
+    /// A **sender-only** legacy shape — AUTHENTICATION sender against a
+    /// mint-valid DECRYPTION recipient — is also shielded from the
+    /// broken-channel mark when the payload fails to decrypt.
+    ///
+    /// The widening moved the sender rule from ENCRYPTION-only to
+    /// ENCRYPTION-or-AUTHENTICATION as well, so this request reaches the
+    /// decrypt purely because of the receive-side policy, exactly like the
+    /// recipient-side case. A flag that inspected only the recipient key would
+    /// classify it as an ordinary permanent fault and destroy the channel.
+    ///
+    /// The ciphertext here is deliberate garbage — standing in for the
+    /// convention gap we cannot rule out without a dashj-produced fixture.
+    #[tokio::test]
+    async fn sender_only_legacy_shape_is_not_charged_for_a_decrypt_failure() {
+        use crate::changeset::{PendingContactCrypto, PendingContactCryptoOp};
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+        use crate::wallet::identity::{ContactRequest, EstablishedContact};
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::{IdentityPublicKey, IdentityV0, KeyType, Purpose, SecurityLevel};
+
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let secp = dashcore::secp256k1::Secp256k1::new();
+        let key_at = |id: u32, purpose: Purpose, byte: u8| {
+            IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id,
+                purpose,
+                security_level: SecurityLevel::HIGH,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: dashcore::secp256k1::PublicKey::from_secret_key(
+                    &secp,
+                    &dashcore::secp256k1::SecretKey::from_slice(&[byte; 32]).expect("secret"),
+                )
+                .serialize()
+                .to_vec()
+                .into(),
+                disabled_at: None,
+            })
+        };
+
+        // Our key is DECRYPTION — mint-valid, so the RECIPIENT side needed no
+        // widening at all. Only the sender side does.
+        let our_identity = Identity::V0(IdentityV0 {
+            id: owner,
+            public_keys: [(0u32, key_at(0, Purpose::DECRYPTION, 0x24))]
+                .into_iter()
+                .collect(),
+            balance: 0,
+            revision: 0,
+        });
+        let contact_identity = Identity::V0(IdentityV0 {
+            id: contact,
+            public_keys: [(0u32, key_at(0, Purpose::AUTHENTICATION, 0x42))]
+                .into_iter()
+                .collect(),
+            balance: 0,
+            revision: 0,
+        });
+
+        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+        sdk.mock()
+            .expect_fetch::<Identity, Identifier>(contact, Some(contact_identity))
+            .await
+            .expect("set the contact-identity fetch expectation");
+        let sdk = Arc::new(sdk);
+
+        let persister = Arc::new(RecordingPersister::default());
+        let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::clone(&persister),
+            handler,
+        ));
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let wallet_id = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("wallet creation")
+            .wallet_id();
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(our_identity, 0, wallet_id, &p)
+                .expect("add owner");
+            let outgoing = ContactRequest::new(owner, contact, 0, 0, 0, vec![0u8; 96], 0, 0);
+            let incoming = ContactRequest::new(contact, owner, 0, 0, 0, vec![0u8; 96], 0, 0);
+            let managed = info
+                .identity_manager
+                .managed_identity_mut(&owner)
+                .expect("owner resident");
+            managed.apply_established_contact(EstablishedContact::new(contact, outgoing, incoming));
+            managed
+                .dashpay_pending_contact_crypto_mut()
+                .push(PendingContactCrypto {
+                    owner_identity_id: owner,
+                    contact_id: contact,
+                    op: PendingContactCryptoOp::RegisterExternal {
+                        // Undecryptable under any shared secret — the stand-in
+                        // for a dashj/us convention mismatch.
+                        encrypted_public_key: vec![7u8; 96],
+                        our_decryption_key_index: 0,
+                        contact_encryption_key_index: 0,
+                    },
+                    enqueued_at_ms: 0,
+                });
+        }
+
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let drained = iw.dashpay().drain_pending_contact_crypto(&provider).await;
+        assert_eq!(
+            drained, 0,
+            "a legacy-cohort decrypt failure must leave the entry queued, not clear it"
+        );
+
+        let wm = iw.wallet_manager.read().await;
+        let managed = wm
+            .get_wallet_info(&wallet_id)
+            .expect("info")
+            .identity_manager
+            .managed_identity(&owner)
+            .expect("owner resident");
+        assert!(
+            !managed
+                .dashpay()
+                .established_contacts()
+                .get(&contact)
+                .expect("contact resident")
+                .payment_channel_broken,
+            "a sender-only legacy shape must not have a possible convention gap charged \
+             to it — the channel stays recoverable"
+        );
+    }
+
     /// A `RegisterExternal` entry the drain cannot complete (here: the owner
     /// isn't wallet-owned, so no HD index → it bails before any network fetch)
     /// must be **left queued**, never dropped or crashed — so a later drain can

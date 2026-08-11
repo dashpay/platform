@@ -2090,13 +2090,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         continue;
                     };
                     // Did only the widened receive-side policy let this request
-                    // through — i.e. does it name a key purpose we would never
-                    // mint ourselves? That marks it as the legacy dashj cohort,
-                    // whose ECDH/AES byte compatibility with our implementation
-                    // has not been cross-validated against a dashj-produced
-                    // payload. Used far below to keep a decrypt failure from
-                    // being charged to the document.
-                    let accepted_by_legacy_widening = our_identity
+                    // through — i.e. does either referenced key name a purpose
+                    // we would never mint ourselves? That marks it as the
+                    // legacy dashj cohort, whose ECDH/AES byte compatibility
+                    // with our implementation has not been cross-validated
+                    // against a dashj-produced payload. Used far below to keep
+                    // a decrypt failure from being charged to the document.
+                    //
+                    // The recipient term is known here; the sender term needs
+                    // the identity fetched below and is OR-ed in there.
+                    let recipient_widened = our_identity
                         .get_public_key_by_id(*our_decryption_key_index)
                         .map(|k| {
                             !dash_sdk::platform::dashpay::recipient_key_purpose_is_valid(
@@ -2155,6 +2158,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             }
                         }
                     };
+
+                    // The sender side of the legacy classification — the
+                    // widening moved the sender rule from ENCRYPTION-only to
+                    // ENCRYPTION-or-AUTHENTICATION too, so an AUTHENTICATION
+                    // sender against a mint-valid recipient is just as much an
+                    // unverified legacy payload.
+                    let accepted_by_legacy_widening = recipient_widened
+                        || contact_identity
+                            .get_public_key_by_id(*contact_encryption_key_index)
+                            .map(|k| k.purpose() != Purpose::ENCRYPTION)
+                            .unwrap_or(false);
 
                     // The sender half — the checks that need the identity we
                     // just fetched.
