@@ -294,6 +294,27 @@ public final class PersistentIdentity {
         lastUpdated = Date()
     }
 
+    /// Verified wallet-ownership evidence: at least one persisted
+    /// key row carrying THIS wallet's derivation stamp
+    /// (`PersistentPublicKey.walletId`), which `persistIdentityKeys`
+    /// writes only for keys Rust derived from the wallet's DIP-9
+    /// tree.
+    ///
+    /// Deliberately the ONLY accepted form. An UNSTAMPED key row is
+    /// not evidence: `LoadIdentityView` and `IdentityKeyRefresher`
+    /// persist unstamped rows for arbitrary (observed) identities, so
+    /// a row the old unconditional fallback mislinked can carry them
+    /// — and a stamp for a DIFFERENT wallet is evidence of the
+    /// opposite. A genuinely-owned row that predates the breadcrumb
+    /// columns regains its stamp through the Keychain breadcrumb
+    /// backfill (`backfillIdentityKeyBreadcrumbs`) or its next owned
+    /// re-emit (both write `walletId`), so treating it as unproven
+    /// meanwhile is a recoverable deferral — restoring a mislink as
+    /// wallet-owned is not.
+    public func hasWalletDerivationEvidence(for walletId: Data) -> Bool {
+        publicKeys.contains { $0.walletId == walletId }
+    }
+
     /// Recompute `isLocal` after an explicit key-removal flow from
     /// what this row can still prove: wallet linkage or remaining
     /// imported key material. This is the ONE sanctioned demotion
@@ -338,7 +359,14 @@ public final class PersistentIdentity {
            !keychain.hasSpecialKey(identityId: identityId, keyType: .payout) {
             payoutPrivateKeyIdentifier = nil
         }
-        isLocal = wallet != nil
+        // The wallet relationship counts only when corroborated by
+        // derivation evidence — a stale mislink (old unconditional
+        // fallback) must not resurrect "Local" the moment the last
+        // imported key is forgotten.
+        let walletEvidence = wallet.map {
+            hasWalletDerivationEvidence(for: $0.walletId)
+        } ?? false
+        isLocal = walletEvidence
             || publicKeys.contains { $0.privateKeyKeychainIdentifier != nil }
             || votingPrivateKeyIdentifier != nil
             || ownerPrivateKeyIdentifier != nil

@@ -93,11 +93,12 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
         ).first
     }
 
-    /// A persisted key row. With `walletId` set this is the strong
-    /// derivation stamp `persistIdentityKeys` writes for DIP-9-derived
-    /// keys; with `walletId == nil` it models a pre-breadcrumb-era key
-    /// row (the columns didn't exist yet), which also counts as
-    /// ownership evidence — only key-LESS linked rows are suspect.
+    /// A persisted key row. With `walletId` set this is the derivation
+    /// stamp `persistIdentityKeys` writes for DIP-9-derived keys — the
+    /// only accepted ownership evidence. With `walletId == nil` it
+    /// models an UNSTAMPED row (pre-breadcrumb era, or a by-id
+    /// import / key refresh on an observed identity), which is
+    /// deliberately NOT evidence.
     private func attachKeyRow(
         to identity: PersistentIdentity,
         stampedWalletId: Data?
@@ -285,14 +286,11 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
 
     // MARK: Restore-slice collision guard
 
-    /// Two rows claiming the same `identityIndex` (a real index-0
-    /// identity + a legacy mislink carrying the placeholder `0`) must
-    /// not both reach Rust's per-index BTreeMap — the row with
-    /// wallet-derivation key evidence wins the collision. A
-    /// collision-free row restores even WITHOUT evidence: a
-    /// legitimately-owned row from an older store era may lack the
-    /// key stamp, and dropping it would silently skip its
-    /// contact/payment restore.
+    /// Only rows carrying THIS wallet's derivation stamp reach the
+    /// restore slice: a legacy mislink at the placeholder index `0`
+    /// (no stamp) is quarantined and cannot displace the genuine
+    /// index-0 identity in Rust's per-index BTreeMap, and every
+    /// stamped row at a unique index passes through.
     func testRestorableIdentitiesPrefersKeyEvidenceOnIndexCollision() throws {
         try insertWalletRow()
         let context = ModelContext(container)
@@ -322,10 +320,7 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
         mislinked.wallet = wallet
         context.insert(mislinked)
 
-        // A pre-breadcrumb-era identity at a unique index: its key
-        // row carries no wallet stamp (the column didn't exist), and
-        // it must keep restoring — the era fallback in
-        // `walletKeyEvidence` covers it.
+        // A stamped identity at a unique index passes through.
         let second = PersistentIdentity(
             identityId: Data(repeating: 0x02, count: 32),
             isLocal: true,
@@ -334,7 +329,7 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
         )
         second.wallet = wallet
         context.insert(second)
-        attachKeyRow(to: second, stampedWalletId: nil)
+        attachKeyRow(to: second, stampedWalletId: walletId)
         try context.save()
 
         let slice = PlatformWalletPersistenceHandler.restorableIdentities(
@@ -348,19 +343,18 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
             genuine.identityId,
             "the key-less mislink is quarantined; the stamped index-0 row survives"
         )
-        XCTAssertEqual(
-            slice[1].identityId,
-            second.identityId,
-            "a pre-breadcrumb row (unstamped key) restores via the era fallback"
-        )
+        XCTAssertEqual(slice[1].identityId, second.identityId)
     }
 
-    /// A SOLE key-less linked row — the exact product of the old
-    /// unconditional fallback, with no genuine competitor — must not
-    /// be restored as wallet-owned either: Rust would stamp it
+    /// A SOLE mislinked row with no genuine competitor must not be
+    /// restored as wallet-owned either: Rust would stamp it
     /// `wallet_id = Some(wallet)` and the corruption would become
-    /// durable. Quarantine leaves the store row untouched.
-    func testRestorableIdentitiesQuarantinesSoleKeylessMislink() throws {
+    /// durable. Crucially this holds even when the row CARRIES key
+    /// rows — an unstamped one (by-id import / key refresh persist
+    /// those for observed identities too) and one stamped for a
+    /// DIFFERENT wallet — neither of which is evidence for THIS
+    /// wallet. Quarantine leaves the store row untouched.
+    func testRestorableIdentitiesQuarantinesSoleMislinkWithForeignKeys() throws {
         try insertWalletRow()
         let context = ModelContext(container)
         let wallet = try XCTUnwrap(
@@ -373,6 +367,8 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
         )
         mislinked.wallet = wallet
         context.insert(mislinked)
+        attachKeyRow(to: mislinked, stampedWalletId: nil)
+        attachKeyRow(to: mislinked, stampedWalletId: Data(repeating: 0xBB, count: 32))
         try context.save()
 
         let slice = PlatformWalletPersistenceHandler.restorableIdentities(
@@ -382,7 +378,7 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
 
         XCTAssertTrue(
             slice.isEmpty,
-            "a sole key-less linked row must not be marshalled as wallet-owned"
+            "unstamped or foreign-stamped keys must not qualify a sole mislink for wallet-owned restore"
         )
     }
 
@@ -421,17 +417,20 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
         )
         mislinkedNoEvidence.wallet = wallet
         context.insert(mislinkedNoEvidence)
-        // Pre-breadcrumb-era genuine row: linked, stale false, key row
-        // without a wallet stamp — must be promoted via the era arm.
-        let preBreadcrumb = PersistentIdentity(
+        // Linked row with only an UNSTAMPED key: could be a
+        // pre-breadcrumb genuine row OR a mislinked observed identity
+        // whose keys came from a by-id import / refresh — the heal
+        // cannot tell them apart, so it must defer (the breadcrumb
+        // backfill / next owned re-emit stamps the genuine case).
+        let unstamped = PersistentIdentity(
             identityId: Data(repeating: 0x04, count: 32),
             isLocal: false,
             network: .testnet,
             identityIndex: 1
         )
-        preBreadcrumb.wallet = wallet
-        context.insert(preBreadcrumb)
-        attachKeyRow(to: preBreadcrumb, stampedWalletId: nil)
+        unstamped.wallet = wallet
+        context.insert(unstamped)
+        attachKeyRow(to: unstamped, stampedWalletId: nil)
         try context.save()
 
         // The fixture wallet has no restorable accounts, so the
@@ -460,12 +459,12 @@ final class IdentityIsLocalPersistenceTests: XCTestCase {
             "a key-less legacy mislink must not be promoted to signable"
         )
 
-        let preBreadcrumbRow = try XCTUnwrap(
+        let unstampedRow = try XCTUnwrap(
             try fetchIdentity(Data(repeating: 0x04, count: 32))
         )
-        XCTAssertTrue(
-            preBreadcrumbRow.isLocal,
-            "a pre-breadcrumb row (unstamped key) heals via the era fallback"
+        XCTAssertFalse(
+            unstampedRow.isLocal,
+            "unstamped keys are not ownership evidence — promotion defers to the backfill / next owned re-emit"
         )
     }
 }

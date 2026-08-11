@@ -13,6 +13,7 @@ struct KeyDetailView: View {
     @State private var showDisableConfirm = false
     @State private var isDisabling = false
     @State private var disableError: String?
+    @State private var forgetError: String?
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var appState: AppState
@@ -164,6 +165,17 @@ struct KeyDetailView: View {
             Button("OK", role: .cancel) { disableError = nil }
         } message: {
             Text(disableError ?? "")
+        }
+        .alert(
+            "Forget Key Failed",
+            isPresented: Binding(
+                get: { forgetError != nil },
+                set: { if !$0 { forgetError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { forgetError = nil }
+        } message: {
+            Text(forgetError ?? "")
         }
     }
 
@@ -353,7 +365,17 @@ struct KeyDetailView: View {
                 // identity's local status — recompute from what
                 // remains (wallet linkage / other key material).
                 identity.recomputeIsLocalAfterKeyRemoval()
-                try? modelContext.save()
+                do {
+                    try modelContext.save()
+                } catch {
+                    // The Keychain item is already gone (that delete
+                    // is irreversible), so a silent save failure
+                    // would leave a stale reference + isLocal on the
+                    // next launch with no way to re-run this flow.
+                    // Surface it and keep the sheet open.
+                    forgetError = "The key was removed from the Keychain, but saving the change failed: \(error.localizedDescription)"
+                    return
+                }
             }
             dismiss()
         }

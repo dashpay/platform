@@ -607,19 +607,19 @@ final class DashPayContactPersistenceTests: XCTestCase {
         )
         let owner = try XCTUnwrap(try context.fetch(ownerDescriptor).first)
         owner.wallet = wallet
-        // A persisted key row (era-style: no wallet stamp) — the
-        // restore slice quarantines key-less linked rows, and every
-        // genuinely-owned identity has key rows.
-        owner.publicKeys.append(
-            PersistentPublicKey(
-                keyId: 0,
-                purpose: .authentication,
-                securityLevel: .master,
-                keyType: .ecdsaSecp256k1,
-                publicKeyData: Data(repeating: 0x11, count: 33),
-                identityId: owner.identityIdString
-            )
+        // A derivation-stamped key row, as persistIdentityKeys writes
+        // for wallet-derived keys — the restore slice quarantines
+        // linked rows without this wallet's stamp.
+        let ownerKey = PersistentPublicKey(
+            keyId: 0,
+            purpose: .authentication,
+            securityLevel: .master,
+            keyType: .ecdsaSecp256k1,
+            publicKeyData: Data(repeating: 0x11, count: 33),
+            identityId: owner.identityIdString
         )
+        ownerKey.walletId = walletId
+        owner.publicKeys.append(ownerKey)
         try context.save()
 
         // Persist an established contact carrying the accepted accounts.
@@ -896,19 +896,19 @@ final class DashPayPaymentPersistenceTests: XCTestCase {
         )
         let owner = try XCTUnwrap(try context.fetch(ownerDescriptor).first)
         owner.wallet = wallet
-        // A persisted key row (era-style: no wallet stamp) — the
-        // restore slice quarantines key-less linked rows, and every
-        // genuinely-owned identity has key rows.
-        owner.publicKeys.append(
-            PersistentPublicKey(
-                keyId: 0,
-                purpose: .authentication,
-                securityLevel: .master,
-                keyType: .ecdsaSecp256k1,
-                publicKeyData: Data(repeating: 0x11, count: 33),
-                identityId: owner.identityIdString
-            )
+        // A derivation-stamped key row, as persistIdentityKeys writes
+        // for wallet-derived keys — the restore slice quarantines
+        // linked rows without this wallet's stamp.
+        let ownerKey = PersistentPublicKey(
+            keyId: 0,
+            purpose: .authentication,
+            securityLevel: .master,
+            keyType: .ecdsaSecp256k1,
+            publicKeyData: Data(repeating: 0x11, count: 33),
+            identityId: owner.identityIdString
         )
+        ownerKey.walletId = walletId
+        owner.publicKeys.append(ownerKey)
         try context.save()
 
         // The persister round: begin → payments batch → end.

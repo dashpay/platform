@@ -4674,14 +4674,15 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// evidence (`walletKeyEvidence`). Historical stores need this
     /// because the persister used to write `isLocal: false`
     /// unconditionally — the wallet's own identities carried `false`
-    /// (the mainnet field bug). The evidence spans key-persistence
-    /// eras (pre-breadcrumb rows count via their unstamped key rows —
-    /// see `walletKeyEvidence`), while keeping the same era's OTHER
-    /// defect out: rows the old unconditional fallback mislinked to
-    /// the wallet carry no key rows at all and must not be promoted
-    /// to "signable". A genuinely-owned row that somehow lacks any
-    /// key row is merely deferred — its next entry re-emit promotes
-    /// it on the upsert path with the entry's own authority.
+    /// (the mainnet field bug). Only the derivation stamp counts as
+    /// evidence (see `PersistentIdentity.hasWalletDerivationEvidence`):
+    /// unstamped key rows also exist on observed identities (by-id
+    /// load, key refresh), so they cannot corroborate a link the old
+    /// unconditional fallback may have fabricated. A genuinely-owned
+    /// row without a stamp (pre-breadcrumb era) is merely deferred —
+    /// the Keychain breadcrumb backfill or its next owned re-emit
+    /// stamps it and promotion follows; a mislink promoted to
+    /// "signable" would have no comparable recovery.
     ///
     /// UPWARD ONLY: a `true` on an unlinked row is left alone — an
     /// identity can be local without a wallet (imported masternode
@@ -4730,26 +4731,18 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
-    /// Ownership evidence for a wallet-linked row, spanning every
-    /// key-persistence era:
-    /// - **strong**: a persisted `PersistentPublicKey` stamped with
-    ///   THIS wallet's id — `persistIdentityKeys` writes that stamp
-    ///   only for keys Rust derived from the wallet's DIP-9 tree;
-    /// - **era fallback**: a key row with NO wallet stamp —
-    ///   `PersistentPublicKey.walletId` is optional precisely because
-    ///   rows persisted before the derivation-breadcrumb columns
-    ///   existed have none, and those identities are genuinely owned.
-    ///
-    /// A row the old unconditional fallback mislinked can satisfy
-    /// neither arm: out-of-wallet entries never produce key rows at
-    /// all (Rust emits identity + keys in one atomic changeset round
-    /// for owned identities only). A key stamped for a DIFFERENT
-    /// wallet is evidence of the opposite and never counts.
+    /// See `PersistentIdentity.hasWalletDerivationEvidence(for:)` —
+    /// the single ownership-evidence contract shared by the heal, the
+    /// restore quarantine, and `recomputeIsLocalAfterKeyRemoval`.
+    /// Only a key row carrying THIS wallet's derivation stamp counts;
+    /// unstamped rows are explicitly NOT evidence (by-id load and
+    /// key-refresh flows persist unstamped keys for observed
+    /// identities too).
     static func walletKeyEvidence(
         _ row: PersistentIdentity,
         walletId: Data
     ) -> Bool {
-        row.publicKeys.contains { $0.walletId == walletId || $0.walletId == nil }
+        row.hasWalletDerivationEvidence(for: walletId)
     }
 
     /// Order and de-collide one wallet's identity rows for the
@@ -4759,22 +4752,20 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// reach Rust's `build_wallet_identity_bucket`, whose per-index
     /// `BTreeMap` would silently keep only the last insert.
     ///
-    /// Rows without `walletKeyEvidence` are quarantined — Rust stamps
-    /// every restored identity `wallet_id = Some(wallet)` and Swift
+    /// Rows without `walletKeyEvidence` (this wallet's derivation
+    /// stamp — the only accepted form; unstamped keys exist on
+    /// observed identities too) are quarantined: Rust stamps every
+    /// restored identity `wallet_id = Some(wallet)` and Swift
     /// mutation gates trust the relationship, so restoring a row the
     /// old unconditional fallback mislinked would make the corruption
     /// durable (once restored as owned, it never re-emits in the
-    /// nil/nil shape that lets the upsert path unlink it). The
-    /// evidence spans key-persistence eras (see `walletKeyEvidence`),
-    /// so genuinely-owned rows — including pre-breadcrumb and
-    /// watch-only ones, whose PUBLIC key rows exist regardless of
-    /// private-key material — all pass; only key-less linked rows,
-    /// which no owned-identity flow can produce, are held back.
-    /// Collisions between surviving rows prefer the strongly-stamped
-    /// contender, then the sort winner. Skipped rows are only omitted
-    /// from THIS slice; their store rows are untouched, and the
-    /// upsert path's scope-unlink repairs a mislink when its identity
-    /// re-emits.
+    /// nil/nil shape that lets the upsert path unlink it). A
+    /// genuinely-owned row without a stamp (pre-breadcrumb era) sits
+    /// out at most until the Keychain breadcrumb backfill or its next
+    /// owned re-emit stamps it — a recoverable deferral, unlike a
+    /// durably restored mislink. Collisions between surviving rows
+    /// resolve to the sort winner. Skipped rows are only omitted from
+    /// THIS slice; their store rows are untouched.
     static func restorableIdentities(
         _ identities: [PersistentIdentity],
         walletId: Data
@@ -4810,9 +4801,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 result.append(group[0])
                 continue
             }
-            let winner = group.first { row in
-                row.publicKeys.contains { $0.walletId == walletId }
-            } ?? group[0]
+            // Every surviving row carries the derivation stamp, so
+            // there is no evidence tiebreak left — deterministic sort
+            // order decides.
+            let winner = group[0]
             result.append(winner)
             for skipped in group where skipped !== winner {
                 NSLog(

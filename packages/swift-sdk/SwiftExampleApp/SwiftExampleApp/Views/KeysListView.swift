@@ -325,6 +325,7 @@ struct PrivateKeyView: View {
   @EnvironmentObject var appState: AppState
   @State private var showingPrivateKey = false
   @State private var showForgetKeyAlert = false
+  @State private var forgetError: String?
 
   var body: some View {
     NavigationView {
@@ -526,6 +527,17 @@ struct PrivateKeyView: View {
       } message: {
         Text("Are you sure you want to forget this private key? This action cannot be undone and you will need to re-enter the key to use it again.")
       }
+      .alert(
+        "Forget Key Failed",
+        isPresented: Binding(
+          get: { forgetError != nil },
+          set: { if !$0 { forgetError = nil } }
+        )
+      ) {
+        Button("OK", role: .cancel) { forgetError = nil }
+      } message: {
+        Text(forgetError ?? "")
+      }
     }
   }
 
@@ -545,7 +557,16 @@ struct PrivateKeyView: View {
         // local status — recompute from what remains (wallet
         // linkage / other key material).
         identity.recomputeIsLocalAfterKeyRemoval()
-        try? modelContext.save()
+        do {
+          try modelContext.save()
+        } catch {
+          // The Keychain item is already gone (that delete is
+          // irreversible), so a silent save failure would leave a
+          // stale reference + isLocal on the next launch with no way
+          // to re-run this flow. Surface it and keep the sheet open.
+          forgetError = "The key was removed from the Keychain, but saving the change failed: \(error.localizedDescription)"
+          return
+        }
       }
       dismiss()
     }
