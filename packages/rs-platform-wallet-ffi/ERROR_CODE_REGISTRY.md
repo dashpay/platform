@@ -100,39 +100,49 @@ These are shipped ABI. Do not renumber.
 | 26 | `ErrorTransactionBroadcastRejected` | Merged in `9302c62e8b`; took a number several open branches had been treating as free |
 | 27 | `ErrorShutdownIncomplete` | Merged 2026-08-02 by **#4268** (`429667e723`). A quiesce/drain barrier missed its budget. **Took the number #4185 had held since before this file existed** — see the collision history below |
 | 31 | `ErrorSigningKeyUnavailable` | Merged 2026-08-04 by **#4183** (merge commit `189a3abb1c`, stacked on #4191). The signer holds no usable private key for a requested public key. Landed complete in that one commit: the Rust C-facing discriminant, Swift's `errorSigningKeyUnavailable = 31` raw case *and* its `init(ffi:)` arm *and* the typed `PlatformWalletError` case with its `init(result:)` arm, and Kotlin's `31 -> PlatformWallet.SigningKeyUnavailable`. Rule 3 now protects it — see the 31-vs-33 note below |
+| 34 | `ErrorStaleReservationToken` | Merged 2026-08-06 by **#4308** (`438153da39`) — the reservation trio landed with the split build/broadcast surface (successor of fork-era #4185's claim) |
+| 35 | `ErrorReservationTokenConsumed` | Merged 2026-08-06 by **#4308** (`438153da39`) |
+| 36 | `ErrorReservationWalletMismatch` | Merged 2026-08-06 by **#4308** (`438153da39`) |
+| 37 | `ErrorDocumentNotForSale` | Merged 2026-08-09 by **#4348** (`6373e00f0c`). **Took the number the fork-era shielded-invite claim held** — see the proposed table's 37 note |
+| 38 | `ErrorDocumentPriceChanged` | Merged 2026-08-09 by **#4348** (`6373e00f0c`) |
+| 39 | `ErrorInsufficientIdentityCredits` | Merged 2026-08-09 by **#4348** (`6373e00f0c`) |
+| 40 | `ErrorContestedNameNotTradable` | Merged 2026-08-09 by **#4348** (`6373e00f0c`) |
+| 41 | `ErrorShieldedInsufficientBalance` | Merged 2026-08-11 by **#4360** (`e0b8baa850`) |
 | 98 | `NotFound` | Sentinel — `Option` returned as an error |
 | 99 | `ErrorUnknown` | Sentinel — unmapped/flattened errors |
 
-**Next allocatable integer: 38** — 27–37 are all claimed (27 and 31 merged; 29
-and 32–37 in the proposed table below; 28 and 30 reserved). **28 and 30 are
-RESERVED, not free**: #4185 and #4256 vacated them when the reservation trio
-moved to 34–36, but they are deliberately left unclaimed rather than
-back-filled, so that the trio stays contiguous and no number is reused within a
-single review cycle. Rule 1's "do not reuse a gap unless this file marks it
-free" applies — this file does **not** mark 28 or 30 free, so the frontier is
-the only allocation source and a new code takes 38.
+**Next allocatable integer: 42** — 27–41 are all claimed (27, 31, 34–41
+merged; 28–30, 32 and 33 reserved). **28–30, 32 and 33 are RESERVED, not
+free**: 28 and 30 were vacated when the reservation trio moved to 34–36; 29,
+32 and 33 lapsed when their in-repo owners (#4316, #4310, #4311) closed
+without merging. All five are deliberately left unclaimed rather than
+back-filled, so no number is reused within a single review cycle. Rule 1's
+"do not reuse a gap unless this file marks it free" applies — this file does
+**not** mark any of them free, so the frontier is the only allocation source
+and a new code takes 42.
 
 ## Proposed allocations (open PRs)
 
 Not yet ABI. Numbers here may still move; they move by agreement recorded in
 this file.
 
-**Ownership migrated 2026-08-11.** The fork-era PRs that originally held these
-allocations (#4184, #4185, #4204, #4247, #4256) were closed and recreated
-in-repository per repo policy; the owners below are the active successors.
-Fork-era numbers remain in the collision history, which is immutable record.
+**Ownership migrated 2026-08-11, then largely settled the same week.** The
+fork-era PRs that originally held these allocations (#4184, #4185, #4204,
+#4247, #4256) were closed and recreated in-repository per repo policy. Of the
+successors: #4308 **merged** (the trio, 34–36 — now in the merged table);
+#4316, #4310 and #4311 **closed without merging** (29, 32, 33 lapse to
+RESERVED); and #4313 (the shielded-invite claim) lost 37 to merged #4348 and
+takes the frontier when it revives. Fork-era numbers remain in the collision
+history, which is immutable record.
 
 | Code | Name | Owning PR | Status |
 | ---: | --- | --- | --- |
 | 28 | *(reserved — vacated)* | — | Vacated by #4185/#4256 on 2026-08-02; RESERVED, not reissuable — the next-free frontier is the only allocation source |
-| 29 | `ErrorAssetLockInsufficientFunds` | #4316 | In review — **keeps 29** (collision resolved; successor of fork-era #4184) |
+| 29 | *(reserved — lapsed)* | — | Owner #4316 (successor of fork-era #4184) closed 2026-08-11 without merging; RESERVED, not reissuable |
 | 30 | *(reserved — vacated)* | — | Vacated by #4185/#4256 on 2026-08-02; RESERVED, not reissuable — the next-free frontier is the only allocation source |
-| 32 | `ErrorTransactionBuild` | #4310 | In review (also carried by #4311; successor of fork-era #4247) |
-| 33 | `ErrorTransactionSigning` | #4311 | In review (successor of fork-era #4256) |
-| 34 | `ErrorStaleReservationToken` | #4308 | In review — **moved 27 → 34** (also carried by #4309, #4310 and #4311; successor of fork-era #4185) |
-| 35 | `ErrorReservationTokenConsumed` | #4308 | In review — **moved 28 → 35** (also carried by #4309, #4310 and #4311; successor of fork-era #4185) |
-| 36 | `ErrorReservationWalletMismatch` | #4308 | In review — **moved 30 → 36** (also carried by #4309, #4310 and #4311; successor of fork-era #4185) |
-| 37 | `ErrorShieldedInviteAlreadyClaimed` | #4313 | In review — **moved 32 → 37** (collided with fork-era #4247's `ErrorTransactionBuild`; see below; successor of fork-era #4204) |
+| 32 | *(reserved — lapsed)* | — | Owner #4310 (successor of fork-era #4247) closed without merging; RESERVED, not reissuable |
+| 33 | *(reserved — lapsed)* | — | Owner #4311 (successor of fork-era #4256) closed without merging; RESERVED, not reissuable |
+| 37→42 | `ErrorShieldedInviteAlreadyClaimed` | #4313 | On hold — its claim of 37 (a 32 → 37 move; successor of fork-era #4204) was **taken by merged #4348** (`ErrorDocumentNotForSale = 37`, ABI since 2026-08-09). On revival #4313 renumbers its Rust discriminant and Swift/Kotlin mappings to the frontier (42 at time of writing) |
 
 **Code 31 left this table on 2026-08-04.** `ErrorSigningKeyUnavailable` sat here
 as #4183's proposal until #4183 merged (`189a3abb1c`); it is now in the merged
@@ -298,7 +308,8 @@ discriminant produce no textual conflict — the collision surfaces only as an
 E0081 after a textual merge, or silently as a wrong error code on the host.
 That is the whole reason this file exists.
 
-**Still outstanding:** #4196 (see below).
+**#4196 closed out 2026-08-03** — restacked onto the trio at 34/35/36 (see
+"26 — RESOLVED" below); nothing remains outstanding from this collision.
 
 ### 30 — vacated, then RESERVED (not free)
 
@@ -562,7 +573,9 @@ confirmed:
 * the two Swift mirror gaps this file was tracking — #4204's typed-case gap and
   #4256's missing raw cases — have both been closed.
 
-PR heads of record, all read on 2026-08-04:
+PR heads of record — a **historical snapshot, read 2026-08-04 (fork era)**
+and retained as record; every non-merged PR below has since been closed and,
+where still needed, recreated in-repository (see the migration note above):
 
 | PR | Head | Note |
 | --- | --- | --- |
