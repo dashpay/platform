@@ -734,6 +734,22 @@ public class PlatformWalletManager: ObservableObject {
     ///   mis-mapped Keychain slot) or the verify FFI otherwise fails.
     @discardableResult
     public func verifySeedBinding(_ wallet: ManagedPlatformWallet) throws -> SeedBindingCheck {
+        try verifySeedBinding(wallet, storage: WalletStorage())
+    }
+
+    /// [`verifySeedBinding`](Self/verifySeedBinding(_:)) against a specific
+    /// `WalletStorage`.
+    ///
+    /// A caller that resolves the mnemonic from one store must be verified
+    /// against that same store, or the check answers a question about a
+    /// different Keychain than the one the work will read — approving one
+    /// mnemonic while the derivation uses another. `startWalletSubsystems`
+    /// takes a `storage` parameter for exactly this reason and passes it here.
+    @discardableResult
+    func verifySeedBinding(
+        _ wallet: ManagedPlatformWallet,
+        storage walletStorage: WalletStorage
+    ) throws -> SeedBindingCheck {
         try ensureConfigured()
         let walletId = wallet.walletId
         guard walletId.count == 32 else {
@@ -745,15 +761,19 @@ public class PlatformWalletManager: ObservableObject {
         // A genuine watch-only wallet (imported by xpub, never holding a
         // seed) has no Keychain mnemonic — stays watch-only. Existence-only
         // check; the plaintext is never materialized in Swift.
-        let walletStorage = WalletStorage()
         guard walletStorage.hasMnemonic(for: walletId) else {
+            // No mnemonic is no longer a mismatch: a wallet whose seed failed
+            // to bind and whose Keychain item was then removed must not keep
+            // publishing the banner for a seed that is no longer there.
+            setDashPaySeedMismatch(walletId, false)
             return .watchOnly
         }
 
         let walletHandle = wallet.handle
-        // Resolver-backed signer: the mnemonic is fetched from the Keychain
-        // inside the resolver vtable Rust-side; no resident seed.
-        let coreSigner = MnemonicResolver()
+        // Resolver-backed signer, over the SAME store the check above read and
+        // the caller's work will read: the mnemonic is fetched from the
+        // Keychain inside the resolver vtable Rust-side; no resident seed.
+        let coreSigner = MnemonicResolver(storage: walletStorage)
 
         // Wrong-seed / wrong-wallet gate, marker-cached: the check is a pure
         // function of (mnemonic, network) against the wallet's persisted

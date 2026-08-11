@@ -141,7 +141,11 @@ extension PlatformWalletManager {
         // hosts commonly kick the unlock off asynchronously, so the flag
         // races this call. The verify is marker-cached, so the common path
         // costs a string comparison.
-        try verifySeedBinding(wallet)
+        //
+        // Against `storage`, not a default one: the resolver below reads that
+        // store, and verifying a different Keychain than the work will use
+        // would approve one mnemonic while another derives the accounts.
+        try verifySeedBinding(wallet, storage: storage)
 
         let handle = self.handle
         // Only a definitive "no such item" means watch-only. A lookup that
