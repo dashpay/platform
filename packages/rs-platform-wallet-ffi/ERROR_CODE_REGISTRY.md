@@ -359,9 +359,17 @@ Three branches have now done so:
 
 The equivalent stale comment on **#4204** is gone too. It was not fixed by hand:
 `#4204` rebased onto the merged base, and its `error.rs` at `4efecd5b71` now
-carries #4183's corrected 28/29/30 note verbatim from trunk. All four branches
-that ever held the stale reservation text — #4256, #4183, #4184, #4204 — are
-clear, and #4183's version of the note is now trunk.
+carried #4183's corrected 28/29/30 note verbatim from trunk. All four branches
+that ever held the stale reservation text — #4256, #4183, #4184, #4204 — were
+clear at those surveyed heads, and #4183's version of the note became trunk.
+
+**The stale wording has since RETURNED to trunk.** Merged #4308
+(`438153da39`) introduced allocation comments that call 28 and 30 *free* —
+`error.rs` ("28 (free — vacated by this PR)", "30 (free — …)", "28 and 30 are
+nominally free") and the Swift mirror ("28 and 30 are free") — contradicting
+rule 1 and the primary table, which RESERVE both values. Until a follow-up
+corrects those in-tree comments, this registry is the authority: 28 and 30
+are reserved, not allocatable.
 
 ### 27 / 28 — #3968 still collides; #3954's claim merged as #4268
 
