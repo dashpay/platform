@@ -14,6 +14,42 @@ pub struct SystemLimits {
     ///
     /// NOTE: This must be equal to the `max-tx-bytes` in the Tenderdash config
     pub max_state_transition_size: u64,
+    /// Maximum number of batched transitions (document and token transitions counted together)
+    /// one batch state transition may carry.
+    ///
+    /// This cap is load-bearing for state correctness, not merely a size or throughput limit.
+    /// `BatchTransitionAction::into_high_level_drive_operations` flattens every transition of a
+    /// batch into one `Vec<DriveOperation>`, and `apply_drive_operations` turns that vector into
+    /// a single GroveDB batch. Within one such batch the ordinary document Add/Update/Delete
+    /// conversions are blind to each other: the check that decides whether an index group tree
+    /// has become empty and should be removed sees committed state plus only the operations of
+    /// its own conversion.
+    ///
+    /// While the cap is 1, no two document operations can share a GroveDB batch *by way of a
+    /// batch state transition*, so on that route the blindness has nothing to act on. Raise it
+    /// and two operations that jointly empty a group each observe the other's document still
+    /// committed, each conclude the group is not yet empty, and the group tree survives with no
+    /// documents behind it. On a ranked index that leftover tree is mirrored into the aggregate
+    /// secondary, so the group keeps ranking with a zero aggregate — sorting ahead of every
+    /// group with a positive one — and, because primary and secondary agree that the empty
+    /// group exists, the state is internally consistent: integrity verification passes and
+    /// proofs attest the wrong ranking against the live root hash.
+    ///
+    /// The cap is not the only thing standing between that machinery and a live path, and a
+    /// reader raising it needs to know what the other two are:
+    ///
+    /// * `Drive::update_contract_keywords_operations` puts N blind document deletes and M adds
+    ///   in one batch over a single shared index group. It stays correct only because its
+    ///   caller skips it entirely when the new keyword set is empty, so any batch that empties
+    ///   the group also refills it. That guard is load-bearing in the same way this cap is.
+    /// * `DocumentOperationType::MultipleDocumentOperationsForSameContractDocumentType` threads
+    ///   the accumulated operations through, so document operations in *that* variant do see
+    ///   their siblings — which is why the withdrawal paths batch many documents safely. It is
+    ///   not a drop-in for batch transitions: it carries no delete variant.
+    ///
+    /// Five cases in `rs-drive`'s `batched_group_drain` suite are `#[ignore]`d for exactly this
+    /// reason; the rest of that suite runs. Anyone raising this cap should un-ignore those five
+    /// first and make them pass.
     pub max_transitions_in_documents_batch: u16,
     pub withdrawal_transactions_per_block_limit: u16,
     pub retry_signing_expired_withdrawal_documents_per_block_limit: u16,
@@ -34,7 +70,70 @@ pub struct SystemLimits {
 
 #[cfg(test)]
 mod tests {
+    use crate::version::protocol_version::PLATFORM_VERSIONS;
     use crate::version::PlatformVersion;
+
+    /// The cap is what keeps two document operations out of a shared GroveDB batch, and with
+    /// them the phantom index groups described on `max_transitions_in_documents_batch`. It has
+    /// been 1 since the first mainnet release; a version that relaxes it must be a deliberate,
+    /// reviewed decision rather than a copy-paste into a new `SYSTEM_LIMITS_V*`.
+    #[test]
+    fn documents_batch_is_capped_at_one_transition_at_every_protocol_version() {
+        // Without this the loop below asserts nothing if the registry is ever
+        // emptied or truncated.
+        assert!(
+            PLATFORM_VERSIONS.len() >= 14,
+            "the protocol version registry lost entries; this test only covers what it holds"
+        );
+        for platform_version in PLATFORM_VERSIONS {
+            assert_eq!(
+                platform_version
+                    .system_limits
+                    .max_transitions_in_documents_batch,
+                1,
+                "protocol version {} allows more than one transition per documents batch; \
+                 see the documentation on SystemLimits::max_transitions_in_documents_batch \
+                 for what that exposes",
+                platform_version.protocol_version
+            );
+        }
+    }
+
+    /// The mock versions are never live, but they do execute state transitions
+    /// in drive-abci's protocol-upgrade suite, and one of them hand-writes its
+    /// `SystemLimits` rather than reusing a `SYSTEM_LIMITS_V*` — so it is the
+    /// one place the loop above cannot reach. A mock at a raised cap would
+    /// surface the phantom-group defect there as an unexplained failure.
+    ///
+    /// `PLATFORM_TEST_VERSIONS` is a process-global `OnceLock`, so if another
+    /// test in this binary initialised it first this asserts over whatever is
+    /// actually in use rather than over the defaults named here. That is the
+    /// more useful of the two, and deliberate.
+    #[cfg(feature = "mock-versions")]
+    #[test]
+    fn mock_platform_versions_carry_the_same_documents_batch_cap() {
+        use crate::version::mocks::v2_test::TEST_PLATFORM_V2;
+        use crate::version::mocks::v3_test::TEST_PLATFORM_V3;
+        use crate::version::protocol_version::PLATFORM_TEST_VERSIONS;
+
+        let versions =
+            PLATFORM_TEST_VERSIONS.get_or_init(|| vec![TEST_PLATFORM_V2, TEST_PLATFORM_V3]);
+        assert!(
+            !versions.is_empty(),
+            "the mock version registry is empty; this test would assert nothing"
+        );
+        for platform_version in versions {
+            assert_eq!(
+                platform_version
+                    .system_limits
+                    .max_transitions_in_documents_batch,
+                1,
+                "mock platform version {} allows more than one transition per documents \
+                 batch; see SystemLimits::max_transitions_in_documents_batch",
+                platform_version.protocol_version
+            );
+        }
+    }
 
     #[test]
     fn document_value_depth_limit_starts_at_protocol_version_13() {
