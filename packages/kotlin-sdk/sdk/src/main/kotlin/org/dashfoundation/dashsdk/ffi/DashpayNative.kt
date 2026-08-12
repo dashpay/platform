@@ -244,7 +244,7 @@ internal object DashpayNative {
         inviterUsername: String?,
         nowUnix: Long,
         coreSignerHandle: Long,
-    ): String?
+    ): ByteArray?
 
     /**
      * Claim a `dashpay://invite` link: register a NEW identity for the

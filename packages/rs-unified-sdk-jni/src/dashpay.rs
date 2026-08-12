@@ -22,7 +22,7 @@ use crate::identity::ManagedIdentityHandleGuard;
 use crate::pubkey_rows::decode_registration_pubkeys_blob;
 use crate::support::{guard, take_pwffi_error};
 use jni::objects::{JByteArray, JClass, JString, JValue};
-use jni::sys::{jboolean, jint, jlong, jobject, jstring};
+use jni::sys::{jboolean, jbyteArray, jint, jlong, jobject, jstring};
 use jni::JNIEnv;
 use platform_wallet_ffi::core_wallet_types::OutPointFFI;
 use platform_wallet_ffi::dashpay_profile::DashPayProfileFFI;
@@ -993,15 +993,21 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_parseIn
 /// Blocking (builds + broadcasts an L1 asset lock and waits for its
 /// InstantSend proof). The invitation row lands in Room via the
 /// `onPersistInvitationUpsert` persistence callback before this returns —
-/// the funding outpoint out-param is deliberately ignored, as on iOS.
+/// the funding outpoint out-param is surfaced to Kotlin (unlike iOS, the
+/// Android app keys its own invite-history tracking row and the funding-tx
+/// "Invitation" asset-lock label on it).
 ///
 /// `inviterIdentityId` null ⇒ a pure funding voucher; non-null (32 bytes)
 /// opts into the contact-bootstrap and then requires a non-null
 /// `inviterUsername` (the link carries only the username; the invitee
 /// resolves the id via DPNS).
 ///
-/// **The returned string embeds the plaintext one-time voucher key.**
-/// Callers must never log or persist it.
+/// Returns a blob: `outpoint (txid[32] || vout_le[4])` then the UTF-8 URI —
+/// the same 36-byte-prefixed encoding the persistence callback keys
+/// invitation rows by, so Kotlin has ONE outpoint shape everywhere.
+///
+/// **The returned blob embeds the plaintext one-time voucher key (in the
+/// URI tail).** Callers must never log or persist it.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_createInvitation(
@@ -1014,7 +1020,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_createI
     inviter_username: JString,
     now_unix: jlong,
     core_signer_handle: jlong,
-) -> jstring {
+) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
         if amount_duffs <= 0 {
             crate::support::throw_sdk_exception(env, 1, "amountDuffs must be positive");
@@ -1091,7 +1097,20 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_createI
             );
             return ptr::null_mut();
         };
-        new_jstring(env, value)
+        // Blob: outpoint (`txid[32] || vout_le[4]`) then the UTF-8 URI — the
+        // same 36-byte encoding the persistence callback keys invitation
+        // rows by, so Kotlin has ONE outpoint shape everywhere.
+        let mut blob = Vec::with_capacity(36 + value.len());
+        blob.extend_from_slice(&outpoint.txid);
+        blob.extend_from_slice(&outpoint.vout.to_le_bytes());
+        blob.extend_from_slice(value.as_bytes());
+        match env.byte_array_from_slice(&blob) {
+            Ok(arr) => arr.into_raw(),
+            Err(_) => {
+                crate::support::throw_sdk_exception(env, 99, "failed to build the invitation blob");
+                ptr::null_mut()
+            }
+        }
     })
 }
 

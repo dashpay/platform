@@ -437,7 +437,7 @@ class Dashpay internal constructor(private val walletHandle: Long,
         // default would go negative in 2038 and be rejected by the JNI
         // guard even though the API itself remains valid.
         nowUnix: Long = System.currentTimeMillis() / 1000L,
-    ): String = gate.op {
+    ): CreatedInvitation = gate.op {
         require(amountDuffs > 0) { "amountDuffs must be positive, got $amountDuffs" }
         require(fundingAccountIndex >= 0) {
             "fundingAccountIndex must be non-negative, got $fundingAccountIndex"
@@ -448,13 +448,42 @@ class Dashpay internal constructor(private val walletHandle: Long,
         require(inviterIdentityId == null || !inviterUsername.isNullOrEmpty()) {
             "inviterUsername is required when inviterIdentityId is set"
         }
-        val uri = mapNativeErrors {
+        val blob = mapNativeErrors {
             DashpayNative.createInvitation(
                 walletHandle, amountDuffs, fundingAccountIndex,
                 inviterIdentityId, inviterUsername, nowUnix, coreSignerHandle,
             )
         }
-        checkNotNull(uri) { "native createInvitation returned no link" }
+        checkNotNull(blob) { "native createInvitation returned no data" }
+        require(blob.size > 36) { "createInvitation blob too short (${blob.size} bytes)" }
+        // Blob layout (fixed by the JNI): outpoint[36] (txid[32] || vout_le[4])
+        // then the UTF-8 URI. The 36-byte outpoint is the key the host's own
+        // invite-history row and the funding-tx "Invitation" label ride on.
+        CreatedInvitation(
+            outPoint = blob.copyOfRange(0, 36),
+            uri = String(blob, 36, blob.size - 36, Charsets.UTF_8),
+        )
+    }
+
+    /**
+     * A freshly created invitation: the shareable `dashpay://invite` [uri]
+     * (embeds the plaintext one-time voucher key — never log it) and the
+     * 36-byte funding [outPoint] (`txid[32] || vout_le[4]`) the funding
+     * asset-lock landed on. Hosts key their invite-history tracking and the
+     * funding-tx classification on the outpoint.
+     */
+    data class CreatedInvitation(val outPoint: ByteArray, val uri: String) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other !is CreatedInvitation) return false
+            return outPoint.contentEquals(other.outPoint) && uri == other.uri
+        }
+
+        override fun hashCode(): Int = 31 * outPoint.contentHashCode() + uri.hashCode()
+
+        /** Redacts the bearer URI so an accidental log/toString never leaks the voucher key. */
+        override fun toString(): String =
+            "CreatedInvitation(outPoint=${outPoint.size}B, uri=<redacted>)"
     }
 
     // ── Profile / contactInfo writes (upstream #3841 parity) ──────────
