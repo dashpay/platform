@@ -113,6 +113,33 @@ class DashSdkErrorTest {
             DashSdkError.fromNative(DashSDKException(offset + 22, "inputs reserved"))
         assertTrue(coreInsufficientFunds is DashSdkError.PlatformWallet.CoreInsufficientFunds)
 
+        // The asset-lock coin-selection shortfall (29) must reach callers as its
+        // own type rather than Generic, and must stay DISTINCT from the atomic
+        // Core-send shortfall (22) — the two selectors report over different
+        // funding sets (the asset-lock figures span the pooled sources on an
+        // exact-amount build and exactly one account on a drain), so hosts
+        // message the two differently. Its available/required duffs ride the
+        // message, which must survive verbatim.
+        val assetLockShort = DashSdkError.fromNative(
+            DashSDKException(
+                offset + 29,
+                "asset lock coin selection is short: available 18000000 duffs, " +
+                    "required 100000000 duffs",
+            ),
+        )
+        assertTrue(
+            "code 29 must not fall through to Generic",
+            assetLockShort is DashSdkError.PlatformWallet.AssetLockInsufficientFunds,
+        )
+        assertFalse(
+            "the asset-lock shortfall must not be conflated with the Core-send one",
+            assetLockShort is DashSdkError.PlatformWallet.CoreInsufficientFunds,
+        )
+        assertTrue(
+            "shortfall amounts must survive in the message",
+            assetLockShort.message!!.contains("available 18000000 duffs"),
+        )
+
         val recoveryCodes = mapOf(
             23 to DashSdkError.PlatformWallet.AssetLockNotTracked::class,
             24 to DashSdkError.PlatformWallet.AssetLockAlreadyConsumed::class,
