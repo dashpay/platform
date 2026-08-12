@@ -200,6 +200,33 @@ mod grammar {
         assert!(result.is_err(), "cross-aggregate having must fail");
     }
 
+    /// `GROUP BY identityId, class HAVING AVG(grade) > 80` — compound
+    /// grouping — is rejected: ranked axes live on single-property
+    /// indexes (a contract declaring a ranked flag on a compound index
+    /// is already rejected at contract-parse time), so there is no
+    /// compound grouping for a bound to filter over.
+    #[test]
+    fn compound_group_by_is_rejected() {
+        let result = detect_having_mode_v0(
+            &SelectProjection::avg("grade"),
+            &["identityId".to_string(), "class".to_string()],
+            &[clause(
+                HavingAggregateFunction::Avg,
+                "grade",
+                HavingOperator::GreaterThan,
+                Value::U64(80),
+            )],
+            &[],
+            &[],
+            pagination(10),
+        );
+        let error = result.expect_err("compound group_by must fail");
+        assert!(
+            format!("{error}").contains("exactly one `group_by` property"),
+            "the rejection must say the surface is single-property, got: {error}"
+        );
+    }
+
     #[test]
     fn multiple_clauses_are_rejected() {
         let single = clause(

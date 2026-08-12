@@ -3242,6 +3242,43 @@ mod having_range_tests {
         }
     }
 
+    /// `GROUP BY restaurantId, guests HAVING …` — the routing layer
+    /// sends any grouped single-clause having down the having path
+    /// (it owns *where* the request goes, not the grammar), and
+    /// drive's mode detection rejects the compound grouping: ranked
+    /// axes live on single-property indexes.
+    #[test]
+    fn compound_group_by_is_rejected_on_the_having_path() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let contract = register_restaurants(&platform, version);
+
+        let mut request = having_request(
+            &contract,
+            "visit",
+            select(v1_select::Function::Count, ""),
+            hc(
+                having_aggregate::Function::Count,
+                "",
+                having_clause::Operator::GreaterThan,
+                Value::U64(2),
+            ),
+            Vec::new(),
+            Some(10),
+            false,
+        );
+        request.group_by = vec![GROUP_PROPERTY.to_string(), "guests".to_string()];
+
+        match ranked_error(&platform, &state, request, version) {
+            QueryError::Query(QuerySyntaxError::InvalidParameter(message)) => {
+                assert!(
+                    message.contains("exactly one `group_by` property"),
+                    "the rejection must say the surface is single-property, got: {message}"
+                );
+            }
+            other => panic!("expected InvalidParameter, got {other:?}"),
+        }
+    }
+
     /// `OFFSET` stays ranked-only: the having-range walk has no skip,
     /// so the post-routing offset gate fires with its long-standing
     /// message.
