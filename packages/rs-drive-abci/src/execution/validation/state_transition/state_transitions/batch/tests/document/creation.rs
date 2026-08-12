@@ -91,6 +91,8 @@ mod creation_tests {
             )
             .expect("expected a random document");
 
+        set_valid_profile_payment_addresses(&mut document, profile);
+
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
 
         let documents_batch_create_transition =
@@ -139,6 +141,127 @@ mod creation_tests {
             .commit_transaction(transaction)
             .unwrap()
             .expect("expected to commit transaction");
+    }
+
+    #[tokio::test]
+    async fn should_enforce_profile_payment_address_type_bytes() {
+        use dpp::consensus::state::data_trigger::DataTriggerError;
+        use dpp::consensus::state::state_error::StateError;
+
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(437);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
+        let dashpay_contract = dashpay.clone();
+
+        let profile = dashpay_contract
+            .document_type_for_name("profile")
+            .expect("expected a profile document type");
+
+        // (field under test, leading type byte, accepted by the data trigger)
+        let cases = [
+            ("corePaymentAddress", 0x00u8, true),
+            ("corePaymentAddress", 0x01, true),
+            ("corePaymentAddress", 0x02, false),
+            ("corePaymentAddress", 0x3a, false),
+            ("platformPaymentAddress", 0x00, true),
+            ("platformPaymentAddress", 0x01, true),
+            ("platformPaymentAddress", 0x14, false),
+            ("platformPaymentAddress", 0xff, false),
+        ];
+
+        for (field, leading_byte, expect_valid) in cases {
+            let entropy = Bytes32::random_with_rng(&mut rng);
+
+            let mut document = profile
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    identity.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random document");
+
+            // start from valid values for both fields, then set the case under test
+            set_valid_profile_payment_addresses(&mut document, profile);
+
+            let mut address = vec![leading_byte];
+            address.extend([0u8; 20]);
+            document.set(field, address.into());
+            document.set("avatarUrl", "http://test.com/bob.jpg".into());
+
+            let documents_batch_create_transition =
+                BatchTransition::new_document_creation_transition_from_document(
+                    document,
+                    profile,
+                    entropy.0,
+                    &key,
+                    2,
+                    0,
+                    None,
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_create_serialized_transition = documents_batch_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            // each case runs in its own discarded transaction, so state and
+            // identity nonces are untouched between cases
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![documents_batch_create_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            if expect_valid {
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                    "{field} with type byte 0x{leading_byte:02x} must be accepted"
+                );
+            } else {
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::StateError(StateError::DataTriggerError(
+                            DataTriggerError::DataTriggerConditionError(_)
+                        )),
+                        ..
+                    }],
+                    "{field} with type byte 0x{leading_byte:02x} must be rejected"
+                );
+            }
+        }
     }
 
     #[tokio::test]
@@ -281,6 +404,8 @@ mod creation_tests {
             )
             .expect("expected a random document");
 
+        set_valid_profile_payment_addresses(&mut document, profile);
+
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
 
         let documents_batch_create_transition =
@@ -342,6 +467,8 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+
+        set_valid_profile_payment_addresses(&mut document, profile);
 
         document.set("avatarUrl", "http://test.com/coy.jpg".into());
 
@@ -440,6 +567,8 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+
+        set_valid_profile_payment_addresses(&mut document, profile);
 
         let max_field_size = platform_version.system_limits.max_field_value_size;
         let avatar_size = max_field_size + 1000;

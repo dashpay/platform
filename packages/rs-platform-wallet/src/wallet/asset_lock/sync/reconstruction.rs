@@ -153,18 +153,23 @@ fn chain_proof(
     }
 }
 
-/// Find the fund-bearing account (BIP44 first, then CoinJoin — same
-/// family order as `funding_tx_record` in `sync::proof`) that also
-/// recorded `txid`, i.e. the account whose UTXOs funded the asset
-/// lock. Falls back to 0 when no sibling record exists (the lookup
-/// paths that consume `account_index` degrade to the persister
-/// fallback on a miss, so a wrong-but-plausible index only costs a
-/// round-trip).
+/// Find the fund-bearing account (BIP44, then BIP32, then CoinJoin —
+/// the same family order as `funding_tx_record` in `sync::proof`) that
+/// also recorded `txid`, i.e. the account whose UTXOs funded the asset
+/// lock. A pooled build can be funded EXCLUSIVELY from a BIP32 account
+/// at a nonzero index; omitting that family here stored the fallback 0,
+/// and the pre-final proof wait then queried an index that holds no
+/// record — with `NoPlatformPersistence` there is no fallback, so the
+/// wait parked forever even after finality. Falls back to 0 only when
+/// no sibling record exists in ANY searched family (the lookup paths
+/// that consume `account_index` degrade to the persister fallback on a
+/// miss, so a wrong-but-plausible index only costs a round-trip).
 fn funding_account_index(info: &PlatformWalletInfo, txid: &dashcore::Txid) -> u32 {
     let accounts = &info.core_wallet.accounts;
     accounts
         .standard_bip44_accounts
         .iter()
+        .chain(accounts.standard_bip32_accounts.iter())
         .chain(accounts.coinjoin_accounts.iter())
         .find(|(_, account)| account.transactions().contains_key(txid))
         .map(|(index, _)| *index)
@@ -526,6 +531,78 @@ mod tests {
             .await
             .expect("build asset lock");
         (wallet_manager, wallet_id, tx)
+    }
+
+    /// A lock funded EXCLUSIVELY from a BIP32 account at a NONZERO index
+    /// must recover that index. The pre-fix inference searched only BIP44
+    /// and CoinJoin, stored the fallback 0, and the pre-final proof wait
+    /// then queried an index holding no record — with
+    /// `NoPlatformPersistence` there is no fallback, so the wait parked
+    /// forever even after finality.
+    #[test]
+    fn funding_account_index_recovers_nonzero_bip32_index() {
+        use std::collections::BTreeMap;
+
+        use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
+        use key_wallet::managed_account::ManagedCoreFundsAccount;
+        use key_wallet::test_utils::TestWalletContext;
+        use key_wallet::{DerivationPath, ManagedAccountType};
+
+        use crate::wallet::core::WalletGeneration;
+        use crate::wallet::identity::IdentityManager;
+
+        let mut ctx = TestWalletContext::new_random();
+        let pool = || {
+            AddressPool::new(
+                DerivationPath::master(),
+                AddressPoolType::Absent,
+                20,
+                Network::Testnet,
+                &KeySource::NoKeySource,
+            )
+            .expect("address pool")
+        };
+        let mut account = ManagedCoreFundsAccount::new(
+            ManagedAccountType::Standard {
+                index: 7,
+                standard_account_type: StandardAccountType::BIP32Account,
+                external_addresses: pool(),
+                internal_addresses: pool(),
+            },
+            Network::Testnet,
+        );
+
+        let tx = Transaction::dummy(&ctx.receive_address, 0..1, &[5_000]);
+        let txid = tx.txid();
+        account.transactions_mut().insert(
+            txid,
+            record_for(
+                &tx,
+                AccountType::Standard {
+                    index: 7,
+                    standard_account_type: StandardAccountType::BIP32Account,
+                },
+                chainlocked_context(9),
+            ),
+        );
+        ctx.managed_wallet
+            .accounts
+            .standard_bip32_accounts
+            .insert(7, account);
+
+        let info = PlatformWalletInfo {
+            core_wallet: ctx.managed_wallet,
+            generation: std::sync::Arc::new(WalletGeneration::new()),
+            identity_manager: IdentityManager::new(),
+            tracked_asset_locks: BTreeMap::new(),
+            dpns_name_states: BTreeMap::new(),
+        };
+        assert_eq!(
+            funding_account_index(&info, &txid),
+            7,
+            "the BIP32 sibling record identifies the true source index; \
+             falling back to 0 parks the proof wait forever"
+        );
     }
 
     fn chainlocked_context(height: u32) -> TransactionContext {

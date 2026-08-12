@@ -10,5 +10,6 @@ pub mod wallet;
 pub use balance::WalletBalance;
 pub use balance_handler::BalanceUpdateHandler;
 pub use generation::WalletGeneration;
-pub use transaction::{SignedCoreTransaction, SEND_FUNDING_SOURCES};
+pub(crate) use transaction::resolve_source_accounts;
+pub use transaction::{SignedCoreTransaction, ASSET_LOCK_FUNDING_SOURCES, SEND_FUNDING_SOURCES};
 pub use wallet::CoreWallet;

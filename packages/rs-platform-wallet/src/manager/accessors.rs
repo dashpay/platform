@@ -445,6 +445,19 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         wallets.keys().copied().collect()
     }
 
+    /// Network a registered wallet belongs to, or `None` when the id is
+    /// unknown.
+    ///
+    /// Exists for FFI callers that hold a manager handle and a wallet id but
+    /// no wallet handle, and need the network before they can build the
+    /// per-call key material a wallet operation requires (resolving a master
+    /// xpriv, constructing a contact-crypto provider). Blocking and cheap: one
+    /// `RwLock` read, no I/O.
+    pub fn wallet_network_blocking(&self, wallet_id: &WalletId) -> Option<key_wallet::Network> {
+        let wm = self.wallet_manager.blocking_read();
+        Some(wm.get_wallet_info(wallet_id)?.core_wallet.network())
+    }
+
     /// Snapshot of [`PlatformAddressSyncManager`] tunables and last-
     /// pass timestamp. `watch_list_size` is `wallets.len()` — every
     /// registered wallet participates in each pass since the sync

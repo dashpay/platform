@@ -193,6 +193,30 @@ jobs:
           cargo install cargo-machete 2>/dev/null || true
           cargo machete
 
+      # The transport-free cut is how embedders with their own networking
+      # (Dash Core's platform GUI, explorers) consume verification: feature
+      # unification hides transport regressions in whole-workspace builds, so
+      # check the standalone graphs and assert the networking stack stays out
+      # of the proof-verification tree (native) and out of wasm builds.
+      - name: Check transport-free feature cut
+        run: |
+          cargo check -p dapi-grpc --no-default-features --features core,platform,client --locked
+          cargo check -p drive-proof-verifier --locked
+          for banned in hyper rustls tower; do
+            if cargo tree -p drive-proof-verifier -e normal -i "$banned" 2>/dev/null | grep -q .; then
+              echo "::error::$banned leaked into drive-proof-verifier's dependency tree"
+              exit 1
+            fi
+          done
+          for banned in hyper rustls tower mio; do
+            for wasm_package in dash-sdk wasm-sdk; do
+              if cargo tree -p "$wasm_package" --target wasm32-unknown-unknown -e normal -i "$banned" 2>/dev/null | grep -q .; then
+                echo "::error::$banned leaked into $wasm_package's wasm32 dependency tree"
+                exit 1
+              fi
+            done
+          done
+
       - name: Detect immutable structure changes
         if: github.event_name == 'pull_request'
         run: |

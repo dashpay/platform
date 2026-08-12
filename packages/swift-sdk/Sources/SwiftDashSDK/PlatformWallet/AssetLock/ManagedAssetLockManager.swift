@@ -54,9 +54,8 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
         /// locked amount); a Consumed lock cannot fund another
         /// identity.
         case consumed = 4
-        /// Reconstructed from on-chain history after a wallet restore
-        /// (the SDK's restore-scan reconstruction) rather than tracked
-        /// live through the build pipeline. Core-side finality is
+        /// Produced by restore reconstruction or live reconciliation of an
+        /// unauthenticated already-consumed report. Core-side finality is
         /// known, but Platform-side consumption is UNKNOWN — the lock
         /// may have funded an identity long ago, or be unspent
         /// stranded value. Deliberately outside both the pending

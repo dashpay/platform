@@ -1,5 +1,6 @@
 use crate::drive::contract::DataContractFetchInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use moka::ops::compute::Op;
 use moka::sync::Cache;
 use std::sync::Arc;
 
@@ -20,14 +21,41 @@ impl DataContractCache {
 
     /// Inserts DataContract to block cache
     /// otherwise to goes to global cache
+    ///
+    /// The insert is skipped if the cache already holds the same contract at a
+    /// **higher** version. Contract versions increase strictly monotonically —
+    /// the data contract update transition enforces `new == old + 1`, and system
+    /// contract migrations bump the version — so an insert carrying a lower
+    /// version is always a delayed writer racing a newer copy in, never fresh
+    /// information. CONSENSUS-CRITICAL: a read-only query thread fetches from
+    /// committed state without a transaction and populates the global cache from
+    /// what it read. If such a thread reads a contract, gets descheduled while
+    /// block execution rewrites that contract, and performs its insert after the
+    /// block cache is promoted, an unconditional insert would clobber the newer
+    /// contract with the stale one — and block execution would then serialize
+    /// documents against a different contract than a node whose cache was cold,
+    /// producing a different app hash from the same block. The check-and-insert
+    /// is atomic per key via moka's compute API, so there is no window between
+    /// the version comparison and the write. Same-version inserts still
+    /// overwrite: re-inserting an identical contract with a freshly calculated
+    /// fee is the normal cache-hit fee path.
     pub fn insert(&self, fetch_info: Arc<DataContractFetchInfo>, is_block_cache: bool) {
         let data_contract_id_bytes = fetch_info.contract.id().to_buffer();
 
-        if is_block_cache {
-            self.block_cache.insert(data_contract_id_bytes, fetch_info);
+        let cache = if is_block_cache {
+            &self.block_cache
         } else {
-            self.global_cache.insert(data_contract_id_bytes, fetch_info);
-        }
+            &self.global_cache
+        };
+
+        cache
+            .entry(data_contract_id_bytes)
+            .and_compute_with(|existing| match existing {
+                Some(entry) if entry.value().contract.version() > fetch_info.contract.version() => {
+                    Op::Nop
+                }
+                _ => Op::Put(Arc::clone(&fetch_info)),
+            });
     }
 
     /// Tries to get a data contract from block cache if present
@@ -163,6 +191,104 @@ mod tests {
                 .expect("should be present");
 
             assert_eq!(fetch_info_from_cache, fetch_info_block)
+        }
+    }
+
+    mod insert {
+        use super::*;
+        use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+
+        /// Two copies of the SAME contract (same id) at the given versions. The
+        /// fixture generates a fresh contract id per call, so both copies must
+        /// derive from a single fixture.
+        fn same_contract_at_versions(
+            first: u32,
+            second: u32,
+        ) -> (Arc<DataContractFetchInfo>, Arc<DataContractFetchInfo>) {
+            let fetch_info = DataContractFetchInfo::dpns_contract_fixture(
+                PlatformVersion::latest().protocol_version,
+            );
+            let mut first_info = fetch_info.clone();
+            first_info.contract.set_version(first);
+            let mut second_info = fetch_info;
+            second_info.contract.set_version(second);
+            (Arc::new(first_info), Arc::new(second_info))
+        }
+
+        /// A delayed insert carrying an older contract version must not clobber a newer
+        /// entry. This is the query-thread race: a read-only query reads a contract from
+        /// committed state, is descheduled while block execution rewrites the contract,
+        /// and performs its cache insert only after the migrated contract was promoted
+        /// to the global cache.
+        #[test]
+        fn test_insert_does_not_overwrite_newer_version_with_older() {
+            let data_contract_cache = DataContractCache::new(10, 10);
+
+            let (stale, newer) = same_contract_at_versions(1, 2);
+            let contract_id = newer.contract.id().to_buffer();
+            data_contract_cache.insert(newer, false);
+
+            // The delayed stale insert
+            data_contract_cache.insert(stale, false);
+
+            let cached = data_contract_cache
+                .get(contract_id, false)
+                .expect("should be present");
+            assert_eq!(cached.contract.version(), 2);
+        }
+
+        /// Same-version inserts must overwrite: re-inserting the same contract with a
+        /// freshly calculated fee is the normal cache-hit fee path.
+        #[test]
+        fn test_insert_overwrites_same_version() {
+            let data_contract_cache = DataContractCache::new(10, 10);
+
+            let (mut original, mut with_fee) = same_contract_at_versions(1, 1);
+            let contract_id = original.contract.id().to_buffer();
+            Arc::make_mut(&mut original).fee = None;
+            data_contract_cache.insert(original, false);
+
+            Arc::make_mut(&mut with_fee).fee =
+                Some(dpp::fee::fee_result::FeeResult::new_from_processing_fee(1));
+            data_contract_cache.insert(with_fee, false);
+
+            let cached = data_contract_cache
+                .get(contract_id, false)
+                .expect("should be present");
+            assert!(cached.fee.is_some(), "same-version insert must overwrite");
+        }
+
+        /// The full race, end to end: block execution seeds the migrated (newer)
+        /// contract into the block cache, the block finalizes and promotes it to the
+        /// global cache, and only then does the delayed query thread insert the
+        /// pre-migration contract it read before the rewrite. The promoted contract
+        /// must survive.
+        #[test]
+        fn test_delayed_stale_insert_after_promotion_does_not_stick() {
+            let data_contract_cache = DataContractCache::new(10, 10);
+
+            // The pre-migration contract, as read from committed state by a query
+            // thread that will be descheduled before its insert.
+            let (stale, migrated) = same_contract_at_versions(1, 2);
+            let contract_id = stale.contract.id().to_buffer();
+
+            // Block execution writes the migrated contract and seeds the block cache.
+            data_contract_cache.insert(migrated, true);
+
+            // The block finalizes: block cache promotes to global.
+            data_contract_cache.merge_and_clear_block_cache();
+
+            // The query thread wakes up and performs its stale insert.
+            data_contract_cache.insert(stale, false);
+
+            let cached = data_contract_cache
+                .get(contract_id, false)
+                .expect("should be present");
+            assert_eq!(
+                cached.contract.version(),
+                2,
+                "the promoted migrated contract must survive a delayed stale insert"
+            );
         }
     }
 

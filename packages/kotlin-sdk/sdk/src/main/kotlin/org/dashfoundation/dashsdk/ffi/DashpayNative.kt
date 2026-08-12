@@ -201,6 +201,19 @@ internal object DashpayNative {
     // either side of this boundary.
 
     /**
+     * Rust-enforced cap on an invitation voucher's amount, in duffs.
+     * ← Swift `ManagedPlatformWallet.maxInvitationDuffs`.
+     */
+    external fun invitationMaxDuffs(): Long
+
+    /**
+     * Rust-enforced floor on an invitation voucher's amount, in duffs — a
+     * smaller voucher can fund neither a claim nor a reclaim.
+     * ← Swift `ManagedPlatformWallet.minInvitationDuffs`.
+     */
+    external fun invitationMinDuffs(): Long
+
+    /**
      * Decode a `dashpay://invite` link into a read-only preview — no
      * wallet, no network, no side effects. Returns a JSON object:
      * `structurallyValid`, `isInstant`, `hasInviter`, `inviterUsername`

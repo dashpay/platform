@@ -12,7 +12,9 @@ pub struct TrackedAssetLockFFI {
     pub txid: [u8; 32],
     /// Outpoint vout.
     pub vout: u32,
-    /// BIP44 account index.
+    /// Family-independent source index of the pooled funding (BIP44 and
+    /// BIP32 at this index plus DashPay receiving accounts). Not a
+    /// BIP44-only selector.
     pub account_index: u32,
     /// Funding type (0=IdentityRegistration, 1=IdentityTopUp, 2=IdentityTopUpNotBound,
     /// 3=IdentityInvitation, 4=AssetLockAddressTopUp, 5=AssetLockShieldedAddressTopUp).
@@ -22,8 +24,8 @@ pub struct TrackedAssetLockFFI {
     /// Amount in duffs.
     pub amount: u64,
     /// Status (0=Built, 1=Broadcast, 2=InstantSendLocked, 3=ChainLocked,
-    /// 4=Consumed, 5=RecoveredFromChain — finality proven by the restore
-    /// scan, Platform-side consumption unknown).
+    /// 4=Consumed, 5=RecoveredFromChain — Core finality proven by restore
+    /// reconstruction or live reconciliation, Platform-side consumption unknown).
     pub status: u32,
     /// Whether a proof is attached.
     pub has_proof: bool,

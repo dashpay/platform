@@ -107,8 +107,10 @@ extension PlatformWalletManager {
     /// - Parameters:
     ///   - walletId: 32-byte wallet identifier (the same key
     ///     `bindShielded` uses to look up the bound subwallet).
-    ///   - fundingAccountIndex: BIP44 Core account whose UTXOs fund
-    ///     the asset lock.
+    ///   - fundingAccountIndex: standard-family index the asset lock
+    ///     funds from — POOLS the BIP44 and BIP32 accounts at that
+    ///     index with every DashPay receiving account (change returns
+    ///     to BIP44); it does not restrict DashPay contributions.
     ///   - amountDuffs: L1 amount to lock in Core duffs. Must be
     ///     large enough to cover `recipients.credits + Platform fee`;
     ///     undersized locks fail at Platform submission.
@@ -383,8 +385,10 @@ extension PlatformWalletManager {
     ///     each batch's real note (must be bound).
     ///   - targetTotalNotes: drive the on-chain pool note count up to (at
     ///     least) this value. A no-op if the pool already has this many.
-    ///   - fundingAccountIndex: Core BIP44 account whose UTXOs fund each
-    ///     per-batch asset lock.
+    ///   - fundingAccountIndex: standard-family index each per-batch
+    ///     asset lock funds from — POOLS the BIP44 and BIP32 accounts at
+    ///     that index with every DashPay receiving account (change
+    ///     returns to BIP44); it does not restrict DashPay contributions.
     ///   - progress: optional live-progress handler (see above).
     public func seedShieldedPoolNotes(
         walletId: Data,

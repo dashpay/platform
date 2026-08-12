@@ -39,6 +39,10 @@ impl WalletPersister {
         self.inner.flush(self.wallet_id)
     }
 
+    pub(crate) fn store_commits_inline(&self) -> bool {
+        self.inner.store_commits_inline()
+    }
+
     /// Feature-specific persistence contracts exposed by the backend.
     pub(crate) fn persistence_capabilities(&self) -> PersistenceCapabilities {
         self.inner.persistence_capabilities()

@@ -910,6 +910,42 @@ fn retain_drained_by_snapshot(
     removed
 }
 
+/// Await `future`, giving up once `deadline` has passed. `None` deadline is
+/// the unbounded behaviour; a `None` return means the budget is spent.
+///
+/// **Why the drains bound themselves rather than being wrapped in a
+/// `tokio::time::timeout` by their caller.** Both drains commit per-entry side
+/// effects as they go (`register_contact_account`, `mark_contact_channel_broken`,
+/// the reciprocal send) while accumulating the dequeue list in a local `cleared`
+/// vec applied once at the end. Dropping the drain future mid-loop — which is
+/// exactly what an outer `timeout` does — discards that vec, so entries whose
+/// work really landed stay queued and the returned count reports zero for work
+/// that happened. The queue is at-least-once, so nothing is corrupted, but the
+/// count is a lie precisely when a caller has a budget to report against.
+///
+/// Threading the deadline inside keeps the loop the only thing that ever ends
+/// early: it stops **between** entries, and within an entry only the reads that
+/// precede its first commit are bounded. Every commit still runs to completion.
+async fn bounded<F: std::future::Future>(
+    deadline: Option<std::time::Instant>,
+    future: F,
+) -> Option<F::Output> {
+    let Some(deadline) = deadline else {
+        return Some(future.await);
+    };
+    let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+    if remaining.is_zero() {
+        return None;
+    }
+    tokio::time::timeout(remaining, future).await.ok()
+}
+
+/// Whether `deadline` has passed. Checked at the top of each drain iteration so
+/// a spent budget ends the loop between entries, never inside one.
+fn budget_spent(deadline: Option<std::time::Instant>) -> bool {
+    deadline.is_some_and(|d| std::time::Instant::now() >= d)
+}
+
 /// Whether a registered outbound `DashpayExternalAccount` for `contact`
 /// must be torn down + rebuilt because it was NOT built from the contact's
 /// current `incoming_request.account_reference`.
@@ -941,39 +977,49 @@ fn external_account_needs_rebuild(contact: &EstablishedContact, has_external: bo
 /// 2. Fall back to the recipient's first `ECDSA_SECP256K1` **ENCRYPTION** key.
 /// 3. Error only if the recipient has neither.
 ///
-/// No AUTHENTICATION fallback: no live client population needs it, and reusing
-/// signing keys for ECDH is poor key separation. `ECDSA_SECP256K1` is required
-/// either way (every observed key is that type, and ECDH needs the full key).
+/// No AUTHENTICATION or TRANSFER fallback: reusing a signing or
+/// fund-authorizing key for ECDH is poor key separation, and nothing forces us
+/// to when we are the one choosing. `ECDSA_SECP256K1` is required either way
+/// (every observed key is that type, and ECDH needs the full key).
 ///
-/// The accepted cohort (DECRYPTION or ENCRYPTION) is the shared
-/// [`dash_sdk::platform::dashpay::recipient_key_purpose_is_valid`] membership
-/// policy; only the preference ORDER below (DECRYPTION first, ENCRYPTION
-/// second) is local to the selector.
+/// That mainnet's legacy Android/dashj population *does* reference
+/// AUTHENTICATION/TRANSFER keys is a fact about immutable history, handled by
+/// the wider receive-side policy
+/// ([`dash_sdk::platform::dashpay::recipient_key_purpose_is_acceptable_on_receive`]).
+/// It must not relax what we mint: this selector calls
+/// [`dash_sdk::platform::dashpay::recipient_key_purpose_is_valid`] for
+/// membership, so the cohort cannot drift from the SDK's request-creation
+/// gate. Only the preference ORDER below (DECRYPTION first, ENCRYPTION second)
+/// is local to the selector.
 fn select_recipient_key_index(recipient_identity: &Identity) -> Result<u32, PlatformWalletError> {
+    // Membership comes from the shared mint predicate, never from a purpose
+    // list repeated here — a local copy is exactly how the SDK's
+    // request-creation gate and this selector would drift apart on the next
+    // policy change.
+    //
     // Skip disabled (revoked) keys: encrypting the DIP-15 compact xpub to a
     // key whose private half may be compromised would hand the contact's
     // payment xpub to whoever holds the revoked key. `disabled_at().is_none()`
     // mirrors the validator's disabled-key gate.
-    // Prefer a DECRYPTION key.
-    if let Some((id, _)) = recipient_identity.public_keys().iter().find(|(_, k)| {
-        k.purpose() == Purpose::DECRYPTION
-            && k.key_type() == KeyType::ECDSA_SECP256K1
-            && k.disabled_at().is_none()
-    }) {
-        return Ok(*id);
-    }
-    // Fall back to an ENCRYPTION key (mobile cohort).
-    if let Some((id, _)) = recipient_identity.public_keys().iter().find(|(_, k)| {
-        k.purpose() == Purpose::ENCRYPTION
-            && k.key_type() == KeyType::ECDSA_SECP256K1
-            && k.disabled_at().is_none()
-    }) {
-        return Ok(*id);
-    }
-    Err(PlatformWalletError::InvalidIdentityData(
-        "Recipient identity has no enabled ECDSA_SECP256K1 DECRYPTION or ENCRYPTION key"
-            .to_string(),
-    ))
+    let mut eligible: Vec<(&u32, &dpp::identity::IdentityPublicKey)> = recipient_identity
+        .public_keys()
+        .iter()
+        .filter(|(_, k)| {
+            dash_sdk::platform::dashpay::recipient_key_purpose_is_valid(k.purpose())
+                && k.key_type() == KeyType::ECDSA_SECP256K1
+                && k.disabled_at().is_none()
+        })
+        .collect();
+    // The only policy local to this selector: DECRYPTION before ENCRYPTION,
+    // then lowest key id (which `public_keys()`'s BTreeMap order already
+    // gives, and the stable sort preserves).
+    eligible.sort_by_key(|(_, k)| k.purpose() != Purpose::DECRYPTION);
+    eligible.first().map(|(id, _)| **id).ok_or_else(|| {
+        PlatformWalletError::InvalidIdentityData(
+            "Recipient identity has no enabled ECDSA_SECP256K1 DECRYPTION or ENCRYPTION key"
+                .to_string(),
+        )
+    })
 }
 
 /// Select our OWN ECDH root key: the first **enabled** `ECDSA_SECP256K1`
@@ -1852,6 +1898,21 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         &self,
         provider: &P,
     ) -> usize {
+        self.drain_pending_contact_crypto_until(provider, None)
+            .await
+    }
+
+    /// [`Self::drain_pending_contact_crypto`], stopping once `deadline` passes.
+    ///
+    /// The drain ends between entries, so the count it returns and the queue
+    /// removals it persists always describe work that actually completed —
+    /// see [`bounded`] for why this cannot be an outer timeout. Entries it
+    /// never reached stay queued for the next drain.
+    pub async fn drain_pending_contact_crypto_until<P: ContactCryptoProvider + Sync>(
+        &self,
+        provider: &P,
+        deadline: Option<std::time::Instant>,
+    ) -> usize {
         use crate::changeset::{PendingContactCryptoKey, PendingContactCryptoOp};
 
         // Snapshot every resident identity's queue into one flat owned Vec
@@ -1872,8 +1933,95 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             return 0;
         }
 
+        // Our identity's key inventory, once per drain that has external
+        // builds queued. The whole legacy-cohort bug is a statement about this
+        // layout — an identity minted before DashPay encryption keys existed
+        // carries only AUTHENTICATION/TRANSFER slots, so inbound requests
+        // reference those ids and nothing downstream makes sense without
+        // knowing that. Reading it back off an exported log beats asking the
+        // user to query Platform. On-chain public metadata only; no key data.
+        // Gated on the level: the block allocates a set, a string per key and a
+        // join, and takes the wallet-manager read lock. Purpose-rejected
+        // entries stay queued and revisit this path every sweep, so leaving
+        // that work unconditional would add recurring cost to the very path
+        // this change exists to make cheap.
+        if tracing::enabled!(tracing::Level::INFO) {
+            use dpp::identity::accessors::IdentityGettersV0;
+            use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+            let owners: std::collections::BTreeSet<Identifier> = entries
+                .iter()
+                .filter(|e| matches!(e.op, PendingContactCryptoOp::RegisterExternal { .. }))
+                .map(|e| e.owner_identity_id)
+                .collect();
+            if !owners.is_empty() {
+                let wm = self.wallet_manager.read().await;
+                if let Some(info) = wm.get_wallet_info(&self.wallet_id) {
+                    for owner in owners {
+                        let Some(managed) = info.identity_manager.managed_identity(&owner) else {
+                            continue;
+                        };
+                        let keys: Vec<String> = managed
+                            .identity
+                            .public_keys()
+                            .iter()
+                            .map(|(id, k)| {
+                                format!(
+                                    "{id}:{:?}/{:?}{}",
+                                    k.purpose(),
+                                    k.key_type(),
+                                    if k.disabled_at().is_some() {
+                                        "/DISABLED"
+                                    } else {
+                                        ""
+                                    }
+                                )
+                            })
+                            .collect();
+                        tracing::info!(
+                            owner = %owner,
+                            identity_index = ?managed.identity_index,
+                            keys = %keys.join(" "),
+                            "drain: our identity key inventory (id:purpose/type)"
+                        );
+                    }
+                }
+            }
+        }
+
         let mut cleared: Vec<PendingContactCryptoKey> = Vec::new();
+        // Distinct key-purpose rejections seen this drain, and how many entries
+        // each blocked — summarised once at the end instead of one WARN per
+        // entry. A purpose-rejected entry stays queued by design (the policy,
+        // not the immutable document, is what might change), so per-entry
+        // WARNing repeats every sweep for the life of the wallet: mainnet logs
+        // from one wallet show 396 such lines for 27 contacts in a single
+        // session. Every reason still reaches the log, once, with its count.
+        let mut policy_blocked: std::collections::BTreeMap<String, usize> =
+            std::collections::BTreeMap::new();
+        // How much of `cleared` is already dequeued + persisted, and the running
+        // total actually removed. Bookkeeping lands per entry, so at most one
+        // entry's worth can ever be in flight.
+        let mut flushed: usize = 0;
+        let mut drained_total: usize = 0;
         for entry in &entries {
+            // Land the previous entry's dequeue before starting any new work.
+            if cleared.len() > flushed {
+                drained_total += self
+                    .flush_drained_contact_crypto(&entries, &cleared[flushed..])
+                    .await;
+                flushed = cleared.len();
+            }
+            // Stop between entries, never inside one: an entry that has already
+            // committed its side effect must reach the `cleared.push` that
+            // records it.
+            if budget_spent(deadline) {
+                tracing::info!(
+                    processed = cleared.len(),
+                    total = entries.len(),
+                    "drain: budget spent; leaving the rest queued"
+                );
+                break;
+            }
             match &entry.op {
                 PendingContactCryptoOp::RegisterReceiving => {
                     // Build the friendship path in Rust; the provider derives
@@ -1893,7 +2041,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             continue;
                         }
                     };
-                    match provider.receiving_xpub(&path).await {
+                    // Bounded: the derive is the last step before this entry
+                    // commits anything, so abandoning it changes no state.
+                    let Some(xpub) = bounded(deadline, provider.receiving_xpub(&path)).await else {
+                        tracing::info!(
+                            owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                            "drain: budget spent deriving the receiving xpub; leaving queued"
+                        );
+                        continue;
+                    };
+                    match xpub {
                         Ok(xpub) => match self
                             .register_contact_account(
                                 &entry.owner_identity_id,
@@ -1956,10 +2113,89 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         }
                     };
 
+                    // Validate OUR key first — it needs nothing but the
+                    // resident identity, so a request that can never be used is
+                    // rejected before spending a Platform round trip on the
+                    // contact. This is the dominant rejection in practice
+                    // (legacy documents reference our AUTHENTICATION/TRANSFER
+                    // key), and because such an entry stays queued the fetch
+                    // below would otherwise repeat on every sweep, forever.
+                    //
+                    // Deciding here means a MIXED failure — our key
+                    // purpose-rejected and the contact's key hard-faulted —
+                    // now leaves the entry queued where the composed validator
+                    // would have marked the channel broken. Deliberate: see
+                    // `validate_recipient_key`. Marking broken is unappealable
+                    // by the user, and the retry it avoids no longer costs a
+                    // fetch.
+                    let our_identity = {
+                        let wm = self.wallet_manager.read().await;
+                        wm.get_wallet_info(&self.wallet_id)
+                            .and_then(|info| {
+                                info.identity_manager
+                                    .managed_identity(&entry.owner_identity_id)
+                            })
+                            .map(|m| m.identity.clone())
+                    };
+                    let Some(our_identity) = our_identity else {
+                        tracing::warn!(
+                            owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                            "drain: our identity vanished mid-drain; leaving queued"
+                        );
+                        continue;
+                    };
+                    // Did only the widened receive-side policy let this request
+                    // through — i.e. does either referenced key name a purpose
+                    // we would never mint ourselves? That marks it as the
+                    // legacy dashj cohort, whose ECDH/AES byte compatibility
+                    // with our implementation has not been cross-validated
+                    // against a dashj-produced payload. Used far below to keep
+                    // a decrypt failure from being charged to the document.
+                    //
+                    // The recipient term is known here; the sender term needs
+                    // the identity fetched below and is OR-ed in there.
+                    let recipient_widened = our_identity
+                        .get_public_key_by_id(*our_decryption_key_index)
+                        .map(|k| {
+                            !dash_sdk::platform::dashpay::recipient_key_purpose_is_valid(
+                                k.purpose(),
+                            )
+                        })
+                        .unwrap_or(false);
+                    let recipient_validation =
+                        crate::wallet::identity::crypto::validation::validate_recipient_key(
+                            &our_identity,
+                            *our_decryption_key_index,
+                        );
+                    if !recipient_validation.is_valid {
+                        if self
+                            .apply_drain_validation_failure(
+                                entry,
+                                recipient_validation,
+                                &mut policy_blocked,
+                            )
+                            .await
+                        {
+                            cleared.push(entry.key());
+                        }
+                        continue;
+                    }
+
                     // Fetch the contact identity (transient on failure → leave).
+                    // Bounded: a Platform round trip, and nothing in this entry
+                    // has committed yet.
                     let contact_identity = {
                         use dash_sdk::platform::Fetch;
-                        match Identity::fetch(&self.sdk, entry.contact_id).await {
+                        let fetched =
+                            bounded(deadline, Identity::fetch(&self.sdk, entry.contact_id)).await;
+                        let Some(fetched) = fetched else {
+                            tracing::info!(
+                                owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                                "drain: budget spent fetching the contact identity; leaving queued"
+                            );
+                            continue;
+                        };
+                        match fetched {
                             Ok(Some(id)) => id,
                             Ok(None) => {
                                 tracing::warn!(
@@ -1978,56 +2214,31 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         }
                     };
 
-                    // Validate key indices (purpose + type) BEFORE ECDH — the
-                    // same gate the resident sweep path applies, so the deferred
-                    // path enforces the identical contract. A purpose-only
-                    // mismatch (e.g. a legacy doc referencing an AUTH key) is left
-                    // queued for a future acceptance-policy change; a hard failure
-                    // (key type / missing / disabled) marks the channel broken and
-                    // clears the entry.
-                    let our_identity = {
-                        let wm = self.wallet_manager.read().await;
-                        wm.get_wallet_info(&self.wallet_id)
-                            .and_then(|info| {
-                                info.identity_manager
-                                    .managed_identity(&entry.owner_identity_id)
-                            })
-                            .map(|m| m.identity.clone())
-                    };
-                    let Some(our_identity) = our_identity else {
-                        tracing::warn!(
-                            owner = %entry.owner_identity_id, contact = %entry.contact_id,
-                            "drain: our identity vanished mid-drain; leaving queued"
-                        );
-                        continue;
-                    };
+                    // The sender side of the legacy classification — the
+                    // widening moved the sender rule from ENCRYPTION-only to
+                    // ENCRYPTION-or-AUTHENTICATION too, so an AUTHENTICATION
+                    // sender against a mint-valid recipient is just as much an
+                    // unverified legacy payload.
+                    let accepted_by_legacy_widening = recipient_widened
+                        || contact_identity
+                            .get_public_key_by_id(*contact_encryption_key_index)
+                            .map(|k| k.purpose() != Purpose::ENCRYPTION)
+                            .unwrap_or(false);
+
+                    // The sender half — the checks that need the identity we
+                    // just fetched.
                     let validation =
-                        crate::wallet::identity::crypto::validation::validate_contact_request(
+                        crate::wallet::identity::crypto::validation::validate_sender_key(
                             &contact_identity,
                             *contact_encryption_key_index,
-                            &our_identity,
-                            *our_decryption_key_index,
                         );
                     if !validation.is_valid {
-                        if validation.is_purpose_only() {
-                            tracing::warn!(
-                                owner = %entry.owner_identity_id, contact = %entry.contact_id,
-                                errors = ?validation.errors,
-                                "drain: contact request key-purpose mismatch; leaving queued (not marking broken)"
-                            );
-                            continue;
+                        if self
+                            .apply_drain_validation_failure(entry, validation, &mut policy_blocked)
+                            .await
+                        {
+                            cleared.push(entry.key());
                         }
-                        tracing::warn!(
-                            owner = %entry.owner_identity_id, contact = %entry.contact_id,
-                            errors = ?validation.errors,
-                            "drain: contact request failed key-index validation; marking channel broken"
-                        );
-                        self.mark_contact_channel_broken(
-                            &entry.owner_identity_id,
-                            &entry.contact_id,
-                        )
-                        .await;
-                        cleared.push(entry.key());
                         continue;
                     }
 
@@ -2057,23 +2268,67 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             }
                         }
                         None => {
+                            // Left queued, not broken: the contact's identity
+                            // can gain this key later, exactly as ours can, and
+                            // the document that names it cleared consensus and
+                            // cannot be re-minted. Breaking here would end the
+                            // relationship over a gap that may close by itself.
                             tracing::warn!(
                                 owner = %entry.owner_identity_id, contact = %entry.contact_id,
-                                "drain: contact encryption key missing; marking channel broken"
+                                key_index = *contact_encryption_key_index,
+                                "drain: contact has no key at the referenced index yet; \
+                                 leaving queued (not marking broken)"
                             );
-                            self.mark_contact_channel_broken(
-                                &entry.owner_identity_id,
-                                &entry.contact_id,
-                            )
-                            .await;
-                            cleared.push(entry.key());
                             continue;
                         }
                     };
 
+                    // Everything the external build is about to depend on, in
+                    // one line, BEFORE it can fail. Recorded at INFO because
+                    // the legacy cohort's viability is an open question that
+                    // only real mainnet wallets can answer, and an exported log
+                    // is the only channel we get: without this, a failure below
+                    // says what broke but not what it was working from.
+                    //
+                    // Public metadata only — key ids, purposes, types and
+                    // lengths. Never the shared secret, and never the
+                    // decrypted xpub.
+                    {
+                        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+                        let our_key = our_identity.get_public_key_by_id(*our_decryption_key_index);
+                        let their_key =
+                            contact_identity.get_public_key_by_id(*contact_encryption_key_index);
+                        tracing::info!(
+                            owner = %entry.owner_identity_id,
+                            contact = %entry.contact_id,
+                            identity_index,
+                            our_key_id = *our_decryption_key_index,
+                            our_key_purpose = ?our_key.map(|k| k.purpose()),
+                            our_key_type = ?our_key.map(|k| k.key_type()),
+                            their_key_id = *contact_encryption_key_index,
+                            their_key_purpose = ?their_key.map(|k| k.purpose()),
+                            their_key_type = ?their_key.map(|k| k.key_type()),
+                            ciphertext_len = encrypted_public_key.len(),
+                            legacy_widened = accepted_by_legacy_widening,
+                            ecdh_path = %path,
+                            "drain: building external account"
+                        );
+                    }
+
                     // ECDH via the Keychain-backed provider (scalar stays in the
                     // signer; we only get the shared secret).
-                    let shared = match provider.ecdh_shared_secret(&path, &peer).await {
+                    // Bounded: the last step before the external-account
+                    // registration commits.
+                    let Some(shared) =
+                        bounded(deadline, provider.ecdh_shared_secret(&path, &peer)).await
+                    else {
+                        tracing::info!(
+                            owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                            "drain: budget spent on ECDH; leaving queued"
+                        );
+                        continue;
+                    };
+                    let shared = match shared {
                         Ok(s) => s,
                         Err(e) => {
                             tracing::warn!(
@@ -2122,6 +2377,25 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             .await;
                             cleared.push(entry.key());
                         }
+                        // A permanent fault on a legacy-cohort request is NOT
+                        // charged to the document. Decrypt and compact-xpub
+                        // parse are the only gates on the plaintext, so an
+                        // ECDH/AES convention gap between us and dashj would
+                        // surface here as a "permanent" fault and break every
+                        // legacy channel at once — and a broken channel only
+                        // heals when the CONTACT sends a fresh request, an
+                        // appeal the user cannot file. Leaving it queued keeps
+                        // a later convention fix able to recover it, and costs
+                        // only a retry.
+                        Err(e) if e.is_permanent() && accepted_by_legacy_widening => {
+                            tracing::warn!(
+                                owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                                error = %e.into_inner(),
+                                "drain: legacy-cohort external register failed; leaving queued \
+                                 (not marking broken — may be our own convention gap)"
+                            );
+                            continue;
+                        }
                         Err(e) if e.is_permanent() => {
                             tracing::warn!(
                                 owner = %entry.owner_identity_id, contact = %entry.contact_id,
@@ -2147,10 +2421,24 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     // the signer (the op carries no payload, so the latest
                     // published version always wins). The owner-ownership /
                     // confused-deputy guard lives in `drain_contact_info_decrypt`.
-                    match self
-                        .drain_contact_info_decrypt(&entry.owner_identity_id, provider)
-                        .await
-                    {
+                    // Bounded as a whole: its apply runs under a single write
+                    // lock with no await between persist and the in-memory
+                    // mutation, so abandoning it either leaves nothing applied
+                    // or leaves it fully applied and still queued — and a
+                    // re-run re-fetches the latest published version anyway.
+                    let decrypted = bounded(
+                        deadline,
+                        self.drain_contact_info_decrypt(&entry.owner_identity_id, provider),
+                    )
+                    .await;
+                    let Some(decrypted) = decrypted else {
+                        tracing::info!(
+                            owner = %entry.owner_identity_id,
+                            "drain: budget spent decrypting contactInfo; leaving queued"
+                        );
+                        continue;
+                    };
+                    match decrypted {
                         Ok(applied) => {
                             tracing::debug!(
                                 owner = %entry.owner_identity_id, applied,
@@ -2176,6 +2464,101 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             }
         }
 
+        // Land whatever the last entry completed.
+        drained_total += self
+            .flush_drained_contact_crypto(&entries, &cleared[flushed..])
+            .await;
+
+        // One line for every entry the key-purpose policy turned away, instead
+        // of one per entry per sweep. Kept at WARN and carrying the distinct
+        // reasons: this is the signal that a live on-chain cohort is failing
+        // our acceptance policy, which is exactly how the legacy dashj cohort
+        // was found — it must stay visible in an exported log, just not 27
+        // times a pass.
+        if !policy_blocked.is_empty() {
+            let blocked: usize = policy_blocked.values().sum();
+            tracing::warn!(
+                entries = blocked,
+                reasons = ?policy_blocked,
+                "drain: contact requests left queued by the key-purpose policy \
+                 (not marking broken; they retry when the policy changes)"
+            );
+        }
+        // One-line verdict for the pass. "Did the legacy contacts build?" is
+        // answerable from this alone, without counting per-entry lines across a
+        // multi-megabyte export.
+        tracing::info!(
+            entries = entries.len(),
+            drained = drained_total,
+            still_queued = entries.len().saturating_sub(drained_total),
+            "drain: pass complete"
+        );
+
+        drained_total
+    }
+
+    /// The drain's validation-failure policy, shared by the recipient-half and
+    /// sender-half checks so both halves classify identically.
+    ///
+    /// - A failure that can still resolve — a purpose mismatch (our acceptance
+    ///   policy might change) or an absent key id (identities gain keys) — is
+    ///   counted into `policy_blocked` and left queued. The `contactRequest`
+    ///   cleared consensus and is immutable; a channel marked broken here needs
+    ///   a superseding request from the CONTACT to heal, an appeal the user
+    ///   cannot file.
+    /// - Only a fault that immutable facts make permanent — a key type that
+    ///   cannot do ECDH, a key we disabled — breaks the channel, so the sweep
+    ///   stops collecting it.
+    ///
+    /// Returns `true` when the caller should clear the entry from the queue.
+    ///
+    /// Takes `validation` by value: a purpose-rejected entry stays queued by
+    /// design and comes back through here on every sweep, so cloning its
+    /// reasons into the summary would allocate once per contact per pass for
+    /// the life of the wallet. Moving them costs nothing — neither caller uses
+    /// the result afterwards.
+    async fn apply_drain_validation_failure(
+        &self,
+        entry: &crate::changeset::PendingContactCrypto,
+        validation: crate::wallet::identity::crypto::validation::ContactRequestValidation,
+        policy_blocked: &mut std::collections::BTreeMap<String, usize>,
+    ) -> bool {
+        if !validation.is_permanent() {
+            tracing::debug!(
+                owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                errors = ?validation.errors,
+                "drain: contact request key-purpose mismatch; leaving queued (not marking broken)"
+            );
+            for reason in validation.errors {
+                *policy_blocked.entry(reason).or_default() += 1;
+            }
+            return false;
+        }
+        tracing::warn!(
+            owner = %entry.owner_identity_id, contact = %entry.contact_id,
+            errors = ?validation.errors,
+            "drain: contact request failed key-index validation; marking channel broken"
+        );
+        self.mark_contact_channel_broken(&entry.owner_identity_id, &entry.contact_id)
+            .await;
+        true
+    }
+
+    /// Apply the dequeue for entries a drain just completed: remove them from
+    /// their owners' in-memory queues and persist the removal. Returns how many
+    /// were actually removed.
+    ///
+    /// Called after **each** completed entry rather than once per drain. The
+    /// per-entry side effects (`register_contact_account`, the reciprocal send)
+    /// commit as the loop runs, so batching the bookkeeping to the end means a
+    /// drain that stops — its budget, or a caller that drops the future —
+    /// leaves work it really finished still queued and reported as zero. One
+    /// entry's work and one entry's dequeue now land together.
+    async fn flush_drained_contact_crypto(
+        &self,
+        entries: &[crate::changeset::PendingContactCrypto],
+        cleared: &[crate::changeset::PendingContactCryptoKey],
+    ) -> usize {
         if cleared.is_empty() {
             return 0;
         }
@@ -2196,7 +2579,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // entry still value-equal to the snapshot's — a mid-drain upsert
         // (changed payload) is left queued for the next drain rather than
         // clobbered by this stale snapshot.
-        let removed: Vec<PendingContactCryptoKey> = {
+        let removed: Vec<crate::changeset::PendingContactCryptoKey> = {
             let mut wm = self.wallet_manager.write().await;
             match wm.get_wallet_info_mut(&self.wallet_id) {
                 Some(info) => {
@@ -2258,6 +2641,24 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         S: Signer<IdentityPublicKey> + Send + Sync,
         P: ContactCryptoProvider + Sync,
     {
+        self.drain_auto_accepts_until(signer, provider, None).await
+    }
+
+    /// [`Self::drain_auto_accepts`], stopping once `deadline` passes.
+    ///
+    /// Ends between entries, so a reciprocal that was sent is always recorded
+    /// as accepted — see [`bounded`] for why an outer timeout would not hold
+    /// that. Entries it never reached stay queued.
+    pub async fn drain_auto_accepts_until<S, P>(
+        &self,
+        signer: &S,
+        provider: &P,
+        deadline: Option<std::time::Instant>,
+    ) -> usize
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+        P: ContactCryptoProvider + Sync,
+    {
         use crate::changeset::{PendingContactCryptoKey, PendingContactCryptoOp};
         use crate::wallet::identity::crypto::auto_accept::{
             auto_accept_derivation_path, auto_accept_proof_expiry,
@@ -2296,8 +2697,32 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // failure) are NOT pushed here so they stay retryable.
         let mut verify_failed: Vec<(Identifier, Identifier, Vec<u8>)> = Vec::new();
         let mut accepted: usize = 0;
+        // How much of each has already been applied — see the loop head.
+        let mut flushed: usize = 0;
+        let mut verify_flushed: usize = 0;
 
         for entry in &entries {
+            // Land the previous entry's dequeue + verify-failure marks before
+            // starting new work, so a stop can strand at most one entry's.
+            if cleared.len() > flushed || verify_failed.len() > verify_flushed {
+                self.flush_cleared_auto_accepts(
+                    &cleared[flushed..],
+                    &verify_failed[verify_flushed..],
+                )
+                .await;
+                flushed = cleared.len();
+                verify_flushed = verify_failed.len();
+            }
+            // Stop between entries: an accept whose reciprocal already went out
+            // must reach its `cleared.push` / `accepted += 1`.
+            if budget_spent(deadline) {
+                tracing::info!(
+                    processed = cleared.len(),
+                    total = entries.len(),
+                    "auto-accept: budget spent; leaving the rest queued"
+                );
+                break;
+            }
             let owner = entry.owner_identity_id; // us (the QR owner / recipient)
             let sender = entry.contact_id; // the scanner (request $ownerId)
 
@@ -2354,7 +2779,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     continue;
                 }
             };
-            let pubkey = match provider.receiving_xpub(&path).await {
+            // Bounded: the local verify and the accept both come after this,
+            // so abandoning the derive commits nothing.
+            let Some(derived) = bounded(deadline, provider.receiving_xpub(&path)).await else {
+                tracing::info!(owner = %owner, sender = %sender,
+                    "auto-accept: budget spent deriving our proof key; leaving queued");
+                continue;
+            };
+            let pubkey = match derived {
                 Ok(xpub) => xpub.public_key,
                 Err(e) => {
                     tracing::warn!(owner = %owner, sender = %sender, error = %e,
@@ -2393,10 +2825,36 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             }
         }
 
-        if !cleared.is_empty() {
-            {
-                let mut wm = self.wallet_manager.write().await;
-                if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+        // Land whatever the last entry resolved.
+        self.flush_cleared_auto_accepts(&cleared[flushed..], &verify_failed[verify_flushed..])
+            .await;
+
+        accepted
+    }
+
+    /// Dequeue the `AutoAccept` entries a drain just resolved and record the
+    /// permanent verify failures among them. Called after each resolved entry,
+    /// for the same reason as [`Self::flush_drained_contact_crypto`]: a
+    /// reciprocal that has already been broadcast must not be able to end up
+    /// still queued because the drain stopped before its bookkeeping ran.
+    async fn flush_cleared_auto_accepts(
+        &self,
+        cleared: &[crate::changeset::PendingContactCryptoKey],
+        verify_failed: &[(Identifier, Identifier, Vec<u8>)],
+    ) {
+        // Each list is applied on its own. The caller advances both cursors
+        // after this returns, so gating one on the other would discard the
+        // ungated one for good. Not reachable today — every `verify_failed`
+        // push is paired with a `cleared` push — but a future "leave queued,
+        // remember the bad proof" case would lose its marks silently.
+        if cleared.is_empty() && verify_failed.is_empty() {
+            return;
+        }
+
+        {
+            let mut wm = self.wallet_manager.write().await;
+            if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+                if !cleared.is_empty() {
                     // Remove the cleared entries from their owners' queues. Each
                     // cleared key names its owner, and only that owner's queue can
                     // hold it, so retain each affected owner's queue against the
@@ -2416,28 +2874,32 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                                 .retain(|e| !cleared.iter().any(|k| *k == e.key()));
                         }
                     }
-                    // Record permanent verify failures so the next sweep's
-                    // enqueue gate skips the same bad proof (in-memory only —
-                    // retried once per launch; the request stays manually
-                    // acceptable).
-                    for (owner, sender, proof) in &verify_failed {
-                        if let Some(managed) = info.identity_manager.managed_identity_mut(owner) {
-                            managed.mark_auto_accept_verify_failed(sender, proof);
-                        }
+                }
+                // Record permanent verify failures so the next sweep's
+                // enqueue gate skips the same bad proof (in-memory only —
+                // retried once per launch; the request stays manually
+                // acceptable).
+                for (owner, sender, proof) in verify_failed {
+                    if let Some(managed) = info.identity_manager.managed_identity_mut(owner) {
+                        managed.mark_auto_accept_verify_failed(sender, proof);
                     }
                 }
             }
-            let changeset = crate::changeset::PlatformWalletChangeSet {
-                pending_contact_crypto_cleared: cleared,
-                ..Default::default()
-            };
-            if let Err(e) = self.persister.store(changeset) {
-                tracing::warn!(error = %e,
-                    "auto-accept: failed to persist cleared entries (in-memory already updated)");
-            }
         }
 
-        accepted
+        // Only the dequeue is persisted; the verify-failure marks are in-memory
+        // by design.
+        if cleared.is_empty() {
+            return;
+        }
+        let changeset = crate::changeset::PlatformWalletChangeSet {
+            pending_contact_crypto_cleared: cleared.to_vec(),
+            ..Default::default()
+        };
+        if let Err(e) = self.persister.store(changeset) {
+            tracing::warn!(error = %e,
+                "auto-accept: failed to persist cleared entries (in-memory already updated)");
+        }
     }
 
     /// Build a DIP-15 auto-accept QR URI (`dash:?du=<username>&dapk=<key_blob>`),
@@ -4448,5 +4910,55 @@ mod stamp_race_tests {
             Some(7),
             "a stamp from the live payload records the tracked reference"
         );
+    }
+}
+
+#[cfg(test)]
+mod drain_budget_tests {
+    use super::{bounded, budget_spent};
+    use std::time::{Duration, Instant};
+
+    #[tokio::test]
+    async fn no_deadline_always_runs_the_future_to_completion() {
+        // The shape every pre-existing caller relies on: an unbounded drain
+        // must not acquire an early-exit path just because one caller wanted
+        // a budget.
+        assert!(!budget_spent(None));
+        assert_eq!(bounded(None, async { 7 }).await, Some(7));
+    }
+
+    #[tokio::test]
+    async fn a_spent_deadline_refuses_before_polling_the_future() {
+        // Not merely "returns None": the future must never start, because in
+        // the drains it is the step that precedes a commit.
+        let past = Instant::now() - Duration::from_secs(1);
+        assert!(budget_spent(Some(past)));
+
+        let mut polled = false;
+        let result = bounded(Some(past), async {
+            polled = true;
+            7
+        })
+        .await;
+        assert_eq!(result, None);
+        assert!(!polled, "a spent budget must not start the work");
+    }
+
+    #[tokio::test]
+    async fn a_live_deadline_lets_a_finished_future_through() {
+        let future = Instant::now() + Duration::from_secs(30);
+        assert!(!budget_spent(Some(future)));
+        assert_eq!(bounded(Some(future), async { 7 }).await, Some(7));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_deadline_that_passes_mid_await_abandons_the_step() {
+        let deadline = Instant::now() + Duration::from_millis(50);
+        let result = bounded(deadline.into(), async {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            7
+        })
+        .await;
+        assert_eq!(result, None, "the step outlasted the budget");
     }
 }
