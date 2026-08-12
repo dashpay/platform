@@ -249,6 +249,7 @@ pub struct DriveAbciValidationDataTriggerAndBindingVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciValidationDataTriggerVersions {
     pub create_contact_request_data_trigger: FeatureVersion,
+    pub validate_profile_payment_addresses_data_trigger: FeatureVersion,
     pub create_domain_data_trigger: FeatureVersion,
     pub create_identity_data_trigger: FeatureVersion,
     pub create_feature_flag_data_trigger: FeatureVersion,

@@ -64,7 +64,7 @@
         "byteArray": true,
         "minItems": 21,
         "maxItems": 21,
-        "description": "Core chain address in storage form (type byte 0x00 P2PKH / 0x01 P2SH followed by the 20-byte HASH160, i.e. RIPEMD160 of SHA256, of the public key or redeem script) for public payments. Clients render it as Base58Check for the network they are on and MUST validate the type byte before paying. Payments to it are publicly linkable to this profile.",
+        "description": "Core chain address in storage form (type byte 0x00 P2PKH / 0x01 P2SH followed by the 20-byte HASH160, i.e. RIPEMD160 of SHA256, of the public key or redeem script) for public payments. The type byte is consensus-enforced by a data trigger; clients render the address as Base58Check for the network they are on. Payments to it are publicly linkable to this profile.",
         "position": 5
       },
       "platformPaymentAddress": {
@@ -72,7 +72,7 @@
         "byteArray": true,
         "minItems": 21,
         "maxItems": 21,
-        "description": "Platform address in storage form (type byte 0x00 P2PKH / 0x01 P2SH followed by the 20-byte HASH160, i.e. RIPEMD160 of SHA256, of the public key or redeem script) for public payments",
+        "description": "Platform address in storage form (type byte 0x00 P2PKH / 0x01 P2SH followed by the 20-byte HASH160, i.e. RIPEMD160 of SHA256, of the public key or redeem script) for public payments. The type byte is consensus-enforced by a data trigger.",
         "position": 6
       }
     },

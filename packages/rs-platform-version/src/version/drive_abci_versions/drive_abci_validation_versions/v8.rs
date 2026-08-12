@@ -168,6 +168,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
                         // outer execution_context. v0 versions remain
                         // byte-identical to PV11 (don't bill).
                         create_contact_request_data_trigger: 1,
+                        validate_profile_payment_addresses_data_trigger: 0,
                         create_domain_data_trigger: 1,
                         create_identity_data_trigger: 0,
                         create_feature_flag_data_trigger: 0,
