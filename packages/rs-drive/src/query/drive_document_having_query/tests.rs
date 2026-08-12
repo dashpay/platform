@@ -1110,3 +1110,289 @@ mod execution {
         assert_proof_round_trips(&drive, &contract, &page_two, &rest);
     }
 }
+
+mod identifier_group_keys {
+    //! `SELECT AVG(grade) FROM grades GROUP BY identityId HAVING
+    //! AVG(grade) > 80` — the same surface as the `execution` suite
+    //! above, but with a **32-byte identifier** as the group key
+    //! instead of a string. Identifier and string properties encode
+    //! differently into the axis secondary's `sort_key‖group_key`
+    //! keyspace, so this pins that identifier group keys round-trip
+    //! byte-exact through the read, the proof, and the verifier.
+
+    use super::super::drive_dispatcher::{DocumentHavingRequest, DocumentHavingResponse};
+    use super::super::mode_detection::detect_having_mode;
+    use super::super::DriveDocumentHavingQuery;
+    use super::clause;
+    use crate::drive::Drive;
+    use crate::query::drive_document_ranked_query::index_picker::find_ranked_index_for_axis;
+    use crate::query::drive_document_ranked_query::{
+        RankedEntry, RankedEntryValue, RankedPaginationInputs,
+    };
+    use crate::query::having::{HavingAggregateFunction, HavingOperator};
+    use crate::query::projection::SelectProjection;
+    use crate::query::OrderClause;
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::document::{Document, DocumentV0Setters};
+    use dpp::platform_value::Value;
+    use dpp::prelude::DataContract;
+    use dpp::tests::json_document::json_document_to_contract;
+    use dpp::version::PlatformVersion;
+    use grovedb::element::indexed::compute_avg_fixed_point;
+    use std::collections::BTreeMap;
+
+    const GROUP_PROPERTY: &str = "identityId";
+    const DOCUMENT_TYPE: &str = "grade";
+
+    fn platform_version() -> &'static PlatformVersion {
+        PlatformVersion::latest()
+    }
+
+    fn setup_grades_ranked() -> (Drive, DataContract) {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = platform_version();
+        let contract = json_document_to_contract(
+            "tests/supporting_files/contract/grades/grades-ranked-contract.json",
+            false,
+            pv,
+        )
+        .expect("expected to parse the ranked grades contract");
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply the ranked grades contract");
+        (drive, contract)
+    }
+
+    fn insert_grades(
+        drive: &Drive,
+        contract: &DataContract,
+        first_seed: u64,
+        rows: &[([u8; 32], i64)],
+    ) {
+        let pv = platform_version();
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("grade doctype exists");
+        for (i, (identity, grade)) in rows.iter().enumerate() {
+            let mut doc: Document = document_type
+                .random_document(Some(first_seed + i as u64), pv)
+                .expect("random document");
+            let mut props = BTreeMap::new();
+            props.insert(GROUP_PROPERTY.to_string(), Value::Identifier(*identity));
+            props.insert("grade".to_string(), Value::I64(*grade));
+            doc.set_properties(props);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert a grade document");
+        }
+    }
+
+    fn run(
+        drive: &Drive,
+        contract: &DataContract,
+        order_by: &[OrderClause],
+        prove: bool,
+    ) -> DocumentHavingResponse {
+        let group_by = vec![GROUP_PROPERTY.to_string()];
+        let having = vec![clause(
+            HavingAggregateFunction::Avg,
+            "grade",
+            HavingOperator::GreaterThan,
+            Value::U64(80),
+        )];
+        drive
+            .execute_document_having_request(
+                DocumentHavingRequest {
+                    contract,
+                    document_type: contract
+                        .document_type_for_name(DOCUMENT_TYPE)
+                        .expect("grade doctype exists"),
+                    group_by: &group_by,
+                    select: SelectProjection::avg("grade"),
+                    having: &having,
+                    order_by,
+                    where_clauses: &[],
+                    limit: Some(10),
+                    offset: None,
+                    has_start_at: false,
+                    prove,
+                },
+                None,
+                platform_version(),
+            )
+            .expect("the having request must execute")
+    }
+
+    fn client_side_query<'a>(
+        contract: &'a DataContract,
+        order_by: &[OrderClause],
+    ) -> DriveDocumentHavingQuery<'a> {
+        let group_by = vec![GROUP_PROPERTY.to_string()];
+        let having = vec![clause(
+            HavingAggregateFunction::Avg,
+            "grade",
+            HavingOperator::GreaterThan,
+            Value::U64(80),
+        )];
+        let mode = detect_having_mode(
+            &SelectProjection::avg("grade"),
+            &group_by,
+            &having,
+            order_by,
+            &[],
+            RankedPaginationInputs {
+                limit: Some(10),
+                offset: None,
+                has_start_at: false,
+            },
+            platform_version(),
+        )
+        .expect("the case is well-formed");
+        let indexes = contract
+            .document_types()
+            .get(DOCUMENT_TYPE)
+            .expect("grade doctype exists")
+            .indexes();
+        let index = find_ranked_index_for_axis(
+            indexes,
+            &mode.group_by_property,
+            mode.bounds.axis(),
+            &mode.aggregate_field,
+        )
+        .expect("the fixture declares the avg axis");
+        DriveDocumentHavingQuery {
+            document_type: contract
+                .document_type_for_name(DOCUMENT_TYPE)
+                .expect("grade doctype exists"),
+            contract_id: contract.id_ref().to_buffer(),
+            document_type_name: DOCUMENT_TYPE.to_string(),
+            index,
+            bounds: mode.bounds,
+            descending: mode.descending,
+            limit: mode.limit,
+        }
+    }
+
+    fn assert_proof_round_trips(
+        drive: &Drive,
+        contract: &DataContract,
+        order_by: &[OrderClause],
+        expected: &[RankedEntry],
+    ) {
+        let proof = match run(drive, contract, order_by, true) {
+            DocumentHavingResponse::Proof(proof) => proof,
+            DocumentHavingResponse::Entries(_) => panic!("expected a proof, got entries"),
+        };
+        let (root_hash, verified) = client_side_query(contract, order_by)
+            .verify_having_range_proof(&proof, platform_version())
+            .expect("the proof must verify");
+        assert_eq!(
+            verified, expected,
+            "verified entries must equal what the unproven read returned"
+        );
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &platform_version().drive.grove_version)
+                .unwrap()
+                .expect("root hash must be readable"),
+            "the proof must reconstruct the live grovedb root hash"
+        );
+    }
+
+    /// Averages exactly *at* the threshold stay out (`>` is strict),
+    /// fractional averages just above it come in (80.5 > 80 even
+    /// though both grades round-trip as integers), and the entry keys
+    /// are the raw 32-byte identifiers.
+    #[test]
+    fn avg_threshold_over_identifier_groups_reads_and_proves() {
+        let (drive, contract) = setup_grades_ranked();
+        let at_threshold = [1u8; 32]; // 80, 80 → avg 80: excluded
+        let just_above = [2u8; 32]; // 80, 81 → avg 80.5: included
+        let well_above = [3u8; 32]; // 85, 95 → avg 90:   included
+        let below = [4u8; 32]; // 60, 80 → avg 70:  excluded
+        insert_grades(
+            &drive,
+            &contract,
+            1000,
+            &[
+                (at_threshold, 80),
+                (at_threshold, 80),
+                (just_above, 80),
+                (just_above, 81),
+                (well_above, 85),
+                (well_above, 95),
+                (below, 60),
+                (below, 80),
+            ],
+        );
+
+        let entries = match run(&drive, &contract, &[], false) {
+            DocumentHavingResponse::Entries(entries) => entries,
+            DocumentHavingResponse::Proof(_) => panic!("expected entries, got a proof"),
+        };
+        assert_eq!(
+            entries,
+            vec![
+                RankedEntry {
+                    key: just_above.to_vec(),
+                    value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(161, 2)),
+                },
+                RankedEntry {
+                    key: well_above.to_vec(),
+                    value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(180, 2)),
+                },
+            ],
+            "ascending walk: 80.5 then 90, keyed by raw identifier bytes"
+        );
+        assert_proof_round_trips(&drive, &contract, &[], &entries);
+
+        // `ORDER BY AVG(grade) DESC` walks the same match set from the
+        // top; the identifier keys must survive the flipped direction
+        // and its proof too.
+        let descending = vec![OrderClause {
+            field: "grade".to_string(),
+            ascending: false,
+        }];
+        let flipped = match run(&drive, &contract, &descending, false) {
+            DocumentHavingResponse::Entries(entries) => entries,
+            DocumentHavingResponse::Proof(_) => panic!("expected entries, got a proof"),
+        };
+        assert_eq!(
+            flipped.iter().map(|e| &e.key).collect::<Vec<_>>(),
+            vec![&well_above.to_vec(), &just_above.to_vec()],
+            "descending walk: 90 then 80.5"
+        );
+        assert_proof_round_trips(&drive, &contract, &descending, &flipped);
+    }
+}
