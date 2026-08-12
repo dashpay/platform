@@ -231,6 +231,12 @@ pub enum PlatformWalletError {
     #[error("Key derivation failed: {0}")]
     KeyDerivation(String),
 
+    /// Stealth (DIP-33) crypto failure, preserving the source so callers can
+    /// distinguish the retryable `CryptoError::ZeroStealthTweak` (pick a fresh
+    /// ephemeral key) without parsing display text.
+    #[error("Stealth crypto error: {0}")]
+    StealthCrypto(#[from] platform_encryption::CryptoError),
+
     #[error("Wallet is locked — unlock it before performing this operation")]
     WalletLocked,
 

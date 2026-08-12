@@ -1795,9 +1795,16 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             if let existing = try? backgroundContext.fetch(descriptor).first {
                 row = existing
             } else {
-                let purposeEnum = KeyPurpose(rawValue: entry.purpose) ?? .authentication
-                let levelEnum = SecurityLevel(rawValue: entry.securityLevel) ?? .high
-                let keyTypeEnum = KeyType(rawValue: entry.keyType) ?? .ecdsaSecp256k1
+                // Never coerce an unknown discriminant: the stored raw value is
+                // sent back to Rust on cold-start restore, so persisting a
+                // substitute silently changes the key's meaning. Skip instead;
+                // the key re-arrives once the enum mirror learns the value.
+                guard let purposeEnum = KeyPurpose(rawValue: entry.purpose),
+                      let levelEnum = SecurityLevel(rawValue: entry.securityLevel),
+                      let keyTypeEnum = KeyType(rawValue: entry.keyType) else {
+                    print("⚠️ persistIdentityKeys: skipped key \(entry.keyId) for identity \(identityHex.prefix(8))… — unsupported purpose/level/type discriminant (\(entry.purpose)/\(entry.securityLevel)/\(entry.keyType))")
+                    continue
+                }
                 row = PersistentPublicKey(
                     keyId: targetKeyId,
                     purpose: purposeEnum,

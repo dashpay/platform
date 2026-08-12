@@ -62,8 +62,10 @@ impl TryFrom<&JsValue> for PurposeWasm {
                 "system" => Ok(PurposeWasm::SYSTEM),
                 "voting" => Ok(PurposeWasm::VOTING),
                 "owner" => Ok(PurposeWasm::OWNER),
-                "paymentscan" => Ok(PurposeWasm::PAYMENT_SCAN),
-                "paymentspend" => Ok(PurposeWasm::PAYMENT_SPEND),
+                // both the camelCase PurposeLike names (lowercased) and the
+                // SCREAMING_SNAKE getter output (lowercased) must round-trip
+                "paymentscan" | "payment_scan" => Ok(PurposeWasm::PAYMENT_SCAN),
+                "paymentspend" | "payment_spend" => Ok(PurposeWasm::PAYMENT_SPEND),
                 _ => Err(WasmDppError::invalid_argument(format!(
                     "unsupported purpose value ({})",
                     enum_val
@@ -72,6 +74,17 @@ impl TryFrom<&JsValue> for PurposeWasm {
         }
 
         if let Some(enum_val) = value.as_f64() {
+            // reject NaN/fractional/out-of-range numbers instead of letting the
+            // `as u8` cast truncate them onto a valid discriminant
+            if !enum_val.is_finite()
+                || enum_val.fract() != 0.0
+                || !(0.0..=255.0).contains(&enum_val)
+            {
+                return Err(WasmDppError::invalid_argument(format!(
+                    "unsupported purpose value ({})",
+                    enum_val
+                )));
+            }
             return match enum_val as u8 {
                 0 => Ok(PurposeWasm::AUTHENTICATION),
                 1 => Ok(PurposeWasm::ENCRYPTION),

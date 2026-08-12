@@ -32,6 +32,8 @@ enum class KeyPurpose(val ffiValue: Int) {
     SYSTEM(4),
     VOTING(5),
     OWNER(6),
+    PAYMENT_SCAN(7),
+    PAYMENT_SPEND(8),
 }
 
 /**

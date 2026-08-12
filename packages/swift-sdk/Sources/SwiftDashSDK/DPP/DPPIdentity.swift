@@ -35,6 +35,8 @@ public enum KeyPurpose: UInt8, CaseIterable, Codable, Sendable, CustomStringConv
     case system = 4
     case voting = 5
     case owner = 6
+    case paymentScan = 7
+    case paymentSpend = 8
 
     public var name: String {
         switch self {
@@ -45,6 +47,8 @@ public enum KeyPurpose: UInt8, CaseIterable, Codable, Sendable, CustomStringConv
         case .system: return "System"
         case .voting: return "Voting"
         case .owner: return "Owner"
+        case .paymentScan: return "Payment Scan"
+        case .paymentSpend: return "Payment Spend"
         }
     }
 
@@ -57,6 +61,8 @@ public enum KeyPurpose: UInt8, CaseIterable, Codable, Sendable, CustomStringConv
         case .system: return "System level operations"
         case .voting: return "Used for voting (masternodes)"
         case .owner: return "Owner key (masternodes)"
+        case .paymentScan: return "Used to detect DIP-33 stealth payments"
+        case .paymentSpend: return "Used to spend DIP-33 stealth payments"
         }
     }
 

@@ -413,6 +413,8 @@ private fun KeyPurpose.displayName(): String = when (this) {
     KeyPurpose.SYSTEM -> "System"
     KeyPurpose.VOTING -> "Voting"
     KeyPurpose.OWNER -> "Owner"
+    KeyPurpose.PAYMENT_SCAN -> "Payment Scan"
+    KeyPurpose.PAYMENT_SPEND -> "Payment Spend"
 }
 
 private fun SecurityLevel.displayName(): String = when (this) {

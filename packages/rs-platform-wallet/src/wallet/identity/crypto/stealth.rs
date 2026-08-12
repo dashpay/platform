@@ -97,7 +97,7 @@ pub fn payment_detection_derivation_path(
     };
     let hardened = |value: u32, label: &str| {
         ChildNumber::from_hardened_idx(value).map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
+            PlatformWalletError::KeyDerivation(format!(
                 "Invalid {label} index for payment detection path: {e}"
             ))
         })
@@ -122,15 +122,11 @@ pub fn derive_payment_detection_secret_key(
 ) -> Result<SecretKey, PlatformWalletError> {
     let path = payment_detection_derivation_path(network, account, key_class, index)?;
     let ext_priv = wallet.derive_extended_private_key(&path).map_err(|e| {
-        PlatformWalletError::InvalidIdentityData(format!(
-            "Failed to derive payment detection key: {e}"
-        ))
+        PlatformWalletError::KeyDerivation(format!("Failed to derive payment detection key: {e}"))
     })?;
     let secret_bytes = zeroize::Zeroizing::new(ext_priv.private_key.secret_bytes());
     SecretKey::from_slice(&*secret_bytes).map_err(|e| {
-        PlatformWalletError::InvalidIdentityData(format!(
-            "Invalid derived payment detection key: {e}"
-        ))
+        PlatformWalletError::KeyDerivation(format!("Invalid derived payment detection key: {e}"))
     })
 }
 
@@ -168,8 +164,7 @@ pub fn derive_one_time_destination(
 ) -> Result<(OneTimeDestination, PublicKey), PlatformWalletError> {
     let secp = Secp256k1::new();
     let ephemeral_public = PublicKey::from_secret_key(&secp, ephemeral_secret);
-    let shared = stealth_shared_point(&secp, ephemeral_secret, scan_public)
-        .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))?;
+    let shared = stealth_shared_point(&secp, ephemeral_secret, scan_public)?;
     let one_time_public = one_time_public_key(
         &secp,
         spend_public,
@@ -177,8 +172,7 @@ pub fn derive_one_time_destination(
         &ephemeral_public,
         rail.into(),
         n,
-    )
-    .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))?;
+    )?;
     Ok((
         destination_from_public_key(&one_time_public, rail, network),
         ephemeral_public,
@@ -198,8 +192,7 @@ pub fn recognize_one_time_destination(
     network: Network,
 ) -> Result<OneTimeDestination, PlatformWalletError> {
     let secp = Secp256k1::new();
-    let shared = stealth_shared_point(&secp, scan_secret, ephemeral_public)
-        .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))?;
+    let shared = stealth_shared_point(&secp, scan_secret, ephemeral_public)?;
     let one_time_public = one_time_public_key(
         &secp,
         spend_public,
@@ -207,8 +200,7 @@ pub fn recognize_one_time_destination(
         ephemeral_public,
         rail.into(),
         n,
-    )
-    .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))?;
+    )?;
     Ok(destination_from_public_key(&one_time_public, rail, network))
 }
 
@@ -223,10 +215,14 @@ pub fn derive_one_time_secret_key(
     n: u32,
 ) -> Result<SecretKey, PlatformWalletError> {
     let secp = Secp256k1::new();
-    let shared = stealth_shared_point(&secp, scan_secret, ephemeral_public)
-        .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))?;
-    one_time_secret_key(spend_secret, &shared, ephemeral_public, rail.into(), n)
-        .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))
+    let shared = stealth_shared_point(&secp, scan_secret, ephemeral_public)?;
+    Ok(one_time_secret_key(
+        spend_secret,
+        &shared,
+        ephemeral_public,
+        rail.into(),
+        n,
+    )?)
 }
 
 #[cfg(test)]

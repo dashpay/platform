@@ -605,12 +605,6 @@ pub enum BasicError {
     InvalidKeyPurposeForContractBoundsError(InvalidKeyPurposeForContractBoundsError),
 
     #[error(transparent)]
-    InvalidKeyPurposeKeyTypeError(InvalidKeyPurposeKeyTypeError),
-
-    #[error(transparent)]
-    TooManyPublicKeysOfPurposeError(TooManyPublicKeysOfPurposeError),
-
-    #[error(transparent)]
     StateTransitionNotActiveError(StateTransitionNotActiveError),
 
     #[error(transparent)]
@@ -703,10 +697,69 @@ pub enum BasicError {
 
     #[error(transparent)]
     TokenPricingScheduleEmptyError(TokenPricingScheduleEmptyError),
+
+    #[error(transparent)]
+    InvalidKeyPurposeKeyTypeError(InvalidKeyPurposeKeyTypeError),
+
+    #[error(transparent)]
+    TooManyPublicKeysOfPurposeError(TooManyPublicKeysOfPurposeError),
 }
 
 impl From<BasicError> for ConsensusError {
     fn from(error: BasicError) -> Self {
         Self::BasicError(error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::identity::{KeyType, Purpose};
+    use platform_value::Identifier;
+
+    fn discriminant_byte(error: &BasicError) -> u8 {
+        let bytes = bincode::encode_to_vec(error, bincode::config::standard())
+            .expect("should encode BasicError");
+        bytes[0]
+    }
+
+    // `BasicError` is bincode-encoded positionally, so every variant's wire discriminant is its
+    // index in the enum. These pins fail if a variant is ever inserted mid-enum instead of
+    // appended at the tail, which would mis-decode previously encoded errors.
+    #[test]
+    fn should_keep_wire_discriminants_of_existing_variants_stable() {
+        assert_eq!(
+            discriminant_byte(&BasicError::StateTransitionNotActiveError(
+                StateTransitionNotActiveError::new("test", 13, 14),
+            )),
+            143,
+        );
+        assert_eq!(
+            discriminant_byte(&BasicError::TokenPricingScheduleEmptyError(
+                TokenPricingScheduleEmptyError::new(Identifier::default()),
+            )),
+            172,
+        );
+    }
+
+    #[test]
+    fn should_append_payment_key_error_variants_at_the_tail() {
+        assert_eq!(
+            discriminant_byte(&BasicError::InvalidKeyPurposeKeyTypeError(
+                InvalidKeyPurposeKeyTypeError::new(
+                    0,
+                    Purpose::PAYMENT_SCAN,
+                    KeyType::BLS12_381,
+                    vec![KeyType::ECDSA_SECP256K1],
+                ),
+            )),
+            173,
+        );
+        assert_eq!(
+            discriminant_byte(&BasicError::TooManyPublicKeysOfPurposeError(
+                TooManyPublicKeysOfPurposeError::new(Purpose::PAYMENT_SPEND, 1),
+            )),
+            174,
+        );
     }
 }

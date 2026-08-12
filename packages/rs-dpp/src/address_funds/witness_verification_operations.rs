@@ -20,8 +20,8 @@ pub struct AddressWitnessVerificationOperations {
     /// Hash160 = RIPEMD160(SHA256(pubkey))
     pub pubkey_hash_verifications: u16,
 
-    /// Number of script hash (SHA256) verifications performed.
-    /// Used to verify P2SH redeem scripts.
+    /// Number of script hash (Hash160) verifications performed.
+    /// Hash160 = RIPEMD160(SHA256(redeem_script)); used to verify P2SH redeem scripts.
     pub script_hash_verifications: u16,
 
     /// Size of the signable bytes in bytes.

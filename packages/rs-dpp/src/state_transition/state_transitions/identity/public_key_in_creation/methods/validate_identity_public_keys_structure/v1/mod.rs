@@ -1,9 +1,11 @@
 use crate::consensus::basic::identity::{
     DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
-    InvalidIdentityPublicKeySecurityLevelError, InvalidKeyPurposeKeyTypeError,
-    MissingMasterPublicKeyError, TooManyMasterPublicKeyError, TooManyPublicKeysOfPurposeError,
+    InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
+    InvalidKeyPurposeKeyTypeError, MissingMasterPublicKeyError, TooManyMasterPublicKeyError,
+    TooManyPublicKeysOfPurposeError,
 };
 use crate::consensus::basic::BasicError;
+use crate::PublicKeyValidationError;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 
@@ -160,6 +162,25 @@ impl IdentityPublicKeyInCreation {
             ));
         }
 
+        // DIP-33 publishes payment keys as compressed SEC1 points, but DPP's ECDSA
+        // parser also accepts 65-byte uncompressed keys — and the two encodings of
+        // the same point would evade the raw-bytes duplicate check above
+        if let Some(invalid_size_key) = identity_public_keys_with_witness.iter().find(|key| {
+            Purpose::payment_purposes().contains(&key.purpose()) && key.data().len() != 33
+        }) {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                BasicError::InvalidIdentityPublicKeyDataError(
+                    InvalidIdentityPublicKeyDataError::new(
+                        invalid_size_key.id(),
+                        PublicKeyValidationError::new(
+                            "payment keys must be 33-byte compressed SEC1 points",
+                        ),
+                    ),
+                )
+                .into(),
+            ));
+        }
+
         // We should check all the security levels
         let validation_errors = identity_public_keys_with_witness
             .iter()
@@ -274,6 +295,41 @@ mod tests {
             result.errors.first(),
             Some(ConsensusError::BasicError(
                 BasicError::InvalidKeyPurposeKeyTypeError(_)
+            ))
+        ));
+    }
+
+    #[test]
+    fn rejects_uncompressed_65_byte_payment_key() {
+        use crate::state_transition::public_key_in_creation::accessors::{
+            IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
+        };
+
+        let platform_version = latest();
+        let mut rng = StdRng::seed_from_u64(4);
+        let mut key = payment_key(
+            0,
+            Purpose::PAYMENT_SCAN,
+            KeyType::ECDSA_SECP256K1,
+            &mut rng,
+            platform_version,
+        );
+        // re-encode the same valid point uncompressed: 65-byte SEC1
+        let uncompressed = dashcore::secp256k1::PublicKey::from_slice(key.data().as_slice())
+            .expect("valid compressed key")
+            .serialize_uncompressed();
+        key.set_data(uncompressed.to_vec().into());
+
+        let result = IdentityPublicKeyInCreation::validate_identity_public_keys_structure_v1(
+            &[key],
+            false,
+            platform_version,
+        )
+        .expect("validation ran");
+        assert!(matches!(
+            result.errors.first(),
+            Some(ConsensusError::BasicError(
+                BasicError::InvalidIdentityPublicKeyDataError(_)
             ))
         ));
     }
