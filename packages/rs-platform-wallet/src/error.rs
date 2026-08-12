@@ -286,11 +286,19 @@ pub enum PlatformWalletError {
     /// wallet UI) can render a precise shortfall instead of a stringly-typed
     /// "Insufficient funds" message (dashpay/platform#4073).
     ///
-    /// The `available` figure reflects the single funds account the caller
-    /// selected — the unmixed BIP44 account by default, or an explicit account
-    /// such as CoinJoin. A shortfall here means that *one* account is short:
-    /// asset-lock funding never unions across accounts, so a different source
-    /// must be named explicitly rather than combined automatically.
+    /// What `available` covers depends on the build's funding form. An
+    /// exact-amount build funds from a POOLED source list — the default
+    /// [`ASSET_LOCK_FUNDING_SOURCES`](crate::ASSET_LOCK_FUNDING_SOURCES)
+    /// unions the BIP44 and BIP32 accounts with every DashPay
+    /// contact-receiving account — so its shortfall describes that whole
+    /// permitted union, not any single account (an explicit single-element
+    /// source list narrows it back to one account). Only a *drain* build
+    /// (whole-account funding) selects exactly one account, so only there
+    /// does the figure name a single account's shortfall. CoinJoin funds
+    /// exclusively through the drain form — it is never pooled (spending
+    /// mixed outputs alongside transparent ones would link them), so the
+    /// CoinJoin → shielded migration's shortfall is always the mixed
+    /// account's own.
     ///
     /// Distinct from [`CoreInsufficientFunds`] / [`CorePooledInsufficientFunds`],
     /// which belong to the atomic Core-send selector rather than the asset-lock
@@ -308,6 +316,9 @@ pub enum PlatformWalletError {
     /// a floor-less drain reports `required: 0`. The floor is additionally
     /// enforced downstream against the built payload once the lock value is
     /// known.
+    ///
+    /// [`CoreInsufficientFunds`]: Self::CoreInsufficientFunds
+    /// [`CorePooledInsufficientFunds`]: Self::CorePooledInsufficientFunds
     #[error(
         "asset lock coin selection is short: available {available} duffs, \
          required {required} duffs"

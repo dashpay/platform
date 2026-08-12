@@ -117,9 +117,14 @@ sealed class DashSdkError(
 
         /**
          * `ErrorAssetLockInsufficientFunds` (native code 29). Asset-lock coin
-         * selection came up short on the ONE funds account the caller selected
-         * — asset-lock funding never unions across accounts, so another source
-         * must be named explicitly rather than combined automatically.
+         * selection came up short over the build's *permitted funding set*.
+         * What that set is depends on the funding form: an exact-amount build
+         * POOLS the default source list (the BIP44 and BIP32 accounts plus
+         * every DashPay contact-receiving account), so its shortfall
+         * describes that whole union rather than any single account; only a
+         * whole-account *drain* build — CoinJoin's only form, since mixed
+         * coins are never pooled with transparent ones — names a single
+         * account's shortfall.
          *
          * Distinct from [CoreInsufficientFunds] (22), which is the atomic
          * Core-send selector rather than the asset-lock builder. The shortfall
@@ -129,9 +134,10 @@ sealed class DashSdkError(
          *
          * Raised by
          * [shieldedFundFromCoinJoinDrain][org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedFundFromCoinJoinDrain]
-         * when the CoinJoin account has nothing to drain, and by
+         * when the CoinJoin account has nothing to drain (single-account
+         * drain), and by
          * [shieldedFundFromAssetLock][org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedFundFromAssetLock]
-         * when the funding account cannot cover the requested lock.
+         * when the pooled funding sources cannot cover the requested lock.
          */
         class AssetLockInsufficientFunds(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)

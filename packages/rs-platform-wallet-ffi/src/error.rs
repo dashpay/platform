@@ -224,10 +224,13 @@ pub enum PlatformWalletFFIResultCode {
     /// so the figures ride the typed `Display` rendering or not at all.
     ///
     /// Distinct from [`Self::ErrorCoreInsufficientFunds`] (22), which is the
-    /// atomic Core-send selector rather than the asset-lock builder. Asset-lock
-    /// funding never unions across accounts, so this names a shortfall on the
-    /// ONE account the caller selected; a host offering another source must
-    /// name it explicitly.
+    /// atomic Core-send selector rather than the asset-lock builder. What the
+    /// figures cover depends on the build's funding form: an exact-amount
+    /// build pools the default source list (BIP44 + BIP32 + every DashPay
+    /// contact-receiving account), so its shortfall describes that whole
+    /// permitted union — not any single account — while a whole-account
+    /// *drain* build names exactly one account's shortfall. CoinJoin funds
+    /// only through the drain form (never pooled).
     ///
     /// Reached by the CoinJoin → shielded migration when the mixed account
     /// cannot cover the lock, which is why the Android binding needs it typed.

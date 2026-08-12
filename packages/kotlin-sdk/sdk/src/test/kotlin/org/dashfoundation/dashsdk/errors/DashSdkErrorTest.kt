@@ -102,9 +102,11 @@ class DashSdkErrorTest {
 
         // The asset-lock coin-selection shortfall (29) must reach callers as its
         // own type rather than Generic, and must stay DISTINCT from the atomic
-        // Core-send shortfall (22) — asset-lock funding never unions across
-        // accounts, so hosts message the two differently. Its available/required
-        // duffs ride the message, which must survive verbatim.
+        // Core-send shortfall (22) — the two selectors report over different
+        // funding sets (the asset-lock figures span the pooled sources on an
+        // exact-amount build and exactly one account on a drain), so hosts
+        // message the two differently. Its available/required duffs ride the
+        // message, which must survive verbatim.
         val assetLockShort = DashSdkError.fromNative(
             DashSDKException(
                 offset + 29,
