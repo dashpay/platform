@@ -450,8 +450,8 @@ final class DashPayContactPersistenceTests: XCTestCase {
                     let labelPtr = labelRaw.bindMemory(to: UInt8.self).baseAddress
 
                     var outgoing = ContactRequestFFI()
-                    outgoing.owner_id = Self.tuple32(ownerId)
-                    outgoing.contact_id = Self.tuple32(contactId)
+                    outgoing.owner_id = tuple32(ownerId)
+                    outgoing.contact_id = tuple32(contactId)
                     outgoing.is_outgoing = true
                     outgoing.sender_key_index = 5
                     outgoing.recipient_key_index = 6
@@ -534,8 +534,8 @@ final class DashPayContactPersistenceTests: XCTestCase {
             }
             _ = beginFn(callbacks.context, wid)
             var ignore = ContactIgnoredSenderFFI()
-            ignore.owner_id = Self.tuple32(ownerId)
-            ignore.sender_id = Self.tuple32(contactId)
+            ignore.owner_id = tuple32(ownerId)
+            ignore.sender_id = tuple32(contactId)
             ignore.is_ignored = true
             withUnsafePointer(to: &ignore) { ignPtr in
                 let rc = contactsFn(
@@ -700,17 +700,6 @@ final class DashPayContactPersistenceTests: XCTestCase {
         XCTAssertEqual(try fetchContactRows().count, 0)
     }
 
-    /// Copy a 32-byte `Data` into the C fixed-array tuple shape the
-    /// FFI structs use for ids.
-    private static func tuple32(_ data: Data) -> FFIByteTuple32 {
-        precondition(data.count == 32)
-        var tuple: FFIByteTuple32 = (
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-        )
-        withUnsafeMutableBytes(of: &tuple) { $0.copyBytes(from: data) }
-        return tuple
-    }
 }
 
 // MARK: - DashPay payment-history persistence
@@ -1080,16 +1069,6 @@ final class DashPayPaymentFFIMarshallingTests: XCTestCase {
 
     private let counterpartyId = Data((0..<32).map { UInt8($0 + 1) })
 
-    private static func tuple32(_ data: Data) -> FFIByteTuple32 {
-        precondition(data.count == 32)
-        var tuple: FFIByteTuple32 = (
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-        )
-        withUnsafeMutableBytes(of: &tuple) { $0.copyBytes(from: data) }
-        return tuple
-    }
-
     func testInitFromFFICopiesAllFields() throws {
         let txidCString = strdup("ab12cd34")
         let memoCString = strdup("coffee ☕")
@@ -1099,7 +1078,7 @@ final class DashPayPaymentFFIMarshallingTests: XCTestCase {
         }
 
         var ffi = DashpayPaymentFFI()
-        ffi.counterparty_id = Self.tuple32(counterpartyId)
+        ffi.counterparty_id = tuple32(counterpartyId)
         ffi.amount_duffs = 123_456_789
         ffi.direction = DashPayPaymentDirection.received.rawValue
         ffi.status = DashPayPaymentStatus.confirmed.rawValue
@@ -1122,7 +1101,7 @@ final class DashPayPaymentFFIMarshallingTests: XCTestCase {
         defer { free(txidCString) }
 
         var ffi = DashpayPaymentFFI()
-        ffi.counterparty_id = Self.tuple32(counterpartyId)
+        ffi.counterparty_id = tuple32(counterpartyId)
         ffi.amount_duffs = 1
         ffi.direction = DashPayPaymentDirection.sent.rawValue
         ffi.status = DashPayPaymentStatus.pending.rawValue
@@ -1141,7 +1120,7 @@ final class DashPayPaymentFFIMarshallingTests: XCTestCase {
     /// trapping.
     func testUnknownDiscriminantsAndNullTxidDegradeGracefully() throws {
         var ffi = DashpayPaymentFFI()
-        ffi.counterparty_id = Self.tuple32(counterpartyId)
+        ffi.counterparty_id = tuple32(counterpartyId)
         ffi.amount_duffs = 42
         ffi.direction = 99
         ffi.status = 99
