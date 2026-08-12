@@ -76,6 +76,15 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// (Not returned by `destroy`: Rust owns the callback contexts, so a
     /// straggling worker is memory-safe and merely logged there.)
     case errorShutdownIncomplete = 27
+    // Raw values 26 (errorTransactionBroadcastRejected, v4.1-dev) and 27
+    // (errorShutdownIncomplete, #4268, on v4.2-dev above) are taken. 28-36
+    // are claimed by sibling branches and MUST NOT be reused here: 29 the
+    // asset-lock funding shortfall (#4184), 31 below (#4183), 32/33
+    // errorTransactionBuild / errorTransactionSigning (#4247/#4256), 34-36 the
+    // deferred-payment reservation-token trio (#4185). 28 and 30 are vacated
+    // but RESERVED. These raw values MUST match `PlatformWalletFFIResultCode`
+    // in packages/rs-platform-wallet-ffi/src/error.rs — there is no
+    // compile-time check across the ABI. See ERROR_CODE_REGISTRY.md (#4261).
     /// A state transition could not be signed because the signer has no
     /// usable private key for the requested public key — restored from the
     /// structured signer completion code (dashpay/platform#4060 finding 7).
@@ -159,6 +168,17 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// returning. Distinct from `errorReservationWalletMismatch` (36), where a
     /// *different* live generation answers to the same id. The call did NOT touch
     /// the network and is NOT retryable — the wallet is gone.
+    /// A one-time-key (shielded invitation) claim found the invitation note's
+    /// nullifier already spent on chain, with no positive evidence that this
+    /// claim created an identity. TERMINAL and NOT retryable — the note is
+    /// consumed, so no retry can spend it again, and no identity id is
+    /// produced. Surface the invitation as spent.
+    ///
+    /// Raw value 37 is the allocation frontier from ERROR_CODE_REGISTRY.md
+    /// (dashpay/platform#4261): 32 belongs to `errorTransactionBuild`
+    /// (#4247/#4256), 34-36 to the #4185 deferred-token trio, and 28/30 are
+    /// vacated-but-reserved.
+    case errorShieldedInviteAlreadyClaimed = 43
     case notFound = 98
     case errorUnknown = 99
 
@@ -238,6 +258,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorContestedNameNotTradable
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_INSUFFICIENT_BALANCE:
             self = .errorShieldedInsufficientBalance
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_INVITE_ALREADY_CLAIMED:
+            self = .errorShieldedInviteAlreadyClaimed
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -425,6 +447,13 @@ public enum PlatformWalletError: LocalizedError {
     /// finalize path reconciles the build's reservation before returning. NOT
     /// retryable — unlike `reservationWalletMismatch`, no other generation holds
     /// this payment either.
+    /// A one-time-key (shielded invitation) claim found the invitation
+    /// note's nullifier already spent on chain, with no positive evidence
+    /// that this claim created an identity. TERMINAL and NOT retryable —
+    /// the note is consumed, so no retry can spend it again, and no
+    /// identity id is produced. Surface the invitation as spent. Kotlin
+    /// parity: `DashSdkError.PlatformWallet.ShieldedInviteAlreadyClaimed`.
+    case shieldedInviteAlreadyClaimed(String)
     case notFound(String)
     case unknown(String)
 
@@ -452,6 +481,7 @@ public enum PlatformWalletError: LocalizedError {
              .staleReservationToken(let m), .reservationTokenConsumed(let m),
              .reservationWalletMismatch(let m),
              .notForSale(let m),
+             .shieldedInviteAlreadyClaimed(let m),
              .notFound(let m), .unknown(let m):
             return m
         // The three value-carrying marketplace rejections compose their
@@ -561,6 +591,8 @@ public enum PlatformWalletError: LocalizedError {
             } else {
                 self = .unknown(detail)
             }
+        case .errorShieldedInviteAlreadyClaimed:
+            self = .shieldedInviteAlreadyClaimed(detail)
         case .notFound:               self = .notFound(detail)
         case .errorUnknown:           self = .unknown(detail)
         }

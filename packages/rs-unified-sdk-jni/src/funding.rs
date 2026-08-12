@@ -151,6 +151,43 @@ fn read_id32(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Option<[u8; 32]
     Some(id)
 }
 
+/// Secret-key sibling of [`read_id32`]: same 32-byte contract, but the
+/// returned buffer is wrapped in [`zeroize::Zeroizing`] (scrubbed on drop) and
+/// the intermediate JNI `Vec<u8>` copy is explicitly zeroized before it is
+/// dropped. Use for private/bearer key material only — mirrors
+/// `transactions::read_key32_zeroizing`. A one-time invitation spending key is
+/// bearer spend authority, so it must not linger in unsanitized buffers.
+fn read_key32_zeroizing(
+    env: &mut JNIEnv,
+    arr: &JByteArray,
+    field: &str,
+) -> Option<zeroize::Zeroizing<[u8; 32]>> {
+    use zeroize::Zeroize;
+
+    if arr.is_null() {
+        throw_sdk_exception(env, 1, &format!("{field} byte[] was null"));
+        return None;
+    }
+    let mut bytes = match env.convert_byte_array(arr) {
+        Ok(b) => b,
+        Err(_) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, &format!("{field} byte[] was invalid"));
+            return None;
+        }
+    };
+    if bytes.len() != 32 {
+        let len = bytes.len();
+        bytes.zeroize();
+        throw_sdk_exception(env, 1, &format!("{field} must be 32 bytes, got {len}"));
+        return None;
+    }
+    let mut key = zeroize::Zeroizing::new([0u8; 32]);
+    key.copy_from_slice(&bytes);
+    bytes.zeroize();
+    Some(key)
+}
+
 /// Read a required 43-byte raw Orchard recipient address from a Java
 /// `byte[]` (11-byte diversifier + 32-byte pk_d); throws + returns None on
 /// the wrong length / a JNI error.
@@ -778,6 +815,234 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
         packed.extend_from_slice(&out_id);
         packed.extend_from_slice(&diagnostic);
         env.byte_array_from_slice(&packed)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// Create an identity funded from a ONE-TIME Orchard key, Type 20 (bridges
+/// `platform_wallet_manager_shielded_identity_create_from_one_time_key`) — the
+/// L2-invitation *claim* side.
+///
+/// Sibling of [`Java_..._shieldedIdentityCreateFromPool`], but the Orchard spend
+/// authority is a foreign `one_time_sk` (32 bytes) rather than the wallet's own
+/// bound pool. `change_address_raw43` is the claimer's OWN 43-byte default Orchard
+/// address (receives any over-funding change note). `funding_birth_height` is an
+/// advisory hint: a negative value means "no hint" (`None`); a non-negative value
+/// is passed through as `Some(u32)`. Everything else — `pubkeys_blob` (the SAME
+/// shared rich registration key-row blob ID-08 uses, built by `IdentityPubkeyCodec`
+/// and decoded by `decode_registration_pubkeys_blob`), `denomination`,
+/// `fallback_address`, `identity_index`, `signer_handle` — matches the pool
+/// sibling. Blocks for the ~30 s Halo 2 proof; returns the tagged create payload
+/// (`[0|1] || identity_id || diagnostic_utf8`, written on success AND on the
+/// unconfirmed-broadcast fallback) exactly like the pool sibling.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shieldedIdentityCreateFromOneTimeKey(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    one_time_sk: JByteArray,
+    funding_birth_height: jint,
+    change_address_raw43: JByteArray,
+    identity_index: jint,
+    pubkeys_blob: JByteArray,
+    denomination: jlong,
+    fallback_address: JByteArray,
+    signer_handle: jlong,
+) -> jni::sys::jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if identity_index < 0 {
+            throw_sdk_exception(env, 1, "identityIndex must be non-negative");
+            return ptr::null_mut();
+        }
+        if denomination <= 0 {
+            throw_sdk_exception(env, 1, "denomination must be positive");
+            return ptr::null_mut();
+        }
+        if signer_handle == 0 {
+            throw_sdk_exception(env, 1, "signerHandle must be non-null");
+            return ptr::null_mut();
+        }
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return ptr::null_mut();
+        };
+        // Bearer spend authority for a funded invitation: carry it through a
+        // `Zeroizing` buffer (scrubbed on drop) instead of the generic
+        // `read_id32`, whose intermediate JNI copy and returned array are left
+        // unsanitized. `sk` derefs to `[u8; 32]`, so `sk.as_ptr()` below is
+        // unchanged, and the secret is wiped when `sk` drops after the FFI call.
+        let Some(sk) = read_key32_zeroizing(env, &one_time_sk, "oneTimeSk") else {
+            return ptr::null_mut();
+        };
+        let Some(change_raw) = read_recipient43(env, &change_address_raw43) else {
+            return ptr::null_mut();
+        };
+
+        let Some(decoded) = decode_registration_pubkeys_blob(env, &pubkeys_blob) else {
+            return ptr::null_mut();
+        };
+
+        // The 21-byte fallback PlatformAddress (1 variant tag + 20 hash),
+        // REQUIRED for Type-20 — validated exactly here.
+        let fallback = match read_opt_bytes(env, &fallback_address) {
+            Ok(Some(v)) => v,
+            Ok(None) => {
+                throw_sdk_exception(env, 1, "fallbackAddress must not be null");
+                return ptr::null_mut();
+            }
+            Err(()) => return ptr::null_mut(),
+        };
+        if fallback.len() != 21 {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!("fallbackAddress must be 21 bytes, got {}", fallback.len()),
+            );
+            return ptr::null_mut();
+        }
+
+        // A negative birth-height means "no hint" (`None`); non-negative is a
+        // `Some(u32)` advisory value.
+        let (has_birth, birth_val): (bool, u32) = if funding_birth_height < 0 {
+            (false, 0)
+        } else {
+            (true, funding_birth_height as u32)
+        };
+
+        // Same rich rows as ID-01 / ID-08 — the caller stamps each key's DPP
+        // role and any contract bounds; this path just marshals them.
+        let ffi_rows: Vec<IdentityPubkeyFFI> = decoded.iter().map(|row| row.to_ffi()).collect();
+
+        let mut out_id = [0u8; 32];
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_shielded_identity_create_from_one_time_key(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                sk.as_ptr(),
+                has_birth,
+                birth_val,
+                change_raw.as_ptr(),
+                identity_index as u32,
+                ffi_rows.as_ptr(),
+                ffi_rows.len(),
+                denomination as u64,
+                fallback.as_ptr(),
+                signer_handle as *mut SignerHandle,
+                &mut out_id as *mut [u8; 32],
+            )
+        };
+        // `decoded` / `ffi_rows` / `fallback` / `sk` / `change_raw` own the
+        // pointed-to buffers through the blocking FFI call above.
+        //
+        // ErrorShieldedBroadcastUnconfirmed (17) is NOT routed through
+        // take_pwffi_error: the C ABI writes `out_id` on that outcome too —
+        // the identity may already be live on-chain, so the host must
+        // retain the id and hold its derivation slot instead of retrying
+        // into a duplicate. Return a tagged variable-length payload
+        // (`[0|1] || identity_id || diagnostic_utf8`) so Kotlin can surface
+        // a typed unconfirmed result without losing the id or native error.
+        let unconfirmed = result.code
+            == platform_wallet_ffi::error::PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed;
+        let mut diagnostic = Vec::new();
+        if unconfirmed {
+            // Preserve the native diagnostic (the underlying DAPI /
+            // result-proof confirmation failure) before freeing — the
+            // registration controller surfaces it, and Swift keeps both
+            // fields.
+            let mut result = result;
+            if !result.message.is_null() {
+                diagnostic = unsafe { std::ffi::CStr::from_ptr(result.message) }
+                    .to_bytes()
+                    .to_vec();
+            }
+            unsafe { platform_wallet_ffi::error::platform_wallet_ffi_result_free(&mut result) };
+        } else if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let mut packed = Vec::with_capacity(33 + diagnostic.len());
+        packed.push(u8::from(unconfirmed));
+        packed.extend_from_slice(&out_id);
+        packed.extend_from_slice(&diagnostic);
+        env.byte_array_from_slice(&packed)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// Generate a fresh one-time Orchard spending key + its default payment
+/// address (bridges `platform_wallet_generate_one_time_orchard_key`) — the
+/// *inviter* side of an L2 shielded invitation.
+///
+/// Handle-less: a one-time key is process-local Orchard crypto, not bound to
+/// any wallet. Returns a single 75-byte array carrying both halves:
+/// `bytes[0..32]` is the 32-byte one-time spending key, `bytes[32..75]` is
+/// the 43-byte raw default Orchard address the inviter funds a note to. The
+/// Kotlin wrapper splits the blob back into the two arrays.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_generateOneTimeOrchardKey(
+    mut env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        // Bearer spend authority: hold the native `sk` and the combined `out`
+        // blob (its first 32 bytes are the spending key) in `Zeroizing` buffers so
+        // both are scrubbed on drop, including any early return (#4204 key-hygiene).
+        let mut sk = zeroize::Zeroizing::new([0u8; 32]);
+        let mut addr = [0u8; 43];
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_generate_one_time_orchard_key(
+                sk.as_mut_ptr(),
+                addr.as_mut_ptr(),
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        // sk ‖ addr — a 75-byte blob the Kotlin side slices into (sk32, addr43).
+        let mut out = zeroize::Zeroizing::new([0u8; 75]);
+        out[..32].copy_from_slice(&sk[..]);
+        out[32..].copy_from_slice(&addr);
+        env.byte_array_from_slice(&out[..])
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// Derive the default 43-byte raw Orchard address from a 32-byte one-time
+/// spending key (bridges `platform_wallet_orchard_address_from_spending_key`).
+///
+/// Handle-less, RNG-free counterpart of
+/// [`Java_..._generateOneTimeOrchardKey`]. Returns the 43-byte address;
+/// throws an `SdkException` (invalid-parameter) if `spendingKey` is not a
+/// valid Orchard spending key.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_orchardAddressFromSpendingKey(
+    mut env: JNIEnv,
+    _class: JClass,
+    spending_key: JByteArray,
+) -> jni::sys::jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        // Same bearer-secret treatment as `oneTimeSk` above: a one-time Orchard
+        // spending key is spend authority, so read it through the `Zeroizing`
+        // helper (scrubbed on drop, intermediate JNI copy wiped) rather than the
+        // generic `read_id32`. `sk` derefs to `[u8; 32]`, so `sk.as_ptr()` below
+        // is unchanged.
+        let Some(sk) = read_key32_zeroizing(env, &spending_key, "spendingKey") else {
+            return ptr::null_mut();
+        };
+        let mut addr = [0u8; 43];
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_orchard_address_from_spending_key(
+                sk.as_ptr(),
+                addr.as_mut_ptr(),
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        env.byte_array_from_slice(&addr)
             .map(|a| a.into_raw())
             .unwrap_or(ptr::null_mut())
     })

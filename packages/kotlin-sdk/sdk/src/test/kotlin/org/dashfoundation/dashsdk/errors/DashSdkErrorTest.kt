@@ -90,6 +90,19 @@ class DashSdkErrorTest {
         // The message must warn against retrying, like the broadcast sibling.
         assertTrue(spendUnconfirmed.message!!.contains("do NOT retry"))
 
+        // Code 37, NOT 32: 32 is ErrorTransactionBuild (dashpay/platform#4247,
+        // #4256). This assertion is the mirror's guard against the collision —
+        // if the Rust discriminant is ever moved back onto a claimed number,
+        // the host silently reclassifies an already-claimed invite as some
+        // other branch's error. See ERROR_CODE_REGISTRY.md (#4261).
+        val inviteClaimed =
+            DashSdkError.fromNative(DashSDKException(offset + 37, "nullifier already spent"))
+        assertTrue(inviteClaimed is DashSdkError.PlatformWallet.ShieldedInviteAlreadyClaimed)
+        assertFalse(
+            "ShieldedInviteAlreadyClaimed is TERMINAL — the note is consumed",
+            inviteClaimed.isRetryable,
+        )
+
         val broadcastUnconfirmed =
             DashSdkError.fromNative(DashSDKException(offset + 20, "ambiguous broadcast"))
         assertTrue(

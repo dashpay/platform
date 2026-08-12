@@ -1669,6 +1669,103 @@ impl PlatformWallet {
             .shielded_shield_plan_for_account(payment_account)
             .await?
             .preflight)
+    /// Create a brand-new Platform identity funded from a ONE-TIME Orchard
+    /// spending key — the L2-invitation *claim* side.
+    ///
+    /// Unlike [`Self::shielded_identity_create_from_pool`], the Orchard spend
+    /// authority is a foreign `one_time_sk` (the invitation's single-use
+    /// spending key), NOT this wallet's own `OrchardKeySet`. The operation
+    /// derives the fvk / ivk / ask from that key, transiently scans the network
+    /// for the note(s) it funds, witnesses them against the shared commitment
+    /// tree, and drives the same key-agnostic Type-20 builder. Any spent value
+    /// above `denomination` re-enters the pool as a change note to
+    /// `change_address` — the claimer's OWN default Orchard address (43 raw
+    /// bytes) — which the claimer's normal sync later discovers.
+    ///
+    /// `funding_birth_height` is an advisory hint (the shielded tree has no
+    /// height→note-index oracle, so it cannot seed the scan start today).
+    ///
+    /// `identity_index` is the DIP-9 registration slot the new identity occupies
+    /// in the local `IdentityManager`; on a successful broadcast the
+    /// proof-verified identity is registered there (mirroring
+    /// [`Self::shielded_identity_create_from_pool`]) so the host persister emits
+    /// the identity row. A failed registration after a successful broadcast is
+    /// logged and swallowed — the identity already exists on chain and the next
+    /// sync heals the local row. Returns the new identity's id.
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn identity_create_from_one_time_key<P, IS>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        // Bearer spend authority carried in a `Zeroizing` buffer so this layer's copy
+        // of the one-time spending key is scrubbed on drop (#4204 key-hygiene).
+        one_time_sk: zeroize::Zeroizing<[u8; 32]>,
+        funding_birth_height: Option<u32>,
+        change_address: dpp::address_funds::OrchardAddress,
+        identity_index: u32,
+        public_keys: Vec<(
+            dpp::identity::IdentityPublicKey,
+            dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation,
+        )>,
+        denomination: u64,
+        send_to_address_on_creation_failure: dpp::address_funds::PlatformAddress,
+        identity_signer: &IS,
+        prover: P,
+    ) -> Result<dpp::prelude::Identifier, PlatformWalletError>
+    where
+        P: dpp::shielded::builder::OrchardProver,
+        IS: dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> + Send + Sync,
+    {
+        let (identity_id, identity) =
+            super::shielded::operations::identity_create_from_one_time_key(
+                &self.sdk,
+                coordinator.store(),
+                self.wallet_id,
+                one_time_sk,
+                funding_birth_height,
+                &change_address,
+                public_keys,
+                denomination,
+                send_to_address_on_creation_failure,
+                identity_signer,
+                &prover,
+            )
+            .await?;
+
+        // Register the proof-verified identity in the local manager at its HD
+        // slot — the SAME tail as `shielded_identity_create_from_pool`. The
+        // broadcast already succeeded; a registration failure here is logged and
+        // swallowed (the identity exists on chain; the next sync heals the row).
+        {
+            let mut wm = self.wallet_manager.write().await;
+            match wm.get_wallet_info_mut(&self.wallet_id) {
+                Some(info) => {
+                    if let Err(e) = info.identity_manager.add_identity(
+                        identity,
+                        identity_index,
+                        self.wallet_id,
+                        &self.persister,
+                    ) {
+                        tracing::warn!(
+                            identity_index,
+                            error = %e,
+                            "IdentityCreateFromOneTimeKey broadcast succeeded but registering the \
+                             identity in the local manager failed; the on-chain identity exists and \
+                             the next sync will heal the local row"
+                        );
+                    }
+                }
+                None => {
+                    tracing::warn!(
+                        identity_index,
+                        "IdentityCreateFromOneTimeKey broadcast succeeded but the wallet info was \
+                         not found in the manager; skipping local registration (heals on next sync)"
+                    );
+                }
+            }
+        }
+
+        Ok(identity_id)
     }
 
     /// Shield credits from a Platform Payment account into the
