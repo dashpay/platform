@@ -57,25 +57,47 @@ pub const SHIELDED_PROOF_WIRE_BYTES_PER_ACTION: u64 = 2_273;
 /// Derived from the same measured points as
 /// [`SHIELDED_PROOF_WIRE_BYTES_PER_ACTION`] (8,294 − 2 × 2,681 = 2,932,
 /// consistent across the 2-, 6- and 7-action measurements of a
-/// `ShieldFromAssetLock` with a chain asset-lock proof). Transition types with
-/// larger envelopes (an instant asset-lock proof embedding its funding
-/// transaction, or a large identity key set) eat into the ~1.4 KiB of slack
-/// that remains at the derived action ceiling — they do not change the
-/// ceiling itself for realistic envelopes, and DAPI's byte prefilter remains
-/// the authoritative gate.
+/// `ShieldFromAssetLock` with a chain asset-lock proof). This is the BASELINE
+/// envelope: transition types whose non-Orchard fields have VARIABLE
+/// serialized size — an instant asset-lock proof embedding its funding
+/// transaction and `InstantLock` (both carry input vectors; DPP admits
+/// asset-lock transactions with up to 100 inputs), or an identity-create key
+/// set of up to six keys — must account for those bytes on top of this
+/// constant via the `extra_envelope_bytes` argument of
+/// [`max_shielded_actions_for_envelope`] /
+/// [`estimated_shielded_transition_wire_bytes_with_envelope`], so the
+/// pre-proving gate sees the size the byte prefilter will see. DAPI's byte
+/// prefilter remains the authoritative gate.
 pub const SHIELDED_TRANSITION_WIRE_OVERHEAD_BYTES: u64 = 2_932;
 
 /// Conservative estimate of a shielded transition's on-wire serialized size
-/// for a bundle of `num_actions` Orchard actions.
+/// for a bundle of `num_actions` Orchard actions with the baseline envelope.
 ///
 /// `SHIELDED_TRANSITION_WIRE_OVERHEAD_BYTES + num_actions ×
 /// (SHIELDED_ACTION_WIRE_BYTES + SHIELDED_PROOF_WIRE_BYTES_PER_ACTION)` —
 /// the linear model pinned against measured proved transitions (see
-/// [`SHIELDED_PROOF_WIRE_BYTES_PER_ACTION`]).
+/// [`SHIELDED_PROOF_WIRE_BYTES_PER_ACTION`]). Transitions with
+/// variable-size non-Orchard fields use
+/// [`estimated_shielded_transition_wire_bytes_with_envelope`].
 pub fn estimated_shielded_transition_wire_bytes(num_actions: usize) -> u64 {
+    estimated_shielded_transition_wire_bytes_with_envelope(num_actions, 0)
+}
+
+/// [`estimated_shielded_transition_wire_bytes`] plus `extra_envelope_bytes`
+/// of transition-specific envelope beyond the measured baseline — the
+/// serialized size of the transition's variable-length non-Orchard fields
+/// (an embedded instant asset-lock proof, an identity key set), which the
+/// fixed [`SHIELDED_TRANSITION_WIRE_OVERHEAD_BYTES`] does not cover.
+pub fn estimated_shielded_transition_wire_bytes_with_envelope(
+    num_actions: usize,
+    extra_envelope_bytes: u64,
+) -> u64 {
     SHIELDED_TRANSITION_WIRE_OVERHEAD_BYTES
-        + (num_actions as u64)
-            * (SHIELDED_ACTION_WIRE_BYTES + SHIELDED_PROOF_WIRE_BYTES_PER_ACTION)
+        .saturating_add(extra_envelope_bytes)
+        .saturating_add(
+            (num_actions as u64)
+                .saturating_mul(SHIELDED_ACTION_WIRE_BYTES + SHIELDED_PROOF_WIRE_BYTES_PER_ACTION),
+        )
 }
 
 /// The EFFECTIVE per-transition Orchard action ceiling under `platform_version`:
@@ -98,8 +120,32 @@ pub fn estimated_shielded_transition_wire_bytes(num_actions: usize) -> u64 {
 /// `shielded_bundle_action_count`); otherwise a 7..16-action bundle passes the
 /// structural check, burns the expensive Halo 2 proof, and is only then
 /// rejected by the byte prefilter.
+///
+/// This is the ceiling for the BASELINE envelope. Transition types with
+/// variable-size non-Orchard fields (instant asset-lock proofs, identity key
+/// sets) must use [`max_shielded_actions_for_envelope`] with their measured
+/// extra bytes — a large enough envelope tightens the ceiling below 6.
 pub fn max_shielded_actions_per_transition(
     platform_version: &platform_version::version::PlatformVersion,
+) -> usize {
+    max_shielded_actions_for_envelope(platform_version, 0)
+}
+
+/// [`max_shielded_actions_per_transition`], with the size budget reduced by
+/// `extra_envelope_bytes` of transition-specific envelope beyond the measured
+/// baseline (see [`SHIELDED_TRANSITION_WIRE_OVERHEAD_BYTES`]).
+///
+/// An instant asset-lock proof embeds its funding transaction and
+/// `InstantLock` — both carry input vectors, and DPP admits asset-lock
+/// transactions with up to 100 inputs — and an identity create carries up to
+/// six variable public keys; either can consume the ~1.4 KiB of slack the
+/// baseline ceiling leaves under the byte cap, so the pre-proving gate must
+/// price them in or a bundle passes the gate, burns the Halo 2 proof, and is
+/// only then rejected by DAPI's byte prefilter (#4312 review finding
+/// e90e9cf15f52).
+pub fn max_shielded_actions_for_envelope(
+    platform_version: &platform_version::version::PlatformVersion,
+    extra_envelope_bytes: u64,
 ) -> usize {
     let structural = platform_version
         .system_limits
@@ -108,7 +154,8 @@ pub fn max_shielded_actions_per_transition(
     let size_budget = platform_version
         .system_limits
         .max_state_transition_size
-        .saturating_sub(SHIELDED_TRANSITION_WIRE_OVERHEAD_BYTES);
+        .saturating_sub(SHIELDED_TRANSITION_WIRE_OVERHEAD_BYTES)
+        .saturating_sub(extra_envelope_bytes);
     // per_action is a non-zero constant; the division is total.
     let by_size = (size_budget / per_action) as usize;
     structural.min(by_size)
@@ -337,6 +384,59 @@ mod wire_cost_tests {
                 || estimated_shielded_transition_wire_bytes(effective + 1) > max_size,
             "one more action than the (size-bound) ceiling must NOT fit"
         );
+    }
+
+    /// Transition-specific envelope bytes must tighten the ceiling at the
+    /// exact byte boundary (#4312 review finding e90e9cf15f52): extra bytes
+    /// within the slack the baseline ceiling leaves under the size limit keep
+    /// the ceiling; one byte past the slack displaces an action; an envelope
+    /// larger than the whole budget must degrade to a zero ceiling, never
+    /// panic or wrap.
+    #[test]
+    fn envelope_bytes_tighten_the_action_ceiling_at_the_exact_boundary() {
+        let platform_version = PlatformVersion::latest();
+        let baseline = max_shielded_actions_per_transition(platform_version);
+        let per_action = SHIELDED_ACTION_WIRE_BYTES + SHIELDED_PROOF_WIRE_BYTES_PER_ACTION;
+        let max_size = platform_version.system_limits.max_state_transition_size;
+        // Bytes left under the size limit once the baseline envelope and the
+        // baseline-ceiling actions are paid for.
+        let slack =
+            max_size - SHIELDED_TRANSITION_WIRE_OVERHEAD_BYTES - baseline as u64 * per_action;
+
+        assert_eq!(
+            max_shielded_actions_for_envelope(platform_version, 0),
+            baseline,
+            "a zero extra envelope must reproduce the baseline ceiling"
+        );
+        assert_eq!(
+            max_shielded_actions_for_envelope(platform_version, slack),
+            baseline,
+            "an envelope exactly filling the slack must keep the ceiling"
+        );
+        assert_eq!(
+            max_shielded_actions_for_envelope(platform_version, slack + 1),
+            baseline - 1,
+            "one byte past the slack must displace one action"
+        );
+        assert_eq!(
+            max_shielded_actions_for_envelope(platform_version, u64::MAX),
+            0,
+            "an envelope beyond the whole budget must degrade to zero, not wrap"
+        );
+
+        // The estimator and the ceiling must agree: the ceiling is exactly
+        // the largest action count whose estimated size (with the same
+        // envelope) fits the limit.
+        for extra in [0, slack, slack + 1] {
+            let ceiling = max_shielded_actions_for_envelope(platform_version, extra);
+            assert!(
+                estimated_shielded_transition_wire_bytes_with_envelope(ceiling, extra) <= max_size
+            );
+            assert!(
+                estimated_shielded_transition_wire_bytes_with_envelope(ceiling + 1, extra)
+                    > max_size
+            );
+        }
     }
 }
 

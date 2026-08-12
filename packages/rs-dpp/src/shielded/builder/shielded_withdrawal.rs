@@ -77,7 +77,15 @@ pub fn build_shielded_withdrawal_transition<P: OrchardProver>(
     // Routed through the shared predictor (1 shielded output — the change note), which is
     // numerically `spends.len().max(2)` AND enforces both consensus ceilings (the structural
     // action cap and the transition-size-derived one) BEFORE the ~30 s Halo 2 proof.
-    let num_actions = shielded_bundle_action_count(spends.len(), 1, platform_version)?;
+    let num_actions = shielded_bundle_action_count(
+        spends.len(),
+        1,
+        // No variable-length envelope beyond the measured baseline: this
+        // transition's non-Orchard fields are fixed-size (no embedded
+        // asset-lock proof or identity key set).
+        0,
+        platform_version,
+    )?;
     // The fee is fixed at the withdrawal minimum: consensus always carves exactly
     // `compute_shielded_withdrawal_fee` from the pool — the base shielded minimum fee PLUS the
     // flat storage cost of the Core withdrawal document this transition inserts — and the net

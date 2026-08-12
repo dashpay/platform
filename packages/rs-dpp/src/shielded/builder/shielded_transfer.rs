@@ -68,7 +68,14 @@ pub fn build_shielded_transfer_transition<P: OrchardProver>(
     // (`max_shielded_transition_actions`), so a wallet fragmented enough to need more spends
     // than consensus allows fails here rather than after the ~30 s proof.
     const MAX_OUTPUTS: usize = 2; // recipient + change
-    let num_actions = shielded_bundle_action_count(spends.len(), MAX_OUTPUTS, platform_version)?;
+    let num_actions = shielded_bundle_action_count(
+        spends.len(),
+        MAX_OUTPUTS,
+        // No variable-length envelope beyond the baseline: a transfer's
+        // non-Orchard fields are fixed-size.
+        0,
+        platform_version,
+    )?;
     // The fee is fixed at the minimum: a transfer's `value_balance` IS the fee and consensus
     // pins it to exactly this amount (overpayment buys nothing and would leak a distinguishing
     // fee fingerprint that breaks shielded uniformity).
@@ -246,7 +253,14 @@ pub fn build_shielded_transfer_transition_multi<P: OrchardProver>(
     // `max_shielded_transition_actions`, or the transition is doomed at `validate_structure`.
     // `try_from_bundle` performs no structural validation, so without this the caller would burn
     // the ~30 s Halo 2 proof on a bundle consensus is guaranteed to reject.
-    let num_actions = shielded_bundle_action_count(spends.len(), num_outputs, platform_version)?;
+    let num_actions = shielded_bundle_action_count(
+        spends.len(),
+        num_outputs,
+        // No variable-length envelope beyond the baseline: a transfer's
+        // non-Orchard fields are fixed-size.
+        0,
+        platform_version,
+    )?;
     let fee = compute_minimum_shielded_fee(num_actions, platform_version)?;
 
     let required = transfer_total.checked_add(fee).ok_or_else(|| {
@@ -672,8 +686,7 @@ mod tests {
     #[test]
     fn multi_output_transfer_rejects_output_count_over_the_size_ceiling() {
         let platform_version = PlatformVersion::latest();
-        let effective =
-            crate::shielded::max_shielded_actions_per_transition(platform_version);
+        let effective = crate::shielded::max_shielded_actions_per_transition(platform_version);
         assert!(
             effective
                 < platform_version
@@ -714,8 +727,7 @@ mod tests {
     #[test]
     fn multi_output_transfer_accepts_the_action_limit_boundary() {
         let platform_version = PlatformVersion::latest();
-        let effective =
-            crate::shielded::max_shielded_actions_per_transition(platform_version);
+        let effective = crate::shielded::max_shielded_actions_per_transition(platform_version);
         let sk = SpendingKey::from_bytes([42u8; 32]).expect("valid sk");
         let fvk = FullViewingKey::from(&sk);
         let ask = SpendAuthorizingKey::from(&sk);
