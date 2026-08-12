@@ -27,7 +27,7 @@
 //!     super::coordinator::NetworkShieldedCoordinator::sync
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use dash_sdk::platform::shielded::{
     sync_shielded_notes_stream, try_decrypt_note, try_recover_outgoing_note,
@@ -799,6 +799,111 @@ pub(crate) async fn balances_across<S: ShieldedStore>(
     Ok(out)
 }
 
+/// Process-local resume checkpoint for one foreign-key transient scan.
+///
+/// [`scan_notes_for_foreign_key`] has no subwallet store to persist a sync
+/// watermark into, so without a checkpoint every call restarts the
+/// proof-verified note stream at position zero — and a syntactically valid but
+/// UNFUNDED invitation key (attacker-controlled input) turns every retry into
+/// a full-history rescan (#4313 review finding d19c5cf84a9f). The checkpoint
+/// bounds the repeat: within one process, tree positions below
+/// `resume_position` are streamed and trial-decrypted at most once per key, so
+/// an unfunded key costs one full-history scan per process, after which each
+/// retry only covers new tree growth plus the mutable buffer chunk.
+///
+/// Funds-safety: the commitment tree is append-only and every full chunk is
+/// immutable, so nothing below `resume_position` can change after it was
+/// scanned; only the final (partial) buffer chunk can still receive notes, and
+/// `resume_position` is never advanced past a partial chunk's `start_index` —
+/// the same resume rule the subwallet sync applies (see
+/// `ShieldedChunkBatch::is_partial`). A resumed scan therefore can never miss
+/// a note a from-zero scan would have found. Deliberately process-local (no
+/// persistence): a fresh process re-pays one full scan, which keeps this a
+/// pure work bound with no stored state to invalidate.
+struct ForeignScanCheckpoint {
+    /// First tree position the next scan must cover; every position strictly
+    /// below it has already been streamed and trial-decrypted for this key.
+    /// Always a full-chunk boundary (and re-aligned down on use).
+    resume_position: u64,
+    /// Notes that decrypted under the key at positions strictly below
+    /// `resume_position`. Positions at/above it are re-derived on resume, so
+    /// buffer-chunk notes are never carried here (no duplicates on rescan).
+    notes: Vec<ShieldedNote>,
+}
+
+/// Bounded, most-recently-used-last checkpoint list keyed by
+/// [`foreign_scan_checkpoint_key`]. A `Vec` with linear search: the cap is
+/// tiny, and eviction order (front = least recently used) falls out for free.
+type ForeignScanCheckpoints = Vec<([u8; 32], ForeignScanCheckpoint)>;
+
+static FOREIGN_SCAN_CHECKPOINTS: OnceLock<Mutex<ForeignScanCheckpoints>> = OnceLock::new();
+
+/// At most this many foreign keys keep a checkpoint. One claim flow touches
+/// one key, so this covers concurrent/retried claims while capping what
+/// hostile key churn can pin in memory (a one-time key funds 1–2 notes, so
+/// each entry is small; churn also cannot force rescans of OTHER keys — an
+/// evicted key merely re-pays its own full scan).
+const FOREIGN_SCAN_CHECKPOINT_CAP: usize = 8;
+
+/// Deterministic checkpoint key for a foreign one-time key. Domain-separated
+/// from `one_time_claim_record_key` (operations.rs) so the two keyspaces can
+/// never alias, and hashed so the raw FVK bytes are not retained in the map.
+fn foreign_scan_checkpoint_key(fvk: &grovedb_commitment_tree::FullViewingKey) -> [u8; 32] {
+    use dashcore::hashes::{sha256, Hash};
+
+    let mut preimage = Vec::with_capacity(96 + 44);
+    preimage.extend_from_slice(b"platform-wallet:foreign-scan-checkpoint:v1");
+    preimage.extend_from_slice(&fvk.to_bytes());
+    sha256::Hash::hash(&preimage).to_byte_array()
+}
+
+/// Remove and return the checkpoint for `key`, if present. Taking (rather
+/// than cloning) keeps the entry single-owner while a scan is in flight; the
+/// scan writes the advanced checkpoint back on every exit path.
+fn take_foreign_scan_checkpoint(key: &[u8; 32]) -> Option<ForeignScanCheckpoint> {
+    let mut map = FOREIGN_SCAN_CHECKPOINTS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    map.iter()
+        .position(|(k, _)| k == key)
+        .map(|i| map.remove(i).1)
+}
+
+/// Insert/replace the checkpoint for `key` as most recently used, evicting
+/// the least recently used entry beyond [`FOREIGN_SCAN_CHECKPOINT_CAP`].
+fn save_foreign_scan_checkpoint(key: [u8; 32], checkpoint: ForeignScanCheckpoint) {
+    let mut map = FOREIGN_SCAN_CHECKPOINTS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(i) = map.iter().position(|(k, _)| k == &key) {
+        map.remove(i);
+    }
+    while map.len() >= FOREIGN_SCAN_CHECKPOINT_CAP {
+        map.remove(0);
+    }
+    map.push((key, checkpoint));
+}
+
+/// Build the checkpoint to persist after covering the tree through
+/// `scanned_through`: only notes on immutable, fully-consumed chunks
+/// (position strictly below the resume point) are carried — notes inside the
+/// mutable buffer chunk are re-derived on the next pass.
+fn foreign_scan_checkpoint_below(
+    scanned_through: u64,
+    found: &[ShieldedNote],
+) -> ForeignScanCheckpoint {
+    ForeignScanCheckpoint {
+        resume_position: scanned_through,
+        notes: found
+            .iter()
+            .filter(|n| n.position < scanned_through)
+            .cloned()
+            .collect(),
+    }
+}
+
 /// Transiently scan the shielded-note set for a FOREIGN Orchard key (the
 /// L2-invitation *claim* path).
 ///
@@ -812,15 +917,21 @@ pub(crate) async fn balances_across<S: ShieldedStore>(
 /// The scan stops early as soon as the accumulated value reaches
 /// `stop_at_value` — a one-time invitation key holds exactly its funding, so
 /// there is no reason to keep streaming past the note(s) that fund it. If the
-/// key's value never reaches `stop_at_value`, the whole tree is scanned and
-/// whatever was found is returned; the caller's note selection then surfaces
-/// the typed insufficient-value error.
+/// key's value never reaches `stop_at_value`, the tree is scanned to the tip
+/// and whatever was found is returned; the caller's note selection then
+/// surfaces the typed insufficient-value error.
 ///
 /// Note: shielded notes are indexed by tree POSITION and this tree exposes no
 /// height→position oracle (a chunk's `block_height` is the proof-tip height, not
-/// a per-note inclusion height — see [`ShieldedChunkBatch`]), so the scan always
-/// starts at position 0. A caller's birth-height hint therefore cannot seed the
-/// start today; the value-coverage early-stop above is the effective bound.
+/// a per-note inclusion height — see [`ShieldedChunkBatch`]), so a caller's
+/// birth-height hint cannot seed the scan start. The rescan bound is instead a
+/// process-local [`ForeignScanCheckpoint`]: the first scan for a key covers the
+/// full history from position 0 (never risking a missed note), and every later
+/// scan for the SAME key resumes past the immutable chunks it already covered —
+/// so a valid-but-unfunded invitation key costs one full-history scan per
+/// process, not one per attempt (#4313 review finding d19c5cf84a9f). Progress
+/// is checkpointed even when the stream errors mid-scan, so an interrupted
+/// retry resumes rather than restarting.
 ///
 /// [`ShieldedChunkBatch`]: dash_sdk::platform::shielded::notes_sync::types::ShieldedChunkBatch
 pub(crate) async fn scan_notes_for_foreign_key(
@@ -831,14 +942,71 @@ pub(crate) async fn scan_notes_for_foreign_key(
 ) -> Result<Vec<ShieldedNote>, PlatformWalletError> {
     use grovedb_commitment_tree::PreparedIncomingViewingKey;
 
+    let checkpoint_key = foreign_scan_checkpoint_key(fvk);
+    let (mut found, resume_position) = match take_foreign_scan_checkpoint(&checkpoint_key) {
+        Some(cp) => (cp.notes, cp.resume_position),
+        None => (Vec::new(), 0),
+    };
+
+    // The stream start must sit on an on-chain MMR chunk boundary; align DOWN
+    // so a resume can only over-scan, never skip. Checkpointed notes at/above
+    // the aligned start would be re-found by the rescan below — drop them so
+    // they cannot duplicate (defensive: persisted resume positions are already
+    // chunk-aligned and their notes strictly below).
+    let aligned_start = (resume_position / CHUNK_SIZE) * CHUNK_SIZE;
+    found.retain(|n| n.position < aligned_start);
+    let mut total: u64 = found
+        .iter()
+        .fold(0u64, |acc, n| acc.saturating_add(n.value));
+
+    if aligned_start > 0 {
+        debug!(
+            aligned_start,
+            checkpointed_notes = found.len(),
+            checkpointed_value = total,
+            "Foreign-key scan resuming from process-local checkpoint"
+        );
+    }
+
+    // Checkpointed notes already cover the requested value: no network work.
+    // Safe because note contents at a scanned position are immutable
+    // (append-only tree) and spent-ness is not decided here — the caller's
+    // selection/preflight re-verifies nullifier status against the chain,
+    // exactly as it does for freshly scanned notes.
+    if total >= stop_at_value && !found.is_empty() {
+        save_foreign_scan_checkpoint(
+            checkpoint_key,
+            foreign_scan_checkpoint_below(aligned_start, &found),
+        );
+        return Ok(found);
+    }
+
     let prepared = PreparedIncomingViewingKey::new(ivk);
-    let stream = sync_shielded_notes_stream(sdk, &prepared, 0, None);
+    let stream = sync_shielded_notes_stream(sdk, &prepared, aligned_start, None);
     futures::pin_mut!(stream);
 
-    let mut found: Vec<ShieldedNote> = Vec::new();
-    let mut total: u64 = 0;
+    // How far this pass has FULLY covered the tree: advanced past the end of
+    // every immutable full chunk consumed, held AT a partial (buffer) chunk's
+    // `start_index` because that chunk may still receive notes.
+    let mut scanned_through = aligned_start;
     while let Some(batch) = stream.next().await {
-        let batch = batch.map_err(|e| PlatformWalletError::ShieldedSyncFailed(e.to_string()))?;
+        let batch = match batch {
+            Ok(batch) => batch,
+            Err(e) => {
+                // Persist partial progress: the retry that follows this error
+                // resumes here instead of re-paying the whole scan.
+                save_foreign_scan_checkpoint(
+                    checkpoint_key,
+                    foreign_scan_checkpoint_below(scanned_through, &found),
+                );
+                return Err(PlatformWalletError::ShieldedSyncFailed(e.to_string()));
+            }
+        };
+        scanned_through = if batch.is_partial {
+            batch.start_index
+        } else {
+            batch.start_index + batch.notes.len() as u64
+        };
         for dn in batch.decrypted {
             let value = dn.note.value().inner();
             let nullifier = dn.note.nullifier(fvk).to_bytes();
@@ -858,6 +1026,11 @@ pub(crate) async fn scan_notes_for_foreign_key(
             break;
         }
     }
+
+    save_foreign_scan_checkpoint(
+        checkpoint_key,
+        foreign_scan_checkpoint_below(scanned_through, &found),
+    );
     Ok(found)
 }
 
@@ -1059,6 +1232,90 @@ mod tests {
         assert!(!newly_spent.contains_key(&b));
         assert!(store.get_unspent_notes(a).unwrap().is_empty());
         assert_eq!(store.get_unspent_notes(b).unwrap().len(), 1);
+    }
+
+    /// Note at `position` worth `value` (checkpoint tests don't care about
+    /// nullifiers).
+    fn note_at(position: u64, value: u64) -> ShieldedNote {
+        ShieldedNote {
+            position,
+            cmx: [0x22; 32],
+            nullifier: [0x33; 32],
+            block_height: 10,
+            is_spent: false,
+            value,
+            note_data: vec![0u8; 115],
+        }
+    }
+
+    /// The checkpoint carries only notes on immutable, fully-consumed chunks
+    /// (position strictly below the resume point); buffer-chunk notes are
+    /// dropped so the rescan of that chunk cannot duplicate them.
+    #[test]
+    fn foreign_scan_checkpoint_below_drops_buffer_chunk_notes() {
+        let found = vec![note_at(5, 100), note_at(2047, 200), note_at(2048, 300)];
+
+        let cp = super::foreign_scan_checkpoint_below(2048, &found);
+
+        assert_eq!(cp.resume_position, 2048);
+        let positions: Vec<u64> = cp.notes.iter().map(|n| n.position).collect();
+        assert_eq!(
+            positions,
+            vec![5, 2047],
+            "the note AT the resume position sits in the still-mutable buffer \
+             chunk and must be re-derived next pass, not carried"
+        );
+    }
+
+    /// Process-local checkpoint map semantics: take removes, save replaces,
+    /// and the least-recently-saved entry is evicted beyond the cap. One test
+    /// function on purpose — the map is a process-global static, so keeping
+    /// every access sequential avoids cross-test interference.
+    #[test]
+    fn foreign_scan_checkpoint_map_take_save_and_evict() {
+        // Keys unique to this test (no other test touches the static: the
+        // scan itself needs a live Sdk and has no unit-test call sites).
+        let key = |i: u8| -> [u8; 32] { [0xE0 + i; 32] };
+        let cp = |resume: u64| super::ForeignScanCheckpoint {
+            resume_position: resume,
+            notes: vec![note_at(1, 42)],
+        };
+
+        // Missing key: nothing to take.
+        assert!(super::take_foreign_scan_checkpoint(&key(0)).is_none());
+
+        // Round-trip: save then take returns the entry and REMOVES it.
+        super::save_foreign_scan_checkpoint(key(0), cp(2048));
+        let got = super::take_foreign_scan_checkpoint(&key(0)).expect("saved checkpoint");
+        assert_eq!(got.resume_position, 2048);
+        assert_eq!(got.notes.len(), 1);
+        assert!(
+            super::take_foreign_scan_checkpoint(&key(0)).is_none(),
+            "take must remove the entry (single-owner while a scan is in flight)"
+        );
+
+        // Save for an existing key replaces rather than duplicates.
+        super::save_foreign_scan_checkpoint(key(0), cp(2048));
+        super::save_foreign_scan_checkpoint(key(0), cp(4096));
+        let got = super::take_foreign_scan_checkpoint(&key(0)).expect("replaced checkpoint");
+        assert_eq!(got.resume_position, 4096, "latest save must win");
+        assert!(super::take_foreign_scan_checkpoint(&key(0)).is_none());
+
+        // Fill one past the cap: the oldest entry is evicted, the rest live.
+        let n = super::FOREIGN_SCAN_CHECKPOINT_CAP as u8 + 1;
+        for i in 0..n {
+            super::save_foreign_scan_checkpoint(key(i), cp(u64::from(i) * 2048));
+        }
+        assert!(
+            super::take_foreign_scan_checkpoint(&key(0)).is_none(),
+            "least-recently-saved entry must be evicted beyond the cap"
+        );
+        for i in 1..n {
+            assert!(
+                super::take_foreign_scan_checkpoint(&key(i)).is_some(),
+                "entry {i} must survive the eviction"
+            );
+        }
     }
 }
 

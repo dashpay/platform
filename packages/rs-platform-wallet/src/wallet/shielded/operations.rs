@@ -1839,7 +1839,8 @@ where
 ///
 /// `funding_birth_height` is an advisory hint only (see
 /// [`super::sync::scan_notes_for_foreign_key`] — the tree has no height→position
-/// oracle, so it cannot seed the scan start today).
+/// oracle, so it cannot seed the scan start today; repeated attempts are
+/// bounded by the scan's process-local resume checkpoint instead).
 ///
 /// Returns the new identity's id and the proof-verified [`Identity`]; the caller
 /// registers that identity in its local `IdentityManager`.
@@ -1904,8 +1905,10 @@ where
 
     // Advisory only: the shielded tree has no height→note-index oracle (a chunk's
     // block_height is the proof-tip height, not per-note inclusion height), so the
-    // transient scan always starts at position 0 and bounds itself by value
-    // coverage. Logged so the hint is observable and not silently dropped.
+    // transient scan cannot seed its start from a height; it bounds itself by
+    // value coverage plus a process-local resume checkpoint (one full-history
+    // scan per key per process — see `scan_notes_for_foreign_key`). Logged so
+    // the hint is observable and not silently dropped.
     if let Some(h) = funding_birth_height {
         debug!(
             funding_birth_height = h,
@@ -3730,9 +3733,11 @@ async fn fetch_identity_by_key_hash_with_retries(
 /// Outcomes:
 /// - **`Ok`** — a fetched identity cleared both bindings: this claim created it.
 /// - **[`PlatformWalletError::ShieldedInviteAlreadyClaimed`]** — an identity was
-///   fetched but failed a binding (chargeable fallback, or a competing holder of
-///   the same bearer key), *or* the id is not re-derivable so no binding can ever
-///   be established. Terminal: the note is spent, so retrying cannot help.
+///   fetched but failed a binding (chargeable fallback, a competing holder of
+///   the same bearer key, or — when `master_key_hash` is `None` — a key binding
+///   that can never be established for this claim), *or* the id is not
+///   re-derivable so no binding can ever be established. Terminal: the note is
+///   spent, so retrying cannot help.
 /// - **[`PlatformWalletError::ShieldedBroadcastUnconfirmed`]** — nothing resolved
 ///   yet, but the id *is* re-derivable, so a later retry can still reconcile once
 ///   indexing catches up. Only reachable when `expected_identity_id` is `Some`,
@@ -3818,6 +3823,28 @@ async fn recover_executed_one_time_claim(
                  (id and key bindings both verified)"
             );
             return Ok((identity.id(), identity));
+        }
+        // `recovered_identity_matches_claim` also fails closed when NO master
+        // auth key hash was resolvable from the submitted keys (`master_key_hash
+        // == None` — nothing was submitted, or `public_key_hash()` errored for
+        // an unusual key type). The key binding can then never be established
+        // for this claim, which is NOT evidence of a competing holder — report
+        // the real cause. Terminal either way: the note is spent, and a retry
+        // resubmits the same key set, so the hash stays unresolvable.
+        if master_key_hash.is_none() {
+            warn!(
+                derived_id = %expected_id,
+                "IdentityCreateFromOneTimeKey: an identity exists at this claim's derived id but \
+                 this claim carries no resolvable master auth key hash, so ownership can be \
+                 neither proven nor disproven"
+            );
+            return Err(PlatformWalletError::ShieldedInviteAlreadyClaimed {
+                reason: format!(
+                    "identity {expected_id} was created from this invitation's notes, but this \
+                     claim submitted no resolvable master authentication key hash, so its \
+                     ownership cannot be verified: {evidence}"
+                ),
+            });
         }
         // The id matches (same nullifier set) but the on-chain keys are not ours:
         // another holder of the same bearer one-time key won the race.

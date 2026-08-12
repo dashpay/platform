@@ -188,19 +188,20 @@ fn read_key32_zeroizing(
     Some(key)
 }
 
-/// Read a required 43-byte raw Orchard recipient address from a Java
-/// `byte[]` (11-byte diversifier + 32-byte pk_d); throws + returns None on
-/// the wrong length / a JNI error.
-fn read_recipient43(env: &mut JNIEnv, arr: &JByteArray) -> Option<[u8; 43]> {
+/// Read a required 43-byte raw Orchard address from a Java `byte[]`
+/// (11-byte diversifier + 32-byte pk_d); throws + returns None on the
+/// wrong length / a JNI error. `field` names the caller's parameter in
+/// the exception message (mirrors `read_id32`).
+fn read_recipient43(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Option<[u8; 43]> {
     if arr.is_null() {
-        throw_sdk_exception(env, 1, "recipientRaw43 byte[] was null");
+        throw_sdk_exception(env, 1, &format!("{field} byte[] was null"));
         return None;
     }
     let bytes = match env.convert_byte_array(arr) {
         Ok(b) => b,
         Err(_) => {
             let _ = env.exception_clear();
-            throw_sdk_exception(env, 1, "recipientRaw43 byte[] was invalid");
+            throw_sdk_exception(env, 1, &format!("{field} byte[] was invalid"));
             return None;
         }
     };
@@ -208,7 +209,7 @@ fn read_recipient43(env: &mut JNIEnv, arr: &JByteArray) -> Option<[u8; 43]> {
         throw_sdk_exception(
             env,
             1,
-            &format!("recipientRaw43 must be 43 bytes, got {}", bytes.len()),
+            &format!("{field} must be 43 bytes, got {}", bytes.len()),
         );
         return None;
     }
@@ -382,7 +383,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
         let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
             return;
         };
-        let Some(recipient) = read_recipient43(env, &recipient_raw43) else {
+        let Some(recipient) = read_recipient43(env, &recipient_raw43, "recipientRaw43") else {
             return;
         };
         let surplus = match read_opt_bytes(env, &surplus_output) {
@@ -441,7 +442,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
         let Some(txid) = read_id32(env, &out_point_txid, "outPointTxid") else {
             return;
         };
-        let Some(recipient) = read_recipient43(env, &recipient_raw43) else {
+        let Some(recipient) = read_recipient43(env, &recipient_raw43, "recipientRaw43") else {
             return;
         };
         let surplus = match read_opt_bytes(env, &surplus_output) {
@@ -876,7 +877,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
         let Some(sk) = read_key32_zeroizing(env, &one_time_sk, "oneTimeSk") else {
             return ptr::null_mut();
         };
-        let Some(change_raw) = read_recipient43(env, &change_address_raw43) else {
+        let Some(change_raw) = read_recipient43(env, &change_address_raw43, "changeAddressRaw43") else {
             return ptr::null_mut();
         };
 
@@ -1085,7 +1086,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
         let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
             return;
         };
-        let Some(recipient) = read_recipient43(env, &recipient_raw43) else {
+        let Some(recipient) = read_recipient43(env, &recipient_raw43, "recipientRaw43") else {
             return;
         };
         // null / empty memo → null pointer (no memo). The CString owns the
