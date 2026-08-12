@@ -122,6 +122,7 @@ fn insert_values(
     property_value: &Value,
     root_schema: &Value,
     config: &DataContractConfig,
+    admit_property_references: bool,
 ) -> Result<(), DataContractError> {
     let mut to_visit: Vec<(Option<String>, String, &Value)> =
         vec![(prefix, property_key, property_value)];
@@ -170,7 +171,11 @@ fn insert_values(
                 }
             }
             property_type => {
-                let property_type = apply_property_reference(&inner_properties, property_type)?;
+                let property_type = if admit_property_references {
+                    apply_property_reference(&inner_properties, property_type)?
+                } else {
+                    property_type
+                };
                 document_properties.insert(
                     prefixed_property_key,
                     DocumentProperty {
@@ -187,6 +192,7 @@ fn insert_values(
 }
 
 // TODO: This is quite big
+#[allow(clippy::too_many_arguments)]
 fn insert_values_nested(
     document_properties: &mut IndexMap<String, DocumentProperty>,
     known_required: &BTreeSet<String>,
@@ -195,6 +201,7 @@ fn insert_values_nested(
     property_value: &Value,
     root_schema: &Value,
     config: &DataContractConfig,
+    admit_property_references: bool,
 ) -> Result<(), DataContractError> {
     let mut inner_properties = property_value.to_btree_ref_string_map()?;
 
@@ -271,6 +278,7 @@ fn insert_values_nested(
                             object_property_value,
                             root_schema,
                             config,
+                            admit_property_references,
                         )?;
                     }
                 }
@@ -280,7 +288,11 @@ fn insert_values_nested(
             property_type => property_type,
         };
 
-    let property_type = apply_property_reference(&inner_properties, property_type)?;
+    let property_type = if admit_property_references {
+        apply_property_reference(&inner_properties, property_type)?
+    } else {
+        property_type
+    };
 
     document_properties.insert(
         property_key,
@@ -297,6 +309,11 @@ fn insert_values_nested(
 /// Folds a `refersTo` declaration into the property type: an identifier property
 /// with `refersTo` becomes `IdentifierWithReference(target)`. Non-identifier
 /// properties cannot carry `refersTo`.
+///
+/// Only generation 3 admits the keyword (`admit_property_references`); the
+/// callers above skip this fold entirely for earlier generations, which parsed
+/// before the keyword existed and must keep producing exactly what they always
+/// produced.
 fn apply_property_reference(
     inner_properties: &BTreeMap<String, &Value>,
     property_type: DocumentPropertyType,
@@ -343,7 +360,13 @@ mod tests {
     fn try_document_type_from_schema(
         schema: serde_json::Value,
     ) -> Result<DocumentType, ProtocolError> {
-        let platform_version = PlatformVersion::latest();
+        try_document_type_from_schema_on_version(schema, PlatformVersion::latest())
+    }
+
+    fn try_document_type_from_schema_on_version(
+        schema: serde_json::Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<DocumentType, ProtocolError> {
         let config =
             DataContractConfig::default_for_version(platform_version).expect("config should build");
 
@@ -422,5 +445,68 @@ mod tests {
             message.contains("refersTo is only allowed on identifier properties"),
             "unexpected error: {message}"
         );
+    }
+
+    #[test]
+    fn should_ignore_refers_to_on_pre_generation_3_parse() {
+        // Generations before 3 predate the `refersTo` keyword: even if it
+        // appears in a schema they parse (only possible without full
+        // validation — their meta-schemas reject it), they must ignore it
+        // and keep producing the plain identifier type they always produced.
+        let platform_version = PlatformVersion::get(13).expect("platform version 13 should exist");
+
+        let document_type = try_document_type_from_schema_on_version(
+            json!({
+                "type": "object",
+                "properties": {
+                    "toUserId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0,
+                        "refersTo": {
+                            "type": "identity"
+                        }
+                    }
+                },
+                "required": [],
+                "additionalProperties": false
+            }),
+            platform_version,
+        )
+        .expect("should parse");
+
+        let property_type = document_type
+            .as_ref()
+            .flattened_properties()
+            .get("toUserId")
+            .map(|p| p.property_type.clone())
+            .expect("property should be present");
+
+        assert!(matches!(property_type, DocumentPropertyType::Identifier));
+    }
+
+    #[test]
+    fn should_not_reject_refers_to_on_non_identifier_property_on_pre_generation_3_parse() {
+        let platform_version = PlatformVersion::get(13).expect("platform version 13 should exist");
+
+        try_document_type_from_schema_on_version(
+            json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "position": 0,
+                        "refersTo": { "type": "identity" }
+                    }
+                },
+                "required": [],
+                "additionalProperties": false
+            }),
+            platform_version,
+        )
+        .expect("pre-generation-3 parse should ignore refersTo entirely");
     }
 }

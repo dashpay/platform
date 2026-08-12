@@ -242,6 +242,10 @@ fn try_from_schema_generation_3(
             // Count indexes arrived at PV12; every version selecting this
             // generation is far past that boundary.
             admit_count_indexes: true,
+            // Meta-schema v3 introduces the `refersTo` reference keyword, so
+            // this generation folds it into the property type; earlier
+            // generations ignore it, exactly as they did before it existed.
+            admit_property_references: true,
             meta_schema_method_name: "DocumentType::try_from_schema_v3 (document_type_schema)",
             // RANKED: the constants that make this generation 3.
             admit_ranked: true,

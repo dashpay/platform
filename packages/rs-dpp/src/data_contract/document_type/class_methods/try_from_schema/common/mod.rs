@@ -154,6 +154,13 @@ pub(super) struct ParserGeneration {
     /// exist from protocol v12 onward, so the driver passes `false` below
     /// that boundary and the index is rejected with `UnsupportedFeatureError`.
     pub admit_count_indexes: bool,
+    /// Whether the `refersTo` reference keyword is part of this generation's
+    /// grammar. When `false` the keyword is ignored entirely, exactly as a
+    /// node that predated it did — meta-schemas v0–v2 already reject it when
+    /// full validation runs, so this flag keeps the non-validating parse of
+    /// pre-generation-3 contracts byte-for-byte identical to what those
+    /// generations produced.
+    pub admit_property_references: bool,
     /// Method name reported by the `UnknownVersionMismatch` raised for an
     /// unknown `document_type_schema`. Differs per generation, so it is a
     /// parameter rather than a constant.
@@ -714,6 +721,7 @@ fn parse_document_properties(
             property_value,
             root_schema,
             ctx.data_contact_config,
+            ctx.generation.admit_property_references,
         )
         .map_err(consensus_or_protocol_data_contract_error)?;
 
@@ -725,6 +733,7 @@ fn parse_document_properties(
             property_value,
             root_schema,
             ctx.data_contact_config,
+            ctx.generation.admit_property_references,
         )
         .map_err(consensus_or_protocol_data_contract_error)?;
     }

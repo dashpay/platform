@@ -246,6 +246,8 @@ impl DocumentTypeV0 {
                 property_value,
                 &root_schema,
                 data_contact_config,
+                // Generation 0 predates the `refersTo` keyword
+                false,
             )
             .map_err(consensus_or_protocol_data_contract_error)?;
 
@@ -257,6 +259,7 @@ impl DocumentTypeV0 {
                 property_value,
                 &root_schema,
                 data_contact_config,
+                false,
             )
             .map_err(consensus_or_protocol_data_contract_error)?;
         }
