@@ -153,7 +153,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                     // PROTOCOL_VERSION_13: v1 drops the reject bindings for
                     // Transfer, Purchase and UpdatePrice on DPNS `domain`
                     // documents, enabling username transfers and sales.
-                    bindings: 1,
+                    bindings: 2,
                     triggers: DriveAbciValidationDataTriggerVersions {
                         // PROTOCOL_VERSION_12 (v3.1 hard fork): triggers
                         // that perform drive reads now have `_v1` versions
@@ -161,6 +161,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                         // outer execution_context. v0 versions remain
                         // byte-identical to PV11 (don't bill).
                         create_contact_request_data_trigger: 1,
+                        validate_profile_payment_addresses_data_trigger: 0,
                         create_domain_data_trigger: 1,
                         create_identity_data_trigger: 0,
                         create_feature_flag_data_trigger: 0,
