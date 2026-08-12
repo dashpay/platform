@@ -234,6 +234,20 @@ pub struct NetworkShieldedCoordinator {
     /// account set.
     hydrated: RwLock<std::collections::BTreeSet<WalletId>>,
 
+    /// Per-FVK single-flight guards for the one-time-key (L2-invitation)
+    /// claim lifecycle — see `operations::ForeignClaimGuards`. Owned here
+    /// because the coordinator also owns the durable pending-claim record
+    /// store the guard protects: everything that can race on one invitation
+    /// key races through this one instance.
+    foreign_claim_guards: super::operations::ForeignClaimGuards,
+
+    /// Resume checkpoints for foreign-key transient scans — see
+    /// `sync::ForeignScanCheckpointCache`. Owned here (NOT process-global)
+    /// so a checkpoint can never leak between chains: one coordinator = one
+    /// network + one tree store, which also separates two devnets that share
+    /// `Network::Devnet` (#4313 review findings 6118148e4547 / cr-4d2aa8ce).
+    foreign_scan_checkpoints: super::sync::ForeignScanCheckpointCache,
+
     /// Counts completed [`clear`](Self::clear) calls, so a bind can tell
     /// that the host snapshot it loaded predates a wipe.
     ///
@@ -388,8 +402,22 @@ impl NetworkShieldedCoordinator {
             tree_progress_handler: std::sync::Mutex::new(None),
             lifecycle: tokio::sync::Mutex::new(()),
             hydrated: RwLock::new(std::collections::BTreeSet::new()),
+            foreign_claim_guards: Default::default(),
+            foreign_scan_checkpoints: Default::default(),
             clear_generation: std::sync::atomic::AtomicU64::new(0),
         }
+    }
+
+    /// The coordinator-owned per-FVK single-flight guards for one-time-key
+    /// claims. See the field doc and `operations::ForeignClaimGuards`.
+    pub fn foreign_claim_guards(&self) -> &super::operations::ForeignClaimGuards {
+        &self.foreign_claim_guards
+    }
+
+    /// The coordinator-owned foreign-scan resume checkpoints. See the field
+    /// doc and `sync::ForeignScanCheckpointCache`.
+    pub fn foreign_scan_checkpoints(&self) -> &super::sync::ForeignScanCheckpointCache {
+        &self.foreign_scan_checkpoints
     }
 
     /// Snapshot of the clear counter, to be taken **before** reading the

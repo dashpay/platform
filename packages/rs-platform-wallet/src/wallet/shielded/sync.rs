@@ -27,7 +27,7 @@
 //!     super::coordinator::NetworkShieldedCoordinator::sync
 
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 use dash_sdk::platform::shielded::{
     sync_shielded_notes_stream, try_decrypt_note, try_recover_outgoing_note,
@@ -799,17 +799,17 @@ pub(crate) async fn balances_across<S: ShieldedStore>(
     Ok(out)
 }
 
-/// Process-local resume checkpoint for one foreign-key transient scan.
+/// Resume checkpoint for one foreign-key transient scan.
 ///
 /// [`scan_notes_for_foreign_key`] has no subwallet store to persist a sync
 /// watermark into, so without a checkpoint every call restarts the
 /// proof-verified note stream at position zero — and a syntactically valid but
 /// UNFUNDED invitation key (attacker-controlled input) turns every retry into
 /// a full-history rescan (#4313 review finding d19c5cf84a9f). The checkpoint
-/// bounds the repeat: within one process, tree positions below
+/// bounds the repeat: within one cache, tree positions below
 /// `resume_position` are streamed and trial-decrypted at most once per key, so
-/// an unfunded key costs one full-history scan per process, after which each
-/// retry only covers new tree growth plus the mutable buffer chunk.
+/// an unfunded key costs one full-history scan per cache lifetime, after which
+/// each retry only covers new tree growth plus the mutable buffer chunk.
 ///
 /// Funds-safety: the commitment tree is append-only and every full chunk is
 /// immutable, so nothing below `resume_position` can change after it was
@@ -817,9 +817,10 @@ pub(crate) async fn balances_across<S: ShieldedStore>(
 /// `resume_position` is never advanced past a partial chunk's `start_index` —
 /// the same resume rule the subwallet sync applies (see
 /// `ShieldedChunkBatch::is_partial`). A resumed scan therefore can never miss
-/// a note a from-zero scan would have found. Deliberately process-local (no
+/// a note a from-zero scan would have found. Deliberately in-memory only (no
 /// persistence): a fresh process re-pays one full scan, which keeps this a
 /// pure work bound with no stored state to invalidate.
+#[derive(Clone)]
 struct ForeignScanCheckpoint {
     /// First tree position the next scan must cover; every position strictly
     /// below it has already been streamed and trial-decrypted for this key.
@@ -836,7 +837,30 @@ struct ForeignScanCheckpoint {
 /// tiny, and eviction order (front = least recently used) falls out for free.
 type ForeignScanCheckpoints = Vec<([u8; 32], ForeignScanCheckpoint)>;
 
-static FOREIGN_SCAN_CHECKPOINTS: OnceLock<Mutex<ForeignScanCheckpoints>> = OnceLock::new();
+/// Coordinator-owned cache of [`ForeignScanCheckpoint`]s.
+///
+/// Owned by `NetworkShieldedCoordinator` — NOT process-global — so a
+/// checkpoint can never leak across chains (#4313 review findings
+/// 6118148e4547 / cr-4d2aa8ce): each coordinator is pinned to one network AND
+/// one on-disk tree store, so two devnets that both answer to
+/// `Network::Devnet` still get distinct caches, and a resume position
+/// computed against one chain's tree can never skip a funded note at an
+/// earlier position on another chain's tree. Dropping the coordinator drops
+/// its cache — no allocation-address aliasing is possible.
+///
+/// Concurrency: entries are read with [`load`](Self::load) (clone, NOT
+/// remove) and written with [`save`](Self::save), which only advances a
+/// key's `resume_position` monotonically. A caller cancelled between the two
+/// therefore leaves the previous checkpoint intact instead of destroying it
+/// (#4313 review finding cr-4808dde4: the old take-then-put-back scheme lost
+/// the entry if the taker's future was dropped mid-scan). Same-key callers
+/// are additionally serialized end-to-end by the claim-lifecycle guard
+/// (`operations::ForeignClaimGuards`); the internal mutex is sync-only and
+/// never held across an await.
+#[derive(Default)]
+pub struct ForeignScanCheckpointCache {
+    entries: Mutex<ForeignScanCheckpoints>,
+}
 
 /// At most this many foreign keys keep a checkpoint. One claim flow touches
 /// one key, so this covers concurrent/retried claims while capping what
@@ -844,6 +868,46 @@ static FOREIGN_SCAN_CHECKPOINTS: OnceLock<Mutex<ForeignScanCheckpoints>> = OnceL
 /// each entry is small; churn also cannot force rescans of OTHER keys — an
 /// evicted key merely re-pays its own full scan).
 const FOREIGN_SCAN_CHECKPOINT_CAP: usize = 8;
+
+impl ForeignScanCheckpointCache {
+    /// Clone the checkpoint for `key`, if present, marking it most recently
+    /// used. The entry stays in the cache — see the type-level concurrency
+    /// note.
+    fn load(&self, key: &[u8; 32]) -> Option<ForeignScanCheckpoint> {
+        let mut map = self
+            .entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        map.iter().position(|(k, _)| k == key).map(|i| {
+            let entry = map.remove(i);
+            let checkpoint = entry.1.clone();
+            map.push(entry);
+            checkpoint
+        })
+    }
+
+    /// Insert/replace the checkpoint for `key` as most recently used,
+    /// evicting the least recently used entry beyond
+    /// [`FOREIGN_SCAN_CHECKPOINT_CAP`]. Monotonic: an existing entry is only
+    /// replaced by one whose `resume_position` is at least as far along, so
+    /// no writer can rewind another's progress.
+    fn save(&self, key: [u8; 32], checkpoint: ForeignScanCheckpoint) {
+        let mut map = self
+            .entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(i) = map.iter().position(|(k, _)| k == &key) {
+            if map[i].1.resume_position > checkpoint.resume_position {
+                return;
+            }
+            map.remove(i);
+        }
+        while map.len() >= FOREIGN_SCAN_CHECKPOINT_CAP {
+            map.remove(0);
+        }
+        map.push((key, checkpoint));
+    }
+}
 
 /// Deterministic checkpoint key for a foreign one-time key. Domain-separated
 /// from `one_time_claim_record_key` (operations.rs) so the two keyspaces can
@@ -855,35 +919,6 @@ fn foreign_scan_checkpoint_key(fvk: &grovedb_commitment_tree::FullViewingKey) ->
     preimage.extend_from_slice(b"platform-wallet:foreign-scan-checkpoint:v1");
     preimage.extend_from_slice(&fvk.to_bytes());
     sha256::Hash::hash(&preimage).to_byte_array()
-}
-
-/// Remove and return the checkpoint for `key`, if present. Taking (rather
-/// than cloning) keeps the entry single-owner while a scan is in flight; the
-/// scan writes the advanced checkpoint back on every exit path.
-fn take_foreign_scan_checkpoint(key: &[u8; 32]) -> Option<ForeignScanCheckpoint> {
-    let mut map = FOREIGN_SCAN_CHECKPOINTS
-        .get_or_init(Default::default)
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    map.iter()
-        .position(|(k, _)| k == key)
-        .map(|i| map.remove(i).1)
-}
-
-/// Insert/replace the checkpoint for `key` as most recently used, evicting
-/// the least recently used entry beyond [`FOREIGN_SCAN_CHECKPOINT_CAP`].
-fn save_foreign_scan_checkpoint(key: [u8; 32], checkpoint: ForeignScanCheckpoint) {
-    let mut map = FOREIGN_SCAN_CHECKPOINTS
-        .get_or_init(Default::default)
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if let Some(i) = map.iter().position(|(k, _)| k == &key) {
-        map.remove(i);
-    }
-    while map.len() >= FOREIGN_SCAN_CHECKPOINT_CAP {
-        map.remove(0);
-    }
-    map.push((key, checkpoint));
 }
 
 /// Build the checkpoint to persist after covering the tree through
@@ -925,17 +960,22 @@ fn foreign_scan_checkpoint_below(
 /// height→position oracle (a chunk's `block_height` is the proof-tip height, not
 /// a per-note inclusion height — see [`ShieldedChunkBatch`]), so a caller's
 /// birth-height hint cannot seed the scan start. The rescan bound is instead a
-/// process-local [`ForeignScanCheckpoint`]: the first scan for a key covers the
+/// coordinator-owned [`ForeignScanCheckpoint`] (in `checkpoints` — see
+/// [`ForeignScanCheckpointCache`] for the chain-isolation and
+/// cancellation-safety contract): the first scan for a key covers the
 /// full history from position 0 (never risking a missed note), and every later
 /// scan for the SAME key resumes past the immutable chunks it already covered —
 /// so a valid-but-unfunded invitation key costs one full-history scan per
-/// process, not one per attempt (#4313 review finding d19c5cf84a9f). Progress
-/// is checkpointed even when the stream errors mid-scan, so an interrupted
-/// retry resumes rather than restarting.
+/// coordinator, not one per attempt (#4313 review finding d19c5cf84a9f).
+/// Progress is checkpointed even when the stream errors mid-scan, so an
+/// interrupted retry resumes rather than restarting. Same-key calls are
+/// serialized by the caller's per-FVK claim guard, so two scans never
+/// interleave on one key.
 ///
 /// [`ShieldedChunkBatch`]: dash_sdk::platform::shielded::notes_sync::types::ShieldedChunkBatch
 pub(crate) async fn scan_notes_for_foreign_key(
     sdk: &Arc<dash_sdk::Sdk>,
+    checkpoints: &ForeignScanCheckpointCache,
     fvk: &grovedb_commitment_tree::FullViewingKey,
     ivk: &grovedb_commitment_tree::IncomingViewingKey,
     stop_at_value: u64,
@@ -943,7 +983,7 @@ pub(crate) async fn scan_notes_for_foreign_key(
     use grovedb_commitment_tree::PreparedIncomingViewingKey;
 
     let checkpoint_key = foreign_scan_checkpoint_key(fvk);
-    let (mut found, resume_position) = match take_foreign_scan_checkpoint(&checkpoint_key) {
+    let (mut found, resume_position) = match checkpoints.load(&checkpoint_key) {
         Some(cp) => (cp.notes, cp.resume_position),
         None => (Vec::new(), 0),
     };
@@ -964,7 +1004,7 @@ pub(crate) async fn scan_notes_for_foreign_key(
             aligned_start,
             checkpointed_notes = found.len(),
             checkpointed_value = total,
-            "Foreign-key scan resuming from process-local checkpoint"
+            "Foreign-key scan resuming from coordinator-owned checkpoint"
         );
     }
 
@@ -974,7 +1014,7 @@ pub(crate) async fn scan_notes_for_foreign_key(
     // selection/preflight re-verifies nullifier status against the chain,
     // exactly as it does for freshly scanned notes.
     if total >= stop_at_value && !found.is_empty() {
-        save_foreign_scan_checkpoint(
+        checkpoints.save(
             checkpoint_key,
             foreign_scan_checkpoint_below(aligned_start, &found),
         );
@@ -995,7 +1035,7 @@ pub(crate) async fn scan_notes_for_foreign_key(
             Err(e) => {
                 // Persist partial progress: the retry that follows this error
                 // resumes here instead of re-paying the whole scan.
-                save_foreign_scan_checkpoint(
+                checkpoints.save(
                     checkpoint_key,
                     foreign_scan_checkpoint_below(scanned_through, &found),
                 );
@@ -1027,7 +1067,7 @@ pub(crate) async fn scan_notes_for_foreign_key(
         }
     }
 
-    save_foreign_scan_checkpoint(
+    checkpoints.save(
         checkpoint_key,
         foreign_scan_checkpoint_below(scanned_through, &found),
     );
@@ -1267,55 +1307,98 @@ mod tests {
         );
     }
 
-    /// Process-local checkpoint map semantics: take removes, save replaces,
-    /// and the least-recently-saved entry is evicted beyond the cap. One test
-    /// function on purpose — the map is a process-global static, so keeping
-    /// every access sequential avoids cross-test interference.
+    /// Checkpoint cache semantics: load clones without removing, save
+    /// replaces monotonically, and the least-recently-used entry is evicted
+    /// beyond the cap.
     #[test]
-    fn foreign_scan_checkpoint_map_take_save_and_evict() {
-        // Keys unique to this test (no other test touches the static: the
-        // scan itself needs a live Sdk and has no unit-test call sites).
+    fn foreign_scan_checkpoint_cache_load_save_and_evict() {
+        let cache = super::ForeignScanCheckpointCache::default();
         let key = |i: u8| -> [u8; 32] { [0xE0 + i; 32] };
         let cp = |resume: u64| super::ForeignScanCheckpoint {
             resume_position: resume,
             notes: vec![note_at(1, 42)],
         };
 
-        // Missing key: nothing to take.
-        assert!(super::take_foreign_scan_checkpoint(&key(0)).is_none());
+        // Missing key: nothing to load.
+        assert!(cache.load(&key(0)).is_none());
 
-        // Round-trip: save then take returns the entry and REMOVES it.
-        super::save_foreign_scan_checkpoint(key(0), cp(2048));
-        let got = super::take_foreign_scan_checkpoint(&key(0)).expect("saved checkpoint");
+        // Round-trip: save then load returns the entry WITHOUT removing it —
+        // a caller cancelled after a load must leave the checkpoint intact
+        // for the next attempt (review finding cr-4808dde4).
+        cache.save(key(0), cp(2048));
+        let got = cache.load(&key(0)).expect("saved checkpoint");
         assert_eq!(got.resume_position, 2048);
         assert_eq!(got.notes.len(), 1);
         assert!(
-            super::take_foreign_scan_checkpoint(&key(0)).is_none(),
-            "take must remove the entry (single-owner while a scan is in flight)"
+            cache.load(&key(0)).is_some(),
+            "load must NOT remove the entry (cancellation between load and \
+             save would otherwise destroy the resume progress)"
         );
 
-        // Save for an existing key replaces rather than duplicates.
-        super::save_foreign_scan_checkpoint(key(0), cp(2048));
-        super::save_foreign_scan_checkpoint(key(0), cp(4096));
-        let got = super::take_foreign_scan_checkpoint(&key(0)).expect("replaced checkpoint");
-        assert_eq!(got.resume_position, 4096, "latest save must win");
-        assert!(super::take_foreign_scan_checkpoint(&key(0)).is_none());
+        // Save for an existing key replaces rather than duplicates…
+        cache.save(key(0), cp(4096));
+        let got = cache.load(&key(0)).expect("replaced checkpoint");
+        assert_eq!(got.resume_position, 4096, "farther save must win");
+        // …but only monotonically: a stale writer cannot rewind progress.
+        cache.save(key(0), cp(2048));
+        let got = cache.load(&key(0)).expect("checkpoint after stale save");
+        assert_eq!(
+            got.resume_position, 4096,
+            "an older resume position must never replace a newer one"
+        );
 
-        // Fill one past the cap: the oldest entry is evicted, the rest live.
+        // Fill one past the cap with fresh keys: the oldest entry is evicted,
+        // the rest live.
         let n = super::FOREIGN_SCAN_CHECKPOINT_CAP as u8 + 1;
+        let cache = super::ForeignScanCheckpointCache::default();
         for i in 0..n {
-            super::save_foreign_scan_checkpoint(key(i), cp(u64::from(i) * 2048));
+            cache.save(key(i), cp(u64::from(i) * 2048));
         }
         assert!(
-            super::take_foreign_scan_checkpoint(&key(0)).is_none(),
-            "least-recently-saved entry must be evicted beyond the cap"
+            cache.load(&key(0)).is_none(),
+            "least-recently-used entry must be evicted beyond the cap"
         );
         for i in 1..n {
             assert!(
-                super::take_foreign_scan_checkpoint(&key(i)).is_some(),
+                cache.load(&key(i)).is_some(),
                 "entry {i} must survive the eviction"
             );
         }
+    }
+
+    /// Chain isolation: the cache is an instance owned by ONE coordinator
+    /// (one network, one tree store), so the same foreign key checkpointed
+    /// through one coordinator must be invisible to another — a resume
+    /// position computed against one chain's tree can never skip a funded
+    /// note at an earlier position on a different chain (review findings
+    /// 6118148e4547 / cr-4d2aa8ce; covers two devnets that share
+    /// `Network::Devnet`).
+    #[test]
+    fn foreign_scan_checkpoints_do_not_cross_cache_instances() {
+        let mainnet_like = super::ForeignScanCheckpointCache::default();
+        let devnet_like = super::ForeignScanCheckpointCache::default();
+        let key = [0xAB; 32];
+
+        mainnet_like.save(
+            key,
+            super::ForeignScanCheckpoint {
+                resume_position: 4096,
+                notes: vec![note_at(1, 42)],
+            },
+        );
+
+        assert!(
+            devnet_like.load(&key).is_none(),
+            "a checkpoint saved through one coordinator's cache must not be \
+             visible through another's"
+        );
+        assert_eq!(
+            mainnet_like
+                .load(&key)
+                .expect("own checkpoint stays visible")
+                .resume_position,
+            4096
+        );
     }
 }
 

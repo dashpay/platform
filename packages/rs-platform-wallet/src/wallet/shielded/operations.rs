@@ -1612,7 +1612,7 @@ where
 /// `funding_birth_height` is an advisory hint only (see
 /// [`super::sync::scan_notes_for_foreign_key`] — the tree has no height→position
 /// oracle, so it cannot seed the scan start today; repeated attempts are
-/// bounded by the scan's process-local resume checkpoint instead).
+/// bounded by the scan's coordinator-owned resume checkpoint instead).
 ///
 /// Returns the new identity's id and the proof-verified [`Identity`]; the caller
 /// registers that identity in its local `IdentityManager`.
@@ -1620,6 +1620,14 @@ where
 pub async fn identity_create_from_one_time_key<S, P, IS>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
+    // Coordinator-owned per-FVK single-flight guards — see
+    // [`ForeignClaimGuards`]. Acquired for the WHOLE body, so concurrent
+    // same-key claims serialize instead of racing the durable record.
+    claim_guards: &ForeignClaimGuards,
+    // Coordinator-owned transient-scan resume checkpoints — see
+    // [`super::sync::ForeignScanCheckpointCache`] for the chain-isolation
+    // contract.
+    scan_checkpoints: &super::sync::ForeignScanCheckpointCache,
     // Claimer's wallet id — keys the durable pending-claim record (under the
     // reserved `ONE_TIME_CLAIM_RECORDS_ACCOUNT` subwallet of this wallet).
     wallet_id: WalletId,
@@ -1678,8 +1686,9 @@ where
     // Advisory only: the shielded tree has no height→note-index oracle (a chunk's
     // block_height is the proof-tip height, not per-note inclusion height), so the
     // transient scan cannot seed its start from a height; it bounds itself by
-    // value coverage plus a process-local resume checkpoint (one full-history
-    // scan per key per process — see `scan_notes_for_foreign_key`). Logged so
+    // value coverage plus a coordinator-owned resume checkpoint (one
+    // full-history scan per key per coordinator — see
+    // `scan_notes_for_foreign_key`). Logged so
     // the hint is observable and not silently dropped.
     if let Some(h) = funding_birth_height {
         debug!(
@@ -1705,6 +1714,24 @@ where
         .map(|(key, _)| (key.id(), key.clone()))
         .collect();
 
+    // ---- Per-FVK single-flight (#4313 review finding 979bbc2fcb3c) ----
+    //
+    // Serialize the COMPLETE claim lifecycle for this invitation key —
+    // pending-record lookup, transient scan, transition construction, atomic
+    // arming, broadcast, and finalization — before touching any shared state.
+    // Without it, two concurrent claims for the same key both see no pending
+    // record, build transitions with DIFFERENT padded identity ids, and the
+    // second `arm_one_time_claim_record` (INSERT-OR-REPLACE) overwrites the
+    // first's byte-exact recovery row while its broadcast may already be on
+    // the wire — stranding that identity forever. A parked second caller
+    // instead resumes the settled record when the guard lifts. The guard is
+    // an async mutex (held across every await below; released on drop, so a
+    // cancelled claim cannot wedge the key) owned by the SAME coordinator
+    // that owns the record store it protects.
+    let claim_record_key = one_time_claim_record_key(&fvk);
+    let lifecycle_entry = claim_guards.entry_for(claim_record_key);
+    let _lifecycle_guard = lifecycle_entry.lock().await;
+
     // ---- Durable pending-claim resume (#4204 review finding c0781f9d387f) ----
     //
     // A claim that broadcast but never confirmed (process death, JNI
@@ -1717,7 +1744,6 @@ where
     // would misread the spent notes as a foreign claim
     // (`ShieldedInviteAlreadyClaimed`).
     let claim_records_id = SubwalletId::new(wallet_id, ONE_TIME_CLAIM_RECORDS_ACCOUNT);
-    let claim_record_key = one_time_claim_record_key(&fvk);
     if let Some(record) =
         find_one_time_claim_record(store, claim_records_id, claim_record_key).await?
     {
@@ -1745,7 +1771,9 @@ where
     }
 
     // Transient scan: re-derive the one-time key's note(s) from the network.
-    let discovered = super::sync::scan_notes_for_foreign_key(sdk, &fvk, &ivk, denomination).await?;
+    let discovered =
+        super::sync::scan_notes_for_foreign_key(sdk, scan_checkpoints, &fvk, &ivk, denomination)
+            .await?;
     if discovered.is_empty() {
         // No note decrypts under this key — nothing was funded to it (or the
         // wallet hasn't synced far enough to see it yet).
@@ -2169,6 +2197,57 @@ fn one_time_claim_record_key(fvk: &grovedb_commitment_tree::FullViewingKey) -> [
     preimage.extend_from_slice(b"platform-wallet:one-time-claim:v1");
     preimage.extend_from_slice(&fvk.to_bytes());
     sha256::Hash::hash(&preimage).to_byte_array()
+}
+
+/// Per-FVK single-flight guards for the one-time-key claim lifecycle.
+///
+/// Owned by `NetworkShieldedCoordinator` (the same owner as the durable
+/// pending-claim record store the guard protects). Two concurrent
+/// [`identity_create_from_one_time_key`] calls for the SAME foreign key would
+/// otherwise both observe no pending record, build two transitions whose
+/// padded single-note identity ids differ (random padding nullifier), and
+/// race `arm_one_time_claim_record` — whose store implementation is an
+/// INSERT-OR-REPLACE — so the loser's byte-exact recovery row is silently
+/// overwritten and its identity becomes unrecoverable; either caller could
+/// also finalize (clear) the shared row while the other is mid-broadcast
+/// (#4313 review finding 979bbc2fcb3c / cr-4808dde4). The guard therefore
+/// spans the COMPLETE lifecycle — pending-record lookup, transient scan,
+/// transition construction, atomic arming, broadcast, and finalization — not
+/// just the scan-checkpoint window: the second caller parks until the first
+/// settles, then resumes that outcome through the persisted record instead of
+/// double-spending the invitation.
+///
+/// Mechanics: `entry_for` hands every same-key caller the SAME
+/// `Arc<tokio::sync::Mutex<()>>` (a live entry is always upgraded, never
+/// replaced), whose async lock is cancellation-safe — dropping a parked or
+/// mid-claim future releases it. The map holds only `Weak` handles, pruned on
+/// every acquisition, so abandoned keys cost nothing and hostile key churn
+/// cannot grow the map beyond the keys currently in flight.
+#[derive(Default)]
+pub struct ForeignClaimGuards {
+    entries: std::sync::Mutex<Vec<([u8; 32], std::sync::Weak<tokio::sync::Mutex<()>>)>>,
+}
+
+impl ForeignClaimGuards {
+    /// The shared lifecycle mutex for `key`. Callers `.lock().await` the
+    /// returned handle and hold the guard across the whole claim; the
+    /// internal registry lock is sync-only and released before any await.
+    fn entry_for(&self, key: [u8; 32]) -> Arc<tokio::sync::Mutex<()>> {
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        entries.retain(|(_, weak)| weak.strong_count() > 0);
+        if let Some((_, weak)) = entries.iter().find(|(k, _)| *k == key) {
+            if let Some(existing) = weak.upgrade() {
+                return existing;
+            }
+        }
+        let fresh = Arc::new(tokio::sync::Mutex::new(()));
+        entries.retain(|(k, _)| *k != key);
+        entries.push((key, Arc::downgrade(&fresh)));
+        fresh
+    }
 }
 
 /// Look up the persisted pending-claim record for `key`. Fail-closed on a
@@ -3746,6 +3825,92 @@ fn deserialize_note(data: &[u8]) -> Option<grovedb_commitment_tree::Note> {
     let rseed = RandomSeed::from_bytes(rseed_bytes, &rho).into_option()?;
 
     Note::from_parts(recipient, value, rho, rseed).into_option()
+}
+
+#[cfg(test)]
+mod foreign_claim_guard_tests {
+    use super::ForeignClaimGuards;
+    use std::sync::Arc;
+
+    /// Two callers with the same key must share ONE lifecycle mutex — that
+    /// identity is what makes the claim single-flight (#4313 review finding
+    /// 979bbc2fcb3c); different keys must not contend.
+    #[test]
+    fn same_key_shares_one_mutex_and_keys_are_independent() {
+        let guards = ForeignClaimGuards::default();
+        let a1 = guards.entry_for([1u8; 32]);
+        let a2 = guards.entry_for([1u8; 32]);
+        let b = guards.entry_for([2u8; 32]);
+        assert!(
+            Arc::ptr_eq(&a1, &a2),
+            "same-key callers must receive the SAME lifecycle mutex"
+        );
+        assert!(
+            !Arc::ptr_eq(&a1, &b),
+            "distinct keys must receive distinct mutexes"
+        );
+    }
+
+    /// The complete-lifecycle serialization: while one claim holds the
+    /// guard (parked at an await, as across scan/proof/broadcast), a
+    /// second same-key claim cannot enter; it proceeds only after the
+    /// first releases — including release by CANCELLATION (future drop),
+    /// so an abandoned claim can never wedge its invitation key.
+    #[tokio::test]
+    async fn same_key_claims_serialize_and_cancellation_releases() {
+        let guards = Arc::new(ForeignClaimGuards::default());
+        let key = [7u8; 32];
+
+        let entry = guards.entry_for(key);
+        let held = entry.lock().await;
+        // Second same-key claim: must NOT be able to enter while held.
+        let second = guards.entry_for(key);
+        assert!(
+            second.try_lock().is_err(),
+            "a concurrent same-key claim must park while the lifecycle guard is held"
+        );
+        drop(held);
+        assert!(
+            second.try_lock().is_ok(),
+            "the parked claim must proceed once the holder settles"
+        );
+
+        // Cancellation-safety: drop a future that acquired the guard at an
+        // await point; the key must be immediately claimable again.
+        let entry2 = guards.entry_for(key);
+        let task = tokio::spawn(async move {
+            let _g = entry2.lock().await;
+            std::future::pending::<()>().await; // parked "mid-claim" forever
+        });
+        tokio::task::yield_now().await;
+        task.abort();
+        let _ = task.await;
+        assert!(
+            guards.entry_for(key).try_lock().is_ok(),
+            "an aborted (cancelled) claim must release the key on drop"
+        );
+    }
+
+    /// Abandoned keys cost nothing: once no claim holds a key's mutex, its
+    /// registry row is pruned on the next acquisition, so hostile key churn
+    /// cannot grow the map beyond the keys currently in flight.
+    #[test]
+    fn dead_entries_are_pruned() {
+        let guards = ForeignClaimGuards::default();
+        for i in 0..64u8 {
+            let _ = guards.entry_for([i; 32]); // dropped immediately
+        }
+        let _live = guards.entry_for([0xFF; 32]);
+        let len = guards
+            .entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len();
+        assert_eq!(
+            len, 1,
+            "only keys with a live claimant may occupy the registry"
+        );
+    }
 }
 
 #[cfg(test)]
