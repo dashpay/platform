@@ -1269,6 +1269,34 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 }
             };
 
+            // Refuse a selection that picked an input pinned by an IN-FLIGHT
+            // BROADCAST dispatch (`WalletGeneration::pin_in_broadcast`): our
+            // own selection swept that dispatch's aged reservation (catch-up
+            // advanced past key-wallet's TTL while it was suspended
+            // pre-submission) and re-reserved the input, so completing this
+            // payment would race the pinned, already-signed transaction on
+            // the wire. Same backstop as `finalize_transaction` and the
+            // asset-lock build. The `build_signed` reservation is token-less;
+            // the by-outpoint release is exact because the write guard has
+            // been held since selection. Roll back the consumed payment
+            // address exactly like the build-failure arm above — nothing was
+            // persisted or broadcast.
+            if let Some(pinned) = info.generation.in_broadcast_conflict(&tx) {
+                managed_account.release_reservation(&tx);
+                if let Some(external_account) = info
+                    .core_wallet
+                    .accounts
+                    .dashpay_external_accounts
+                    .get_mut(&key)
+                {
+                    return_contact_payment_address_to_pool(external_account, &payment_address);
+                }
+                return Err(PlatformWalletError::TransactionBuild(format!(
+                    "selected input {pinned} is mid-broadcast by an in-flight dispatch; \
+                     retry after it completes"
+                )));
+            }
+
             (payment_address, used_flip_changeset, tx, fee)
         };
 

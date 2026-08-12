@@ -37,8 +37,11 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
      * On that refusal the handle has **already been consumed** by this call and
      * its funding reservation released owner-guarded (freed only while this
      * build still owned it; a no-op once a TTL sweep or re-reservation
-     * transferred ownership), so a follow-up [abandonTransaction] is an
-     * invalid-handle error, not a recovery path — there is nothing left to
+     * transferred ownership). This call consumes the Kotlin-side handle up
+     * front (on EVERY outcome, success included), so a follow-up
+     * [abandonTransaction] fails locally with [IllegalStateException] because
+     * [FinalizedCoreTransaction] has already been consumed; it never re-enters
+     * native code and is not a recovery path — there is nothing left to
      * release. Recover by rebuilding the transaction, which can reselect the
      * freed inputs immediately.
      */
@@ -59,6 +62,10 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
      * skips its unguarded by-outpoint release past it (releasing by outpoint
      * could free a newer build's reservation), leaving the aged reservation for
      * the TTL to reclaim. The handle is torn down either way.
+     *
+     * Consumes the Kotlin-side handle: calling this (or [broadcastTransaction])
+     * on an already-consumed [FinalizedCoreTransaction] fails locally with
+     * [IllegalStateException] before any native code runs.
      */
     fun abandonTransaction(tx: FinalizedCoreTransaction) {
         WalletManagerNative.coreWalletAbandonSignedTransaction(

@@ -402,6 +402,26 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 };
             }
 
+            // Refuse a selection that picked an input pinned by an IN-FLIGHT
+            // BROADCAST. A pinned input is normally still reserved and never
+            // reaches selection; getting here means this build's own
+            // selection swept that dispatch's aged reservation (catch-up
+            // advanced the clock past key-wallet's TTL while the dispatch
+            // was suspended pre-submission) and re-reserved the input under
+            // our token. Completing this build would race the pinned,
+            // already-signed transaction on the wire — the double-spend the
+            // dispatch-side age guard exists to prevent
+            // (`WalletGeneration::pin_in_broadcast`). Still under the write
+            // guard, so the check is atomic with our reservation and the
+            // release is exact.
+            if let Some(pinned) = info.generation.in_broadcast_conflict(&unsigned) {
+                release_all!(offered_accounts, info.core_wallet.accounts, &unsigned);
+                return Err(PlatformWalletError::TransactionBuild(format!(
+                    "selected input {pinned} is mid-broadcast by an in-flight dispatch; \
+                     retry after it completes"
+                )));
+            }
+
             // Map every selected input back to the account that owns it. That
             // mapping — not the offered list — is what the transaction carries:
             // selection routinely takes nothing from most offered sources, and

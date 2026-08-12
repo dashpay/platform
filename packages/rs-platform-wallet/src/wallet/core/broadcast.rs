@@ -18,8 +18,9 @@ pub(crate) enum GuardedDispatch {
 }
 
 impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
-    /// Age-check under the wallet-manager READ lock, then dispatch
-    /// immediately after releasing it.
+    /// Age-check AND pin under the wallet-manager READ lock, then dispatch
+    /// immediately after releasing it, keeping the pin until the broadcaster
+    /// returns.
     ///
     /// The age check orders against key-wallet's `ReservationSet` TTL
     /// sweep — it runs inside coin selection, which mutates wallet state
@@ -28,7 +29,9 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// this guard cannot already have been swept, because key-wallet's TTL
     /// exceeds `RESERVATION_MAX_AGE_BLOCKS` on the same height clock, and
     /// self-releases only run on this transaction's own rejection/abandon
-    /// paths, which are sequenced after this call returns.
+    /// paths, which are sequenced after this call returns. That proof of
+    /// still-held ownership is what authorizes the pin taken in the same
+    /// guarded section (the pin's owner check).
     ///
     /// The guard is deliberately DROPPED before the broadcaster await. The
     /// production `SpvBroadcaster` waits on dash-spv's mempool pipeline,
@@ -37,14 +40,30 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// echo/IS-lock/confirmation events the wait needs — held across the
     /// await, the guard starves the pipeline and every dispatch rides the
     /// full acceptance timeout to an ambiguous verdict while the whole
-    /// manager stalls behind tokio's write-preferring queue. Check-to-wire
-    /// is therefore a small non-atomic gap rather than an invariant; it is
-    /// covered by the same TTL margin as the propagation phase that follows
-    /// (the guard never spanned rebroadcasts either), and dropping early is
-    /// strictly stronger afterwards: the mempool pipeline marks the inputs
-    /// spent in the wallet's own view within milliseconds instead of after
-    /// the timeout. (Same lock-free shape as
-    /// `broadcast_releasing_on_rejection`.)
+    /// manager stalls behind tokio's write-preferring queue. (Same
+    /// lock-free shape as `broadcast_releasing_on_rejection`.)
+    ///
+    /// What spans the await instead is the **in-broadcast pin**
+    /// ([`WalletGeneration::pin_in_broadcast`](super::WalletGeneration::pin_in_broadcast)),
+    /// installed on the manager-registered generation while the guard was
+    /// still held. Both production broadcasters can suspend *before*
+    /// submission (the SPV path awaits configuration, event subscription and
+    /// the network lock ahead of its local dispatch), catch-up can advance
+    /// the clock by many blocks in that gap, and async scheduling puts no
+    /// bound on it — so a freshness check alone is not an ordering
+    /// invariant against the TTL sweep + re-reserve race. The pin is: it
+    /// has no TTL, every coin-selection choke point refuses a build whose
+    /// selection picked a pinned input (under the same write lock the sweep
+    /// runs under), and it is released — via RAII, so a cancelled dispatch
+    /// releases it too — only after the broadcaster returns, which is
+    /// strictly after initial network dispatch. The propagation phase that
+    /// follows is unchanged: once dispatch returns, the mempool pipeline
+    /// marks the inputs spent in the wallet's own view within milliseconds.
+    ///
+    /// A wallet no longer in the manager skips the pin (there is no
+    /// registered generation to fence builds on — they cannot fund from a
+    /// removed wallet); liveness is the FFI layer's generation check,
+    /// established before this runs.
     ///
     /// Callers do their stale/rejection reconciliation AFTER this returns:
     /// those paths retake manager locks.
@@ -53,17 +72,22 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         reservation_height: u32,
         transaction: &Transaction,
     ) -> GuardedDispatch {
-        {
+        let _in_broadcast_pin = {
             let wm = self.wallet_manager.read().await;
-            let height = wm
-                .get_wallet_and_info(&self.wallet_id)
-                .map(|(_, info)| info.core_wallet.last_processed_height());
+            let info = wm.get_wallet_info(&self.wallet_id);
+            let height = info.map(|info| info.core_wallet.last_processed_height());
             if reservation_expired(reservation_height, height) {
                 return GuardedDispatch::Stale;
             }
-            // Guard dropped here — see above: holding it across the await
-            // starves the SPV pipeline that must complete the wait.
-        }
+            // Pin BEFORE the guard drops: check-and-pin is one atomic step,
+            // and freshness under this guard proves the reservation is still
+            // ours to pin (see the method docs). The pin outlives the guard
+            // and is dropped only after the broadcaster returns below.
+            info.map(|info| info.generation.pin_in_broadcast(transaction))
+            // Guard dropped here — holding it across the await starves the
+            // SPV pipeline that must complete the wait; the pin, not the
+            // guard, covers check-to-wire.
+        };
         GuardedDispatch::Sent(self.broadcaster.broadcast(transaction).await)
     }
 
@@ -116,10 +140,12 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         // stale before the send (sync catch-up can age the reservation and
         // a concurrent finalization can sweep + re-reserve the same inputs
         // in the gap, letting the old signed transaction hit the wire
-        // against reassigned UTXOs). The residual check-to-wire gap and
-        // why the manager guard must not span the broadcaster await are
-        // documented on `dispatch_unexpired`. Reconciliation retakes
-        // manager locks after it returns.
+        // against reassigned UTXOs). The check also installs the
+        // in-broadcast pin that fences the inputs against exactly that
+        // sweep + re-reserve until the broadcaster returns; why the manager
+        // guard itself must not span the broadcaster await is documented on
+        // `dispatch_unexpired`. Reconciliation retakes manager locks after
+        // it returns.
         match self
             .dispatch_unexpired(transaction.reservation_height(), transaction.transaction())
             .await
@@ -239,7 +265,10 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// under the manager read guard ([`Self::dispatch_unexpired`]) — a
     /// pre-checked age is not an invariant, because catch-up can advance
     /// the clock and a concurrent finalization can sweep + re-reserve the
-    /// inputs between a caller's check and the send. On the stale outcome
+    /// inputs between a caller's check and the send. The same guarded
+    /// section installs the in-broadcast pin that fences the inputs against
+    /// that sweep + re-reserve for the whole broadcaster await — the same
+    /// primitive as the finalized-handle path. On the stale outcome
     /// nothing was sent and NOTHING is released here: the caller owns the
     /// reconciliation policy (the registry reconciles owner-guarded).
     pub(crate) async fn broadcast_payment_releasing_reservation(
@@ -502,8 +531,9 @@ mod tests {
     /// expiry verdict happen under a wallet-manager read guard that is
     /// dropped before the broadcaster await (holding it across the await
     /// starves the SPV mempool pipeline — see `dispatch_unexpired`'s doc);
-    /// the residual check-to-wire gap is covered by key-wallet's TTL
-    /// margin, the same margin that covers the propagation phase. The
+    /// the check-to-wire gap is covered by the in-broadcast pin installed
+    /// in the same guarded section (see
+    /// `in_broadcast_pin_blocks_reselection_until_dispatch_returns`). The
     /// single-threaded proof here: the same handle's inputs dispatch while
     /// fresh, and the identical call refuses — broadcaster untouched —
     /// once catch-up advances the clock past the bound.
@@ -638,6 +668,109 @@ mod tests {
                 unreachable!("only standard-account funding is exercised by these tests: {other:?}")
             }
         }
+    }
+
+    /// A broadcaster that models the pre-submission suspension window of the
+    /// production broadcasters: `broadcast` parks between two barriers, so the
+    /// test can interleave catch-up and a competing build while the dispatch
+    /// is provably mid-await (freshness already checked, guard already
+    /// dropped, pin held).
+    struct GatedBroadcaster {
+        entered: Arc<tokio::sync::Barrier>,
+        release: Arc<tokio::sync::Barrier>,
+    }
+
+    #[async_trait::async_trait]
+    impl TransactionBroadcaster for GatedBroadcaster {
+        async fn broadcast(
+            &self,
+            transaction: &Transaction,
+        ) -> Result<dashcore::Txid, crate::broadcaster::BroadcastError> {
+            self.entered.wait().await;
+            self.release.wait().await;
+            Ok(transaction.txid())
+        }
+    }
+
+    /// THE CHECK-TO-WIRE RACE the in-broadcast pin closes: the freshness
+    /// check passes under the manager read guard, the guard drops, and the
+    /// dispatch suspends inside the broadcaster BEFORE submission. Catch-up
+    /// then advances the clock past key-wallet's reservation TTL, so a
+    /// competing finalize's own selection sweeps the dispatched build's
+    /// reservation and re-selects its input — pre-pin, that build completed
+    /// and raced the already-signed transaction on the wire. With the pin
+    /// held across the await, the competing finalize must be REFUSED, and
+    /// only after the dispatch returns (pin dropped, RAII) may a new build
+    /// take the input again.
+    #[tokio::test]
+    async fn in_broadcast_pin_blocks_reselection_until_dispatch_returns() {
+        let entered = Arc::new(tokio::sync::Barrier::new(2));
+        let release = Arc::new(tokio::sync::Barrier::new(2));
+        let (core, signer, outputs) = funded_core_wallet(
+            StandardAccountType::BIP44Account,
+            Arc::new(GatedBroadcaster {
+                entered: Arc::clone(&entered),
+                release: Arc::clone(&release),
+            }),
+        )
+        .await;
+        let stamped = core
+            .last_processed_height()
+            .await
+            .expect("last processed height");
+        let finalized = finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
+
+        // Age the handle to ONE BELOW the guard bound: the freshness check
+        // must pass, which is exactly what makes the pre-submission window
+        // dangerous without the pin.
+        advance_processed_height(&core, stamped + RESERVATION_MAX_AGE_BLOCKS - 1).await;
+
+        let dispatcher = tokio::spawn({
+            let core = core.clone();
+            async move { core.broadcast_finalized_transaction(&finalized).await }
+        });
+        // The dispatcher is now suspended INSIDE the broadcaster: freshness
+        // checked, manager guard dropped, pin held.
+        entered.wait().await;
+
+        // Catch-up races far past key-wallet's TTL measured from the original
+        // reservation stamp, so the NEXT selection's sweep reclaims the
+        // dispatched build's reservation and its input returns to the
+        // selectable pool.
+        advance_processed_height(&core, stamped + RESERVATION_MAX_AGE_BLOCKS + 48).await;
+
+        // The competing finalize re-selects the fixture's only UTXO — the
+        // pinned input — and must be refused by the pin backstop, not
+        // completed into a conflicting signed transaction.
+        let competing =
+            try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
+        match competing {
+            Err(PlatformWalletError::TransactionBuild(message)) => assert!(
+                message.contains("mid-broadcast"),
+                "the refusal must name the in-flight broadcast, got: {message}"
+            ),
+            other => panic!("a build re-selecting a pinned input must be refused, got {other:?}"),
+        }
+
+        // Let the dispatch complete: the send succeeds (the age check passed
+        // before the suspension) and the pin is dropped with it.
+        release.wait().await;
+        let sent = dispatcher.await.expect("dispatcher task");
+        assert!(
+            sent.is_ok(),
+            "the pinned dispatch itself must complete, got {sent:?}"
+        );
+
+        // Pin lifted: a new build may take the input again. (The mock manager
+        // runs no mempool pipeline; in production the dispatched transaction's
+        // inputs would be marked spent by processing moments later — the
+        // assertion here is only that the pin's lifetime ended with the
+        // dispatch.)
+        let after = try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
+        let after = after.unwrap_or_else(|error| {
+            panic!("the pin must lift once the dispatch returns, got {error:?}")
+        });
+        core.abandon_transaction(&after).await;
     }
 
     /// A pre-send broadcast rejection must release the UTXO reservation taken
