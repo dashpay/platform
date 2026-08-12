@@ -480,13 +480,11 @@ public class PlatformWalletManager: ObservableObject {
         }
         let w = ManagedPlatformWallet(handle: walletHandle, walletId: idData)
         self.wallets[idData] = w
-        // Establish verified signing capability for the fresh wallet now
-        // (minting the seed-binding marker when a Keychain mnemonic backs
-        // it) — identities registered this session would otherwise defer
-        // their `isLocal` promotion until the next launch's unlock runs
-        // the verification. Best-effort: a failure only delays promotion,
-        // it can't mis-classify.
-        _ = try? verifySeedBinding(w)
+        // NOTE: deliberately NO verifySeedBinding here. Creation callers
+        // (CreateWalletView / WalletDetailView) store the mnemonic AFTER
+        // this returns, so a verification at this point observes definitive
+        // absence and wrongfully revokes capability. First-session identity
+        // promotion defers to the first unlock's verification instead.
         return w
     }
 
@@ -536,13 +534,11 @@ public class PlatformWalletManager: ObservableObject {
         }
         let w = ManagedPlatformWallet(handle: walletHandle, walletId: idData)
         self.wallets[idData] = w
-        // Establish verified signing capability for the fresh wallet now
-        // (minting the seed-binding marker when a Keychain mnemonic backs
-        // it) — identities registered this session would otherwise defer
-        // their `isLocal` promotion until the next launch's unlock runs
-        // the verification. Best-effort: a failure only delays promotion,
-        // it can't mis-classify.
-        _ = try? verifySeedBinding(w)
+        // NOTE: deliberately NO verifySeedBinding here. Creation callers
+        // (CreateWalletView / WalletDetailView) store the mnemonic AFTER
+        // this returns, so a verification at this point observes definitive
+        // absence and wrongfully revokes capability. First-session identity
+        // promotion defers to the first unlock's verification instead.
         return w
     }
 
