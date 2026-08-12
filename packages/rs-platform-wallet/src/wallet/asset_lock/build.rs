@@ -245,20 +245,19 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // funding key index is the same residue any discarded build leaves,
         // reclaimed by the gap-limit scan.
         if let Some(pinned) = info.generation.in_broadcast_conflict(&result.transaction) {
-            let funds_account = match funding_account {
-                AssetLockFundingAccount::Bip44 { account_index } => info
-                    .core_wallet
-                    .bip44_managed_account_at_index(account_index),
-                AssetLockFundingAccount::CoinJoin { account_index } => info
-                    .core_wallet
-                    .accounts
-                    .coinjoin_accounts
-                    .get(&account_index),
-            };
-            if let Some(account) = funds_account {
-                match result.reservation_token {
-                    Some(token) => account.release_reservation_if_owner(&result.transaction, token),
-                    None => account.release_reservation(&result.transaction),
+            // The pooled build reserves in EVERY contributing account's own
+            // set under the one owner token, so the release must sweep
+            // `result.funding_accounts` — the same per-account idiom as
+            // `release_reservation_after_rejected_broadcast`; accounts that
+            // supplied nothing no-op.
+            for funding_account in &result.funding_accounts {
+                if let Some(account) = info.core_wallet.accounts.funds_account(funding_account) {
+                    match result.reservation_token {
+                        Some(token) => {
+                            account.release_reservation_if_owner(&result.transaction, token)
+                        }
+                        None => account.release_reservation(&result.transaction),
+                    }
                 }
             }
             return Err(PlatformWalletError::AssetLockTransaction(format!(
