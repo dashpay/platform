@@ -79,6 +79,7 @@ pub(crate) mod property_names {
     pub const CONTENT_MEDIA_TYPE: &str = "contentMediaType";
     pub const ENCRYPTION_KEY_REQUIREMENTS: &str = "encryptionKeyReqs";
     pub const DECRYPTION_KEY_REQUIREMENTS: &str = "decryptionKeyReqs";
+    pub const REFERS_TO: &str = "refersTo";
     pub const DOCUMENTS_COUNTABLE: &str = "documentsCountable";
     pub const RANGE_COUNTABLE: &str = "rangeCountable";
     /// Doctype-level flag naming the property whose values are summed into

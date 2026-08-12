@@ -311,6 +311,7 @@ impl ErrorWithCode for StateError {
             Self::IdentityTryingToPayWithWrongTokenError(_) => 40117,
             Self::DocumentContestIndexMismatchError(_) => 40118,
             Self::DocumentContestNotRequiredError(_) => 40119,
+            Self::ReferencedEntityNotFoundError(_) => 40120,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,

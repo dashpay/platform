@@ -9,7 +9,11 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
 // PROTOCOL_VERSION_14: bump `document_create_transition_structure_validation` to
 // 1, which cross-checks the index named by a document create transition's
 // prefunded voting balance against the contested index the document itself
-// resolves to. v9 remains unchanged for PROTOCOL_VERSION_13 chain replay.
+// resolves to. Also bump document create state validation to 2 and document
+// replace state validation to 1, adding `refersTo` document reference
+// validation (referenced identities and contracts must exist), and introduce
+// the `document_reference_validation` feature version.
+// v9 remains unchanged for PROTOCOL_VERSION_13 chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
         state_transitions: DriveAbciStateTransitionValidationVersions {
@@ -182,12 +186,13 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 document_purchase_transition_structure_validation: 0,
                 document_update_price_transition_structure_validation: 0,
                 document_base_transition_state_validation: 0,
-                document_create_transition_state_validation: 1,
+                document_create_transition_state_validation: 2,
                 document_delete_transition_state_validation: 0,
-                document_replace_transition_state_validation: 0,
+                document_replace_transition_state_validation: 1,
                 document_transfer_transition_state_validation: 0,
                 document_purchase_transition_state_validation: 0,
                 document_update_price_transition_state_validation: 0,
+                document_reference_validation: 0,
                 token_mint_transition_structure_validation: 0,
                 token_burn_transition_structure_validation: 0,
                 token_transfer_transition_structure_validation: 0,

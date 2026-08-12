@@ -1476,7 +1476,7 @@ impl<'a> WhereClause {
             use DocumentPropertyType as T;
             match prop_ty {
                 T::String(_) => matches!(v, Value::Text(_)),
-                T::Identifier => matches!(v, Value::Identifier(_)),
+                T::Identifier(_) => matches!(v, Value::Identifier(_)),
                 T::Boolean => matches!(v, Value::Bool(_)),
                 T::ByteArray(_) => matches!(v, Value::Bytes(_)),
                 T::F64 => matches!(v, Value::Float(_)),
@@ -1547,7 +1547,7 @@ impl<'a> WhereClause {
                             | Value::I8(_)
                     ),
                     T::String(_) => matches!(self.value, Value::Text(_)),
-                    T::Identifier => matches!(self.value, Value::Identifier(_)),
+                    T::Identifier(_) => matches!(self.value, Value::Identifier(_)),
                     T::ByteArray(_) => matches!(self.value, Value::Bytes(_)),
                     T::Boolean => matches!(self.value, Value::Bool(_)),
                     // Not applicable for object/array/variable arrays
@@ -1642,7 +1642,7 @@ pub fn allowed_ops_for_type(property_type: &DocumentPropertyType) -> &'static [W
             BetweenExcludeLeft,
             BetweenExcludeRight,
         ],
-        DocumentPropertyType::Identifier => &[Equal, In],
+        DocumentPropertyType::Identifier(_) => &[Equal, In],
         DocumentPropertyType::ByteArray(_) => &[Equal, In],
         DocumentPropertyType::Boolean => &[Equal],
         DocumentPropertyType::Object(_)
@@ -1675,7 +1675,7 @@ fn meta_field_property_type(field: &str) -> Option<DocumentPropertyType> {
     match field {
         // Identifiers
         "$id" | "$ownerId" | "$dataContractId" | "$creatorId" => {
-            Some(DocumentPropertyType::Identifier)
+            Some(DocumentPropertyType::Identifier(None))
         }
         // Dates (millis since epoch)
         "$createdAt" | "$updatedAt" | "$transferredAt" => Some(DocumentPropertyType::Date),
@@ -3440,7 +3440,7 @@ mod tests {
         for field in ["$id", "$ownerId", "$dataContractId", "$creatorId"] {
             let pt = meta_field_property_type(field);
             assert!(
-                matches!(pt, Some(DocumentPropertyType::Identifier)),
+                matches!(pt, Some(DocumentPropertyType::Identifier(_))),
                 "expected Identifier for {field}"
             );
         }
@@ -3587,7 +3587,7 @@ mod tests {
         use super::allowed_ops_for_type;
         use dpp::data_contract::document_type::DocumentPropertyType;
 
-        let ops = allowed_ops_for_type(&DocumentPropertyType::Identifier);
+        let ops = allowed_ops_for_type(&DocumentPropertyType::Identifier(None));
         assert_eq!(ops, &[Equal, In]);
     }
 

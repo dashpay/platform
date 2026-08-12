@@ -1570,6 +1570,104 @@ mod tests {
                 )] if e.operation() == "replace" && e.property_path() == "/properties/test/type"
             );
         }
+
+        fn identifier_document_type(
+            refers_to: Option<platform_value::Value>,
+            platform_version: &PlatformVersion,
+        ) -> DocumentType {
+            let mut to_user_id = platform_value!({
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "position": 0
+            });
+
+            if let Some(refers_to) = refers_to {
+                to_user_id
+                    .insert("refersTo".to_string(), refers_to)
+                    .expect("should insert refersTo");
+            }
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "toUserId": to_user_id
+                },
+                "signatureSecurityLevelRequirement": 0,
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            DocumentType::try_from_schema(
+                Identifier::random(),
+                1,
+                config.version(),
+                "test",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create document type")
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_refers_to_is_added() {
+            let platform_version = PlatformVersion::latest();
+
+            let old_document_type = identifier_document_type(None, platform_version);
+            let new_document_type = identifier_document_type(
+                Some(platform_value!({ "type": "identity" })),
+                platform_version,
+            );
+
+            let result = old_document_type
+                .as_ref()
+                .validate_schema(new_document_type.as_ref(), platform_version)
+                .expect("failed to validate schema compatibility");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::IncompatibleDocumentTypeSchemaError(e)
+                )] if e.operation() == "add"
+                    && e.property_path() == "/properties/toUserId/refersTo"
+            );
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_refers_to_is_modified() {
+            let platform_version = PlatformVersion::latest();
+
+            let old_document_type = identifier_document_type(
+                Some(platform_value!({ "type": "identity" })),
+                platform_version,
+            );
+            let new_document_type = identifier_document_type(
+                Some(platform_value!({ "type": "contract" })),
+                platform_version,
+            );
+
+            let result = old_document_type
+                .as_ref()
+                .validate_schema(new_document_type.as_ref(), platform_version)
+                .expect("failed to validate schema compatibility");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::IncompatibleDocumentTypeSchemaError(e)
+                )] if e.operation() == "replace"
+                    && e.property_path() == "/properties/toUserId/refersTo/type"
+            );
+        }
     }
 
     mod validate_byte_array_encoding {

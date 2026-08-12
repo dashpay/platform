@@ -2,7 +2,8 @@ use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::{
-    property_names, DocumentProperty, DocumentPropertyType, DocumentType,
+    property_names, DocumentProperty, DocumentPropertyReferenceTarget, DocumentPropertyType,
+    DocumentType,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -169,6 +170,7 @@ fn insert_values(
                 }
             }
             property_type => {
+                let property_type = apply_property_reference(&inner_properties, property_type)?;
                 document_properties.insert(
                     prefixed_property_key,
                     DocumentProperty {
@@ -278,6 +280,8 @@ fn insert_values_nested(
             property_type => property_type,
         };
 
+    let property_type = apply_property_reference(&inner_properties, property_type)?;
+
     document_properties.insert(
         property_key,
         DocumentProperty {
@@ -288,4 +292,130 @@ fn insert_values_nested(
     );
 
     Ok(())
+}
+
+/// Folds a `refersTo` declaration into the property type: an identifier property
+/// with `refersTo` becomes `Identifier(Some(target))`. Non-identifier properties
+/// cannot carry `refersTo`.
+fn apply_property_reference(
+    inner_properties: &BTreeMap<String, &Value>,
+    property_type: DocumentPropertyType,
+) -> Result<DocumentPropertyType, DataContractError> {
+    let Some(refers_to_value) = inner_properties.get(property_names::REFERS_TO) else {
+        return Ok(property_type);
+    };
+
+    if !matches!(property_type, DocumentPropertyType::Identifier(_)) {
+        return Err(DataContractError::InvalidContractStructure(
+            "refersTo is only allowed on identifier properties".to_string(),
+        ));
+    }
+
+    let refers_to_map = refers_to_value.to_btree_ref_string_map()?;
+
+    let target = match refers_to_map
+        .get_str(property_names::TYPE)
+        .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?
+    {
+        "identity" => DocumentPropertyReferenceTarget::Identity,
+        "contract" => DocumentPropertyReferenceTarget::Contract,
+        "token" => DocumentPropertyReferenceTarget::Token,
+        other => {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "invalid refersTo type {other}"
+            )))
+        }
+    };
+
+    Ok(DocumentPropertyType::Identifier(Some(target)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data_contract::config::DataContractConfig;
+    use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use serde_json::json;
+
+    fn try_document_type_from_schema(
+        schema: serde_json::Value,
+    ) -> Result<DocumentType, ProtocolError> {
+        let platform_version = PlatformVersion::latest();
+        let config =
+            DataContractConfig::default_for_version(platform_version).expect("config should build");
+
+        let value = platform_value::to_value(schema).expect("schema should convert");
+
+        DocumentType::try_from_schema(
+            Identifier::random(),
+            0,
+            config.version(),
+            "msg",
+            value,
+            None,
+            &BTreeMap::new(),
+            &config,
+            false,
+            &mut vec![],
+            platform_version,
+        )
+    }
+
+    #[test]
+    fn should_parse_refers_to_on_identifier_property() {
+        let document_type = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "toUserId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "identity"
+                    }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect("should parse");
+
+        let property_type = document_type
+            .as_ref()
+            .flattened_properties()
+            .get("toUserId")
+            .map(|p| p.property_type.clone())
+            .expect("property should be present");
+
+        assert!(matches!(
+            property_type,
+            DocumentPropertyType::Identifier(Some(DocumentPropertyReferenceTarget::Identity))
+        ));
+    }
+
+    #[test]
+    fn should_reject_refers_to_on_non_identifier_property() {
+        let err = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "position": 0,
+                    "refersTo": { "type": "identity" }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect_err("should fail");
+
+        let message = err.to_string();
+        assert!(
+            message.contains("refersTo is only allowed on identifier properties"),
+            "unexpected error: {message}"
+        );
+    }
 }

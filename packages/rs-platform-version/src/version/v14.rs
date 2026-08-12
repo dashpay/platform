@@ -107,9 +107,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   `document_create_transition_structure_validation` 0 → 1, requiring a
 ///   contested create transition's prefunded voting balance to name the
 ///   same vote poll the document itself resolves to, and rejecting one on a
-///   document that resolves to no contested index. v13 keeps the v9 table
-///   and therefore keeps accepting both, so replay of pre-upgrade blocks is
-///   unchanged.
+///   document that resolves to no contested index. It also bumps document
+///   create state validation to 2 and document replace state validation to
+///   1, enforcing `refersTo` document references: a document whose
+///   reference property names an identity or contract that does not exist
+///   is rejected. v13 keeps the v9 table and therefore keeps
+///   accepting all of these, so replay of pre-upgrade blocks is unchanged.
 ///
 /// The wire surface is deliberately unchanged: `GetDocumentsRequestV1`
 /// already carries `selects` / `group_by` / `order_by` / `limit` /
@@ -121,7 +124,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V9,
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested create transitions must name the contested index they resolve to
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2, // changed: ranked HAVING routing gate
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,

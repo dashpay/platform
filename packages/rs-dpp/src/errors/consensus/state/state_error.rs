@@ -41,6 +41,7 @@ use crate::consensus::state::document::document_contest_index_mismatch_error::Do
 use crate::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
 use crate::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
 use crate::consensus::state::document::document_contest_not_required_error::DocumentContestNotRequiredError;
+use crate::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
 use crate::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use crate::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use crate::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionAlreadySignedByIdentityError, GroupActionDoesNotExistError, IdentityMemberOfGroupNotFoundError, IdentityNotMemberOfGroupError, ModificationOfGroupActionMainParametersNotPermittedError};
@@ -362,6 +363,9 @@ pub enum StateError {
 
     #[error(transparent)]
     DocumentContestNotRequiredError(DocumentContestNotRequiredError),
+
+    #[error(transparent)]
+    ReferencedEntityNotFoundError(ReferencedEntityNotFoundError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -427,6 +431,16 @@ mod tests {
                 )
             )),
             92
+        );
+        assert_eq!(
+            discriminant_of(StateError::ReferencedEntityNotFoundError(
+                ReferencedEntityNotFoundError::new(
+                    Identifier::from([1; 32]),
+                    crate::data_contract::document_type::DocumentPropertyReferenceTarget::Identity,
+                    "toUserId".to_string(),
+                )
+            )),
+            93
         );
     }
 }

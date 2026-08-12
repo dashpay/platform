@@ -138,6 +138,7 @@ use crate::errors::consensus::state::document::{
     DocumentAlreadyPresentErrorWasm, DocumentNotFoundErrorWasm, DocumentOwnerIdMismatchErrorWasm,
     DocumentTimestampWindowViolationErrorWasm, DocumentTimestampsMismatchErrorWasm,
     DuplicateUniqueIndexErrorWasm, InvalidDocumentRevisionErrorWasm,
+    ReferencedEntityNotFoundErrorWasm,
 };
 use crate::errors::consensus::state::identity::{
     IdentityAlreadyExistsErrorWasm, IdentityPublicKeyIsDisabledErrorWasm,
@@ -470,6 +471,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::InsufficientShieldedFeeError(e) => {
             generic_consensus_error!(InsufficientShieldedFeeError, e).into()
+        }
+        StateError::ReferencedEntityNotFoundError(e) => {
+            ReferencedEntityNotFoundErrorWasm::from(e).into()
         }
     }
 }
