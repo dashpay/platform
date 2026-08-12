@@ -1571,7 +1571,8 @@ where
 ///
 /// `funding_birth_height` is an advisory hint only (see
 /// [`super::sync::scan_notes_for_foreign_key`] — the tree has no height→position
-/// oracle, so it cannot seed the scan start today).
+/// oracle, so it cannot seed the scan start today; repeated attempts are
+/// bounded by the scan's process-local resume checkpoint instead).
 ///
 /// Returns the new identity's id and the proof-verified [`Identity`]; the caller
 /// registers that identity in its local `IdentityManager`.
@@ -1636,8 +1637,10 @@ where
 
     // Advisory only: the shielded tree has no height→note-index oracle (a chunk's
     // block_height is the proof-tip height, not per-note inclusion height), so the
-    // transient scan always starts at position 0 and bounds itself by value
-    // coverage. Logged so the hint is observable and not silently dropped.
+    // transient scan cannot seed its start from a height; it bounds itself by
+    // value coverage plus a process-local resume checkpoint (one full-history
+    // scan per key per process — see `scan_notes_for_foreign_key`). Logged so
+    // the hint is observable and not silently dropped.
     if let Some(h) = funding_birth_height {
         debug!(
             funding_birth_height = h,
