@@ -91,15 +91,7 @@ mod creation_tests {
             )
             .expect("expected a random document");
 
-        // The generator fills the optional payment address fields (present
-        // from dashpay v2 / PV14 on) with random bytes; the data trigger
-        // requires a valid leading type byte
-        if profile.properties().contains_key("corePaymentAddress") {
-            document.set("corePaymentAddress", vec![0u8; 21].into());
-            let mut platform_payment_address = vec![1u8];
-            platform_payment_address.extend([0u8; 20]);
-            document.set("platformPaymentAddress", platform_payment_address.into());
-        }
+        set_valid_profile_payment_addresses(&mut document, profile);
 
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
 
@@ -152,7 +144,7 @@ mod creation_tests {
     }
 
     #[tokio::test]
-    async fn test_profile_payment_address_type_byte_enforcement() {
+    async fn should_enforce_profile_payment_address_type_bytes() {
         use dpp::consensus::state::data_trigger::DataTriggerError;
         use dpp::consensus::state::state_error::StateError;
 
@@ -207,10 +199,7 @@ mod creation_tests {
                 .expect("expected a random document");
 
             // start from valid values for both fields, then set the case under test
-            document.set("corePaymentAddress", vec![0u8; 21].into());
-            let mut platform_payment_address = vec![1u8];
-            platform_payment_address.extend([0u8; 20]);
-            document.set("platformPaymentAddress", platform_payment_address.into());
+            set_valid_profile_payment_addresses(&mut document, profile);
 
             let mut address = vec![leading_byte];
             address.extend([0u8; 20]);
@@ -415,15 +404,7 @@ mod creation_tests {
             )
             .expect("expected a random document");
 
-        // The generator fills the optional payment address fields (present
-        // from dashpay v2 / PV14 on) with random bytes; the data trigger
-        // requires a valid leading type byte
-        if profile.properties().contains_key("corePaymentAddress") {
-            document.set("corePaymentAddress", vec![0u8; 21].into());
-            let mut platform_payment_address = vec![1u8];
-            platform_payment_address.extend([0u8; 20]);
-            document.set("platformPaymentAddress", platform_payment_address.into());
-        }
+        set_valid_profile_payment_addresses(&mut document, profile);
 
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
 
@@ -487,15 +468,7 @@ mod creation_tests {
             )
             .expect("expected a random document");
 
-        // The generator fills the optional payment address fields (present
-        // from dashpay v2 / PV14 on) with random bytes; the data trigger
-        // requires a valid leading type byte
-        if profile.properties().contains_key("corePaymentAddress") {
-            document.set("corePaymentAddress", vec![0u8; 21].into());
-            let mut platform_payment_address = vec![1u8];
-            platform_payment_address.extend([0u8; 20]);
-            document.set("platformPaymentAddress", platform_payment_address.into());
-        }
+        set_valid_profile_payment_addresses(&mut document, profile);
 
         document.set("avatarUrl", "http://test.com/coy.jpg".into());
 
@@ -595,15 +568,7 @@ mod creation_tests {
             )
             .expect("expected a random document");
 
-        // The generator fills the optional payment address fields (present
-        // from dashpay v2 / PV14 on) with random bytes; the data trigger
-        // requires a valid leading type byte
-        if profile.properties().contains_key("corePaymentAddress") {
-            document.set("corePaymentAddress", vec![0u8; 21].into());
-            let mut platform_payment_address = vec![1u8];
-            platform_payment_address.extend([0u8; 20]);
-            document.set("platformPaymentAddress", platform_payment_address.into());
-        }
+        set_valid_profile_payment_addresses(&mut document, profile);
 
         let max_field_size = platform_version.system_limits.max_field_value_size;
         let avatar_size = max_field_size + 1000;
