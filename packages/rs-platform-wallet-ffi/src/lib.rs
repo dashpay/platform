@@ -29,6 +29,9 @@ pub mod derive_and_persist_callbacks;
 pub mod derive_identity_key_at_slot;
 pub mod document;
 pub mod dpns;
+pub mod dpns_marketplace;
+pub mod dpns_name_state_persistence;
+pub mod dpns_sync;
 pub mod error;
 pub mod established_contact;
 pub mod event_handler;
@@ -79,6 +82,7 @@ pub mod utils;
 pub mod wallet;
 pub mod wallet_registration_persistence;
 pub mod wallet_restore_types;
+pub mod wallet_startup;
 pub mod xpub_render;
 
 // Re-exports
@@ -101,6 +105,9 @@ pub use derive_and_persist_callbacks::*;
 pub use derive_identity_key_at_slot::*;
 pub use document::*;
 pub use dpns::*;
+pub use dpns_marketplace::*;
+pub use dpns_name_state_persistence::*;
+pub use dpns_sync::*;
 pub use error::*;
 pub use established_contact::*;
 pub use event_handler::*;

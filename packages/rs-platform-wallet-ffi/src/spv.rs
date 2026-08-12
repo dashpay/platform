@@ -3,7 +3,9 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
+use dashcore::hashes::Hash;
 use dashcore::sml::llmq_type::LlmqDevnetParams;
+use dashcore::PubkeyHash;
 use platform_wallet::spv::{
     ClientConfig, DevnetConfig, ProgressPercentage, SpvPeerNodeType, SyncProgress, SyncState,
 };
@@ -11,7 +13,7 @@ use platform_wallet::spv::{
 use crate::error::*;
 use crate::handle::*;
 use crate::runtime::{block_on_worker, runtime};
-use crate::types::FFINetwork;
+use crate::types::{FFINetwork, IdentifierArray};
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 
 pub const SPV_SYNC_STATE_WAIT_FOR_EVENTS: u32 = 0;
@@ -150,6 +152,100 @@ pub unsafe extern "C" fn platform_wallet_manager_sync_progress(
         None => FFISpvSyncProgress::default(),
     };
     PlatformWalletFFIResult::ok()
+}
+
+/// The proTxHashes of every masternode in the current-tip deterministic
+/// masternode list whose voting key hash matches the 20-byte `voting_key_id`.
+///
+/// Replaces dashj's `MasternodeListManager.getMasternodesByVotingKey(...)`,
+/// the lookup contested-username voting uses. On success `*out_array` owns a
+/// flat `[[u8; 32]]` of `count` proTxHashes (internal byte order), which the
+/// caller must release via [`crate::platform_wallet_identifier_array_free`].
+/// An unsynced/stopped client (or a voting key no masternode uses) returns
+/// `ok()` with the empty `(null, 0)` sentinel.
+///
+/// # Safety
+/// - `voting_key_id` must point at 20 readable bytes.
+/// - `out_array` must be a valid `*mut IdentifierArray`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_masternodes_by_voting_key(
+    handle: Handle,
+    voting_key_id: *const u8,
+    out_array: *mut IdentifierArray,
+) -> PlatformWalletFFIResult {
+    // Validate and publish the sentinel BEFORE any other guard. `check_ptr!`
+    // returns early, so validating `voting_key_id` first meant a null input
+    // pointer returned `ErrorNullPointer` with `*out_array` still holding
+    // whatever the caller's stack had — breaking this function's documented
+    // promise that the out-param is initialized on every path. A C or Swift
+    // caller that frees unconditionally would then hand
+    // `platform_wallet_identifier_array_free` an arbitrary pointer
+    // (dashpay/platform#4258 review).
+    check_ptr!(out_array);
+    *out_array = IdentifierArray::empty();
+    check_ptr!(voting_key_id);
+
+    let key_bytes: [u8; 20] = std::ptr::read(voting_key_id as *const [u8; 20]);
+    let voting_key = PubkeyHash::from_byte_array(key_bytes);
+
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        manager
+            .spv()
+            .masternodes_by_voting_key_blocking(&voting_key)
+    });
+    let hashes = unwrap_option_or_return!(option);
+    *out_array = IdentifierArray::from_hashes(hashes);
+    PlatformWalletFFIResult::ok()
+}
+
+#[cfg(test)]
+mod masternodes_by_voting_key_tests {
+    use super::*;
+    use crate::error::platform_wallet_ffi_result_free;
+
+    /// The function documents that `*out_array` is initialized on EVERY path.
+    /// A null `voting_key_id` must therefore still leave the sentinel behind:
+    /// a C or Swift caller that frees unconditionally on error would otherwise
+    /// hand `platform_wallet_identifier_array_free` whatever its uninitialized
+    /// stack slot happened to hold (dashpay/platform#4258 review).
+    #[test]
+    fn null_input_pointer_still_initializes_the_out_param() {
+        // Pre-poison the out-param the way an uninitialized C local looks:
+        // non-null pointer, non-zero count. If the guard order regresses, this
+        // survives the call and a cleanup-on-error caller frees it.
+        let mut out = IdentifierArray {
+            items: 0xdead_beef_usize as *mut [u8; 32],
+            count: 9,
+        };
+
+        let mut result = unsafe {
+            platform_wallet_manager_masternodes_by_voting_key(0, std::ptr::null(), &mut out)
+        };
+
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        assert!(
+            out.items.is_null() && out.count == 0,
+            "the empty sentinel must be published before the input-pointer \
+             guard returns (got items={:?}, count={})",
+            out.items,
+            out.count,
+        );
+
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+    }
+
+    /// A null `out_array` has nowhere to publish the sentinel, so it must be
+    /// rejected — and must not be dereferenced on the way out.
+    #[test]
+    fn null_out_param_is_rejected() {
+        let mut result = unsafe {
+            let key = [0u8; 20];
+            platform_wallet_manager_masternodes_by_voting_key(0, key.as_ptr(), std::ptr::null_mut())
+        };
+
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+    }
 }
 
 pub const SPV_PEER_NODE_TYPE_UNKNOWN: u32 = 0;

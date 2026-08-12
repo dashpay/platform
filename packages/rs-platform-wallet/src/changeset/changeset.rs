@@ -604,12 +604,13 @@ impl Merge for IdentityChangeSet {
                     // profile via `from_managed`, so LWW converges
                     // correctly within a single wallet.
                     existing.dashpay_profile = entry.dashpay_profile.clone();
-                    // Append new DPNS names (by label).
-                    for name in &entry.dpns_names {
-                        if !existing.dpns_names.iter().any(|n| n.label == name.label) {
-                            existing.dpns_names.push(name.clone());
-                        }
-                    }
+                    // DPNS names: last-write-wins wholesale, same policy
+                    // as `contested_dpns_names` below. Every emitter
+                    // snapshots the complete current list via
+                    // `from_managed`, and a sold/transferred name must be
+                    // able to LEAVE the list — the previous append-only-
+                    // by-label merge made departure impossible.
+                    existing.dpns_names = entry.dpns_names.clone();
                     // The contested-name sync emits the complete canonical
                     // snapshot. Last-write-wins is therefore required so
                     // resolved contests disappear, including when the latest
@@ -944,14 +945,58 @@ pub struct AssetLockEntry {
     /// Current status on Core chain.
     pub status: AssetLockStatus,
     /// The asset lock proof, available once IS-locked or ChainLocked.
+    #[cfg_attr(
+        feature = "serde",
+        serde(with = "crate::changeset::serde_adapters::optional_asset_lock_proof")
+    )]
     pub proof: Option<AssetLockProof>,
 }
 
 impl Merge for AssetLockChangeSet {
     fn merge(&mut self, other: Self) {
-        // Last write wins — later status is higher finality.
-        self.asset_locks.extend(other.asset_locks);
-        self.removed.extend(other.removed);
+        // Last write wins, with ONE lifecycle exception: `Consumed` is
+        // the terminal state, so a non-Consumed snapshot never replaces
+        // a Consumed one. Writers race here — the wallet-event
+        // adapter's batched drain can fold (or persist) a stale
+        // reconstruction/enrichment snapshot AFTER the live flow's
+        // synchronous consumption write — and every non-terminal
+        // transition is legitimately bidirectional (a live advance
+        // overwrites `RecoveredFromChain`, a defensive resume
+        // re-enters `Broadcast`), so terminality is the only ordering
+        // the merge can enforce without vetoing real transitions. The
+        // durable stores apply the same rule (sqlite upsert guard,
+        // swift-sdk `persistAssetLocks`), making the store order of
+        // racing snapshots immaterial.
+        for (out_point, entry) in other.asset_locks {
+            if entry.status == AssetLockStatus::Consumed {
+                // A Consumed write supersedes any earlier-folded
+                // tombstone for the outpoint — Consumed rows are
+                // deliberately retained for historical lookup (see the
+                // variant doc), so the terminal write wins over a stale
+                // removal exactly as it wins over a stale status.
+                self.removed.remove(&out_point);
+            } else if let Some(existing) = self.asset_locks.get(&out_point) {
+                if existing.status == AssetLockStatus::Consumed {
+                    continue;
+                }
+            }
+            self.asset_locks.insert(out_point, entry);
+        }
+        // Tombstones folded after a Consumed upsert are dropped for the
+        // same reason. The only removal emitter (`untrack_asset_lock`)
+        // fires exclusively for Built rows whose broadcast was
+        // definitively rejected, so a Consumed/removed pair for one
+        // outpoint has no legitimate producer — this is defense in
+        // depth matching the upsert guard.
+        for out_point in other.removed {
+            let consumed = self
+                .asset_locks
+                .get(&out_point)
+                .is_some_and(|entry| entry.status == AssetLockStatus::Consumed);
+            if !consumed {
+                self.removed.insert(out_point);
+            }
+        }
     }
 
     fn is_empty(&self) -> bool {
@@ -1028,6 +1073,112 @@ impl Merge for InvitationChangeSet {
 
     fn is_empty(&self) -> bool {
         self.invitations.is_empty() && self.removed.is_empty()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DPNS name states (username marketplace)
+// ---------------------------------------------------------------------------
+
+/// Where a tracked DPNS name currently stands relative to the wallet
+/// identity that owned it.
+///
+/// `Sold` / `Transferred` rows are retained (not deleted) so the host can
+/// surface "your name was sold" affordances; hard removal goes through
+/// [`DpnsNameStateChangeSet::removed`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum DpnsNameSaleStatus {
+    /// The wallet identity is the document's `$ownerId`.
+    Owned,
+    /// The name left the identity through a purchase; `to` is the buyer.
+    Sold { to: Identifier },
+    /// The name left the identity through a plain transfer (gift /
+    /// off-market handover); `to` is the recipient.
+    Transferred { to: Identifier },
+}
+
+/// One tracked DPNS `domain` document belonging to (or recently departed
+/// from) a wallet identity, **with sale state** — the marketplace-facing
+/// superset of the label-only `DpnsNameInfo` list.
+///
+/// Deliberately a separate store rather than new fields on
+/// [`IdentityEntry`]: the identity `entry_blob` is unversioned positional
+/// bincode, so growing `DpnsNameInfo` would break decoding of existing
+/// rows. Keyed by the domain document id, which is stable across ownership
+/// changes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct DpnsNameStateEntry {
+    /// The DPNS `domain` document id (this record's identity; stable
+    /// across transfers and purchases).
+    pub document_id: Identifier,
+    /// The wallet identity this row is tracked for. For `Owned` rows this
+    /// equals the document's `$ownerId`; for `Sold`/`Transferred` rows it
+    /// is the previous owner (ours).
+    pub wallet_identity_id: Identifier,
+    /// Display label (e.g. "Alice").
+    pub label: String,
+    /// Homograph-normalized label (e.g. "a11ce").
+    pub normalized_label: String,
+    /// Normalized parent domain (today always "dash").
+    pub normalized_parent_domain_name: String,
+    /// Listed sale price in credits (`$price`). `None` = not for sale.
+    pub price: Option<Credits>,
+    /// Ownership status relative to `wallet_identity_id`.
+    pub status: DpnsNameSaleStatus,
+    /// Document `$createdAt` (ms since epoch) when the document carries it.
+    pub created_at_ms: Option<u64>,
+    /// Document `$updatedAt` (ms) — bumps on price changes.
+    pub updated_at_ms: Option<u64>,
+    /// Document `$transferredAt` (ms) — set on purchase/transfer.
+    pub transferred_at_ms: Option<u64>,
+    /// Wall-clock ms of the sync pass / confirmed transition that wrote
+    /// this row.
+    pub last_synced_at_ms: u64,
+}
+
+/// DPNS name-state records emitted by the marketplace sync pass and by the
+/// set-price / delist / purchase / transfer orchestration ops.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct DpnsNameStateChangeSet {
+    /// Name states keyed by domain document id. Last write wins on merge —
+    /// every emitter writes a complete row read from Platform or from a
+    /// confirmed transition, so later rows are strictly fresher.
+    pub names: BTreeMap<Identifier, DpnsNameStateEntry>,
+    /// Document ids removed from tracking entirely.
+    pub removed: BTreeSet<Identifier>,
+}
+
+impl Merge for DpnsNameStateChangeSet {
+    fn merge(&mut self, other: Self) {
+        // Last OPERATION wins per document id, not merely last write.
+        //
+        // The sqlite writer applies inserts before deletes, so a key
+        // landing in both sets resolves to "removed" no matter which
+        // operation came first — a stale tombstone would silently
+        // swallow a newer upsert. Each side therefore evicts the key
+        // from the other as it merges, so the operation that arrived
+        // later is the one that survives.
+        //
+        // Deliberately stricter than `InvitationChangeSet`'s
+        // insert-XOR-tombstone convention: a marketplace row can
+        // legitimately come back after removal (a name re-acquired
+        // later), so the ordering hazard is reachable here rather than
+        // latent.
+        for document_id in other.names.keys() {
+            self.removed.remove(document_id);
+        }
+        for document_id in &other.removed {
+            self.names.remove(document_id);
+        }
+        self.names.extend(other.names);
+        self.removed.extend(other.removed);
+    }
+
+    fn is_empty(&self) -> bool {
+        self.names.is_empty() && self.removed.is_empty()
     }
 }
 
@@ -1436,6 +1587,9 @@ pub struct PlatformWalletChangeSet {
     pub asset_locks: Option<AssetLockChangeSet>,
     /// DashPay invitation (DIP-13) records — inviter-side create/reclaim.
     pub invitations: Option<InvitationChangeSet>,
+    /// DPNS name states with sale price (username marketplace) — emitted
+    /// by the marketplace sync pass and the trade orchestration ops.
+    pub dpns_name_states: Option<DpnsNameStateChangeSet>,
     /// Platform token balance / watch changes.
     pub token_balances: Option<TokenBalanceChangeSet>,
     /// DashPay profile overlays keyed by identity ID. Applied AFTER
@@ -1544,6 +1698,15 @@ impl From<TokenBalanceChangeSet> for PlatformWalletChangeSet {
     }
 }
 
+impl From<DpnsNameStateChangeSet> for PlatformWalletChangeSet {
+    fn from(cs: DpnsNameStateChangeSet) -> Self {
+        Self {
+            dpns_name_states: Some(cs),
+            ..Default::default()
+        }
+    }
+}
+
 impl Merge for PlatformWalletChangeSet {
     fn merge(&mut self, other: Self) {
         // `CoreChangeSet` implements `Merge`; delegate via the
@@ -1555,6 +1718,7 @@ impl Merge for PlatformWalletChangeSet {
         self.platform_addresses.merge(other.platform_addresses);
         self.asset_locks.merge(other.asset_locks);
         self.invitations.merge(other.invitations);
+        self.dpns_name_states.merge(other.dpns_name_states);
         self.token_balances.merge(other.token_balances);
         // DashPay overlays: LWW per identity_id.
         if let Some(other_profiles) = other.dashpay_profiles {
@@ -1607,6 +1771,7 @@ impl Merge for PlatformWalletChangeSet {
             && self.platform_addresses.is_empty()
             && self.asset_locks.is_empty()
             && self.invitations.is_empty()
+            && self.dpns_name_states.is_empty()
             && self.token_balances.is_empty()
             && self.dashpay_profiles.as_ref().is_none_or(|m| m.is_empty())
             && self
@@ -1659,6 +1824,102 @@ mod tests {
         assert!(cs.is_empty());
     }
 
+    /// Asset-lock merge is last-write-wins EXCEPT for the Consumed
+    /// terminal: when the wallet-event adapter's batched drain folds a
+    /// stale reconstruction/enrichment snapshot after (or before) the
+    /// live flow's consumption write, the fold must never regress
+    /// Consumed — while Consumed itself must still land over anything.
+    #[test]
+    fn asset_lock_merge_never_regresses_consumed() {
+        use dashcore::hashes::Hash;
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+
+        let outpoint = OutPoint {
+            txid: Txid::from_byte_array([0x61; 32]),
+            vout: 0,
+        };
+        let entry_with = |status: AssetLockStatus| AssetLockEntry {
+            out_point: outpoint,
+            transaction: Transaction {
+                version: 3,
+                lock_time: 0,
+                input: vec![],
+                output: vec![],
+                special_transaction_payload: None,
+            },
+            account_index: 0,
+            funding_type: AssetLockFundingType::IdentityRegistration,
+            identity_index: 0,
+            amount_duffs: 1,
+            status,
+            proof: None,
+        };
+        let cs_with = |status: AssetLockStatus| {
+            let mut cs = AssetLockChangeSet::default();
+            cs.asset_locks.insert(outpoint, entry_with(status));
+            cs
+        };
+
+        // Stale recovery snapshot folded AFTER the consumption write.
+        let mut folded = cs_with(AssetLockStatus::Consumed);
+        folded.merge(cs_with(AssetLockStatus::RecoveredFromChain));
+        assert_eq!(
+            folded.asset_locks[&outpoint].status,
+            AssetLockStatus::Consumed,
+            "a non-Consumed snapshot must not replace the Consumed terminal"
+        );
+
+        // The legitimate direction still lands.
+        let mut folded = cs_with(AssetLockStatus::RecoveredFromChain);
+        folded.merge(cs_with(AssetLockStatus::Consumed));
+        assert_eq!(
+            folded.asset_locks[&outpoint].status,
+            AssetLockStatus::Consumed
+        );
+
+        // Non-terminal transitions stay last-write-wins in both
+        // directions (live advances overwrite RecoveredFromChain, and
+        // enrichment overwrites Broadcast).
+        let mut folded = cs_with(AssetLockStatus::RecoveredFromChain);
+        folded.merge(cs_with(AssetLockStatus::ChainLocked));
+        assert_eq!(
+            folded.asset_locks[&outpoint].status,
+            AssetLockStatus::ChainLocked
+        );
+        let mut folded = cs_with(AssetLockStatus::Broadcast);
+        folded.merge(cs_with(AssetLockStatus::RecoveredFromChain));
+        assert_eq!(
+            folded.asset_locks[&outpoint].status,
+            AssetLockStatus::RecoveredFromChain
+        );
+
+        // Tombstones obey the same terminal rule. A removal folded
+        // after a Consumed entry is dropped…
+        let removal = || {
+            let mut cs = AssetLockChangeSet::default();
+            cs.removed.insert(outpoint);
+            cs
+        };
+        let mut folded = cs_with(AssetLockStatus::Consumed);
+        folded.merge(removal());
+        assert!(
+            folded.removed.is_empty(),
+            "a tombstone must not survive over a Consumed entry"
+        );
+        // …a Consumed entry folded after a tombstone clears it…
+        let mut folded = removal();
+        folded.merge(cs_with(AssetLockStatus::Consumed));
+        assert!(folded.removed.is_empty());
+        assert_eq!(
+            folded.asset_locks[&outpoint].status,
+            AssetLockStatus::Consumed
+        );
+        // …and a legitimate removal (rejected Built row) still folds.
+        let mut folded = cs_with(AssetLockStatus::Built);
+        folded.merge(removal());
+        assert!(folded.removed.contains(&outpoint));
+    }
+
     #[test]
     fn contested_dpns_merge_replaces_canonical_snapshot_and_allows_empty() {
         let id = Identifier::from([0x51; 32]);
@@ -1683,6 +1944,126 @@ mod tests {
             .insert(id, identity_entry_with_contested(id, &[]));
         changes.merge(resolved);
         assert!(changes.identities[&id].contested_dpns_names.is_empty());
+    }
+
+    fn identity_entry_with_names(id: Identifier, labels: &[&str]) -> IdentityEntry {
+        let mut entry = identity_entry_with_contested(id, &[]);
+        entry.dpns_names = labels
+            .iter()
+            .map(|label| DpnsNameInfo {
+                label: (*label).to_owned(),
+                acquired_at: None,
+            })
+            .collect();
+        entry
+    }
+
+    /// DPNS names merge last-write-wins wholesale (same policy as
+    /// contested names): a sold/transferred name must be able to LEAVE
+    /// the list, including via an empty snapshot. Guards the 2026-08
+    /// change away from append-only-by-label, which made departure
+    /// impossible.
+    #[test]
+    fn dpns_names_merge_replaces_canonical_snapshot_and_allows_empty() {
+        let id = Identifier::from([0x52; 32]);
+        let mut changes = IdentityChangeSet::default();
+        changes
+            .identities
+            .insert(id, identity_entry_with_names(id, &["sold", "kept"]));
+
+        let mut refreshed = IdentityChangeSet::default();
+        refreshed
+            .identities
+            .insert(id, identity_entry_with_names(id, &["kept", "bought"]));
+        changes.merge(refreshed);
+        let labels: Vec<&str> = changes.identities[&id]
+            .dpns_names
+            .iter()
+            .map(|n| n.label.as_str())
+            .collect();
+        assert_eq!(labels, ["kept", "bought"]);
+
+        let mut emptied = IdentityChangeSet::default();
+        emptied
+            .identities
+            .insert(id, identity_entry_with_names(id, &[]));
+        changes.merge(emptied);
+        assert!(changes.identities[&id].dpns_names.is_empty());
+    }
+
+    /// Marketplace name-state rows merge LWW per document id, with
+    /// tombstones accumulating independently (insert-XOR-tombstone per
+    /// mutation round, applied inserts-then-deletes downstream).
+    #[test]
+    fn dpns_name_state_merge_is_lww_per_document_with_tombstones() {
+        let doc = Identifier::from([0x61; 32]);
+        let other_doc = Identifier::from([0x62; 32]);
+        let identity = Identifier::from([0x63; 32]);
+        let buyer = Identifier::from([0x64; 32]);
+        let entry = |price: Option<Credits>, status: DpnsNameSaleStatus| DpnsNameStateEntry {
+            document_id: doc,
+            wallet_identity_id: identity,
+            label: "Alice".into(),
+            normalized_label: "a11ce".into(),
+            normalized_parent_domain_name: "dash".into(),
+            price,
+            status,
+            created_at_ms: Some(1),
+            updated_at_ms: None,
+            transferred_at_ms: None,
+            last_synced_at_ms: 2,
+        };
+
+        let mut cs = DpnsNameStateChangeSet::default();
+        assert!(cs.is_empty());
+        cs.names
+            .insert(doc, entry(Some(5_000), DpnsNameSaleStatus::Owned));
+
+        let mut sold = DpnsNameStateChangeSet::default();
+        sold.names
+            .insert(doc, entry(None, DpnsNameSaleStatus::Sold { to: buyer }));
+        sold.removed.insert(other_doc);
+        cs.merge(sold);
+
+        assert_eq!(cs.names[&doc].price, None);
+        assert_eq!(
+            cs.names[&doc].status,
+            DpnsNameSaleStatus::Sold { to: buyer }
+        );
+        assert!(cs.removed.contains(&other_doc));
+        assert!(!cs.is_empty());
+
+        // Tombstone AFTER an upsert: the later remove wins and the
+        // superseded upsert does not linger in `names`.
+        let mut upsert_then_remove = DpnsNameStateChangeSet::default();
+        upsert_then_remove
+            .names
+            .insert(doc, entry(Some(1), DpnsNameSaleStatus::Owned));
+        let mut tombstone = DpnsNameStateChangeSet::default();
+        tombstone.removed.insert(doc);
+        upsert_then_remove.merge(tombstone);
+        assert!(!upsert_then_remove.names.contains_key(&doc));
+        assert!(upsert_then_remove.removed.contains(&doc));
+
+        // Upsert AFTER a tombstone (a name re-acquired later): the newer
+        // upsert wins and the stale tombstone is dropped. Without the
+        // eviction this row would be silently deleted, because the
+        // sqlite writer applies inserts before deletes.
+        let mut remove_then_upsert = DpnsNameStateChangeSet::default();
+        remove_then_upsert.removed.insert(doc);
+        let mut reacquired = DpnsNameStateChangeSet::default();
+        reacquired
+            .names
+            .insert(doc, entry(Some(7), DpnsNameSaleStatus::Owned));
+        remove_then_upsert.merge(reacquired);
+        assert!(!remove_then_upsert.removed.contains(&doc));
+        assert_eq!(remove_then_upsert.names[&doc].price, Some(7));
+
+        // Replaying the same round is idempotent.
+        let mut replayed = remove_then_upsert.clone();
+        replayed.merge(remove_then_upsert.clone());
+        assert_eq!(replayed.names, remove_then_upsert.names);
+        assert_eq!(replayed.removed, remove_then_upsert.removed);
     }
 
     /// The deferred contact-crypto queue rides the changeset as add/clear
@@ -2158,7 +2539,7 @@ mod tests {
         index: u32,
     ) -> key_wallet::transaction_checking::DerivedAddressInfo {
         use key_wallet::bip32::{ChildNumber, DerivationPath};
-        use key_wallet::managed_account::address_pool::{AddressInfo, PublicKeyType};
+        use key_wallet::managed_account::address_pool::{AddressInfo, AddressState, PublicKeyType};
 
         let pubkey =
             dashcore::PublicKey::from_slice(&TEST_PUBKEY_G).expect("generator point is valid");
@@ -2177,9 +2558,7 @@ mod tests {
                 public_key: Some(PublicKeyType::ECDSA(TEST_PUBKEY_G.to_vec())),
                 index,
                 path,
-                used: true,
-                generated_at: 0,
-                used_at: None,
+                state: AddressState::Used,
                 tx_count: 0,
                 total_received: 0,
                 total_sent: 0,

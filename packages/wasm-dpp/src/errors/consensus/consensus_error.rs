@@ -74,8 +74,10 @@ use dpp::consensus::state::data_contract::document_type_update_error::DocumentTy
 use dpp::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
 use dpp::consensus::state::document::document_contest_document_with_same_id_already_present_error::DocumentContestDocumentWithSameIdAlreadyPresentError;
 use dpp::consensus::state::document::document_contest_identity_already_contestant::DocumentContestIdentityAlreadyContestantError;
+use dpp::consensus::state::document::document_contest_index_mismatch_error::DocumentContestIndexMismatchError;
 use dpp::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
 use dpp::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
+use dpp::consensus::state::document::document_contest_not_required_error::DocumentContestNotRequiredError;
 use dpp::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use dpp::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use dpp::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionAlreadySignedByIdentityError, GroupActionDoesNotExistError, IdentityMemberOfGroupNotFoundError, IdentityNotMemberOfGroupError, ModificationOfGroupActionMainParametersNotPermittedError};
@@ -324,6 +326,12 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::DocumentContestNotPaidForError(e) => {
             generic_consensus_error!(DocumentContestNotPaidForError, e).into()
+        }
+        StateError::DocumentContestIndexMismatchError(e) => {
+            generic_consensus_error!(DocumentContestIndexMismatchError, e).into()
+        }
+        StateError::DocumentContestNotRequiredError(e) => {
+            generic_consensus_error!(DocumentContestNotRequiredError, e).into()
         }
         StateError::RecipientIdentityDoesNotExistError(e) => {
             generic_consensus_error!(RecipientIdentityDoesNotExistError, e).into()

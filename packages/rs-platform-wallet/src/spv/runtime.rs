@@ -7,7 +7,8 @@ use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
 use dashcore::sml::llmq_type::LLMQType;
-use dashcore::{QuorumHash, Transaction};
+use dashcore::sml::masternode_list::MasternodeList;
+use dashcore::{PubkeyHash, QuorumHash, Transaction};
 
 use dash_spv::network::PeerNetworkManager;
 use dash_spv::storage::{DiskStorageManager, StorageManager};
@@ -437,6 +438,46 @@ impl SpvRuntime {
         Some(map)
     }
 
+    /// The proTxHashes of every masternode in the current-tip deterministic
+    /// masternode list whose voting key hash matches `voting_key_id` (the
+    /// 20-byte hash160 of a voting public key).
+    ///
+    /// Replaces dashj's
+    /// `MasternodeListManager.getMasternodesByVotingKey(votingKeyId)`, the
+    /// lookup contested-username voting uses to find which masternode(s) a
+    /// voting key can cast a vote for. The current tip is the highest
+    /// `CoreBlockHeight` held by the engine (`latest_masternode_list`).
+    ///
+    /// Each proTxHash is returned in internal byte order — the same
+    /// `pro_reg_tx_hash.as_ref()` convention as
+    /// [`Self::masternode_validity_snapshot_blocking`]. Returns an empty vec
+    /// when the DML isn't available (SPV client not running, engine not
+    /// initialized, or the masternode list hasn't synced yet). Blocking:
+    /// acquires the client + engine `tokio::RwLock`s via `blocking_read`, so
+    /// it must run off the async runtime (FFI blocking thread), mirroring the
+    /// other `*_blocking` accessors.
+    pub fn masternodes_by_voting_key_blocking(&self, voting_key_id: &PubkeyHash) -> Vec<[u8; 32]> {
+        // Clone the engine `Arc` out while holding the client lock, then drop
+        // it before reading the engine — same ordering as `connected_peers`.
+        let engine = {
+            let client_guard = self.client.blocking_read();
+            let Some(client) = client_guard.as_ref() else {
+                return Vec::new();
+            };
+            match client.masternode_list_engine().ok() {
+                Some(engine) => engine,
+                None => return Vec::new(),
+            }
+        };
+
+        let engine_guard = engine.blocking_read();
+        let Some(list) = engine_guard.latest_masternode_list() else {
+            return Vec::new();
+        };
+
+        masternodes_by_voting_key(list, voting_key_id)
+    }
+
     /// Get the current sync progress.
     ///
     /// Returns `None` if the SPV client is not running.
@@ -518,6 +559,134 @@ impl SpvRuntime {
             .update_config(config)
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))
+    }
+}
+
+/// The proTxHashes (internal byte order) of every entry in `list` whose
+/// `key_id_voting` equals `voting_key_id`.
+///
+/// A single voting key can back more than one masternode, so this is a
+/// filter-and-collect rather than a point lookup; the result is empty when
+/// nothing matches.
+///
+/// # Why this lives here instead of in rust-dashcore
+///
+/// This duplicates `MasternodeList::masternodes_by_voting_key`, which is not
+/// present on the Dash-owned rust-dashcore revision this workspace pins. The
+/// upstream helper is still in flight as dashpay/rust-dashcore#916 and that PR
+/// is blocked on being split, so pinning to a revision carrying it would mean
+/// depending on a personal fork for an indefinite period. The filter is small
+/// and reads only long-standing public SML fields, so keeping a local copy is
+/// cheaper than the fork pin.
+///
+/// Delete this function and call `list.masternodes_by_voting_key(voting_key_id)`
+/// once #916 lands and the workspace pin moves past it — tracked by
+/// dashpay/platform#4262.
+fn masternodes_by_voting_key(list: &MasternodeList, voting_key_id: &PubkeyHash) -> Vec<[u8; 32]> {
+    list.masternodes
+        .values()
+        .filter(|qualified| qualified.masternode_list_entry.key_id_voting == *voting_key_id)
+        .map(|qualified| {
+            // Internal byte order, matching `masternode_validity_snapshot_blocking`:
+            // the DML map keys by the reversed/display form, so read the hash off
+            // the entry rather than the map key.
+            let mut out = [0u8; 32];
+            out.copy_from_slice(qualified.masternode_list_entry.pro_reg_tx_hash.as_ref());
+            out
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod masternodes_by_voting_key_tests {
+    use dashcore::bls_sig_utils::BLSPublicKey;
+    use dashcore::hashes::Hash;
+    use dashcore::sml::masternode_list_entry::{
+        EntryMasternodeType, MasternodeListEntry, MasternodeNetInfo,
+    };
+    use dashcore::{BlockHash, ProTxHash, PubkeyHash};
+    use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+
+    use super::{masternodes_by_voting_key, MasternodeList};
+
+    /// Build a list from `(proTxHash-seed, voting-key-id)` pairs so each entry
+    /// gets a distinct proTxHash and a caller-chosen voting key.
+    fn list_from(entries: Vec<(u8, [u8; 20])>) -> MasternodeList {
+        let masternodes = entries
+            .into_iter()
+            .map(|(seed, voting_key_id)| {
+                let mut hash_bytes = [0u8; 32];
+                hash_bytes[0] = seed;
+                let pro_tx_hash = ProTxHash::from_byte_array(hash_bytes);
+                let entry = MasternodeListEntry {
+                    version: 1,
+                    pro_reg_tx_hash: pro_tx_hash,
+                    confirmed_hash: None,
+                    service_address: MasternodeNetInfo::Legacy(SocketAddr::V4(SocketAddrV4::new(
+                        Ipv4Addr::new(10, 0, 0, seed),
+                        9999,
+                    ))),
+                    operator_public_key: BLSPublicKey::from([0u8; 48]),
+                    key_id_voting: PubkeyHash::from_byte_array(voting_key_id),
+                    is_valid: true,
+                    mn_type: EntryMasternodeType::Regular,
+                };
+                (pro_tx_hash, entry.into())
+            })
+            .collect();
+        MasternodeList::build(
+            masternodes,
+            Default::default(),
+            BlockHash::from_byte_array([0u8; 32]),
+            0,
+        )
+        .build()
+    }
+
+    #[test]
+    fn collects_every_masternode_sharing_a_voting_key() {
+        let key_a = [0xAAu8; 20];
+        let key_b = [0xBBu8; 20];
+        // Two masternodes share voting key A, one uses key B.
+        let list = list_from(vec![(1, key_a), (2, key_b), (3, key_a)]);
+
+        let mut matched = masternodes_by_voting_key(&list, &PubkeyHash::from_byte_array(key_a));
+        // Iteration is BTreeMap (proTxHash) order; sort on the seed byte so the
+        // assert does not depend on it.
+        matched.sort_by_key(|hash| hash[0]);
+        assert_eq!(matched.len(), 2, "both key-A masternodes must be returned");
+        assert_eq!(matched[0][0], 1);
+        assert_eq!(matched[1][0], 3);
+    }
+
+    #[test]
+    fn returns_the_single_masternode_for_an_unshared_voting_key() {
+        let key_a = [0xAAu8; 20];
+        let key_b = [0xBBu8; 20];
+        let list = list_from(vec![(1, key_a), (2, key_b), (3, key_a)]);
+
+        let matched = masternodes_by_voting_key(&list, &PubkeyHash::from_byte_array(key_b));
+        assert_eq!(matched.len(), 1);
+        assert_eq!(matched[0][0], 2);
+    }
+
+    #[test]
+    fn returns_empty_when_no_masternode_uses_the_voting_key() {
+        let list = list_from(vec![(1, [0xAAu8; 20]), (2, [0xBBu8; 20])]);
+
+        let matched = masternodes_by_voting_key(&list, &PubkeyHash::from_byte_array([0xCCu8; 20]));
+        assert!(
+            matched.is_empty(),
+            "an unused voting key must match nothing"
+        );
+    }
+
+    #[test]
+    fn returns_empty_for_an_empty_masternode_list() {
+        let list = list_from(vec![]);
+
+        let matched = masternodes_by_voting_key(&list, &PubkeyHash::from_byte_array([0xAAu8; 20]));
+        assert!(matched.is_empty());
     }
 }
 

@@ -42,6 +42,9 @@ fn summable_index(name: &str, props: &[&str], summable: Option<&str>) -> Index {
         range_countable: false,
         summable: summable.map(String::from),
         range_summable: false,
+        ranked_countable: false,
+        ranked_summable: false,
+        ranked_averageable: false,
     }
 }
 
@@ -58,6 +61,9 @@ fn range_summable_index(name: &str, props: &[&str], summable: &str) -> Index {
         range_countable: false,
         summable: Some(summable.to_string()),
         range_summable: true,
+        ranked_countable: false,
+        ranked_summable: false,
+        ranked_averageable: false,
     }
 }
 

@@ -39,7 +39,9 @@ import org.dashfoundation.example.ui.dashpay.DashPayProfileScreen
 import org.dashfoundation.example.ui.dashpay.DashPayTabScreen
 import org.dashfoundation.example.ui.dashpay.HiddenContactsScreen
 import org.dashfoundation.example.ui.dashpay.IgnoredContactsScreen
+import org.dashfoundation.example.ui.dashpay.InvitationsScreen
 import org.dashfoundation.example.ui.identity.DpnsTestScreen
+import org.dashfoundation.example.ui.identity.DpnsMarketplaceScreen
 import org.dashfoundation.example.ui.identity.IdentitiesHomeScreen
 import org.dashfoundation.example.ui.identity.IdentityDetailScreen
 import org.dashfoundation.example.ui.identity.KeyDetailScreen
@@ -178,6 +180,11 @@ fun AppNavHost(
         composable<SelectMainName> { entry ->
             val route = entry.toRoute<SelectMainName>()
             SelectMainNameScreen(route.identityIdHex, navController)
+        }
+
+        composable<DpnsMarketplace> { entry ->
+            val route = entry.toRoute<DpnsMarketplace>()
+            DpnsMarketplaceScreen(route.identityIdHex, navController)
         }
 
         composable<KeysList> { entry ->
@@ -443,6 +450,10 @@ fun AppNavHost(
 
         composable<DashPayHidden> { entry ->
             HiddenContactsScreen(entry.toRoute<DashPayHidden>().ownerIdentityIdHex, navController)
+        }
+
+        composable<DashPayInvitations> { entry ->
+            InvitationsScreen(entry.toRoute<DashPayInvitations>().activeIdentityIdHex)
         }
 
         // ── Diagnostics graph ──────────────────────────────────────────

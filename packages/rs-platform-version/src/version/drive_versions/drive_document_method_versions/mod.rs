@@ -34,6 +34,13 @@ pub struct DriveDocumentQueryMethodVersions {
     /// Mode-detection routing table for `SELECT SUM` queries. Same
     /// versioning rationale as `detect_count_mode`.
     pub detect_sum_mode: FeatureVersion,
+    /// Mode-detection routing table for ranked (`HAVING ... TOP/BOTTOM/
+    /// MIN/MAX`) aggregate queries served from an indexed index tree.
+    /// Same versioning rationale as `detect_count_mode`. Present in
+    /// every version table so the slot exists for older protocol
+    /// versions; the routing itself is unreachable before the ranked
+    /// contract grammar activates.
+    pub detect_ranked_mode: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

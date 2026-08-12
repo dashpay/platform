@@ -69,6 +69,7 @@ fn generate_code(typ: ImplType, output_base: &Path) {
 
     println!("cargo:rerun-if-changed=./protos");
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_SERDE");
+    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_TRANSPORT");
     println!("cargo:rerun-if-env-changed=CARGO_CFG_TARGET_ARCH");
     println!("cargo:rerun-if-env-changed=DAPI_GRPC_OUT_DIR");
 }
@@ -416,15 +417,23 @@ enum ImplType {
 impl ImplType {
     // Configure the builder based on the implementation type.
     pub fn configure(&self, builder: Builder) -> Builder {
+        // The `transport` cargo feature controls whether generated clients get
+        // the `connect()` convenience impls over tonic's own channel. Without
+        // it, clients are still generated but stay generic over the caller's
+        // transport. Never enabled for wasm32, where tonic transport does not
+        // build. Note: cfg!(target_arch) in a build script reflects the HOST,
+        // so the target must be read from CARGO_CFG_TARGET_ARCH.
+        let transport = std::env::var("CARGO_FEATURE_TRANSPORT").is_ok()
+            && std::env::var("CARGO_CFG_TARGET_ARCH").map(|arch| arch != "wasm32") == Ok(true);
         match self {
             Self::Server => builder
                 .build_client(true)
                 .build_server(true)
-                .build_transport(true),
+                .build_transport(transport),
             Self::Client => builder
                 .build_client(true)
                 .build_server(false)
-                .build_transport(true),
+                .build_transport(transport),
             Self::Wasm => builder
                 .build_client(true)
                 .build_server(false)

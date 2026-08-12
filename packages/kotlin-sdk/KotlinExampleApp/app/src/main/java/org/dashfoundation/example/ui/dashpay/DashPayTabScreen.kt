@@ -15,6 +15,8 @@ import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Redeem
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
@@ -24,6 +26,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -58,6 +61,7 @@ import org.dashfoundation.example.navigation.DashPayAddContact
 import org.dashfoundation.example.navigation.DashPayContacts
 import org.dashfoundation.example.navigation.DashPayHidden
 import org.dashfoundation.example.navigation.DashPayIgnored
+import org.dashfoundation.example.navigation.DashPayInvitations
 import org.dashfoundation.example.navigation.DashPayProfile
 import org.dashfoundation.example.navigation.DashPayRequests
 import org.dashfoundation.example.navigation.IdentitiesHome
@@ -148,6 +152,27 @@ fun DashPayTabScreen(navController: NavHostController) {
     var isRefreshing by remember(network) { mutableStateOf(false) }
     var unlockError by remember { mutableStateOf<String?>(null) }
 
+    // Claim-invitation sheet, seeded either by the toolbar action or a
+    // parked deep link. The pending URI is consumed (cleared) only when the
+    // sheet is actually seeded — a walletless tap keeps it parked (deviation
+    // from iOS, which drops the link; see AppUiState.pendingInviteUri).
+    val appUiState = container.appUiState
+    var claimSheetUri by remember { mutableStateOf<String?>(null) }
+    var showClaimSheet by remember { mutableStateOf(false) }
+    val pendingInvite by appUiState.pendingInviteUri.collectAsStateWithLifecycle()
+    val claimInFlight by appUiState.invitationClaimInFlight.collectAsStateWithLifecycle()
+    // The parked URI is NOT cleared at seeding: it stays in AppUiState (the
+    // only holder that survives this tab leaving composition) until the
+    // claim actually starts or the user explicitly closes the sheet — an
+    // activity recreation between seeding and claim re-seeds from it.
+    LaunchedEffect(pendingInvite, walletsMap, claimInFlight, showClaimSheet) {
+        val uri = pendingInvite
+        if (uri != null && walletsMap.isNotEmpty() && !claimInFlight && !showClaimSheet) {
+            claimSheetUri = uri
+            showClaimSheet = true
+        }
+    }
+
     fun refresh() {
         if (!contentReady) return
         val activeManager = manager ?: return
@@ -163,6 +188,28 @@ fun DashPayTabScreen(navController: NavHostController) {
             TopAppBar(
                 title = { Text("DashPay") },
                 actions = {
+                    IconButton(
+                        onClick = {
+                            claimSheetUri = null
+                            showClaimSheet = true
+                        },
+                        enabled = walletsMap.isNotEmpty(),
+                        modifier = Modifier.testTag("dashpay.claimInvitation"),
+                    ) {
+                        Icon(Icons.Default.Redeem, contentDescription = "Claim invitation")
+                    }
+                    IconButton(
+                        onClick = {
+                            navController.navigate(
+                                DashPayInvitations(
+                                    selectionReady?.activeIdentity?.identityId?.toHex(),
+                                ),
+                            )
+                        },
+                        modifier = Modifier.testTag("dashpay.openSentInvitations"),
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Sent invitations")
+                    }
                     IconButton(
                         onClick = { refresh() },
                         enabled = contentReady,
@@ -328,6 +375,34 @@ fun DashPayTabScreen(navController: NavHostController) {
             }
         },
     )
+
+    if (showClaimSheet) {
+        // Closing without claiming is an explicit decline — release the
+        // parked URI so the sheet doesn't re-seed forever.
+        fun closeClaimSheet() {
+            appUiState.pendingInviteUri.value = null
+            showClaimSheet = false
+        }
+        ModalBottomSheet(onDismissRequest = { if (!claimInFlight) closeClaimSheet() }) {
+            ClaimInvitationSheet(
+                initialUri = claimSheetUri,
+                preferredWalletIdHex = selectionReady?.activeIdentity?.walletId?.toHex(),
+                onScanRequest = {
+                    // Bearer scan: arm the in-memory sink so the result
+                    // bypasses SavedStateHandle (never written to disk) and
+                    // lands back in the parked-URI path, re-seeding this
+                    // sheet. The scanner clears the sink on delivery/cancel.
+                    appUiState.scanResultSink = { scanned ->
+                        appUiState.pendingInviteUri.value = scanned
+                    }
+                    showClaimSheet = false
+                    navController.navigate(org.dashfoundation.example.navigation.QrScanner)
+                },
+                onClaimStarted = { appUiState.pendingInviteUri.value = null },
+                onClose = { closeClaimSheet() },
+            )
+        }
+    }
 }
 
 sealed interface DashPayActiveIdentitySelection {

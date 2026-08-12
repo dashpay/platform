@@ -41,7 +41,9 @@ pub struct AssetLockEntryFFI {
     /// for the callback window.
     pub transaction_bytes: *const u8,
     pub transaction_bytes_len: usize,
-    /// BIP44 account index that funded this asset lock.
+    /// Family-independent source index of the pooled funding (BIP44 and
+    /// BIP32 at this index plus DashPay receiving accounts; change
+    /// returns to BIP44). Not a BIP44-only selector.
     pub account_index: u32,
     /// Discriminant of [`key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType`]:
     /// 0 = IdentityRegistration, 1 = IdentityTopUp, 2 = IdentityTopUpNotBound,
@@ -167,5 +169,6 @@ fn status_to_u8(status: &AssetLockStatus) -> u8 {
         AssetLockStatus::InstantSendLocked => 2,
         AssetLockStatus::ChainLocked => 3,
         AssetLockStatus::Consumed => 4,
+        AssetLockStatus::RecoveredFromChain => 5,
     }
 }

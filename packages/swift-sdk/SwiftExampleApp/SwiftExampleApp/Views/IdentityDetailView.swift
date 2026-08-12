@@ -39,6 +39,11 @@ struct IdentityDetailView: View {
         identities.first
     }
 
+    private func hasLoadedWallet(for identity: PersistentIdentity) -> Bool {
+        guard let walletId = identity.wallet?.walletId else { return false }
+        return walletManager.wallet(for: walletId) != nil
+    }
+
     @State private var isRefreshing = false
     @State private var showingEditAlias = false
     @State private var newAlias = ""
@@ -153,13 +158,11 @@ struct IdentityDetailView: View {
                         .fontWeight(.medium)
                 }
 
-                // Top-up entry point. Hidden for purely-local rows
-                // (no on-chain identity to credit yet) and for
-                // identities whose owning wallet isn't loaded into
-                // the manager — both paths would just surface a
-                // confusing error from the FFI layer.
-                if !identity.isLocal,
-                   let walletId = identity.wallet?.walletId,
+                // Top-up entry point. Hidden for identities whose
+                // owning wallet isn't loaded into the manager — that
+                // path would just surface a confusing error from the
+                // FFI layer.
+                if let walletId = identity.wallet?.walletId,
                    walletManager.wallet(for: walletId) != nil {
                     Button {
                         showingTopUp = true
@@ -218,19 +221,19 @@ struct IdentityDetailView: View {
                                       identity.identityTypeEnum == .masternode ? .purple : .orange)
                 }
 
-                if identity.isLocal {
-                    HStack {
-                        Label("Status", systemImage: "location")
-                        Spacer()
-                        Text("Local Only")
-                            .foregroundColor(.secondary)
-                    }
-                }
             }
 
             // DPNS Names Section
-            if !dpnsNames.isEmpty || !contestedDpnsNames.isEmpty || !identity.isLocal {
-                Section("DPNS Names") {
+            // Every persisted identity exists on Platform, so the
+            // section always renders.
+            Section("DPNS Names") {
+                    if hasLoadedWallet(for: identity) {
+                        NavigationLink(destination: DpnsMarketplaceView(identity: identity)) {
+                            Label("Username Marketplace", systemImage: "storefront")
+                        }
+                        .accessibilityIdentifier("identity.dpnsMarketplace")
+                    }
+
                     if isLoadingDPNS {
                         HStack {
                             ProgressView()
@@ -280,8 +283,9 @@ struct IdentityDetailView: View {
                         }
                     }
 
-                    // Register name button
-                    if !identity.isLocal {
+                    // Register name button — registration signs
+                    // through the identity's loaded wallet.
+                    if hasLoadedWallet(for: identity) {
                         Button(action: { showingRegisterName = true }) {
                             HStack {
                                 Image(systemName: "plus.circle")
@@ -290,7 +294,6 @@ struct IdentityDetailView: View {
                             .foregroundColor(.blue)
                         }
                     }
-                }
             }
 
             // Tokens Section
@@ -303,8 +306,7 @@ struct IdentityDetailView: View {
             // round-trip. Transient @State only — persistence to
             // PersistentTokenBalance lives in the platform-wallet
             // sync path, not here.
-            if !identity.isLocal {
-                Section {
+            Section {
                     if isLoadingTokens && tokenBalances.isEmpty {
                         HStack(spacing: 10) {
                             ProgressView()
@@ -352,7 +354,6 @@ struct IdentityDetailView: View {
                         .disabled(isLoadingTokens)
                     }
                 }
-            }
 
             // DashPay Profile Section
             //
@@ -361,13 +362,7 @@ struct IdentityDetailView: View {
             // via `syncDashPayProfiles()` so the cache reflects the
             // latest on-chain state without blocking the first paint.
             Section("DashPay Profile") {
-                if !identity.isLocal {
-                    dashPayProfileCard(identity: identity)
-                } else {
-                    Text("Available once the identity is on the network.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+                dashPayProfileCard(identity: identity)
             }
 
             // Keys Section
@@ -395,20 +390,18 @@ struct IdentityDetailView: View {
             }
 
             // Actions Section
-            if !identity.isLocal {
-                Section {
-                    Button(action: refreshIdentityData) {
-                        HStack {
-                            Image(systemName: "arrow.clockwise")
-                            Text("Refresh Identity Data")
-                            Spacer()
-                            if isRefreshing {
-                                ProgressView()
-                            }
+            Section {
+                Button(action: refreshIdentityData) {
+                    HStack {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Refresh Identity Data")
+                        Spacer()
+                        if isRefreshing {
+                            ProgressView()
                         }
                     }
-                    .disabled(isRefreshing)
                 }
+                .disabled(isRefreshing)
             }
         }
         .navigationTitle("Identity Details")
@@ -473,14 +466,14 @@ struct IdentityDetailView: View {
             print("🔵 IdentityDetailView onAppear - dpnsName: \(identity.dpnsName ?? "nil"), isLocal: \(identity.isLocal)")
 
             // Load DPNS names from network if we don't have any cached or if they're empty
-            if (dpnsNames.isEmpty && contestedDpnsNames.isEmpty) && !identity.isLocal {
+            if dpnsNames.isEmpty && contestedDpnsNames.isEmpty {
                 print("🔵 No cached DPNS names, loading from network...")
                 loadDPNSNames()
-            } else if !dpnsNames.isEmpty || !contestedDpnsNames.isEmpty {
+            } else {
                 print("🔵 Using cached DPNS names: \(dpnsNames.count) regular, \(contestedDpnsNames.count) contested")
             }
 
-            if !identity.isLocal {
+            do {
                 // Read whatever's currently cached synchronously so the
                 // card renders immediately, then kick off a background
                 // sync to freshen it. The sync uses the merged
@@ -558,8 +551,7 @@ struct IdentityDetailView: View {
     }
 
     private func loadDPNSNames() {
-        guard let identity = identity,
-              !identity.isLocal else { return }
+        guard identity != nil else { return }
 
         Task {
             await loadDPNSNamesFromNetwork()
@@ -567,8 +559,7 @@ struct IdentityDetailView: View {
     }
 
     private func loadDPNSNamesFromNetwork() async {
-        guard let identity = identity,
-              !identity.isLocal else { return }
+        guard let identity = identity else { return }
 
         print("🔵 loadDPNSNamesFromNetwork called for identity \(identity.identityIdBase58)")
 
@@ -890,7 +881,7 @@ struct IdentityDetailView: View {
     /// the UI can show a spinner without blocking.
     @MainActor
     private func reloadTokenBalances() {
-        guard let identity = identity, !identity.isLocal,
+        guard let identity = identity,
               let sdk = appState.sdk else { return }
 
         // In-flight guard: `onAppear` now reloads unconditionally and this

@@ -6,6 +6,7 @@ import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.NativeCleaner
 import org.dashfoundation.dashsdk.ffi.TokensNative
 import org.dashfoundation.dashsdk.ffi.WalletManagerNative
+import org.dashfoundation.dashsdk.tokens.translateManagedIdentityNotFoundToZero
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -104,10 +105,19 @@ class ManagedPlatformWallet internal constructor(
         )
     }
 
-    /** Standard account derivation shape for [sendToAddresses]. */
+    /** Funding-source selector for [sendToAddresses] / [buildSignedPayment]. */
     enum class AccountType(val ffiValue: Int) {
         BIP44(0),
         BIP32(1),
+
+        /**
+         * Pool every spendable transparent source — BIP44 + BIP32 + all
+         * DashPay contact-receiving accounts — with change returning to
+         * BIP44. CoinJoin is excluded (separate privacy domain), as are a
+         * contact's watch-only coins. The default for plain sends, so funds
+         * a contact paid us are spendable without picking an account.
+         */
+        ALL_SPENDABLE(3),
     }
 
     /**
@@ -141,7 +151,7 @@ class ManagedPlatformWallet internal constructor(
         recipients: List<Pair<String, Long>>,
         network: org.dashfoundation.dashsdk.Network,
         coreSignerHandle: Long,
-        accountType: AccountType = AccountType.BIP44,
+        accountType: AccountType = AccountType.ALL_SPENDABLE,
         accountIndex: Int = 0,
     ): String = gate.op {
         require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
@@ -152,11 +162,12 @@ class ManagedPlatformWallet internal constructor(
         val builderAccountType = when (accountType) {
             AccountType.BIP44 -> CoreTransactionBuilder.AccountType.BIP44
             AccountType.BIP32 -> CoreTransactionBuilder.AccountType.BIP32
+            AccountType.ALL_SPENDABLE -> CoreTransactionBuilder.AccountType.ALL_SPENDABLE
         }
         mapNativeErrors {
             val builder = CoreTransactionBuilder(network)
-            // `buildSigned` consumes the builder; `use` still safely destroys
-            // it on the pre-build failure paths (addOutput / setFunding throw).
+            // `finalizeAtomic` consumes the builder; `use` still safely
+            // destroys it on the pre-finalize failure paths (addOutput throws).
             val signedTx = builder.use {
                 for ((address, amount) in recipients) {
                     it.addOutput(address, amount)
@@ -170,6 +181,431 @@ class ManagedPlatformWallet internal constructor(
             }
             signedTx.use { tx -> coreWallet().use { core -> core.broadcastTransaction(tx) } }
         }
+    }
+
+    /**
+     * A built, signed Core transaction whose funding UTXOs are reserved,
+     * awaiting a deferred [broadcastSigned] or [releaseReservation] — the
+     * split-out result of [buildSignedPayment] for BIP70/BIP270 (CTX/DashSpend)
+     * flows that must sign now, POST the raw bytes to a merchant server, and
+     * broadcast only on the server's ack.
+     *
+     * **Owns the reservation token.** The blocking native registration mints the
+     * token before this object exists, so if the object were then discarded —
+     * the caller drops it, or a coroutine cancellation is observed after
+     * [buildSignedPayment]'s native call returned — the token (and its funding
+     * reservation) would be orphaned until key-wallet's TTL. This type is
+     * therefore [AutoCloseable] with a [NativeCleaner] GC backstop: [close], or
+     * GC if you never call it, releases the token exactly once. Release is
+     * idempotent native-side and tokens are process-unique (never reused), so
+     * releasing a token already consumed by [broadcastSigned] /
+     * [releaseReservation] — or releasing twice — is a harmless no-op. A caller
+     * that broadcasts or releases can still `use`/close this object; a caller
+     * that abandons it is covered by GC.
+     *
+     * @property txidHex the transaction id (lowercase hex) the broadcast will
+     *   return — computed from the signed bytes Rust-side so it matches exactly.
+     * @property rawTxBytes the consensus-serialized signed transaction, to hand
+     *   to the merchant server.
+     * @property feeDuffs the fee the build charged, in duffs.
+     * @property reservationToken the opaque token for [broadcastSigned] /
+     *   [releaseReservation]. Valid only for this wallet instance and only until
+     *   consumed by one of those calls (or released by [close] / GC).
+     */
+    class SignedCoreTransaction internal constructor(
+        val txidHex: String,
+        val rawTxBytes: ByteArray,
+        val feeDuffs: Long,
+        val reservationToken: Long,
+    ) : AutoCloseable {
+
+        // GC backstop: releases the token if it was neither broadcast nor
+        // released. The action must not reference this object (it would never
+        // become phantom-reachable), so it captures the token by value.
+        private val cleanable = NativeCleaner.register(this, TokenRelease(reservationToken))
+
+        /**
+         * Release the funding reservation if this payment was neither broadcast
+         * nor released, and drop the token. Idempotent — safe to call after a
+         * [broadcastSigned] / [releaseReservation] (native no-op) and safe to
+         * call twice. The [NativeCleaner] backstop runs the same release on GC
+         * if you never call [close].
+         */
+        override fun close() = cleanable.clean()
+
+        override fun equals(other: Any?): Boolean =
+            other is SignedCoreTransaction &&
+                txidHex == other.txidHex &&
+                rawTxBytes.contentEquals(other.rawTxBytes) &&
+                feeDuffs == other.feeDuffs &&
+                reservationToken == other.reservationToken
+
+        override fun hashCode(): Int {
+            var result = txidHex.hashCode()
+            result = 31 * result + rawTxBytes.contentHashCode()
+            result = 31 * result + feeDuffs.hashCode()
+            result = 31 * result + reservationToken.hashCode()
+            return result
+        }
+
+        override fun toString(): String =
+            "SignedCoreTransaction(txidHex=$txidHex, feeDuffs=$feeDuffs, " +
+                "reservationToken=$reservationToken, rawTxBytes=${rawTxBytes.size} bytes)"
+
+        /** Releases the reservation token exactly once, on [close] or GC. */
+        private class TokenRelease(private val token: Long) : Runnable {
+            override fun run() {
+                WalletManagerNative.coreWalletReleaseSignedPayment(token)
+            }
+        }
+
+        internal companion object {
+            /**
+             * Decode the big-endian native BLOB the atomic
+             * finalize-and-register FFI returns: `u64 token, u64 feeDuffs,
+             * u32 txidLen, txid utf8, u32 txBytesLen, txBytes`.
+             */
+            internal fun fromRegisterBlob(blob: ByteArray): SignedCoreTransaction {
+                val buffer = java.nio.ByteBuffer.wrap(blob) // big-endian by default
+                val token = buffer.long
+                val feeDuffs = buffer.long
+                val txidLen = buffer.int
+                val txidBytes = ByteArray(txidLen)
+                buffer.get(txidBytes)
+                val txBytesLen = buffer.int
+                val rawTxBytes = ByteArray(txBytesLen)
+                buffer.get(rawTxBytes)
+                return SignedCoreTransaction(
+                    txidHex = String(txidBytes, Charsets.UTF_8),
+                    rawTxBytes = rawTxBytes,
+                    feeDuffs = feeDuffs,
+                    reservationToken = token,
+                )
+            }
+        }
+    }
+
+    /**
+     * Build and sign a Core payment to [recipients] WITHOUT broadcasting,
+     * reserving the funding UTXOs and returning a [SignedCoreTransaction] whose
+     * [SignedCoreTransaction.reservationToken] later drives [broadcastSigned]
+     * (server acked) or [releaseReservation] (abandoned / server nacked).
+     *
+     * The BIP70/BIP270 counterpart to [sendToAddresses]: those protocols sign,
+     * POST the raw bytes to a merchant server, and broadcast only on ack, which
+     * a single build-sign-broadcast call cannot express. The
+     * `new → addOutput* → finalizeSignedPayment` build runs under the same
+     * per-wallet teardown gate ([gate]) as [sendToAddresses]. The single atomic
+     * finalize does select + reserve + sign + register under the wallet-manager
+     * lock (closing the funding/signing selection race the former split
+     * fund-then-sign path had), so once this returns the reservation holds the
+     * inputs and [broadcastSigned] / [releaseReservation] operate on the token
+     * later.
+     *
+     * The returned [SignedCoreTransaction] OWNS the token: it is [AutoCloseable]
+     * with a GC/[NativeCleaner] backstop, so a token that is neither broadcast
+     * nor released is never orphaned. If a cancellation discards the result
+     * *after* the blocking native registration already minted the token, this
+     * call closes it deterministically on the way out (the gate's
+     * cancellation-cleanup handoff) rather than leaving the reservation to the
+     * GC backstop or the reservation TTL. Otherwise the backstop releases on GC,
+     * or the caller releases via an explicit [SignedCoreTransaction.close];
+     * consuming the token via [broadcastSigned] / [releaseReservation] makes
+     * that release a native no-op.
+     *
+     * Process-death note: the reservation is in-memory. An app crash between
+     * this call and [broadcastSigned] drops the reservation on restart (the
+     * UTXOs become spendable again) — the same property dashj has.
+     *
+     * ## MAYACHAIN-style deposits
+     *
+     * The optional builder controls ([opReturnData], [preserveOutputOrder],
+     * [changeToFirstInput]) exist for MAYACHAIN/THORChain-style swap deposits
+     * (see https://docs.mayaprotocol.com/mayachain-dev-docs/concepts/sending-transactions),
+     * where Swift consumers drive the public `CoreTransactionBuilder` directly
+     * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/CoreWallet/CoreTransactionBuilder.swift:
+     * `addOpReturn` / `preserveOutputOrder` / `changeToFirstInput`). On
+     * Android the builder is not public, so this is the supported path: pass
+     * the vault as the single recipient, the swap memo as [opReturnData], and
+     * enable both flags — the built transaction then has the vault at VOUT0,
+     * the memo at VOUT1, and change (paid back to the first input's address,
+     * which MAYAChain uses to identify the depositor and refund) at VOUT2.
+     * Assert that shape from [SignedCoreTransaction.rawTxBytes] before
+     * deciding: [broadcastSigned] to submit, or [releaseReservation] /
+     * [SignedCoreTransaction.close] to abandon without ever broadcasting.
+     *
+     * @param network the wallet network — see [sendToAddresses].
+     * @param coreSignerHandle the manager's `MnemonicResolverHandle` — see
+     *   [sendToAddresses]. No private key crosses the boundary.
+     * @param opReturnData if non-null, append a zero-value OP_RETURN output
+     *   carrying these bytes after the recipient outputs. Size limits are
+     *   enforced Rust-side (the 80-byte standardness ceiling); an oversize
+     *   payload fails the build without reserving anything.
+     * @param preserveOutputOrder keep outputs in insertion order (skip the
+     *   default BIP-69 sort) — required when a protocol assigns meaning to
+     *   output indices, as MAYAChain does.
+     * @param changeToFirstInput route change back to the first selected
+     *   input's address (VIN0) instead of a fresh change address.
+     */
+    suspend fun buildSignedPayment(
+        recipients: List<Pair<String, Long>>,
+        network: org.dashfoundation.dashsdk.Network,
+        coreSignerHandle: Long,
+        accountType: AccountType = AccountType.ALL_SPENDABLE,
+        accountIndex: Int = 0,
+        opReturnData: ByteArray? = null,
+        preserveOutputOrder: Boolean = false,
+        changeToFirstInput: Boolean = false,
+    ): SignedCoreTransaction = gate.opWithCleanupOnCancellation(
+        // Native finalization mints the token and transfers reservation ownership
+        // to it before the blocking JNI call returns, so the token already exists
+        // by the time `withContext` dispatches back to the caller. That handoff is
+        // a prompt-cancellation point: if the caller was cancelled while JNI ran,
+        // the completed SignedCoreTransaction is discarded before anyone can hold
+        // it, leaving only the GC/NativeCleaner backstop — the reservation would
+        // then sit until an unpredictable GC cycle or the reservation TTL.
+        // Closing the discarded result releases the token deterministically.
+        cleanup = { payment: SignedCoreTransaction -> payment.close() },
+    ) {
+        require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
+        require(recipients.isNotEmpty()) { "recipients must not be empty" }
+        require(recipients.all { it.second > 0 }) {
+            "every recipient amount must be positive"
+        }
+        val builderAccountType = when (accountType) {
+            AccountType.BIP44 -> CoreTransactionBuilder.AccountType.BIP44
+            AccountType.BIP32 -> CoreTransactionBuilder.AccountType.BIP32
+            AccountType.ALL_SPENDABLE -> CoreTransactionBuilder.AccountType.ALL_SPENDABLE
+        }
+        mapNativeErrors {
+            // One atomic native operation: select + reserve + sign + register.
+            // `finalizeSignedPayment` consumes the builder on every path, so
+            // `use` only needs to destroy it on the pre-finalize failure paths
+            // (adding outputs). Selection and reservation commit as a single unit
+            // under the wallet-manager lock, so a concurrent deferred build — or a
+            // deferred build racing an immediate send — can no longer double-
+            // select the same input, restoring the atomicity the removed Kotlin
+            // per-wallet send mutex used to provide.
+            CoreTransactionBuilder(network).use { builder ->
+                for ((address, amount) in recipients) {
+                    builder.addOutput(address, amount)
+                }
+                // Canonical MAYACHAIN sequence: memo after the recipient
+                // outputs, then the shape flags — with preserveOutputOrder the
+                // built transaction keeps vault=VOUT0 / memo=VOUT1 / change last.
+                opReturnData?.let { builder.addOpReturn(it) }
+                if (preserveOutputOrder) {
+                    builder.preserveOutputOrder()
+                }
+                if (changeToFirstInput) {
+                    builder.changeToFirstInput()
+                }
+                builder.finalizeSignedPayment(
+                    this@ManagedPlatformWallet,
+                    builderAccountType,
+                    accountIndex,
+                    coreSignerHandle,
+                )
+            }
+        }
+    }
+
+    /**
+     * Sign [message] with the private key behind [address] and return the
+     * signature as base64 — a **classic Dash signed message**, byte-for-byte
+     * compatible with dashj's `ECKey.signMessage` and Dash Core's `signmessage`
+     * RPC, and verifiable by `verifymessage`, `ECKey.verifyMessage`, and
+     * CrowdNode's server-side check. Android port of Swift's
+     * `ManagedCoreWallet.signMessage(address:message:)`
+     * (`ManagedCoreWallet.swift`), which takes no signer parameter because it
+     * builds a per-call `MnemonicResolver` internally; here the manager's
+     * resolver handle is passed explicitly, as on the send paths.
+     *
+     * **The format.** The signed digest is
+     * `SHA256d(prefix ‖ varint(bytes.size) ‖ bytes)` over
+     * `bytes = message.toByteArray(Charsets.UTF_8)`: the length prefix counts
+     * **UTF-8 bytes**, not `String.length`, which counts UTF-16 code units and
+     * diverges for any non-ASCII text. The prefix is
+     * the historical `"\x19DarkCoin Signed Message:\n"` — *not* `"Dash"`. Dash
+     * inherited that string from before the rename and every existing verifier
+     * depends on it, so it can never change. The returned signature is the
+     * 65-byte BIP-137-style recoverable form (`header ‖ r ‖ s`, with
+     * `header = 27 + recoveryId + 4`, the `+ 4` marking a compressed public
+     * key), base64-encoded. A verifier recovers the public key from the digest
+     * and compares its hash to [address] — which is why only P2PKH addresses
+     * can sign: no other payload has a defined recovery comparison.
+     *
+     * **The CrowdNode use case.** This is the primitive the Android wallet's
+     * CrowdNode integration needs: it signs short strings — a withdrawal amount,
+     * the account email — which CrowdNode verifies against the address that
+     * funded the account. It is a **proof of address ownership, not a spend**:
+     * no UTXO is selected, reserved, spent, or broadcast, no balance changes, and
+     * nothing is persisted. Calling it repeatedly is free and side-effect-free.
+     *
+     * **Which addresses can sign.** [address] must be a P2PKH address of *this*
+     * wallet, on this wallet's network, already derived into one of its address
+     * pools, and belonging to a **signable funds account** (BIP44 / BIP32 /
+     * CoinJoin / DashPay-*receiving*). A watch-only DashPay **external** account
+     * holds a contact's receiving addresses whose private keys we never had, so
+     * those are refused exactly like any other address the wallet does not own:
+     * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.SigningKeyUnavailable].
+     *
+     * An unparseable, wrong-network, or non-P2PKH address is caller input and
+     * surfaces natively as `ErrorInvalidParameter` (2), which has no dedicated
+     * Kotlin arm today and therefore arrives as
+     * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.Generic]
+     * with `code == 2`; the message names which of the three it was. Branch on
+     * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.SigningKeyUnavailable]
+     * to tell "wallet does not own this address" apart from "this is not a
+     * usable address".
+     *
+     * **Determinism.** Signing is RFC6979 deterministic and low-s normalized, so
+     * the same ([address], [message]) pair on the same seed always returns the
+     * same string. Two calls yielding different signatures means the key or the
+     * message differed.
+     *
+     * Runs through the manager's [TeardownGate] like every other native op.
+     *
+     * @param address the P2PKH address whose key signs; must be one this wallet
+     *   owns and has derived.
+     * @param message the string to sign, **verbatim** as UTF-8. It is
+     *   length-prefixed into the digest, so trailing whitespace and newlines are
+     *   significant and the verifier must receive the identical bytes. An empty
+     *   string is valid. Must be well-formed text: a string holding an unpaired
+     *   UTF-16 surrogate has no UTF-8 encoding and is rejected with
+     *   [IllegalArgumentException] rather than signed after a silent
+     *   substitution.
+     * @param coreSignerHandle the manager's `MnemonicResolverHandle`
+     *   (`PlatformWalletManager.mnemonicResolverHandle`); no private key crosses
+     *   the boundary.
+     * @return the base64 signature (88 characters for the 65-byte payload).
+     */
+    suspend fun signMessage(
+        address: String,
+        message: String,
+        coreSignerHandle: Long,
+    ): String = gate.op {
+        require(address.isNotEmpty()) { "address must not be empty" }
+        // The digest commits to the message's UTF-8 bytes, but a Kotlin String
+        // is an unvalidated UTF-16 sequence and may hold an unpaired surrogate,
+        // which has no UTF-8 encoding at all. Every conversion below is LENIENT
+        // and they do not even agree: the JNI bridge's String read substitutes
+        // U+FFFD, while `toByteArray(Charsets.UTF_8)` substitutes '?'. Either
+        // way the wallet would sign bytes the caller never wrote and hand back a
+        // signature that verifies for a different message — silently. Rejected
+        // here, the one layer that still has the exact UTF-16 and can say why.
+        require(message.hasNoUnpairedSurrogate()) {
+            "message must be well-formed text: it contains an unpaired UTF-16 surrogate, " +
+                "which has no UTF-8 encoding and would be silently substituted before signing"
+        }
+
+        mapNativeErrors {
+            coreWallet().use { core ->
+                core.signMessage(address, message, coreSignerHandle)
+            }
+        }
+    }
+
+    /**
+     * Broadcast the deferred payment behind [token] (from [buildSignedPayment])
+     * and return its broadcast txid — the "merchant server acked" arm. Consumes
+     * the token. Rather than double-broadcasting, an unusable token throws one
+     * of three sibling errors: already consumed / unknown
+     * ([org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ReservationTokenConsumed],
+     * e.g. a second [broadcastSigned] with the same token), a different wallet
+     * generation
+     * ([org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ReservationWalletMismatch],
+     * e.g. a re-created wallet), or aged out
+     * ([org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.StaleReservationToken]).
+     * Operates on the token directly (the inputs are already reserved).
+     *
+     * Callers holding a [SignedCoreTransaction] should prefer the object
+     * overload: with the bare token, the source object must stay strongly
+     * reachable until this call returns, or its GC backstop can release the
+     * reservation mid-broadcast.
+     */
+    suspend fun broadcastSigned(token: Long): String = withContext(Dispatchers.IO) {
+        mapNativeErrors {
+            coreWallet().use { core -> core.broadcastSignedPayment(token) }
+        }
+    }
+
+    /**
+     * Broadcast [payment] and return its txid — the object-owning form of
+     * [broadcastSigned]. Prefer this over passing the bare
+     * [SignedCoreTransaction.reservationToken]: the token's lifetime is coupled
+     * to the object's GC-reachability (the [NativeCleaner] backstop releases the
+     * reservation when the object is collected), so a caller that extracts the
+     * `Long` and drops the object races GC and can find the reservation gone.
+     * This overload keeps the object reachable for the whole native call and
+     * disarms the backstop once the token is consumed.
+     */
+    suspend fun broadcastSigned(payment: SignedCoreTransaction): String {
+        try {
+            val txid = broadcastSigned(payment.reservationToken)
+            // Token consumed: close() disarms the GC backstop (the underlying
+            // native release is an idempotent no-op on a consumed token).
+            payment.close()
+            return txid
+        } finally {
+            // The object must stay reachable across the suspend/native call —
+            // without this, GC could run the backstop mid-broadcast and release
+            // the reservation out from under it.
+            java.lang.ref.Reference.reachabilityFence(payment)
+        }
+    }
+
+    /**
+     * Release the funding reservation behind [token] (from [buildSignedPayment])
+     * — the "payment abandoned / merchant server nacked" arm — returning the
+     * reserved UTXOs to spendable. Idempotent: releasing an unknown /
+     * already-broadcast / already-released token is a silent no-op, so it is
+     * always safe to call defensively.
+     */
+    suspend fun releaseReservation(token: Long) {
+        withContext(Dispatchers.IO) {
+            mapNativeErrors {
+                WalletManagerNative.coreWalletReleaseSignedPayment(token)
+            }
+        }
+    }
+
+    /**
+     * Release [payment]'s funding reservation — the object-owning form of
+     * [releaseReservation]; see [broadcastSigned] for why it is preferred over
+     * the bare-token form.
+     */
+    suspend fun releaseReservation(payment: SignedCoreTransaction) {
+        try {
+            releaseReservation(payment.reservationToken)
+            payment.close()
+        } finally {
+            java.lang.ref.Reference.reachabilityFence(payment)
+        }
+    }
+
+    /**
+     * Whether every UTF-16 surrogate in this string is part of a well-formed
+     * high/low pair — i.e. whether the string has an exact UTF-8 encoding.
+     *
+     * Scanned directly rather than via a strict `CharsetEncoder` to keep the
+     * check allocation-free on the hot path; the two agree on exactly which
+     * strings are encodable.
+     */
+    private fun String.hasNoUnpairedSurrogate(): Boolean {
+        var i = 0
+        while (i < length) {
+            val c = this[i]
+            when {
+                c.isHighSurrogate() -> {
+                    if (i + 1 >= length || !this[i + 1].isLowSurrogate()) return false
+                    i += 2
+                }
+                c.isLowSurrogate() -> return false
+                else -> i++
+            }
+        }
+        return true
     }
 
     /**
@@ -546,7 +982,14 @@ class ManagedPlatformWallet internal constructor(
         val watched = inMemoryWatchedIdentityIds().map { it to true }
         (managed + watched).mapNotNull { (id, isWatched) ->
             mapNativeErrors {
-                val identityHandle = TokensNative.getManagedIdentity(handle, id)
+                // The native side reports an unmanaged / just-removed identity
+                // as a platform-wallet NotFound error, not a zero handle, so
+                // the raw code is translated back to the zero-handle "skip"
+                // signal here — otherwise one removed id would throw through
+                // the whole listing (dashpay/platform#4060).
+                val identityHandle = translateManagedIdentityNotFoundToZero {
+                    TokensNative.getManagedIdentity(handle, id)
+                }
                 if (identityHandle == 0L) return@mapNativeErrors null
                 try {
                     val index = WalletManagerNative.managedIdentityGetIdentityIndex(identityHandle)
