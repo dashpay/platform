@@ -225,9 +225,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // `DrainAll`; use it so the pair describes the real gap.
                 let required = match amount {
                     AssetLockBuildAmount::Exact(value) => value,
-                    AssetLockBuildAmount::DrainAll {
-                        minimum_lock_duffs,
-                    } => minimum_lock_duffs.unwrap_or(0),
+                    AssetLockBuildAmount::DrainAll { minimum_lock_duffs } => {
+                        minimum_lock_duffs.unwrap_or(0)
+                    }
                 };
                 map_builder_error(e, required)
             })?;
