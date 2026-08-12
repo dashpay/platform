@@ -121,7 +121,7 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * owned, unlisted row until the first native marketplace sync refreshes it.
  */
 @Database(
-    version = 10,
+    version = 11,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -557,6 +557,44 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v10 → v11: reconcile the `invitations` table to the DIP-13
+         * (#4284/#4313) schema. The qa5 integration line shipped a DIFFERENT
+         * `invitations` schema at its own version 9 (`outPoint`/`fundingIndex`,
+         * 8 columns); databases created by that line therefore carry a table
+         * Room cannot validate against the current `InvitationEntity`
+         * (`outPointHex`/`rawOutPoint`/`fundingIndexRaw` + reclaim/timestamps).
+         * Invitation-tracking rows are non-critical sent-invite history
+         * (reconstructable from chain), so the reconciliation is destructive:
+         * drop and recreate to the current shape. Idempotent via IF EXISTS /
+         * IF NOT EXISTS, so a fresh dev-lineage database is unaffected.
+         */
+        val MIGRATION_10_11: Migration = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS `invitations`")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `invitations` (" +
+                        "`outPointHex` TEXT NOT NULL, " +
+                        "`rawOutPoint` BLOB NOT NULL, " +
+                        "`walletId` BLOB NOT NULL, " +
+                        "`fundingIndexRaw` INTEGER NOT NULL, " +
+                        "`amountDuffs` INTEGER NOT NULL, " +
+                        "`expiryUnix` INTEGER NOT NULL, " +
+                        "`createdAtSecs` INTEGER NOT NULL, " +
+                        "`hasInviter` INTEGER NOT NULL, " +
+                        "`statusRaw` INTEGER NOT NULL, " +
+                        "`reclaimInFlight` INTEGER NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`outPointHex`))"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_invitations_walletId` " +
+                        "ON `invitations` (`walletId`)"
+                )
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -574,6 +612,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_7_8,
                     MIGRATION_8_9,
                     MIGRATION_9_10,
+                    MIGRATION_10_11,
                 )
                 .build()
 
