@@ -1669,6 +1669,8 @@ impl PlatformWallet {
             .shielded_shield_plan_for_account(payment_account)
             .await?
             .preflight)
+    }
+
     /// Create a brand-new Platform identity funded from a ONE-TIME Orchard
     /// spending key — the L2-invitation *claim* side.
     ///

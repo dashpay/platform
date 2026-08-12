@@ -1122,6 +1122,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield_preflight(
             }
         }
         Err(error) => error.into(),
+    }
+}
+
 /// Sibling of [`platform_wallet_manager_shielded_identity_create_from_pool`], but
 /// the Orchard spend authority is a foreign one-time spending key rather than the
 /// wallet's own bound `OrchardKeySet`:
