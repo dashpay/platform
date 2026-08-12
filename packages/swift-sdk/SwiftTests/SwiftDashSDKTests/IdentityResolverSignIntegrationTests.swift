@@ -17,6 +17,38 @@ final class IdentityResolverSignIntegrationTests: XCTestCase {
     private let mnemonic =
         "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 
+    /// In-memory `WalletStorage` so the resolver path under test never
+    /// touches the real macOS Keychain — CI runners often have a locked
+    /// or permission-denied keychain session (`keychainError(-60008)` /
+    /// `(-61)`), which is an environment failure, not what these tests
+    /// cover. The lock mirrors the real storage's thread-safety: the
+    /// resolver trampoline reads from a Rust worker thread.
+    private final class InMemoryWalletStorage: WalletStorage {
+        private var mnemonics: [Data: Data] = [:]
+        private let lock = NSLock()
+
+        override func storeMnemonic(_ mnemonic: String, for walletId: Data) throws {
+            lock.lock()
+            defer { lock.unlock() }
+            mnemonics[walletId] = Data(mnemonic.utf8)
+        }
+
+        override func retrieveMnemonicUTF8Bytes(for walletId: Data) throws -> Data {
+            lock.lock()
+            defer { lock.unlock() }
+            guard let data = mnemonics[walletId], !data.isEmpty else {
+                throw WalletStorageError.mnemonicNotFound
+            }
+            return data
+        }
+
+        override func deleteMnemonic(for walletId: Data) throws {
+            lock.lock()
+            defer { lock.unlock() }
+            mnemonics[walletId] = nil
+        }
+    }
+
     /// A consistent breadcrumb (the path derives to the row's pubkey) signs via
     /// the resolver: the seed is read from the Keychain, the key is derived on
     /// demand, the binding accepts it, and a 65-byte ECDSA signature comes back —
@@ -34,7 +66,7 @@ final class IdentityResolverSignIntegrationTests: XCTestCase {
         XCTAssertEqual(pubkey.count, 33, "compressed secp256k1 pubkey")
 
         // Seed the resolver's source: the mnemonic in WalletStorage, keyed by walletId.
-        let storage = WalletStorage()
+        let storage = InMemoryWalletStorage()
         try storage.storeMnemonic(mnemonic, for: walletId)
         defer { try? storage.deleteMnemonic(for: walletId) }
 
@@ -48,7 +80,7 @@ final class IdentityResolverSignIntegrationTests: XCTestCase {
         ctx.insert(row)
         try ctx.save()
 
-        let signer = KeychainSigner(modelContainer: container, network: .testnet)
+        let signer = KeychainSigner(modelContainer: container, network: .testnet, storage: storage)
         let message = Data("identity state transition".utf8)
         let result = signer.signIdentityKeyOnDemand(publicKey: pubkey, keyType: 0, data: message)
 
@@ -75,7 +107,7 @@ final class IdentityResolverSignIntegrationTests: XCTestCase {
         let wrongPath = try KeyDerivation.getIdentityAuthenticationPath(
             network: .testnet, identityIndex: 9, keyIndex: 9)
 
-        let storage = WalletStorage()
+        let storage = InMemoryWalletStorage()
         try storage.storeMnemonic(mnemonic, for: walletId)
         defer { try? storage.deleteMnemonic(for: walletId) }
 
@@ -88,7 +120,7 @@ final class IdentityResolverSignIntegrationTests: XCTestCase {
         ctx.insert(row)
         try ctx.save()
 
-        let signer = KeychainSigner(modelContainer: container, network: .testnet)
+        let signer = KeychainSigner(modelContainer: container, network: .testnet, storage: storage)
         let result = signer.signIdentityKeyOnDemand(
             publicKey: pubkey, keyType: 0, data: Data("x".utf8))
 

@@ -194,10 +194,14 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     ///   - network: forwarded to `dash_sdk_signer_create_from_private_key`
     ///     for WIF address derivation; does not affect signature output.
     ///   - keychain: defaults to `KeychainManager.shared`.
+    ///   - storage: mnemonic source for the resolver-based signing
+    ///     paths. Defaults to a fresh `WalletStorage()` — overridable
+    ///     for tests.
     public init(
         modelContainer: ModelContainer,
         network: Network = .testnet,
-        keychain: KeychainManager = .shared
+        keychain: KeychainManager = .shared,
+        storage: WalletStorage = WalletStorage()
     ) {
         self.modelContainer = modelContainer
         self.network = network
@@ -206,7 +210,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         // One resolver per signer instance. Cheap to keep around —
         // it's just an opaque handle + a Swift-side `WalletStorage`
         // reference. Used by the platform-address signing branch.
-        self.mnemonicResolver = MnemonicResolver()
+        self.mnemonicResolver = MnemonicResolver(storage: storage)
 
         // Hand Rust an opaque NON-owning pointer to self. The
         // Swift owner is responsible for keeping `self` alive
