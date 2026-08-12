@@ -1580,8 +1580,12 @@ fn resolve_wallet_and_coordinator(
 /// [`platform_wallet_manager_shielded_identity_create_from_one_time_key`]
 /// (which accepts exactly these spending-key bytes).
 ///
-/// Always succeeds (the generator re-rolls until it draws a valid scalar).
+/// The generator re-rolls until it draws a valid scalar, so an invalid key is
+/// never returned — but the call itself can still fail: an OS entropy failure
+/// in the underlying RNG surfaces as [`ErrorWalletOperation`] (never a panic
+/// across the C ABI). Always check the result code.
 ///
+/// [`ErrorWalletOperation`]: crate::error::PlatformWalletFFIResultCode::ErrorWalletOperation
 /// [`platform_wallet_manager_shielded_default_address`]: crate::platform_wallet_manager_shielded_default_address
 ///
 /// # Safety
