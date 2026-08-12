@@ -25,7 +25,7 @@ use super::activity_recorder::{
 };
 use super::keys::{AccountViewingKeys, OrchardKeySet};
 use super::note_selection::{
-    select_notes_for_denomination, select_notes_with_fee, ShieldedFeeKind,
+    select_notes_for_denomination, select_notes_with_fee, ChangeRequirement, ShieldedFeeKind,
 };
 use super::store::{PendingRedrive, ShieldedNote, ShieldedStore, SubwalletId};
 use crate::changeset::{PlatformWalletChangeSet, ShieldedChangeSet};
@@ -51,8 +51,9 @@ use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::prelude::Identifier;
 use dpp::shielded::builder::{
     build_identity_create_from_shielded_pool_transition, build_shield_transition,
-    build_shielded_transfer_transition, build_shielded_withdrawal_transition,
-    build_unshield_transition, OrchardProver, SpendableNote,
+    build_shielded_transfer_transition, build_shielded_transfer_transition_multi,
+    build_shielded_withdrawal_transition, build_unshield_transition, OrchardProver,
+    ShieldedTransferOutput, SpendableNote,
 };
 use dpp::shielded::compute_minimum_shielded_fee;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -712,8 +713,18 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     // reserve against `ShieldedFeeKind::Unshield` — reserving the base fee here would under-fund the
     // address-write cost and the builder would reject the spend (and the `fee_used == exact_fee`
     // debug assert below would fire).
-    let (selected_notes, total_input, exact_fee) =
-        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::Unshield).await?;
+    let (selected_notes, total_input, exact_fee) = reserve_unspent_notes(
+        sdk,
+        store,
+        id,
+        amount,
+        2,
+        ShieldedFeeKind::Unshield,
+        // `build_unshield_transition` accepts a zero-valued change output (it rejects only
+        // `required > total_spent`), so exact coverage is a fundable selection.
+        ChangeRequirement::Optional,
+    )
+    .await?;
 
     info!(
         account,
@@ -899,8 +910,18 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
 
     // ShieldedTransfer is carved with the base `compute_minimum_shielded_fee`, so reserve
     // against `ShieldedFeeKind::Base`.
-    let (selected_notes, total_input, exact_fee) =
-        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::Base).await?;
+    let (selected_notes, total_input, exact_fee) = reserve_unspent_notes(
+        sdk,
+        store,
+        id,
+        amount,
+        2,
+        ShieldedFeeKind::Base,
+        // `build_shielded_transfer_transition` emits change only when there is some, so an
+        // exact-coverage selection is fundable.
+        ChangeRequirement::Optional,
+    )
+    .await?;
 
     info!(
         account,
@@ -1029,6 +1050,204 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     }
 }
 
+/// Transfer funds privately from `account`'s shielded notes to
+/// SEVERAL Orchard outputs in one atomic transition (Type 16).
+///
+/// Multi-output sibling of [`transfer`]. Each `(address, amount)` pair becomes its own note —
+/// including when several pairs name the SAME address, which is how one transition funds an
+/// address with more than one note.
+///
+/// `memo` is attached to every recipient note (the change note always carries the empty memo).
+///
+/// # Fee sizing
+///
+/// The bundle publishes `max(spends, recipients + 1, 2)` actions and a `ShieldedTransfer`'s
+/// `value_balance` must equal `compute_minimum_shielded_fee(actions.len())` EXACTLY. Note
+/// selection therefore reserves against `recipients.len() + 1` outputs — the same floor the
+/// builder sizes its fee from — so the reserved and carved fees cannot diverge.
+#[allow(clippy::too_many_arguments)]
+pub async fn transfer_multi<S: ShieldedStore, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &OrchardKeySet,
+    account: u32,
+    outputs: &[(PaymentAddress, u64)],
+    memo: [u8; 36],
+    prover: &P,
+) -> Result<(), PlatformWalletError> {
+    if outputs.is_empty() {
+        return Err(PlatformWalletError::ShieldedBuildError(
+            "a multi-output shielded transfer needs at least one recipient output".to_string(),
+        ));
+    }
+
+    let builder_outputs: Vec<ShieldedTransferOutput> = outputs
+        .iter()
+        .map(|(addr, amount)| {
+            Ok(ShieldedTransferOutput {
+                recipient: payment_address_to_orchard(addr)?,
+                amount: *amount,
+                memo,
+            })
+        })
+        .collect::<Result<_, PlatformWalletError>>()?;
+
+    let total_amount = outputs
+        .iter()
+        .try_fold(0u64, |acc, (_, amount)| acc.checked_add(*amount))
+        .ok_or_else(|| {
+            PlatformWalletError::ShieldedBuildError(
+                "multi-output shielded transfer amounts overflow u64".to_string(),
+            )
+        })?;
+
+    let views = keys.viewing_keys();
+    let change_addr = default_orchard_address(&views)?;
+    let id = SubwalletId::new(wallet_id, account);
+
+    // Reserve against the SAME output count the builder sizes its fee from: every recipient
+    // output plus the unconditional change output.
+    //
+    // That change output is unconditional and must carry a positive value, so the builder
+    // rejects `total_input == total_amount + fee`. Selection must therefore demand STRICTLY
+    // more, or a wallet holding e.g. `[total_amount + fee, 1]` would have the exact-coverage
+    // note reserved on its own and the build would fail despite the balance being sufficient.
+    let num_outputs = builder_outputs.len() + 1;
+    let (selected_notes, total_input, exact_fee) = reserve_unspent_notes(
+        sdk,
+        store,
+        id,
+        total_amount,
+        num_outputs,
+        ShieldedFeeKind::Base,
+        ChangeRequirement::StrictlyPositive,
+    )
+    .await?;
+
+    info!(
+        account,
+        credits = total_amount,
+        note_outputs = builder_outputs.len(),
+        fee = exact_fee,
+        inputs = selected_notes.len(),
+        total_input,
+        "Shielded multi-output transfer"
+    );
+
+    let mut pending_entry = None;
+    let result = async {
+        let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
+        let anchor_bytes = anchor.to_bytes();
+
+        let (state_transition, fee_used) = build_shielded_transfer_transition_multi(
+            spends,
+            &builder_outputs,
+            &change_addr,
+            &keys.full_viewing_key,
+            &keys.spend_auth_key,
+            anchor,
+            prover,
+            sdk.version(),
+        )
+        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+        debug_assert_eq!(
+            fee_used, exact_fee,
+            "builder fee must match the reserved minimum fee"
+        );
+
+        // One activity row for the whole transition. The counterparty is only meaningful when
+        // every output lands on the same address (the fund-an-address-with-N-notes shape); a
+        // genuine multi-recipient send has no single counterparty to record.
+        let counterparty = outputs
+            .first()
+            .filter(|(first, _)| outputs.iter().all(|(a, _)| a == first))
+            .map(|(addr, _)| addr.to_raw_address_bytes().to_vec());
+
+        pending_entry = record_pending_activity(
+            store,
+            persister,
+            wallet_id,
+            id,
+            &views,
+            LiveEntryParams {
+                kind: ShieldedActivityKind::Sent,
+                direction: ShieldedDirection::Out,
+                amount: total_amount,
+                fee: Some(fee_used),
+                counterparty,
+                memo: non_zero_memo(&memo),
+                actions: shielded_actions(&state_transition),
+                spent_notes: &selected_notes,
+            },
+        )
+        .await;
+        arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await;
+
+        trace!("Shielded multi-output transfer: state transition built, broadcasting...");
+        broadcast_shielded_spend_with_redrive(
+            sdk,
+            store,
+            id,
+            &pending_entry,
+            anchor_bytes,
+            &selected_notes,
+            &state_transition,
+            "transfer_multi",
+        )
+        .await
+    }
+    .await;
+
+    match result {
+        Ok(()) => {
+            record_activity_status(
+                store,
+                persister,
+                wallet_id,
+                id,
+                &pending_entry,
+                ShieldedActivityStatus::Confirmed,
+                None,
+            )
+            .await;
+            if let Err(e) = finalize_pending(store, persister, wallet_id, id, &selected_notes).await
+            {
+                warn!(
+                    account,
+                    error = %e,
+                    "Shielded multi-output transfer broadcast succeeded but local spent-state \
+                     update failed; will heal on next sync"
+                );
+            }
+            info!(
+                account,
+                credits = total_amount,
+                "Shielded multi-output transfer broadcast succeeded"
+            );
+            Ok(())
+        }
+        // Ambiguous post-broadcast confirmation failure: leave the reservation (and the Pending
+        // activity row) in place — a later scan flips it to Confirmed (see `unshield`).
+        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => Err(e),
+        Err(e) => {
+            record_activity_status(
+                store,
+                persister,
+                wallet_id,
+                id,
+                &pending_entry,
+                ShieldedActivityStatus::Failed,
+                None,
+            )
+            .await;
+            cancel_pending(store, id, &selected_notes).await;
+            Err(e)
+        }
+    }
+}
+
 // -------------------------------------------------------------------------
 // Withdraw: shielded pool -> Core L1 address (Type 19)
 // -------------------------------------------------------------------------
@@ -1060,8 +1279,17 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     // `ShieldedFeeKind::Withdrawal` — reserving the base fee here would under-fund the document
     // cost and the builder would reject the spend (and the `fee_used == exact_fee` debug assert
     // below would fire).
-    let (selected_notes, total_input, exact_fee) =
-        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::Withdrawal).await?;
+    let (selected_notes, total_input, exact_fee) = reserve_unspent_notes(
+        sdk,
+        store,
+        id,
+        amount,
+        2,
+        ShieldedFeeKind::Withdrawal,
+        // `build_shielded_withdrawal_transition` likewise accepts zero change.
+        ChangeRequirement::Optional,
+    )
+    .await?;
 
     info!(
         account,
@@ -1916,13 +2144,15 @@ async fn reserve_unspent_notes<S: ShieldedStore>(
     amount: u64,
     outputs: usize,
     fee_kind: ShieldedFeeKind,
+    change: ChangeRequirement,
 ) -> Result<(Vec<ShieldedNote>, u64, u64), PlatformWalletError> {
     let mut store = store.write().await;
     let unspent = store
         .get_unspent_notes(id)
         .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
     let (selected, total_input, exact_fee) =
-        select_notes_with_fee(&unspent, amount, outputs, fee_kind, sdk.version())?.into_owned();
+        select_notes_with_fee(&unspent, amount, outputs, fee_kind, change, sdk.version())?
+            .into_owned();
     for note in &selected {
         store
             .mark_pending(id, &note.nullifier)
