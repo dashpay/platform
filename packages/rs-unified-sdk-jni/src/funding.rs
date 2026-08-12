@@ -877,7 +877,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
         let Some(sk) = read_key32_zeroizing(env, &one_time_sk, "oneTimeSk") else {
             return ptr::null_mut();
         };
-        let Some(change_raw) = read_recipient43(env, &change_address_raw43, "changeAddressRaw43") else {
+        let Some(change_raw) = read_recipient43(env, &change_address_raw43, "changeAddressRaw43")
+        else {
             return ptr::null_mut();
         };
 
