@@ -93,8 +93,6 @@ impl DocumentTypeV1 {
                 document_type_schema_version,
                 admit_history: document_type_schema_version >= 2,
                 admit_count_indexes: platform_version.protocol_version >= 12,
-                // The `refersTo` reference keyword arrived with generation 3
-                admit_property_references: false,
                 meta_schema_method_name: "DocumentTypeV1::try_from_schema (document_type_schema)",
                 // RANKED: generation 1 predates the ranked aggregates entirely
                 // — its index grammar has no `ranked*` keywords, and it

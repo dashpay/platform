@@ -122,7 +122,7 @@ fn insert_values(
     property_value: &Value,
     root_schema: &Value,
     config: &DataContractConfig,
-    admit_property_references: bool,
+    platform_version: &PlatformVersion,
 ) -> Result<(), DataContractError> {
     let mut to_visit: Vec<(Option<String>, String, &Value)> =
         vec![(prefix, property_key, property_value)];
@@ -171,11 +171,8 @@ fn insert_values(
                 }
             }
             property_type => {
-                let property_type = if admit_property_references {
-                    apply_property_reference(&inner_properties, property_type)?
-                } else {
-                    property_type
-                };
+                let property_type =
+                    apply_property_reference(&inner_properties, property_type, platform_version)?;
                 document_properties.insert(
                     prefixed_property_key,
                     DocumentProperty {
@@ -201,7 +198,7 @@ fn insert_values_nested(
     property_value: &Value,
     root_schema: &Value,
     config: &DataContractConfig,
-    admit_property_references: bool,
+    platform_version: &PlatformVersion,
 ) -> Result<(), DataContractError> {
     let mut inner_properties = property_value.to_btree_ref_string_map()?;
 
@@ -278,7 +275,7 @@ fn insert_values_nested(
                             object_property_value,
                             root_schema,
                             config,
-                            admit_property_references,
+                            platform_version,
                         )?;
                     }
                 }
@@ -288,11 +285,8 @@ fn insert_values_nested(
             property_type => property_type,
         };
 
-    let property_type = if admit_property_references {
-        apply_property_reference(&inner_properties, property_type)?
-    } else {
-        property_type
-    };
+    let property_type =
+        apply_property_reference(&inner_properties, property_type, platform_version)?;
 
     document_properties.insert(
         property_key,
@@ -310,11 +304,31 @@ fn insert_values_nested(
 /// with `refersTo` becomes `IdentifierWithReference(target)`. Non-identifier
 /// properties cannot carry `refersTo`.
 ///
-/// Only generation 3 admits the keyword (`admit_property_references`); the
-/// callers above skip this fold entirely for earlier generations, which parsed
-/// before the keyword existed and must keep producing exactly what they always
-/// produced.
+/// Versioned on `apply_property_reference` in the platform version's document
+/// type schema versions. `None` selects the behavior of the versions that
+/// predate the keyword: it is ignored entirely, so their parses stay
+/// byte-for-byte identical to what they always produced.
 fn apply_property_reference(
+    inner_properties: &BTreeMap<String, &Value>,
+    property_type: DocumentPropertyType,
+    platform_version: &PlatformVersion,
+) -> Result<DocumentPropertyType, DataContractError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .apply_property_reference
+    {
+        None => Ok(property_type),
+        Some(0) => apply_property_reference_v0(inner_properties, property_type),
+        Some(version) => Err(DataContractError::Unsupported(format!(
+            "apply_property_reference version {version} is not supported"
+        ))),
+    }
+}
+
+fn apply_property_reference_v0(
     inner_properties: &BTreeMap<String, &Value>,
     property_type: DocumentPropertyType,
 ) -> Result<DocumentPropertyType, DataContractError> {
@@ -448,11 +462,12 @@ mod tests {
     }
 
     #[test]
-    fn should_ignore_refers_to_on_pre_generation_3_parse() {
-        // Generations before 3 predate the `refersTo` keyword: even if it
-        // appears in a schema they parse (only possible without full
-        // validation — their meta-schemas reject it), they must ignore it
-        // and keep producing the plain identifier type they always produced.
+    fn should_ignore_refers_to_on_platform_versions_predating_it() {
+        // Platform versions whose tables carry `apply_property_reference: None`
+        // predate the `refersTo` keyword: even if it appears in a schema they
+        // parse (only possible without full validation — their meta-schemas
+        // reject it), they must ignore it and keep producing the plain
+        // identifier type they always produced.
         let platform_version = PlatformVersion::get(13).expect("platform version 13 should exist");
 
         let document_type = try_document_type_from_schema_on_version(
@@ -489,7 +504,7 @@ mod tests {
     }
 
     #[test]
-    fn should_not_reject_refers_to_on_non_identifier_property_on_pre_generation_3_parse() {
+    fn should_not_reject_refers_to_on_non_identifier_property_on_platform_versions_predating_it() {
         let platform_version = PlatformVersion::get(13).expect("platform version 13 should exist");
 
         try_document_type_from_schema_on_version(
@@ -507,6 +522,6 @@ mod tests {
             }),
             platform_version,
         )
-        .expect("pre-generation-3 parse should ignore refersTo entirely");
+        .expect("a parse predating refersTo should ignore the keyword entirely");
     }
 }
