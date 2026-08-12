@@ -6,7 +6,10 @@ use crate::state_transition::StateTransition;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
-use super::{build_output_only_bundle, serialize_authorized_bundle, OrchardProver};
+use super::{
+    build_output_only_bundle, serialize_authorized_bundle, shielded_bundle_action_count,
+    OrchardProver,
+};
 
 /// Builds a ShieldFromAssetLock state transition (core asset lock -> shielded pool).
 ///
@@ -46,6 +49,16 @@ pub fn build_shield_from_asset_lock_transition<P: OrchardProver>(
     dummy_outputs: usize,
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError> {
+    // Gate the on-wire action count (1 real output + the anonymity-set fillers) against both
+    // consensus ceilings — the structural action cap and the transition-size-derived one —
+    // BEFORE the ~30 s-per-bundle Halo 2 proof. The seeding flow's `MAX_ACTIONS_PER_BATCH`
+    // stays within this, but the parameter is caller-controlled. Checked: `usize::MAX` dummies
+    // must not wrap past the gate in release builds.
+    let num_outputs = dummy_outputs.checked_add(1).ok_or_else(|| {
+        ProtocolError::ShieldedBuildError("dummy_outputs overflows the output count".to_string())
+    })?;
+    shielded_bundle_action_count(0, num_outputs, platform_version)?;
+
     let bundle = build_output_only_bundle(
         recipient,
         shield_amount,
@@ -127,6 +140,13 @@ where
     P: OrchardProver,
     AS: ::key_wallet::signer::Signer,
 {
+    // Same pre-proving gate as the non-signer sibling: both consensus ceilings, before the
+    // proof, with the same checked output-count arithmetic.
+    let num_outputs = dummy_outputs.checked_add(1).ok_or_else(|| {
+        ProtocolError::ShieldedBuildError("dummy_outputs overflows the output count".to_string())
+    })?;
+    shielded_bundle_action_count(0, num_outputs, platform_version)?;
+
     let bundle = build_output_only_bundle(
         recipient,
         shield_amount,

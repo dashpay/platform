@@ -21,7 +21,10 @@ use crate::ProtocolError;
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 
-use super::{build_spend_bundle_with, serialize_authorized_bundle, OrchardProver, SpendableNote};
+use super::{
+    build_spend_bundle_with, serialize_authorized_bundle, shielded_bundle_action_count,
+    OrchardProver, SpendableNote,
+};
 
 /// Output of [`build_identity_create_from_shielded_pool_transition`]: everything the SDK's
 /// `IdentityCreateFromShieldedPool::identity_create_from_shielded_pool` broadcast helper needs.
@@ -158,7 +161,11 @@ where
     // Orchard's BundleType::DEFAULT pads single-spend bundles to a 2-action minimum, matching the
     // other spend-side builders. The fee predictor is only informational here (the metered fee at
     // execution is authoritative); we report it so the caller's reservation math lines up.
-    let num_actions = spends.len().max(2);
+    //
+    // Routed through the shared predictor (1 shielded output — the change note), which is
+    // numerically `spends.len().max(2)` AND enforces both consensus ceilings (the structural
+    // action cap and the transition-size-derived one) BEFORE the ~30 s Halo 2 proof.
+    let num_actions = shielded_bundle_action_count(spends.len(), 1, platform_version)?;
     let fee =
         compute_shielded_identity_create_fee(num_actions, public_keys.len(), platform_version)?;
 

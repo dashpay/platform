@@ -1777,8 +1777,9 @@ class PlatformWalletManager(
      *
      * @param walletId the 32-byte wallet id.
      * @param outputs (raw 43-byte Orchard address, credits) pairs; must be
-     *   non-empty, hold at most 16 entries (the native ceiling), and every
-     *   amount must be positive.
+     *   non-empty, hold at most [MAX_SHIELDED_TRANSFER_RECIPIENTS] entries
+     *   (the native ceiling — 5, bound by the 20 KiB transition-size limit),
+     *   and every amount must be positive.
      * @param account the ZIP-32 shielded account to spend from (usually 0).
      * @param memo optional UTF-8 memo attached to EVERY recipient note
      *   (null / empty = no memo; at most 32 UTF-8 bytes).
@@ -2447,8 +2448,13 @@ class PlatformWalletManager(
          * `packages/rs-platform-wallet-ffi/src/shielded_send.rs`, which the JNI adapter enforces
          * from the array lengths before allocating. Checked here too so an oversized call is
          * refused before this side flattens caller-sized buffers.
+         *
+         * 5 = the effective per-transition Orchard action ceiling (6, bound by the 20 KiB
+         * `max_state_transition_size` — a 7-action transition serializes to ~21.7 KiB) minus
+         * the unconditional change output. The native constant is pinned to the dpp derivation
+         * by a Rust test; raise this only in lockstep with it.
          */
-        const val MAX_SHIELDED_TRANSFER_RECIPIENTS = 16
+        const val MAX_SHIELDED_TRANSFER_RECIPIENTS = 5
 
         /** De-offset `PlatformWalletFFIResultCode::ErrorInvalidParameter`. */
         const val PWFFI_INVALID_PARAMETER = 2
