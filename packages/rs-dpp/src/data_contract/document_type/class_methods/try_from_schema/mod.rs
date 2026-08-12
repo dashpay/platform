@@ -295,8 +295,8 @@ fn insert_values_nested(
 }
 
 /// Folds a `refersTo` declaration into the property type: an identifier property
-/// with `refersTo` becomes `Identifier(Some(target))`. Non-identifier properties
-/// cannot carry `refersTo`.
+/// with `refersTo` becomes `IdentifierWithReference(target)`. Non-identifier
+/// properties cannot carry `refersTo`.
 fn apply_property_reference(
     inner_properties: &BTreeMap<String, &Value>,
     property_type: DocumentPropertyType,
@@ -305,7 +305,10 @@ fn apply_property_reference(
         return Ok(property_type);
     };
 
-    if !matches!(property_type, DocumentPropertyType::Identifier(_)) {
+    if !matches!(
+        property_type,
+        DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
+    ) {
         return Err(DataContractError::InvalidContractStructure(
             "refersTo is only allowed on identifier properties".to_string(),
         ));
@@ -327,7 +330,7 @@ fn apply_property_reference(
         }
     };
 
-    Ok(DocumentPropertyType::Identifier(Some(target)))
+    Ok(DocumentPropertyType::IdentifierWithReference(target))
 }
 
 #[cfg(test)]
@@ -392,7 +395,9 @@ mod tests {
 
         assert!(matches!(
             property_type,
-            DocumentPropertyType::Identifier(Some(DocumentPropertyReferenceTarget::Identity))
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::Identity
+            )
         ));
     }
 

@@ -325,7 +325,7 @@ impl DocumentTypeV0 {
                     schema.insert("byteArray".to_string(), serde_json::Value::Bool(true));
                     serde_json::Value::Object(schema)
                 },
-                DocumentPropertyType::Identifier(_) => {
+                DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                     json!({
                         "type": "array",
                         "items": {

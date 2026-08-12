@@ -89,12 +89,13 @@ pub enum DocumentPropertyType {
     F64,
     String(StringPropertySizes),
     ByteArray(ByteArrayPropertySizes),
-    Identifier(Option<DocumentPropertyReferenceTarget>),
+    Identifier,
     Boolean,
     Date,
     Object(IndexMap<String, DocumentProperty>),
     Array(ArrayItemType),
     VariableTypeArray(Vec<ArrayItemType>),
+    IdentifierWithReference(DocumentPropertyReferenceTarget),
 }
 
 impl DocumentPropertyType {
@@ -114,7 +115,7 @@ impl DocumentPropertyType {
             "f64" | "number" => Ok(DocumentPropertyType::F64),
             "boolean" => Ok(DocumentPropertyType::Boolean),
             "date" => Ok(DocumentPropertyType::Date),
-            "identifier" => Ok(DocumentPropertyType::Identifier(None)),
+            "identifier" => Ok(DocumentPropertyType::Identifier),
             "string" => Ok(DocumentPropertyType::String(StringPropertySizes {
                 min_length: None,
                 max_length: None,
@@ -150,7 +151,9 @@ impl DocumentPropertyType {
             DocumentPropertyType::F64 => "f64".to_string(),
             DocumentPropertyType::String(_) => "string".to_string(),
             DocumentPropertyType::ByteArray(_) => "byteArray".to_string(),
-            DocumentPropertyType::Identifier(_) => "identifier".to_string(),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                "identifier".to_string()
+            }
             DocumentPropertyType::Boolean => "boolean".to_string(),
             DocumentPropertyType::Date => "date".to_string(),
             DocumentPropertyType::Object(_) => "object".to_string(),
@@ -188,7 +191,9 @@ impl DocumentPropertyType {
                 .sum(),
             DocumentPropertyType::Array(_) => None,
             DocumentPropertyType::VariableTypeArray(_) => None,
-            DocumentPropertyType::Identifier(_) => Some(32),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Some(32)
+            }
         }
     }
 
@@ -233,7 +238,9 @@ impl DocumentPropertyType {
                 .sum(),
             DocumentPropertyType::Array(_) => Ok(None),
             DocumentPropertyType::VariableTypeArray(_) => Ok(None),
-            DocumentPropertyType::Identifier(_) => Ok(Some(32)),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Ok(Some(32))
+            }
         }
     }
 
@@ -278,7 +285,9 @@ impl DocumentPropertyType {
                 .sum(),
             DocumentPropertyType::Array(_) => Ok(None),
             DocumentPropertyType::VariableTypeArray(_) => Ok(None),
-            DocumentPropertyType::Identifier(_) => Ok(Some(32)),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Ok(Some(32))
+            }
         }
     }
 
@@ -311,7 +320,9 @@ impl DocumentPropertyType {
                 .sum(),
             DocumentPropertyType::Array(_) => None,
             DocumentPropertyType::VariableTypeArray(_) => None,
-            DocumentPropertyType::Identifier(_) => Some(32),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Some(32)
+            }
         }
     }
 
@@ -445,7 +456,9 @@ impl DocumentPropertyType {
             }
             DocumentPropertyType::Array(_) => Value::Null,
             DocumentPropertyType::VariableTypeArray(_) => Value::Null,
-            DocumentPropertyType::Identifier(_) => Value::Identifier(rng.gen()),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Value::Identifier(rng.gen())
+            }
         }
     }
 
@@ -494,7 +507,9 @@ impl DocumentPropertyType {
             }
             DocumentPropertyType::Array(_) => Value::Null,
             DocumentPropertyType::VariableTypeArray(_) => Value::Null,
-            DocumentPropertyType::Identifier(_) => Value::Identifier(rng.gen()),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Value::Identifier(rng.gen())
+            }
         }
     }
 
@@ -543,7 +558,9 @@ impl DocumentPropertyType {
             }
             DocumentPropertyType::Array(_) => Value::Null,
             DocumentPropertyType::VariableTypeArray(_) => Value::Null,
-            DocumentPropertyType::Identifier(_) => Value::Identifier(rng.gen()),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Value::Identifier(rng.gen())
+            }
         }
     }
 
@@ -719,7 +736,7 @@ impl DocumentPropertyType {
                     }
                 }
             }
-            DocumentPropertyType::Identifier(_) => {
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                 let mut id = [0; 32];
                 buf.read_exact(&mut id).map_err(|_| {
                     DataContractError::DecodingContractError(DecodingError::new(
@@ -938,7 +955,7 @@ impl DocumentPropertyType {
                 r_vec.append(&mut bytes);
                 Ok(r_vec)
             }
-            DocumentPropertyType::Identifier(_) => {
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                 let mut bytes = value.into_identifier_bytes()?;
 
                 let mut r_vec = bytes.len().encode_var_vec();
@@ -1096,7 +1113,9 @@ impl DocumentPropertyType {
                     Ok(r_vec)
                 }
             },
-            DocumentPropertyType::Identifier(_) => Ok(value.to_identifier_bytes()?),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Ok(value.to_identifier_bytes()?)
+            }
             DocumentPropertyType::Boolean => {
                 let value_as_boolean = value
                     .as_bool()
@@ -1231,9 +1250,11 @@ impl DocumentPropertyType {
             DocumentPropertyType::ByteArray(_) => {
                 value.to_binary_bytes().map_err(ProtocolError::ValueError)
             }
-            DocumentPropertyType::Identifier(_) => value
-                .to_identifier_bytes()
-                .map_err(ProtocolError::ValueError),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                value
+                    .to_identifier_bytes()
+                    .map_err(ProtocolError::ValueError)
+            }
             DocumentPropertyType::Boolean => {
                 let value_as_boolean = value
                     .as_bool()
@@ -1352,7 +1373,7 @@ impl DocumentPropertyType {
                 Ok(Value::Float(float))
             }
             DocumentPropertyType::ByteArray(_) => Ok(Value::Bytes(value.to_vec())),
-            DocumentPropertyType::Identifier(_) => {
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                 let identifier = Identifier::from_bytes(value)?;
                 Ok(identifier.into())
             }
@@ -1478,12 +1499,14 @@ impl DocumentPropertyType {
                     DataContractError::ValueDecodingError("could not parse hex bytes".to_string())
                 })?))
             }
-            DocumentPropertyType::Identifier(_) => Ok(Value::Identifier(
-                Value::Text(str.to_owned())
-                    .to_identifier()
-                    .map_err(|e| DataContractError::ValueDecodingError(format!("{:?}", e)))?
-                    .into_buffer(),
-            )),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Ok(Value::Identifier(
+                    Value::Text(str.to_owned())
+                        .to_identifier()
+                        .map_err(|e| DataContractError::ValueDecodingError(format!("{:?}", e)))?
+                        .into_buffer(),
+                ))
+            }
             DocumentPropertyType::Boolean => {
                 if str.to_lowercase().as_str() == "true" {
                     Ok(Value::Bool(true))
@@ -2162,7 +2185,10 @@ impl DocumentPropertyType {
             }
 
             // Convert hex or base58 strings to identifiers for Identifier fields
-            (DocumentPropertyType::Identifier(_), Value::Text(str_value)) => {
+            (
+                DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_),
+                Value::Text(str_value),
+            ) => {
                 // First try base58 decoding (most common for identifiers)
                 if let Ok(id) = Identifier::from_string_unknown_encoding(&str_value) {
                     *value = Value::Identifier(id.into_buffer());
@@ -2416,9 +2442,7 @@ impl DocumentPropertyType {
                 }
 
                 match value_map.get_optional_str(property_names::CONTENT_MEDIA_TYPE)? {
-                    Some("application/x.dash.dpp.identifier") => {
-                        DocumentPropertyType::Identifier(None)
-                    }
+                    Some("application/x.dash.dpp.identifier") => DocumentPropertyType::Identifier,
                     Some(_) | None => DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
                         min_size: value_map.get_optional_integer(property_names::MIN_ITEMS)?,
                         max_size: value_map.get_optional_integer(property_names::MAX_ITEMS)?,
@@ -2581,7 +2605,7 @@ mod tests {
                 }),
                 "byteArray",
             ),
-            (DocumentPropertyType::Identifier(None), "identifier"),
+            (DocumentPropertyType::Identifier, "identifier"),
             (DocumentPropertyType::Boolean, "boolean"),
             (DocumentPropertyType::Date, "date"),
             (DocumentPropertyType::Object(IndexMap::new()), "object"),
@@ -2670,7 +2694,7 @@ mod tests {
         );
         assert_eq!(
             DocumentPropertyType::try_from_name("identifier").unwrap(),
-            DocumentPropertyType::Identifier(None)
+            DocumentPropertyType::Identifier
         );
         assert!(DocumentPropertyType::try_from_name("string").is_ok());
         assert!(DocumentPropertyType::try_from_name("byteArray").is_ok());
@@ -2708,7 +2732,7 @@ mod tests {
         assert_eq!(DocumentPropertyType::F64.min_size(), Some(8));
         assert_eq!(DocumentPropertyType::Boolean.min_size(), Some(1));
         assert_eq!(DocumentPropertyType::Date.min_size(), Some(8));
-        assert_eq!(DocumentPropertyType::Identifier(None).min_size(), Some(32));
+        assert_eq!(DocumentPropertyType::Identifier.min_size(), Some(32));
     }
 
     #[test]
@@ -2792,7 +2816,7 @@ mod tests {
         assert_eq!(DocumentPropertyType::F64.max_size(), Some(8));
         assert_eq!(DocumentPropertyType::Boolean.max_size(), Some(1));
         assert_eq!(DocumentPropertyType::Date.max_size(), Some(8));
-        assert_eq!(DocumentPropertyType::Identifier(None).max_size(), Some(32));
+        assert_eq!(DocumentPropertyType::Identifier.max_size(), Some(32));
     }
 
     #[test]
@@ -2887,9 +2911,7 @@ mod tests {
             Some(8)
         );
         assert_eq!(
-            DocumentPropertyType::Identifier(None)
-                .min_byte_size(pv)
-                .unwrap(),
+            DocumentPropertyType::Identifier.min_byte_size(pv).unwrap(),
             Some(32)
         );
     }
@@ -3072,7 +3094,7 @@ mod tests {
         assert!(!DocumentPropertyType::F64.is_integer());
         assert!(!DocumentPropertyType::Boolean.is_integer());
         assert!(!DocumentPropertyType::Date.is_integer());
-        assert!(!DocumentPropertyType::Identifier(None).is_integer());
+        assert!(!DocumentPropertyType::Identifier.is_integer());
         assert!(!DocumentPropertyType::U128.is_integer());
         assert!(!DocumentPropertyType::I128.is_integer());
         assert!(!DocumentPropertyType::String(StringPropertySizes {
@@ -3503,7 +3525,7 @@ mod tests {
 
     #[test]
     fn test_tree_keys_roundtrip_identifier() {
-        let prop = DocumentPropertyType::Identifier(None);
+        let prop = DocumentPropertyType::Identifier;
         let id_bytes: [u8; 32] = [42u8; 32];
         let val = Value::Identifier(id_bytes);
         let enc = prop.encode_value_for_tree_keys(&val).unwrap();
@@ -3623,7 +3645,7 @@ mod tests {
 
     #[test]
     fn test_encode_value_with_size_identifier() {
-        let prop = DocumentPropertyType::Identifier(None);
+        let prop = DocumentPropertyType::Identifier;
         let id_bytes = [1u8; 32];
         let result = prop
             .encode_value_with_size(Value::Identifier(id_bytes), true)
@@ -3888,7 +3910,7 @@ mod tests {
 
     #[test]
     fn test_encode_value_ref_with_size_identifier() {
-        let prop = DocumentPropertyType::Identifier(None);
+        let prop = DocumentPropertyType::Identifier;
         let id_bytes = [5u8; 32];
         let val = Value::Identifier(id_bytes);
         let result = prop.encode_value_ref_with_size(&val, true).unwrap();
@@ -4205,7 +4227,7 @@ mod tests {
     #[test]
     fn test_read_optionally_from_identifier_required() {
         use std::io::BufReader;
-        let prop = DocumentPropertyType::Identifier(None);
+        let prop = DocumentPropertyType::Identifier;
         let id_bytes = [7u8; 32];
         let mut reader = BufReader::new(id_bytes.as_slice());
         let (value, _) = prop.read_optionally_from(&mut reader, true).unwrap();
@@ -4607,7 +4629,7 @@ mod tests {
         map.insert("contentMediaType".to_string(), &media_type_val);
         let options = DocumentPropertyTypeParsingOptions::default();
         let result = DocumentPropertyType::try_from_value_map(&map, &options).unwrap();
-        assert_eq!(result, DocumentPropertyType::Identifier(None));
+        assert_eq!(result, DocumentPropertyType::Identifier);
     }
 
     #[test]
@@ -5282,7 +5304,7 @@ mod tests {
 
     #[test]
     fn test_encode_value_for_tree_keys_identifier() {
-        let prop = DocumentPropertyType::Identifier(None);
+        let prop = DocumentPropertyType::Identifier;
         let id = [7u8; 32];
         let result = prop
             .encode_value_for_tree_keys(&Value::Identifier(id))
@@ -5387,7 +5409,7 @@ mod tests {
 
     #[test]
     fn test_decode_value_for_tree_keys_identifier() {
-        let prop = DocumentPropertyType::Identifier(None);
+        let prop = DocumentPropertyType::Identifier;
         let id = [7u8; 32];
         let decoded = prop.decode_value_for_tree_keys(&id).unwrap();
         if let Value::Identifier(decoded_id) = decoded {
@@ -5666,9 +5688,7 @@ mod tests {
     fn test_min_byte_size_identifier() {
         let pv = PlatformVersion::latest();
         assert_eq!(
-            DocumentPropertyType::Identifier(None)
-                .min_byte_size(pv)
-                .unwrap(),
+            DocumentPropertyType::Identifier.min_byte_size(pv).unwrap(),
             Some(32)
         );
     }
@@ -5677,9 +5697,7 @@ mod tests {
     fn test_max_byte_size_identifier() {
         let pv = PlatformVersion::latest();
         assert_eq!(
-            DocumentPropertyType::Identifier(None)
-                .max_byte_size(pv)
-                .unwrap(),
+            DocumentPropertyType::Identifier.max_byte_size(pv).unwrap(),
             Some(32)
         );
     }
@@ -5812,7 +5830,7 @@ mod tests {
             Value::Float(_)
         ));
         assert!(matches!(
-            DocumentPropertyType::Identifier(None).random_value(&mut rng),
+            DocumentPropertyType::Identifier.random_value(&mut rng),
             Value::Identifier(_)
         ));
     }
@@ -6049,7 +6067,7 @@ mod tests {
     fn test_random_sub_filled_value_identifier() {
         let mut rng = StdRng::seed_from_u64(15);
         assert!(matches!(
-            DocumentPropertyType::Identifier(None).random_sub_filled_value(&mut rng),
+            DocumentPropertyType::Identifier.random_sub_filled_value(&mut rng),
             Value::Identifier(_)
         ));
     }
@@ -6172,7 +6190,7 @@ mod tests {
             Value::Float(_)
         ));
         assert!(matches!(
-            DocumentPropertyType::Identifier(None).random_filled_value(&mut rng),
+            DocumentPropertyType::Identifier.random_filled_value(&mut rng),
             Value::Identifier(_)
         ));
         assert_eq!(
@@ -6310,7 +6328,7 @@ mod tests {
 
     #[test]
     fn test_read_optionally_from_identifier_truncated_returns_error() {
-        let prop = DocumentPropertyType::Identifier(None);
+        let prop = DocumentPropertyType::Identifier;
         // Only 16 bytes but identifier needs 32
         let data = [1u8; 16];
         let mut reader = BufReader::new(data.as_slice());
@@ -7100,9 +7118,9 @@ mod tests {
     #[test]
     fn should_serialize_reference_metadata() {
         let property = DocumentProperty {
-            property_type: DocumentPropertyType::Identifier(Some(
+            property_type: DocumentPropertyType::IdentifierWithReference(
                 DocumentPropertyReferenceTarget::Identity,
-            )),
+            ),
             required: false,
             transient: false,
         };
@@ -7112,7 +7130,7 @@ mod tests {
         assert_eq!(
             value.get("property_type"),
             Some(&serde_json::json!({
-                "Identifier": "identity"
+                "IdentifierWithReference": "identity"
             }))
         );
     }

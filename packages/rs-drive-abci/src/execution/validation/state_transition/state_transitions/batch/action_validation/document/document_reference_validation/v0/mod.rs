@@ -101,7 +101,8 @@ fn validate_document_type_references_v0(
             }
         }
 
-        let DocumentPropertyType::Identifier(Some(reference_target)) = &property.property_type
+        let DocumentPropertyType::IdentifierWithReference(reference_target) =
+            &property.property_type
         else {
             continue;
         };

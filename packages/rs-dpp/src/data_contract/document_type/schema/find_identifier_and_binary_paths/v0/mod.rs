@@ -29,7 +29,8 @@ impl DocumentTypeV0 {
             };
 
             match &value.property_type {
-                DocumentPropertyType::Identifier(_) => {
+                DocumentPropertyType::Identifier
+                | DocumentPropertyType::IdentifierWithReference(_) => {
                     identifier_paths.insert(new_path);
                 }
                 DocumentPropertyType::ByteArray(_) => {
