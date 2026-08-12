@@ -99,38 +99,35 @@ struct IdentityRow: View {
                     }
                 }
 
-                if identity.isLocal {
-                    HStack {
-                        Image(systemName: "location")
+                // `isLocal` = mine-or-tracked (wallet-derived rows
+                // are always local; manual adds too). Flag only the
+                // rare incidental rows; the balance refresh is a
+                // plain Platform fetch, valid for every row.
+                HStack {
+                    if !identity.isLocal {
+                        Image(systemName: "eye")
                             .font(.caption2)
-                        Text("Local Only")
+                        Text("Observed")
                             .font(.caption2)
+                            .foregroundColor(.secondary)
                     }
-                    .foregroundColor(.orange)
-                } else {
-                    HStack {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.caption2)
-                        Text("On Network")
-                            .font(.caption2)
 
-                        Spacer()
+                    Spacer()
 
-                        Button(action: {
-                            isRefreshing = true
-                            Task {
-                                await refreshBalance()
-                                isRefreshing = false
-                            }
-                        }) {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.caption)
-                                .foregroundColor(.blue)
-                                .rotationEffect(.degrees(isRefreshing ? 360 : 0))
-                                .animation(isRefreshing ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isRefreshing)
+                    Button(action: {
+                        isRefreshing = true
+                        Task {
+                            await refreshBalance()
+                            isRefreshing = false
                         }
-                        .buttonStyle(BorderlessButtonStyle())
+                    }) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                            .rotationEffect(.degrees(isRefreshing ? 360 : 0))
+                            .animation(isRefreshing ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isRefreshing)
                     }
+                    .buttonStyle(BorderlessButtonStyle())
                 }
             }
             .padding(.vertical, 4)
@@ -187,11 +184,11 @@ struct IdentityRow: View {
 
             try? modelContext.save()
         } catch {
-            if !identity.isLocal {
-                appState.showError(
-                    message: "Failed to refresh balance: \(error.localizedDescription)"
-                )
-            }
+            // Every persisted row exists on Platform, so a failed
+            // refresh is worth surfacing for all of them.
+            appState.showError(
+                message: "Failed to refresh balance: \(error.localizedDescription)"
+            )
         }
     }
 }

@@ -90,13 +90,15 @@ class DashSdkErrorTest {
         // The message must warn against retrying, like the broadcast sibling.
         assertTrue(spendUnconfirmed.message!!.contains("do NOT retry"))
 
-        // Code 37, NOT 32: 32 is ErrorTransactionBuild (dashpay/platform#4247,
-        // #4256). This assertion is the mirror's guard against the collision —
-        // if the Rust discriminant is ever moved back onto a claimed number,
-        // the host silently reclassifies an already-claimed invite as some
-        // other branch's error. See ERROR_CODE_REGISTRY.md (#4261).
+        // Code 43, NOT 37 (v4.2-dev's ErrorDocumentNotForSale) and NOT 32
+        // (ErrorTransactionBuild — dashpay/platform#4247/#4256). This
+        // assertion is the mirror's guard against the collision — if the Rust
+        // discriminant is ever moved back onto a claimed number, the host
+        // silently reclassifies an already-claimed invite as some other
+        // branch's error. 43 matches the integration-branch allocation
+        // already shipped in QA AARs, so it is frozen.
         val inviteClaimed =
-            DashSdkError.fromNative(DashSDKException(offset + 37, "nullifier already spent"))
+            DashSdkError.fromNative(DashSDKException(offset + 43, "nullifier already spent"))
         assertTrue(inviteClaimed is DashSdkError.PlatformWallet.ShieldedInviteAlreadyClaimed)
         assertFalse(
             "ShieldedInviteAlreadyClaimed is TERMINAL — the note is consumed",
@@ -128,6 +130,49 @@ class DashSdkErrorTest {
         )
         // The message must warn against retrying (distinct from the anchor case).
         assertTrue(broadcastUnconfirmed.message!!.contains("do NOT retry"))
+
+        // Definitive broadcast rejection (26) must reach callers as its own type,
+        // NOT as Generic: it is the definitive counterpart to the ambiguous
+        // TransactionBroadcastUnconfirmed (20), and on the deferred path the
+        // reservation was released and the token consumed — so it is not
+        // retryable in place, it must be rebuilt.
+        val rejected = DashSdkError.fromNative(DashSDKException(offset + 26, "bad-txns-inputs-spent"))
+        assertTrue(
+            "code 26 must not fall through to Generic",
+            rejected is DashSdkError.PlatformWallet.TransactionBroadcastRejected,
+        )
+        assertFalse(
+            "TransactionBroadcastRejected must NOT be retryable in place (rebuild the payment)",
+            rejected.isRetryable,
+        )
+        assertEquals("bad-txns-inputs-spent", rejected.message)
+
+        // Deferred build/broadcast: the three sibling reservation-token failures
+        // map to three distinct typed errors, none retryable.
+        val agedOut = DashSdkError.fromNative(DashSDKException(offset + 34, "stale token 7"))
+        assertTrue(agedOut is DashSdkError.PlatformWallet.StaleReservationToken)
+        assertFalse(
+            "StaleReservationToken must NOT be retryable (rebuild the payment)",
+            agedOut.isRetryable,
+        )
+        assertEquals("stale token 7", agedOut.message)
+
+        val consumed = DashSdkError.fromNative(DashSDKException(offset + 35, "already broadcast"))
+        assertTrue(consumed is DashSdkError.PlatformWallet.ReservationTokenConsumed)
+        assertFalse(
+            "ReservationTokenConsumed must NOT be retryable (rebuild the payment)",
+            consumed.isRetryable,
+        )
+        assertEquals("already broadcast", consumed.message)
+
+        val walletMismatch =
+            DashSdkError.fromNative(DashSDKException(offset + 36, "different generation"))
+        assertTrue(walletMismatch is DashSdkError.PlatformWallet.ReservationWalletMismatch)
+        assertFalse(
+            "ReservationWalletMismatch must NOT be retryable (rebuild the payment)",
+            walletMismatch.isRetryable,
+        )
+        assertEquals("different generation", walletMismatch.message)
     }
 
     @Test
@@ -139,6 +184,25 @@ class DashSdkErrorTest {
         assertEquals(99, (mapped as DashSdkError.PlatformWallet.Generic).nativeCode)
         assertEquals("boom", mapped.message)
         assertFalse("Generic platform-wallet errors are not retryable", mapped.isRetryable)
+    }
+
+    @Test
+    fun platformShieldCapacityCode41MapsTyped() {
+        val message =
+            "Platform shield capacity exceeded: available 3623849220, required 3623849221"
+        val mapped = DashSdkError.fromNative(
+            DashSDKException(
+                DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 41,
+                message,
+            ),
+        )
+
+        assertTrue(mapped is DashSdkError.PlatformWallet.PlatformShieldCapacityExceeded)
+        assertEquals(message, mapped.message)
+        assertFalse(
+            "unchanged amount must not be retried without refreshing preflight",
+            mapped.isRetryable,
+        )
     }
 
     @Test

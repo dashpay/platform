@@ -29,13 +29,14 @@ pub(crate) use changeset::account_address_pool_entries;
 pub use changeset::{
     upsert_pending_contact_crypto, AccountAddressPoolEntry, AccountRegistrationEntry,
     AssetLockChangeSet, AssetLockEntry, ContactChangeSet, ContactRequestEntry, CoreChangeSet,
-    HighestUsedIndexes, IdentityChangeSet, IdentityEntry, IdentityKeyDerivationIndices,
-    IdentityKeyEntry, IdentityKeysChangeSet, InvitationChangeSet, InvitationEntry,
-    InvitationStatus, KeyDerivationBreadcrumb, KeyWithBreadcrumb, PendingContactCrypto,
-    PendingContactCryptoKey, PendingContactCryptoKind, PendingContactCryptoOp,
-    PlatformAddressBalanceEntry, PlatformAddressChangeSet, PlatformWalletChangeSet,
-    ProviderKeyAccountEntry, ProviderKeyExtendedPubKey, ProviderPlatformNodePubKey,
-    ReceivedContactRequestKey, SentContactRequestKey, TokenBalanceChangeSet, WalletMetadataEntry,
+    DpnsNameSaleStatus, DpnsNameStateChangeSet, DpnsNameStateEntry, HighestUsedIndexes,
+    IdentityChangeSet, IdentityEntry, IdentityKeyDerivationIndices, IdentityKeyEntry,
+    IdentityKeysChangeSet, InvitationChangeSet, InvitationEntry, InvitationStatus,
+    KeyDerivationBreadcrumb, KeyWithBreadcrumb, PendingContactCrypto, PendingContactCryptoKey,
+    PendingContactCryptoKind, PendingContactCryptoOp, PlatformAddressBalanceEntry,
+    PlatformAddressChangeSet, PlatformWalletChangeSet, ProviderKeyAccountEntry,
+    ProviderKeyExtendedPubKey, ProviderPlatformNodePubKey, ReceivedContactRequestKey,
+    SentContactRequestKey, TokenBalanceChangeSet, WalletMetadataEntry,
 };
 pub use client_start_state::ClientStartState;
 pub use client_wallet_start_state::ClientWalletStartState;
@@ -48,4 +49,6 @@ pub use platform_address_sync_start_state::PlatformAddressSyncStartState;
 pub use shielded_changeset::ShieldedChangeSet;
 #[cfg(feature = "shielded")]
 pub use shielded_sync_start_state::{ShieldedSubwalletStartState, ShieldedSyncStartState};
-pub use traits::{PersistenceError, PersistenceErrorKind, PlatformWalletPersistence};
+pub use traits::{
+    ListedCoreTxid, PersistenceError, PersistenceErrorKind, PlatformWalletPersistence,
+};

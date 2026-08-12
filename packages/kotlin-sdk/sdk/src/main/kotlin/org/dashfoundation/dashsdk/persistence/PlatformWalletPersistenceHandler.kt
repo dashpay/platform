@@ -133,7 +133,9 @@ class PlatformWalletPersistenceHandler(
             CAPABILITY_SHIELDED_VIEWING_KEYS or
             CAPABILITY_PROVIDER_TRANSACTIONS or
             CAPABILITY_UNSIGNED_TOKEN_STORAGE or
-            CAPABILITY_WALLET_RESTORE
+            CAPABILITY_WALLET_RESTORE or
+            CAPABILITY_DPNS_NAME_STATES or
+            CAPABILITY_TRACKED_ASSET_LOCKS
 
     /**
      * The single-thread executor created when no [dispatcher] is injected.
@@ -1027,7 +1029,22 @@ class PlatformWalletPersistenceHandler(
             )
             db.identityDao().upsert(row)
 
-            // DPNS labels (append-only; upsert by the unique triple).
+            // IdentityEntryFFI carries the complete canonical label set. Drop
+            // owned labels that are no longer present; a marketplace state
+            // callback in the same changeset re-inserts departed rows with
+            // their sold/transferred status and counterparty.
+            val canonicalLabels = dpnsNames
+                .asSequence()
+                .filter { it.isNotEmpty() }
+                .map(::normalizeDpnsLabel)
+                .toSet()
+            for (persisted in db.dpnsNameDao().getAllByIdentity(identityId)) {
+                if (persisted.isOwned && persisted.normalizedLabel !in canonicalLabels) {
+                    db.dpnsNameDao().delete(persisted)
+                }
+            }
+
+            // DPNS labels (last-write-wins; upsert by the unique triple).
             for (i in dpnsNames.indices) {
                 val label = dpnsNames[i]
                 if (label.isEmpty()) continue
@@ -1042,6 +1059,15 @@ class PlatformWalletPersistenceHandler(
                         acquiredAt = if (acquiredAt != 0L) acquiredAt
                         else existingName?.acquiredAt ?: 0L,
                         identityId = identityId,
+                        documentId = existingName?.documentId,
+                        isOwned = true,
+                        priceCredits = existingName?.priceCredits,
+                        saleStatusRaw = 0,
+                        counterpartyIdentityId = null,
+                        documentCreatedAtMs = existingName?.documentCreatedAtMs ?: 0L,
+                        documentUpdatedAtMs = existingName?.documentUpdatedAtMs ?: 0L,
+                        documentTransferredAtMs = existingName?.documentTransferredAtMs ?: 0L,
+                        marketplaceUpdatedAt = existingName?.marketplaceUpdatedAt ?: 0L,
                         createdAt = existingName?.createdAt ?: java.util.Date(),
                         lastUpdated = now(),
                     ),
@@ -1085,6 +1111,72 @@ class PlatformWalletPersistenceHandler(
             walletId.toHex(),
             clearPendingKeyByIdentityDelta(identityBase58),
         )
+        0
+    }
+
+    @Suppress("LongParameterList")
+    override fun onPersistDpnsNameState(
+        walletId: ByteArray,
+        documentId: ByteArray,
+        walletIdentityId: ByteArray,
+        hasCounterparty: Boolean,
+        counterpartyId: ByteArray,
+        label: String,
+        normalizedLabel: String,
+        normalizedParentDomainName: String,
+        hasPrice: Boolean,
+        priceCredits: Long,
+        status: Byte,
+        createdAtMs: Long,
+        updatedAtMs: Long,
+        transferredAtMs: Long,
+        lastSyncedAtMs: Long,
+    ): Int = guarded {
+        require(status.toInt() in 0..2) { "unknown DPNS sale status $status" }
+        stage(walletId) { db ->
+            // The relationship is non-optional. A marketplace sweep can race
+            // the first identity snapshot, so skip this row and let the next
+            // sync re-emit it instead of rolling back the complete changeset.
+            if (db.identityDao().getByIdentityId(walletIdentityId) == null) {
+                return@stage
+            }
+            val networkRaw = db.walletDao().getByWalletId(walletId)?.networkRaw ?: NETWORK_TESTNET
+            val existing = db.dpnsNameDao().getByDocumentId(documentId)
+                ?: db.dpnsNameDao().getByUniqueKey(
+                    networkRaw,
+                    normalizedParentDomainName,
+                    normalizedLabel,
+                )
+            db.dpnsNameDao().upsert(
+                DpnsNameEntity(
+                    networkRaw = networkRaw,
+                    label = label,
+                    normalizedLabel = normalizedLabel,
+                    parentDomainName = normalizedParentDomainName,
+                    normalizedParentDomainName = normalizedParentDomainName,
+                    acquiredAt = existing?.acquiredAt ?: createdAtMs,
+                    identityId = walletIdentityId,
+                    documentId = documentId,
+                    isOwned = status.toInt() == 0,
+                    priceCredits = if (hasPrice) priceCredits else null,
+                    saleStatusRaw = status.toInt(),
+                    counterpartyIdentityId = if (hasCounterparty) counterpartyId else null,
+                    documentCreatedAtMs = createdAtMs,
+                    documentUpdatedAtMs = updatedAtMs,
+                    documentTransferredAtMs = transferredAtMs,
+                    marketplaceUpdatedAt = lastSyncedAtMs,
+                    createdAt = existing?.createdAt ?: now(),
+                    lastUpdated = now(),
+                ),
+            )
+        }
+        0
+    }
+
+    override fun onRemoveDpnsNameState(walletId: ByteArray, documentId: ByteArray): Int = guarded {
+        stage(walletId) { db ->
+            db.dpnsNameDao().clearMarketplaceByDocumentId(documentId, now())
+        }
         0
     }
 
@@ -3084,6 +3176,8 @@ class PlatformWalletPersistenceHandler(
         internal const val CAPABILITY_PROVIDER_TRANSACTIONS: Long = 0x10
         internal const val CAPABILITY_UNSIGNED_TOKEN_STORAGE: Long = 0x20
         internal const val CAPABILITY_WALLET_RESTORE: Long = 0x80
+        internal const val CAPABILITY_DPNS_NAME_STATES: Long = 0x100
+        internal const val CAPABILITY_TRACKED_ASSET_LOCKS: Long = 0x200
 
         private const val TAG = "DashPersistence"
 

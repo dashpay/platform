@@ -11,16 +11,10 @@ import SwiftUI
 /// the voucher.
 ///
 /// On success the row's `statusRaw` flips to Reclaimed locally — SwiftData is the
-/// UI source of truth here (no Rust re-emit). If the voucher was already consumed
-/// (the invitee claimed it), the reclaim is rejected deterministically and the
-/// row flips to Claimed with a neutral message instead.
-///
-/// Reclaimed is asserted on a successful consume observed by this attempt, or
-/// when the wallet returns its typed `assetLockAlreadyConsumed` error from a
-/// retained local tombstone. That tombstone is written only after this wallet
-/// successfully consumed the lock, so it is stronger evidence than the
-/// persisted `reclaimInFlight` marker. A consensus-message fallback has no such
-/// attribution and remains Claimed or explicitly ambiguous.
+/// UI source of truth here (no Rust re-emit). A typed or legacy already-consumed
+/// error is not success evidence: it can be an unauthenticated Platform report,
+/// so the row and in-flight marker remain unchanged until another source proves
+/// the outcome.
 struct ReclaimInvitationSheet: View {
     let invitation: PersistentInvitation
     let walletId: Data
@@ -198,15 +192,14 @@ struct ReclaimInvitationSheet: View {
                 // consume — never before pre-broadcast local work (e.g. register's
                 // key pre-persist). The marker does NOT attribute a later "already
                 // consumed" rejection (the invitee can race our crash-interrupted
-                // consume); it only downgrades the classification from "provably a
-                // foreign claim" to "explicitly ambiguous". Setting it earlier
-                // would let a purely local failure leave the marker set, degrading
-                // a subsequent genuine foreign claim into the ambiguous message.
+                // consume); it remains crash evidence while the operation outcome
+                // is unknown. Setting it earlier would let a purely local failure
+                // leave a misleading recovery marker.
                 // `hadPriorReclaimInFlight` captures the PERSISTED prior value first.
                 // The save must SUCCEED before the consume may run: an unpersisted
                 // marker followed by a consume + crash would strand the row (a local
                 // "is not tracked" retry classifies as an error, and a Platform
-                // "already consumed" as a foreign claim). On a failed save the
+                // "already consumed" as consumption unknown). On a failed save the
                 // in-memory flag is rolled back so an unrelated later save can't
                 // leak a marker that never reached disk, and the throw aborts the
                 // reclaim before anything irreversible.
@@ -273,43 +266,15 @@ struct ReclaimInvitationSheet: View {
                     error: error,
                     hadPriorReclaimInFlight: hadPriorReclaimInFlight
                 ) {
-                case .reclaimed:
-                    // The wallet retained a local consumed tombstone. It is
-                    // written only after this wallet's consume succeeds, so a
-                    // retry can safely recover the local row as Reclaimed.
-                    invitation.statusRaw = 2
-                    invitation.reclaimInFlight = false
-                    invitation.updatedAt = Date()
-                    try? modelContext.save()
-                    infoMessage =
-                        "This invitation was already reclaimed by this wallet. "
-                        + "The credits were delivered to the target selected "
-                        + "for that reclaim."
-                case .claimed:
-                    // Someone else claimed the voucher first. Reflect the terminal
-                    // state with a neutral message (the claimant is intentionally
-                    // not named).
-                    invitation.statusRaw = 1
-                    invitation.reclaimInFlight = false
-                    invitation.updatedAt = Date()
-                    try? modelContext.save()
-                    infoMessage = "This invitation was already claimed."
-                case .consumedAmbiguous:
-                    // The voucher is provably consumed (Platform's deterministic
-                    // rejection), but with our own earlier attempt in flight the
-                    // consumer could be EITHER that attempt or a racing claim —
-                    // the marker is not evidence tied to a submitted transition,
-                    // so never upgrade to Reclaimed. Terminal-Claimed is the
-                    // conservative resolution; the message states the ambiguity.
-                    invitation.statusRaw = 1
-                    invitation.reclaimInFlight = false
-                    invitation.updatedAt = Date()
-                    try? modelContext.save()
-                    infoMessage =
-                        "This invitation was already consumed — by the invitee's "
-                        + "claim, or possibly by your own earlier interrupted "
-                        + "reclaim. If that reclaim went through, the credits were "
-                        + "delivered to the target you selected then."
+                case .consumptionUnknown:
+                    // Code 24 can mean either a retained local tombstone or an
+                    // unauthenticated Platform report. Retain both status and
+                    // the in-flight marker because this reclaim's completion
+                    // cannot be inferred safely.
+                    errorMessage =
+                        "This asset lock was reported as already used, but the "
+                        + "wallet could not verify whether this reclaim completed. "
+                        + "Sync and check the selected target before retrying."
                 case .untrackedAfterOwnAttempt:
                     // The wallet no longer tracks the voucher lock and our own
                     // attempt was in flight — consistent with that attempt's
@@ -369,23 +334,15 @@ struct ReclaimInvitationSheet: View {
         return highest == UInt32.max ? UInt32.max : highest + 1
     }
 
-    /// The terminal state a reclaim attempt resolves to.
+    /// The state a failed reclaim attempt resolves to.
     ///
-    /// A typed local consumed-tombstone result can recover `.reclaimed`. The
-    /// persisted `reclaimInFlight` marker alone cannot: it is not tied to a
-    /// submitted transition or target, so consensus-message fallback remains
-    /// conservatively Claimed or ambiguous.
+    /// Code 24 and the legacy consensus wording share one conservative outcome:
+    /// neither distinguishes a local tombstone from an unauthenticated remote
+    /// report, so the specific operation's completion remains unknown.
     enum ReclaimOutcome: Equatable {
-        /// This wallet retained a tombstone written after its successful local
-        /// consume, so the interrupted reclaim can be recovered definitively.
-        case reclaimed
-        /// The voucher was consumed and no local attempt was in flight — a
-        /// foreign claim, unambiguously.
-        case claimed
-        /// The voucher is provably consumed (deterministic Platform
-        /// rejection), but our own in-flight attempt makes the consumer
-        /// ambiguous: it could be that attempt or a racing foreign claim.
-        case consumedAmbiguous
+        /// The lock was reported as consumed, but neither consumption nor this
+        /// reclaim's completion is authenticated.
+        case consumptionUnknown
         /// The wallet no longer tracks the voucher lock and our own attempt
         /// was in flight — consistent with that attempt's consume having
         /// landed, but with no on-chain proof of consumption at all. Leave
@@ -396,26 +353,15 @@ struct ReclaimInvitationSheet: View {
     }
 
     /// Pure decision for the reclaim `catch`. A typed wallet
-    /// `assetLockAlreadyConsumed` error comes from a retained local tombstone
-    /// written after a successful consume, and therefore recovers Reclaimed.
-    /// Consensus wording is only proof that the lock is consumed, not who
-    /// consumed it, so the prior in-flight marker splits that fallback into a
-    /// foreign claim vs an explicitly ambiguous consumption. Kept
-    /// side-effect-free and `nonisolated` so it is the unit-tested seam for all
-    /// outcomes; the view maps the outcome to `statusRaw`/message/save.
+    /// `assetLockAlreadyConsumed` and the legacy consensus wording are both
+    /// consumption-unknown signals. Kept side-effect-free and `nonisolated` so
+    /// it is the unit-tested seam for all outcomes.
     nonisolated static func classifyReclaimFailure(
         error: Error,
         hadPriorReclaimInFlight: Bool
     ) -> ReclaimOutcome {
-        if isLocallyConsumedTombstone(error) {
-            return .reclaimed
-        }
-        if isAlreadyConsumed(message: error.localizedDescription) {
-            // Platform deterministically rejected the consume as already-spent,
-            // but this compatibility fallback cannot attribute the consumer.
-            // With no local attempt in flight that is a foreign claim; with one
-            // in flight, attribution is unknowable from the marker alone.
-            return hadPriorReclaimInFlight ? .consumedAmbiguous : .claimed
+        if isAlreadyConsumed(error) {
+            return .consumptionUnknown
         }
         // A retry after our own crash-interrupted consume can also fail
         // LOCALLY ("…is not tracked") — before Platform, so `isAlreadyConsumed`
@@ -460,31 +406,22 @@ struct ReclaimInvitationSheet: View {
         message.lowercased().contains("is not tracked")
     }
 
-    /// Whether an error is the deterministic "asset lock outpoint already
-    /// consumed" rejection (consensus code 10504). The SDK surfaces a consensus
+    /// Whether an error is the typed signal or legacy wording for consensus
+    /// code 10504. The SDK surfaces a legacy consensus
     /// error as `"SDK error: Protocol error: <consensus Display verbatim>"`, so
     /// the canonical Display of
     /// `IdentityAssetLockTransactionOutPointAlreadyConsumedError` —
     /// "Asset lock transaction … already completely used" — appears verbatim.
     /// Matched on that exact phrase ONLY: broader phrases like "already consumed"
-    /// never occur in the real Display and would only widen false-positive risk
-    /// (misclassifying an unrelated failure as a benign "already claimed", which
-    /// would wrongly flip the row to Claimed). A typed FFI result code is the
-    /// primary signal, with the consensus wording retained as a compatibility
-    /// fallback for errors originating below the typed wallet boundary.
+    /// never occur in the real Display and would only widen false-positive risk.
+    /// Neither form authenticates consumption or proves this reclaim completed;
+    /// the typed FFI result is primary and wording is compatibility-only.
     nonisolated static func isAlreadyConsumed(_ error: Error) -> Bool {
-        isLocallyConsumedTombstone(error)
-            || isAlreadyConsumed(message: error.localizedDescription)
-    }
-
-    /// Whether the wallet rejected a retry from its retained local consumed
-    /// tombstone. Unlike consensus wording, this identifies a prior successful
-    /// consume by this wallet and can safely recover the row as Reclaimed.
-    nonisolated static func isLocallyConsumedTombstone(_ error: Error) -> Bool {
-        guard let walletError = error as? PlatformWalletError,
-              case .assetLockAlreadyConsumed = walletError
-        else { return false }
-        return true
+        if let walletError = error as? PlatformWalletError,
+           case .assetLockAlreadyConsumed = walletError {
+            return true
+        }
+        return isAlreadyConsumed(message: error.localizedDescription)
     }
 
     /// Pure classifier over the surfaced error message — the testable seam for

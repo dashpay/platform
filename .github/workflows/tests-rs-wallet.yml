@@ -196,6 +196,7 @@ jobs:
             --package platform-wallet-ffi \
             --package rs-unified-sdk-ffi \
             --package rs-unified-sdk-jni \
+            --all-targets \
             --all-features \
             --locked \
             -- --no-deps -D warnings

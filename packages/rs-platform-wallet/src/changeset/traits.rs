@@ -12,6 +12,22 @@ use crate::wallet::platform_wallet::WalletId;
 use dashcore::Txid;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 
+/// One row of [`PlatformWalletPersistence::list_wallet_core_txids`]:
+/// a persisted Core transaction id plus the host's per-wallet
+/// ownership verdict for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ListedCoreTxid {
+    /// The persisted transaction's id.
+    pub txid: Txid,
+    /// `true` when the transaction spends at least one input funded by
+    /// this wallet's own spendable accounts — i.e. the wallet actually
+    /// paid out in this transaction. `false` for transactions the host
+    /// persisted for other reasons: incoming payments, and third-party
+    /// transactions that merely pay an address on a watch-only DashPay
+    /// external (contact) account.
+    pub spends_wallet_input: bool,
+}
+
 /// Retry classification for [`PersistenceError::Backend`].
 ///
 /// The kind carries the persister's `is_transient()` contract across
@@ -189,6 +205,16 @@ impl PersistenceError {
 /// to guarantee a batch flush, it should call `flush` explicitly after all
 /// `store` calls and treat `store` as a best-effort buffer hint.
 pub trait PlatformWalletPersistence: Send + Sync {
+    /// Whether a successful [`store`](Self::store) makes its changeset
+    /// durable before [`flush`](Self::flush) is called.
+    ///
+    /// The default is conservative for buffered backends. Inline-committing
+    /// implementations override this so callers do not roll back live state
+    /// after a later, post-commit flush-notification failure.
+    fn store_commits_inline(&self) -> bool {
+        false
+    }
+
     /// Feature-specific contracts this backend can persist and, where the
     /// capability requires it, restore after process restart.
     ///
@@ -322,25 +348,62 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// (`SqliteWalletPersister`, the SwiftData iOS persister) should
     /// override.
     ///
-    /// **Field contract.** Implementations are only required to
-    /// populate `txid` and `context` (with the `BlockInfo` inside
-    /// `InChainLockedBlock` / `InBlock` carrying real height + block
-    /// hash + timestamp). Other fields (`transaction`, `input_details`,
+    /// **Field contract.** Implementations must populate `txid`,
+    /// `context` (with the `BlockInfo` inside `InChainLockedBlock` /
+    /// `InBlock` carrying real height + block hash + timestamp) and
+    /// `transaction` — the real consensus-decoded transaction, never a
+    /// synthetic body. A backend that cannot produce the real
+    /// transaction for a txid must return `Ok(None)` instead;
+    /// DashPay sent-payment reconstruction walks
+    /// `record.transaction.output` and treats a miss on a txid the
+    /// backend itself enumerated (via
+    /// [`Self::list_wallet_core_txids`]) as "not available yet", so a
+    /// placeholder body would silently corrupt reconstruction where a
+    /// miss is retried safely. The remaining fields (`input_details`,
     /// `output_details`, `account_type`, `transaction_type`,
     /// `direction`, `net_amount`, `fee`, `label`) MAY be returned as
-    /// best-effort placeholders and MUST NOT be relied upon by callers.
-    /// The current consumer — the asset-lock proof flow — only reads
-    /// `context` and `height()` (which is
-    /// `context.block_info().map(|b| b.height)`). FFI-backed
-    /// implementations (e.g. the SwiftData iOS persister) take
-    /// advantage of this contract by emitting a synthetic record with a
-    /// placeholder transaction body, since reconstructing the full
-    /// `Transaction` over the C ABI is not free and isn't needed.
+    /// best-effort placeholders and MUST NOT be relied upon by callers
+    /// — the asset-lock proof flow reads only `context` and `height()`
+    /// (which is `context.block_info().map(|b| b.height)`).
     fn get_core_tx_record(
         &self,
         _wallet_id: WalletId,
         _txid: &Txid,
     ) -> Result<Option<TransactionRecord>, PersistenceError> {
+        Ok(None)
+    }
+
+    /// Enumerate the persisted Core transaction ids that belong to
+    /// `wallet_id`, each tagged with whether the transaction spends an
+    /// input this wallet funded.
+    ///
+    /// Used by DashPay sent-payment reconstruction to walk the
+    /// wallet's locally persisted transaction history without relying
+    /// on the optional in-memory `transactions()` map.
+    ///
+    /// Returns `Ok(None)` when the backend does not index wallet-scoped
+    /// transaction history at all — the default, kept by backends that
+    /// never wire the capability (e.g. the Android vtable leaves the
+    /// enumeration callbacks unset). `None` is NOT an empty table: an
+    /// empty table (`Some(vec![])`) means "supported, nothing persisted
+    /// yet" and reconstruction keeps retrying until rows appear, while
+    /// `None` tells the caller to skip reconstruction entirely instead
+    /// of re-deriving candidate windows against a table that will never
+    /// materialize.
+    ///
+    /// `spends_wallet_input` must be `true` only when at least one of
+    /// the transaction's inputs spends an output owned by one of this
+    /// wallet's own spendable accounts. Watch-only mirrors — a DashPay
+    /// external account tracking a *contact's* addresses — do NOT
+    /// count: a third party paying that contact produces a transaction
+    /// the host persists as wallet-involved, but nothing in it was
+    /// funded by this wallet. Reconstruction only considers
+    /// wallet-funded transactions, so an over-broad `true` here turns
+    /// other people's payments into fabricated `Sent` history.
+    fn list_wallet_core_txids(
+        &self,
+        _wallet_id: WalletId,
+    ) -> Result<Option<Vec<ListedCoreTxid>>, PersistenceError> {
         Ok(None)
     }
 

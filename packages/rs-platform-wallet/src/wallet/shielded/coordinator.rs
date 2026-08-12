@@ -1623,7 +1623,7 @@ impl NetworkShieldedCoordinator {
                 .into_iter()
                 .flat_map(|entry| entry.note_cmxs.into_iter().map(move |c| (c, entry.id)))
                 .collect();
-            let mut confirmations = derived.confirmations;
+            let confirmations = derived.confirmations;
             for entry in derived.new_entries {
                 let overlapped: std::collections::BTreeSet<[u8; 32]> = entry
                     .note_cmxs
@@ -1632,9 +1632,15 @@ impl NetworkShieldedCoordinator {
                     .copied()
                     .collect();
                 if !overlapped.is_empty() {
-                    if let Some(height) = entry.block_height {
-                        confirmations.extend(overlapped.into_iter().map(|eid| (eid, height)));
-                    }
+                    // A live recorder raced a richer row in between the
+                    // read snapshot and here. Scan-derived entries carry
+                    // no height (their batch's proof-anchor height is
+                    // not an inclusion height — see
+                    // `derive_activity_from_scan_data`), so there is no
+                    // sighting to record from this side; the NEXT pass's
+                    // deriver sees the same cluster overlap and emits
+                    // the `(id, observed_at_height)` sighting that
+                    // flips a still-Pending raced row.
                     continue;
                 }
                 store.save_activity(*id, &entry).map_err(|e| {
@@ -1667,9 +1673,22 @@ impl NetworkShieldedCoordinator {
                 // therefore `Pending || block_height.is_none()`, which
                 // also catches those Failed-no-height rows; only a
                 // Confirmed-with-height row is final.
+                // Scan-derived rows (`created_at_ms == 0`) are
+                // permanently height-less BY DESIGN — their inclusion
+                // height is unknowable client-side (see the entry's
+                // `block_height` doc). Without this exemption, the very
+                // next pass's sighting for the row's own cluster would
+                // match the height-less gate below and stamp the
+                // discovering batch's proof-anchor (scan-tip) height
+                // back onto the row — reintroducing the exact artifact
+                // the deriver stopped writing. Live rows keep both
+                // arms: the Pending flip and the height backfill (their
+                // sighting arrives near-tip, so the bound is within a
+                // few blocks of inclusion).
+                let is_scan_derived = stored.created_at_ms == 0;
                 let needs_upgrade = stored.status
                     == super::activity::ShieldedActivityStatus::Pending
-                    || stored.block_height.is_none();
+                    || (stored.block_height.is_none() && !is_scan_derived);
                 if !needs_upgrade {
                     continue;
                 }
