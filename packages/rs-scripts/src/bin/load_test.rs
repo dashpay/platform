@@ -176,17 +176,29 @@ async fn main() -> ExitCode {
 async fn run() -> Result<(), String> {
     let args = Args::parse();
 
-    // Fail loud on degenerate inputs rather than hanging: --connections 0
-    // would block forever on a zero-permit semaphore, and --rate 0 (or NaN)
-    // would set an effectively infinite tick period, never honouring --time.
+    // Fail loud on degenerate inputs rather than hanging or panicking later,
+    // after contract variants have already been registered (and paid for):
+    // --connections 0 would block forever on a zero-permit semaphore; a
+    // non-finite or too-high --rate produces a zero tick period that panics
+    // tokio's interval; --time 0 would register contracts then broadcast
+    // nothing and divide by zero when reporting.
     if args.connections < 1 {
         return Err("--connections must be >= 1".to_string());
     }
     if args.contracts < 1 {
         return Err("--contracts must be >= 1".to_string());
     }
-    if args.rate <= 0.0 || args.rate.is_nan() {
-        return Err("--rate must be > 0".to_string());
+    if args.time == 0 {
+        return Err("--time must be >= 1 (seconds)".to_string());
+    }
+    if !args.rate.is_finite() || args.rate <= 0.0 {
+        return Err("--rate must be a positive, finite number".to_string());
+    }
+    if Duration::from_secs_f64(1.0 / args.rate).is_zero() {
+        return Err(format!(
+            "--rate {} is too high: the inter-broadcast interval rounds to zero",
+            args.rate
+        ));
     }
     if args.contracts < args.connections as u32 {
         return Err(format!(
@@ -447,7 +459,7 @@ async fn run_document_load(
         ..Default::default()
     };
 
-    let mut ticker = tokio::time::interval(Duration::from_secs_f64(1.0 / rate.max(0.000_001)));
+    let mut ticker = tokio::time::interval(Duration::from_secs_f64(1.0 / rate));
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     eprintln!(
@@ -549,15 +561,18 @@ async fn run_document_load(
 
     let ok = oks.load(Ordering::Relaxed);
     let err = errs.load(Ordering::Relaxed);
-    let secs = duration.as_secs_f64();
+    // Report measured wall-clock (includes the drain past the deadline), and
+    // base accepted throughput on successful acceptances only — failed
+    // broadcasts are not landed documents and must not inflate the headline.
+    let elapsed = start.elapsed().as_secs_f64();
     eprintln!(
         "Done: {} attempted ({} ok, {} err) over {:.0}s = {:.2} docs/s accepted \
          (broadcast/mempool acceptance, not on-chain commit; target {:.2}).",
         ok + err,
         ok,
         err,
-        secs,
-        (ok + err) as f64 / secs,
+        elapsed,
+        ok as f64 / elapsed,
         rate,
     );
 }
