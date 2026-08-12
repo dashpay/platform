@@ -141,6 +141,7 @@ pub struct DriveAbciStateTransitionCommonValidationVersions {
     pub validate_state_transition_identity_signed: FeatureVersion,
     pub validate_unique_identity_public_key_hashes_in_state: FeatureVersion,
     pub validate_master_key_uniqueness: FeatureVersion,
+    pub validate_payment_key_uniqueness: FeatureVersion,
     pub validate_non_masternode_identity_exists: FeatureVersion,
     pub validate_identity_exists: FeatureVersion,
 }

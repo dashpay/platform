@@ -2,6 +2,7 @@ use dpp::identity::Purpose;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name = KeyPurpose)]
+#[allow(non_camel_case_types)]
 pub enum PurposeWasm {
     /// at least one authentication key must be registered for all security levels
     AUTHENTICATION = 0,
@@ -17,6 +18,10 @@ pub enum PurposeWasm {
     VOTING = 5,
     /// this key is only for masternode owners
     OWNER = 6,
+    /// this key detects stealth payments and decrypts payment notifications (DIP-33)
+    PAYMENT_SCAN = 7,
+    /// this key is the spend base for stealth one-time payment addresses (DIP-33)
+    PAYMENT_SPEND = 8,
 }
 
 impl From<Purpose> for PurposeWasm {
@@ -29,6 +34,8 @@ impl From<Purpose> for PurposeWasm {
             Purpose::SYSTEM => PurposeWasm::SYSTEM,
             Purpose::VOTING => PurposeWasm::VOTING,
             Purpose::OWNER => PurposeWasm::OWNER,
+            Purpose::PAYMENT_SCAN => PurposeWasm::PAYMENT_SCAN,
+            Purpose::PAYMENT_SPEND => PurposeWasm::PAYMENT_SPEND,
         }
     }
 }

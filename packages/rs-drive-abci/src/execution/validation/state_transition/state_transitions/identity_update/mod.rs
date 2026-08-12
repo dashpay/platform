@@ -1845,4 +1845,388 @@ mod tests {
             [StateTransitionExecutionResult::PaidConsensusError { .. }]
         );
     }
+
+    /// State-validation coverage for the DIP-33 at-most-one-active-payment-key
+    /// invariant (`validate_payment_key_uniqueness`), including the rotation
+    /// exception and the protocol-version gate.
+    mod payment_key_uniqueness {
+        use super::*;
+        use crate::rpc::core::MockCoreRPCLike;
+        use crate::test::helpers::setup::TempPlatform;
+        use dpp::consensus::basic::BasicError;
+        use dpp::identity::{IdentityPublicKey, KeyID};
+        use simple_signer::signer::SimpleSigner;
+
+        /// Build, sign, and process an identity update that adds the given
+        /// payment-purpose keys (each freshly generated and self-signed) and
+        /// disables the given key ids. Commits on completion so sequential
+        /// updates in one test observe each other's state.
+        #[allow(clippy::too_many_arguments)]
+        async fn process_update(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            identity_id: Identifier,
+            signer: &SimpleSigner,
+            master_key: &IdentityPublicKey,
+            revision: u64,
+            nonce: u64,
+            add: &[(KeyID, Purpose, u64)],
+            disable_public_keys: Vec<KeyID>,
+            platform_version: &PlatformVersion,
+        ) -> Vec<StateTransitionExecutionResult> {
+            let secp = Secp256k1::new();
+
+            let keypairs: Vec<(KeyID, Purpose, Keypair)> = add
+                .iter()
+                .map(|(key_id, purpose, seed)| {
+                    let mut rng = StdRng::seed_from_u64(*seed);
+                    (*key_id, *purpose, Keypair::new(&secp, &mut rng))
+                })
+                .collect();
+
+            let build_keys = |signatures: Option<&Vec<Vec<u8>>>| {
+                keypairs
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (key_id, purpose, keypair))| {
+                        IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
+                            id: *key_id,
+                            purpose: *purpose,
+                            security_level: SecurityLevel::MEDIUM,
+                            key_type: ECDSA_SECP256K1,
+                            read_only: false,
+                            data: keypair.public_key().serialize().to_vec().into(),
+                            signature: signatures
+                                .map(|sigs| sigs[i].clone().into())
+                                .unwrap_or_default(),
+                            contract_bounds: None,
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            };
+
+            let build_transition = |add_public_keys: Vec<IdentityPublicKeyInCreation>| {
+                let transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+                    identity_id,
+                    revision,
+                    nonce,
+                    add_public_keys,
+                    disable_public_keys: disable_public_keys.clone(),
+                    user_fee_increase: 0,
+                    signature_public_key_id: master_key.id(),
+                    signature: Default::default(),
+                }
+                .into();
+                let transition: StateTransition = transition.into();
+                transition
+            };
+
+            // added-key signatures are over the transition's signable bytes,
+            // which exclude those signatures themselves — two-pass build
+            let signable_bytes = build_transition(build_keys(None))
+                .signable_bytes()
+                .expect("expected signable bytes");
+            let signatures: Vec<Vec<u8>> = keypairs
+                .iter()
+                .map(|(_, _, keypair)| {
+                    signer::sign(&signable_bytes, &keypair.secret_key().secret_bytes())
+                        .expect("expected to sign added key")
+                        .to_vec()
+                })
+                .collect();
+
+            let mut transition = build_transition(build_keys(Some(&signatures)));
+            transition.set_signature(
+                signer
+                    .sign(master_key, signable_bytes.as_slice())
+                    .await
+                    .expect("expected to sign"),
+            );
+
+            let transition_bytes = transition
+                .serialize_to_bytes()
+                .expect("expected to serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![transition_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    true,
+                    None,
+                )
+                .expect("expected to process state transition");
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit");
+
+            processing_result.into_execution_results()
+        }
+
+        /// Install an already-valid payment key directly into state as a test
+        /// precondition (bypassing the pipeline).
+        fn install_payment_key(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            identity_id: Identifier,
+            key_id: KeyID,
+            purpose: Purpose,
+            seed: u64,
+            platform_version: &PlatformVersion,
+        ) -> IdentityPublicKey {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let (key, _) = IdentityPublicKey::random_key_with_known_attributes(
+                key_id,
+                &mut rng,
+                purpose,
+                SecurityLevel::MEDIUM,
+                ECDSA_SECP256K1,
+                None,
+                platform_version,
+            )
+            .expect("expected key");
+            platform
+                .drive
+                .add_new_unique_keys_to_identity(
+                    identity_id.to_buffer(),
+                    vec![key.clone()],
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add key to state");
+            key
+        }
+
+        #[tokio::test]
+        async fn test_adding_first_payment_scan_key_is_valid() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let (identity, signer, _, master_key) =
+                setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+
+            let results = process_update(
+                &platform,
+                identity.id(),
+                &signer,
+                &master_key,
+                1,
+                1,
+                &[(10, Purpose::PAYMENT_SCAN, 4001)],
+                vec![],
+                platform_version,
+            )
+            .await;
+            assert_matches!(
+                results.as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+        }
+
+        #[tokio::test]
+        async fn test_adding_payment_key_conflicts_with_existing_active_key() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let (identity, signer, _, master_key) =
+                setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+            install_payment_key(
+                &platform,
+                identity.id(),
+                10,
+                Purpose::PAYMENT_SCAN,
+                4002,
+                platform_version,
+            );
+
+            let results = process_update(
+                &platform,
+                identity.id(),
+                &signer,
+                &master_key,
+                1,
+                1,
+                &[(11, Purpose::PAYMENT_SCAN, 4003)],
+                vec![],
+                platform_version,
+            )
+            .await;
+            assert_matches!(
+                results.as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::BasicError(BasicError::TooManyPublicKeysOfPurposeError(
+                        _
+                    )),
+                    ..
+                }]
+            );
+        }
+
+        #[tokio::test]
+        async fn test_rotating_payment_key_by_disabling_in_same_transition_is_valid() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let (identity, signer, _, master_key) =
+                setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+            let old_key = install_payment_key(
+                &platform,
+                identity.id(),
+                10,
+                Purpose::PAYMENT_SCAN,
+                4004,
+                platform_version,
+            );
+
+            let results = process_update(
+                &platform,
+                identity.id(),
+                &signer,
+                &master_key,
+                1,
+                1,
+                &[(11, Purpose::PAYMENT_SCAN, 4005)],
+                vec![old_key.id()],
+                platform_version,
+            )
+            .await;
+            assert_matches!(
+                results.as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+        }
+
+        #[tokio::test]
+        async fn test_previously_disabled_payment_key_does_not_block_replacement() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let (identity, signer, _, master_key) =
+                setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+            let old_key = install_payment_key(
+                &platform,
+                identity.id(),
+                10,
+                Purpose::PAYMENT_SCAN,
+                4006,
+                platform_version,
+            );
+
+            // first update: disable the old key only
+            let results = process_update(
+                &platform,
+                identity.id(),
+                &signer,
+                &master_key,
+                1,
+                1,
+                &[],
+                vec![old_key.id()],
+                platform_version,
+            )
+            .await;
+            assert_matches!(
+                results.as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            // second update: the disabled historical key must not block adding
+            // a replacement
+            let results = process_update(
+                &platform,
+                identity.id(),
+                &signer,
+                &master_key,
+                2,
+                2,
+                &[(11, Purpose::PAYMENT_SCAN, 4007)],
+                vec![],
+                platform_version,
+            )
+            .await;
+            assert_matches!(
+                results.as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+        }
+
+        #[tokio::test]
+        async fn test_scan_and_spend_purposes_are_independent() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let (identity, signer, _, master_key) =
+                setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+            install_payment_key(
+                &platform,
+                identity.id(),
+                10,
+                Purpose::PAYMENT_SCAN,
+                4008,
+                platform_version,
+            );
+
+            let results = process_update(
+                &platform,
+                identity.id(),
+                &signer,
+                &master_key,
+                1,
+                1,
+                &[(11, Purpose::PAYMENT_SPEND, 4009)],
+                vec![],
+                platform_version,
+            )
+            .await;
+            assert_matches!(
+                results.as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+        }
+
+        #[tokio::test]
+        async fn test_payment_keys_rejected_before_protocol_version_14() {
+            let platform_version = PlatformVersion::get(13).expect("expected version 13");
+            let mut platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(13)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let (identity, signer, _, master_key) =
+                setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+
+            let results = process_update(
+                &platform,
+                identity.id(),
+                &signer,
+                &master_key,
+                1,
+                1,
+                &[(10, Purpose::PAYMENT_SCAN, 4010)],
+                vec![],
+                platform_version,
+            )
+            .await;
+            assert!(
+                !matches!(
+                    results.as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+                ),
+                "payment keys must be rejected before protocol version 14, got: {:?}",
+                results
+            );
+        }
+    }
 }

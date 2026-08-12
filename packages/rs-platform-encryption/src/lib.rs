@@ -10,6 +10,7 @@
 //! - [`account_label`] — `encryptedAccountLabel`.
 //! - [`contact_info`] — `contactInfo` (`encToUserId` + `privateData`).
 //! - [`account_reference`] — the masked `accountReference`.
+//! - [`stealth`] — DIP-33 stealth one-time key derivation.
 //! - [`error`] — the shared [`CryptoError`].
 //!
 //! Every public item is re-exported at the crate root, so the API is flat
@@ -22,6 +23,7 @@ mod compact_xpub;
 mod contact_info;
 mod ecdh;
 mod error;
+mod stealth;
 
 pub use account_label::{decrypt_account_label, encrypt_account_label};
 pub use account_reference::{calculate_account_reference, unmask_account_reference};
@@ -35,3 +37,6 @@ pub use contact_info::{
 };
 pub use ecdh::derive_shared_key_ecdh;
 pub use error::CryptoError;
+pub use stealth::{
+    one_time_public_key, one_time_secret_key, one_time_tweak, stealth_shared_point, StealthRail,
+};

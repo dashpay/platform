@@ -14,4 +14,10 @@ pub enum CryptoError {
 
     #[error("Invalid compact xpub length (DIP-15 requires exactly 69 bytes, got {0})")]
     InvalidCompactXpubLength(usize),
+
+    #[error("Stealth tweak reduced to zero; retry with a fresh ephemeral key")]
+    ZeroStealthTweak,
+
+    #[error("Stealth point operation failed")]
+    StealthPointOperation,
 }

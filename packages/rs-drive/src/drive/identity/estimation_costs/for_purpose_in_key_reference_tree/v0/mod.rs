@@ -46,6 +46,13 @@ impl Drive {
             Purpose::SYSTEM => ApproximateElements(1),
             Purpose::VOTING => ApproximateElements(1),
             Purpose::OWNER => ApproximateElements(1),
+            // Payment purposes are not searchable (DIP-33): no key reference tree exists
+            Purpose::PAYMENT_SCAN => {
+                return;
+            }
+            Purpose::PAYMENT_SPEND => {
+                return;
+            }
         };
 
         let estimated_layer_sizes = match purpose {
@@ -60,6 +67,12 @@ impl Drive {
             Purpose::SYSTEM => AllReference(1, KEY_REFERENCE_SIZE, None),
             Purpose::VOTING => AllReference(1, KEY_REFERENCE_SIZE, None),
             Purpose::OWNER => AllReference(1, KEY_REFERENCE_SIZE, None),
+            Purpose::PAYMENT_SCAN => {
+                return;
+            }
+            Purpose::PAYMENT_SPEND => {
+                return;
+            }
         };
         // we then need to insert the identity keys layer
         estimated_costs_only_with_layer_info.insert(

@@ -7,7 +7,7 @@ use crate::version::dpp_versions::dpp_factory_versions::v1::DPP_FACTORY_VERSIONS
 use crate::version::dpp_versions::dpp_identity_versions::v1::IDENTITY_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_method_versions::v2::DPP_METHOD_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_state_transition_conversion_versions::v2::STATE_TRANSITION_CONVERSION_VERSIONS_V2;
-use crate::version::dpp_versions::dpp_state_transition_method_versions::v1::STATE_TRANSITION_METHOD_VERSIONS_V1;
+use crate::version::dpp_versions::dpp_state_transition_method_versions::v2::STATE_TRANSITION_METHOD_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v2::STATE_TRANSITION_SERIALIZATION_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_state_transition_versions::v3::STATE_TRANSITION_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_token_versions::v2::TOKEN_VERSIONS_V2;
@@ -131,7 +131,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         validation: DPP_VALIDATION_VERSIONS_V5,
         state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V2,
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
-        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V1,
+        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2, // changed: accepts DIP-33 payment key purposes
         state_transitions: STATE_TRANSITION_VERSIONS_V3,
         contract_versions: CONTRACT_VERSIONS_V6, // changed: v3 document meta-schema hosts the ranked index keywords
         document_versions: DOCUMENT_VERSIONS_V3,
