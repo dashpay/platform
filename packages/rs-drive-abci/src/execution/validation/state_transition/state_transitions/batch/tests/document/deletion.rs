@@ -78,15 +78,7 @@ mod deletion_tests {
             )
             .expect("expected a random document");
 
-        // The generator fills the optional payment address fields (present
-        // from dashpay v2 / PV14 on) with random bytes; the data trigger
-        // requires a valid leading type byte
-        if profile.properties().contains_key("corePaymentAddress") {
-            document.set("corePaymentAddress", vec![0u8; 21].into());
-            let mut platform_payment_address = vec![1u8];
-            platform_payment_address.extend([0u8; 20]);
-            document.set("platformPaymentAddress", platform_payment_address.into());
-        }
+        set_valid_profile_payment_addresses(&mut document, profile);
 
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
 
@@ -799,15 +791,7 @@ mod deletion_tests {
             )
             .expect("expected a random document");
 
-        // The generator fills the optional payment address fields (present
-        // from dashpay v2 / PV14 on) with random bytes; the data trigger
-        // requires a valid leading type byte
-        if profile.properties().contains_key("corePaymentAddress") {
-            document.set("corePaymentAddress", vec![0u8; 21].into());
-            let mut platform_payment_address = vec![1u8];
-            platform_payment_address.extend([0u8; 20]);
-            document.set("platformPaymentAddress", platform_payment_address.into());
-        }
+        set_valid_profile_payment_addresses(&mut document, profile);
 
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
 
