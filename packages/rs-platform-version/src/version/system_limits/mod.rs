@@ -39,9 +39,12 @@ pub struct SystemLimits {
     /// reader raising it needs to know what the other two are:
     ///
     /// * `Drive::update_contract_keywords_operations` puts N blind document deletes and M adds
-    ///   in one batch over a single shared index group. It stays correct only because its
-    ///   caller skips it entirely when the new keyword set is empty, so any batch that empties
-    ///   the group also refills it. That guard is load-bearing in the same way this cap is.
+    ///   in one batch over a single shared index group. Every batch it actually emits refills
+    ///   the group it empties, but only because its caller skips it outright when the new
+    ///   keyword set is empty — and that skip is a shield, not a fix. Called directly with an
+    ///   empty set it does strand the group, and the skip leaves the old keyword documents in
+    ///   place, so a contract that clears its keywords keeps being found under them. Both
+    ///   halves are pinned by tests; see the call site in `update_contract_v1`.
     /// * `DocumentOperationType::MultipleDocumentOperationsForSameContractDocumentType` threads
     ///   the accumulated operations through, so document operations in *that* variant do see
     ///   their siblings — which is why the withdrawal paths batch many documents safely. It is
