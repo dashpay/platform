@@ -15,3 +15,4 @@ pub mod document_timestamps_are_equal_error;
 pub mod document_timestamps_mismatch_error;
 pub mod duplicate_unique_index_error;
 pub mod invalid_document_revision_error;
+pub mod referenced_entity_not_found_error;

@@ -300,3 +300,100 @@ lazy_static! {
         .expect("Invalid data contract schema");
 
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn document_schema_with_refers_to(refers_to: serde_json::Value) -> serde_json::Value {
+        json!({
+            "$schema": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json",
+            "type": "object",
+            "properties": {
+                "toUserId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": refers_to
+                }
+            },
+            "additionalProperties": false
+        })
+    }
+
+    #[test]
+    fn should_accept_refers_to_in_v3_document_schema() {
+        for target in ["identity", "contract", "token"] {
+            let schema = document_schema_with_refers_to(json!({
+                "type": target
+            }));
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+                "expected schema with {target} target to be valid"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_refers_to_with_unknown_properties() {
+        let schema = document_schema_with_refers_to(json!({
+            "type": "identity",
+            "mustExist": false
+        }));
+
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+            "expected unknown refersTo properties to be rejected"
+        );
+    }
+
+    #[test]
+    fn should_reject_refers_to_with_unknown_type() {
+        let schema = document_schema_with_refers_to(json!({
+            "type": "unknown"
+        }));
+
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+            "expected schema to be invalid"
+        );
+    }
+
+    #[test]
+    fn should_reject_refers_to_on_non_identifier_property() {
+        let schema = json!({
+            "$schema": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json",
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "position": 0,
+                    "refersTo": { "type": "identity" }
+                }
+            },
+            "additionalProperties": false
+        });
+
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+            "expected refersTo on a non-identifier property to be invalid"
+        );
+    }
+
+    #[test]
+    fn should_reject_refers_to_in_v2_document_schema() {
+        let schema = document_schema_with_refers_to(json!({
+            "type": "identity"
+        }));
+
+        assert!(
+            DOCUMENT_META_SCHEMA_V2.validate(&schema).is_err(),
+            "expected refersTo to be rejected by the v2 meta schema"
+        );
+    }
+}

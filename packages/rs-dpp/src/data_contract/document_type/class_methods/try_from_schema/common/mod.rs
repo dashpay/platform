@@ -714,6 +714,7 @@ fn parse_document_properties(
             property_value,
             root_schema,
             ctx.data_contact_config,
+            ctx.platform_version,
         )
         .map_err(consensus_or_protocol_data_contract_error)?;
 
@@ -725,6 +726,7 @@ fn parse_document_properties(
             property_value,
             root_schema,
             ctx.data_contact_config,
+            ctx.platform_version,
         )
         .map_err(consensus_or_protocol_data_contract_error)?;
     }

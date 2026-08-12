@@ -4684,4 +4684,327 @@ mod creation_tests {
         // He was paid 5
         assert_eq!(token_balance, Some(5));
     }
+
+    const REFERENCE_VALIDATION_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract.json";
+    const REFERENCE_VALIDATION_NESTED_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-nested.json";
+    const REFERENCE_VALIDATION_CONTRACT_REF_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-contract-ref.json";
+    /// The `id` of the contract-reference fixture contract; the happy-path test
+    /// references it since it is the one contract known to exist in state.
+    const REFERENCE_VALIDATION_CONTRACT_REF_CONTRACT_ID: &str =
+        "4Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVd";
+    const REFERENCE_VALIDATION_TOKEN_REF_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-token-ref.json";
+    const REFERENCE_VALIDATION_OPTIONAL_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-optional.json";
+
+    /// References the mutator can point document fields at: the two identities
+    /// existing in state and the id of a token that exists in state.
+    struct ReferenceTargets {
+        identity_id: Identifier,
+        other_identity_id: Identifier,
+        token_id: Identifier,
+    }
+
+    // Helper to run document creation with custom reference mutations.
+    async fn run_reference_validation_creation_with_mutator<F>(
+        contract_path: &str,
+        mutator: F,
+    ) -> StateTransitionExecutionResult
+    where
+        F: FnOnce(&mut Document, &ReferenceTargets),
+    {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(433);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+        let (other_identity, ..) = setup_identity(&mut platform, 959, dash_to_credits!(0.1));
+
+        let (_token_contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            other_identity.id(),
+            None::<fn(&mut TokenConfiguration)>,
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        let targets = ReferenceTargets {
+            identity_id: identity.id(),
+            other_identity_id: other_identity.id(),
+            token_id,
+        };
+
+        let contract = setup_contract(
+            &platform.drive,
+            contract_path,
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            None,
+        );
+
+        let message = contract
+            .document_type_for_name("message")
+            .expect("expected a message document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = message
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        mutator(&mut document, &targets);
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document,
+                message,
+                entropy.0,
+                &key,
+                2,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[documents_batch_create_serialized_transition],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        processing_result
+            .execution_results()
+            .first()
+            .expect("expected one execution result")
+            .clone()
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_referenced_identity_missing() {
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_CONTRACT_PATH,
+            |document, _| {
+                document.set("toUserId", Identifier::random().into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_)),
+                ..
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_referenced_identity_exists() {
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_CONTRACT_PATH,
+            |document, targets| {
+                document.set("toUserId", targets.identity_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_referenced_contract_missing() {
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_CONTRACT_REF_CONTRACT_PATH,
+            |document, _| {
+                document.set("refContractId", Identifier::random().into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_)),
+                ..
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_optional_reference_not_set() {
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_OPTIONAL_CONTRACT_PATH,
+            |document, _| {
+                document.remove("optionalUserId");
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_optional_reference_set_to_missing_identity() {
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_OPTIONAL_CONTRACT_PATH,
+            |document, _| {
+                document.set("optionalUserId", Identifier::random().into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_)),
+                ..
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_referenced_token_missing() {
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_TOKEN_REF_CONTRACT_PATH,
+            |document, _| {
+                document.set("refTokenId", Identifier::random().into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_)),
+                ..
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_referenced_token_exists() {
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_TOKEN_REF_CONTRACT_PATH,
+            |document, targets| {
+                document.set("refTokenId", targets.token_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_referenced_contract_exists() {
+        let existing_contract_id = Identifier::from_string(
+            REFERENCE_VALIDATION_CONTRACT_REF_CONTRACT_ID,
+            Encoding::Base58,
+        )
+        .expect("expected a valid contract id");
+
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_CONTRACT_REF_CONTRACT_PATH,
+            |document, _| {
+                document.set("refContractId", existing_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_with_nested_and_multiple_references() {
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_NESTED_CONTRACT_PATH,
+            |document, targets| {
+                document.set("toUserId", targets.identity_id.into());
+                document.set("otherUserId", targets.other_identity_id.into());
+                document.set("meta.nestedUserId", targets.identity_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_nested_reference_missing() {
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_NESTED_CONTRACT_PATH,
+            |document, targets| {
+                document.set("toUserId", targets.identity_id.into());
+                document.set("otherUserId", targets.other_identity_id.into());
+                document.set("meta.nestedUserId", Identifier::random().into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_)),
+                ..
+            }
+        );
+    }
 }
