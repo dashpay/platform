@@ -191,14 +191,30 @@ async fn run() -> Result<(), String> {
     if args.time == 0 {
         return Err("--time must be >= 1 (seconds)".to_string());
     }
+    // Guard against a --time so large that computing the run deadline
+    // (Instant::now() + duration) would overflow the monotonic clock and panic.
+    if Instant::now()
+        .checked_add(Duration::from_secs(args.time))
+        .is_none()
+    {
+        return Err("--time is too large to represent as a run deadline".to_string());
+    }
     if !args.rate.is_finite() || args.rate <= 0.0 {
         return Err("--rate must be a positive, finite number".to_string());
     }
-    if Duration::from_secs_f64(1.0 / args.rate).is_zero() {
-        return Err(format!(
-            "--rate {} is too high: the inter-broadcast interval rounds to zero",
-            args.rate
-        ));
+    // try_from_secs_f64 (unlike from_secs_f64) returns Err instead of panicking
+    // when the interval is out of Duration's range, so this catches both a
+    // too-high rate (interval rounds to zero) and a too-low rate (interval
+    // overflows Duration) without the check itself ever panicking.
+    match Duration::try_from_secs_f64(1.0 / args.rate) {
+        Ok(period) if !period.is_zero() => {}
+        _ => {
+            return Err(format!(
+                "--rate {} is outside the usable range (its inter-broadcast \
+                 interval is not a positive, representable duration)",
+                args.rate
+            ))
+        }
     }
     if args.contracts < args.connections as u32 {
         return Err(format!(
