@@ -60,10 +60,11 @@
         "position": 4
       },
       "corePaymentAddress": {
-        "type": "string",
-        "minLength": 26,
-        "maxLength": 34,
-        "description": "Base58Check P2PKH/P2SH Core chain address for public payments. Consensus constrains only the length; clients MUST validate the Base58Check checksum and network byte before paying. Payments to it are publicly linkable to this profile.",
+        "type": "array",
+        "byteArray": true,
+        "minItems": 21,
+        "maxItems": 21,
+        "description": "Core chain address in storage form (type byte 0x00 P2PKH / 0x01 P2SH followed by the 20-byte HASH160, i.e. RIPEMD160 of SHA256, of the public key or redeem script) for public payments. Clients render it as Base58Check for the network they are on and MUST validate the type byte before paying. Payments to it are publicly linkable to this profile.",
         "position": 5
       },
       "platformPaymentAddress": {
@@ -71,7 +72,7 @@
         "byteArray": true,
         "minItems": 21,
         "maxItems": 21,
-        "description": "Platform address in storage form (type byte 0x00 P2PKH / 0x01 P2SH followed by 20-byte HASH160) for public payments",
+        "description": "Platform address in storage form (type byte 0x00 P2PKH / 0x01 P2SH followed by the 20-byte HASH160, i.e. RIPEMD160 of SHA256, of the public key or redeem script) for public payments",
         "position": 6
       }
     },
