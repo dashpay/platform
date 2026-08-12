@@ -126,15 +126,29 @@ impl From<&OrchardAddress> for PaymentAddress {
 /// This delegates to Orchard's own [`BundleType::num_actions`] rather than re-deriving the rule,
 /// so the predictor cannot drift from the builder that actually lays out the bundle.
 ///
-/// # The consensus ceiling
+/// # The consensus ceilings
 ///
-/// Every shielded transition's `validate_structure` rejects a bundle whose `actions.len()`
-/// exceeds `platform_version.system_limits.max_shielded_transition_actions` (via
-/// `validate_actions_count`), but the `try_from_bundle` constructors do NOT run structural
-/// validation — so without this gate an over-sized bundle is built, proved (~30 s of Halo 2),
-/// and only then rejected on chain. Because the action count is `max(spends, outputs)`, bounding
-/// it here bounds BOTH sides: a fragmented wallet spending too many notes and a caller asking
-/// for too many outputs are rejected by the same comparison, before any proving work starts.
+/// TWO versioned limits bound a shielded bundle, and this gate enforces both
+/// BEFORE any proving work starts:
+///
+/// 1. **Structural**: every shielded transition's `validate_structure` rejects a bundle whose
+///    `actions.len()` exceeds `platform_version.system_limits.max_shielded_transition_actions`
+///    (via `validate_actions_count`).
+/// 2. **Size**: the serialized transition must fit
+///    `platform_version.system_limits.max_state_transition_size` (20 KiB), enforced by DAPI's
+///    byte prefilter / Tenderdash `mempool.max-tx-bytes` and the Drive-ABCI consensus decoder
+///    — which run BEFORE structural validation ever sees the transition. At current constants
+///    this is the binding limit: 6 actions serialize to ~19.0 KiB while 7 need ~21.7 KiB, so
+///    7..16-action bundles pass the structural check yet are guaranteed dead on arrival.
+///
+/// The `try_from_bundle` constructors run no structural validation and nothing checks the byte
+/// size client-side — so without this gate an over-limit bundle is built, proved (~30 s of
+/// Halo 2 *per bundle*), and only then rejected. The effective ceiling is derived from BOTH
+/// limits via [`crate::shielded::max_shielded_actions_per_transition`], never hardcoded, so a
+/// future `max_state_transition_size` raise widens this gate automatically. Because the action
+/// count is `max(spends, outputs)`, bounding it here bounds BOTH sides: a fragmented wallet
+/// spending too many notes and a caller asking for too many outputs are rejected by the same
+/// comparison, before any proving work starts.
 pub fn shielded_bundle_action_count(
     num_spends: usize,
     num_outputs: usize,
@@ -156,6 +170,18 @@ pub fn shielded_bundle_action_count(
             "a bundle of {num_spends} spends and {num_outputs} outputs publishes {num_actions} \
              Orchard actions, exceeding the consensus limit of {max_actions} \
              (max_shielded_transition_actions); consensus would reject the proved transition"
+        )));
+    }
+
+    let effective_max = crate::shielded::max_shielded_actions_per_transition(platform_version);
+    if num_actions > effective_max {
+        let estimated = crate::shielded::estimated_shielded_transition_wire_bytes(num_actions);
+        let max_size = platform_version.system_limits.max_state_transition_size;
+        return Err(ProtocolError::ShieldedBuildError(format!(
+            "a bundle of {num_spends} spends and {num_outputs} outputs publishes {num_actions} \
+             Orchard actions, which serializes to an estimated {estimated} bytes and exceeds \
+             max_state_transition_size ({max_size} bytes); at most {effective_max} actions fit, \
+             so DAPI's byte prefilter would reject the proved transition"
         )));
     }
 
@@ -861,7 +887,7 @@ mod mod_tests {
             (2, 3, 3),
             (1, 4, 4),
             (5, 3, 5),
-            (3, 7, 7),
+            (3, 6, 6),
         ] {
             let actual = shielded_bundle_action_count(spends, outputs, platform_version)
                 .expect("DEFAULT bundles accept any spend/output mix");
@@ -896,33 +922,61 @@ mod mod_tests {
         }
     }
 
-    /// The predictor is also the CONSENSUS gate: `validate_actions_count` rejects
-    /// `actions.len() > max_shielded_transition_actions`, but `try_from_bundle` runs no
-    /// structural validation — so a bundle over the ceiling would be proved (~30 s of Halo 2)
-    /// and only then rejected on chain. The boundary itself must still pass.
+    /// The predictor is also the CONSENSUS gate — for BOTH ceilings. The effective (size-derived)
+    /// boundary itself must still pass, from each side: at current constants that is 6 actions
+    /// (~19.0 KiB against the 20 KiB `max_state_transition_size`).
     #[test]
-    fn shielded_bundle_action_count_accepts_the_consensus_boundary() {
+    fn shielded_bundle_action_count_accepts_the_effective_boundary() {
         let platform_version = PlatformVersion::latest();
-        let max = platform_version
-            .system_limits
-            .max_shielded_transition_actions as usize;
+        let effective = crate::shielded::max_shielded_actions_per_transition(platform_version);
 
-        // Exactly at the ceiling, from each side.
-        assert_eq!(
-            shielded_bundle_action_count(1, max, platform_version)
-                .expect("the output-side boundary must be accepted"),
-            max
-        );
-        assert_eq!(
-            shielded_bundle_action_count(max, 1, platform_version)
-                .expect("the spend-side boundary must be accepted"),
-            max
-        );
+        // Exactly at the effective ceiling, from each side and from both at once.
+        for (spends, outputs) in [(1usize, effective), (effective, 1), (effective, effective)] {
+            assert_eq!(
+                shielded_bundle_action_count(spends, outputs, platform_version).unwrap_or_else(
+                    |e| panic!("{spends} spends / {outputs} outputs is AT the effective ceiling and must be accepted: {e}")
+                ),
+                effective
+            );
+        }
     }
 
-    /// One action over the ceiling must fail fast — from the OUTPUT side (the 16-recipient FFI
-    /// call, which becomes 17 outputs once the unconditional change output is added) and from
-    /// the SPEND side (a fragmented wallet selecting too many notes).
+    /// One action over the EFFECTIVE ceiling must fail fast, pre-proving — from the OUTPUT side
+    /// (a 6-recipient multi transfer becomes 7 outputs once the unconditional change output is
+    /// added) and from the SPEND side (a fragmented wallet selecting 7 notes). These shapes pass
+    /// the 16-action structural cap, but a 7-action transition serializes to ~21.7 KiB and is
+    /// rejected by DAPI's 20 KiB byte prefilter — AFTER ~30 s of Halo 2 proving, without this
+    /// gate. This test completing in milliseconds is itself part of the assertion.
+    #[test]
+    fn shielded_bundle_action_count_rejects_over_the_size_derived_ceiling() {
+        let platform_version = PlatformVersion::latest();
+        let effective = crate::shielded::max_shielded_actions_per_transition(platform_version);
+        let structural = platform_version
+            .system_limits
+            .max_shielded_transition_actions as usize;
+        assert!(
+            effective < structural,
+            "this test requires the size limit to be the binding one (effective {effective} < \
+             structural {structural}); if the size limit was raised, retire or rework this test"
+        );
+
+        let over = effective + 1;
+        // Output-dominated, spend-dominated, and both-sided 7-action shapes.
+        for (spends, outputs) in [(1usize, over), (over, 1), (over, over)] {
+            let err = shielded_bundle_action_count(spends, outputs, platform_version)
+                .expect_err("a bundle over the size-derived ceiling must be rejected pre-proving");
+            assert!(
+                err.to_string().contains("max_state_transition_size"),
+                "unexpected error for {spends} spends / {outputs} outputs: {err}"
+            );
+        }
+    }
+
+    /// One action over the STRUCTURAL ceiling must fail fast — from the OUTPUT side (a
+    /// 16-recipient call, which becomes 17 outputs once the unconditional change output is
+    /// added) and from the SPEND side (a fragmented wallet selecting too many notes). The
+    /// structural check fires first, so these carry the `max_shielded_transition_actions`
+    /// message rather than the size-derived one.
     #[test]
     fn shielded_bundle_action_count_rejects_over_the_consensus_limit() {
         let platform_version = PlatformVersion::latest();

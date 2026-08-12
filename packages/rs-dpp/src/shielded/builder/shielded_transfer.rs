@@ -641,8 +641,9 @@ mod tests {
         let ask = SpendAuthorizingKey::from(&sk);
         let change_address = test_orchard_address();
 
-        // `max` recipients → `max + 1` outputs once change is added. This is exactly what the
-        // FFI's 16-recipient ceiling admits today.
+        // `max` recipients → `max + 1` outputs once change is added — over even the structural
+        // cap, so this carries the `max_shielded_transition_actions` message (the size-derived
+        // ceiling below 16 is exercised separately).
         let outputs = n_outputs(max, 1_000_000);
 
         let err = build_shielded_transfer_transition_multi(
@@ -662,23 +663,65 @@ mod tests {
         );
     }
 
-    /// The boundary itself must still build: `max - 1` recipients plus change is exactly
-    /// `max_shielded_transition_actions` actions. The gate must not reject it — the build gets
-    /// past the fee/limit arithmetic and only stops at the (unrelated) `add_spend` anchor
-    /// mismatch of the test note, which is how the other builder tests pin "proceeded past the
-    /// value checks" without paying for a real proof.
+    /// The size-derived ceiling binds BELOW the structural cap: `effective` recipients plus the
+    /// unconditional change output is `effective + 1` actions (7 at current constants) — within
+    /// `max_shielded_transition_actions` (16), yet the transition would serialize to ~21.7 KiB
+    /// against the 20 KiB `max_state_transition_size` and die at DAPI's byte prefilter after
+    /// ~30 s of proving. It must fail BEFORE proving with the size-derived message — this test
+    /// completing in milliseconds is itself part of the assertion.
     #[test]
-    fn multi_output_transfer_accepts_the_action_limit_boundary() {
+    fn multi_output_transfer_rejects_output_count_over_the_size_ceiling() {
         let platform_version = PlatformVersion::latest();
-        let max = platform_version
-            .system_limits
-            .max_shielded_transition_actions as usize;
+        let effective =
+            crate::shielded::max_shielded_actions_per_transition(platform_version);
+        assert!(
+            effective
+                < platform_version
+                    .system_limits
+                    .max_shielded_transition_actions as usize,
+            "this test requires the size limit to be the binding one; if it was raised, rework"
+        );
         let sk = SpendingKey::from_bytes([42u8; 32]).expect("valid sk");
         let fvk = FullViewingKey::from(&sk);
         let ask = SpendAuthorizingKey::from(&sk);
         let change_address = test_orchard_address();
 
-        let outputs = n_outputs(max - 1, 1_000_000);
+        // `effective` recipients → `effective + 1` outputs once change is added.
+        let outputs = n_outputs(effective, 1_000_000);
+
+        let err = build_shielded_transfer_transition_multi(
+            vec![test_spendable_note(u64::MAX / 2)],
+            &outputs,
+            &change_address,
+            &fvk,
+            &ask,
+            Anchor::empty_tree(),
+            &TestProver,
+            platform_version,
+        )
+        .expect_err("a bundle over the size-derived ceiling must be rejected pre-proving");
+        assert!(
+            err.to_string().contains("max_state_transition_size"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// The boundary itself must still build: `effective - 1` recipients plus change is exactly
+    /// the effective action ceiling (6 at current constants). Neither gate may reject it — the
+    /// build gets past the fee/limit arithmetic and only stops at the (unrelated) `add_spend`
+    /// anchor mismatch of the test note, which is how the other builder tests pin "proceeded
+    /// past the value checks" without paying for a real proof.
+    #[test]
+    fn multi_output_transfer_accepts_the_action_limit_boundary() {
+        let platform_version = PlatformVersion::latest();
+        let effective =
+            crate::shielded::max_shielded_actions_per_transition(platform_version);
+        let sk = SpendingKey::from_bytes([42u8; 32]).expect("valid sk");
+        let fvk = FullViewingKey::from(&sk);
+        let ask = SpendAuthorizingKey::from(&sk);
+        let change_address = test_orchard_address();
+
+        let outputs = n_outputs(effective - 1, 1_000_000);
 
         let err = build_shielded_transfer_transition_multi(
             vec![test_spendable_note(u64::MAX / 2)],
@@ -693,8 +736,10 @@ mod tests {
         .expect_err("the test note's all-zero path mismatches the empty-tree anchor");
         let err = err.to_string();
         assert!(
-            !err.contains("exceeding the consensus limit"),
-            "exactly {max} actions is AT the limit and must not be rejected by it, got: {err}"
+            !err.contains("exceeding the consensus limit")
+                && !err.contains("max_state_transition_size"),
+            "exactly {effective} actions is AT the effective ceiling and must not be rejected \
+             by either gate, got: {err}"
         );
         assert!(
             err.contains("failed to add spend") || err.contains("nchor"),

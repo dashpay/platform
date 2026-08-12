@@ -11,7 +11,10 @@ use crate::withdrawal::Pooling;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
-use super::{build_spend_bundle, serialize_authorized_bundle, OrchardProver, SpendableNote};
+use super::{
+    build_spend_bundle, serialize_authorized_bundle, shielded_bundle_action_count, OrchardProver,
+    SpendableNote,
+};
 
 /// Builds a ShieldedWithdrawal state transition (shielded pool -> core L1 address).
 ///
@@ -70,7 +73,11 @@ pub fn build_shielded_withdrawal_transition<P: OrchardProver>(
     // otherwise consensus recomputes min_fee from the on-wire actions.len() == 2 and
     // rejects an honest single-spend withdrawal with InsufficientShieldedFeeError (or,
     // post-fee, WithdrawalBelowMinAmountError).
-    let num_actions = spends.len().max(2);
+    //
+    // Routed through the shared predictor (1 shielded output — the change note), which is
+    // numerically `spends.len().max(2)` AND enforces both consensus ceilings (the structural
+    // action cap and the transition-size-derived one) BEFORE the ~30 s Halo 2 proof.
+    let num_actions = shielded_bundle_action_count(spends.len(), 1, platform_version)?;
     // The fee is fixed at the withdrawal minimum: consensus always carves exactly
     // `compute_shielded_withdrawal_fee` from the pool — the base shielded minimum fee PLUS the
     // flat storage cost of the Core withdrawal document this transition inserts — and the net
