@@ -486,7 +486,7 @@ public class PlatformWalletManager: ObservableObject {
         // their `isLocal` promotion until the next launch's unlock runs
         // the verification. Best-effort: a failure only delays promotion,
         // it can't mis-classify.
-        try? verifySeedBinding(w)
+        _ = try? verifySeedBinding(w)
         return w
     }
 
@@ -542,7 +542,7 @@ public class PlatformWalletManager: ObservableObject {
         // their `isLocal` promotion until the next launch's unlock runs
         // the verification. Best-effort: a failure only delays promotion,
         // it can't mis-classify.
-        try? verifySeedBinding(w)
+        _ = try? verifySeedBinding(w)
         return w
     }
 
