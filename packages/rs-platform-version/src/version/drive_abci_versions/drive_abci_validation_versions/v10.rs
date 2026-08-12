@@ -150,9 +150,12 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 fetch_documents_for_transitions_knowing_contract_and_document_type: 1,
                 fetch_document_with_id: 1,
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
-                    // PROTOCOL_VERSION_13: v1 drops the reject bindings for
-                    // Transfer, Purchase and UpdatePrice on DPNS `domain`
-                    // documents, enabling username transfers and sales.
+                    // PROTOCOL_VERSION_14: v2 adds DashPay `profile`
+                    // Create/Replace triggers enforcing the DIP-33
+                    // payment-address type byte (0x00 P2PKH / 0x01 P2SH).
+                    // It keeps v1's PROTOCOL_VERSION_13 change: no reject
+                    // bindings for Transfer, Purchase and UpdatePrice on
+                    // DPNS `domain` documents (username transfers/sales).
                     bindings: 2,
                     triggers: DriveAbciValidationDataTriggerVersions {
                         // PROTOCOL_VERSION_12 (v3.1 hard fork): triggers
