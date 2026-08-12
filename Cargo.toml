@@ -66,6 +66,15 @@ tokio-metrics = "0.5"
 # Size-tuned profile for the iOS `rs-unified-sdk-ffi` staticlib, which
 # otherwise ships huge. Inherits `release` and is ONLY used by the iOS
 # build (`build_ios.sh --profile release`)
+#
+# NOTE: `panic = "abort"` (here and in dev-ios) also disables the FFI
+# panic guards (`catch_panic_to_code` in platform-wallet-ffi's
+# shielded_send.rs) — on iOS a panic aborts the process before any
+# `catch_unwind` runs; the guards are effective on Android and host
+# builds, which keep `panic = "unwind"`. Flipping iOS to "unwind" would
+# activate them at a binary-size cost (unwind tables + landing pads
+# under fat LTO) that must be measured against this profile's size
+# budget before shipping.
 [profile.release-ios]
 inherits = "release"
 panic = "abort"

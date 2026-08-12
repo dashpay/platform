@@ -282,6 +282,36 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
     amount: u64,
     memo_text: *const c_char,
 ) -> PlatformWalletFFIResult {
+    // Guarded: a panic (most concretely `block_on_worker`'s `.expect` on a panicking proving
+    // task) must NOT reach this `extern "C"` frame, where it would abort the process instead of
+    // surfacing to the host as a typed error.
+    catch_spend_panic("shielded transfer", || {
+        shielded_transfer_inner(
+            handle,
+            wallet_id_bytes,
+            mnemonic_resolver_handle,
+            account,
+            recipient_raw_43,
+            amount,
+            memo_text,
+        )
+    })
+}
+
+/// Body of [`platform_wallet_manager_shielded_transfer`], as an ordinary Rust function so a
+/// panic unwinds into [`catch_spend_panic`] instead of across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+unsafe fn shielded_transfer_inner(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    account: u32,
+    recipient_raw_43: *const u8,
+    amount: u64,
+    memo_text: *const c_char,
+) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(mnemonic_resolver_handle);
     check_ptr!(recipient_raw_43);
@@ -350,16 +380,23 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
     map_spend_result(result, "shielded transfer")
 }
 
-/// Defensive upper bound on the recipient count of a multi-output shielded transfer.
+/// Recipient ceiling of a multi-output shielded transfer (Type 16).
 ///
-/// This is an FFI sanity bound, not the protocol limit: it stops an absurd or corrupt
-/// `num_recipients` from driving a huge allocation before anything else can reject it. The real
-/// ceiling is the 20 KiB state-transition size limit, which admits roughly six Orchard actions —
-/// so a legitimate caller stays far below this.
+/// Derived from the EFFECTIVE per-transition Orchard action ceiling — the largest bundle that
+/// satisfies BOTH versioned consensus limits: the structural
+/// `max_shielded_transition_actions` cap AND the 20 KiB `max_state_transition_size`, whose byte
+/// prefilter is the binding one at current constants (6 actions ≈ 19.0 KiB on the wire, 7 ≈
+/// 21.7 KiB — see `dpp::shielded::max_shielded_actions_per_transition`). A multi-output
+/// transfer always appends a change output, so recipients = effective actions − 1. Admitting
+/// more would only burn ~30 s of Halo 2 proving per bundle before DAPI's byte prefilter (or the
+/// dpp builder's own pre-proving gate) rejects the transition.
 ///
 /// Public so language bridges (the JNI adapter, Swift) can enforce the SAME bound before they
-/// allocate their own caller-sized buffers, rather than duplicating the literal.
-pub const MAX_SHIELDED_TRANSFER_RECIPIENTS: usize = 16;
+/// allocate their own caller-sized buffers, rather than duplicating the literal. Pinned against
+/// the dpp derivation by the `max_recipients_matches_the_effective_action_ceiling` test below —
+/// raise it only in lockstep with the versioned limits, together with the Kotlin mirror
+/// (`MAX_SHIELDED_TRANSFER_RECIPIENTS` in `kotlin-sdk`'s `PlatformWalletManager.kt`).
+pub const MAX_SHIELDED_TRANSFER_RECIPIENTS: usize = 5;
 
 /// Render a caught panic payload as a human-readable string.
 fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
@@ -372,8 +409,9 @@ fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
     }
 }
 
-/// Run a shielded-spend export body under [`std::panic::catch_unwind`], converting a panic into a
-/// typed FFI error instead of letting it reach the `extern "C"` frame.
+/// Run an FFI export body under [`std::panic::catch_unwind`], converting a panic into the
+/// operation's contract-appropriate result `code` (with `guidance` appended to the message)
+/// instead of letting it reach the `extern "C"` frame.
 ///
 /// A Rust panic cannot unwind through a C ABI boundary: it aborts the process. The JNI layer
 /// wraps its calls in `support::guard` (which catches panics and raises a Java exception), but
@@ -381,6 +419,61 @@ fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
 /// process is already gone. `block_on_worker` makes this reachable rather than theoretical: it
 /// `.expect`s on the tokio `JoinError`, so any panic inside the proving future (Halo 2 synthesis,
 /// note bookkeeping, the SDK) re-panics right here inside the export.
+///
+/// The `code` must be chosen per operation to preserve that operation's result contract — a
+/// panic can strike after side effects (note reservation, a broadcast) have happened, so the
+/// outcome is genuinely ambiguous and the code must never promise a definitive failure. See
+/// [`catch_spend_panic`] and the per-export call sites.
+///
+/// NOTE: this guard is only effective where panics unwind. The Android (`*-android`) and
+/// host/test profiles build with `panic = "unwind"`, so it works there; the iOS profiles
+/// (`dev-ios` / `release-ios`) build with `panic = "abort"` as part of their staticlib size
+/// tuning (see the workspace `Cargo.toml` profile comments), so on iOS a panic still aborts the
+/// process before this guard can see it.
+fn catch_panic_to_code(
+    operation: &str,
+    code: PlatformWalletFFIResultCode,
+    guidance: &str,
+    body: impl FnOnce() -> PlatformWalletFFIResult,
+) -> PlatformWalletFFIResult {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
+        Ok(result) => result,
+        Err(payload) => PlatformWalletFFIResult::err(
+            code,
+            format!(
+                "{operation} panicked: {}. {guidance}",
+                panic_payload_message(payload.as_ref())
+            ),
+        ),
+    }
+}
+
+/// Post-panic guidance for the note-spending operations (transfer / multi-transfer / unshield /
+/// withdraw / shield). Paired with `ErrorShieldedSpendUnconfirmed` in [`catch_spend_panic`].
+const SPEND_PANIC_GUIDANCE: &str = "The spend may or may not have been broadcast — do NOT \
+     retry; the next shielded sync reconciles the outcome.";
+
+/// Post-panic guidance for Type 20 identity creation. Paired with the generic
+/// [`PlatformWalletFFIResultCode::ErrorUnknown`] — see the export's guard call site for why no
+/// richer code fits.
+const IDENTITY_CREATE_PANIC_GUIDANCE: &str = "The transition may or may not have been broadcast \
+     and the new identity may already exist on chain — do NOT re-submit and do NOT release the \
+     identity slot; out_identity_id was NOT written. The next shielded sync reconciles the \
+     outcome.";
+
+/// Post-panic guidance for the asset-lock funding operations (fresh fund / resume). Paired with
+/// `ErrorWalletOperation`, the single error code those exports already surface.
+const ASSET_LOCK_FUNDING_PANIC_GUIDANCE: &str = "The funding may have partially executed — an \
+     asset-lock transaction may already be broadcast and tracked. Do NOT blindly re-run (a fresh \
+     call would build and fund a NEW asset lock); check the wallet's tracked asset locks after \
+     the next sync and use the resume entry point to complete an in-flight funding.";
+
+/// Post-panic guidance for the devnet/testnet pool-seeding loop. Paired with
+/// `ErrorWalletOperation`, the single error code that export already surfaces.
+const SEED_POOL_PANIC_GUIDANCE: &str = "Batches that completed before the panic are on chain; \
+     re-running after the next sync resumes seeding toward the target.";
+
+/// [`catch_panic_to_code`] specialized for the note-spending exports.
 ///
 /// The panic is mapped to [`PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed`], NOT to
 /// a definitive failure code: a panic can strike after the notes were reserved and even after the
@@ -391,17 +484,12 @@ fn catch_spend_panic(
     operation: &str,
     body: impl FnOnce() -> PlatformWalletFFIResult,
 ) -> PlatformWalletFFIResult {
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
-        Ok(result) => result,
-        Err(payload) => PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
-            format!(
-                "{operation} panicked: {}. The spend may or may not have been broadcast — do \
-                 NOT retry; the next shielded sync reconciles the outcome.",
-                panic_payload_message(payload.as_ref())
-            ),
-        ),
-    }
+    catch_panic_to_code(
+        operation,
+        PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
+        SPEND_PANIC_GUIDANCE,
+        body,
+    )
 }
 
 /// Send a shielded → shielded transfer with SEVERAL outputs in one
@@ -606,6 +694,32 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_unshield(
     to_platform_addr_cstr: *const c_char,
     amount: u64,
 ) -> PlatformWalletFFIResult {
+    // Guarded: a panic must NOT reach this `extern "C"` frame (see `catch_panic_to_code`).
+    catch_spend_panic("shielded unshield", || {
+        shielded_unshield_inner(
+            handle,
+            wallet_id_bytes,
+            mnemonic_resolver_handle,
+            account,
+            to_platform_addr_cstr,
+            amount,
+        )
+    })
+}
+
+/// Body of [`platform_wallet_manager_shielded_unshield`], as an ordinary Rust function so a
+/// panic unwinds into [`catch_spend_panic`] instead of across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+unsafe fn shielded_unshield_inner(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    account: u32,
+    to_platform_addr_cstr: *const c_char,
+    amount: u64,
+) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(mnemonic_resolver_handle);
     check_ptr!(to_platform_addr_cstr);
@@ -672,6 +786,34 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_unshield(
 ///   C string for the duration of the call.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    account: u32,
+    to_core_address_cstr: *const c_char,
+    amount: u64,
+    core_fee_per_byte: u32,
+) -> PlatformWalletFFIResult {
+    // Guarded: a panic must NOT reach this `extern "C"` frame (see `catch_panic_to_code`).
+    catch_spend_panic("shielded withdraw", || {
+        shielded_withdraw_inner(
+            handle,
+            wallet_id_bytes,
+            mnemonic_resolver_handle,
+            account,
+            to_core_address_cstr,
+            amount,
+            core_fee_per_byte,
+        )
+    })
+}
+
+/// Body of [`platform_wallet_manager_shielded_withdraw`], as an ordinary Rust function so a
+/// panic unwinds into [`catch_spend_panic`] instead of across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+unsafe fn shielded_withdraw_inner(
     handle: Handle,
     wallet_id_bytes: *const u8,
     mnemonic_resolver_handle: *mut MnemonicResolverHandle,
@@ -899,6 +1041,58 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
     signer_identity_handle: *mut SignerHandle,
     out_identity_id: *mut [u8; 32],
 ) -> PlatformWalletFFIResult {
+    // Guarded: a panic must NOT reach this `extern "C"` frame (see `catch_panic_to_code`).
+    //
+    // The panic code is the generic `ErrorUnknown`, deliberately NOT one of this export's
+    // richer codes: `ErrorShieldedBroadcastUnconfirmed`'s ABI contract says `out_identity_id`
+    // IS written on that code, and a panic destroyed the result so there is no id to write;
+    // `ErrorShieldedSpendUnconfirmed` is documented as scoped to the unshield / transfer /
+    // withdrawal spends; and every other code promises a definitive outcome a panic cannot
+    // promise. No dedicated panic code exists in the (registry-tracked) enum, and allocating
+    // one here would risk the silent cross-branch numeric collisions the codes 28-30 comment
+    // warns about — so the generic internal code carries it, with the do-not-resubmit guidance
+    // in the message.
+    catch_panic_to_code(
+        "shielded identity-create-from-pool",
+        PlatformWalletFFIResultCode::ErrorUnknown,
+        IDENTITY_CREATE_PANIC_GUIDANCE,
+        || {
+            shielded_identity_create_from_pool_inner(
+                handle,
+                wallet_id_bytes,
+                mnemonic_resolver_handle,
+                account,
+                identity_index,
+                identity_pubkeys,
+                identity_pubkeys_count,
+                denomination,
+                send_to_address_on_creation_failure_bytes,
+                signer_identity_handle,
+                out_identity_id,
+            )
+        },
+    )
+}
+
+/// Body of [`platform_wallet_manager_shielded_identity_create_from_pool`], as an ordinary Rust
+/// function so a panic unwinds into [`catch_panic_to_code`] instead of across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+#[allow(clippy::too_many_arguments)]
+unsafe fn shielded_identity_create_from_pool_inner(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    account: u32,
+    identity_index: u32,
+    identity_pubkeys: *const IdentityPubkeyFFI,
+    identity_pubkeys_count: usize,
+    denomination: u64,
+    send_to_address_on_creation_failure_bytes: *const u8,
+    signer_identity_handle: *mut SignerHandle,
+    out_identity_id: *mut [u8; 32],
+) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(mnemonic_resolver_handle);
     check_ptr!(identity_pubkeys);
@@ -1065,6 +1259,36 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
     amount: u64,
     signer_address_handle: *const SignerHandle,
 ) -> PlatformWalletFFIResult {
+    // Guarded: a panic must NOT reach this `extern "C"` frame (see `catch_panic_to_code`). A
+    // shield reserves no notes, but the transition may already have been broadcast when the
+    // panic struck, so the same ambiguous spend-unconfirmed contract applies (matching
+    // `map_spend_result`'s mapping for this operation); a later manual retry self-heals through
+    // the address-nonce check.
+    catch_spend_panic("shielded shield", || {
+        shielded_shield_inner(
+            handle,
+            wallet_id_bytes,
+            shielded_account,
+            payment_account,
+            amount,
+            signer_address_handle,
+        )
+    })
+}
+
+/// Body of [`platform_wallet_manager_shielded_shield`], as an ordinary Rust function so a panic
+/// unwinds into [`catch_spend_panic`] instead of across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+unsafe fn shielded_shield_inner(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    shielded_account: u32,
+    payment_account: u32,
+    amount: u64,
+    signer_address_handle: *const SignerHandle,
+) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(signer_address_handle);
 
@@ -1160,6 +1384,44 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    account_index: u32,
+    amount_duffs: u64,
+    recipient_raw_43: *const u8,
+    surplus_output_ptr: *const u8,
+    surplus_output_len: usize,
+    core_signer_handle: *mut MnemonicResolverHandle,
+) -> PlatformWalletFFIResult {
+    // Guarded: a panic must NOT reach this `extern "C"` frame (see `catch_panic_to_code`). The
+    // panic maps to `ErrorWalletOperation` — the single error code this export already surfaces
+    // — with the tracked-lock / resume guidance in the message.
+    catch_panic_to_code(
+        "shielded fund-from-asset-lock",
+        PlatformWalletFFIResultCode::ErrorWalletOperation,
+        ASSET_LOCK_FUNDING_PANIC_GUIDANCE,
+        || {
+            shielded_fund_from_asset_lock_inner(
+                handle,
+                wallet_id_bytes,
+                account_index,
+                amount_duffs,
+                recipient_raw_43,
+                surplus_output_ptr,
+                surplus_output_len,
+                core_signer_handle,
+            )
+        },
+    )
+}
+
+/// Body of [`platform_wallet_manager_shielded_fund_from_asset_lock`], as an ordinary Rust
+/// function so a panic unwinds into [`catch_panic_to_code`] instead of across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+#[allow(clippy::too_many_arguments)]
+unsafe fn shielded_fund_from_asset_lock_inner(
     handle: Handle,
     wallet_id_bytes: *const u8,
     account_index: u32,
@@ -1317,6 +1579,42 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
     surplus_output_len: usize,
     core_signer_handle: *mut MnemonicResolverHandle,
 ) -> PlatformWalletFFIResult {
+    // Guarded: a panic must NOT reach this `extern "C"` frame (see `catch_panic_to_code`).
+    // Same code + guidance as the fresh-build sibling; a resume of the same outpoint is
+    // additionally protected by the lock's one-shot consumption on Platform.
+    catch_panic_to_code(
+        "shielded resume fund-from-asset-lock",
+        PlatformWalletFFIResultCode::ErrorWalletOperation,
+        ASSET_LOCK_FUNDING_PANIC_GUIDANCE,
+        || {
+            shielded_resume_fund_from_asset_lock_inner(
+                handle,
+                wallet_id_bytes,
+                out_point,
+                recipient_raw_43,
+                surplus_output_ptr,
+                surplus_output_len,
+                core_signer_handle,
+            )
+        },
+    )
+}
+
+/// Body of [`platform_wallet_manager_shielded_resume_fund_from_asset_lock`], as an ordinary
+/// Rust function so a panic unwinds into [`catch_panic_to_code`] instead of across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+#[allow(clippy::too_many_arguments)]
+unsafe fn shielded_resume_fund_from_asset_lock_inner(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    out_point: *const OutPointFFI,
+    recipient_raw_43: *const u8,
+    surplus_output_ptr: *const u8,
+    surplus_output_len: usize,
+    core_signer_handle: *mut MnemonicResolverHandle,
+) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(out_point);
     check_ptr!(recipient_raw_43);
@@ -1443,6 +1741,51 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_seed_pool_notes(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    account: u32,
+    target_total_notes: u64,
+    funding_account_index: u32,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    progress_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut std::os::raw::c_void,
+            batch_index: u64,
+            batches_total_estimate: u64,
+            pool_notes_now: u64,
+            target: u64,
+        ),
+    >,
+    progress_ctx: *mut std::os::raw::c_void,
+) -> PlatformWalletFFIResult {
+    // Guarded: a panic must NOT reach this `extern "C"` frame (see `catch_panic_to_code`). The
+    // panic maps to `ErrorWalletOperation` — the single error code this export already surfaces.
+    catch_panic_to_code(
+        "shielded seed-pool-notes",
+        PlatformWalletFFIResultCode::ErrorWalletOperation,
+        SEED_POOL_PANIC_GUIDANCE,
+        || {
+            shielded_seed_pool_notes_inner(
+                handle,
+                wallet_id_bytes,
+                account,
+                target_total_notes,
+                funding_account_index,
+                core_signer_handle,
+                progress_fn,
+                progress_ctx,
+            )
+        },
+    )
+}
+
+/// Body of [`platform_wallet_manager_shielded_seed_pool_notes`], as an ordinary Rust function
+/// so a panic unwinds into [`catch_panic_to_code`] instead of across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+#[allow(clippy::too_many_arguments)]
+unsafe fn shielded_seed_pool_notes_inner(
     handle: Handle,
     wallet_id_bytes: *const u8,
     account: u32,
@@ -1738,6 +2081,74 @@ mod tests {
         assert!(
             message.contains("do NOT retry"),
             "the message must carry the do-not-retry guidance: {message}"
+        );
+    }
+
+    /// The public recipient ceiling must equal the EFFECTIVE per-transition action ceiling
+    /// (derived in dpp from BOTH `max_shielded_transition_actions` and
+    /// `max_state_transition_size`) minus the unconditional change output. If a versioned limit
+    /// moves, this fails and the constant — plus its Kotlin mirror in
+    /// `PlatformWalletManager.kt` — must be raised in lockstep.
+    #[test]
+    fn max_recipients_matches_the_effective_action_ceiling() {
+        let effective = dpp::shielded::max_shielded_actions_per_transition(
+            dpp::version::PlatformVersion::latest(),
+        );
+        assert_eq!(
+            MAX_SHIELDED_TRANSFER_RECIPIENTS + 1,
+            effective,
+            "recipients + the unconditional change output must equal the effective action \
+             ceiling; update MAX_SHIELDED_TRANSFER_RECIPIENTS (and the Kotlin mirror) in \
+             lockstep with the versioned limits"
+        );
+    }
+
+    /// The generalized guard must carry the per-operation code and guidance: identity creation
+    /// maps a panic to the generic `ErrorUnknown` (its richer codes all promise things a panic
+    /// cannot deliver — see the export's call site), and the asset-lock funding exports map it
+    /// to their single existing error code, `ErrorWalletOperation`.
+    #[test]
+    fn catch_panic_to_code_carries_the_per_operation_contract() {
+        let previous = std::panic::take_hook();
+        // Silence the default hook's backtrace spew for these deliberate panics.
+        std::panic::set_hook(Box::new(|_| {}));
+
+        let identity = catch_panic_to_code(
+            "shielded identity-create-from-pool",
+            PlatformWalletFFIResultCode::ErrorUnknown,
+            IDENTITY_CREATE_PANIC_GUIDANCE,
+            || panic!("proving task panicked"),
+        );
+        let funding = catch_panic_to_code(
+            "shielded fund-from-asset-lock",
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            ASSET_LOCK_FUNDING_PANIC_GUIDANCE,
+            || panic!("proving task panicked"),
+        );
+        std::panic::set_hook(previous);
+
+        assert_eq!(
+            identity.code,
+            PlatformWalletFFIResultCode::ErrorUnknown,
+            "identity creation must NOT reuse the spend-scoped unconfirmed code"
+        );
+        let message = message_of(&identity);
+        assert!(
+            message.contains("shielded identity-create-from-pool panicked")
+                && message.contains("do NOT re-submit")
+                && message.contains("out_identity_id was NOT written"),
+            "identity-create guidance must survive into the message: {message}"
+        );
+
+        assert_eq!(
+            funding.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            "asset-lock funding must keep its single existing error code"
+        );
+        let message = message_of(&funding);
+        assert!(
+            message.contains("Do NOT blindly re-run") && message.contains("resume"),
+            "funding guidance must survive into the message: {message}"
         );
     }
 
