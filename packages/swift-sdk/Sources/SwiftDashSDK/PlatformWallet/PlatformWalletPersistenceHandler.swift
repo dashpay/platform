@@ -766,6 +766,222 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
     // MARK: - Wallet Changeset (transactions, utxos, accounts, balance, chain)
 
+    /// Per-round lookup cache for the wallet-changeset apply path.
+    ///
+    /// A single changeset can carry thousands of transaction records
+    /// (an SPV catch-up folds many blocks into one `store()` round),
+    /// and the apply helpers used to issue an individual
+    /// `ModelContext.fetch` per row, per input, and per UTXO. Each of
+    /// those fetches re-evaluates its predicate against every object
+    /// staged (unsaved) in the open begin/end changeset bracket, so
+    /// the round's cost grew quadratically with its size — hours of
+    /// CPU for an 8k-record round on a large wallet.
+    ///
+    /// Instead, `buildWalletChangesetRoundCache` walks the changeset
+    /// once, bulk-fetches every row the round could touch with
+    /// chunked `IN` predicates, and the helpers hit these
+    /// dictionaries. Inserts and deletes performed during the round
+    /// update the cache in place so later rows observe them, exactly
+    /// as they observed staged objects through per-row fetches.
+    ///
+    /// A key found in a dictionary is a hit. A key absent from the
+    /// dictionary but present in the corresponding `prefetched*` set
+    /// is an authoritative miss (the bulk fetch covered it). A key in
+    /// neither (rare: values discovered mid-round, e.g. a pending
+    /// row's `spendingTxid` loaded from the store) falls back to a
+    /// single-row fetch.
+    private final class WalletChangesetRoundCache {
+        /// txid → transaction row (records, stubs, spending txs).
+        var transactions: [Data: PersistentTransaction] = [:]
+        /// 36-byte outpoint → TXO row.
+        var txos: [Data: PersistentTxo] = [:]
+        /// 36-byte outpoint → unresolved pending-input rows. A key
+        /// present with an empty array is authoritative: the rows
+        /// were deleted this round (or a fallback fetch found none).
+        var pendingInputs: [Data: [PersistentPendingInput]] = [:]
+        /// Base58Check address → core-address row.
+        var coreAddresses: [String: PersistentCoreAddress] = [:]
+
+        /// Keys covered by the bulk prefetch — absence from the
+        /// dictionaries above is authoritative for these.
+        var prefetchedTxids: Set<Data> = []
+        var prefetchedOutpoints: Set<Data> = []
+        var prefetchedAddresses: Set<String> = []
+    }
+
+    /// Walk the changeset's account buckets, collect every txid /
+    /// outpoint / address the apply helpers could look up, and
+    /// bulk-fetch the matching rows in chunks (staying under SQLite's
+    /// bind-variable limit). One fetch per entity per ~900 keys
+    /// replaces one fetch per row.
+    private func buildWalletChangesetRoundCache(
+        accountsPtr: UnsafePointer<AccountChangeSetFFI>,
+        count: Int
+    ) -> WalletChangesetRoundCache {
+        let cache = WalletChangesetRoundCache()
+
+        for i in 0..<count {
+            let acc = accountsPtr[i]
+            if acc.transactions_count > 0, let txsPtr = acc.transactions {
+                for t in 0..<Int(acc.transactions_count) {
+                    let tx = txsPtr[t]
+                    let txid = hashData(tx.txid)
+                    cache.prefetchedTxids.insert(txid)
+                    if let inPtr = tx.input_outpoints, tx.input_outpoints_count > 0 {
+                        for j in 0..<Int(tx.input_outpoints_count) {
+                            let entry = inPtr[j]
+                            let prevTxid = hashData(entry.txid)
+                            cache.prefetchedTxids.insert(prevTxid)
+                            cache.prefetchedOutpoints.insert(
+                                PersistentTxo.makeOutpoint(txid: prevTxid, vout: entry.vout)
+                            )
+                        }
+                    }
+                }
+            }
+            if acc.utxos_added_count > 0, let utxosPtr = acc.utxos_added {
+                for u in 0..<Int(acc.utxos_added_count) {
+                    let utxo = utxosPtr[u]
+                    let txid = hashData(utxo.outpoint.txid)
+                    cache.prefetchedTxids.insert(txid)
+                    cache.prefetchedOutpoints.insert(
+                        PersistentTxo.makeOutpoint(txid: txid, vout: utxo.outpoint.vout)
+                    )
+                    if let addrPtr = utxo.address {
+                        cache.prefetchedAddresses.insert(String(cString: addrPtr))
+                    }
+                }
+            }
+            if acc.utxos_spent_count > 0, let spentPtr = acc.utxos_spent {
+                for s in 0..<Int(acc.utxos_spent_count) {
+                    let entry = spentPtr[s]
+                    let txid = hashData(entry.outpoint.txid)
+                    cache.prefetchedOutpoints.insert(
+                        PersistentTxo.makeOutpoint(txid: txid, vout: entry.outpoint.vout)
+                    )
+                    cache.prefetchedTxids.insert(hashData(entry.spending_txid))
+                }
+            }
+            if acc.utxos_instant_locked_count > 0, let ilPtr = acc.utxos_instant_locked {
+                for l in 0..<Int(acc.utxos_instant_locked_count) {
+                    let op = ilPtr[l]
+                    cache.prefetchedOutpoints.insert(
+                        PersistentTxo.makeOutpoint(txid: hashData(op.txid), vout: op.vout)
+                    )
+                }
+            }
+        }
+
+        for chunk in Self.chunked(Array(cache.prefetchedTxids)) {
+            let descriptor = FetchDescriptor<PersistentTransaction>(
+                predicate: #Predicate { chunk.contains($0.txid) }
+            )
+            for row in (try? backgroundContext.fetch(descriptor)) ?? [] {
+                cache.transactions[row.txid] = row
+            }
+        }
+        for chunk in Self.chunked(Array(cache.prefetchedOutpoints)) {
+            let txoDescriptor = FetchDescriptor<PersistentTxo>(
+                predicate: #Predicate { chunk.contains($0.outpoint) }
+            )
+            for row in (try? backgroundContext.fetch(txoDescriptor)) ?? [] {
+                cache.txos[row.outpoint] = row
+            }
+            let pendingDescriptor = FetchDescriptor<PersistentPendingInput>(
+                predicate: #Predicate { chunk.contains($0.outpoint) }
+            )
+            for row in (try? backgroundContext.fetch(pendingDescriptor)) ?? [] {
+                cache.pendingInputs[row.outpoint, default: []].append(row)
+            }
+        }
+        for chunk in Self.chunked(Array(cache.prefetchedAddresses)) {
+            let descriptor = FetchDescriptor<PersistentCoreAddress>(
+                predicate: #Predicate { chunk.contains($0.address) }
+            )
+            for row in (try? backgroundContext.fetch(descriptor)) ?? [] {
+                cache.coreAddresses[row.address] = row
+            }
+        }
+
+        return cache
+    }
+
+    /// Split `keys` into slices below SQLite's historical 999
+    /// bind-variable limit so each `IN` predicate stays translatable.
+    private static func chunked<T>(_ keys: [T], size: Int = 900) -> [[T]] {
+        stride(from: 0, to: keys.count, by: size).map {
+            Array(keys[$0..<min($0 + size, keys.count)])
+        }
+    }
+
+    /// Cache-first transaction lookup. Falls back to a single-row
+    /// fetch only for keys outside the prefetched set.
+    private func cachedTransaction(
+        txid: Data,
+        cache: WalletChangesetRoundCache
+    ) -> PersistentTransaction? {
+        if let hit = cache.transactions[txid] { return hit }
+        if cache.prefetchedTxids.contains(txid) { return nil }
+        let descriptor = FetchDescriptor<PersistentTransaction>(
+            predicate: #Predicate { $0.txid == txid }
+        )
+        guard let row = try? backgroundContext.fetch(descriptor).first else { return nil }
+        cache.transactions[txid] = row
+        return row
+    }
+
+    /// Cache-first TXO lookup, same fallback contract as
+    /// `cachedTransaction`.
+    private func cachedTxo(
+        outpoint: Data,
+        cache: WalletChangesetRoundCache
+    ) -> PersistentTxo? {
+        if let hit = cache.txos[outpoint] { return hit }
+        if cache.prefetchedOutpoints.contains(outpoint) { return nil }
+        let descriptor = FetchDescriptor<PersistentTxo>(
+            predicate: #Predicate { $0.outpoint == outpoint }
+        )
+        guard let row = try? backgroundContext.fetch(descriptor).first else { return nil }
+        cache.txos[outpoint] = row
+        return row
+    }
+
+    /// Cache-first core-address lookup, same fallback contract as
+    /// `cachedTransaction`.
+    private func cachedCoreAddress(
+        address: String,
+        cache: WalletChangesetRoundCache
+    ) -> PersistentCoreAddress? {
+        if let hit = cache.coreAddresses[address] { return hit }
+        if cache.prefetchedAddresses.contains(address) { return nil }
+        let descriptor = FetchDescriptor<PersistentCoreAddress>(
+            predicate: #Predicate { $0.address == address }
+        )
+        guard let row = try? backgroundContext.fetch(descriptor).first else { return nil }
+        cache.coreAddresses[address] = row
+        return row
+    }
+
+    /// Cache-first pending-input lookup. Always leaves an entry for
+    /// `outpoint` in the dictionary afterwards, so the result is
+    /// authoritative on subsequent hits (including "no rows").
+    private func cachedPendingInputs(
+        outpoint: Data,
+        cache: WalletChangesetRoundCache
+    ) -> [PersistentPendingInput] {
+        if let rows = cache.pendingInputs[outpoint] { return rows }
+        if cache.prefetchedOutpoints.contains(outpoint) {
+            cache.pendingInputs[outpoint] = []
+            return []
+        }
+        let descriptor = FetchDescriptor<PersistentPendingInput>(
+            predicate: #Predicate { $0.outpoint == outpoint }
+        )
+        let rows = (try? backgroundContext.fetch(descriptor)) ?? []
+        cache.pendingInputs[outpoint] = rows
+        return rows
+    }
+
     /// Apply a full `WalletChangeSetFFI` to SwiftData.
     ///
     /// Called from the Rust persister when an SPV round produces core-
@@ -813,11 +1029,17 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 wallet.lastUpdated = Date()
             }
 
-            // Per-account: transactions, UTXOs, pool state.
+            // Per-account: transactions, UTXOs, pool state. All row
+            // lookups go through a per-round bulk-prefetched cache —
+            // see `WalletChangesetRoundCache`.
             if cs.accounts_count > 0, let accountsPtr = cs.accounts {
+                let cache = buildWalletChangesetRoundCache(
+                    accountsPtr: accountsPtr,
+                    count: Int(cs.accounts_count)
+                )
                 for i in 0..<Int(cs.accounts_count) {
                     let acc = accountsPtr[i]
-                    applyAccountChangeset(walletRecord: wallet, acc: acc)
+                    applyAccountChangeset(walletRecord: wallet, acc: acc, cache: cache)
                 }
             }
 
@@ -883,7 +1105,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// Apply a single account changeset to SwiftData.
     private func applyAccountChangeset(
         walletRecord: PersistentWallet,
-        acc: AccountChangeSetFFI
+        acc: AccountChangeSetFFI,
+        cache: WalletChangesetRoundCache
     ) {
         let accountIndex = acc.account_index
         // Stable account-type discriminants from the FFI. Used as the
@@ -956,33 +1179,37 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         // Transactions.
         if acc.transactions_count > 0, let txsPtr = acc.transactions {
             for i in 0..<Int(acc.transactions_count) {
-                upsertTransaction(account: account, tx: txsPtr[i])
+                upsertTransaction(account: account, tx: txsPtr[i], cache: cache)
             }
         }
 
         // UTXOs added.
         if acc.utxos_added_count > 0, let utxosPtr = acc.utxos_added {
             for i in 0..<Int(acc.utxos_added_count) {
-                upsertUtxo(account: account, utxo: utxosPtr[i])
+                upsertUtxo(account: account, utxo: utxosPtr[i], cache: cache)
             }
         }
 
         // UTXOs spent — mark them spent (keep for history).
         if acc.utxos_spent_count > 0, let spentPtr = acc.utxos_spent {
             for i in 0..<Int(acc.utxos_spent_count) {
-                markUtxoSpent(spentPtr[i])
+                markUtxoSpent(spentPtr[i], cache: cache)
             }
         }
 
         // UTXOs became InstantSend-locked — update flag.
         if acc.utxos_instant_locked_count > 0, let ilPtr = acc.utxos_instant_locked {
             for i in 0..<Int(acc.utxos_instant_locked_count) {
-                markUtxoInstantLocked(ilPtr[i])
+                markUtxoInstantLocked(ilPtr[i], cache: cache)
             }
         }
     }
 
-    private func upsertTransaction(account: PersistentAccount, tx: TransactionRecordFFI) {
+    private func upsertTransaction(
+        account: PersistentAccount,
+        tx: TransactionRecordFFI,
+        cache: WalletChangesetRoundCache
+    ) {
         // The `account` parameter scopes the wallet-id used for the
         // input-reconciliation pass at the bottom of this method, and
         // records this account's participation in the tx via the
@@ -1003,9 +1230,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         //
         let resolvedWalletId: Data = account.wallet.walletId
         let txidData = hashData(tx.txid)
-        let descriptor = FetchDescriptor<PersistentTransaction>(
-            predicate: #Predicate { $0.txid == txidData }
-        )
 
         // The FFI projection always serializes the transaction body
         // (`dashcore::consensus::encode::serialize` upstream), so
@@ -1028,7 +1252,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             tx.first_seen != 0 ? tx.first_seen : UInt64(Date().timeIntervalSince1970)
 
         let record: PersistentTransaction
-        if let existing = try? backgroundContext.fetch(descriptor).first {
+        if let existing = cachedTransaction(txid: txidData, cache: cache) {
             record = existing
         } else {
             record = PersistentTransaction(
@@ -1042,6 +1266,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 firstSeen: firstSeen
             )
             backgroundContext.insert(record)
+            cache.transactions[txidData] = record
         }
 
         record.context = tx.context
@@ -1120,14 +1345,17 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         if let inPtr = tx.input_outpoints, tx.input_outpoints_count > 0 {
             for i in 0..<Int(tx.input_outpoints_count) {
                 let entry = inPtr[i]
-                let prevTxid = withUnsafeBytes(of: entry.txid) { Data($0) }
-                let outpoint = PersistentTxo.makeOutpoint(txid: prevTxid, vout: entry.vout)
+                let outpoint = PersistentTxo.makeOutpoint(
+                    txid: hashData(entry.txid),
+                    vout: entry.vout
+                )
                 resolveInputOutpoint(
                     outpoint: outpoint,
                     inputIndex: UInt32(i),
                     spendingTransaction: record,
                     spendingTxid: txidData,
-                    walletId: resolvedWalletId
+                    walletId: resolvedWalletId,
+                    cache: cache
                 )
             }
         }
@@ -1156,12 +1384,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         inputIndex: UInt32,
         spendingTransaction: PersistentTransaction,
         spendingTxid: Data,
-        walletId: Data
+        walletId: Data,
+        cache: WalletChangesetRoundCache
     ) {
-        let txoDescriptor = FetchDescriptor<PersistentTxo>(
-            predicate: #Predicate { $0.outpoint == outpoint }
-        )
-        if let txo = try? backgroundContext.fetch(txoDescriptor).first {
+        if let txo = cachedTxo(outpoint: outpoint, cache: cache) {
             // `isSpent` only flips once the spending tx is in a block
             // (see `spendIsInBlock`'s doc) — a mempool sighting
             // alone links the spending relationship but keeps the
@@ -1187,23 +1413,20 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             }
             // A pending entry from an earlier write is now stale —
             // resolved by this fetch. Drop it.
-            removePendingInputs(for: outpoint)
+            removePendingInputs(for: outpoint, cache: cache)
         } else {
             // Defer: record a pending row so a future `upsertUtxo`
-            // can complete the link. Writing one row per input is
-            // cheap; the cascade-delete relationship + the resolve
-            // path in `upsertUtxo` keep the table from growing
-            // unbounded.
+            // can complete the link. The cascade-delete relationship
+            // + the resolve path in `upsertUtxo` clean rows up once
+            // they resolve.
             //
             // Skip the write if a pending row for this exact
             // (outpoint, spending-tx) pair already exists — re-upserts
             // of the same transaction would otherwise produce
             // duplicate pending rows that all resolve to the same
             // TXO, wasting fetch work on the resolve side.
-            let pendingDescriptor = FetchDescriptor<PersistentPendingInput>(
-                predicate: #Predicate { $0.outpoint == outpoint && $0.spendingTxid == spendingTxid }
-            )
-            if (try? backgroundContext.fetch(pendingDescriptor).first) == nil {
+            let existing = cachedPendingInputs(outpoint: outpoint, cache: cache)
+            if !existing.contains(where: { $0.spendingTxid == spendingTxid }) {
                 let pending = PersistentPendingInput(
                     outpoint: outpoint,
                     inputIndex: inputIndex,
@@ -1212,6 +1435,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     walletId: walletId
                 )
                 backgroundContext.insert(pending)
+                cache.pendingInputs[outpoint, default: []].append(pending)
             }
         }
     }
@@ -1221,19 +1445,21 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// pending entries don't linger as orphans, and from
     /// `upsertUtxo`'s resolve path so a freshly-arrived TXO doesn't
     /// keep its corresponding pending row alive.
-    private func removePendingInputs(for outpoint: Data) {
-        let descriptor = FetchDescriptor<PersistentPendingInput>(
-            predicate: #Predicate { $0.outpoint == outpoint }
-        )
-        guard let rows = try? backgroundContext.fetch(descriptor), !rows.isEmpty else {
-            return
-        }
-        for row in rows {
+    private func removePendingInputs(for outpoint: Data, cache: WalletChangesetRoundCache) {
+        for row in cachedPendingInputs(outpoint: outpoint, cache: cache) {
             backgroundContext.delete(row)
         }
+        // Authoritatively empty for the rest of the round —
+        // `cachedPendingInputs` has already left an entry here, so
+        // this only overwrites rows we just deleted.
+        cache.pendingInputs[outpoint] = []
     }
 
-    private func upsertUtxo(account: PersistentAccount, utxo: UtxoEntryFFI) {
+    private func upsertUtxo(
+        account: PersistentAccount,
+        utxo: UtxoEntryFFI,
+        cache: WalletChangesetRoundCache
+    ) {
         // Pull the per-account wallet id once. Used both for the new
         // `PersistentTxo.walletId` denorm (so per-wallet predicates
         // can hit a single column) and for stub-tx routing below.
@@ -1241,11 +1467,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
         let txidData = hashData(utxo.outpoint.txid)
         let outpoint = PersistentTxo.makeOutpoint(txid: txidData, vout: utxo.outpoint.vout)
-        let descriptor = FetchDescriptor<PersistentTxo>(
-            predicate: #Predicate { $0.outpoint == outpoint }
-        )
         let record: PersistentTxo
-        if let existing = try? backgroundContext.fetch(descriptor).first {
+        if let existing = cachedTxo(outpoint: outpoint, cache: cache) {
             record = existing
             // Backfill if the account or wallet linkage is missing —
             // the per-wallet query path filters on TXO.walletId, so
@@ -1264,11 +1487,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // arrives. Note we no longer set `parentTx.account` —
             // transactions don't carry account linkage anymore (they
             // can span multiple accounts).
-            let txDescriptor = FetchDescriptor<PersistentTransaction>(
-                predicate: #Predicate { $0.txid == txidData }
-            )
             let parentTx: PersistentTransaction
-            if let existingTx = try? backgroundContext.fetch(txDescriptor).first {
+            if let existingTx = cachedTransaction(txid: txidData, cache: cache) {
                 parentTx = existingTx
             } else {
                 // Stub row — `transactionData` is left as empty
@@ -1280,6 +1500,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 // treats as miss.
                 parentTx = PersistentTransaction(txid: txidData, transactionData: Data())
                 backgroundContext.insert(parentTx)
+                cache.transactions[txidData] = parentTx
             }
 
             let script: Data = {
@@ -1298,6 +1519,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             record.account = account
             record.walletId = resolvedWalletId
             backgroundContext.insert(record)
+            cache.txos[outpoint] = record
         }
 
         record.amount = utxo.amount
@@ -1314,14 +1536,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         // paid to an address outside our pool, or out-of-order flush),
         // leave the relationship nil — `record.address` stays as the
         // authoritative identifier.
-        if record.coreAddress == nil, !record.address.isEmpty {
-            let addressLookup = record.address
-            let coreAddressDescriptor = FetchDescriptor<PersistentCoreAddress>(
-                predicate: #Predicate { $0.address == addressLookup }
-            )
-            if let coreAddr = try? backgroundContext.fetch(coreAddressDescriptor).first {
-                record.coreAddress = coreAddr
-            }
+        if record.coreAddress == nil, !record.address.isEmpty,
+           let coreAddr = cachedCoreAddress(address: record.address, cache: cache) {
+            record.coreAddress = coreAddr
         }
 
         // Resolve any deferred spend signal that landed before this
@@ -1334,11 +1551,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         // independent at this layer regardless of which side arrives
         // first.
         let outpointKey = record.outpoint
-        let pendingDescriptor = FetchDescriptor<PersistentPendingInput>(
-            predicate: #Predicate { $0.outpoint == outpointKey }
-        )
-        if let pendingRows = try? backgroundContext.fetch(pendingDescriptor),
-           !pendingRows.isEmpty {
+        let pendingRows = cachedPendingInputs(outpoint: outpointKey, cache: cache)
+        if !pendingRows.isEmpty {
             // Pick the freshest pending entry — under normal sync
             // there's only one, but a chain reorg or double-spend
             // observation could leave multiple. Newest wins so the
@@ -1356,11 +1570,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             if let spending = chosen.spendingTransaction {
                 resolvedSpending = spending
             } else {
-                let spendingTxid = chosen.spendingTxid
-                let txDescriptor = FetchDescriptor<PersistentTransaction>(
-                    predicate: #Predicate { $0.txid == spendingTxid }
-                )
-                resolvedSpending = try? backgroundContext.fetch(txDescriptor).first
+                resolvedSpending = cachedTransaction(txid: chosen.spendingTxid, cache: cache)
             }
 
             // Carry the vin index forward so the spending tx's
@@ -1378,21 +1588,16 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 record.isSpent = Self.spendIsInBlock(spending)
             }
             record.lastUpdated = Date()
-            for row in pendingRows {
-                backgroundContext.delete(row)
-            }
+            removePendingInputs(for: outpointKey, cache: cache)
         }
     }
 
-    private func markUtxoSpent(_ entry: SpentOutPointFFI) {
+    private func markUtxoSpent(_ entry: SpentOutPointFFI, cache: WalletChangesetRoundCache) {
         let outpoint = PersistentTxo.makeOutpoint(
             txid: hashData(entry.outpoint.txid),
             vout: entry.outpoint.vout
         )
-        let descriptor = FetchDescriptor<PersistentTxo>(
-            predicate: #Predicate { $0.outpoint == outpoint }
-        )
-        guard let txo = try? backgroundContext.fetch(descriptor).first else {
+        guard let txo = cachedTxo(outpoint: outpoint, cache: cache) else {
             return
         }
         // Link the spending transaction. The FFI now carries
@@ -1410,10 +1615,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             if txo.spendingTransaction?.txid == spendingTxid {
                 spendingTx = txo.spendingTransaction
             } else {
-                let txDescriptor = FetchDescriptor<PersistentTransaction>(
-                    predicate: #Predicate { $0.txid == spendingTxid }
-                )
-                spendingTx = try? backgroundContext.fetch(txDescriptor).first
+                spendingTx = cachedTransaction(txid: spendingTxid, cache: cache)
                 if let spending = spendingTx {
                     txo.spendingTransaction = spending
                 }
@@ -1438,15 +1640,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         // written a `PersistentPendingInput` row when the TXO
         // didn't yet exist. Drain any leftover pending rows for
         // this outpoint so they don't linger as orphans.
-        removePendingInputs(for: outpoint)
+        removePendingInputs(for: outpoint, cache: cache)
     }
 
-    private func markUtxoInstantLocked(_ op: OutPointFFI) {
+    private func markUtxoInstantLocked(_ op: OutPointFFI, cache: WalletChangesetRoundCache) {
         let outpoint = PersistentTxo.makeOutpoint(txid: hashData(op.txid), vout: op.vout)
-        let descriptor = FetchDescriptor<PersistentTxo>(
-            predicate: #Predicate { $0.outpoint == outpoint }
-        )
-        if let txo = try? backgroundContext.fetch(descriptor).first {
+        if let txo = cachedTxo(outpoint: outpoint, cache: cache) {
             txo.isInstantLocked = true
             txo.lastUpdated = Date()
         }
@@ -3187,14 +3386,33 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             return true
         }
 
+        // Bulk-prefetch the address rows and the TXO-backfill rows in
+        // chunked `IN` fetches instead of two per-entry fetches — a
+        // restore emits thousands of entries per round, and each
+        // per-row fetch would re-scan the round's staged objects
+        // (same quadratic the wallet-changeset round cache removes).
+        let allAddresses = entries.map(\.address)
+        var existingRows: [String: PersistentCoreAddress] = [:]
+        var txosByAddress: [String: [PersistentTxo]] = [:]
+        for chunk in Self.chunked(allAddresses) {
+            let rowDescriptor = FetchDescriptor<PersistentCoreAddress>(
+                predicate: #Predicate { chunk.contains($0.address) }
+            )
+            for row in (try? backgroundContext.fetch(rowDescriptor)) ?? [] {
+                existingRows[row.address] = row
+            }
+            let txoDescriptor = FetchDescriptor<PersistentTxo>(
+                predicate: #Predicate { chunk.contains($0.address) }
+            )
+            for txo in (try? backgroundContext.fetch(txoDescriptor)) ?? [] {
+                txosByAddress[txo.address, default: []].append(txo)
+            }
+        }
+
         for entry in entries {
             let address = entry.address
-            let existingDescriptor = FetchDescriptor<PersistentCoreAddress>(
-                predicate: #Predicate { $0.address == address }
-            )
-            let existing = try? backgroundContext.fetch(existingDescriptor).first
             let row: PersistentCoreAddress
-            if let existing = existing {
+            if let existing = existingRows[address] {
                 row = existing
             } else {
                 row = PersistentCoreAddress(
@@ -3208,6 +3426,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     balance: entry.balance
                 )
                 backgroundContext.insert(row)
+                // Register so a repeated address later in `entries`
+                // updates this staged row instead of inserting a
+                // duplicate (the per-row fetch this replaced saw
+                // staged rows via pending changes).
+                existingRows[address] = row
             }
             // Mutation path for both insert + update.
             row.publicKey = entry.publicKey
@@ -3227,16 +3450,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // the relationship and `record.coreAddress` stayed nil.
             // Without this sweep the storage-explorer's "Address
             // Row" field renders as "—" forever even though the
-            // address row now exists. Avoid the SwiftData
-            // optional-relationship-in-predicate gotcha by
-            // filtering nil-coreAddress in Swift after the fetch.
-            let txoBackfillDescriptor = FetchDescriptor<PersistentTxo>(
-                predicate: #Predicate { $0.address == address }
-            )
-            if let txosAtAddress = try? backgroundContext.fetch(txoBackfillDescriptor) {
-                for txo in txosAtAddress where txo.coreAddress == nil {
-                    txo.coreAddress = row
-                }
+            // address row now exists. Sourced from the bulk prefetch
+            // above; nil-coreAddress filtering stays in Swift (the
+            // optional-relationship-in-predicate gotcha).
+            for txo in txosByAddress[address] ?? [] where txo.coreAddress == nil {
+                txo.coreAddress = row
             }
         }
 
