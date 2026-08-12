@@ -165,10 +165,12 @@ fn assert_not_yet_implemented(result: Result<&'static str, QueryError>, expected
 
 #[test]
 fn reject_having_non_empty() {
-    // Non-empty `having` is rejected wholesale until the server
-    // gains HAVING-evaluation capability. The clause shape itself
-    // doesn't matter (server doesn't decode it past the `is_empty()`
-    // check), so a single placeholder clause is sufficient.
+    // Non-empty `having` on a **non-aggregate** select stays rejected
+    // by the unversioned gate: this request carries no `selects`, so it
+    // defaults to `SELECT DOCUMENTS`, and there is no aggregate for a
+    // HAVING to talk about. (The aggregate selects route through the
+    // versioned helper, whose v2 table serves a single grouped clause —
+    // see `having_range_tests`.)
     let request = GetDocumentsRequestV1 {
         having: vec![hc(
             having_aggregate::Function::Count,
@@ -1964,17 +1966,17 @@ mod ranked_tests {
 
     /// Shared with rs-drive's ranked suite — see the module docs for
     /// why this is a cross-crate path and not a copy.
-    const RESTAURANTS_CONTRACT_PATH: &str =
+    pub(super) const RESTAURANTS_CONTRACT_PATH: &str =
         "../rs-drive/tests/supporting_files/contract/restaurants/restaurants-contract.json";
 
     /// The one property every fixture doctype groups by.
-    const GROUP_PROPERTY: &str = "restaurantId";
+    pub(super) const GROUP_PROPERTY: &str = "restaurantId";
 
     /// The last protocol version whose query table (v0) has no ranked
     /// path at all. Ranked routing activates at 14.
-    const PROTOCOL_VERSION_V13: u32 = 13;
+    pub(super) const PROTOCOL_VERSION_V13: u32 = 13;
 
-    fn register_restaurants(
+    pub(super) fn register_restaurants(
         platform: &Platform<MockCoreRPCLike>,
         platform_version: &PlatformVersion,
     ) -> DataContract {
@@ -1992,7 +1994,7 @@ mod ranked_tests {
     /// `first_seed` seeds the random-document generator, which derives
     /// each document's id; two calls in one test need disjoint seed
     /// ranges or the second collides on an existing id.
-    fn insert_docs(
+    pub(super) fn insert_docs(
         platform: &Platform<MockCoreRPCLike>,
         contract: &DataContract,
         document_type_name: &str,
@@ -2025,7 +2027,7 @@ mod ranked_tests {
         }
     }
 
-    fn select(function: v1_select::Function, field: &str) -> Vec<V1Select> {
+    pub(super) fn select(function: v1_select::Function, field: &str) -> Vec<V1Select> {
         vec![V1Select {
             function: function as i32,
             field: field.to_string(),
@@ -2091,7 +2093,7 @@ mod ranked_tests {
     /// **page** — entries plus the `skipped` rank base — asserting the
     /// response landed on the `ranked` variant of `ResultData` rather
     /// than on `counts` / `sums` / `averages`.
-    fn ranked_page(
+    pub(super) fn ranked_page(
         platform: &Platform<MockCoreRPCLike>,
         state: &PlatformState,
         request: GetDocumentsRequestV1,
@@ -2119,7 +2121,7 @@ mod ranked_tests {
 
     /// [`ranked_page`] for the majority of tests, which only care about
     /// the entries.
-    fn ranked_entries(
+    pub(super) fn ranked_entries(
         platform: &Platform<MockCoreRPCLike>,
         state: &PlatformState,
         request: GetDocumentsRequestV1,
@@ -2133,7 +2135,7 @@ mod ranked_tests {
     /// validation result, which the gRPC layer turns into
     /// `invalid_argument` — and never as the `Err` arm, which becomes
     /// an opaque internal error.
-    fn ranked_error(
+    pub(super) fn ranked_error(
         platform: &Platform<MockCoreRPCLike>,
         state: &PlatformState,
         request: GetDocumentsRequestV1,
@@ -2153,7 +2155,7 @@ mod ranked_tests {
         result.errors.into_iter().next().expect("checked non-empty")
     }
 
-    fn group_keys(entries: &[RankedEntry]) -> Vec<String> {
+    pub(super) fn group_keys(entries: &[RankedEntry]) -> Vec<String> {
         entries
             .iter()
             .map(|entry| String::from_utf8(entry.key.clone()).expect("fixture keys are utf-8"))
@@ -2706,14 +2708,28 @@ mod ranked_tests {
         assert_eq!(sums(&bottom_one), vec![10]);
     }
 
-    /// A boolean `HAVING` alongside an aggregate ordering is refused
-    /// with the `not_yet_implemented` contract — a client can leave the
-    /// request in place and it starts working when the capability
-    /// lands.
+    /// A single boolean `HAVING` clause alongside an aggregate ordering
+    /// no longer rides the ranked path at all: the v2 routing helper
+    /// sends any grouped single-clause `having` to the having-range
+    /// surface, where an `ORDER BY` naming the selected aggregate is
+    /// legal and sets the walk direction. This request — a client left
+    /// in place across the capability landing, exactly as the old
+    /// `not_yet_implemented` contract promised — now answers. Full
+    /// having-range behaviour is pinned in [`super::having_range_tests`];
+    /// this test pins the routing handoff from the ranked shape.
     #[test]
-    fn having_alongside_an_aggregate_ordering_is_still_unsupported() {
+    fn having_alongside_an_aggregate_ordering_now_routes_to_having_range() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
         let contract = register_restaurants(&platform, version);
+        insert_docs(
+            &platform,
+            &contract,
+            "review",
+            "grade",
+            9_000,
+            &[("alpha", 90), ("beta", 30), ("gamma", 60)],
+            version,
+        );
 
         let mut request = ranked_desc(
             &contract,
@@ -2726,18 +2742,19 @@ mod ranked_tests {
             having_aggregate::Function::Avg,
             "grade",
             having_clause::Operator::GreaterThan,
-            Value::U64(4),
+            Value::U64(40),
         )];
 
-        match ranked_error(&platform, &state, request, version) {
-            QueryError::Query(QuerySyntaxError::Unsupported(message)) => {
-                assert!(
-                    message.contains("not yet implemented") && message.contains("HAVING"),
-                    "expected the HAVING-with-ordering rejection, got: {message}"
-                );
-            }
-            other => panic!("expected Unsupported, got {other:?}"),
-        }
+        let page = ranked_page(&platform, &state, request, version);
+        assert_eq!(
+            page.skipped, None,
+            "a having-range page has no rank base and must leave `skipped` unset"
+        );
+        assert_eq!(
+            group_keys(&page.entries),
+            vec!["alpha", "gamma"],
+            "descending walk over averages above 40: alpha (90) then gamma (60)"
+        );
     }
 
     /// Ordering by the selected aggregate **without** a `GROUP BY` is
@@ -3030,5 +3047,375 @@ mod ranked_tests {
                     .expect("a range-bound GROUP BY is a supported non-ranked shape");
             assert_ne!(label, "ranked", "no ORDER BY means no ranked routing");
         }
+    }
+}
+
+mod having_range_tests {
+    //! End-to-end coverage of the having-range
+    //! (`GROUP BY p HAVING <the selected aggregate> <op> <value> LIMIT n`)
+    //! surface through the real v1 handler: wire request in,
+    //! `ResultData.ranked` with `skipped` unset (or a `Proof`) out.
+    //!
+    //! Shares the `restaurants` fixture with [`super::ranked_tests`] —
+    //! same cross-crate path, same doctype → axis table — because the
+    //! having-range surface reads the very same indexed trees; only the
+    //! addressing (value bound instead of rank) differs. Value-level
+    //! behaviour (bounds translation, proof round-trips, tamper
+    //! rejection) is pinned in rs-drive's
+    //! `drive_document_having_query::tests`; this suite pins the wire
+    //! encoding, the routing, and the rejection contracts.
+
+    use super::ranked_tests::{
+        group_keys, insert_docs, ranked_error, ranked_page, register_restaurants, select,
+        GROUP_PROPERTY, PROTOCOL_VERSION_V13,
+    };
+    use super::*;
+
+    /// The canonical having-range request: one aggregate select, one
+    /// `group_by`, one `having` clause on the selected aggregate, a
+    /// `limit`, and optionally an `order_by` naming the selected
+    /// aggregate. Everything else at its "unset" wire value.
+    #[allow(clippy::too_many_arguments)]
+    fn having_request(
+        contract: &dpp::prelude::DataContract,
+        document_type: &str,
+        selects: Vec<V1Select>,
+        clause: ProtoHavingClause,
+        order_by: Vec<ProtoOrderClause>,
+        limit: Option<u32>,
+        prove: bool,
+    ) -> GetDocumentsRequestV1 {
+        GetDocumentsRequestV1 {
+            data_contract_id: contract.id().to_vec(),
+            document_type: document_type.to_string(),
+            where_clauses: Vec::new(),
+            order_by,
+            limit,
+            start: None,
+            prove,
+            selects,
+            group_by: vec![GROUP_PROPERTY.to_string()],
+            having: vec![clause],
+            offset: None,
+        }
+    }
+
+    /// `SELECT COUNT(*) GROUP BY restaurantId HAVING $count > 2
+    /// LIMIT 10` — the headline spam-resistant-discovery shape. No
+    /// `order_by`: ascending by count is the default, and `skipped`
+    /// must be unset because a value-bounded page has no rank base.
+    #[test]
+    fn count_threshold_returns_matching_entries_with_no_rank_base() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let contract = register_restaurants(&platform, version);
+        insert_docs(
+            &platform,
+            &contract,
+            "visit",
+            "guests",
+            10_000,
+            &[
+                ("alpha", 1),
+                ("beta", 1),
+                ("beta", 2),
+                ("beta", 3),
+                ("gamma", 1),
+                ("gamma", 2),
+                ("delta", 1),
+                ("delta", 2),
+                ("delta", 3),
+                ("delta", 4),
+            ],
+            version,
+        );
+
+        let request = having_request(
+            &contract,
+            "visit",
+            select(v1_select::Function::Count, ""),
+            hc(
+                having_aggregate::Function::Count,
+                "",
+                having_clause::Operator::GreaterThan,
+                Value::U64(2),
+            ),
+            Vec::new(),
+            Some(10),
+            false,
+        );
+
+        let page = ranked_page(&platform, &state, request, version);
+        assert_eq!(
+            page.skipped, None,
+            "a having-range page must leave the rank-based `skipped` field unset"
+        );
+        assert_eq!(
+            group_keys(&page.entries),
+            vec!["beta", "delta"],
+            "ascending count order: beta (3 visits) before delta (4)"
+        );
+    }
+
+    /// `prove = true` answers with a `Proof` payload, exactly like the
+    /// ranked path. The proof's verifiability is pinned in rs-drive's
+    /// suite; here only the wire shape is asserted.
+    #[test]
+    fn a_having_request_with_prove_returns_a_proof() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let contract = register_restaurants(&platform, version);
+        insert_docs(
+            &platform,
+            &contract,
+            "visit",
+            "guests",
+            11_000,
+            &[("alpha", 1), ("beta", 1), ("beta", 2), ("beta", 3)],
+            version,
+        );
+
+        let request = having_request(
+            &contract,
+            "visit",
+            select(v1_select::Function::Count, ""),
+            hc(
+                having_aggregate::Function::Count,
+                "",
+                having_clause::Operator::GreaterThan,
+                Value::U64(2),
+            ),
+            Vec::new(),
+            Some(10),
+            true,
+        );
+
+        let result = platform
+            .query_documents_v1(request, &state, version)
+            .expect("query call should not error at the transport layer");
+        assert!(
+            result.errors.is_empty(),
+            "expected no validation errors, got {:?}",
+            result.errors
+        );
+        match result.data {
+            Some(GetDocumentsResponseV1 {
+                result: Some(get_documents_response_v1::Result::Proof(_)),
+                metadata: Some(_),
+            }) => {}
+            other => panic!("expected a Proof result, got {:?}", other),
+        }
+    }
+
+    /// Two clauses (implicit AND) keep the `not_yet_implemented`
+    /// contract, with a message that names the restriction rather than
+    /// the blanket "HAVING clause".
+    #[test]
+    fn multiple_clauses_are_still_not_implemented() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let contract = register_restaurants(&platform, version);
+
+        let clause = hc(
+            having_aggregate::Function::Count,
+            "",
+            having_clause::Operator::GreaterThan,
+            Value::U64(2),
+        );
+        let mut request = having_request(
+            &contract,
+            "visit",
+            select(v1_select::Function::Count, ""),
+            clause.clone(),
+            Vec::new(),
+            Some(10),
+            false,
+        );
+        request.having.push(clause);
+
+        match ranked_error(&platform, &state, request, version) {
+            QueryError::Query(QuerySyntaxError::Unsupported(message)) => {
+                assert!(
+                    message.contains("multiple HAVING clauses")
+                        && message.contains("not yet implemented"),
+                    "expected the multi-clause rejection, got: {message}"
+                );
+            }
+            other => panic!("expected Unsupported, got {other:?}"),
+        }
+    }
+
+    /// `OFFSET` stays ranked-only: the having-range walk has no skip,
+    /// so the post-routing offset gate fires with its long-standing
+    /// message.
+    #[test]
+    fn offset_is_rejected_on_the_having_path() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let contract = register_restaurants(&platform, version);
+
+        let mut request = having_request(
+            &contract,
+            "visit",
+            select(v1_select::Function::Count, ""),
+            hc(
+                having_aggregate::Function::Count,
+                "",
+                having_clause::Operator::GreaterThan,
+                Value::U64(2),
+            ),
+            Vec::new(),
+            Some(10),
+            false,
+        );
+        request.offset = Some(1);
+
+        match ranked_error(&platform, &state, request, version) {
+            QueryError::Query(QuerySyntaxError::Unsupported(message)) => {
+                assert!(
+                    message.contains("OFFSET pagination"),
+                    "expected the offset gate's message, got: {message}"
+                );
+            }
+            other => panic!("expected Unsupported, got {other:?}"),
+        }
+    }
+
+    /// A bound on an axis the index does not declare surfaces as a
+    /// query error naming the missing contract keyword. The `review`
+    /// doctype's index is `rankedAverageable` only.
+    #[test]
+    fn a_bound_on_an_undeclared_axis_names_the_missing_keyword() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let contract = register_restaurants(&platform, version);
+
+        let request = having_request(
+            &contract,
+            "review",
+            select(v1_select::Function::Count, ""),
+            hc(
+                having_aggregate::Function::Count,
+                "",
+                having_clause::Operator::GreaterThan,
+                Value::U64(2),
+            ),
+            Vec::new(),
+            Some(10),
+            false,
+        );
+
+        let error = ranked_error(&platform, &state, request, version);
+        assert!(
+            format!("{error}").contains("rankedCountable"),
+            "the rejection must name the missing keyword, got: {error}"
+        );
+    }
+
+    /// Non-contiguous operators (`!=`, `IN`) reach drive and are
+    /// refused there with a message explaining the contiguity
+    /// requirement — as a query error, never an internal one.
+    #[test]
+    fn non_contiguous_operators_surface_as_query_errors() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let contract = register_restaurants(&platform, version);
+
+        for operator in [
+            having_clause::Operator::NotEqual,
+            having_clause::Operator::In,
+        ] {
+            let request = having_request(
+                &contract,
+                "visit",
+                select(v1_select::Function::Count, ""),
+                hc(
+                    having_aggregate::Function::Count,
+                    "",
+                    operator,
+                    Value::U64(2),
+                ),
+                Vec::new(),
+                Some(10),
+                false,
+            );
+            match ranked_error(&platform, &state, request, version) {
+                QueryError::Query(QuerySyntaxError::Unsupported(message)) => {
+                    assert!(
+                        message.contains("contiguous"),
+                        "expected the contiguity rejection for {operator:?}, got: {message}"
+                    );
+                }
+                other => panic!("expected Unsupported for {operator:?}, got {other:?}"),
+            }
+        }
+    }
+
+    /// Protocol version 13's query table (v0 helper) has no having
+    /// path: the same request a v14 node answers is refused with the
+    /// blanket rejection. The routing gate fires before any contract
+    /// fetch, so no ranked contract is needed (v13's meta-schema could
+    /// not register one anyway).
+    #[test]
+    fn protocol_version_13_still_rejects_having() {
+        let (platform, state, version) =
+            setup_platform(None, Network::Testnet, Some(PROTOCOL_VERSION_V13));
+
+        let request = GetDocumentsRequestV1 {
+            data_contract_id: vec![0u8; 32],
+            document_type: "visit".to_string(),
+            where_clauses: Vec::new(),
+            order_by: Vec::new(),
+            limit: Some(10),
+            start: None,
+            prove: false,
+            selects: select(v1_select::Function::Count, ""),
+            group_by: vec![GROUP_PROPERTY.to_string()],
+            having: vec![hc(
+                having_aggregate::Function::Count,
+                "",
+                having_clause::Operator::GreaterThan,
+                Value::U64(2),
+            )],
+            offset: None,
+        };
+
+        match ranked_error(&platform, &state, request, version) {
+            QueryError::Query(QuerySyntaxError::Unsupported(message)) => {
+                assert!(
+                    message.contains("HAVING clause") && message.contains("not yet implemented"),
+                    "expected v13's blanket rejection, got: {message}"
+                );
+            }
+            other => panic!("expected Unsupported, got {other:?}"),
+        }
+    }
+
+    /// The routing label: a grouped aggregate with one having clause
+    /// routes to `having_range`, and without the group_by it stays on
+    /// the blanket-rejection path.
+    #[test]
+    fn routing_picks_having_range_only_for_grouped_single_clause_having() {
+        let clause = hc(
+            having_aggregate::Function::Count,
+            "",
+            having_clause::Operator::GreaterThan,
+            Value::U64(2),
+        );
+
+        let grouped = GetDocumentsRequestV1 {
+            selects: select_count_star(),
+            group_by: vec![GROUP_PROPERTY.to_string()],
+            having: vec![clause.clone()],
+            limit: Some(10),
+            ..empty_v1_request()
+        };
+        let label = validate_and_route_for_tests(&grouped, &[], PlatformVersion::latest())
+            .expect("a grouped single-clause having is a supported shape");
+        assert_eq!(label, "having_range");
+
+        // No group_by → the v0 blanket rejection still owns it.
+        let ungrouped = GetDocumentsRequestV1 {
+            group_by: Vec::new(),
+            ..grouped
+        };
+        assert_not_yet_implemented(
+            validate_and_route_for_tests(&ungrouped, &[], PlatformVersion::latest()),
+            "HAVING clause",
+        );
     }
 }

@@ -58,10 +58,11 @@ use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
 use drive::query::{
     AverageEntry as DriveAverageEntry, AverageMode, CountMode, DocumentAverageRequest,
-    DocumentAverageResponse, DocumentCountRequest, DocumentCountResponse, DocumentRankedRequest,
-    DocumentRankedResponse, DocumentSumRequest, DocumentSumResponse, HavingClause, OrderClause,
-    RankedEntry as DriveRankedEntry, RankedEntryValue, SelectFunction, SelectProjection,
-    SplitCountEntry, SumEntry as DriveSumEntry, SumMode, WhereClause,
+    DocumentAverageResponse, DocumentCountRequest, DocumentCountResponse, DocumentHavingRequest,
+    DocumentHavingResponse, DocumentRankedRequest, DocumentRankedResponse, DocumentSumRequest,
+    DocumentSumResponse, HavingClause, OrderClause, RankedEntry as DriveRankedEntry,
+    RankedEntryValue, SelectFunction, SelectProjection, SplitCountEntry, SumEntry as DriveSumEntry,
+    SumMode, WhereClause,
 };
 use drive::util::grove_operations::GroveDBToUse;
 
@@ -132,8 +133,9 @@ fn validate_and_route(
     // it is a boolean predicate over the groups a `COUNT` / `SUM` /
     // `AVG` produces. Those three functions route through the
     // versioned `compute_aggregate_mode_and_check_limit` helper below,
-    // which rejects non-empty HAVING on both tables (evaluation is not
-    // implemented) but with wording that depends on whether the
+    // whose v2 table routes a single grouped clause to the
+    // having-range executor and whose older tables reject every
+    // non-empty HAVING, with wording that depends on whether the
     // request is otherwise a ranked one.
     //
     // For every other SELECT there is no aggregate for a HAVING to
@@ -225,6 +227,7 @@ fn validate_and_route(
                     mode,
                 }),
                 AggregateRouting::Ranked => Ok(RoutingDecision::Ranked),
+                AggregateRouting::HavingRange => Ok(RoutingDecision::HavingRange),
             }
         }
         SelectFunction::Avg => {
@@ -269,6 +272,7 @@ fn validate_and_route(
                     mode,
                 }),
                 AggregateRouting::Ranked => Ok(RoutingDecision::Ranked),
+                AggregateRouting::HavingRange => Ok(RoutingDecision::HavingRange),
             }
         }
         SelectFunction::Min => Err(not_yet_implemented(
@@ -326,6 +330,7 @@ fn validate_and_route(
             )? {
                 AggregateRouting::Grouped(mode) => Ok(RoutingDecision::Count(mode)),
                 AggregateRouting::Ranked => Ok(RoutingDecision::Ranked),
+                AggregateRouting::HavingRange => Ok(RoutingDecision::HavingRange),
             }
         }
     }
@@ -378,6 +383,18 @@ enum RoutingDecision {
     /// there is nothing to carry and no opportunity for the routing
     /// layer's reading of the ranking to drift from drive's.
     Ranked,
+    /// Boolean-`HAVING` range routing: a `COUNT` / `SUM` / `AVG` select
+    /// with a `GROUP BY` carrying exactly one `having` clause. Routing
+    /// does not read the clause — whether it bounds the selected
+    /// aggregate, whether its operator translates to a contiguous
+    /// range, and the limit's contract are drive's to resolve and to
+    /// refuse (`detect_having_mode`). Dispatches to
+    /// [`Self::dispatch_having_v1`] →
+    /// `Drive::execute_document_having_request` and emits the
+    /// `RankedEntries` proto message with `skipped` unset (a range page
+    /// has no rank base). Carries nothing, for the same reason `Ranked`
+    /// carries nothing.
+    HavingRange,
 }
 
 /// The `OFFSET` gate, applied **after** routing.
@@ -511,6 +528,9 @@ pub(super) fn validate_and_route_for_tests(
         // breakdown is drive's to resolve, not routing's, so there
         // is no sub-mode to report here.
         RoutingDecision::Ranked => "ranked",
+        // Having-range surface — single label for the same reason as
+        // ranked: the bounds / direction / limit breakdown is drive's.
+        RoutingDecision::HavingRange => "having_range",
     })
 }
 
@@ -664,6 +684,21 @@ impl<C> Platform<C> {
                 platform_version,
             ),
             RoutingDecision::Ranked => self.dispatch_ranked_v1(
+                data_contract_id,
+                document_type,
+                select,
+                group_by,
+                having_clauses,
+                where_clauses,
+                order_by_clauses,
+                limit,
+                offset,
+                start,
+                prove,
+                platform_state,
+                platform_version,
+            ),
+            RoutingDecision::HavingRange => self.dispatch_having_v1(
                 data_contract_id,
                 document_type,
                 select,
@@ -1382,6 +1417,135 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             },
             DocumentRankedResponse::Proof(proof_bytes) => {
+                let (grovedb_used, proof) =
+                    self.response_proof_v0(platform_state, proof_bytes, GroveDBToUse::Current)?;
+                GetDocumentsResponseV1 {
+                    result: Some(get_documents_response_v1::Result::Proof(proof)),
+                    metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
+                }
+            }
+        };
+
+        Ok(QueryValidationResult::new_with_data(response))
+    }
+
+    /// Dispatch a boolean-`HAVING` range request
+    /// (`GROUP BY p HAVING <agg> <op> <value> LIMIT n`) to
+    /// [`Drive::execute_document_having_request`] and map the response
+    /// onto the wire.
+    ///
+    /// Parallels [`Self::dispatch_ranked_v1`] line-for-line — same
+    /// contract/doctype resolution, same error → typed-rejection
+    /// mapping, same prove split — because the two surfaces read the
+    /// same indexed tree. The response reuses the `RankedEntries`
+    /// message (a having page is the same "group key + aggregate value"
+    /// entry list), with one deliberate difference: `skipped` is left
+    /// unset. Its published contract is "the page's starting rank", and
+    /// a value-bounded page has no rank base — the entries are simply
+    /// every matching group in axis order, cut at `limit`.
+    #[allow(clippy::too_many_arguments)]
+    fn dispatch_having_v1(
+        &self,
+        data_contract_id: Vec<u8>,
+        document_type_name: String,
+        select: SelectProjection,
+        group_by: Vec<String>,
+        having: Vec<HavingClause>,
+        where_clauses: Vec<WhereClause>,
+        order_clauses: Vec<OrderClause>,
+        limit: Option<u32>,
+        offset: Option<u32>,
+        start: Option<RequestV1Start>,
+        prove: bool,
+        platform_state: &PlatformState,
+        platform_version: &PlatformVersion,
+    ) -> Result<QueryValidationResult<GetDocumentsResponseV1>, Error> {
+        let contract_id: Identifier =
+            check_validation_result_with_data!(data_contract_id.try_into().map_err(|_| {
+                QueryError::InvalidArgument(
+                    "id must be a valid identifier (32 bytes long)".to_string(),
+                )
+            }));
+
+        let (_, contract_fetch_info) = self.drive.get_contract_with_fetch_info_and_fee(
+            contract_id.to_buffer(),
+            None,
+            true,
+            None,
+            platform_version,
+        )?;
+        let contract_fetch_info = check_validation_result_with_data!(contract_fetch_info.ok_or(
+            QueryError::Query(QuerySyntaxError::DataContractNotFound(
+                "contract not found when querying from value with contract info",
+            ))
+        ));
+        let contract_ref = &contract_fetch_info.contract;
+        let document_type = check_validation_result_with_data!(contract_ref
+            .document_type_for_name(document_type_name.as_str())
+            .map_err(|_| QueryError::InvalidArgument(format!(
+                "document type {} not found for contract {}",
+                document_type_name, contract_id
+            ))));
+
+        let drive_request = DocumentHavingRequest {
+            contract: contract_ref,
+            document_type,
+            group_by: &group_by,
+            select,
+            having: &having,
+            order_by: &order_clauses,
+            where_clauses: &where_clauses,
+            limit,
+            offset,
+            has_start_at: start.is_some(),
+            prove,
+        };
+
+        let drive_response =
+            match self
+                .drive
+                .execute_document_having_request(drive_request, None, platform_version)
+            {
+                Ok(r) => r,
+                Err(drive::error::Error::Query(qe)) => {
+                    return Ok(QueryValidationResult::new_with_error(QueryError::Query(qe)));
+                }
+                // Same empty-tree backstop as the ranked path: the
+                // range prover emits a guaranteed-empty range against
+                // an empty secondary, so this should be unreachable,
+                // but the failure class is merk-level and could
+                // surface from anywhere in the ancestor chain.
+                Err(e) => match empty_ranking_proof_rejection(&e) {
+                    Some(rejection) => {
+                        return Ok(QueryValidationResult::new_with_error(rejection));
+                    }
+                    None => return Err(e.into()),
+                },
+            };
+
+        let response = match drive_response {
+            DocumentHavingResponse::Entries(entries) => GetDocumentsResponseV1 {
+                result: Some(get_documents_response_v1::Result::Data(ResultData {
+                    // Always a list, never an aggregate collapse — same
+                    // rationale as ranked: even one matching group is
+                    // an entry, because the caller needs to know which
+                    // group matched, not only that one did.
+                    variant: Some(result_data::Variant::Ranked(RankedEntries {
+                        // Order preserved verbatim: axis order in the
+                        // walk direction, and drive already asserted
+                        // the list is no longer than the limit.
+                        entries: entries.into_iter().map(into_v1_ranked_entry).collect(),
+                        // Deliberately unset. `skipped`'s published
+                        // contract is rank-based ("entry i is the
+                        // group at rank skipped + i"), and a
+                        // value-bounded page has no rank base — there
+                        // is nothing the field could truthfully say.
+                        skipped: None,
+                    })),
+                })),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
+            },
+            DocumentHavingResponse::Proof(proof_bytes) => {
                 let (grovedb_used, proof) =
                     self.response_proof_v0(platform_state, proof_bytes, GroveDBToUse::Current)?;
                 GetDocumentsResponseV1 {

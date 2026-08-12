@@ -224,7 +224,7 @@ impl DocumentRankedEntries {
 /// out-of-range double into `i128::MIN`/`MAX`. Every legitimate value
 /// fits comfortably, since `|sum| ≤ i64::MAX` bounds the true fixed
 /// point at `i64::MAX * 10^19 ≈ 9.2e37 < i128::MAX`.
-fn ranked_entry_from_proto(entry: &ProtoRankedEntry) -> Result<RankedEntry, Error> {
+pub(crate) fn ranked_entry_from_proto(entry: &ProtoRankedEntry) -> Result<RankedEntry, Error> {
     let value = match entry.value.as_ref() {
         Some(ranked_entry::Value::Count(count)) => RankedEntryValue::Count(*count),
         Some(ranked_entry::Value::Sum(sum)) => RankedEntryValue::Sum(*sum),

@@ -16,7 +16,7 @@ use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
 use crate::version::drive_abci_versions::drive_abci_method_versions::v9::DRIVE_ABCI_METHOD_VERSIONS_V9;
-use crate::version::drive_abci_versions::drive_abci_query_versions::v2::DRIVE_ABCI_QUERY_VERSIONS_V2;
+use crate::version::drive_abci_versions::drive_abci_query_versions::v3::DRIVE_ABCI_QUERY_VERSIONS_V3;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v10::DRIVE_ABCI_VALIDATION_VERSIONS_V10;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v2::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2;
@@ -95,14 +95,17 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   `verify_ranked_top_k_proof`. All are 0 today. The same table bumps the
 ///   four index walkers to v2 and the document update walker to v1 for the
 ///   shared-prefix fix.
-/// * `DRIVE_ABCI_QUERY_VERSIONS_V2` bumps
-///   `document_query_helpers.compute_aggregate_mode_and_check_limit` 0 → 1,
-///   opening the ranked path on the v1 document-query handler: a grouped
-///   aggregate whose single `order_by` names the selected aggregate
-///   (`ORDER BY <agg> [ASC|DESC] LIMIT n [OFFSET m]`) routes to the ranked
-///   executor. v13 and earlier keep the v1 table and therefore keep
-///   rejecting that shape, so mixed-version networks agree across the
-///   upgrade.
+/// * `DRIVE_ABCI_QUERY_VERSIONS_V3` bumps
+///   `document_query_helpers.compute_aggregate_mode_and_check_limit` 0 → 2,
+///   opening two routes on the v1 document-query handler: the ranked path
+///   (a grouped aggregate whose single `order_by` names the selected
+///   aggregate — `ORDER BY <agg> [ASC|DESC] LIMIT n [OFFSET m]`) and the
+///   boolean-`HAVING` range path (a grouped aggregate carrying exactly one
+///   `having` clause on the selected aggregate — `GROUP BY p HAVING <agg>
+///   <op> <value> LIMIT n`), the latter served as a value-bounded range
+///   read of the covering ranked index's axis secondary. v13 and earlier
+///   keep the v1 table and therefore keep rejecting both shapes, so
+///   mixed-version networks agree across the upgrade.
 /// * `DRIVE_ABCI_VALIDATION_VERSIONS_V10` bumps
 ///   `document_create_transition_structure_validation` 0 → 1, requiring a
 ///   contested create transition's prefunded voting balance to name the
@@ -123,7 +126,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         methods: DRIVE_ABCI_METHOD_VERSIONS_V9,
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested create transitions must name the contested index they resolve to
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2,
-        query: DRIVE_ABCI_QUERY_VERSIONS_V2, // changed: ranked HAVING routing gate
+        query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: ranked + boolean-HAVING routing gate
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
     },
     dpp: DPPVersion {
@@ -155,16 +158,18 @@ mod tests {
     use super::*;
     use crate::version::v13::PLATFORM_V13;
 
-    /// The ranked-HAVING routing gate lives in v14's own query table, so
-    /// flipping it to feature version 1 touches only v14: a v13 node keeps
-    /// running the v0 helper, which rejects every non-empty HAVING, so a
+    /// The ranked / boolean-HAVING routing gate lives in v14's own query
+    /// table, so flipping it touches only v14: a v13 node keeps running
+    /// the v0 helper, which rejects every non-empty HAVING, so a
     /// mixed-version network agrees until the upgrade vote carries.
     ///
-    /// The flip is real as of the ranked routing landing — v14 selects the
-    /// v1 helper, which routes a single ranking-operand HAVING clause to
-    /// `dispatch_ranked_v1`. A change that made v13 non-zero here would be
-    /// consensus-breaking for already-deployed nodes, which is exactly what
-    /// the v13 half of this assertion guards.
+    /// v14 selects the v2 helper, which routes the ranked shape
+    /// (`ORDER BY <agg> LIMIT n`) to `dispatch_ranked_v1` and the
+    /// boolean-HAVING range shape (exactly one `having` clause on the
+    /// selected aggregate) to `dispatch_having_v1`. A change that made
+    /// v13 non-zero here would be consensus-breaking for
+    /// already-deployed nodes, which is exactly what the v13 half of
+    /// this assertion guards.
     #[test]
     fn ranked_having_routing_gate_is_v14_only() {
         assert_eq!(
@@ -181,7 +186,7 @@ mod tests {
                 .query
                 .document_query_helpers
                 .compute_aggregate_mode_and_check_limit,
-            1
+            2
         );
     }
 
@@ -264,12 +269,25 @@ mod tests {
             0
         );
         assert_eq!(
+            PLATFORM_V14.drive.methods.document.query.detect_having_mode,
+            0
+        );
+        assert_eq!(
             PLATFORM_V14
                 .drive
                 .methods
                 .verify
                 .document_ranked
                 .verify_ranked_top_k_proof,
+            0
+        );
+        assert_eq!(
+            PLATFORM_V14
+                .drive
+                .methods
+                .verify
+                .document_ranked
+                .verify_having_range_proof,
             0
         );
         let grove = &PLATFORM_V14.drive.grove_methods.batch;

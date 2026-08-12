@@ -89,16 +89,26 @@ pub struct DocumentQuery {
     /// [`drive::query::HavingOperator`] for the catalogs. Multiple
     /// entries combine with implicit `AND`.
     ///
-    /// **Every non-empty value is rejected by the server** with
-    /// `QuerySyntaxError::Unsupported("HAVING clause is not yet
-    /// implemented")`, at every protocol version. The typed builder
-    /// exists so callers can encode `HAVING` ahead of server support
-    /// landing without a wire-format change.
+    /// **Served from protocol version 14, for exactly one clause
+    /// bounding the selected aggregate** with a contiguous-range
+    /// operator (`=`, `>`, `>=`, `<`, `<=`, `BETWEEN*`) — the
+    /// having-range surface, fetched as
+    /// [`DocumentHavingEntries`](drive_proof_verifier::DocumentHavingEntries)
+    /// and served as a value-bounded range read of the covering ranked
+    /// index's axis secondary (the index must declare the matching
+    /// `rankedCountable` / `rankedSummable` / `rankedAverageable`
+    /// keyword). Everything else — multiple clauses (implicit AND), a
+    /// clause on an aggregate the select does not project, `!=` / `IN`
+    /// — is still rejected with `QuerySyntaxError::Unsupported`, as is
+    /// any non-empty value at protocol version 13 and earlier.
     ///
     /// **`having` does not express ranking.** "The n highest-scoring
     /// groups" is [`Self::order_by_selected_aggregate`] +
     /// [`Self::with_limit`] — SQL's own `ORDER BY <agg> DESC LIMIT n`
-    /// — which *is* served, from protocol version 14.
+    /// — which is also served from protocol version 14. The two
+    /// compose only in the one shape the having grammar allows: an
+    /// `ORDER BY` naming the selected aggregate sets the having
+    /// range's walk direction.
     #[cfg_attr(feature = "mocks", serde(default))]
     pub having: Vec<HavingClause>,
     /// `order_by` clauses for the query.
