@@ -221,6 +221,41 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 ))
             })?;
 
+        // Refuse a selection that picked an input pinned by an IN-FLIGHT
+        // BROADCAST dispatch (`WalletGeneration::pin_in_broadcast`): this
+        // build's own selection swept that dispatch's aged reservation
+        // (catch-up advanced past key-wallet's TTL while it was suspended
+        // pre-submission) and re-reserved the input, so broadcasting this
+        // asset lock would race the pinned, already-signed transaction on
+        // the wire. Same backstop as `finalize_transaction` and the
+        // contact-payment build. The release runs under the write guard
+        // held since selection, so it is exact; the token form is
+        // owner-guarded like the drain-floor abandon below. The consumed
+        // funding key index is the same residue any discarded build leaves,
+        // reclaimed by the gap-limit scan.
+        if let Some(pinned) = info.generation.in_broadcast_conflict(&result.transaction) {
+            let funds_account = match funding_account {
+                AssetLockFundingAccount::Bip44 { account_index } => info
+                    .core_wallet
+                    .bip44_managed_account_at_index(account_index),
+                AssetLockFundingAccount::CoinJoin { account_index } => info
+                    .core_wallet
+                    .accounts
+                    .coinjoin_accounts
+                    .get(&account_index),
+            };
+            if let Some(account) = funds_account {
+                match result.reservation_token {
+                    Some(token) => account.release_reservation_if_owner(&result.transaction, token),
+                    None => account.release_reservation(&result.transaction),
+                }
+            }
+            return Err(PlatformWalletError::AssetLockTransaction(format!(
+                "selected input {pinned} is mid-broadcast by an in-flight dispatch; \
+                 retry after it completes"
+            )));
+        }
+
         // 4. Pull the (pubkey, path) for our single credit output.
         //
         // `build_asset_lock_with_signer` always returns the `Public`

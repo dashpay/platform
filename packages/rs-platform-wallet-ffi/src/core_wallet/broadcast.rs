@@ -288,6 +288,26 @@ mod tests {
         runtime().block_on(core.abandon_transaction(&retry));
     }
 
+    /// Prove the funding reservation was released owner-guarded: a fresh
+    /// finalize of the same size reselects the single fixture UTXO. An aged
+    /// abandon/free with the build's owner token present releases via
+    /// `release_reservation_if_owner` (safe at any age — no-op once ownership
+    /// transferred), so the input must be immediately reselectable.
+    fn assert_released_for_rebuild(core: &TestCore, signer: &WalletSigner, tag: u8) {
+        let rebuild = runtime().block_on(core.finalize_transaction(
+            TransactionBuilder::new().add_output(
+                &Address::dummy(Network::Testnet, usize::from(tag)),
+                1_000_000,
+            ),
+            &[AccountTypePreference::BIP44],
+            0,
+            signer,
+        ));
+        let rebuilt = rebuild
+            .expect("aged abandon/free must release the still-owned reservation for a rebuild");
+        runtime().block_on(core.abandon_transaction(&rebuilt));
+    }
+
     #[test]
     fn double_free_is_safe_and_releases_reservation() {
         let (core, signer) =
@@ -325,6 +345,98 @@ mod tests {
         );
         assert_released(&origin, &origin_signer, 45);
         CORE_WALLET_STORAGE.remove(other_handle);
+    }
+
+    /// The deinit/GC backstop (`core_wallet_signed_transaction_free`) is the
+    /// exact path shumkov flagged: a `FinalizedCoreTransaction` never broadcast
+    /// or abandoned, freed by the host GC long after finalize. The funded
+    /// finalize stamped an owner token, so the aged free still releases —
+    /// owner-guarded via `release_reservation_if_owner`, which is safe at any
+    /// age (it no-ops once key-wallet's TTL swept and an unrelated build
+    /// re-reserved the outpoint) — freeing the still-owned input for a rebuild.
+    /// The handle is torn down (the storage entry is removed) so a re-free is a
+    /// safe no-op.
+    #[test]
+    fn aged_free_releases_owner_guarded() {
+        let (core, signer) =
+            runtime().block_on(funded_spv_core_wallet(StandardAccountType::BIP44Account));
+        let transaction_handle = insert(&core, finalize(&core, &signer, 48));
+
+        // Age the pinned handle past the guard bound (still below the TTL, so the
+        // reservation is provably still held — only the software guard trips).
+        runtime().block_on(platform_wallet::test_support::age_core_past_reservation_guard(&core));
+
+        core_wallet_signed_transaction_free(transaction_handle);
+
+        // The aged free released owner-guarded: the input is reselectable.
+        assert_released_for_rebuild(&core, &signer, 49);
+        // Handle is gone regardless — a re-free is a harmless no-op.
+        core_wallet_signed_transaction_free(transaction_handle);
+    }
+
+    /// The FFI broadcast/abandon *failure* paths (invalid or wrong-generation
+    /// wallet handle) route their cleanup through `abandon_transaction`, so they
+    /// inherit the same policy: an aged handle with the build's owner token
+    /// still releases owner-guarded (safe at any age), so the failure-path
+    /// cleanup frees the still-owned input instead of stranding it.
+    #[test]
+    fn aged_failure_path_abandon_releases_owner_guarded() {
+        let (origin, signer) =
+            runtime().block_on(funded_spv_core_wallet(StandardAccountType::BIP44Account));
+        let transaction_handle = insert(&origin, finalize(&origin, &signer, 50));
+
+        runtime().block_on(platform_wallet::test_support::age_core_past_reservation_guard(&origin));
+
+        // Invalid wallet handle → routes through abandon_transaction, then returns
+        // ErrorInvalidHandle. The embedded aged reservation is released
+        // owner-guarded on the way out.
+        let invalid =
+            unsafe { core_wallet_abandon_signed_transaction(u64::MAX, transaction_handle) };
+        assert_eq!(
+            invalid.code,
+            PlatformWalletFFIResultCode::ErrorInvalidHandle
+        );
+        assert_released_for_rebuild(&origin, &signer, 51);
+    }
+
+    /// The terminal FFI stale-broadcast behavior: by the time the age guard
+    /// runs, `core_wallet_broadcast_signed_transaction` has already consumed
+    /// the opaque handle (and the host bindings cleared theirs before entering
+    /// the ABI), so no follow-up abandon is possible. The refusal must
+    /// therefore reconcile the reservation itself — owner-guarded, freeing the
+    /// still-owned input so the instructed immediate rebuild can reselect it —
+    /// and surface the shared `ErrorStaleReservationToken` (34) code with no
+    /// txid. A retry of the consumed handle is `NotFound`, not a resend.
+    #[test]
+    fn aged_broadcast_refuses_and_releases_for_rebuild() {
+        let (core, signer) =
+            runtime().block_on(funded_spv_core_wallet(StandardAccountType::BIP44Account));
+        let core_handle = CORE_WALLET_STORAGE.insert(core.clone());
+        let transaction_handle = insert(&core, finalize(&core, &signer, 52));
+
+        runtime().block_on(platform_wallet::test_support::age_core_past_reservation_guard(&core));
+
+        let mut txid = ptr::null_mut();
+        let stale = unsafe {
+            core_wallet_broadcast_signed_transaction(core_handle, transaction_handle, &mut txid)
+        };
+        assert_eq!(
+            stale.code,
+            PlatformWalletFFIResultCode::ErrorStaleReservationToken
+        );
+        assert!(txid.is_null());
+
+        // The refusal released owner-guarded: the input is reselectable with no
+        // further cleanup call.
+        assert_released_for_rebuild(&core, &signer, 53);
+
+        // The handle was consumed by the refused broadcast — a retry cannot
+        // reconsume it.
+        let retry = unsafe {
+            core_wallet_broadcast_signed_transaction(core_handle, transaction_handle, &mut txid)
+        };
+        assert_eq!(retry.code, PlatformWalletFFIResultCode::NotFound);
+        CORE_WALLET_STORAGE.remove(core_handle);
     }
 
     #[test]
