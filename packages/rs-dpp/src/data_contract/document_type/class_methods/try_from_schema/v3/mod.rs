@@ -988,11 +988,15 @@ mod tests {
     // prefix-overlap conflict
     // -------------------------------------------------------------------
 
+    /// One extra single-property index for [`compound_ranked_schema`]:
+    /// `(name, property, keys)`.
+    type ExtraIndexSpec<'a> = (&'a str, &'a str, Vec<(&'a str, Value)>);
+
     /// A doctype with a compound ranked index `[region, restaurantId]`
     /// (avg axis on `grade`), plus optional extra single-property
     /// indexes to provoke — or fail to provoke — the prefix-overlap
-    /// conflict. `extra_index` entries are `(name, property, keys)`.
-    fn compound_ranked_schema(extra_indexes: Vec<(&str, &str, Vec<(&str, Value)>)>) -> Value {
+    /// conflict.
+    fn compound_ranked_schema(extra_indexes: Vec<ExtraIndexSpec>) -> Value {
         let compound_entry: Vec<(Value, Value)> = vec![
             (
                 Value::Text("name".to_string()),
