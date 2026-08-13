@@ -647,7 +647,10 @@ impl Drive {
                 // bare reference at key `[0]` only for a unique index
                 // with no old nulls. Same dispatch as
                 // `remove_reference_for_index_level_for_contract_operations_v0`.
-                if !(old_all_fields_null && !index.null_searchable) {
+                if old_all_fields_null && !index.null_searchable {
+                    // the insert walker wrote no entry for the old
+                    // document — nothing to delete
+                } else {
                     let mut key_info_path = KeyInfoPath::from_vec(
                         old_index_path
                             .into_iter()
