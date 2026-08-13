@@ -3159,8 +3159,13 @@ mod multi_in_wire_tests {
             !result.errors.is_empty(),
             "expected a validation error at protocol version 13"
         );
+        // The v0 (protocol version 13) grammar rejects the shape at parse
+        // time, so the error surfaces through the parse wrapping — the
+        // same wire shape historical nodes produced.
         match &result.errors[0] {
-            QueryError::Query(QuerySyntaxError::MultipleInClauses(_)) => {}
+            QueryError::Drive(drive::error::Error::Query(QuerySyntaxError::MultipleInClauses(
+                _,
+            ))) => {}
             other => panic!("expected MultipleInClauses, got {:?}", other),
         }
     }

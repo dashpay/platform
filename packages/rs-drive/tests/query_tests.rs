@@ -1208,6 +1208,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -1256,6 +1257,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -1323,6 +1325,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -1654,6 +1657,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -1710,6 +1714,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -1761,6 +1766,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -1813,6 +1819,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -1873,6 +1880,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -1921,6 +1929,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -1981,6 +1990,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -2040,6 +2050,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -2658,6 +2669,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -2989,6 +3001,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -3045,6 +3058,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -3096,6 +3110,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -3148,6 +3163,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -3208,6 +3224,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -3256,6 +3273,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -3316,6 +3334,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -3375,6 +3394,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -4045,6 +4065,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -4126,6 +4147,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -4185,6 +4207,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -4238,6 +4261,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -4297,6 +4321,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -4360,13 +4385,18 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("should build query");
 
         let sql_string = "select * from person order by firstName asc limit 100";
-        let query2 =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query2 = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         assert_eq!(query1, query2);
 
@@ -4385,13 +4415,18 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("should build query");
 
         let sql_string = "select * from person where firstName = 'Chris'";
-        let query2 =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query2 = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         assert_eq!(query1, query2);
 
@@ -4414,14 +4449,19 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("should build query");
 
         let sql_string =
             "select * from person where firstName < 'Chris' order by firstName asc limit 100";
-        let query2 =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query2 = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         assert_eq!(query1, query2);
 
@@ -4444,14 +4484,19 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("should build query");
 
         let sql_string =
             "select * from person where firstName like 'C%' order by firstName asc limit 100";
-        let query2 =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query2 = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         assert_eq!(query1, query2);
 
@@ -4475,13 +4520,18 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("should build query");
 
         let sql_string = "select * from person where firstName > 'Chris' and firstName <= 'Noellyn' order by firstName asc limit 100";
-        let query2 =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query2 = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         assert_eq!(query1, query2);
 
@@ -4505,14 +4555,19 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("should build query");
 
         let sql_string =
             "select * from person where firstName in ('a', 'b') order by firstName limit 100";
-        let query2 =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query2 = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         assert_eq!(query1, query2);
     }
@@ -4575,6 +4630,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -5014,6 +5070,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -5065,6 +5122,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -5146,6 +5204,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -5205,6 +5264,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -5280,6 +5340,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -5336,6 +5397,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -5384,6 +5446,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -5575,6 +5638,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -5671,6 +5735,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -5767,6 +5832,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -5863,6 +5929,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -5959,6 +6026,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -6152,6 +6220,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
 
@@ -6359,6 +6428,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
 
@@ -6579,6 +6649,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -6633,6 +6704,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -6688,6 +6760,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -6773,6 +6846,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -6872,6 +6946,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -6976,6 +7051,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -7054,6 +7130,7 @@ mod tests {
                 &contract,
                 withdrawal_document_type,
                 &drive.config,
+                platform_version,
             )
             .expect("query should be built");
             let (results, _, _) = query
@@ -7232,6 +7309,7 @@ mod tests {
                 &contract,
                 withdrawal_document_type,
                 &drive.config,
+                platform_version,
             )
             .expect("query should be built");
             let (results, _, _) = query
@@ -7599,6 +7677,7 @@ mod tests {
             &contract,
             document_type,
             &DriveConfig::default(),
+            platform_version,
         )
         .expect("should create a query from cbor");
 
@@ -7659,6 +7738,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
 
@@ -7698,6 +7778,7 @@ mod multi_in_tests {
             contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -7742,6 +7823,7 @@ mod multi_in_tests {
             contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -8031,6 +8113,67 @@ mod multi_in_tests {
     }
 
     #[test]
+    fn test_two_in_clauses_with_descending_left_over_property() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup_family_tests(10, 73509, platform_version);
+        let people = all_people(&drive, &contract, platform_version);
+
+        let names_of = |field: &str| -> Vec<String> {
+            let mut names: Vec<String> = people
+                .iter()
+                .map(|(_, document)| text_field(document, field))
+                .collect();
+            names.sort();
+            names.dedup();
+            names
+        };
+        let first_names = names_of("firstName");
+        let middle_names = names_of("middleName");
+
+        // [firstName, middleName, lastName]: lastName is left over and
+        // ordered descending
+        let query_value = json!({
+            "where": [
+                ["firstName", "in", first_names],
+                ["middleName", "in", middle_names],
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["firstName", "asc"],
+                ["middleName", "asc"],
+                ["lastName", "desc"],
+            ]
+        });
+        let documents =
+            run_query_with_proof_round_trip(&drive, &contract, query_value, platform_version);
+
+        let mut expected: Vec<(String, String, std::cmp::Reverse<String>)> = people
+            .iter()
+            .map(|(_, document)| {
+                (
+                    text_field(document, "firstName"),
+                    text_field(document, "middleName"),
+                    std::cmp::Reverse(text_field(document, "lastName")),
+                )
+            })
+            .collect();
+        expected.sort();
+
+        let returned: Vec<(String, String, std::cmp::Reverse<String>)> = documents
+            .iter()
+            .map(|document| {
+                (
+                    text_field(document, "firstName"),
+                    text_field(document, "middleName"),
+                    std::cmp::Reverse(text_field(document, "lastName")),
+                )
+            })
+            .collect();
+        assert_eq!(returned, expected);
+        assert_eq!(returned.len(), 10);
+    }
+
+    #[test]
     fn test_equality_prefix_with_two_in_clauses() {
         let platform_version = PlatformVersion::latest();
         let (drive, contract) = setup_family_tests(10, 73509, platform_version);
@@ -8130,6 +8273,7 @@ mod multi_in_tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
 
@@ -8186,6 +8330,7 @@ mod multi_in_tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let error = query
@@ -8194,6 +8339,61 @@ mod multi_in_tests {
         assert!(
             matches!(error, Error::Query(QuerySyntaxError::Unsupported(_))),
             "expected Unsupported, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn test_multiple_in_clauses_cursor_rejection_precedes_cursor_lookup() {
+        // The shape preflight must fire before the startAfter document is
+        // fetched from storage: a nonexistent cursor may not surface as
+        // StartDocumentNotFound when the shape itself is unsupported (v14)
+        // or rejected (v13).
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup_family_tests(10, 73509, platform_version);
+        let platform_version_13 =
+            PlatformVersion::get(13).expect("protocol version 13 should exist");
+
+        let person_document_type = contract
+            .document_type_for_name("person")
+            .expect("contract should have a person document type");
+        let nonexistent = Identifier::from([77u8; 32]).to_string(Encoding::Base58);
+        let query_value = json!({
+            "where": [
+                ["firstName", "in", ["Adey", "Briney"]],
+                ["lastName", "in", ["Kriskov", "Randolf"]],
+            ],
+            "startAfter": nonexistent,
+            "limit": 100,
+            "orderBy": [
+                ["firstName", "asc"],
+                ["lastName", "asc"],
+            ]
+        });
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
+        let query = DriveDocumentQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            person_document_type,
+            &drive.config,
+            platform_version,
+        )
+        .expect("query should be built");
+
+        let error = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect_err("multi-in with a cursor must be rejected at protocol version 14");
+        assert!(
+            matches!(error, Error::Query(QuerySyntaxError::Unsupported(_))),
+            "expected Unsupported before the cursor lookup, got {error:?}"
+        );
+
+        let error = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version_13)
+            .expect_err("multi-in must be rejected at protocol version 13");
+        assert!(
+            matches!(error, Error::Query(QuerySyntaxError::MultipleInClauses(_))),
+            "expected MultipleInClauses before the cursor lookup, got {error:?}"
         );
     }
 
@@ -8225,6 +8425,7 @@ mod multi_in_tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let error = query
@@ -8265,6 +8466,7 @@ mod multi_in_tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let error = query
@@ -8304,6 +8506,7 @@ mod multi_in_tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let error = query

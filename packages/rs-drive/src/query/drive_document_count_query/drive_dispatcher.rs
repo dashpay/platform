@@ -171,6 +171,7 @@ pub enum DocumentCountResponse {
 /// count path doesn't.)
 pub fn where_clauses_from_value(
     value: &dpp::platform_value::Value,
+    platform_version: &PlatformVersion,
 ) -> Result<Vec<WhereClause>, Error> {
     let clauses: Vec<WhereClause> = match value {
         dpp::platform_value::Value::Null => Vec::new(),
@@ -192,7 +193,7 @@ pub fn where_clauses_from_value(
         }
     };
 
-    validate_and_canonicalize_where_clauses(clauses)
+    validate_and_canonicalize_where_clauses(clauses, platform_version)
 }
 
 /// Run the system-wide where-clause validator on a structured
@@ -250,8 +251,9 @@ pub fn where_clauses_from_value(
 /// rejected by `detect_mode`'s `range_count > 1` structural check.
 pub fn validate_and_canonicalize_where_clauses(
     clauses: Vec<WhereClause>,
+    platform_version: &PlatformVersion,
 ) -> Result<Vec<WhereClause>, Error> {
-    match WhereClause::group_clauses(&clauses) {
+    match WhereClause::group_clauses(&clauses, platform_version) {
         // Multiple `In` clauses are a document-query-only shape (protocol
         // version 14+); the aggregate surfaces keep rejecting them since
         // their mode detection and index pickers assume a single `In`.
@@ -441,7 +443,8 @@ impl Drive {
         // shaped legacy path or the v1 typed-proto path. See
         // [`validate_and_canonicalize_where_clauses`]'s docstring
         // for the catalog of rejections / canonicalization rules.
-        let where_clauses = validate_and_canonicalize_where_clauses(request.where_clauses)?;
+        let where_clauses =
+            validate_and_canonicalize_where_clauses(request.where_clauses, platform_version)?;
         let order_clauses = request.order_clauses;
 
         // Split-mode entry direction is whatever the first orderBy

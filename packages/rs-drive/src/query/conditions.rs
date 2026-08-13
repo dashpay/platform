@@ -16,7 +16,7 @@ use grovedb::Query;
 use sqlparser::ast;
 use std::borrow::Cow;
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fmt::Display;
 use WhereOperator::{
     Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Equal, GreaterThan,
@@ -524,7 +524,9 @@ impl<'a> WhereClause {
         })
     }
 
-    fn lower_bound_clause(where_clauses: &'a [&WhereClause]) -> Result<Option<&'a Self>, Error> {
+    pub(crate) fn lower_bound_clause(
+        where_clauses: &'a [&WhereClause],
+    ) -> Result<Option<&'a Self>, Error> {
         let lower_range_clauses: Vec<&&WhereClause> = where_clauses
             .iter()
             .filter(|&where_clause| {
@@ -540,7 +542,9 @@ impl<'a> WhereClause {
         }
     }
 
-    fn upper_bound_clause(where_clauses: &'a [&WhereClause]) -> Result<Option<&'a Self>, Error> {
+    pub(crate) fn upper_bound_clause(
+        where_clauses: &'a [&WhereClause],
+    ) -> Result<Option<&'a Self>, Error> {
         let upper_range_clauses: Vec<&&WhereClause> = where_clauses
             .iter()
             .filter(|&where_clause| matches!(where_clause.operator, LessThan | LessThanOrEquals))
@@ -554,216 +558,22 @@ impl<'a> WhereClause {
         }
     }
 
-    /// Given a list of where clauses, returns them in groups of equal, range, and in clauses.
+    /// Given a list of where clauses, returns them in groups of equal, range,
+    /// and in clauses, under the platform version's grammar.
     ///
-    /// Multiple `In` clauses (on distinct fields) are grouped structurally here;
-    /// whether more than one is *accepted* is decided later, at path-query
-    /// lowering, where the platform version is known (protocol version 14 is the
-    /// first to accept them).
+    /// Versioned via
+    /// `platform_version.drive.methods.document.query.where_clause_grouping`
+    /// (see [`crate::query::where_clause_grouping`]): v0 — every protocol
+    /// version up to 13 — rejects more than one non-primary-key `In` clause
+    /// with `MultipleInClauses` before any other same-field checks; v1
+    /// (protocol version 14) groups multiple `In` clauses structurally, and
+    /// their acceptance is decided by the versioned path-query lowering.
     #[allow(clippy::type_complexity)]
     pub(crate) fn group_clauses(
         where_clauses: &'a [WhereClause],
-        // TODO: Define a type/struct for return value
+        platform_version: &PlatformVersion,
     ) -> Result<(BTreeMap<String, Self>, Option<Self>, Vec<Self>), Error> {
-        if where_clauses.is_empty() {
-            return Ok((BTreeMap::new(), None, Vec::new()));
-        }
-        let equal_clauses_array =
-            where_clauses
-                .iter()
-                .filter_map(|where_clause| match where_clause.operator {
-                    Equal => match where_clause.is_identifier() {
-                        true => None,
-                        false => Some(where_clause.clone()),
-                    },
-                    _ => None,
-                });
-        let mut known_fields: BTreeSet<String> = BTreeSet::new();
-        let equal_clauses: BTreeMap<String, WhereClause> = equal_clauses_array
-            .into_iter()
-            .map(|where_clause| {
-                if known_fields.contains(&where_clause.field) {
-                    Err(Error::Query(
-                        QuerySyntaxError::DuplicateNonGroupableClauseSameField(
-                            "duplicate equality fields",
-                        ),
-                    ))
-                } else {
-                    known_fields.insert(where_clause.field.clone());
-                    Ok((where_clause.field.clone(), where_clause))
-                }
-            })
-            .collect::<Result<BTreeMap<String, WhereClause>, Error>>()?;
-
-        let in_clauses_array = where_clauses
-            .iter()
-            .filter_map(|where_clause| match where_clause.operator {
-                In => match where_clause.is_identifier() {
-                    true => None,
-                    false => Some(where_clause.clone()),
-                },
-                _ => None,
-            })
-            .collect::<Vec<WhereClause>>();
-
-        let in_clauses = in_clauses_array
-            .into_iter()
-            .map(|clause| {
-                if known_fields.contains(&clause.field) {
-                    Err(Error::Query(
-                        QuerySyntaxError::DuplicateNonGroupableClauseSameField(
-                            "in clause has same field as an equality or in clause",
-                        ),
-                    ))
-                } else {
-                    known_fields.insert(clause.field.clone());
-                    Ok(clause)
-                }
-            })
-            .collect::<Result<Vec<WhereClause>, Error>>()?;
-
-        // In order to group range clauses
-        let groupable_range_clauses: Vec<&WhereClause> = where_clauses
-            .iter()
-            .filter(|where_clause| match where_clause.operator {
-                Equal => false,
-                In => false,
-                GreaterThan => true,
-                GreaterThanOrEquals => true,
-                LessThan => true,
-                LessThanOrEquals => true,
-                StartsWith => false,
-                Between => false,
-                BetweenExcludeBounds => false,
-                BetweenExcludeRight => false,
-                BetweenExcludeLeft => false,
-            })
-            .collect();
-
-        let non_groupable_range_clauses: Vec<&WhereClause> = where_clauses
-            .iter()
-            .filter(|where_clause| match where_clause.operator {
-                Equal => false,
-                In => false,
-                GreaterThan => false,
-                GreaterThanOrEquals => false,
-                LessThan => false,
-                LessThanOrEquals => false,
-                StartsWith => true,
-                Between => true,
-                BetweenExcludeBounds => true,
-                BetweenExcludeRight => true,
-                BetweenExcludeLeft => true,
-            })
-            .collect();
-
-        let range_clause =
-            if non_groupable_range_clauses.is_empty() {
-                if groupable_range_clauses.is_empty() {
-                    Ok(None)
-                } else if groupable_range_clauses.len() == 1 {
-                    let clause = *groupable_range_clauses.first().unwrap();
-                    if known_fields.contains(clause.field.as_str()) {
-                        Err(Error::Query(
-                            QuerySyntaxError::InvalidWhereClauseComponents(
-                                "in clause has same field as an equality clause",
-                            ),
-                        ))
-                    } else {
-                        Ok(Some(clause.clone()))
-                    }
-                } else if groupable_range_clauses.len() > 2 {
-                    Err(Error::Query(QuerySyntaxError::MultipleRangeClauses(
-                        "there can only be at most 2 range clauses that must be on the same field",
-                    )))
-                } else {
-                    let first_field = groupable_range_clauses.first().unwrap().field.as_str();
-                    if known_fields.contains(first_field) {
-                        Err(Error::Query(
-                            QuerySyntaxError::InvalidWhereClauseComponents(
-                                "a range clause has same field as an equality or in clause",
-                            ),
-                        ))
-                    } else if groupable_range_clauses
-                        .iter()
-                        .any(|&z| z.field.as_str() != first_field)
-                    {
-                        Err(Error::Query(QuerySyntaxError::MultipleRangeClauses(
-                            "all ranges must be on same field",
-                        )))
-                    } else {
-                        let lower_upper_error = || {
-                            Error::Query(QuerySyntaxError::RangeClausesNotGroupable(
-                                "lower and upper bounds must be passed if providing 2 ranges",
-                            ))
-                        };
-
-                        // we need to find the bounds of the clauses
-                        let lower_bounds_clause =
-                            WhereClause::lower_bound_clause(groupable_range_clauses.as_slice())?
-                                .ok_or_else(lower_upper_error)?;
-                        let upper_bounds_clause =
-                            WhereClause::upper_bound_clause(groupable_range_clauses.as_slice())?
-                                .ok_or_else(lower_upper_error)?;
-
-                        let operator =
-                            match (lower_bounds_clause.operator, upper_bounds_clause.operator) {
-                                (GreaterThanOrEquals, LessThanOrEquals) => Some(Between),
-                                (GreaterThanOrEquals, LessThan) => Some(BetweenExcludeRight),
-                                (GreaterThan, LessThanOrEquals) => Some(BetweenExcludeLeft),
-                                (GreaterThan, LessThan) => Some(BetweenExcludeBounds),
-                                _ => None,
-                            }
-                            .ok_or_else(lower_upper_error)?;
-
-                        if upper_bounds_clause
-                            .less_than(lower_bounds_clause, operator == BetweenExcludeBounds)?
-                        {
-                            return Err(Error::Query(QuerySyntaxError::MultipleRangeClauses(
-                                "lower bounds must be under upper bounds",
-                            )));
-                        }
-
-                        Ok(Some(WhereClause {
-                            field: groupable_range_clauses.first().unwrap().field.clone(),
-                            operator,
-                            value: Value::Array(vec![
-                                lower_bounds_clause.value.clone(),
-                                upper_bounds_clause.value.clone(),
-                            ]),
-                        }))
-                    }
-                }
-            } else if non_groupable_range_clauses.len() == 1 && groupable_range_clauses.is_empty() {
-                let where_clause = *non_groupable_range_clauses.first().unwrap();
-                if where_clause.operator == StartsWith {
-                    // Starts with must null be against an empty string
-                    if let Value::Text(text) = &where_clause.value {
-                        if text.is_empty() {
-                            return Err(Error::Query(QuerySyntaxError::StartsWithIllegalString(
-                                "starts with can not start with an empty string",
-                            )));
-                        }
-                    }
-                }
-                if known_fields.contains(where_clause.field.as_str()) {
-                    Err(Error::Query(QuerySyntaxError::DuplicateNonGroupableClauseSameField(
-                    "a non groupable range clause has same field as an equality or in clause",
-                )))
-                } else {
-                    Ok(Some(where_clause.clone()))
-                }
-            } else if groupable_range_clauses.is_empty() {
-                Err(Error::Query(QuerySyntaxError::MultipleRangeClauses(
-                    "there can not be more than 1 non groupable range clause",
-                )))
-            } else {
-                Err(Error::Query(QuerySyntaxError::RangeClausesNotGroupable(
-                    "clauses are not groupable",
-                )))
-            }?;
-
-        Ok((equal_clauses, range_clause, in_clauses))
+        crate::query::where_clause_grouping::group_where_clauses(where_clauses, platform_version)
     }
 
     fn split_value_for_between(
@@ -1721,6 +1531,7 @@ mod tests {
     use dpp::platform_value::Value;
     use dpp::prelude::Identifier;
     use dpp::tests::fixtures::get_data_contract_fixture;
+    use dpp::version::PlatformVersion;
     use dpp::version::LATEST_PLATFORM_VERSION;
     use grovedb::Query;
     use std::collections::BTreeMap;
@@ -1819,8 +1630,9 @@ mod tests {
                     value: Value::Float(1.0),
                 },
             ];
-            let (_, range_clause, _) = WhereClause::group_clauses(&where_clauses)
-                .expect("expected to have groupable pair");
+            let (_, range_clause, _) =
+                WhereClause::group_clauses(&where_clauses, PlatformVersion::latest())
+                    .expect("expected to have groupable pair");
             range_clause.expect("expected to have range clause returned");
         }
     }
@@ -1845,8 +1657,9 @@ mod tests {
                     value: Value::Float(0.0),
                 },
             ];
-            let (_, range_clause, _) = WhereClause::group_clauses(&where_clauses)
-                .expect("expected to have groupable pair");
+            let (_, range_clause, _) =
+                WhereClause::group_clauses(&where_clauses, PlatformVersion::latest())
+                    .expect("expected to have groupable pair");
             range_clause.expect("expected to have range clause returned");
         }
     }
@@ -1867,7 +1680,7 @@ mod tests {
                     value: Value::Float(1.0),
                 },
             ];
-            WhereClause::group_clauses(&where_clauses)
+            WhereClause::group_clauses(&where_clauses, PlatformVersion::latest())
                 .expect_err("expected to have an error returned");
         }
     }
@@ -1886,7 +1699,7 @@ mod tests {
                 value: Value::Float(1.0),
             },
         ];
-        WhereClause::group_clauses(&where_clauses)
+        WhereClause::group_clauses(&where_clauses, PlatformVersion::latest())
             .expect_err("different fields should not be groupable");
     }
 
@@ -1918,7 +1731,7 @@ mod tests {
                     value: Value::Float(1.0),
                 },
             ];
-            WhereClause::group_clauses(&where_clauses)
+            WhereClause::group_clauses(&where_clauses, PlatformVersion::latest())
                 .expect_err("expected to not have a groupable pair");
         }
     }
@@ -3068,7 +2881,8 @@ mod tests {
     #[test]
     fn group_clauses_empty_input() {
         let clauses: Vec<WhereClause> = vec![];
-        let (eq, range, in_c) = WhereClause::group_clauses(&clauses).expect("empty should succeed");
+        let (eq, range, in_c) = WhereClause::group_clauses(&clauses, PlatformVersion::latest())
+            .expect("empty should succeed");
         assert!(eq.is_empty());
         assert!(range.is_none());
         assert!(in_c.is_empty());
@@ -3081,7 +2895,8 @@ mod tests {
             operator: Equal,
             value: Value::Text("alice".to_string()),
         }];
-        let (eq, range, in_c) = WhereClause::group_clauses(&clauses).unwrap();
+        let (eq, range, in_c) =
+            WhereClause::group_clauses(&clauses, PlatformVersion::latest()).unwrap();
         assert_eq!(eq.len(), 1);
         assert!(eq.contains_key("name"));
         assert!(range.is_none());
@@ -3095,7 +2910,8 @@ mod tests {
             operator: Equal,
             value: Value::I64(1),
         }];
-        let (eq, range, in_c) = WhereClause::group_clauses(&clauses).unwrap();
+        let (eq, range, in_c) =
+            WhereClause::group_clauses(&clauses, PlatformVersion::latest()).unwrap();
         // $id equality is excluded from the equal_clauses map
         assert!(eq.is_empty());
         assert!(range.is_none());
@@ -3109,7 +2925,8 @@ mod tests {
             operator: In,
             value: Value::Array(vec![Value::I64(1), Value::I64(2)]),
         }];
-        let (eq, range, in_c) = WhereClause::group_clauses(&clauses).unwrap();
+        let (eq, range, in_c) =
+            WhereClause::group_clauses(&clauses, PlatformVersion::latest()).unwrap();
         assert!(eq.is_empty());
         assert!(range.is_none());
         assert!(in_c.is_empty());
@@ -3122,7 +2939,8 @@ mod tests {
             operator: In,
             value: Value::Array(vec![Value::I64(1), Value::I64(2)]),
         }];
-        let (eq, range, in_c) = WhereClause::group_clauses(&clauses).unwrap();
+        let (eq, range, in_c) =
+            WhereClause::group_clauses(&clauses, PlatformVersion::latest()).unwrap();
         assert!(eq.is_empty());
         assert!(range.is_none());
         assert_eq!(in_c.len(), 1);
@@ -3146,12 +2964,90 @@ mod tests {
                 value: Value::Array(vec![Value::I64(2)]),
             },
         ];
-        let (eq, range, in_c) = WhereClause::group_clauses(&clauses).unwrap();
+        let (eq, range, in_c) =
+            WhereClause::group_clauses(&clauses, PlatformVersion::latest()).unwrap();
         assert!(eq.is_empty());
         assert!(range.is_none());
         assert_eq!(in_c.len(), 2);
         assert_eq!(in_c[0].field, "a");
         assert_eq!(in_c[1].field, "b");
+    }
+
+    #[test]
+    fn group_clauses_multiple_in_v13_reports_multiple_in_before_any_other_check() {
+        // The v0 grammar (protocol versions up to 13) rejects any query
+        // with more than one non-primary-key in clause with
+        // MultipleInClauses before duplicate-field, overlap, or range
+        // checks — the error surface historical nodes committed to.
+        let platform_version_13 =
+            PlatformVersion::get(13).expect("protocol version 13 should exist");
+        let shapes: Vec<Vec<WhereClause>> = vec![
+            // duplicate in fields
+            vec![
+                WhereClause {
+                    field: "a".to_string(),
+                    operator: In,
+                    value: Value::Array(vec![Value::I64(1)]),
+                },
+                WhereClause {
+                    field: "a".to_string(),
+                    operator: In,
+                    value: Value::Array(vec![Value::I64(2)]),
+                },
+            ],
+            // in overlapping an equality
+            vec![
+                WhereClause {
+                    field: "a".to_string(),
+                    operator: Equal,
+                    value: Value::I64(1),
+                },
+                WhereClause {
+                    field: "a".to_string(),
+                    operator: In,
+                    value: Value::Array(vec![Value::I64(2)]),
+                },
+                WhereClause {
+                    field: "b".to_string(),
+                    operator: In,
+                    value: Value::Array(vec![Value::I64(3)]),
+                },
+            ],
+            // two ranges on different fields next to two ins
+            vec![
+                WhereClause {
+                    field: "a".to_string(),
+                    operator: In,
+                    value: Value::Array(vec![Value::I64(1)]),
+                },
+                WhereClause {
+                    field: "b".to_string(),
+                    operator: In,
+                    value: Value::Array(vec![Value::I64(2)]),
+                },
+                WhereClause {
+                    field: "c".to_string(),
+                    operator: GreaterThan,
+                    value: Value::I64(5),
+                },
+                WhereClause {
+                    field: "d".to_string(),
+                    operator: super::LessThan,
+                    value: Value::I64(3),
+                },
+            ],
+        ];
+        for clauses in shapes {
+            let error = WhereClause::group_clauses(&clauses, platform_version_13)
+                .expect_err("multi-in shapes must be rejected at protocol version 13");
+            assert!(
+                matches!(
+                    error,
+                    crate::error::Error::Query(QuerySyntaxError::MultipleInClauses(_))
+                ),
+                "expected MultipleInClauses, got {error:?}"
+            );
+        }
     }
 
     #[test]
@@ -3168,7 +3064,7 @@ mod tests {
                 value: Value::Array(vec![Value::I64(2)]),
             },
         ];
-        assert!(WhereClause::group_clauses(&clauses).is_err());
+        assert!(WhereClause::group_clauses(&clauses, PlatformVersion::latest()).is_err());
     }
 
     #[test]
@@ -3185,7 +3081,7 @@ mod tests {
                 value: Value::Array(vec![Value::I64(2)]),
             },
         ];
-        assert!(WhereClause::group_clauses(&clauses).is_err());
+        assert!(WhereClause::group_clauses(&clauses, PlatformVersion::latest()).is_err());
     }
 
     #[test]
@@ -3202,7 +3098,7 @@ mod tests {
                 value: Value::Text("bob".to_string()),
             },
         ];
-        assert!(WhereClause::group_clauses(&clauses).is_err());
+        assert!(WhereClause::group_clauses(&clauses, PlatformVersion::latest()).is_err());
     }
 
     #[test]
@@ -3212,7 +3108,8 @@ mod tests {
             operator: GreaterThan,
             value: Value::I64(18),
         }];
-        let (eq, range, in_c) = WhereClause::group_clauses(&clauses).unwrap();
+        let (eq, range, in_c) =
+            WhereClause::group_clauses(&clauses, PlatformVersion::latest()).unwrap();
         assert!(eq.is_empty());
         assert!(range.is_some());
         assert_eq!(range.unwrap().operator, GreaterThan);
@@ -3226,7 +3123,8 @@ mod tests {
             operator: Between,
             value: Value::Array(vec![Value::Float(0.0), Value::Float(100.0)]),
         }];
-        let (eq, range, in_c) = WhereClause::group_clauses(&clauses).unwrap();
+        let (eq, range, in_c) =
+            WhereClause::group_clauses(&clauses, PlatformVersion::latest()).unwrap();
         assert!(eq.is_empty());
         assert!(range.is_some());
         assert_eq!(range.unwrap().operator, Between);
@@ -3240,7 +3138,7 @@ mod tests {
             operator: super::StartsWith,
             value: Value::Text("".to_string()),
         }];
-        assert!(WhereClause::group_clauses(&clauses).is_err());
+        assert!(WhereClause::group_clauses(&clauses, PlatformVersion::latest()).is_err());
     }
 
     #[test]
@@ -3250,7 +3148,8 @@ mod tests {
             operator: super::StartsWith,
             value: Value::Text("al".to_string()),
         }];
-        let (eq, range, in_c) = WhereClause::group_clauses(&clauses).unwrap();
+        let (eq, range, in_c) =
+            WhereClause::group_clauses(&clauses, PlatformVersion::latest()).unwrap();
         assert!(eq.is_empty());
         assert!(range.is_some());
         assert_eq!(range.unwrap().operator, super::StartsWith);
@@ -3271,7 +3170,7 @@ mod tests {
                 value: Value::Text("al".to_string()),
             },
         ];
-        assert!(WhereClause::group_clauses(&clauses).is_err());
+        assert!(WhereClause::group_clauses(&clauses, PlatformVersion::latest()).is_err());
     }
 
     #[test]
@@ -3288,7 +3187,7 @@ mod tests {
                 value: Value::Text("x".to_string()),
             },
         ];
-        assert!(WhereClause::group_clauses(&clauses).is_err());
+        assert!(WhereClause::group_clauses(&clauses, PlatformVersion::latest()).is_err());
     }
 
     #[test]
@@ -3305,7 +3204,7 @@ mod tests {
                 value: Value::Array(vec![Value::Float(0.0), Value::Float(10.0)]),
             },
         ];
-        assert!(WhereClause::group_clauses(&clauses).is_err());
+        assert!(WhereClause::group_clauses(&clauses, PlatformVersion::latest()).is_err());
     }
 
     #[test]
@@ -3327,7 +3226,7 @@ mod tests {
                 value: Value::Float(5.0),
             },
         ];
-        assert!(WhereClause::group_clauses(&clauses).is_err());
+        assert!(WhereClause::group_clauses(&clauses, PlatformVersion::latest()).is_err());
     }
 
     #[test]
@@ -3344,7 +3243,7 @@ mod tests {
                 value: Value::I64(18),
             },
         ];
-        assert!(WhereClause::group_clauses(&clauses).is_err());
+        assert!(WhereClause::group_clauses(&clauses, PlatformVersion::latest()).is_err());
     }
 
     #[test]
@@ -3361,7 +3260,8 @@ mod tests {
                 value: Value::Float(20.0),
             },
         ];
-        let (_, range, _) = WhereClause::group_clauses(&clauses).unwrap();
+        let (_, range, _) =
+            WhereClause::group_clauses(&clauses, PlatformVersion::latest()).unwrap();
         let r = range.unwrap();
         assert_eq!(r.operator, Between);
         assert_eq!(r.field, "age");
@@ -3381,7 +3281,8 @@ mod tests {
                 value: Value::Float(20.0),
             },
         ];
-        let (_, range, _) = WhereClause::group_clauses(&clauses).unwrap();
+        let (_, range, _) =
+            WhereClause::group_clauses(&clauses, PlatformVersion::latest()).unwrap();
         assert_eq!(range.unwrap().operator, BetweenExcludeRight);
     }
 
@@ -3399,7 +3300,8 @@ mod tests {
                 value: Value::Float(20.0),
             },
         ];
-        let (_, range, _) = WhereClause::group_clauses(&clauses).unwrap();
+        let (_, range, _) =
+            WhereClause::group_clauses(&clauses, PlatformVersion::latest()).unwrap();
         assert_eq!(range.unwrap().operator, BetweenExcludeLeft);
     }
 
@@ -3417,7 +3319,8 @@ mod tests {
                 value: Value::Float(20.0),
             },
         ];
-        let (_, range, _) = WhereClause::group_clauses(&clauses).unwrap();
+        let (_, range, _) =
+            WhereClause::group_clauses(&clauses, PlatformVersion::latest()).unwrap();
         assert_eq!(range.unwrap().operator, BetweenExcludeBounds);
     }
 
@@ -3435,7 +3338,8 @@ mod tests {
                 value: Value::Array(vec![Value::I64(1), Value::I64(2)]),
             },
         ];
-        let (eq, _, in_c) = WhereClause::group_clauses(&clauses).unwrap();
+        let (eq, _, in_c) =
+            WhereClause::group_clauses(&clauses, PlatformVersion::latest()).unwrap();
         assert_eq!(eq.len(), 1);
         assert_eq!(in_c.len(), 1);
     }
@@ -3454,7 +3358,8 @@ mod tests {
                 value: Value::Float(18.0),
             },
         ];
-        let (eq, range, in_c) = WhereClause::group_clauses(&clauses).unwrap();
+        let (eq, range, in_c) =
+            WhereClause::group_clauses(&clauses, PlatformVersion::latest()).unwrap();
         assert_eq!(eq.len(), 1);
         assert!(range.is_some());
         assert!(in_c.is_empty());

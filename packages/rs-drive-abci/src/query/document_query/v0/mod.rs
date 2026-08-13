@@ -244,6 +244,7 @@ impl<C> Platform<C> {
                 contract_ref,
                 document_type,
                 &self.config.drive,
+                platform_version,
             ));
 
         let response = if prove {

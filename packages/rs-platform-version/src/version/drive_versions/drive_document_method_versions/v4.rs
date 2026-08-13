@@ -75,6 +75,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             detect_sum_mode: 0,
             detect_ranked_mode: 0,
             non_primary_key_path_query: 1,
+            where_clause_grouping: 1,
         },
         delete: DriveDocumentDeleteMethodVersions {
             add_estimation_costs_for_remove_document_to_primary_storage: 0,

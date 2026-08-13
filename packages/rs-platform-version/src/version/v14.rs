@@ -215,6 +215,27 @@ mod tests {
                 .non_primary_key_path_query,
             1
         );
+        // The grouping grammar flips together with the lowering: v0
+        // grouping rejects multi-In shapes at parse with the historical
+        // `MultipleInClauses` precedence, v1 groups them structurally.
+        assert_eq!(
+            PLATFORM_V13
+                .drive
+                .methods
+                .document
+                .query
+                .where_clause_grouping,
+            0
+        );
+        assert_eq!(
+            PLATFORM_V14
+                .drive
+                .methods
+                .document
+                .query
+                .where_clause_grouping,
+            1
+        );
     }
 
     /// The ranked index keywords are gated by the meta-schema version, so v14
