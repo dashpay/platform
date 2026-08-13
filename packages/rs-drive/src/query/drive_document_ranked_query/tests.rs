@@ -2381,6 +2381,166 @@ mod pinned_prefix {
         );
     }
 
+    /// A **null** pin addresses the prefix subtree the write path
+    /// creates for an *absent* optional leading property: the walkers
+    /// encode a missing value as an empty path segment
+    /// (`get_raw_for_document_type(..).unwrap_or_default()`), so
+    /// `WHERE tag == null` must resolve to that empty segment — read,
+    /// proof, and client-side verification all reconstructing the same
+    /// stored path. Documents that *do* carry a tag live under their
+    /// own prefix and must not leak into the null prefix's ranking.
+    #[test]
+    fn a_null_pin_addresses_the_absent_value_prefix() {
+        const TAGGED_DOCTYPE: &str = "taggedGrade";
+        let (drive, contract) = setup_grades_compound_ranked();
+        let pv = platform_version();
+        let document_type = contract
+            .document_type_for_name(TAGGED_DOCTYPE)
+            .expect("taggedGrade doctype exists");
+
+        // Tagless rows land under the empty-segment prefix; the
+        // "honors" row must stay in its own prefix.
+        for (i, (tag, class, grade)) in [
+            (None, "math", 80i64),
+            (None, "math", 90),
+            (None, "science", 60),
+            (Some("honors"), "math", 100),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let mut doc: Document = document_type
+                .random_document(Some(7000 + i as u64), pv)
+                .expect("random document");
+            let mut props = BTreeMap::new();
+            if let Some(tag) = tag {
+                props.insert("tag".to_string(), Value::Text(tag.to_string()));
+            }
+            props.insert(CLASS_PROPERTY.to_string(), Value::Text(class.to_string()));
+            props.insert("grade".to_string(), Value::I64(*grade));
+            doc.set_properties(props);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert a tagged grade document");
+        }
+
+        let null_pin = vec![WhereClause {
+            field: "tag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Null,
+        }];
+        let group_by = vec![CLASS_PROPERTY.to_string()];
+        let order_by = vec![OrderClause {
+            field: "grade".to_string(),
+            ascending: false,
+        }];
+        let request = |prove: bool| DocumentRankedRequest {
+            contract: &contract,
+            document_type,
+            group_by: &group_by,
+            select: SelectProjection::avg("grade"),
+            having: &[],
+            order_by: &order_by,
+            where_clauses: &null_pin,
+            limit: Some(2),
+            offset: None,
+            has_start_at: false,
+            prove,
+        };
+
+        let page = match drive
+            .execute_document_ranked_request(request(false), None, pv)
+            .expect("the null-pinned read succeeds")
+        {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries, got a proof"),
+        };
+        assert_eq!(
+            page.entries,
+            vec![
+                RankedEntry {
+                    key: b"math".to_vec(),
+                    value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(170, 2)),
+                },
+                RankedEntry {
+                    key: b"science".to_vec(),
+                    value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(60, 1)),
+                },
+            ],
+            "the tagless ranking: math 85 then science 60 — the honors row \
+             (math 100) must not leak into the null prefix"
+        );
+
+        // Proof round trip through the shared resolver, so the verifier
+        // reconstructs the same empty-segment path the prover walked.
+        let proof = match drive
+            .execute_document_ranked_request(request(true), None, pv)
+            .expect("the null-pinned prove succeeds")
+        {
+            DocumentRankedResponse::Proof(proof) => proof,
+            DocumentRankedResponse::Entries(_) => panic!("expected a proof, got entries"),
+        };
+        let mode = detect_ranked_mode(
+            &SelectProjection::avg("grade"),
+            &group_by,
+            &[],
+            &order_by,
+            &null_pin,
+            RankedPaginationInputs {
+                limit: Some(2),
+                offset: None,
+                has_start_at: false,
+            },
+            pv,
+        )
+        .expect("the null-pinned case is well-formed");
+        let query = resolve_ranked_query_for_mode(
+            contract.id_ref().to_buffer(),
+            document_type,
+            TAGGED_DOCTYPE.to_string(),
+            contract
+                .document_types()
+                .get(TAGGED_DOCTYPE)
+                .expect("taggedGrade doctype exists")
+                .indexes(),
+            &mode,
+            pv,
+        )
+        .expect("the compound index covers the null-pinned request");
+        assert_eq!(
+            query.equality_prefix_values,
+            vec![Vec::<u8>::new()],
+            "a null pin must encode as the write path's empty segment"
+        );
+        let (root_hash, verified) = query
+            .verify_ranked_top_k_proof(&proof, pv)
+            .expect("the null-pinned proof must verify");
+        assert_eq!(verified.entries, page.entries);
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &pv.drive.grove_version)
+                .unwrap()
+                .expect("root hash must be readable"),
+        );
+    }
+
     /// An unpinned request over the compound-only contract has no
     /// covering index — there is no global cross-prefix ordering to
     /// serve, so the rejection names the missing coverage.

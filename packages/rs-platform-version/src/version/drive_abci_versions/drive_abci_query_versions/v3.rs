@@ -16,9 +16,11 @@ use crate::version::drive_abci_versions::drive_abci_query_versions::{
 /// secondary. Everything else — including multi-clause `having` and
 /// `having` on a select with no ranked axis — keeps the v1 behavior.
 ///
-/// Same mixed-network rationale as the v1 → v2 flip: earlier protocol
-/// versions keep the v2 table and keep rejecting the shape, so nodes
-/// agree until the upgrade carries. The wire surface is unchanged —
+/// Mixed-network safety comes from the shipped tables: protocol
+/// versions 1–11 select `DRIVE_ABCI_QUERY_VERSIONS_V0`, and versions
+/// 12–13 select `DRIVE_ABCI_QUERY_VERSIONS_V1`. Both use helper
+/// version 0 and reject ranked and `HAVING` shapes, so nodes agree
+/// until the PV14 upgrade carries. The wire surface is unchanged —
 /// `GetDocumentsRequestV1.having` has been wire-stable since the v1
 /// document query, and the response reuses the additive
 /// `ResultData.ranked` entries shape (with `skipped` unset, since a

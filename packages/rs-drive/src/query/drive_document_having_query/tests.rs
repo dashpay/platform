@@ -1956,4 +1956,156 @@ mod pinned_prefix {
             "proving a never-written prefix value tree must error"
         );
     }
+
+    /// A **null** pin addresses the empty-segment prefix the write path
+    /// creates for an absent optional leading property — the having
+    /// bound reads (and proves) the tagless subtree, and tagged rows
+    /// stay in their own prefix. Sibling of the ranked suite's
+    /// `a_null_pin_addresses_the_absent_value_prefix`.
+    #[test]
+    fn a_null_pin_bounds_the_absent_value_prefix() {
+        const TAGGED_DOCTYPE: &str = "taggedGrade";
+        let (drive, contract) = setup_grades_compound_ranked();
+        let pv = platform_version();
+        let document_type = contract
+            .document_type_for_name(TAGGED_DOCTYPE)
+            .expect("taggedGrade doctype exists");
+
+        for (i, (tag, class, grade)) in [
+            (None, "math", 80i64),
+            (None, "math", 90),
+            (None, "science", 60),
+            (Some("honors"), "science", 100),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let mut doc: Document = document_type
+                .random_document(Some(8000 + i as u64), pv)
+                .expect("random document");
+            let mut props = BTreeMap::new();
+            if let Some(tag) = tag {
+                props.insert("tag".to_string(), Value::Text(tag.to_string()));
+            }
+            props.insert(GROUP_PROPERTY.to_string(), Value::Text(class.to_string()));
+            props.insert("grade".to_string(), Value::I64(*grade));
+            doc.set_properties(props);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert a tagged grade document");
+        }
+
+        let null_pin = vec![WhereClause {
+            field: "tag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Null,
+        }];
+        let group_by = vec![GROUP_PROPERTY.to_string()];
+        let having = vec![clause(
+            HavingAggregateFunction::Avg,
+            "grade",
+            HavingOperator::GreaterThan,
+            Value::U64(70),
+        )];
+        let request = |prove: bool| DocumentHavingRequest {
+            contract: &contract,
+            document_type,
+            group_by: &group_by,
+            select: SelectProjection::avg("grade"),
+            having: &having,
+            order_by: &[],
+            where_clauses: &null_pin,
+            limit: Some(10),
+            offset: None,
+            has_start_at: false,
+            prove,
+        };
+
+        // Only the tagless math group (avg 85) clears the bound: the
+        // tagless science (60) misses it, and the tagged science (100)
+        // lives under its own prefix.
+        let entries = match drive
+            .execute_document_having_request(request(false), None, pv)
+            .expect("the null-pinned read succeeds")
+        {
+            DocumentHavingResponse::Entries(entries) => entries,
+            DocumentHavingResponse::Proof(_) => panic!("expected entries, got a proof"),
+        };
+        assert_eq!(
+            entries,
+            vec![RankedEntry {
+                key: b"math".to_vec(),
+                value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(170, 2)),
+            }],
+            "the tagless bound: math 85 only — the honors science row \
+             must not leak into the null prefix"
+        );
+
+        let proof = match drive
+            .execute_document_having_request(request(true), None, pv)
+            .expect("the null-pinned prove succeeds")
+        {
+            DocumentHavingResponse::Proof(proof) => proof,
+            DocumentHavingResponse::Entries(_) => panic!("expected a proof, got entries"),
+        };
+        let mode = detect_having_mode(
+            &SelectProjection::avg("grade"),
+            &group_by,
+            &having,
+            &[],
+            &null_pin,
+            RankedPaginationInputs {
+                limit: Some(10),
+                offset: None,
+                has_start_at: false,
+            },
+            pv,
+        )
+        .expect("the null-pinned case is well-formed");
+        let query = resolve_having_query_for_mode(
+            contract.id_ref().to_buffer(),
+            document_type,
+            TAGGED_DOCTYPE.to_string(),
+            contract
+                .document_types()
+                .get(TAGGED_DOCTYPE)
+                .expect("taggedGrade doctype exists")
+                .indexes(),
+            &mode,
+            pv,
+        )
+        .expect("the compound index covers the null-pinned request");
+        assert_eq!(
+            query.equality_prefix_values,
+            vec![Vec::<u8>::new()],
+            "a null pin must encode as the write path's empty segment"
+        );
+        let (root_hash, verified) = query
+            .verify_having_range_proof(&proof, pv)
+            .expect("the null-pinned proof must verify");
+        assert_eq!(verified, entries);
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &pv.drive.grove_version)
+                .unwrap()
+                .expect("root hash must be readable"),
+        );
+    }
 }

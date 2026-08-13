@@ -310,9 +310,10 @@ mod tests {
         }
     }
 
-    /// The generic FromProof guard in drive-proof-verifier must not be
-    /// reachable from the SDK path: this impl (on `DocumentQuery`) is
-    /// the one `fetch` resolves, and it runs the real verification.
+    /// HAVING limits are a hard inclusive range, `1..=100`: `0` (the
+    /// unset sentinel) and anything above `MAX_HAVING_LIMIT` are
+    /// rejected client side rather than clamped, because the limit is
+    /// echoed in the proof envelope and re-checked by the verifier.
     #[test]
     fn limit_is_required_and_capped_client_side() {
         for limit in [0u32, 101] {

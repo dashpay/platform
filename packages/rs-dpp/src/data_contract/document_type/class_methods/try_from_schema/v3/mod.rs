@@ -15,13 +15,15 @@
 //! index-key length ceilings, and the constants they are derived from.
 
 use crate::data_contract::config::DataContractConfig;
-// Only the ranked key-length rule below names these, and it is validation-only.
-#[cfg(feature = "validation")]
+use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
+// The prefix-overlap rule below runs on every parse path; only the
+// key-length rule is validation-only.
 use crate::data_contract::document_type::index::Index;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
@@ -110,6 +112,15 @@ fn validate_ranked_index_property_key_length(
     property_type: &DocumentPropertyType,
     platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
+    // Only the **terminal** property's encoded value becomes an
+    // indexed-tree item key, mirrored into the ordered secondary behind
+    // the sort key — that is where the tightened ceiling comes from.
+    // Leading properties of a compound ranked index are ordinary grovedb
+    // path segments, bound by the generic limits checked after this.
+    if index.properties.last().map(|p| p.name.as_str()) != Some(index_property_name) {
+        return Ok(());
+    }
+
     let Some(limit) = ranked_index_key_length_limit(index) else {
         return Ok(());
     };
@@ -179,6 +190,83 @@ fn validate_ranked_index_property_key_length(
     )))
 }
 
+/// Rejects the one compound-ranked shape the storage layer cannot lay
+/// out: a compound ranked index whose **full leading prefix** also
+/// terminates a separate countable and/or summable index.
+///
+/// A ranked flag on a compound index `[p1, …, pn]` puts an indexed tree
+/// at each prefix's terminal `pn` property-name level — inside the value
+/// trees of the `[p1, …, pn-1]` level. When another countable/summable
+/// index terminates at exactly that prefix, those value trees are
+/// aggregating (`CountTree` / `SumTree` / …), and every continuation
+/// subtree inside them must be wrapped in a `NonCounted` / `NotSummed`
+/// shell so its contents don't pollute the prefix index's aggregates.
+/// grovedb structurally rejects that shell around an indexed tree — the
+/// wrapper would neutralize the very aggregates the ranking indexes —
+/// so the write path fails closed at document insert. Rejecting the
+/// contract here surfaces the conflict at registration instead.
+///
+/// Only the **exact** `n-1` prefix conflicts. An aggregating index
+/// terminating at a shorter prefix wraps a plain intermediate
+/// property-name tree (fine), and one extending *past* the ranked
+/// terminal lives inside the indexed tree's value trees, which the
+/// storage layer supports (see rs-drive's
+/// `ranked_terminator_with_a_compound_continuation_gets_both_treatments`).
+///
+/// Property comparison is by name, positionally: the merged index-level
+/// tree keys sub-levels by property name in declaration order, so
+/// `[a, b]` and `[b, a]` never share a level and cannot conflict.
+///
+/// Unconditional (not gated on `full_validation`): the same structural
+/// impossibility must reject the contract on every parse path — a
+/// contract admitted through a non-validating parse would brick the
+/// first document insert under the ranked index.
+fn validate_no_ranked_prefix_overlap(
+    indices: &BTreeMap<String, Index>,
+) -> Result<(), ProtocolError> {
+    for ranked in indices.values() {
+        let is_ranked =
+            ranked.ranked_countable || ranked.ranked_summable || ranked.ranked_averageable;
+        if !is_ranked || ranked.properties.len() < 2 {
+            continue;
+        }
+        let prefix = &ranked.properties[..ranked.properties.len() - 1];
+        for other in indices.values() {
+            if other.name == ranked.name {
+                continue;
+            }
+            let terminates_at_prefix = other.properties.len() == prefix.len()
+                && other
+                    .properties
+                    .iter()
+                    .zip(prefix.iter())
+                    .all(|(a, b)| a.name == b.name);
+            let aggregates = other.countable.is_countable() || other.summable.is_some();
+            if terminates_at_prefix && aggregates {
+                return Err(consensus_or_protocol_data_contract_error(
+                    DataContractError::InvalidContractStructure(format!(
+                        "compound ranked index `{}` conflicts with index `{}`: the ranked \
+                         index's leading prefix [{}] also terminates a countable/summable \
+                         index, so the ranked terminal tree would sit inside aggregating \
+                         value trees and need a NonCounted/NotSummed shell — which the \
+                         storage layer rejects for indexed trees because the wrapper would \
+                         neutralize the aggregates the ranking indexes. Drop the ranked \
+                         flags, or drop the aggregate flags from the prefix index",
+                        ranked.name,
+                        other.name,
+                        prefix
+                            .iter()
+                            .map(|p| p.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    )),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// The [`common::RankedIndexKeyLengthCheck`] generation 3 runs on every indexed
 /// property, resolved at compile time.
 ///
@@ -246,6 +334,7 @@ fn try_from_schema_generation_3(
             // RANKED: the constants that make this generation 3.
             admit_ranked: true,
             ranked_index_key_length_check: RANKED_INDEX_KEY_LENGTH_CHECK,
+            ranked_index_structure_check: validate_no_ranked_prefix_overlap,
         },
         platform_version,
     )?;
@@ -870,6 +959,122 @@ mod tests {
             "the error must name maxLength, the 59-character bound and the 239-byte key \
              ceiling it derives from; got {msg}"
         );
+    }
+
+    /// A compound `[region, restaurantId]` avg-ranked index over the same
+    /// doctype shape as [`ranked_bound_schema`], with independent control
+    /// of the leading and terminal string properties' `maxLength`.
+    fn compound_ranked_bound_schema(leading: Value, terminal: Value) -> Value {
+        let mut index_entry: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("byRegionRestaurant".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![
+                    Value::Map(vec![(
+                        Value::Text("region".to_string()),
+                        Value::Text("asc".to_string()),
+                    )]),
+                    Value::Map(vec![(
+                        Value::Text("restaurantId".to_string()),
+                        Value::Text("asc".to_string()),
+                    )]),
+                ]),
+            ),
+        ];
+        index_entry.extend(
+            avg_ranked_extras()
+                .into_iter()
+                .map(|(key, value)| (Value::Text(key.to_string()), value)),
+        );
+
+        Value::Map(vec![
+            (
+                Value::Text("type".to_string()),
+                Value::Text("object".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Map(vec![
+                    (Value::Text("region".to_string()), leading),
+                    (Value::Text("restaurantId".to_string()), terminal),
+                    (
+                        Value::Text("grade".to_string()),
+                        platform_value!({
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 100,
+                            "position": 2,
+                        }),
+                    ),
+                ]),
+            ),
+            (
+                Value::Text("required".to_string()),
+                Value::Array(vec![
+                    Value::Text("region".to_string()),
+                    Value::Text("restaurantId".to_string()),
+                    Value::Text("grade".to_string()),
+                ]),
+            ),
+            (
+                Value::Text("additionalProperties".to_string()),
+                Value::Bool(false),
+            ),
+            (
+                Value::Text("indices".to_string()),
+                Value::Array(vec![Value::Map(index_entry)]),
+            ),
+        ])
+    }
+
+    fn string_property_at(max_length: u32, position: u32) -> Value {
+        platform_value!({
+            "type": "string",
+            "maxLength": max_length,
+            "position": position,
+        })
+    }
+
+    /// The ranked ceiling binds only the **terminal** property — the one
+    /// whose encoded value becomes the indexed tree's item key. A leading
+    /// prefix property is an ordinary grovedb path segment: the generic
+    /// 63-character indexed-string limit is what binds it, not the
+    /// 59-character avg-ranked ceiling.
+    #[test]
+    fn ranked_ceiling_binds_the_terminal_property_not_the_leading_prefix() {
+        // Leading at 63 (over the 59 ranked bound, at the generic bound)
+        // with a terminal that fits the ranked bound: accepted.
+        parse_bound(compound_ranked_bound_schema(
+            string_property_at(63, 0),
+            string_property_at(59, 1),
+        ))
+        .expect("a 63-character leading prefix is a path segment, not an item key");
+
+        // The same 60-character string the single-property tests reject is
+        // still rejected when it is the terminal property of a compound
+        // ranked index.
+        let error = parse_bound(compound_ranked_bound_schema(
+            string_property_at(30, 0),
+            string_property_at(60, 1),
+        ))
+        .expect_err("the terminal property keeps the 239-byte avg ceiling");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("maxLength") && msg.contains("59") && msg.contains("239"),
+            "the error must still name the ranked bound for the terminal; got {msg}"
+        );
+
+        // And the generic indexed-string limit still binds the leading
+        // property: 64 characters is over the 63-character cap whether or
+        // not the index is ranked.
+        parse_bound(compound_ranked_bound_schema(
+            string_property_at(64, 0),
+            string_property_at(59, 1),
+        ))
+        .expect_err("the generic 63-character limit still binds the leading prefix");
     }
 
     /// Avg is strictly tighter than Count/Sum, and an index carrying Avg

@@ -253,6 +253,17 @@ pub fn encode_equality_prefix_values(
                          prefix encoder disagreed on the pins",
                     ))
                 })?;
+            // A null pin addresses the subtree the write walkers create
+            // for an **absent** value: they encode it as
+            // `get_raw_for_document_type(..).unwrap_or_default()` — an
+            // empty path segment — for user and system properties alike.
+            // Null must short-circuit here because the system-property
+            // encoders (`$updatedAt`, `$creatorId`, …) reject null before
+            // any encoding happens, which would make the stored
+            // empty-segment prefix unaddressable.
+            if value.is_null() {
+                return Ok(Vec::new());
+            }
             document_type
                 .serialize_value_for_key(&property.name, value, platform_version)
                 .map_err(|e| {

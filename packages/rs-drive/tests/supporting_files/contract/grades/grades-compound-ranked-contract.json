@@ -12,8 +12,12 @@
         {
           "name": "byIdentityAndClass",
           "properties": [
-            { "identityId": "asc" },
-            { "class": "asc" }
+            {
+              "identityId": "asc"
+            },
+            {
+              "class": "asc"
+            }
           ],
           "averageable": "grade",
           "rangeAverageable": true,
@@ -43,6 +47,50 @@
       },
       "required": [
         "identityId",
+        "class",
+        "grade"
+      ],
+      "additionalProperties": false
+    },
+    "taggedGrade": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": false,
+      "indices": [
+        {
+          "name": "byTagAndClass",
+          "properties": [
+            {
+              "tag": "asc"
+            },
+            {
+              "class": "asc"
+            }
+          ],
+          "averageable": "grade",
+          "rangeAverageable": true,
+          "rankedAverageable": true
+        }
+      ],
+      "properties": {
+        "tag": {
+          "type": "string",
+          "maxLength": 32,
+          "position": 0
+        },
+        "class": {
+          "type": "string",
+          "maxLength": 32,
+          "position": 1
+        },
+        "grade": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "position": 2
+        }
+      },
+      "required": [
         "class",
         "grade"
       ],
