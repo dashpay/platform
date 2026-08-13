@@ -605,6 +605,37 @@ pub enum PlatformWalletError {
     )]
     ShieldedInviteAlreadyClaimed { reason: String },
 
+    /// A one-time-key (shielded invitation) claim was retried with arguments that do **not** match
+    /// the transition the earlier attempt actually submitted, so the retry was refused before
+    /// touching the network.
+    ///
+    /// The durable pending-claim record is keyed by wallet id and the invitation's full viewing
+    /// key alone — nothing in that key distinguishes *which* identity the original attempt was
+    /// creating. The record does, however, carry the byte-exact serialized transition, and that
+    /// transition is the authoritative statement of what was submitted: its `public_keys` are the
+    /// keys the binding signature committed to, and its `denomination` is the value that left the
+    /// pool. Resuming means re-broadcasting those exact bytes, so the identity that results belongs
+    /// to *those* keys — never to whatever keys the retry happened to pass in.
+    ///
+    /// A retry whose keys or denomination differ is therefore not a resume of the same claim; it is
+    /// a request to create a different identity from an invitation that is already committed
+    /// elsewhere. Honouring it would let the caller
+    ///
+    /// * classify the original identity as belonging to another holder and clear the record (making
+    ///   a padded single-note claim permanently unrecoverable — its declared id embeds a random
+    ///   dummy nullifier and exists nowhere else),
+    /// * backfill an empty proof result with keys that were never in the stored transition, or
+    /// * register the original identity at the retry's local HD slot.
+    ///
+    /// So the claim fails closed here instead: nothing is re-broadcast, no proof is burned, and the
+    /// record is left intact for a retry that presents the original arguments.
+    #[error(
+        "Shielded invitation claim retry does not match the transition the earlier attempt \
+         submitted ({mismatch}); refusing to resume — retry with the original arguments, which \
+         the pending claim record has preserved"
+    )]
+    ShieldedClaimBindingMismatch { mismatch: String },
+
     #[error("Shielded key derivation failed: {0}")]
     ShieldedKeyDerivation(String),
 

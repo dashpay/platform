@@ -2348,6 +2348,58 @@ async fn finalize_one_time_claim_record<S: ShieldedStore>(
     }
 }
 
+/// Describe the first way a resume attempt's arguments disagree with the
+/// transition the earlier attempt submitted, or `None` when they agree.
+///
+/// Every field compared here is one the resume would otherwise act on with the
+/// caller's value while broadcasting the *stored* bytes — the exact mis-binding
+/// #4313 review finding 195efdd4ae21 describes. The comparison is on the
+/// derived-from-transition side, so it is a statement about what is on the wire,
+/// not about what some parallel record claims.
+///
+/// Key comparison is exact and whole-set: `IdentityPublicKey` compares by id,
+/// purpose, security level, key type, read-only flag, contract bounds and key
+/// data, so a retry that keeps the ids but swaps the key material — the case
+/// that would register a foreign identity at this wallet's slot — is caught.
+/// A retry that merely *reorders* the same keys is not a mismatch: both sides
+/// are `BTreeMap`s keyed by key id.
+fn one_time_claim_binding_mismatch(
+    stored_public_keys: &BTreeMap<u32, IdentityPublicKey>,
+    stored_master_key_hash: Option<[u8; 20]>,
+    stored_denomination: u64,
+    submitted_public_keys: &BTreeMap<u32, IdentityPublicKey>,
+    submitted_master_key_hash: Option<[u8; 20]>,
+    submitted_denomination: u64,
+) -> Option<String> {
+    if stored_denomination != submitted_denomination {
+        return Some(format!(
+            "denomination: stored transition spends {stored_denomination}, retry asked for \
+             {submitted_denomination}"
+        ));
+    }
+    if stored_master_key_hash != submitted_master_key_hash {
+        // The MASTER auth key hash is the handle `recover_executed_one_time_claim`
+        // probes Platform with. Recovering under a hash that is not in the stored
+        // transition can only find someone else's identity.
+        return Some(format!(
+            "master authentication key hash: stored transition carries {}, retry presented {}",
+            stored_master_key_hash.map_or_else(|| "none".to_string(), hex::encode),
+            submitted_master_key_hash.map_or_else(|| "none".to_string(), hex::encode),
+        ));
+    }
+    if stored_public_keys != submitted_public_keys {
+        return Some(format!(
+            "public key set: stored transition carries {} key(s) (ids {:?}), retry presented {} \
+             key(s) (ids {:?})",
+            stored_public_keys.len(),
+            stored_public_keys.keys().collect::<Vec<_>>(),
+            submitted_public_keys.len(),
+            submitted_public_keys.keys().collect::<Vec<_>>(),
+        ));
+    }
+    None
+}
+
 /// Outcome of attempting to resume a persisted pending claim.
 enum OneTimeClaimResume {
     /// The record drove the claim to an outcome — return it to the caller.
@@ -2363,6 +2415,48 @@ enum OneTimeClaimResume {
 /// consumed, otherwise re-broadcast the byte-identical stored transition —
 /// never rebuild while the record is live, because a rebuilt padded bundle
 /// derives a fresh random id and orphans the recorded one.
+///
+/// # The resumed claim is bound to the STORED transition, not to this call
+///
+/// (#4313 review finding 195efdd4ae21.) The record is found by wallet id and
+/// one-time FVK alone, so nothing about the lookup says *which* identity the
+/// original attempt was creating. This call's `master_key_hash`,
+/// `submitted_public_keys` and `denomination` are therefore treated as
+/// **assertions to check**, never as inputs to act on: every one of them is
+/// re-derived from `record.st_bytes` — the byte-exact transition the earlier
+/// attempt actually put (or is about to put) on the wire — and the derived
+/// values are what drive recovery, the empty-proof-result backfill and the
+/// re-broadcast.
+///
+/// Deriving rather than persisting the binding is deliberate: the transition
+/// already carries it (`public_keys` are exactly what the binding signature
+/// committed to; `denomination` is the value that leaves the pool), so a
+/// derived binding needs no record-schema change and, more importantly, cannot
+/// drift from what was submitted the way a separately-persisted copy could.
+///
+/// If the caller's arguments disagree with the transition, this is **not** a
+/// resume of the same claim — it is a request to create a different identity
+/// from an invitation already committed elsewhere — and it fails closed with
+/// [`PlatformWalletError::ShieldedClaimBindingMismatch`]: nothing is
+/// re-broadcast (so no chargeable resubmission and no burned proof), and the
+/// record is left intact for a retry that presents the original arguments.
+///
+/// ## What this does and does not bind
+///
+/// Bound: the submitted key set (by id and content), the MASTER authentication
+/// key hash used for idempotent recovery, and the denomination.
+///
+/// Not directly bound: the caller's `identity_index`, the local DIP-9 slot the
+/// returned identity is registered at — it is a purely local placement and
+/// appears nowhere in the transition, so there is nothing in `st_bytes` to
+/// derive it from. It is bound *transitively*: the identity's keys are derived
+/// from the wallet seed at that slot, so a retry naming a different slot
+/// presents different keys and is refused above. That leaves exactly one
+/// uncovered case — a caller that pairs slot `i` with keys derived at slot `j`
+/// — which is a violation of the same caller contract that a *first* attempt
+/// relies on and mis-slots identically. The resume path is therefore no weaker
+/// than a fresh claim, which is the strongest guarantee available without
+/// persisting the slot.
 async fn resume_one_time_claim<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
@@ -2387,8 +2481,20 @@ async fn resume_one_time_claim<S: ShieldedStore>(
             return OneTimeClaimResume::RecordUnusable;
         }
     };
-    let declared_id = match &st {
-        StateTransition::IdentityCreateFromShieldedPool(t) => t.identity_id(),
+    // Everything the resume acts on comes from HERE — the stored transition —
+    // not from this call's arguments. See the fn docs.
+    let (declared_id, stored_public_keys, stored_denomination) = match &st {
+        StateTransition::IdentityCreateFromShieldedPool(t) => {
+            let keys: BTreeMap<u32, IdentityPublicKey> = t
+                .public_keys()
+                .iter()
+                .map(|key_in_creation| {
+                    let key: IdentityPublicKey = key_in_creation.into();
+                    (key.id(), key)
+                })
+                .collect();
+            (t.identity_id(), keys, t.denomination())
+        }
         other => {
             warn!(
                 transition = %other.name(),
@@ -2399,6 +2505,37 @@ async fn resume_one_time_claim<S: ShieldedStore>(
             return OneTimeClaimResume::RecordUnusable;
         }
     };
+    let stored_master_key_hash = master_auth_public_key_hash_of(stored_public_keys.values());
+
+    // Fail closed on any disagreement between what the caller asked for and
+    // what the earlier attempt committed. Checked BEFORE the spent-nullifier
+    // probe and the re-broadcast, so a mismatched retry costs nothing and
+    // changes nothing — in particular the record survives for a correct retry.
+    if let Some(mismatch) = one_time_claim_binding_mismatch(
+        &stored_public_keys,
+        stored_master_key_hash,
+        stored_denomination,
+        &submitted_public_keys,
+        master_key_hash,
+        denomination,
+    ) {
+        warn!(
+            declared_id = %declared_id,
+            mismatch,
+            "one-time claim resume: retry arguments do not match the stored transition; refusing \
+             to resume rather than mis-binding the original identity"
+        );
+        return OneTimeClaimResume::Resolved(Err(
+            PlatformWalletError::ShieldedClaimBindingMismatch { mismatch },
+        ));
+    }
+
+    // Past the gate the two agree, so the derived values are used from here on
+    // — the transition is the source of truth by construction, and reading them
+    // from it keeps that true even if the check above is ever relaxed.
+    let master_key_hash = stored_master_key_hash;
+    let submitted_public_keys = stored_public_keys;
+    let denomination = stored_denomination;
 
     info!(
         declared_id = %declared_id,
@@ -3452,12 +3589,20 @@ async fn nullifier_spent_status(
 fn master_auth_public_key_hash(
     public_keys: &[(IdentityPublicKey, IdentityPublicKeyInCreation)],
 ) -> Option<[u8; 20]> {
+    master_auth_public_key_hash_of(public_keys.iter().map(|(key, _)| key))
+}
+
+/// [`master_auth_public_key_hash`] over any borrowed key sequence — used by the
+/// resume path, whose keys come out of the stored transition rather than out of
+/// the caller's `(IdentityPublicKey, IdentityPublicKeyInCreation)` pairs.
+fn master_auth_public_key_hash_of<'a>(
+    public_keys: impl IntoIterator<Item = &'a IdentityPublicKey>,
+) -> Option<[u8; 20]> {
     use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
     use dpp::identity::{Purpose, SecurityLevel};
 
     public_keys
-        .iter()
-        .map(|(key, _)| key)
+        .into_iter()
         .find(|key| {
             key.purpose() == Purpose::AUTHENTICATION
                 && key.security_level() == SecurityLevel::MASTER
@@ -5219,6 +5364,7 @@ mod one_time_key_tests {
 #[cfg(test)]
 mod one_time_claim_evidence_tests {
     use super::*;
+    use crate::wallet::shielded::file_store::FileBackedShieldedStore;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::{KeyType, Purpose, SecurityLevel};
     use dpp::platform_value::BinaryData;
@@ -5228,6 +5374,16 @@ mod one_time_claim_evidence_tests {
     const OUR_MASTER_HASH: [u8; 20] = [0xA1; 20];
     /// Some other key's hash — used for the competing-claimant identity.
     const OTHER_MASTER_HASH: [u8; 20] = [0xB2; 20];
+    /// Smallest member of the versioned exit-denomination set (0.1 DASH).
+    const DENOMINATION: u64 = 10_000_000_000;
+
+    fn temp_store_path(tag: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock is after the epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("one_time_claim_{tag}_{nanos}.sqlite"))
+    }
 
     /// The two real note nullifiers this claim spends.
     fn our_nullifiers() -> Vec<[u8; 32]> {
@@ -5473,5 +5629,296 @@ mod one_time_claim_evidence_tests {
             !recovered_identity_matches_claim(&identity, Some(ours), Some(OUR_MASTER_HASH)),
             "an identity created from a different nullifier set is not this claim's identity"
         );
+    }
+
+    // ── Resumed-claim binding (#4313 review finding 195efdd4ae21) ──────────
+    //
+    // The pending-claim record is found by wallet id and one-time FVK alone, so
+    // the resume must take its binding from the STORED TRANSITION and refuse a
+    // retry whose arguments disagree — never act on the caller's values while
+    // re-broadcasting someone else's bytes.
+
+    /// Serialize a shielded identity-create transition carrying exactly `keys`
+    /// and `denomination`, shaped as `arm_one_time_claim_record` stores it.
+    fn stored_claim_transition(
+        keys: &[IdentityPublicKey],
+        denomination: u64,
+    ) -> (StateTransition, Vec<u8>) {
+        use dpp::serialization::PlatformSerializable;
+        use dpp::state_transition::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
+        use dpp::state_transition::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
+
+        let transition: IdentityCreateFromShieldedPoolTransition =
+            IdentityCreateFromShieldedPoolTransitionV0 {
+                public_keys: keys
+                    .iter()
+                    .map(|key| IdentityPublicKeyInCreation::from(key.clone()))
+                    .collect(),
+                denomination,
+                actions: Vec::new(),
+                anchor: [0x07; 32],
+                proof: vec![0x08; 8],
+                binding_signature: [0x09; 64],
+                send_to_address_on_creation_failure: dpp::address_funds::PlatformAddress::P2pkh(
+                    [0u8; 20],
+                ),
+                identity_id: identity_id_from_nullifiers(&our_nullifiers()),
+            }
+            .into();
+        let st = StateTransition::IdentityCreateFromShieldedPool(transition);
+        let bytes = st.serialize_to_bytes().expect("transition serializes");
+        (st, bytes)
+    }
+
+    /// A pending-claim record over `st_bytes`, keyed like a real one.
+    fn stored_claim_record(st_bytes: Vec<u8>) -> PendingRedrive {
+        PendingRedrive {
+            activity_id: [0x5A; 32],
+            anchor: [0x07; 32],
+            nullifiers: our_nullifiers(),
+            st_bytes,
+            attempts: 0,
+        }
+    }
+
+    fn keys_map(keys: &[IdentityPublicKey]) -> BTreeMap<u32, IdentityPublicKey> {
+        keys.iter().map(|key| (key.id(), key.clone())).collect()
+    }
+
+    /// A second key set that differs from `our_master_key()` only in the key
+    /// MATERIAL — same id, purpose and security level. This is the dangerous
+    /// shape: ids alone still line up, so anything comparing only ids would
+    /// wave it through and register a foreign identity at this wallet's slot.
+    fn other_master_key() -> IdentityPublicKey {
+        key_with_hash(
+            0,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::MASTER,
+            OTHER_MASTER_HASH,
+        )
+    }
+
+    /// THE DERIVE PATH: everything the resume needs is recoverable from the
+    /// serialized transition, which is why no record-schema change is required.
+    /// A round-trip through `StateTransition` must reproduce the exact key set
+    /// (by id AND content), the denomination, and the MASTER auth key hash that
+    /// idempotent recovery probes Platform with.
+    #[test]
+    fn claim_binding_is_recoverable_from_the_stored_transition() {
+        use dpp::serialization::PlatformDeserializable;
+        use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::accessors::IdentityCreateFromShieldedPoolTransitionAccessorsV0;
+
+        let submitted = vec![
+            our_master_key(),
+            key_with_hash(1, Purpose::TRANSFER, SecurityLevel::CRITICAL, [0xC3; 20]),
+        ];
+        let (_, st_bytes) = stored_claim_transition(&submitted, DENOMINATION);
+
+        let restored =
+            StateTransition::deserialize_from_bytes(&st_bytes).expect("stored bytes deserialize");
+        let StateTransition::IdentityCreateFromShieldedPool(transition) = &restored else {
+            panic!("stored record must carry a shielded identity-create transition");
+        };
+
+        let derived: BTreeMap<u32, IdentityPublicKey> = transition
+            .public_keys()
+            .iter()
+            .map(|key_in_creation| {
+                let key: IdentityPublicKey = key_in_creation.into();
+                (key.id(), key)
+            })
+            .collect();
+
+        assert_eq!(
+            derived,
+            keys_map(&submitted),
+            "the submitted key set must be recoverable from the transition itself"
+        );
+        assert_eq!(transition.denomination(), DENOMINATION);
+        assert_eq!(
+            master_auth_public_key_hash_of(derived.values()),
+            Some(OUR_MASTER_HASH),
+            "the recovery handle must be derivable from the transition, not supplied by the retry"
+        );
+    }
+
+    /// MATCHING ARGS: a retry presenting exactly what the earlier attempt
+    /// submitted is a genuine resume and must pass the binding gate.
+    #[test]
+    fn matching_retry_arguments_resume() {
+        let submitted = vec![our_master_key()];
+        let keys = keys_map(&submitted);
+
+        assert_eq!(
+            one_time_claim_binding_mismatch(
+                &keys,
+                Some(OUR_MASTER_HASH),
+                DENOMINATION,
+                &keys,
+                Some(OUR_MASTER_HASH),
+                DENOMINATION,
+            ),
+            None,
+            "identical arguments must not be treated as a mis-binding"
+        );
+    }
+
+    /// Key ORDER is not a mismatch: both sides are keyed by key id, so a caller
+    /// that assembles the same keys in a different order still resumes.
+    #[test]
+    fn key_order_is_not_a_binding_mismatch() {
+        let forward = keys_map(&[
+            our_master_key(),
+            key_with_hash(1, Purpose::TRANSFER, SecurityLevel::CRITICAL, [0xC3; 20]),
+        ]);
+        let reversed = keys_map(&[
+            key_with_hash(1, Purpose::TRANSFER, SecurityLevel::CRITICAL, [0xC3; 20]),
+            our_master_key(),
+        ]);
+
+        assert_eq!(
+            one_time_claim_binding_mismatch(
+                &forward,
+                Some(OUR_MASTER_HASH),
+                DENOMINATION,
+                &reversed,
+                Some(OUR_MASTER_HASH),
+                DENOMINATION,
+            ),
+            None
+        );
+    }
+
+    /// MISMATCHED ARGS, per field. Each of these is a way the pre-fix resume
+    /// would have acted on the caller's value while broadcasting the stored
+    /// bytes: a swapped key set registers a foreign identity at this wallet's
+    /// slot and backfills an empty proof result with keys that were never in the
+    /// transition; a swapped master hash makes idempotent recovery probe
+    /// Platform for someone else's identity; a swapped denomination misreports
+    /// the value that left the pool.
+    #[test]
+    fn mismatched_retry_arguments_are_refused_per_field() {
+        let stored = keys_map(&[our_master_key()]);
+        let swapped = keys_map(&[other_master_key()]);
+
+        // Same key ids, different key material — ids alone would not catch it.
+        assert_eq!(
+            stored.keys().collect::<Vec<_>>(),
+            swapped.keys().collect::<Vec<_>>(),
+            "precondition: the swap keeps the key ids identical"
+        );
+
+        let key_mismatch = one_time_claim_binding_mismatch(
+            &stored,
+            Some(OUR_MASTER_HASH),
+            DENOMINATION,
+            &swapped,
+            Some(OUR_MASTER_HASH),
+            DENOMINATION,
+        );
+        assert!(
+            key_mismatch.is_some_and(|m| m.contains("public key set")),
+            "a swapped key set must be refused"
+        );
+
+        let hash_mismatch = one_time_claim_binding_mismatch(
+            &stored,
+            Some(OUR_MASTER_HASH),
+            DENOMINATION,
+            &stored,
+            Some(OTHER_MASTER_HASH),
+            DENOMINATION,
+        );
+        assert!(
+            hash_mismatch.is_some_and(|m| m.contains("master authentication key hash")),
+            "a recovery handle that is not in the stored transition must be refused"
+        );
+
+        let denomination_mismatch = one_time_claim_binding_mismatch(
+            &stored,
+            Some(OUR_MASTER_HASH),
+            DENOMINATION,
+            &stored,
+            Some(OUR_MASTER_HASH),
+            DENOMINATION * 3,
+        );
+        assert!(
+            denomination_mismatch.is_some_and(|m| m.contains("denomination")),
+            "a different denomination must be refused"
+        );
+    }
+
+    /// END TO END, and the property that matters most: a mismatched retry must
+    /// fail CLOSED — refused with `ShieldedClaimBindingMismatch` **before** any
+    /// network work, with the pending record left intact so the correct retry
+    /// can still resume. The SDK here is a bare mock with no expectations
+    /// registered: reaching the spent-nullifier probe or the re-broadcast would
+    /// surface as something other than this error.
+    #[tokio::test]
+    async fn mismatched_retry_refuses_without_broadcasting_or_clearing_the_record() {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let path = temp_store_path("resume_binding");
+        let store = Arc::new(RwLock::new(
+            FileBackedShieldedStore::open_path(&path, 100).expect("store opens"),
+        ));
+        let claim_records_id = SubwalletId::new([0x77; 32], ONE_TIME_CLAIM_RECORDS_ACCOUNT);
+
+        let (_, st_bytes) = stored_claim_transition(&[our_master_key()], DENOMINATION);
+        let record = stored_claim_record(st_bytes);
+        store
+            .write()
+            .await
+            .arm_redrive(claim_records_id, record.clone())
+            .expect("record arms");
+
+        // The retry presents a DIFFERENT identity's keys — the mis-slot case.
+        let outcome = resume_one_time_claim(
+            &sdk,
+            &store,
+            claim_records_id,
+            &record,
+            Some(OTHER_MASTER_HASH),
+            keys_map(&[other_master_key()]),
+            DENOMINATION,
+        )
+        .await;
+
+        match outcome {
+            OneTimeClaimResume::Resolved(Err(
+                PlatformWalletError::ShieldedClaimBindingMismatch { mismatch },
+            )) => assert!(
+                mismatch.contains("master authentication key hash")
+                    || mismatch.contains("public key set"),
+                "the refusal must name the binding that failed, got: {mismatch}"
+            ),
+            other => panic!(
+                "a retry with a different identity's keys must be refused, got {}",
+                match other {
+                    OneTimeClaimResume::RecordUnusable => "RecordUnusable".to_string(),
+                    OneTimeClaimResume::Resolved(r) => format!("Resolved({r:?})"),
+                }
+            ),
+        }
+
+        // Fail-closed: the record survives, so the ORIGINAL claim is still
+        // resumable. Clearing it here would strand a padded single-note claim
+        // forever — its declared id exists nowhere else.
+        let surviving = store
+            .read()
+            .await
+            .pending_redrives(claim_records_id)
+            .expect("records readable");
+        assert_eq!(
+            surviving.len(),
+            1,
+            "a refused retry must not clear the pending-claim record"
+        );
+        assert_eq!(
+            surviving[0].st_bytes, record.st_bytes,
+            "the stored transition must be untouched"
+        );
+
+        drop(store);
+        let _ = std::fs::remove_file(&path);
     }
 }
