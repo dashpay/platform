@@ -139,6 +139,116 @@ mod grammar {
         );
     }
 
+    /// Resolve one `AVG(grade)` clause and return the bounds.
+    fn avg_bounds(
+        operator: HavingOperator,
+        right: Value,
+    ) -> Result<AxisRangeBounds, crate::error::Error> {
+        detect_having_mode_v0(
+            &SelectProjection::avg("grade"),
+            &["restaurantId".to_string()],
+            &[clause(
+                HavingAggregateFunction::Avg,
+                "grade",
+                operator,
+                right,
+            )],
+            &[],
+            &[],
+            pagination(50),
+        )
+        .map(|mode| mode.bounds)
+    }
+
+    /// Float thresholds translate through the **exact** IEEE-754 value
+    /// with operator-aware floor/ceiling — never through truncation.
+    /// `80.5` is exactly representable (`161 × 2⁻¹`), so its scaled
+    /// product lands on a tick and the inclusive/exclusive translations
+    /// differ by exactly one, on both ends.
+    #[test]
+    fn avg_float_threshold_on_a_tick_translates_like_an_integer() {
+        use crate::query::drive_document_ranked_query::RANKED_AVG_SCALE;
+        let tick = 161 * RANKED_AVG_SCALE / 2; // 80.5 × SCALE, exact
+        let max = i128::MAX;
+        let min = i128::MIN;
+        for (operator, expected_lo, expected_hi) in [
+            (HavingOperator::GreaterThanOrEquals, tick, max),
+            (HavingOperator::GreaterThan, tick + 1, max),
+            (HavingOperator::LessThanOrEquals, min, tick),
+            (HavingOperator::LessThan, min, tick - 1),
+            (HavingOperator::Equal, tick, tick),
+        ] {
+            assert_eq!(
+                avg_bounds(operator, Value::Float(80.5)).expect("80.5 scales exactly"),
+                AxisRangeBounds::Avg {
+                    lo: expected_lo,
+                    hi: expected_hi
+                },
+                "wrong translation for {operator:?} 80.5"
+            );
+        }
+    }
+
+    /// A float threshold that falls **between** two ticks: the
+    /// inclusive and exclusive translations collapse onto the same
+    /// integer bound — the ceiling for lower bounds, the floor for
+    /// upper bounds. `5e-20` scales to ≈0.5 of a tick, the exact case
+    /// truncation used to get wrong (`AVG >= 0.5-tick` must start at
+    /// tick 1, not 0), and its negation exercises the
+    /// negative-threshold direction (`AVG > -0.5-tick` must start at
+    /// tick 0, not 1 — truncate-then-increment lands on 1).
+    #[test]
+    fn avg_float_threshold_between_ticks_takes_operator_aware_bounds() {
+        let half_tick = Value::Float(5e-20); // ≈ 0.5 of a fixed-point tick
+        let neg_half_tick = Value::Float(-5e-20);
+        let max = i128::MAX;
+        let min = i128::MIN;
+        for (operator, right, expected_lo, expected_hi) in [
+            (
+                HavingOperator::GreaterThanOrEquals,
+                half_tick.clone(),
+                1,
+                max,
+            ),
+            (HavingOperator::GreaterThan, half_tick.clone(), 1, max),
+            (HavingOperator::LessThanOrEquals, half_tick.clone(), min, 0),
+            (HavingOperator::LessThan, half_tick.clone(), min, 0),
+            (HavingOperator::GreaterThan, neg_half_tick.clone(), 0, max),
+            (
+                HavingOperator::GreaterThanOrEquals,
+                neg_half_tick.clone(),
+                0,
+                max,
+            ),
+            (HavingOperator::LessThan, neg_half_tick.clone(), min, -1),
+            (
+                HavingOperator::LessThanOrEquals,
+                neg_half_tick.clone(),
+                min,
+                -1,
+            ),
+        ] {
+            assert_eq!(
+                avg_bounds(operator, right.clone()).expect("between-tick thresholds resolve"),
+                AxisRangeBounds::Avg {
+                    lo: expected_lo,
+                    hi: expected_hi
+                },
+                "wrong translation for {operator:?} {right:?}"
+            );
+        }
+
+        // An equality on a value between ticks can never match a
+        // group's average; it is rejected loudly rather than silently
+        // converted into a point lookup on the truncated tick.
+        let error = avg_bounds(HavingOperator::Equal, half_tick)
+            .expect_err("equality between ticks matches nothing");
+        assert!(
+            format!("{error}").contains("does not land on a fixed-point tick"),
+            "the rejection must explain the tick mismatch, got: {error}"
+        );
+    }
+
     #[test]
     fn order_by_the_selected_aggregate_sets_direction() {
         let mode = detect_having_mode_v0(
@@ -1093,9 +1203,13 @@ mod execution {
         assert_proof_round_trips(&drive, &contract, &case, &entries);
     }
 
-    /// Pagination-by-bound: after a page cut at the limit, the caller
-    /// tightens the bound past the last seen value and continues —
-    /// the documented substitute for `OFFSET` on this surface.
+    /// Continuation-by-bound: after a page cut at the limit, the
+    /// caller tightens the bound past the last seen value and picks up
+    /// at the next *distinct* aggregate value. This is deliberately not
+    /// full pagination — a cut inside a tie cannot be continued (the
+    /// tied groups past the limit are unreachable without a
+    /// composite-key cursor); this fixture's counts are distinct, which
+    /// is the case the continuation serves.
     #[test]
     fn tightening_the_bound_continues_past_a_cut_page() {
         let (drive, contract) = setup_restaurants();

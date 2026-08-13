@@ -40,16 +40,17 @@ pub(crate) fn indexed_property_name_tree_path_for_index(
 ) -> Result<Vec<Vec<u8>>, Error> {
     let Some((terminal_property, leading_properties)) = index.properties.split_last() else {
         return Err(Error::Drive(DriveError::NotSupported(
-            "ranked queries require an index with at least one property",
+            "ranked and having-range queries require an index with at least one \
+             property",
         )));
     };
     if leading_properties.len() != equality_prefix_values.len() {
         return Err(Error::Drive(DriveError::NotSupported(
-            "ranked queries over a compound index require exactly one encoded equality \
-             value per leading index property: the ranked secondary lives on the index's \
-             terminal property-name tree, which for a compound index sits under one prefix \
-             value tree per leading property, and only an equality `where` clause can name \
-             those values",
+            "ranked and having-range queries over a compound index require exactly one \
+             encoded equality value per leading index property: the axis secondary lives \
+             on the index's terminal property-name tree, which for a compound index sits \
+             under one prefix value tree per leading property, and only an equality \
+             `where` clause can name those values",
         )));
     }
     let mut path = Vec::with_capacity(5 + 2 * leading_properties.len());

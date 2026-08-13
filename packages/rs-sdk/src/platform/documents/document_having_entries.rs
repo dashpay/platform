@@ -41,10 +41,14 @@
 //!
 //! Entries come back in axis order in the walk direction; **do not
 //! re-sort**. Fewer than `n` entries means fewer groups matched.
-//! **Exactly `n` may mean the match set was cut at the limit** — to
-//! continue, tighten the bound past the last aggregate value seen and
-//! ask again. Averages are fixed-point integers, exact on this (proved)
-//! path; see the ranked module's notes, which apply verbatim.
+//! **Exactly `n` may mean the match set was cut at the limit.**
+//! Tightening the bound past the last aggregate value seen continues
+//! past *distinct* values only: a cut inside a tie (several groups
+//! sharing the boundary aggregate) cannot be continued — the tied
+//! groups past the limit stay unreachable until a composite-key cursor
+//! exists — so size the limit above the widest expected tie. Averages
+//! are fixed-point integers, exact on this (proved) path; see the
+//! ranked module's notes, which apply verbatim.
 //!
 //! ## Example: hashtags with more than 100 posts
 //!

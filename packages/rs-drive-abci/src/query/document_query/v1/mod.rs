@@ -1510,11 +1510,14 @@ impl<C> Platform<C> {
                 Err(drive::error::Error::Query(qe)) => {
                     return Ok(QueryValidationResult::new_with_error(QueryError::Query(qe)));
                 }
-                // Same empty-tree backstop as the ranked path: the
-                // range prover emits a guaranteed-empty range against
-                // an empty secondary, so this should be unreachable,
-                // but the failure class is merk-level and could
-                // surface from anywhere in the ancestor chain.
+                // Same empty-tree mapping as the ranked path — and
+                // genuinely reachable here: the range prover has no
+                // empty-range shape for a completely empty axis
+                // secondary (pinned by
+                // `an_empty_match_set_reads_empty_and_proves_empty` in
+                // rs-drive's having suite), so a proved HAVING request
+                // against an index with no documents yet surfaces this
+                // merk-level failure.
                 Err(e) => match empty_ranking_proof_rejection(&e) {
                     Some(rejection) => {
                         return Ok(QueryValidationResult::new_with_error(rejection));
@@ -1638,11 +1641,11 @@ fn empty_ranking_proof_rejection(error: &drive::error::Error) -> Option<QueryErr
         return None;
     }
     Some(QueryError::InvalidArgument(
-        "this ranking has no groups yet, and an empty ranking cannot be proved: \
-         grovedb has no absence-proof shape for an empty axis secondary. Retry \
-         with `prove = false` — the unproven read answers the same request with \
-         an empty entry list. Once the index holds at least one document, the \
-         proved form works."
+        "this index's axis secondary has no groups yet, and an empty ranking or \
+         HAVING range cannot be proved: grovedb has no absence-proof shape for \
+         an empty axis secondary. Retry with `prove = false` — the unproven \
+         read answers the same request with an empty entry list. Once the \
+         index holds at least one document, the proved form works."
             .to_string(),
     ))
 }

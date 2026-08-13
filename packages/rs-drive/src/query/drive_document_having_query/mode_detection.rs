@@ -253,15 +253,7 @@ pub fn detect_having_mode_v0(
             AxisRangeBounds::Sum { lo, hi }
         }
         RankedAxis::Avg => {
-            let (lo, hi) = bounds_for_operator(
-                clause.operator,
-                right,
-                avg_operand,
-                i128::MIN,
-                i128::MAX,
-                |v| v.checked_add(1),
-                |v| v.checked_sub(1),
-            )?;
+            let (lo, hi) = avg_bounds_for_operator(clause.operator, right)?;
             AxisRangeBounds::Avg { lo, hi }
         }
     };
@@ -349,7 +341,9 @@ pub fn detect_having_mode_v0(
         return Err(Error::Query(QuerySyntaxError::InvalidLimit(
             "having-range queries do not accept `offset`: matching groups are read from \
              the bound's start and cut at `limit`. To reach deeper matches, tighten the \
-             bound (e.g. move the threshold past the last aggregate value already seen)."
+             bound past the last aggregate value already seen — noting that a page cut \
+             inside a tie (several groups sharing the boundary aggregate) cannot be \
+             continued that way; size `limit` above the widest expected tie."
                 .to_string(),
         )));
     }
@@ -484,26 +478,49 @@ fn sum_operand(value: &Value) -> Result<i64, Error> {
     })
 }
 
+/// An `AVG` operand scaled into the axis's fixed-point domain, kept as
+/// `(⌊t × SCALE⌋, is the product exactly that integer?)` so the operator
+/// translation can pick the correct floor or ceiling per bound.
+///
+/// A plain truncated `i128` would be wrong for floats: truncation is
+/// toward zero, but an inclusive lower bound needs the *ceiling* and an
+/// upper bound the *floor* — and around zero the two diverge in
+/// opposite directions (`AVG >= 0.5-tick` must start at tick 1, while
+/// truncation says 0; `AVG > -0.5-tick` must start at tick 0, while
+/// truncate-then-increment says 1).
+#[derive(Debug, Clone, Copy)]
+struct ScaledAvgOperand {
+    /// `⌊t × SCALE⌋` — the floor (toward −∞) of the exact real product.
+    floor: i128,
+    /// Whether `t × SCALE` is exactly `floor` (the operand lands on a
+    /// fixed-point tick). Always true for integer operands.
+    exact: bool,
+}
+
 /// Extract an average operand and scale it into the axis's fixed-point
 /// domain (see
-/// [`super::super::drive_document_ranked_query::RANKED_AVG_SCALE`]).
+/// [`super::super::drive_document_ranked_query::RANKED_AVG_SCALE`])
+/// **exactly**.
 ///
 /// Integer operands scale exactly (`v × SCALE` — the product of any i64
 /// with the scale fits in `i128` by the compile-time bound next to the
-/// scale constant). Float operands are scaled through `f64`
-/// multiplication and truncated toward zero; that conversion is
-/// deterministic (IEEE 754) but inexact above 2^53, which is fine for a
-/// *threshold* — callers needing exact fixed-point bounds pass integers
-/// or pre-scaled values.
-fn avg_operand(value: &Value) -> Result<i128, Error> {
+/// scale constant). Float operands are decomposed into their IEEE-754
+/// `±mantissa × 2^exponent` form and the product `±mantissa × SCALE ×
+/// 2^exponent` is floored with integer arithmetic — never through an
+/// `f64` multiplication, which loses sub-tick precision long before
+/// this scale (`SCALE = 10^19 > 2^53`): the nearest-f64 rounding of
+/// `t × SCALE` can land on the wrong side of a tick and silently move
+/// an inclusive bound by one.
+fn scaled_avg_operand(value: &Value) -> Result<ScaledAvgOperand, Error> {
     if let Some(int) = value.as_integer::<i64>() {
-        return (int as i128)
+        let floor = (int as i128)
             .checked_mul(AVG_FIXED_POINT_SCALE)
             .ok_or_else(|| {
                 Error::Query(QuerySyntaxError::InvalidParameter(format!(
                     "the `AVG(field)` having bound {int} does not fit the fixed-point domain"
                 )))
-            });
+            })?;
+        return Ok(ScaledAvgOperand { floor, exact: true });
     }
     let float = value.to_float().map_err(|_| {
         Error::Query(QuerySyntaxError::InvalidParameter(format!(
@@ -515,14 +532,194 @@ fn avg_operand(value: &Value) -> Result<i128, Error> {
             "an `AVG(field)` having bound must be finite; got {float}"
         ))));
     }
-    let scaled = float * AVG_FIXED_POINT_SCALE as f64;
-    // `f64 as i128` saturates rather than wrapping; the explicit range
-    // check keeps out-of-domain thresholds a loud caller error instead
-    // of a silent clamp to the domain edge.
-    if scaled <= i128::MIN as f64 || scaled >= i128::MAX as f64 {
-        return Err(Error::Query(QuerySyntaxError::InvalidParameter(format!(
+
+    // IEEE-754 double decomposition: float = ±mantissa × 2^exponent,
+    // with the implicit leading bit restored for normal numbers and the
+    // subnormal exponent pinned at 2^-1074.
+    let bits = float.to_bits();
+    let negative = bits >> 63 == 1;
+    let raw_exponent = ((bits >> 52) & 0x7ff) as i64;
+    let fraction = bits & 0x000f_ffff_ffff_ffff;
+    let (mantissa, exponent) = if raw_exponent == 0 {
+        (fraction, -1074i64)
+    } else {
+        (fraction | 0x0010_0000_0000_0000, raw_exponent - 1075)
+    };
+    if mantissa == 0 {
+        // ±0.0 — exactly tick zero.
+        return Ok(ScaledAvgOperand {
+            floor: 0,
+            exact: true,
+        });
+    }
+    let out_of_domain = || {
+        Error::Query(QuerySyntaxError::InvalidParameter(format!(
             "the `AVG(field)` having bound {float} does not fit the fixed-point domain"
+        )))
+    };
+
+    // mantissa < 2^54 and SCALE < 2^64, so the product stays well under
+    // i128::MAX (< 2^118); only the 2^exponent factor can overflow.
+    let magnitude = (mantissa as i128) * AVG_FIXED_POINT_SCALE;
+    let signed = if negative { -magnitude } else { magnitude };
+    if exponent >= 0 {
+        // × 2^exponent, exactly. |signed| ≥ SCALE ≥ 1, so a factor the
+        // domain cannot hold means the bound itself is out of domain.
+        if exponent >= 127 {
+            return Err(out_of_domain());
+        }
+        let floor = signed
+            .checked_mul(1i128 << exponent)
+            .ok_or_else(out_of_domain)?;
+        Ok(ScaledAvgOperand { floor, exact: true })
+    } else {
+        // ÷ 2^-exponent with euclidean (toward −∞) division — exactly
+        // the floor, with the remainder deciding exactness.
+        let shift = -exponent as u32;
+        if shift >= 127 {
+            // |signed| < 2^118 < 2^shift ⇒ 0 < |t × SCALE| < 1: the
+            // product floors to 0 (positive) or −1 (negative), and is
+            // never exact (mantissa is non-zero).
+            return Ok(ScaledAvgOperand {
+                floor: if negative { -1 } else { 0 },
+                exact: false,
+            });
+        }
+        let divisor = 1i128 << shift;
+        Ok(ScaledAvgOperand {
+            floor: signed.div_euclid(divisor),
+            exact: signed.rem_euclid(divisor) == 0,
+        })
+    }
+}
+
+/// Translate `(operator, right operand)` into inclusive `[lo, hi]`
+/// bounds in the Avg axis's fixed-point domain.
+///
+/// The Avg counterpart of [`bounds_for_operator`], separate because Avg
+/// operands may be floats that do not land on a fixed-point tick, and
+/// the correct translation is then **operator-aware**: an inclusive
+/// lower bound takes the ceiling of the exact product `t × SCALE`, an
+/// upper bound its floor, and the exclusive translations collapse onto
+/// the inclusive ones whenever `t` sits strictly between two ticks
+/// (`v > t` and `v ≥ t` admit exactly the same integers there). All of
+/// it works off [`scaled_avg_operand`]'s exact `(floor, exact)` pair:
+///
+/// | operator      | lower bound            | upper bound            |
+/// |---------------|------------------------|------------------------|
+/// | `= t`         | `t` exact on a tick — otherwise rejected: nothing can match |
+/// | `> t`         | `⌊t⌋ + 1`              | domain max             |
+/// | `>= t`        | `⌈t⌉`                  | domain max             |
+/// | `< t`         | domain min             | `⌈t⌉ − 1`              |
+/// | `<= t`        | domain min             | `⌊t⌋`                  |
+/// | `BETWEEN*`    | per-end combination of the four rows above      |
+///
+/// Empty translations (`> MAX`, a between pair that inverts, an
+/// equality between ticks) are rejected loudly, matching
+/// [`bounds_for_operator`]'s contract: a bound that cannot match any
+/// group is a caller error, and silently proving an empty page would
+/// hide it.
+fn avg_bounds_for_operator(operator: HavingOperator, right: &Value) -> Result<(i128, i128), Error> {
+    let scalar = || scaled_avg_operand(right);
+    let pair = || -> Result<(ScaledAvgOperand, ScaledAvgOperand), Error> {
+        let Some(items) = right.as_array() else {
+            return Err(Error::Query(QuerySyntaxError::InvalidParameter(format!(
+                "`{operator:?}` requires a 2-element list operand `[lower, upper]`; got a \
+                 non-list value"
+            ))));
+        };
+        let [lower, upper] = items.as_slice() else {
+            return Err(Error::Query(QuerySyntaxError::InvalidParameter(format!(
+                "`{operator:?}` requires a 2-element list operand `[lower, upper]`; got {} \
+                 element(s)",
+                items.len()
+            ))));
+        };
+        Ok((scaled_avg_operand(lower)?, scaled_avg_operand(upper)?))
+    };
+    let past_max = || {
+        Error::Query(QuerySyntaxError::InvalidParameter(format!(
+            "the `{operator:?}` bound matches no possible aggregate value: it lies at or \
+             above the largest value the aggregate can take"
+        )))
+    };
+    let past_min = || {
+        Error::Query(QuerySyntaxError::InvalidParameter(format!(
+            "the `{operator:?}` bound matches no possible aggregate value: it lies at or \
+             below the smallest value the aggregate can take"
+        )))
+    };
+
+    // v > t ⇔ v ≥ ⌊t⌋ + 1 whether or not t is a tick (for a tick,
+    // strictly above it; between ticks, the ceiling).
+    let exclusive_lower = |bound: ScaledAvgOperand| bound.floor.checked_add(1).ok_or_else(past_max);
+    // v ≥ t ⇔ v ≥ ⌈t⌉.
+    let inclusive_lower = |bound: ScaledAvgOperand| {
+        if bound.exact {
+            Ok(bound.floor)
+        } else {
+            bound.floor.checked_add(1).ok_or_else(past_max)
+        }
+    };
+    // v < t ⇔ v ≤ ⌈t⌉ − 1 (t on a tick: strictly below it; between
+    // ticks: the floor).
+    let exclusive_upper = |bound: ScaledAvgOperand| {
+        if bound.exact {
+            bound.floor.checked_sub(1).ok_or_else(past_min)
+        } else {
+            Ok(bound.floor)
+        }
+    };
+    // v ≤ t ⇔ v ≤ ⌊t⌋, which never overflows.
+    let inclusive_upper = |bound: ScaledAvgOperand| bound.floor;
+
+    let (lo, hi) = match operator {
+        HavingOperator::Equal => {
+            let bound = scalar()?;
+            if !bound.exact {
+                return Err(Error::Query(QuerySyntaxError::InvalidParameter(format!(
+                    "the `AVG(field)` equality bound {right} does not land on a fixed-point \
+                     tick, so no group's average can equal it; use a range operator (e.g. \
+                     `BETWEEN`) around the intended value, or an operand that scales exactly"
+                ))));
+            }
+            (bound.floor, bound.floor)
+        }
+        HavingOperator::GreaterThan => (exclusive_lower(scalar()?)?, i128::MAX),
+        HavingOperator::GreaterThanOrEquals => (inclusive_lower(scalar()?)?, i128::MAX),
+        HavingOperator::LessThan => (i128::MIN, exclusive_upper(scalar()?)?),
+        HavingOperator::LessThanOrEquals => (i128::MIN, inclusive_upper(scalar()?)),
+        HavingOperator::Between => {
+            let (lower, upper) = pair()?;
+            (inclusive_lower(lower)?, inclusive_upper(upper))
+        }
+        HavingOperator::BetweenExcludeBounds => {
+            let (lower, upper) = pair()?;
+            (exclusive_lower(lower)?, exclusive_upper(upper)?)
+        }
+        HavingOperator::BetweenExcludeLeft => {
+            let (lower, upper) = pair()?;
+            (exclusive_lower(lower)?, inclusive_upper(upper))
+        }
+        HavingOperator::BetweenExcludeRight => {
+            let (lower, upper) = pair()?;
+            (inclusive_lower(lower)?, exclusive_upper(upper)?)
+        }
+        HavingOperator::NotEqual | HavingOperator::In => {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                "`{operator:?}` is not yet supported in having-range queries: it describes \
+                 a non-contiguous set of aggregate values, and the axis secondary serves \
+                 one contiguous range per request. Use a range operator, or issue one \
+                 request per contiguous range."
+            ))));
+        }
+    };
+
+    if lo > hi {
+        return Err(Error::Query(QuerySyntaxError::InvalidParameter(format!(
+            "the `having` bound resolves to the empty range [{lo}, {hi}] (lower above \
+             upper), which matches no group; fix the operand"
         ))));
     }
-    Ok(scaled as i128)
+    Ok((lo, hi))
 }

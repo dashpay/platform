@@ -26,7 +26,7 @@
 //! it needs the data contract, which this crate does not carry.
 
 use crate::error::MapGroveDbError;
-use crate::proof::document_ranked::ranked_entry_from_proto;
+use crate::proof::document_ranked::{ranked_entry_from_proto, result_variant_name};
 use crate::verify::verify_tenderdash_proof;
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::get_documents_response::get_documents_response_v1::{
@@ -52,9 +52,11 @@ use drive::verify::RootHash;
 ///
 /// Fewer than `n` entries means fewer groups matched — not an error.
 /// **Exactly `n` entries may mean the match set was cut at the limit**;
-/// nothing in the page marks the cut, so a caller that needs the full
-/// set tightens the bound (moves the threshold past the last aggregate
-/// value already seen) and asks again.
+/// nothing in the page marks the cut. Tightening the bound past the
+/// last aggregate value seen continues past *distinct* values only — a
+/// cut inside a tie (several groups sharing the boundary aggregate)
+/// cannot be continued, so size the limit above the widest expected
+/// tie.
 ///
 /// Entry semantics ([`RankedEntry`]) are identical to the ranked
 /// surface's, including the fixed-point average scaling and the
@@ -127,10 +129,11 @@ impl DocumentHavingEntries {
                 return Err(Error::ResponseDecodeError {
                     error: format!(
                         "expected a `ResultData.ranked` payload for a having-range request, \
-                         got {other:?}. A response on another variant means the node routed \
+                         got {}. A response on another variant means the node routed \
                          the request to a different executor — check that the request \
                          carries a `group_by` and exactly one `having` clause bounding the \
-                         single `select`'s aggregate."
+                         single `select`'s aggregate.",
+                        result_variant_name(other)
                     ),
                 });
             }
