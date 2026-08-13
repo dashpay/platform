@@ -1014,9 +1014,13 @@ mod tests {
 
         // Fetch the document back and verify content matches
         let sql_string = "select * from profile";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
@@ -1133,9 +1137,13 @@ mod tests {
 
         // Fetch both documents back and verify they exist with correct content
         let sql_string = "select * from person order by firstName asc limit 100";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
@@ -1320,9 +1328,13 @@ mod tests {
 
         // Verify both documents were inserted by fetching them
         let sql_string = "select * from contactRequest";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)

@@ -1106,7 +1106,7 @@ mod ported_v0_count_tests {
             .data_contract_owned()
     }
 
-    fn store_person_document(
+    pub(super) fn store_person_document(
         platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
         data_contract: &dpp::prelude::DataContract,
         id: [u8; 32],
@@ -3029,6 +3029,144 @@ mod ranked_tests {
                 validate_and_route_for_tests(&unordered, &where_clauses, PlatformVersion::latest())
                     .expect("a range-bound GROUP BY is a supported non-ranked shape");
             assert_ne!(label, "ranked", "no ORDER BY means no ranked routing");
+        }
+    }
+}
+
+/// Wire-level coverage for multiple `In` clauses on a compound index
+/// (protocol version 14+): the v1 documents select accepts them at
+/// v14 on both the no-proof and prove paths, while a protocol
+/// version 13 execution of the very same request rejects them with
+/// `MultipleInClauses`.
+mod multi_in_wire_tests {
+    use super::ported_v0_count_tests::store_person_document;
+    use super::*;
+    use dpp::platform_value::platform_value;
+    use dpp::tests::json_document::json_document_to_contract_with_ids;
+
+    fn documents_v1_request(data_contract_id: Vec<u8>, prove: bool) -> GetDocumentsRequestV1 {
+        GetDocumentsRequestV1 {
+            data_contract_id,
+            document_type: "person".to_string(),
+            where_clauses: vec![
+                wc(
+                    "firstName",
+                    ProtoWhereOperator::In,
+                    platform_value!(["Alice", "Carol", "Eve"]),
+                ),
+                wc(
+                    "lastName",
+                    ProtoWhereOperator::In,
+                    platform_value!(["Kriskov", "Smith"]),
+                ),
+            ],
+            order_by: vec![oc("firstName", true), oc("lastName", true)],
+            limit: None,
+            start: None,
+            prove,
+            selects: select_documents(),
+            group_by: Vec::new(),
+            having: Vec::new(),
+            offset: None,
+        }
+    }
+
+    fn setup_people() -> (
+        crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+        std::sync::Arc<crate::platform_types::platform_state::PlatformState>,
+        &'static PlatformVersion,
+        dpp::prelude::DataContract,
+    ) {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let data_contract = json_document_to_contract_with_ids(
+            "tests/supporting_files/contract/family/family-contract-countable.json",
+            None,
+            None,
+            false,
+            version,
+        )
+        .expect("expected to get json based contract");
+        store_data_contract(&platform, &data_contract, version);
+
+        for (id, first_name, last_name) in [
+            ([1u8; 32], "Alice", "Kriskov"),
+            ([2u8; 32], "Alice", "Smith"),
+            ([3u8; 32], "Bob", "Kriskov"),
+            ([4u8; 32], "Carol", "Smith"),
+            ([5u8; 32], "Eve", "Sojka"),
+        ] {
+            store_person_document(
+                &platform,
+                &data_contract,
+                id,
+                first_name,
+                last_name,
+                30,
+                version,
+            );
+        }
+
+        (platform, state, version, data_contract)
+    }
+
+    #[test]
+    fn e2e_multiple_in_clauses_documents_select_at_v14() {
+        let (platform, state, version, data_contract) = setup_people();
+        assert!(
+            version.protocol_version >= 14,
+            "test platform should run at protocol version 14 or later"
+        );
+
+        let request = documents_v1_request(data_contract.id().to_vec(), false);
+        let result = platform
+            .query_documents_v1(request, &state, version)
+            .expect("query call should not error at the transport layer");
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+        let documents = match result.data.expect("data").result {
+            Some(get_documents_response_v1::Result::Data(ResultData {
+                variant: Some(result_data::Variant::Documents(documents)),
+            })) => documents.documents,
+            other => panic!("expected documents, got {:?}", other),
+        };
+        // Alice/Kriskov, Alice/Smith, Carol/Smith — Bob and Eve/Sojka
+        // fall outside the cross product
+        assert_eq!(documents.len(), 3);
+
+        let request = documents_v1_request(data_contract.id().to_vec(), true);
+        let result = platform
+            .query_documents_v1(request, &state, version)
+            .expect("query call should not error at the transport layer");
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+        match result.data.expect("data").result {
+            Some(get_documents_response_v1::Result::Proof(proof)) => {
+                assert!(!proof.grovedb_proof.is_empty(), "proof should not be empty");
+            }
+            other => panic!("expected proof, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn e2e_multiple_in_clauses_rejected_at_protocol_version_13() {
+        let (platform, state, _, data_contract) = setup_people();
+        let version_13 = PlatformVersion::get(13).expect("protocol version 13 should exist");
+
+        let request = documents_v1_request(data_contract.id().to_vec(), false);
+        let result = platform
+            .query_documents_v1(request, &state, version_13)
+            .expect("query call should not error at the transport layer");
+        assert!(
+            !result.errors.is_empty(),
+            "expected a validation error at protocol version 13"
+        );
+        // The v0 (protocol version 13) grammar rejects the shape at parse
+        // time, so the error surfaces through the parse wrapping — the
+        // same wire shape historical nodes produced.
+        match &result.errors[0] {
+            QueryError::Drive(drive::error::Error::Query(QuerySyntaxError::MultipleInClauses(
+                _,
+            ))) => {}
+            other => panic!("expected MultipleInClauses, got {:?}", other),
         }
     }
 }

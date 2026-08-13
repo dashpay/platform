@@ -82,10 +82,10 @@ use {
         data_contract::{
             accessors::v0::DataContractV0Getters,
             document_type::{accessors::DocumentTypeV0Getters, methods::DocumentTypeV0Methods},
-            document_type::{DocumentTypeRef, Index, IndexProperty},
+            document_type::{DocumentTypeRef, Index},
             DataContract,
         },
-        document::{document_methods::DocumentMethodsV0, Document, DocumentV0Getters},
+        document::{document_methods::DocumentMethodsV0, Document},
         platform_value::{btreemap_extensions::BTreeValueRemoveFromMapHelper, Value},
         version::PlatformVersion,
         ProtocolError,
@@ -132,12 +132,15 @@ pub mod conditions;
 mod defaults;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod having;
+mod non_primary_key_path_query;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod ordering;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod projection;
 #[cfg(any(feature = "server", feature = "verify"))]
 mod single_document_drive_query;
+/// Versioned grouping of raw where clauses into equality / range / in buckets
+pub(crate) mod where_clause_grouping;
 
 // Module declarations exclusively for "server" feature
 #[cfg(feature = "server")]
@@ -291,8 +294,13 @@ pub struct InternalClauses {
     pub primary_key_in_clause: Option<WhereClause>,
     /// Primary key equal clause
     pub primary_key_equal_clause: Option<WhereClause>,
-    /// In clause
-    pub in_clause: Option<WhereClause>,
+    /// In clauses, on distinct non-primary-key fields.
+    ///
+    /// The grammar groups any number of them structurally; whether more
+    /// than one is accepted is a protocol-versioned decision made at
+    /// path-query lowering (protocol version 14 is the first to accept
+    /// multiple in clauses, on consecutive index properties).
+    pub in_clauses: Vec<WhereClause>,
     /// Range clause
     pub range_clause: Option<WhereClause>,
     /// Equal clause
@@ -310,7 +318,7 @@ impl InternalClauses {
             .bitxor(self.primary_key_equal_clause.is_some())
         {
             // One is set, all rest must be empty
-            !(self.in_clause.is_some()
+            !(!self.in_clauses.is_empty()
                 || self.range_clause.is_some()
                 || !self.equal_clauses.is_empty())
         } else {
@@ -327,7 +335,7 @@ impl InternalClauses {
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Returns true if self is empty.
     pub fn is_empty(&self) -> bool {
-        self.in_clause.is_none()
+        self.in_clauses.is_empty()
             && self.range_clause.is_none()
             && self.equal_clauses.is_empty()
             && self.primary_key_in_clause.is_none()
@@ -336,7 +344,10 @@ impl InternalClauses {
 
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Extracts the `WhereClause`s and returns them as type `InternalClauses`.
-    pub fn extract_from_clauses(all_where_clauses: Vec<WhereClause>) -> Result<Self, Error> {
+    pub fn extract_from_clauses(
+        all_where_clauses: Vec<WhereClause>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Error> {
         let primary_key_equal_clauses_array = all_where_clauses
             .iter()
             .filter_map(|where_clause| match where_clause.operator {
@@ -359,8 +370,8 @@ impl InternalClauses {
             })
             .collect::<Vec<WhereClause>>();
 
-        let (equal_clauses, range_clause, in_clause) =
-            WhereClause::group_clauses(&all_where_clauses)?;
+        let (equal_clauses, range_clause, in_clauses) =
+            WhereClause::group_clauses(&all_where_clauses, platform_version)?;
 
         let primary_key_equal_clause = match primary_key_equal_clauses_array.len() {
             0 => Ok(None),
@@ -395,7 +406,7 @@ impl InternalClauses {
         let internal_clauses = InternalClauses {
             primary_key_equal_clause,
             primary_key_in_clause,
-            in_clause,
+            in_clauses,
             range_clause,
             equal_clauses,
         };
@@ -423,8 +434,8 @@ impl InternalClauses {
             );
         }
 
-        // Validate in_clause against schema
-        if let Some(in_clause) = &self.in_clause {
+        // Validate in_clauses against schema
+        for in_clause in &self.in_clauses {
             // Forbid $id in non-primary-key clauses
             if in_clause.field == "$id" {
                 return QuerySyntaxSimpleValidationResult::new_with_error(
@@ -521,9 +532,7 @@ impl From<InternalClauses> for Vec<WhereClause> {
     fn from(clauses: InternalClauses) -> Self {
         let mut result: Self = clauses.equal_clauses.into_values().collect();
 
-        if let Some(clause) = clauses.in_clause {
-            result.push(clause);
-        };
+        result.extend(clauses.in_clauses);
         if let Some(clause) = clauses.primary_key_equal_clause {
             result.push(clause);
         };
@@ -580,7 +589,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     operator: WhereOperator::Equal,
                     value: Value::Identifier(id.to_buffer()),
                 }),
-                in_clause: None,
+                in_clauses: Vec::new(),
                 range_clause: None,
                 equal_clauses: Default::default(),
             },
@@ -653,13 +662,20 @@ impl<'a> DriveDocumentQuery<'a> {
         contract: &'a DataContract,
         document_type: DocumentTypeRef<'a>,
         config: &DriveConfig,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         let query_document_value: Value = ciborium::de::from_reader(query_cbor).map_err(|_| {
             Error::Query(QuerySyntaxError::DeserializationError(
                 "unable to decode query from cbor".to_string(),
             ))
         })?;
-        Self::from_value(query_document_value, contract, document_type, config)
+        Self::from_value(
+            query_document_value,
+            contract,
+            document_type,
+            config,
+            platform_version,
+        )
     }
 
     #[cfg(any(feature = "server", feature = "verify"))]
@@ -669,9 +685,16 @@ impl<'a> DriveDocumentQuery<'a> {
         contract: &'a DataContract,
         document_type: DocumentTypeRef<'a>,
         config: &DriveConfig,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         let query_document: BTreeMap<String, Value> = query_value.into_btree_string_map()?;
-        Self::from_btree_map_value(query_document, contract, document_type, config)
+        Self::from_btree_map_value(
+            query_document,
+            contract,
+            document_type,
+            config,
+            platform_version,
+        )
     }
 
     #[cfg(any(feature = "server", feature = "verify"))]
@@ -681,6 +704,7 @@ impl<'a> DriveDocumentQuery<'a> {
         contract: &'a DataContract,
         document_type: DocumentTypeRef<'a>,
         config: &DriveConfig,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         if let Some(contract_id) = query_document
             .remove_optional_identifier("contract_id")
@@ -759,7 +783,8 @@ impl<'a> DriveDocumentQuery<'a> {
                     }
                 })?;
 
-        let internal_clauses = InternalClauses::extract_from_clauses(all_where_clauses)?;
+        let internal_clauses =
+            InternalClauses::extract_from_clauses(all_where_clauses, platform_version)?;
 
         let start_at_option = query_document.remove("startAt");
         let start_after_option = query_document.remove("startAfter");
@@ -852,6 +877,7 @@ impl<'a> DriveDocumentQuery<'a> {
         contract: &'a DataContract,
         document_type: DocumentTypeRef<'a>,
         config: &DriveConfig,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         let all_where_clauses: Vec<WhereClause> = match where_clause {
             Value::Null => Ok(vec![]),
@@ -913,6 +939,7 @@ impl<'a> DriveDocumentQuery<'a> {
             contract,
             document_type,
             config,
+            platform_version,
         )
     }
 
@@ -947,6 +974,7 @@ impl<'a> DriveDocumentQuery<'a> {
         contract: &'a DataContract,
         document_type: DocumentTypeRef<'a>,
         config: &DriveConfig,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         let limit = maybe_limit
             .map_or(Some(config.default_query_limit), |limit_value| {
@@ -961,7 +989,8 @@ impl<'a> DriveDocumentQuery<'a> {
                 config.max_query_limit
             ))))?;
 
-        let internal_clauses = InternalClauses::extract_from_clauses(where_clauses)?;
+        let internal_clauses =
+            InternalClauses::extract_from_clauses(where_clauses, platform_version)?;
 
         let order_by: IndexMap<String, OrderClause> = order_by_clauses
             .into_iter()
@@ -987,6 +1016,7 @@ impl<'a> DriveDocumentQuery<'a> {
         sql_string: &str,
         contract: &'a DataContract,
         config: Option<&DriveConfig>,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         let dialect: MySqlDialect = MySqlDialect {};
         let statements: Vec<Statement> = Parser::parse_sql(&dialect, sql_string)
@@ -1107,7 +1137,8 @@ impl<'a> DriveDocumentQuery<'a> {
             )?;
         }
 
-        let internal_clauses = InternalClauses::extract_from_clauses(all_where_clauses)?;
+        let internal_clauses =
+            InternalClauses::extract_from_clauses(all_where_clauses, platform_version)?;
 
         let start_at_option = None; //todo
         let start_after_option = None; //todo
@@ -1187,6 +1218,52 @@ impl<'a> DriveDocumentQuery<'a> {
         }
     }
 
+    #[cfg(any(feature = "server", feature = "verify"))]
+    /// Versioned preflight over the non-primary-key `In` clause shape.
+    ///
+    /// Runs before any cursor storage lookup or proof processing so the
+    /// rejection precedence matches each protocol version's contract: v0
+    /// rejects more than one `In` clause with `MultipleInClauses` before a
+    /// `startAt`/`startAfter` document is ever fetched (matching the
+    /// pre-protocol-version-14 parse-time rejection), and v1 rejects the
+    /// unsupported multi-`In` + cursor combination with `Unsupported`
+    /// before spending state or proof work on the cursor. The lowering
+    /// keeps equivalent guards for callers that reach it directly.
+    pub fn validate_in_clause_shape(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        match platform_version
+            .drive
+            .methods
+            .document
+            .query
+            .non_primary_key_path_query
+        {
+            0 => {
+                if self.internal_clauses.in_clauses.len() > 1 {
+                    return Err(Error::Query(QuerySyntaxError::MultipleInClauses(
+                        "There should only be one in clause",
+                    )));
+                }
+                Ok(())
+            }
+            1 => {
+                if self.internal_clauses.in_clauses.len() > 1 && self.start_at.is_some() {
+                    return Err(Error::Query(QuerySyntaxError::Unsupported(
+                        "startAt/startAfter is not supported with multiple in clauses".to_string(),
+                    )));
+                }
+                Ok(())
+            }
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "DriveDocumentQuery::validate_in_clause_shape".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            })),
+        }
+    }
+
     #[cfg(feature = "server")]
     /// Operations to construct a path query.
     pub fn construct_path_query_operations(
@@ -1197,6 +1274,7 @@ impl<'a> DriveDocumentQuery<'a> {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        self.validate_in_clause_shape(platform_version)?;
         let drive_version = &platform_version.drive;
         // First we should get the overall document_type_path
         let document_type_path = self
@@ -1301,6 +1379,7 @@ impl<'a> DriveDocumentQuery<'a> {
         starts_at_document: Option<Document>,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        self.validate_in_clause_shape(platform_version)?;
         // First we should get the overall document_type_path
         let document_type_path = self
             .contract
@@ -1495,7 +1574,15 @@ impl<'a> DriveDocumentQuery<'a> {
 
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Finds the best index for the query.
+    ///
+    /// Queries with more than one `In` clause use their own selection
+    /// ([`Self::find_best_index_for_multiple_in_clauses`]); they only
+    /// reach it through the v1 (protocol version 14+) path-query
+    /// lowering, since the v0 lowering rejects them first.
     pub fn find_best_index(&self, platform_version: &PlatformVersion) -> Result<&Index, Error> {
+        if self.internal_clauses.in_clauses.len() > 1 {
+            return Ok(self.find_best_index_for_multiple_in_clauses()?.0);
+        }
         let equal_fields = self
             .internal_clauses
             .equal_clauses
@@ -1504,8 +1591,8 @@ impl<'a> DriveDocumentQuery<'a> {
             .collect::<Vec<&str>>();
         let in_field = self
             .internal_clauses
-            .in_clause
-            .as_ref()
+            .in_clauses
+            .first()
             .map(|in_clause| in_clause.field.as_str());
         let range_field = self
             .internal_clauses
@@ -1566,739 +1653,41 @@ impl<'a> DriveDocumentQuery<'a> {
     }
 
     #[cfg(any(feature = "server", feature = "verify"))]
-    /// Returns a `Query` that either starts at or after the given document ID if given.
-    fn inner_query_from_starts_at_for_id(
-        starts_at_document: Option<&StartAtDocument>,
-        left_to_right: bool,
-    ) -> Query {
-        // We only need items after the start at document
-        let mut inner_query = Query::new_with_direction(left_to_right);
-
-        if let Some(StartAtDocument {
-            document, included, ..
-        }) = starts_at_document
-        {
-            let start_at_key = document.id().to_vec();
-            if *included {
-                inner_query.insert_range_from(start_at_key..)
-            } else {
-                inner_query.insert_range_after(start_at_key..)
-            }
-        } else {
-            // No starts at document, take all NULL items
-            inner_query.insert_all();
-        }
-        inner_query
-    }
-
-    #[cfg(any(feature = "server", feature = "verify"))]
-    /// Returns a `Query` that either starts at or after the given key.
-    fn inner_query_starts_from_key(
-        start_at_key: Option<Vec<u8>>,
-        left_to_right: bool,
-        included: bool,
-    ) -> Query {
-        // We only need items after the start at document
-        let mut inner_query = Query::new_with_direction(left_to_right);
-
-        if left_to_right {
-            if let Some(start_at_key) = start_at_key {
-                if included {
-                    inner_query.insert_range_from(start_at_key..);
-                } else {
-                    inner_query.insert_range_after(start_at_key..);
-                }
-            } else {
-                inner_query.insert_all();
-            }
-        } else if included {
-            if let Some(start_at_key) = start_at_key {
-                inner_query.insert_range_to_inclusive(..=start_at_key);
-            } else {
-                inner_query.insert_key(vec![]);
-            }
-        } else if let Some(start_at_key) = start_at_key {
-            inner_query.insert_range_to(..start_at_key);
-        } else {
-            //todo: really not sure if this is correct
-            // Should investigate more
-            inner_query.insert_key(vec![]);
-        }
-
-        inner_query
-    }
-
-    #[cfg(any(feature = "server", feature = "verify"))]
-    /// Returns a `Query` that either starts at or after the given document if given.
-    fn inner_query_from_starts_at(
-        starts_at_document: Option<&StartAtDocument>,
-        indexed_property: &IndexProperty,
-        left_to_right: bool,
-        platform_version: &PlatformVersion,
-    ) -> Result<Query, Error> {
-        let mut inner_query = Query::new_with_direction(left_to_right);
-        if let Some(StartAtDocument {
-            document,
-            document_type,
-            included,
-        }) = starts_at_document
-        {
-            // We only need items after the start at document
-            let start_at_key = document.get_raw_for_document_type(
-                indexed_property.name.as_str(),
-                *document_type,
-                None,
-                platform_version,
-            )?;
-            // We want to get items starting at the start key
-            if let Some(start_at_key) = start_at_key {
-                if left_to_right {
-                    if *included {
-                        inner_query.insert_range_from(start_at_key..)
-                    } else {
-                        inner_query.insert_range_after(start_at_key..)
-                    }
-                } else if *included {
-                    inner_query.insert_range_to_inclusive(..=start_at_key)
-                } else {
-                    inner_query.insert_range_to(..start_at_key)
-                }
-            } else if left_to_right {
-                inner_query.insert_all();
-            } else {
-                inner_query.insert_key(vec![]);
-            }
-        } else {
-            // No starts at document, take all NULL items
-            inner_query.insert_all();
-        }
-        Ok(inner_query)
-    }
-
-    #[cfg(any(feature = "server", feature = "verify"))]
-    fn recursive_create_query(
-        left_over_index_properties: &[&IndexProperty],
-        unique: bool,
-        starts_at_document: Option<&StartAtDocument>, //for key level, included
-        indexed_property: &IndexProperty,
-        order_by: Option<&IndexMap<String, OrderClause>>,
-        platform_version: &PlatformVersion,
-    ) -> Result<Option<Query>, Error> {
-        match left_over_index_properties.split_first() {
-            None => Ok(None),
-            Some((first, left_over)) => {
-                let left_to_right = if let Some(order_by) = order_by {
-                    order_by
-                        .get(first.name.as_str())
-                        .map(|order_clause| order_clause.ascending)
-                        .unwrap_or(first.ascending)
-                } else {
-                    first.ascending
-                };
-
-                let mut inner_query = Self::inner_query_from_starts_at(
-                    starts_at_document,
-                    indexed_property,
-                    left_to_right,
-                    platform_version,
-                )?;
-                DriveDocumentQuery::recursive_insert_on_query(
-                    &mut inner_query,
-                    left_over,
-                    unique,
-                    starts_at_document,
-                    left_to_right,
-                    order_by,
-                    platform_version,
-                )?;
-                Ok(Some(inner_query))
-            }
-        }
-    }
-
-    #[cfg(any(feature = "server", feature = "verify"))]
-    /// Recursively queries as long as there are leftover index properties.
-    /// The in_start_at_document_sub_path_needing_conditional is interesting.
-    /// It indicates whether the start at document should be applied as a conditional
-    /// For example if we have a tree
-    /// Root
-    /// ├── model
-    /// │   ├── sedan
-    /// │   │   ├── brand_name
-    /// │   │   │   ├── Honda
-    /// │   │   │   │   ├── car_type
-    /// │   │   │   │   │   ├── Accord
-    /// │   │   │   │   │   │   ├── 0
-    /// │   │   │   │   │   │   │   ├── a47d2...
-    /// │   │   │   │   │   │   │   ├── e19c8...
-    /// │   │   │   │   │   │   │   └── f1a7b...
-    /// │   │   │   │   │   └── Civic
-    /// │   │   │   │   │       ├── 0
-    /// │   │   │   │   │       │   ├── b65a7...
-    /// │   │   │   │   │       │   └── c43de...
-    /// │   │   │   ├── Toyota
-    /// │   │   │   │   ├── car_type
-    /// │   │   │   │   │   ├── Camry
-    /// │   │   │   │   │   │   ├── 0
-    /// │   │   │   │   │   │   │   └── 1a9d2...
-    /// │   │   │   │   │   └── Corolla
-    /// │   │   │   │   │       ├── 0
-    /// │   │   │   │   │       │   ├── 3f7b4...
-    /// │   │   │   │   │       │   ├── 4e8fa...
-    /// │   │   │   │   │       │   └── 9b1c6...
-    /// │   ├── suv
-    /// │   │   ├── brand_name
-    /// │   │   │   ├── Ford*
-    /// │   │   │   │   ├── car_type*
-    /// │   │   │   │   │   ├── Escape*
-    /// │   │   │   │   │   │   ├── 0
-    /// │   │   │   │   │   │   │   ├── 102bc...
-    /// │   │   │   │   │   │   │   ├── 29f8e... <- Set After this document
-    /// │   │   │   │   │   │   │   └── 6b1a3...
-    /// │   │   │   │   │   └── Explorer
-    /// │   │   │   │   │       ├── 0
-    /// │   │   │   │   │       │   ├── b2a9d...
-    /// │   │   │   │   │       │   └── f4d5c...
-    /// │   │   │   ├── Nissan
-    /// │   │   │   │   ├── car_type
-    /// │   │   │   │   │   ├── Rogue
-    /// │   │   │   │   │   │   ├── 0
-    /// │   │   │   │   │   │   │   ├── 5a9c3...
-    /// │   │   │   │   │   │   │   └── 7e4b9...
-    /// │   │   │   │   │   └── Murano
-    /// │   │   │   │   │       ├── 0
-    /// │   │   │   │   │       │   ├── 8f6a2...
-    /// │   │   │   │   │       │   └── 9c7d4...
-    /// │   ├── truck
-    /// │   │   ├── brand_name
-    /// │   │   │   ├── Ford
-    /// │   │   │   │   ├── car_type
-    /// │   │   │   │   │   ├── F-150
-    /// │   │   │   │   │   │   ├── 0
-    /// │   │   │   │   │   │   │   ├── 72a3b...
-    /// │   │   │   │   │   │   │   └── 94c8e...
-    /// │   │   │   │   │   └── Ranger
-    /// │   │   │   │   │       ├── 0
-    /// │   │   │   │   │       │   ├── 3f4b1...
-    /// │   │   │   │   │       │   ├── 6e7d2...
-    /// │   │   │   │   │       │   └── 8a1f5...
-    /// │   │   │   ├── Toyota
-    /// │   │   │   │   ├── car_type
-    /// │   │   │   │   │   ├── Tundra
-    /// │   │   │   │   │   │   ├── 0
-    /// │   │   │   │   │   │   │   ├── 7c9a4...
-    /// │   │   │   │   │   │   │   └── a5d1e...
-    /// │   │   │   │   │   └── Tacoma
-    /// │   │   │   │   │       ├── 0
-    /// │   │   │   │   │       │   ├── 1e7f4...
-    /// │   │   │   │   │       │   └── 6b9d3...
-    ///
-    /// let's say we are asking for suv's after 29f8e
-    /// here the * denotes the area needing a conditional
-    /// We need a conditional subquery on Ford to say only things after Ford (with Ford included)
-    /// We need a conditional subquery on Escape to say only things after Escape (with Escape included)
-    fn recursive_insert_on_query(
-        query: &mut Query,
-        left_over_index_properties: &[&IndexProperty],
-        unique: bool,
-        starts_at_document: Option<&StartAtDocument>, //for key level, included
-        default_left_to_right: bool,
-        order_by: Option<&IndexMap<String, OrderClause>>,
-        platform_version: &PlatformVersion,
-    ) -> Result<Option<Query>, Error> {
-        match left_over_index_properties.split_first() {
-            None => {
-                match unique {
-                    true => {
-                        query.set_subquery_key(vec![0]);
-
-                        // In the case things are NULL we allow to have multiple values
-                        let inner_query = Self::inner_query_from_starts_at_for_id(
-                            starts_at_document,
-                            true, //for ids we always go left to right
-                        );
-                        query.add_conditional_subquery(
-                            QueryItem::Key(b"".to_vec()),
-                            Some(vec![vec![0]]),
-                            Some(inner_query),
-                        );
-                    }
-                    false => {
-                        query.set_subquery_key(vec![0]);
-                        // we just get all by document id order ascending
-                        let full_query =
-                            Self::inner_query_from_starts_at_for_id(None, default_left_to_right);
-                        query.set_subquery(full_query);
-
-                        let inner_query = Self::inner_query_from_starts_at_for_id(
-                            starts_at_document,
-                            default_left_to_right,
-                        );
-
-                        query.add_conditional_subquery(
-                            QueryItem::Key(b"".to_vec()),
-                            Some(vec![vec![0]]),
-                            Some(inner_query),
-                        );
-                    }
-                }
-                Ok(None)
-            }
-            Some((first, left_over)) => {
-                let left_to_right = if let Some(order_by) = order_by {
-                    order_by
-                        .get(first.name.as_str())
-                        .map(|order_clause| order_clause.ascending)
-                        .unwrap_or(first.ascending)
-                } else {
-                    first.ascending
-                };
-
-                if let Some(start_at_document_inner) = starts_at_document {
-                    let StartAtDocument {
-                        document,
-                        document_type,
-                        included,
-                    } = start_at_document_inner;
-                    let start_at_key = document
-                        .get_raw_for_document_type(
-                            first.name.as_str(),
-                            *document_type,
-                            None,
-                            platform_version,
-                        )
-                        .ok()
-                        .flatten();
-
-                    // We should always include if we have left_over
-                    let non_conditional_included =
-                        !left_over.is_empty() || *included || start_at_key.is_none();
-
-                    let mut non_conditional_query = Self::inner_query_starts_from_key(
-                        start_at_key.clone(),
-                        left_to_right,
-                        non_conditional_included,
-                    );
-
-                    // We place None here on purpose, this has been well-thought-out
-                    // and should not change. The reason is that the path of the start
-                    // at document is used only on the conditional subquery and not on the
-                    // main query
-                    // for example in the following
-                    // Our query will be with $ownerId == a3f9b81c4d7e6a9f5b1c3e8a2d9c4f7b
-                    // With start after 8f2d5
-                    // We want to get from 2024-11-17T12:45:00Z
-                    // withdrawal
-                    // ├── $ownerId
-                    // │   ├── a3f9b81c4d7e6a9f5b1c3e8a2d9c4f7b
-                    // │   │   ├── $updatedAt
-                    // │   │   │   ├── 2024-11-17T12:45:00Z <- conditional subquery here
-                    // │   │   │   │   ├── status
-                    // │   │   │   │   │   ├── 0
-                    // │   │   │   │   │   │   ├── 7a9f1...
-                    // │   │   │   │   │   │   └── 4b8c3...
-                    // │   │   │   │   │   ├── 1
-                    // │   │   │   │   │   │   ├── 8f2d5... <- start after
-                    // │   │   │   │   │   │   └── 5c1e4...
-                    // │   │   │   │   │   ├── 2
-                    // │   │   │   │   │   │   ├── 2e7a9...
-                    // │   │   │   │   │   │   └── 1c8b3...
-                    // │   │   │   ├── 2024-11-18T11:25:00Z <- we want all statuses here, so normal subquery, with None as start at document
-                    // │   │   │   │   ├── status
-                    // │   │   │   │   │   ├── 0
-                    // │   │   │   │   │   │   └── 1a4f2...
-                    // │   │   │   │   │   ├── 2
-                    // │   │   │   │   │   │   ├── 3e7a9...
-                    // │   │   │   │   │   │   └── 198b4...
-                    // │   ├── b6d7e9c4a5f2b3d8e1a7c9f4b1e8a3f
-                    // │   │   ├── $updatedAt
-                    // │   │   │   ├── 2024-11-17T13:30:00Z
-                    // │   │   │   │   ├── status
-                    // │   │   │   │   │   ├── 0
-                    // │   │   │   │   │   │   ├── 6d7e2...
-                    // │   │   │   │   │   │   └── 9c7f5...
-                    // │   │   │   │   │   ├── 3
-                    // │   │   │   │   │   │   ├── 3a9b7...
-                    // │   │   │   │   │   │   └── 8e5c4...
-                    // │   │   │   │   │   ├── 4
-                    // │   │   │   │   │   │   ├── 1f7a8...
-                    // │   │   │   │   │   │   └── 2c9b3...
-                    // println!("going to call recursive_insert_on_query on non_conditional_query {} with left_over {:?}", non_conditional_query, left_over);
-                    DriveDocumentQuery::recursive_insert_on_query(
-                        &mut non_conditional_query,
-                        left_over,
-                        unique,
-                        None,
-                        left_to_right,
-                        order_by,
-                        platform_version,
-                    )?;
-
-                    DriveDocumentQuery::recursive_conditional_insert_on_query(
-                        &mut non_conditional_query,
-                        start_at_key,
-                        left_over,
-                        unique,
-                        start_at_document_inner,
-                        left_to_right,
-                        order_by,
-                        platform_version,
-                    )?;
-
-                    query.set_subquery(non_conditional_query);
-                } else {
-                    let mut inner_query = Query::new_with_direction(first.ascending);
-                    inner_query.insert_all();
-                    DriveDocumentQuery::recursive_insert_on_query(
-                        &mut inner_query,
-                        left_over,
-                        unique,
-                        starts_at_document,
-                        left_to_right,
-                        order_by,
-                        platform_version,
-                    )?;
-                    query.set_subquery(inner_query);
-                }
-                query.set_subquery_key(first.name.as_bytes().to_vec());
-                Ok(None)
-            }
-        }
-    }
-
-    #[cfg(any(feature = "server", feature = "verify"))]
-    #[allow(clippy::too_many_arguments)]
-    fn recursive_conditional_insert_on_query(
-        query: &mut Query,
-        conditional_value: Option<Vec<u8>>,
-        left_over_index_properties: &[&IndexProperty],
-        unique: bool,
-        starts_at_document: &StartAtDocument,
-        default_left_to_right: bool,
-        order_by: Option<&IndexMap<String, OrderClause>>,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), Error> {
-        match left_over_index_properties.split_first() {
-            None => {
-                match unique {
-                    true => {
-                        // In the case things are NULL we allow to have multiple values
-                        let inner_query = Self::inner_query_from_starts_at_for_id(
-                            Some(starts_at_document),
-                            true, //for ids we always go left to right
-                        );
-                        query.add_conditional_subquery(
-                            QueryItem::Key(b"".to_vec()),
-                            Some(vec![vec![0]]),
-                            Some(inner_query),
-                        );
-                    }
-                    false => {
-                        let inner_query = Self::inner_query_from_starts_at_for_id(
-                            Some(starts_at_document),
-                            default_left_to_right,
-                        );
-
-                        query.add_conditional_subquery(
-                            QueryItem::Key(conditional_value.unwrap_or_default()),
-                            Some(vec![vec![0]]),
-                            Some(inner_query),
-                        );
-                    }
-                }
-            }
-            Some((first, left_over)) => {
-                let left_to_right = if let Some(order_by) = order_by {
-                    order_by
-                        .get(first.name.as_str())
-                        .map(|order_clause| order_clause.ascending)
-                        .unwrap_or(first.ascending)
-                } else {
-                    first.ascending
-                };
-
-                let StartAtDocument {
-                    document,
-                    document_type,
-                    ..
-                } = starts_at_document;
-
-                let lower_start_at_key = document
-                    .get_raw_for_document_type(
-                        first.name.as_str(),
-                        *document_type,
-                        None,
-                        platform_version,
-                    )
-                    .ok()
-                    .flatten();
-
-                // We include it if we are not unique,
-                // or if we are unique but the value is empty
-                let non_conditional_included = !unique || lower_start_at_key.is_none();
-
-                let mut non_conditional_query = Self::inner_query_starts_from_key(
-                    lower_start_at_key.clone(),
-                    left_to_right,
-                    non_conditional_included,
-                );
-
-                DriveDocumentQuery::recursive_insert_on_query(
-                    &mut non_conditional_query,
-                    left_over,
-                    unique,
-                    None,
-                    left_to_right,
-                    order_by,
-                    platform_version,
-                )?;
-
-                DriveDocumentQuery::recursive_conditional_insert_on_query(
-                    &mut non_conditional_query,
-                    lower_start_at_key,
-                    left_over,
-                    unique,
-                    starts_at_document,
-                    left_to_right,
-                    order_by,
-                    platform_version,
-                )?;
-
-                query.add_conditional_subquery(
-                    QueryItem::Key(conditional_value.unwrap_or_default()),
-                    Some(vec![first.name.as_bytes().to_vec()]),
-                    Some(non_conditional_query),
-                );
-            }
-        }
-        Ok(())
-    }
-
-    #[cfg(any(feature = "server", feature = "verify"))]
     /// Returns a path query for non-primary keys given a document type path and starting document.
+    ///
+    /// Versioned because the set of accepted query shapes is part of the
+    /// consensus query contract: v0 rejects more than one `In` clause per
+    /// query, v1 (protocol version 14) lowers multiple `In` clauses on
+    /// consecutive index properties to a multi-level key-set path query.
     pub fn get_non_primary_key_path_query(
         &self,
         document_type_path: Vec<Vec<u8>>,
         starts_at_document: Option<(Document, bool)>,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
-        let index = self.find_best_index(platform_version)?;
-        let ordered_clauses: Vec<&WhereClause> = index
-            .properties
-            .iter()
-            .filter_map(|field| self.internal_clauses.equal_clauses.get(field.name.as_str()))
-            .collect();
-        let (last_clause, last_clause_is_range, subquery_clause) = match &self
-            .internal_clauses
-            .in_clause
+        match platform_version
+            .drive
+            .methods
+            .document
+            .query
+            .non_primary_key_path_query
         {
-            None => match &self.internal_clauses.range_clause {
-                None => (ordered_clauses.last().copied(), false, None),
-                Some(where_clause) => (Some(where_clause), true, None),
-            },
-            Some(in_clause) => match &self.internal_clauses.range_clause {
-                None => (Some(in_clause), true, None),
-                Some(range_clause) => {
-                    // Both an `in` clause and a range clause are present.
-                    // The outer path query must operate on the field that
-                    // appears *earlier* (closer to the index root) in the
-                    // chosen index, and the other clause becomes the leaf
-                    // subquery. Without this ordering, a query like
-                    // `status > 0 AND transactionIndex in [..]` on an index
-                    // `[status, transactionIndex]` builds a path that
-                    // terminates at the `status` subtree while the primary
-                    // query iterates `transactionIndex` keys, silently
-                    // returning []. See issue #2409.
-                    let position_of = |field: &str| -> Option<usize> {
-                        index
-                            .properties
-                            .iter()
-                            .position(|p| p.name.as_str() == field)
-                    };
-                    let in_pos = position_of(in_clause.field.as_str());
-                    let range_pos = position_of(range_clause.field.as_str());
-                    match (in_pos, range_pos) {
-                        (Some(i), Some(r)) if i > r => (Some(range_clause), true, Some(in_clause)),
-                        _ => (Some(in_clause), true, Some(range_clause)),
-                    }
-                }
-            },
-        };
-
-        // We need to get the terminal indexes unused by clauses.
-        let left_over_index_properties = index
-            .properties
-            .iter()
-            .filter(|field| {
-                !(self
-                    .internal_clauses
-                    .equal_clauses
-                    .contains_key(field.name.as_str())
-                    || (last_clause.is_some() && last_clause.unwrap().field == field.name)
-                    || (subquery_clause.is_some() && subquery_clause.unwrap().field == field.name))
-            })
-            .collect::<Vec<&IndexProperty>>();
-
-        let intermediate_values = index
-            .properties
-            .iter()
-            .filter_map(|field| {
-                match self.internal_clauses.equal_clauses.get(field.name.as_str()) {
-                    None => None,
-                    Some(where_clause) => {
-                        if !last_clause_is_range
-                            && last_clause.is_some()
-                            && last_clause.unwrap().field == field.name
-                        {
-                            //there is no need to give an intermediate value as the last clause is an equality
-                            None
-                        } else {
-                            Some(self.document_type.serialize_value_for_key(
-                                field.name.as_str(),
-                                &where_clause.value,
-                                platform_version,
-                            ))
-                        }
-                    }
-                }
-            })
-            .collect::<Result<Vec<Vec<u8>>, ProtocolError>>()
-            .map_err(Error::from)?;
-
-        let final_query = match last_clause {
-            None => {
-                // There is no last_clause which means we are using an index most likely because of an order_by, however we have no
-                // clauses, in this case we should use the first value of the index.
-                let first_index = index.properties.first().ok_or(Error::Drive(
-                    DriveError::CorruptedContractIndexes("index must have properties".to_string()),
-                ))?; // Index must have properties
-                Self::recursive_create_query(
-                    left_over_index_properties.as_slice(),
-                    index.unique,
-                    starts_at_document
-                        .map(|(document, included)| StartAtDocument {
-                            document,
-                            document_type: self.document_type,
-                            included,
-                        })
-                        .as_ref(),
-                    first_index,
-                    Some(&self.order_by),
-                    platform_version,
-                )?
-                .expect("Index must have left over properties if no last clause")
-            }
-            Some(where_clause) => {
-                let left_to_right = if where_clause.operator.is_range() {
-                    let order_clause: &OrderClause = self
-                        .order_by
-                        .get(where_clause.field.as_str())
-                        .ok_or(Error::Query(QuerySyntaxError::MissingOrderByForRange(
-                            "query must have an orderBy field for each range element",
-                        )))?;
-
-                    order_clause.ascending
-                } else {
-                    true
-                };
-
-                // We should set the starts at document to be included for the query if there are
-                // left over index properties.
-
-                let query_starts_at_document = if left_over_index_properties.is_empty() {
-                    &starts_at_document
-                } else {
-                    &None
-                };
-
-                let mut query = where_clause.to_path_query(
-                    self.document_type,
-                    query_starts_at_document,
-                    left_to_right,
-                    platform_version,
-                )?;
-
-                match subquery_clause {
-                    None => {
-                        Self::recursive_insert_on_query(
-                            &mut query,
-                            left_over_index_properties.as_slice(),
-                            index.unique,
-                            starts_at_document
-                                .map(|(document, included)| StartAtDocument {
-                                    document,
-                                    document_type: self.document_type,
-                                    included,
-                                })
-                                .as_ref(),
-                            left_to_right,
-                            Some(&self.order_by),
-                            platform_version,
-                        )?;
-                    }
-                    Some(subquery_where_clause) => {
-                        let order_clause: &OrderClause = self
-                            .order_by
-                            .get(subquery_where_clause.field.as_str())
-                            .ok_or(Error::Query(QuerySyntaxError::MissingOrderByForRange(
-                                "query must have an orderBy field for each range element",
-                            )))?;
-                        let mut subquery = subquery_where_clause.to_path_query(
-                            self.document_type,
-                            &starts_at_document,
-                            order_clause.ascending,
-                            platform_version,
-                        )?;
-                        Self::recursive_insert_on_query(
-                            &mut subquery,
-                            left_over_index_properties.as_slice(),
-                            index.unique,
-                            starts_at_document
-                                .map(|(document, included)| StartAtDocument {
-                                    document,
-                                    document_type: self.document_type,
-                                    included,
-                                })
-                                .as_ref(),
-                            left_to_right,
-                            Some(&self.order_by),
-                            platform_version,
-                        )?;
-                        let subindex = subquery_where_clause.field.as_bytes().to_vec();
-                        query.set_subquery_key(subindex);
-                        query.set_subquery(subquery);
-                    }
-                };
-
-                query
-            }
-        };
-
-        let (intermediate_indexes, last_indexes) =
-            index.properties.split_at(intermediate_values.len());
-
-        // Now we should construct the path
-        let last_index = last_indexes.first().ok_or(Error::Query(
-            QuerySyntaxError::QueryOnDocumentTypeWithNoIndexes(
-                "document query has no index with fields",
+            0 => self.get_non_primary_key_path_query_v0(
+                document_type_path,
+                starts_at_document,
+                platform_version,
             ),
-        ))?;
-
-        let mut path = document_type_path;
-
-        for (intermediate_index, intermediate_value) in
-            intermediate_indexes.iter().zip(intermediate_values.iter())
-        {
-            path.push(intermediate_index.name.as_bytes().to_vec());
-            path.push(intermediate_value.as_slice().to_vec());
+            1 => self.get_non_primary_key_path_query_v1(
+                document_type_path,
+                starts_at_document,
+                platform_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "DriveDocumentQuery::get_non_primary_key_path_query".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            })),
         }
-
-        path.push(last_index.name.as_bytes().to_vec());
-
-        Ok(PathQuery::new(
-            path,
-            SizedQuery::new(final_query, self.limit, self.offset),
-        ))
     }
 
     #[cfg(feature = "server")]
@@ -2753,14 +2142,25 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query =
-            DriveDocumentQuery::from_cbor(where_cbor.as_slice(), &contract, document_type, &config)
-                .expect("deserialize cbor shouldn't fail");
+        let query = DriveDocumentQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            document_type,
+            &config,
+            PlatformVersion::latest(),
+        )
+        .expect("deserialize cbor shouldn't fail");
 
         let cbor = query.to_cbor().expect("should serialize cbor");
 
-        let deserialized = DriveDocumentQuery::from_cbor(&cbor, &contract, document_type, &config)
-            .expect("should deserialize cbor");
+        let deserialized = DriveDocumentQuery::from_cbor(
+            &cbor,
+            &contract,
+            document_type,
+            &config,
+            PlatformVersion::latest(),
+        )
+        .expect("should deserialize cbor");
 
         assert_eq!(query, deserialized);
 
@@ -2794,6 +2194,7 @@ mod tests {
             &contract,
             document_type,
             &DriveConfig::default(),
+            PlatformVersion::latest(),
         )
         .expect_err("all ranges must be on same field");
     }
@@ -2823,6 +2224,7 @@ mod tests {
             &contract,
             document_type,
             &DriveConfig::default(),
+            PlatformVersion::latest(),
         )
         .expect_err("fields of queries must of defined supported types (where, limit, orderBy...)");
     }
@@ -2853,6 +2255,7 @@ mod tests {
             &contract,
             document_type,
             &DriveConfig::default(),
+            PlatformVersion::latest(),
         )
         .expect_err("the query should not be created");
     }
@@ -2883,6 +2286,7 @@ mod tests {
             &contract,
             document_type,
             &DriveConfig::default(),
+            PlatformVersion::latest(),
         )
         .expect("the query should be created");
     }
@@ -2912,6 +2316,7 @@ mod tests {
             &contract,
             document_type,
             &DriveConfig::default(),
+            PlatformVersion::latest(),
         )
         .expect("query should be fine for a 255 byte long string");
     }
@@ -2933,7 +2338,7 @@ mod tests {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: None,
+                in_clauses: Vec::new(),
                 range_clause: Some(WhereClause {
                     field: "records.identity".to_string(),
                     operator: WhereOperator::LessThan,
@@ -3012,6 +2417,7 @@ mod tests {
             &contract,
             document_type,
             &DriveConfig::default(),
+            PlatformVersion::latest(),
         )
         .expect("fields of queries length must be under 256 bytes long");
         query
@@ -3101,6 +2507,7 @@ mod tests {
             &contract,
             document_type,
             &DriveConfig::default(),
+            PlatformVersion::latest(),
         )
         .expect("The query itself should be valid for a null type");
         query
@@ -3135,6 +2542,7 @@ mod tests {
             &contract,
             document_type,
             &DriveConfig::default(),
+            PlatformVersion::latest(),
         )
         .expect("query should be valid for empty array");
 
@@ -3174,6 +2582,7 @@ mod tests {
             &contract,
             document_type,
             &DriveConfig::default(),
+            PlatformVersion::latest(),
         )
         .expect("query is valid for too many elements");
 
@@ -3213,6 +2622,7 @@ mod tests {
             &contract,
             document_type,
             &DriveConfig::default(),
+            PlatformVersion::latest(),
         )
         .expect("the query should be created");
 
@@ -3245,6 +2655,7 @@ mod tests {
             &contract,
             document_type,
             &DriveConfig::default(),
+            PlatformVersion::latest(),
         )
         .expect_err("starts with can not start with an empty string");
     }
@@ -3273,6 +2684,7 @@ mod tests {
             &contract,
             document_type,
             &DriveConfig::default(),
+            PlatformVersion::latest(),
         )
         .expect_err("starts with can not start with an empty string");
     }
@@ -3301,6 +2713,7 @@ mod tests {
             &contract,
             document_type,
             &DriveConfig::default(),
+            PlatformVersion::latest(),
         )
         .expect_err("starts with can not start with an empty string");
     }
@@ -3329,6 +2742,7 @@ mod tests {
             &contract,
             document_type,
             &DriveConfig::default(),
+            PlatformVersion::latest(),
         )
         .expect_err("starts with can not start with an empty string");
     }
@@ -3351,7 +2765,7 @@ mod tests {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: Some(WhereClause {
+                in_clauses: vec![WhereClause {
                     field: "status".to_string(),
                     operator: WhereOperator::In,
                     value: Value::Array(vec![
@@ -3361,7 +2775,7 @@ mod tests {
                         Value::U64(3),
                         Value::U64(4),
                     ]),
-                }),
+                }],
                 range_clause: None,
                 equal_clauses: BTreeMap::default(),
             },
@@ -3427,5 +2841,440 @@ mod tests {
                 .items,
             Query::new_range_full().items
         );
+    }
+
+    /// Unit coverage for the v1 multi-`In` path-query lowering. These
+    /// mirror the storage-backed integration tests in
+    /// `tests/query_tests.rs::multi_in_tests`, but exercise the lowering
+    /// as the pure function it is (contract in, path query out), so the
+    /// selection, validation, and rejection branches are covered by the
+    /// lib test target.
+    mod multiple_in_clause_lowering {
+        use super::*;
+        use crate::error::query::QuerySyntaxError;
+        use crate::error::Error;
+
+        fn family_contract() -> DataContract {
+            json_document_to_contract(
+                "tests/supporting_files/contract/family/family-contract.json",
+                false,
+                PlatformVersion::latest(),
+            )
+            .expect("expected to load family contract")
+        }
+
+        fn text_array(values: &[&str]) -> Value {
+            Value::Array(
+                values
+                    .iter()
+                    .map(|value| Value::Text(value.to_string()))
+                    .collect(),
+            )
+        }
+
+        fn in_clause(field: &str, values: &[&str]) -> WhereClause {
+            WhereClause {
+                field: field.to_string(),
+                operator: WhereOperator::In,
+                value: text_array(values),
+            }
+        }
+
+        fn ascending_order_by(fields: &[&str]) -> IndexMap<String, OrderClause> {
+            fields
+                .iter()
+                .map(|field| {
+                    (
+                        field.to_string(),
+                        OrderClause {
+                            field: field.to_string(),
+                            ascending: true,
+                        },
+                    )
+                })
+                .collect()
+        }
+
+        fn person_query<'a>(
+            contract: &'a DataContract,
+            where_clauses: Vec<WhereClause>,
+            order_by_fields: &[&str],
+        ) -> DriveDocumentQuery<'a> {
+            let internal_clauses =
+                InternalClauses::extract_from_clauses(where_clauses, PlatformVersion::latest())
+                    .expect("clauses should group structurally");
+            DriveDocumentQuery {
+                contract,
+                document_type: contract
+                    .document_type_for_name("person")
+                    .expect("person document type should exist"),
+                internal_clauses,
+                offset: None,
+                limit: Some(100),
+                order_by: ascending_order_by(order_by_fields),
+                start_at: None,
+                start_at_included: false,
+                block_time_ms: None,
+            }
+        }
+
+        #[test]
+        fn two_in_clauses_lower_to_nested_key_sets() {
+            let contract = family_contract();
+            let platform_version = PlatformVersion::latest();
+            let query = person_query(
+                &contract,
+                vec![
+                    in_clause("firstName", &["Adey", "Briney"]),
+                    in_clause("lastName", &["Kriskov", "Randolf"]),
+                ],
+                &["firstName", "lastName"],
+            );
+
+            let path_query = query
+                .construct_path_query(None, platform_version)
+                .expect("two in clauses should lower at protocol version 14");
+
+            // The path descends to the first in field of the
+            // [firstName, lastName] index
+            assert_eq!(
+                path_query.path.last().expect("path should not be empty"),
+                &b"firstName".to_vec()
+            );
+
+            // Outer level: one key per firstName in value
+            let outer = &path_query.query.query;
+            assert_eq!(outer.items.len(), 2);
+            assert!(outer.left_to_right);
+
+            // Second level: a key set over lastName under the subquery
+            // path [lastName]
+            assert_eq!(
+                outer.default_subquery_branch.subquery_path,
+                Some(vec![b"lastName".to_vec()])
+            );
+            let inner = outer
+                .default_subquery_branch
+                .subquery
+                .as_deref()
+                .expect("expected a lastName subquery");
+            assert_eq!(inner.items.len(), 2);
+
+            // Terminal level: the document id tree under [0]
+            assert_eq!(
+                inner.default_subquery_branch.subquery_path,
+                Some(vec![vec![0]])
+            );
+        }
+
+        #[test]
+        #[cfg(feature = "cbor_query")]
+        fn two_in_clauses_survive_cbor_round_trip() {
+            let contract = family_contract();
+            let mut query = person_query(
+                &contract,
+                vec![
+                    in_clause("firstName", &["Adey", "Briney"]),
+                    in_clause("lastName", &["Kriskov", "Randolf"]),
+                ],
+                &["firstName", "lastName"],
+            );
+            // `from_cbor` defaults start_at_included to true when no cursor
+            // is present; align so the round trip compares equal
+            query.start_at_included = true;
+
+            let cbor = query.to_cbor().expect("should serialize cbor");
+            let deserialized = DriveDocumentQuery::from_cbor(
+                &cbor,
+                &contract,
+                contract
+                    .document_type_for_name("person")
+                    .expect("person document type should exist"),
+                &DriveConfig::default(),
+                PlatformVersion::latest(),
+            )
+            .expect("should deserialize cbor");
+
+            assert_eq!(query, deserialized);
+            assert_eq!(
+                deserialized
+                    .internal_clauses
+                    .in_clauses
+                    .iter()
+                    .map(|in_clause| in_clause.field.as_str())
+                    .collect::<Vec<_>>(),
+                vec!["firstName", "lastName"],
+                "both in clauses must survive the round trip in order"
+            );
+        }
+
+        #[test]
+        fn descending_order_by_on_left_over_property_is_honored() {
+            let contract = family_contract();
+            let platform_version = PlatformVersion::latest();
+            // [firstName, middleName, lastName]: two in levels, lastName
+            // left over with an explicit descending order
+            let mut query = person_query(
+                &contract,
+                vec![
+                    in_clause("firstName", &["Adey", "Briney"]),
+                    in_clause("middleName", &["Ivanna", "Evangeline"]),
+                ],
+                &["firstName", "middleName"],
+            );
+            query.order_by.insert(
+                "lastName".to_string(),
+                OrderClause {
+                    field: "lastName".to_string(),
+                    ascending: false,
+                },
+            );
+
+            let path_query = query
+                .construct_path_query(None, platform_version)
+                .expect("two in clauses with a left-over order should lower");
+
+            let outer = &path_query.query.query;
+            let middle = outer
+                .default_subquery_branch
+                .subquery
+                .as_deref()
+                .expect("expected a middleName subquery");
+            assert_eq!(
+                middle.default_subquery_branch.subquery_path,
+                Some(vec![b"lastName".to_vec()])
+            );
+            let left_over_level = middle
+                .default_subquery_branch
+                .subquery
+                .as_deref()
+                .expect("expected a lastName subquery");
+            assert!(
+                !left_over_level.left_to_right,
+                "left-over lastName level must honor the descending order by"
+            );
+
+            // Without an order by entry the level falls back to the index
+            // property's direction (ascending)
+            query.order_by.shift_remove("lastName");
+            let path_query = query
+                .construct_path_query(None, platform_version)
+                .expect("two in clauses should lower");
+            let left_over_level = path_query
+                .query
+                .query
+                .default_subquery_branch
+                .subquery
+                .as_deref()
+                .expect("expected a middleName subquery")
+                .default_subquery_branch
+                .subquery
+                .as_deref()
+                .expect("expected a lastName subquery");
+            assert!(left_over_level.left_to_right);
+        }
+
+        #[test]
+        fn two_in_clauses_rejected_at_protocol_version_13() {
+            let contract = family_contract();
+            let platform_version_13 =
+                PlatformVersion::get(13).expect("protocol version 13 should exist");
+            let query = person_query(
+                &contract,
+                vec![
+                    in_clause("firstName", &["Adey", "Briney"]),
+                    in_clause("lastName", &["Kriskov", "Randolf"]),
+                ],
+                &["firstName", "lastName"],
+            );
+
+            let error = query
+                .construct_path_query(None, platform_version_13)
+                .expect_err("multiple in clauses must be rejected before protocol version 14");
+            assert!(
+                matches!(error, Error::Query(QuerySyntaxError::MultipleInClauses(_))),
+                "expected MultipleInClauses, got {error:?}"
+            );
+
+            query
+                .construct_path_query(None, PlatformVersion::latest())
+                .expect("the same query should lower at protocol version 14");
+        }
+
+        #[test]
+        fn equality_prefix_two_in_clauses_and_trailing_range_lowering() {
+            let contract = family_contract();
+            let platform_version = PlatformVersion::latest();
+            let mut query = person_query(
+                &contract,
+                vec![
+                    WhereClause {
+                        field: "age".to_string(),
+                        operator: WhereOperator::Equal,
+                        value: Value::U8(30),
+                    },
+                    in_clause("firstName", &["Adey", "Briney"]),
+                    in_clause("middleName", &["Ivanna", "Evangeline"]),
+                    WhereClause {
+                        field: "lastName".to_string(),
+                        operator: WhereOperator::GreaterThan,
+                        value: Value::Text("M".to_string()),
+                    },
+                ],
+                &["firstName", "middleName", "lastName"],
+            );
+            query.limit = Some(50);
+
+            // Matches the [age, firstName, middleName, lastName] index:
+            // equality prefix on age, then two consecutive in levels, then
+            // the range level
+            let path_query = query
+                .construct_path_query(None, platform_version)
+                .expect("equality + in + in + range should lower");
+
+            let path_len = path_query.path.len();
+            assert_eq!(path_query.path[path_len - 3], b"age".to_vec());
+            assert_eq!(
+                path_query.path.last().expect("path should not be empty"),
+                &b"firstName".to_vec()
+            );
+
+            let outer = &path_query.query.query;
+            assert_eq!(outer.items.len(), 2);
+            assert_eq!(
+                outer.default_subquery_branch.subquery_path,
+                Some(vec![b"middleName".to_vec()])
+            );
+            let middle = outer
+                .default_subquery_branch
+                .subquery
+                .as_deref()
+                .expect("expected a middleName subquery");
+            assert_eq!(middle.items.len(), 2);
+            assert_eq!(
+                middle.default_subquery_branch.subquery_path,
+                Some(vec![b"lastName".to_vec()])
+            );
+            let range_level = middle
+                .default_subquery_branch
+                .subquery
+                .as_deref()
+                .expect("expected a lastName subquery");
+            // The trailing range is a single range item, not a key set
+            assert_eq!(range_level.items.len(), 1);
+            assert_eq!(
+                range_level.default_subquery_branch.subquery_path,
+                Some(vec![vec![0]])
+            );
+        }
+
+        #[test]
+        fn cross_product_above_cap_is_rejected() {
+            let contract = family_contract();
+            let first_names: Vec<String> = (0..20).map(|i| format!("First{i:02}")).collect();
+            let last_names: Vec<String> = (0..6).map(|i| format!("Last{i}")).collect();
+            let query = person_query(
+                &contract,
+                vec![
+                    WhereClause {
+                        field: "firstName".to_string(),
+                        operator: WhereOperator::In,
+                        value: Value::Array(first_names.iter().cloned().map(Value::Text).collect()),
+                    },
+                    WhereClause {
+                        field: "lastName".to_string(),
+                        operator: WhereOperator::In,
+                        value: Value::Array(last_names.iter().cloned().map(Value::Text).collect()),
+                    },
+                ],
+                &["firstName", "lastName"],
+            );
+
+            let error = query
+                .construct_path_query(None, PlatformVersion::latest())
+                .expect_err("a 120-branch cross product must be rejected");
+            assert!(
+                matches!(error, Error::Query(QuerySyntaxError::InvalidInClause(_))),
+                "expected InvalidInClause, got {error:?}"
+            );
+        }
+
+        #[test]
+        fn non_consecutive_in_fields_are_rejected() {
+            let contract = family_contract();
+            // [firstName, middleName, lastName] holds middleName and
+            // lastName at positions 1 and 2 with no equality on firstName,
+            // so no index conforms
+            let query = person_query(
+                &contract,
+                vec![
+                    in_clause("middleName", &["Ivanna", "Evangeline"]),
+                    in_clause("lastName", &["Kriskov", "Randolf"]),
+                ],
+                &["middleName", "lastName"],
+            );
+
+            let error = query
+                .construct_path_query(None, PlatformVersion::latest())
+                .expect_err("non-consecutive in clauses must be rejected");
+            assert!(
+                matches!(
+                    error,
+                    Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(_))
+                ),
+                "expected WhereClauseOnNonIndexedProperty, got {error:?}"
+            );
+        }
+
+        #[test]
+        fn cursor_pagination_is_rejected() {
+            let contract = family_contract();
+            let mut query = person_query(
+                &contract,
+                vec![
+                    in_clause("firstName", &["Adey", "Briney"]),
+                    in_clause("lastName", &["Kriskov", "Randolf"]),
+                ],
+                &["firstName", "lastName"],
+            );
+            query.start_at = Some([5u8; 32]);
+            query.start_at_included = false;
+
+            let error = query
+                .construct_path_query(None, PlatformVersion::latest())
+                .expect_err("cursor pagination with multiple in clauses must be rejected");
+            assert!(
+                matches!(error, Error::Query(QuerySyntaxError::Unsupported(_))),
+                "expected Unsupported, got {error:?}"
+            );
+        }
+
+        #[test]
+        fn missing_order_by_on_an_in_field_is_rejected() {
+            let contract = family_contract();
+            let query = person_query(
+                &contract,
+                vec![
+                    in_clause("firstName", &["Adey", "Briney"]),
+                    in_clause("lastName", &["Kriskov", "Randolf"]),
+                ],
+                &["firstName"],
+            );
+
+            let error = query
+                .construct_path_query(None, PlatformVersion::latest())
+                .expect_err("missing order by on an in field must be rejected");
+            // Index selection rejects the shape first: the order-by
+            // continuity rule in `Index::matches` disqualifies every
+            // candidate index before the per-field `MissingOrderByForRange`
+            // guard could fire
+            assert!(
+                matches!(
+                    error,
+                    Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(_))
+                ),
+                "expected WhereClauseOnNonIndexedProperty, got {error:?}"
+            );
+        }
     }
 }

@@ -1402,6 +1402,7 @@ mod replacement_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1412,6 +1413,7 @@ mod replacement_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1765,6 +1767,7 @@ mod replacement_tests {
             receiver_documents_sql_string.as_str(),
             &dashpay,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1988,6 +1991,7 @@ mod replacement_tests {
             receiver_documents_sql_string.as_str(),
             &dashpay,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -2252,6 +2256,7 @@ mod replacement_tests {
             receiver_documents_sql_string.as_str(),
             &dashpay,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -2520,6 +2525,7 @@ mod replacement_tests {
             receiver_documents_sql_string.as_str(),
             &dashpay,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
