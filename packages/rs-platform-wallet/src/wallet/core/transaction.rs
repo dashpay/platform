@@ -431,7 +431,10 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // (`WalletGeneration::pin_in_broadcast`). Still under the write
             // guard, so the check is atomic with our reservation and the
             // release is exact.
-            if let Some(pinned) = info.generation.in_broadcast_conflict(&unsigned) {
+            if let Some(pinned) = info
+                .generation
+                .in_broadcast_conflict(&unsigned, info.core_wallet.last_processed_height())
+            {
                 release_all!(offered_accounts, info.core_wallet.accounts, &unsigned);
                 return Err(PlatformWalletError::TransactionBuild(format!(
                     "selected input {pinned} is mid-broadcast by an in-flight dispatch; \

@@ -1322,7 +1322,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             // nothing no-op. Roll back the consumed payment address exactly
             // like the build-failure arm above — nothing was persisted or
             // broadcast.
-            if let Some(pinned) = info.generation.in_broadcast_conflict(&tx) {
+            if let Some(pinned) = info
+                .generation
+                .in_broadcast_conflict(&tx, info.core_wallet.last_processed_height())
+            {
                 for at in &offered_accounts {
                     if let Some(managed) = info.core_wallet.accounts.funds_account_mut(at) {
                         managed.release_reservation(&tx);

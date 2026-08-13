@@ -52,13 +52,39 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// the clock by many blocks in that gap, and async scheduling puts no
     /// bound on it — so a freshness check alone is not an ordering
     /// invariant against the TTL sweep + re-reserve race. The pin is: it
-    /// has no TTL, every coin-selection choke point refuses a build whose
-    /// selection picked a pinned input (under the same write lock the sweep
-    /// runs under), and it is released — via RAII, so a cancelled dispatch
-    /// releases it too — only after the broadcaster returns, which is
-    /// strictly after initial network dispatch. The propagation phase that
-    /// follows is unchanged: once dispatch returns, the mempool pipeline
-    /// marks the inputs spent in the wallet's own view within milliseconds.
+    /// has no TTL while the dispatch is in flight, and every coin-selection
+    /// choke point refuses a build whose selection picked a pinned input
+    /// (under the same write lock the sweep runs under).
+    ///
+    /// # Where the fence is released, and why that point is safe
+    ///
+    /// The pin is *not* simply dropped when the broadcaster returns. That
+    /// return means "the transaction may now be on the network", not "this
+    /// wallet has observed the spend", and the two differ per broadcaster:
+    /// `SpvBroadcaster` injects into dash-spv's local mempool pipeline, so the
+    /// inputs leave this wallet's selectable set within milliseconds;
+    /// `DapiBroadcaster::broadcast` only awaits `sdk.execute` and injects
+    /// nothing, so on that path the inputs are still selectable while the
+    /// transaction is in flight (`dashpay/platform#4309`). So:
+    ///
+    /// * **Definitive pre-send rejection** (`BroadcastError::Rejected`) — the
+    ///   transaction provably did not reach the network. The fence is dropped
+    ///   immediately here, and the caller releases the reservation in the same
+    ///   breath, so an instant rebuild can reselect the inputs.
+    /// * **Anything else** (accepted, or an ambiguous `MaybeSent`) — the pin is
+    ///   converted to a pending-spend fence
+    ///   (`InBroadcastPin::retain_pending_spend`)
+    ///   lasting
+    ///   [`IN_BROADCAST_FENCE_BLOCKS`](crate::wallet::reservations::IN_BROADCAST_FENCE_BLOCKS)
+    ///   past the height this dispatch was authorized at. Once the wallet does
+    ///   observe the spend the outpoint stops reaching selection at all, so the
+    ///   fence goes inert without waiting for that bound; the bound is only the
+    ///   backstop for a transaction that is never observed, and matches the TTL
+    ///   the reservation itself would have had, re-anchored at dispatch.
+    ///
+    /// Neither phase touches the wallet-manager lock, so nothing here can
+    /// starve the SPV mempool pipeline: the guard is still dropped before the
+    /// broadcaster await, exactly as it was.
     ///
     /// A wallet no longer in the manager skips the pin (there is no
     /// registered generation to fence builds on — they cannot fund from a
@@ -72,7 +98,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         reservation_height: u32,
         transaction: &Transaction,
     ) -> GuardedDispatch {
-        let _in_broadcast_pin = {
+        let mut in_broadcast_pin = {
             let wm = self.wallet_manager.read().await;
             let info = wm.get_wallet_info(&self.wallet_id);
             let height = info.map(|info| info.core_wallet.last_processed_height());
@@ -81,14 +107,33 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             }
             // Pin BEFORE the guard drops: check-and-pin is one atomic step,
             // and freshness under this guard proves the reservation is still
-            // ours to pin (see the method docs). The pin outlives the guard
-            // and is dropped only after the broadcaster returns below.
-            info.map(|info| info.generation.pin_in_broadcast(transaction))
+            // ours to pin (see the method docs). The pin outlives the guard,
+            // and — unless the send is definitively rejected — outlives the
+            // broadcaster return too, as a pending-spend fence anchored at the
+            // height sampled right here.
+            info.map(|info| {
+                info.generation
+                    .pin_in_broadcast(transaction, info.core_wallet.last_processed_height())
+            })
             // Guard dropped here — holding it across the await starves the
             // SPV pipeline that must complete the wait; the pin, not the
             // guard, covers check-to-wire.
         };
-        GuardedDispatch::Sent(self.broadcaster.broadcast(transaction).await)
+        let outcome = self.broadcaster.broadcast(transaction).await;
+        // Retain the fence for everything except a definitive pre-send
+        // rejection: only `Rejected` proves the transaction is not on the
+        // network, so only `Rejected` may free the inputs at dispatch return.
+        // An ambiguous `MaybeSent` is precisely the case that must stay fenced.
+        if !matches!(
+            outcome,
+            Err(crate::broadcaster::BroadcastError::Rejected { .. })
+        ) {
+            if let Some(pin) = in_broadcast_pin.as_mut() {
+                pin.retain_pending_spend();
+            }
+        }
+        drop(in_broadcast_pin);
+        GuardedDispatch::Sent(outcome)
     }
 
     /// Broadcast an atomically finalized transaction. A definitive rejection
@@ -315,7 +360,7 @@ mod tests {
         RejectFirstBroadcaster, WalletSigner,
     };
     use crate::wallet::core::CoreWallet;
-    use crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS;
+    use crate::wallet::reservations::{IN_BROADCAST_FENCE_BLOCKS, RESERVATION_MAX_AGE_BLOCKS};
     use crate::{PlatformWalletError, SignedCoreTransaction};
 
     /// Builds a testnet `CoreWallet` over the shared funded fixture and a
@@ -753,7 +798,7 @@ mod tests {
         }
 
         // Let the dispatch complete: the send succeeds (the age check passed
-        // before the suspension) and the pin is dropped with it.
+        // before the suspension).
         release.wait().await;
         let sent = dispatcher.await.expect("dispatcher task");
         assert!(
@@ -761,16 +806,125 @@ mod tests {
             "the pinned dispatch itself must complete, got {sent:?}"
         );
 
-        // Pin lifted: a new build may take the input again. (The mock manager
-        // runs no mempool pipeline; in production the dispatched transaction's
-        // inputs would be marked spent by processing moments later — the
-        // assertion here is only that the pin's lifetime ended with the
-        // dispatch.)
+        // A new build may take the input again — but note WHY, because it is
+        // no longer "the pin lifted with the dispatch". The dispatch converted
+        // its pin into a pending-spend fence bounded at
+        // `dispatch_height + IN_BROADCAST_FENCE_BLOCKS`, and the catch-up above
+        // raced 48 blocks past the reservation stamp — well beyond that bound —
+        // so the fence is already lapsed here. The retained fence itself, and
+        // the bound it lapses at, are covered by
+        // `dispatched_input_stays_fenced_after_the_broadcaster_returns`.
+        assert!(
+            stamped + RESERVATION_MAX_AGE_BLOCKS + 48
+                >= (stamped + RESERVATION_MAX_AGE_BLOCKS - 1) + IN_BROADCAST_FENCE_BLOCKS,
+            "this test's catch-up must outrun the pending-spend bound for the \
+             assertion below to be about the pin, not the fence"
+        );
         let after = try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
         let after = after.unwrap_or_else(|error| {
-            panic!("the pin must lift once the dispatch returns, got {error:?}")
+            panic!("the dispatching pin must lift once the dispatch returns, got {error:?}")
         });
         core.abandon_transaction(&after).await;
+    }
+
+    /// `dashpay/platform#4309`: THE RACE THE DISPATCHING PIN ALONE LEFT OPEN.
+    /// The broadcaster returning is not the spend being observed. The mock
+    /// manager here runs no mempool pipeline, which is precisely the
+    /// `DapiBroadcaster` shape — `broadcast` awaits `sdk.execute` and injects
+    /// nothing into this wallet's state — so at dispatch return the input is
+    /// still in the selectable set while the transaction is in flight. With the
+    /// pin dropped at that point, a competing build re-selected it immediately
+    /// (the previous revision of the test above asserted exactly that). The
+    /// pending-spend fence keeps it out until
+    /// `IN_BROADCAST_FENCE_BLOCKS` past the dispatch height, and no longer:
+    /// a never-observed transaction must not strand its inputs forever.
+    ///
+    /// Heights are chosen so the reservation is provably swept while the fence
+    /// still stands — the state pre-fix was "unreserved AND unfenced".
+    #[tokio::test]
+    async fn dispatched_input_stays_fenced_after_the_broadcaster_returns() {
+        let (core, signer, outputs) = funded_core_wallet(
+            StandardAccountType::BIP44Account,
+            Arc::new(AlwaysOkBroadcaster),
+        )
+        .await;
+        let stamped = core
+            .last_processed_height()
+            .await
+            .expect("last processed height");
+        let finalized = finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
+
+        // Dispatch at the OLDEST height the age guard still admits — one below
+        // `RESERVATION_MAX_AGE_BLOCKS`. That is what separates the two clocks:
+        // the reservation's TTL runs from `stamped`, the fence's bound from
+        // here, so there is a window in which the reservation is swept and only
+        // the fence protects the input. (A handle sitting between finalize and
+        // broadcast is exactly how that gap arises in production.)
+        let dispatch_height = stamped + RESERVATION_MAX_AGE_BLOCKS - 1;
+        advance_processed_height(&core, dispatch_height).await;
+        assert!(core
+            .broadcast_finalized_transaction(&finalized)
+            .await
+            .is_ok());
+
+        // Catch-up past key-wallet's 24-block reservation TTL (measured from
+        // the reservation stamp), so the funding reservation is swept and the
+        // input returns to the selectable pool — but still short of the fence's
+        // dispatch-anchored bound. The fence is now the ONLY thing holding it;
+        // pre-fix this window was unreserved AND unfenced.
+        let swept_but_fenced = stamped + IN_BROADCAST_FENCE_BLOCKS + 4;
+        assert!(
+            swept_but_fenced >= stamped + 24
+                && swept_but_fenced < dispatch_height + IN_BROADCAST_FENCE_BLOCKS,
+            "the probe height must be past key-wallet's reservation TTL and below the fence bound"
+        );
+        advance_processed_height(&core, swept_but_fenced).await;
+        let racing = try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
+        match racing {
+            Err(PlatformWalletError::TransactionBuild(message)) => assert!(
+                message.contains("mid-broadcast"),
+                "the post-dispatch refusal must name the in-flight broadcast, got: {message}"
+            ),
+            other => panic!(
+                "an input handed to the network must stay fenced after the \
+                 broadcaster returns, got {other:?}"
+            ),
+        }
+
+        // At the bound the fence lapses and the input is selectable again.
+        advance_processed_height(&core, dispatch_height + IN_BROADCAST_FENCE_BLOCKS).await;
+        let after = try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
+        let after = after
+            .unwrap_or_else(|error| panic!("the fence must lapse at its bound, got {error:?}"));
+        core.abandon_transaction(&after).await;
+    }
+
+    /// The rejection path is the one outcome that frees the inputs at dispatch
+    /// return: Core definitively did not accept the transaction, so there is
+    /// nothing on the wire to fence against and an immediate rebuild must
+    /// reselect. No pending-spend fence may be installed.
+    #[tokio::test]
+    async fn definitively_rejected_dispatch_installs_no_fence() {
+        let (core, signer, outputs) = funded_core_wallet(
+            StandardAccountType::BIP44Account,
+            Arc::new(RejectFirstBroadcaster::new()),
+        )
+        .await;
+        let finalized = finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
+
+        let sent = core.broadcast_finalized_transaction(&finalized).await;
+        assert!(
+            matches!(sent, Err(PlatformWalletError::TransactionBroadcast(_))),
+            "the fixture must reject the first send, got {sent:?}"
+        );
+
+        // Rejection released the reservation AND installed no fence, so the
+        // rebuild succeeds at the very next height with no waiting.
+        let rebuilt = try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
+        let rebuilt = rebuilt.unwrap_or_else(|error| {
+            panic!("a definitively rejected send must leave its inputs free, got {error:?}")
+        });
+        core.abandon_transaction(&rebuilt).await;
     }
 
     /// A pre-send broadcast rejection must release the UTXO reservation taken

@@ -63,8 +63,8 @@ pub struct WalletGeneration {
     /// a retry loop, and the guard must outlive the loop iteration that produced
     /// the `Arc<WalletGeneration>` it came from.
     lifecycle: Arc<RwLock<()>>,
-    /// Outpoints currently **pinned by an in-flight broadcast dispatch**
-    /// ([`pin_in_broadcast`](Self::pin_in_broadcast)), counted per outpoint.
+    /// Outpoints currently fenced against re-selection because a broadcast
+    /// dispatch owns them ([`pin_in_broadcast`](Self::pin_in_broadcast)).
     ///
     /// The guarded dispatch (`CoreWallet::dispatch_unexpired`) proves under the
     /// wallet-manager read guard that a finalized transaction's funding
@@ -75,28 +75,72 @@ pub struct WalletGeneration {
     /// `ReservationSet` TTL sweeps the reservation and a concurrent build
     /// re-reserves the very same inputs — the dispatch would then put an
     /// already-signed transaction on the wire against inputs reassigned to
-    /// another payment. This map is the non-expiring pin that outlives the
-    /// dropped guard: every coin-selection choke point
-    /// (`CoreWallet::finalize_transaction`, the contact-payment build, the
-    /// asset-lock build) checks its freshly reserved selection against it —
-    /// still under the manager write lock, the same synchronization height
-    /// advancement and the TTL sweep run under — and refuses a build whose
-    /// selection picked a pinned input, closing the sweep + re-reserve window
-    /// for as long as the dispatch is in flight.
+    /// another payment. This map is the fence that outlives the dropped guard:
+    /// every coin-selection choke point (`CoreWallet::finalize_transaction`, the
+    /// contact-payment build, the asset-lock build) checks its freshly reserved
+    /// selection against it — still under the manager write lock, the same
+    /// synchronization height advancement and the TTL sweep run under — and
+    /// refuses a build whose selection picked a fenced input.
     ///
-    /// A *count* per outpoint rather than a set: `broadcast_finalized_transaction`
-    /// takes `&SignedCoreTransaction`, so a direct Rust caller can dispatch the
-    /// same transaction twice concurrently (idempotent on the wire — same txid).
-    /// Counting keeps the pin held until the LAST dispatch returns instead of
-    /// letting the first completion unpin the other's in-flight send.
+    /// # Two phases, because dispatch return is not "the spend is safe"
+    ///
+    /// [`InBroadcastFence`] holds both phases per outpoint:
+    ///
+    /// * **dispatching** — a counted, non-expiring pin, live from check-and-pin
+    ///   until the broadcaster returns.
+    /// * **pending-spend** — a height-bounded fence installed *when the
+    ///   broadcaster returns anything other than a definitive pre-send
+    ///   rejection*, i.e. when the transaction may be on the network.
+    ///
+    /// The second phase exists because dispatch returning does not mean the
+    /// wallet has observed the spend. `SpvBroadcaster` injects the transaction
+    /// into dash-spv's local mempool pipeline, so its inputs leave this wallet's
+    /// selectable set within milliseconds — but `DapiBroadcaster::broadcast` only
+    /// awaits `sdk.execute` and performs no local injection at all, so both an
+    /// accepted response and an ambiguous `MaybeSent` return with the input still
+    /// selectable here while the transaction is in flight. Dropping the fence at
+    /// dispatch return would therefore reopen, on the DAPI path, exactly the
+    /// sweep + re-select race the pin was added to close
+    /// (`dashpay/platform#4309`).
+    ///
+    /// A *count* for the dispatching phase rather than a set:
+    /// `broadcast_finalized_transaction` takes `&SignedCoreTransaction`, so a
+    /// direct Rust caller can dispatch the same transaction twice concurrently
+    /// (idempotent on the wire — same txid). Counting keeps the pin held until
+    /// the LAST dispatch returns instead of letting the first completion unpin
+    /// the other's in-flight send.
     ///
     /// A `std::sync::Mutex` like key-wallet's own `ReservationSet`: critical
     /// sections are a few hash operations, never held across an await, and the
-    /// sync lock is what lets [`InBroadcastPin::drop`] unpin from a plain
-    /// (non-async) `Drop` — which is also what makes the pin
+    /// sync lock is what lets [`InBroadcastPin::drop`] settle the fence from a
+    /// plain (non-async) `Drop` — which is also what makes the pin
     /// cancellation-safe when the dispatching future is dropped mid-await.
-    /// Never persisted: after a restart nothing is mid-dispatch.
-    in_broadcast: Mutex<HashMap<OutPoint, u32>>,
+    /// Never persisted: after a restart nothing is mid-dispatch, and a
+    /// transaction that actually landed is reconciled by sync.
+    in_broadcast: Mutex<HashMap<OutPoint, InBroadcastFence>>,
+}
+
+/// One outpoint's broadcast fence — see `WalletGeneration::in_broadcast`.
+#[derive(Debug, Default)]
+struct InBroadcastFence {
+    /// Dispatches currently *inside* the broadcaster await for this outpoint.
+    /// Non-expiring while non-zero: a suspended dispatch keeps its inputs
+    /// fenced no matter how far catch-up advances the clock.
+    dispatching: u32,
+    /// `last_processed_height` at which the pending-spend phase lapses, set when
+    /// a dispatch returns without a definitive pre-send rejection. `None` means
+    /// no dispatch has handed this outpoint to the network.
+    pending_until: Option<u32>,
+}
+
+impl InBroadcastFence {
+    /// Whether this fence still blocks re-selection at `current_height`.
+    fn blocks(&self, current_height: u32) -> bool {
+        self.dispatching > 0
+            || self
+                .pending_until
+                .is_some_and(|until| current_height < until)
+    }
 }
 
 impl Default for WalletGeneration {
@@ -171,7 +215,7 @@ impl WalletGeneration {
     /// is a plain count map with no invariant a partial write could break, and
     /// panicking here would strand every later build and dispatch on this
     /// generation. (Same policy as key-wallet's `ReservationSet`.)
-    fn in_broadcast_lock(&self) -> MutexGuard<'_, HashMap<OutPoint, u32>> {
+    fn in_broadcast_lock(&self) -> MutexGuard<'_, HashMap<OutPoint, InBroadcastFence>> {
         self.in_broadcast
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -192,17 +236,27 @@ impl WalletGeneration {
     /// broadcaster await the guard must not span (see the
     /// [`in_broadcast`](Self::in_broadcast) field docs for the full race).
     ///
-    /// The pin has **no TTL** — a suspended dispatch keeps its inputs fenced no
-    /// matter how far catch-up advances the clock — and is released only by
-    /// dropping the returned guard object, which happens even when the
+    /// The dispatching phase has **no TTL** — a suspended dispatch keeps its
+    /// inputs fenced no matter how far catch-up advances the clock — and ends
+    /// only when the returned guard is dropped, which happens even when the
     /// dispatching future is cancelled mid-await (`Drop` runs on unwind and on
     /// future drop alike).
+    ///
+    /// `dispatch_height` is the `last_processed_height` sampled in the *same*
+    /// guarded section as the freshness check. It anchors the pending-spend
+    /// phase that [`InBroadcastPin::retain_pending_spend`] installs, so that
+    /// phase is measured from the moment the transaction was authorized to go
+    /// to the network rather than from the much older reservation stamp.
     ///
     /// Callers pin on the generation currently REGISTERED in the manager
     /// (`PlatformWalletInfo::generation`), the same object the build-side
     /// conflict checks read, so the fence works even for a dispatch through a
     /// stale-generation handle.
-    pub(crate) fn pin_in_broadcast(self: &Arc<Self>, transaction: &Transaction) -> InBroadcastPin {
+    pub(crate) fn pin_in_broadcast(
+        self: &Arc<Self>,
+        transaction: &Transaction,
+        dispatch_height: u32,
+    ) -> InBroadcastPin {
         let outpoints: Vec<OutPoint> = transaction
             .input
             .iter()
@@ -211,29 +265,45 @@ impl WalletGeneration {
         {
             let mut pinned = self.in_broadcast_lock();
             for outpoint in &outpoints {
-                *pinned.entry(*outpoint).or_insert(0) += 1;
+                pinned.entry(*outpoint).or_default().dispatching += 1;
             }
         }
         InBroadcastPin {
             generation: Arc::clone(self),
             outpoints,
+            dispatch_height,
+            retain_pending_spend: false,
         }
     }
 
-    /// The first of `transaction`'s inputs that is currently pinned by an
-    /// in-flight broadcast dispatch, or `None` when the selection is clear.
+    /// The first of `transaction`'s inputs that is currently fenced by a
+    /// broadcast dispatch, or `None` when the selection is clear.
     ///
     /// Called by every coin-selection choke point immediately after it built
     /// and reserved a selection, while it still holds the wallet-manager WRITE
     /// guard: a hit means this build's own selection swept an aged reservation
-    /// whose transaction is mid-dispatch and re-reserved its input — completing
-    /// the build would race that transaction on the wire, so the caller must
-    /// release its fresh reservation (exact under the still-held write guard)
-    /// and refuse the build. In the normal case a pinned input is still
-    /// *reserved* and never reaches selection at all; this check is the
-    /// backstop for exactly the post-sweep window.
-    pub(crate) fn in_broadcast_conflict(&self, transaction: &Transaction) -> Option<OutPoint> {
-        let pinned = self.in_broadcast_lock();
+    /// whose transaction is mid-dispatch (or already handed to the network) and
+    /// re-reserved its input — completing the build would race that transaction
+    /// on the wire, so the caller must release its fresh reservation (exact
+    /// under the still-held write guard) and refuse the build. In the normal
+    /// case a fenced input is still *reserved* and never reaches selection at
+    /// all; this check is the backstop for exactly the post-sweep window.
+    ///
+    /// `current_height` is the caller's `last_processed_height`, read under the
+    /// same write guard — the identical clock the pending-spend bound was
+    /// stamped against and the one key-wallet's TTL sweep runs on.
+    ///
+    /// Lapsed entries are reaped here rather than by a timer: this is the only
+    /// place the fence is consulted, so pruning on read keeps the map bounded by
+    /// the outpoints dispatched since the last build without any background
+    /// task.
+    pub(crate) fn in_broadcast_conflict(
+        &self,
+        transaction: &Transaction,
+        current_height: u32,
+    ) -> Option<OutPoint> {
+        let mut pinned = self.in_broadcast_lock();
+        pinned.retain(|_, fence| fence.blocks(current_height));
         transaction
             .input
             .iter()
@@ -241,36 +311,80 @@ impl WalletGeneration {
             .find(|outpoint| pinned.contains_key(outpoint))
     }
 
-    /// Drop one pin count for each of `outpoints` — the [`InBroadcastPin`]
-    /// release half of [`pin_in_broadcast`](Self::pin_in_broadcast).
-    fn unpin_in_broadcast(&self, outpoints: &[OutPoint]) {
+    /// End one dispatch's hold on `outpoints` — the [`InBroadcastPin`] release
+    /// half of [`pin_in_broadcast`](Self::pin_in_broadcast).
+    ///
+    /// `pending_until` is `Some(height)` when that dispatch reached the network
+    /// (anything but a definitive pre-send rejection): the dispatching count
+    /// drops but the outpoint stays fenced until `height`. It is `None` for a
+    /// rejection, which frees the outpoint immediately — the transaction is
+    /// provably not on the wire, and the caller releases its reservation in the
+    /// same breath so an immediate rebuild can reselect.
+    fn unpin_in_broadcast(&self, outpoints: &[OutPoint], pending_until: Option<u32>) {
         let mut pinned = self.in_broadcast_lock();
         for outpoint in outpoints {
-            match pinned.get_mut(outpoint) {
-                Some(count) if *count > 1 => *count -= 1,
-                Some(_) => {
-                    pinned.remove(outpoint);
-                }
-                // Unreachable by construction — every pin increments before its
-                // guard can decrement — but a miscount must not panic a Drop.
-                None => debug_assert!(false, "unpin of an outpoint that was never pinned"),
+            let Some(fence) = pinned.get_mut(outpoint) else {
+                // Unreachable by construction — every pin inserts before its
+                // guard can remove — but a miscount must not panic a Drop.
+                debug_assert!(false, "unpin of an outpoint that was never pinned");
+                continue;
+            };
+            fence.dispatching = fence.dispatching.saturating_sub(1);
+            if let Some(until) = pending_until {
+                // Never shorten a fence another dispatch already extended: two
+                // concurrent dispatches of the same transaction must both be
+                // covered, so the later bound wins.
+                fence.pending_until = Some(fence.pending_until.map_or(until, |cur| cur.max(until)));
+            }
+            if fence.dispatching == 0 && fence.pending_until.is_none() {
+                pinned.remove(outpoint);
             }
         }
     }
 }
 
-/// RAII guard for one dispatch's in-broadcast input pins — see
+/// RAII guard for one dispatch's in-broadcast input fence — see
 /// [`WalletGeneration::pin_in_broadcast`]. Dropping it (normal return,
-/// unwind, or the dispatching future being cancelled mid-await) releases
-/// exactly the pins that call took, count-wise, never another dispatch's.
+/// unwind, or the dispatching future being cancelled mid-await) ends exactly
+/// the dispatching hold that call took, count-wise, never another dispatch's.
+///
+/// By default the drop frees the outpoints outright: a guard dropped without
+/// [`retain_pending_spend`](Self::retain_pending_spend) means the transaction
+/// never reached the network (a definitive pre-send rejection, or a cancelled
+/// dispatch), so there is nothing on the wire to fence against.
 pub(crate) struct InBroadcastPin {
     generation: Arc<WalletGeneration>,
     outpoints: Vec<OutPoint>,
+    /// `last_processed_height` sampled in the guarded section that took this
+    /// pin — the anchor for the pending-spend bound.
+    dispatch_height: u32,
+    /// Set by [`retain_pending_spend`](Self::retain_pending_spend).
+    retain_pending_spend: bool,
+}
+
+impl InBroadcastPin {
+    /// Convert this pin, on drop, into a pending-spend fence lasting
+    /// [`IN_BROADCAST_FENCE_BLOCKS`](crate::wallet::reservations::IN_BROADCAST_FENCE_BLOCKS)
+    /// blocks past the height the dispatch was authorized at.
+    ///
+    /// Called once the broadcaster has returned anything other than a
+    /// definitive pre-send rejection — i.e. once the transaction may be on the
+    /// network but this wallet has not necessarily observed the spend yet. See
+    /// the `WalletGeneration::in_broadcast` field docs for why dispatch return
+    /// is not, by itself, safe.
+    pub(crate) fn retain_pending_spend(&mut self) {
+        self.retain_pending_spend = true;
+    }
 }
 
 impl Drop for InBroadcastPin {
     fn drop(&mut self) {
-        self.generation.unpin_in_broadcast(&self.outpoints);
+        let pending_until = self.retain_pending_spend.then(|| {
+            self.dispatch_height
+                .saturating_add(crate::wallet::reservations::IN_BROADCAST_FENCE_BLOCKS)
+        });
+        self.generation
+            .unpin_in_broadcast(&self.outpoints, pending_until);
     }
 }
 
@@ -289,6 +403,11 @@ mod tests {
     use dashcore::{OutPoint, Transaction, TxIn, Txid};
 
     use super::WalletGeneration;
+    use crate::wallet::reservations::IN_BROADCAST_FENCE_BLOCKS;
+
+    /// The height every test pins at, so a fence installed by
+    /// `retain_pending_spend` lapses at `DISPATCH_HEIGHT + IN_BROADCAST_FENCE_BLOCKS`.
+    const DISPATCH_HEIGHT: u32 = 1_000;
 
     /// A minimal transaction spending exactly the given outpoints — the only
     /// part of a transaction the pin machinery reads.
@@ -313,9 +432,11 @@ mod tests {
     }
 
     /// A held pin flags every input of the pinned transaction — and only
-    /// those — and dropping the pin clears the conflict. This is the RAII
-    /// contract the dispatch relies on for cancellation-safety: a dispatching
-    /// future dropped mid-await unpins exactly the same way.
+    /// those — and dropping a pin that was NOT retained clears the conflict.
+    /// This is the RAII contract the dispatch relies on for
+    /// cancellation-safety: a dispatching future dropped mid-await never
+    /// reaches `retain_pending_spend`, so it unpins outright, exactly as a
+    /// definitive pre-send rejection does.
     #[test]
     fn pin_flags_inputs_until_dropped() {
         let generation = Arc::new(WalletGeneration::new());
@@ -323,27 +444,131 @@ mod tests {
         let b = outpoint(0x02, 1);
         let unrelated = outpoint(0x03, 0);
 
-        let pin = generation.pin_in_broadcast(&spending(&[a, b]));
+        let pin = generation.pin_in_broadcast(&spending(&[a, b]), DISPATCH_HEIGHT);
 
         // Both pinned inputs conflict; an unrelated selection does not.
-        assert_eq!(generation.in_broadcast_conflict(&spending(&[a])), Some(a));
-        assert_eq!(generation.in_broadcast_conflict(&spending(&[b])), Some(b));
         assert_eq!(
-            generation.in_broadcast_conflict(&spending(&[unrelated, a])),
+            generation.in_broadcast_conflict(&spending(&[a]), DISPATCH_HEIGHT),
+            Some(a)
+        );
+        assert_eq!(
+            generation.in_broadcast_conflict(&spending(&[b]), DISPATCH_HEIGHT),
+            Some(b)
+        );
+        assert_eq!(
+            generation.in_broadcast_conflict(&spending(&[unrelated, a]), DISPATCH_HEIGHT),
             Some(a),
             "a mixed selection must surface its pinned input"
         );
         assert_eq!(
-            generation.in_broadcast_conflict(&spending(&[unrelated])),
+            generation.in_broadcast_conflict(&spending(&[unrelated]), DISPATCH_HEIGHT),
             None
         );
 
         drop(pin);
         assert_eq!(
-            generation.in_broadcast_conflict(&spending(&[a, b])),
+            generation.in_broadcast_conflict(&spending(&[a, b]), DISPATCH_HEIGHT),
             None,
-            "dropping the pin must clear the conflict"
+            "dropping an unretained pin must clear the conflict"
         );
+    }
+
+    /// The dispatching pin has no TTL: however far catch-up advances the
+    /// clock while the broadcaster is suspended, the inputs stay fenced.
+    #[test]
+    fn dispatching_pin_never_expires() {
+        let generation = Arc::new(WalletGeneration::new());
+        let a = outpoint(0x05, 0);
+        let tx = spending(&[a]);
+
+        let _pin = generation.pin_in_broadcast(&tx, DISPATCH_HEIGHT);
+
+        assert_eq!(
+            generation.in_broadcast_conflict(&tx, DISPATCH_HEIGHT + 10_000),
+            Some(a),
+            "a suspended dispatch must keep its inputs fenced at any height"
+        );
+    }
+
+    /// `dashpay/platform#4309`: a dispatch that reached the network keeps its
+    /// inputs fenced AFTER the broadcaster returns — the DAPI path performs no
+    /// local mempool injection, so the wallet has not observed the spend yet
+    /// and the outpoint would otherwise be immediately re-selectable. The
+    /// fence lapses only once the clock has advanced a full
+    /// `IN_BROADCAST_FENCE_BLOCKS` past the dispatch height.
+    #[test]
+    fn retained_pin_fences_past_dispatch_until_the_bound() {
+        let generation = Arc::new(WalletGeneration::new());
+        let a = outpoint(0x30, 0);
+        let tx = spending(&[a]);
+
+        let mut pin = generation.pin_in_broadcast(&tx, DISPATCH_HEIGHT);
+        pin.retain_pending_spend();
+        drop(pin);
+
+        assert_eq!(
+            generation.in_broadcast_conflict(&tx, DISPATCH_HEIGHT),
+            Some(a),
+            "the fence must survive the dispatch return"
+        );
+        assert_eq!(
+            generation.in_broadcast_conflict(&tx, DISPATCH_HEIGHT + IN_BROADCAST_FENCE_BLOCKS - 1),
+            Some(a),
+            "one block below the bound must still fence"
+        );
+        assert_eq!(
+            generation.in_broadcast_conflict(&tx, DISPATCH_HEIGHT + IN_BROADCAST_FENCE_BLOCKS),
+            None,
+            "exactly at the bound the fence lapses"
+        );
+    }
+
+    /// A lapsed fence is reaped, not merely ignored: the read that observes
+    /// the lapse is what prunes the entry, so the map cannot grow without
+    /// bound across dispatches.
+    #[test]
+    fn lapsed_fences_are_reaped_on_read() {
+        let generation = Arc::new(WalletGeneration::new());
+        let a = outpoint(0x31, 0);
+        let unrelated = outpoint(0x32, 0);
+
+        let mut pin = generation.pin_in_broadcast(&spending(&[a]), DISPATCH_HEIGHT);
+        pin.retain_pending_spend();
+        drop(pin);
+        assert_eq!(generation.in_broadcast_lock().len(), 1);
+
+        // A read past the bound — about an unrelated selection — still reaps.
+        assert_eq!(
+            generation.in_broadcast_conflict(
+                &spending(&[unrelated]),
+                DISPATCH_HEIGHT + IN_BROADCAST_FENCE_BLOCKS
+            ),
+            None
+        );
+        assert!(
+            generation.in_broadcast_lock().is_empty(),
+            "the lapsed entry must be pruned by the read that observed the lapse"
+        );
+    }
+
+    /// The rejection path is the ONLY one that frees inputs at dispatch
+    /// return, and it frees them completely — no residual pending-spend fence
+    /// keeps an immediate rebuild out.
+    #[test]
+    fn rejected_dispatch_frees_the_input_immediately() {
+        let generation = Arc::new(WalletGeneration::new());
+        let a = outpoint(0x33, 0);
+        let tx = spending(&[a]);
+
+        // No `retain_pending_spend` — this models `BroadcastError::Rejected`.
+        drop(generation.pin_in_broadcast(&tx, DISPATCH_HEIGHT));
+
+        assert_eq!(
+            generation.in_broadcast_conflict(&tx, DISPATCH_HEIGHT),
+            None,
+            "a definitively rejected send must not fence its inputs"
+        );
+        assert!(generation.in_broadcast_lock().is_empty());
     }
 
     /// Pins COUNT per outpoint: two concurrent dispatches of the same
@@ -357,18 +582,45 @@ mod tests {
         let a = outpoint(0x10, 0);
         let tx = spending(&[a]);
 
-        let first = generation.pin_in_broadcast(&tx);
-        let second = generation.pin_in_broadcast(&tx);
+        let first = generation.pin_in_broadcast(&tx, DISPATCH_HEIGHT);
+        let second = generation.pin_in_broadcast(&tx, DISPATCH_HEIGHT);
 
         drop(first);
         assert_eq!(
-            generation.in_broadcast_conflict(&tx),
+            generation.in_broadcast_conflict(&tx, DISPATCH_HEIGHT),
             Some(a),
             "one dispatch still in flight must keep the outpoint fenced"
         );
 
         drop(second);
-        assert_eq!(generation.in_broadcast_conflict(&tx), None);
+        assert_eq!(generation.in_broadcast_conflict(&tx, DISPATCH_HEIGHT), None);
+    }
+
+    /// Two concurrent dispatches of the same transaction that BOTH reach the
+    /// network must leave the longer fence standing — a first completion at a
+    /// lower dispatch height must not shorten the second's protection.
+    #[test]
+    fn the_longer_pending_fence_wins() {
+        let generation = Arc::new(WalletGeneration::new());
+        let a = outpoint(0x11, 0);
+        let tx = spending(&[a]);
+
+        let mut early = generation.pin_in_broadcast(&tx, DISPATCH_HEIGHT);
+        let mut late = generation.pin_in_broadcast(&tx, DISPATCH_HEIGHT + 5);
+        late.retain_pending_spend();
+        drop(late);
+        early.retain_pending_spend();
+        drop(early);
+
+        assert_eq!(
+            generation.in_broadcast_conflict(&tx, DISPATCH_HEIGHT + IN_BROADCAST_FENCE_BLOCKS),
+            Some(a),
+            "the later dispatch's bound must win over the earlier one's"
+        );
+        assert_eq!(
+            generation.in_broadcast_conflict(&tx, DISPATCH_HEIGHT + 5 + IN_BROADCAST_FENCE_BLOCKS),
+            None
+        );
     }
 
     /// Pins are per generation: a re-created wallet's fresh generation starts
@@ -378,11 +630,11 @@ mod tests {
     fn pins_do_not_cross_generations() {
         let old_generation = Arc::new(WalletGeneration::new());
         let a = outpoint(0x20, 0);
-        let _pin = old_generation.pin_in_broadcast(&spending(&[a]));
+        let _pin = old_generation.pin_in_broadcast(&spending(&[a]), DISPATCH_HEIGHT);
 
         let new_generation = Arc::new(WalletGeneration::new());
         assert_eq!(
-            new_generation.in_broadcast_conflict(&spending(&[a])),
+            new_generation.in_broadcast_conflict(&spending(&[a]), DISPATCH_HEIGHT),
             None,
             "a fresh generation must not inherit the old generation's pins"
         );

@@ -50,6 +50,52 @@ use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 /// for `last_processed_height` to lag a few blocks behind the true tip.
 pub(crate) const RESERVATION_MAX_AGE_BLOCKS: u32 = 20;
 
+/// How long, in `last_processed_height` blocks past **dispatch**, a transaction
+/// that reached the network keeps its inputs fenced against re-selection by
+/// [`WalletGeneration::pin_in_broadcast`](crate::wallet::core::WalletGeneration::pin_in_broadcast)'s
+/// pending-spend phase.
+///
+/// # Why a fence past dispatch is needed at all
+///
+/// `SpvBroadcaster` injects the dispatched transaction into dash-spv's local
+/// mempool pipeline, so on that path the wallet marks the inputs spent within
+/// milliseconds of dispatch returning and they leave the selectable set on
+/// their own. `DapiBroadcaster::broadcast` does no such injection — it awaits
+/// `sdk.execute` and returns — so on the DAPI path an accepted response *and*
+/// an ambiguous `MaybeSent` both return with the inputs still selectable here
+/// while the transaction is in flight. Ending the fence at dispatch return
+/// therefore reopens the sweep + re-select race on that path
+/// (`dashpay/platform#4309`): key-wallet's `ReservationSet` TTL is stamped at
+/// *build* time, so a handle that sat between `finalize` and broadcast can be
+/// swept the instant the next selection runs.
+///
+/// # Why exactly key-wallet's TTL, re-anchored at dispatch
+///
+/// The correct fix would be to renew the underlying reservation at dispatch so
+/// its TTL runs from the moment the transaction actually went to the network;
+/// key-wallet exposes no such primitive at the pinned revision (`ReservationSet`
+/// and its `RESERVATION_TTL_BLOCKS` are private). This constant is that renewal
+/// implemented one layer up: **24, key-wallet's own `RESERVATION_TTL_BLOCKS`**
+/// (~1 h at the mainnet block target), measured from dispatch instead of from
+/// the build. The inputs are then continuously protected — by the reservation
+/// until its build-anchored TTL, then by this fence — for a full TTL past the
+/// moment they were actually committed to the network, which is the point the
+/// TTL was always meant to be measured from. Coupled by convention, exactly as
+/// [`RESERVATION_MAX_AGE_BLOCKS`] above is: if key-wallet's TTL changes, change
+/// this in lockstep.
+///
+/// # Why it must lapse
+///
+/// A fenced outpoint that the wallet has already observed as spent never
+/// reaches a selection in the first place, so in the common case this bound is
+/// never consulted — the fence goes inert on its own. The bound exists for the
+/// transaction that is *never* observed (dropped from mempool for fee or
+/// conflict): its reservation is already gone at TTL, and a non-expiring fence
+/// would strand those funds permanently with nothing able to clear it. Lapsing
+/// at the same TTL leaves the residual exposure identical to the one
+/// key-wallet's reservation TTL already accepts, and no larger.
+pub(crate) const IN_BROADCAST_FENCE_BLOCKS: u32 = 24;
+
 /// Whether a reservation stamped at `registered_height` is too old to act on at
 /// `current_height` (see [`RESERVATION_MAX_AGE_BLOCKS`]). The registration
 /// height is mandatory on both surfaces — it is derived from the finalized
