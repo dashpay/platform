@@ -8512,9 +8512,15 @@ mod multi_in_tests {
         let error = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect_err("missing order by on an in field must be rejected");
+        // Index selection rejects the shape first: the order-by continuity
+        // rule in `Index::matches` disqualifies every candidate index before
+        // the per-field `MissingOrderByForRange` guard could fire
         assert!(
-            matches!(error, Error::Query(_)),
-            "expected a query error, got {error:?}"
+            matches!(
+                error,
+                Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(_))
+            ),
+            "expected WhereClauseOnNonIndexedProperty, got {error:?}"
         );
     }
 }

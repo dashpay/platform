@@ -2968,6 +2968,47 @@ mod tests {
         }
 
         #[test]
+        #[cfg(feature = "cbor_query")]
+        fn two_in_clauses_survive_cbor_round_trip() {
+            let contract = family_contract();
+            let mut query = person_query(
+                &contract,
+                vec![
+                    in_clause("firstName", &["Adey", "Briney"]),
+                    in_clause("lastName", &["Kriskov", "Randolf"]),
+                ],
+                &["firstName", "lastName"],
+            );
+            // `from_cbor` defaults start_at_included to true when no cursor
+            // is present; align so the round trip compares equal
+            query.start_at_included = true;
+
+            let cbor = query.to_cbor().expect("should serialize cbor");
+            let deserialized = DriveDocumentQuery::from_cbor(
+                &cbor,
+                &contract,
+                contract
+                    .document_type_for_name("person")
+                    .expect("person document type should exist"),
+                &DriveConfig::default(),
+                PlatformVersion::latest(),
+            )
+            .expect("should deserialize cbor");
+
+            assert_eq!(query, deserialized);
+            assert_eq!(
+                deserialized
+                    .internal_clauses
+                    .in_clauses
+                    .iter()
+                    .map(|in_clause| in_clause.field.as_str())
+                    .collect::<Vec<_>>(),
+                vec!["firstName", "lastName"],
+                "both in clauses must survive the round trip in order"
+            );
+        }
+
+        #[test]
         fn descending_order_by_on_left_over_property_is_honored() {
             let contract = family_contract();
             let platform_version = PlatformVersion::latest();
@@ -3223,9 +3264,16 @@ mod tests {
             let error = query
                 .construct_path_query(None, PlatformVersion::latest())
                 .expect_err("missing order by on an in field must be rejected");
+            // Index selection rejects the shape first: the order-by
+            // continuity rule in `Index::matches` disqualifies every
+            // candidate index before the per-field `MissingOrderByForRange`
+            // guard could fire
             assert!(
-                matches!(error, Error::Query(_)),
-                "expected a query error, got {error:?}"
+                matches!(
+                    error,
+                    Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(_))
+                ),
+                "expected WhereClauseOnNonIndexedProperty, got {error:?}"
             );
         }
     }
