@@ -1701,6 +1701,24 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '4.2.0': (configFile) => {
+        // The ACME directory certificates are requested from became
+        // configurable. Existing configs have no value for it, and the schema
+        // requires one, so fill in the directory they were already using.
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            const providerConfigs = options.platform?.gateway?.ssl?.providerConfigs;
+
+            if (providerConfigs?.letsencrypt
+              && providerConfigs.letsencrypt.acmeDirectoryUrl === undefined) {
+              providerConfigs.letsencrypt.acmeDirectoryUrl = base.get(
+                'platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl',
+              );
+            }
+          });
+
+        return configFile;
+      },
     };
   }
 

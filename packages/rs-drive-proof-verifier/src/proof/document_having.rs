@@ -218,10 +218,15 @@ where
 #[cfg(test)]
 mod tests {
     //! Offline tests for the unproven decode and the response-shape
-    //! rejections. Proof verification itself is exercised end-to-end by
+    //! rejections. Proof verification is exercised end-to-end by
     //! rs-drive's `drive_document_having_query::tests` (prover and
-    //! verifier against a real Drive) and rs-drive-abci's
-    //! `having_range_tests` (wire encoding of the same values).
+    //! merk-level verifier against a real Drive), rs-drive-abci's
+    //! `having_range_tests` (wire encoding of the same values), and
+    //! rs-drive-abci's `having_trust_boundary` suite, which runs this
+    //! crate's [`verify_having_range_proof`] wrapper — including the
+    //! tenderdash signature binding — against server-generated proofs.
+    //! The tenderdash-composition tests live on the server side so this
+    //! client crate keeps building drive with `verify` only.
     use super::*;
     use dapi_grpc::platform::v0::get_documents_response::get_documents_response_v1::{
         ranked_entry, Documents, RankedEntries, RankedEntry as ProtoRankedEntry,

@@ -8,6 +8,8 @@ import LegoCertificate from '../../../../ssl/letsencrypt/LegoCertificate.js';
 
 const LEGO_IMAGE = 'goacme/lego:v4.31.0';
 
+const LEGO_CA_CERTIFICATE_MOUNT_PATH = '/acme-ca.pem';
+
 /**
  * @param {Docker} docker
  * @param {dockerPull} dockerPull
@@ -15,8 +17,11 @@ const LEGO_IMAGE = 'goacme/lego:v4.31.0';
  * @param {HomeDir} homeDir
  * @param {validateLetsEncryptCertificate} validateLetsEncryptCertificate
  * @param {saveCertificateTask} saveCertificateTask
- * @param {ConfigFileJsonRepository} configFileRepository
- * @param {ConfigFile} configFile
+ * @param {string|null} legoCaCertificatePath - CA that signed the ACME
+ *   directory's own certificate, for a directory that is not publicly trusted
+ * @param {Object} legoContainerOptions - Docker create-container overrides for
+ *   the lego container, so it can be reached over a network of the caller's
+ *   choosing rather than the host's port 80
  * @return {obtainLetsEncryptCertificateTask}
  */
 export default function obtainLetsEncryptCertificateTaskFactory(
@@ -26,8 +31,8 @@ export default function obtainLetsEncryptCertificateTaskFactory(
   homeDir,
   validateLetsEncryptCertificate,
   saveCertificateTask,
-  configFileRepository,
-  configFile,
+  legoCaCertificatePath,
+  legoContainerOptions,
 ) {
   /**
    * @typedef {obtainLetsEncryptCertificateTask}
@@ -41,9 +46,12 @@ export default function obtainLetsEncryptCertificateTaskFactory(
         task: async (ctx) => {
           // Always load config values (needed even when --force is used)
           ctx.email = config.get('platform.gateway.ssl.providerConfigs.letsencrypt.email');
+          ctx.acmeDirectoryUrl = config.get('platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl');
           ctx.externalIp = config.get('externalIp');
           ctx.legoDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'lego');
           ctx.sslConfigDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl');
+          ctx.configurationUpdateRequired = !config.get('platform.gateway.ssl.enabled')
+            || config.get('platform.gateway.ssl.provider') !== 'letsencrypt';
 
           if (!ctx.email) {
             throw new Error("Let's Encrypt email is not set. Please set it in the config file");
@@ -138,6 +146,17 @@ export default function obtainLetsEncryptCertificateTaskFactory(
         task: async (ctx, task) => {
           const { uid, gid } = os.userInfo();
 
+          let acmeDirectoryUrl;
+          try {
+            acmeDirectoryUrl = new URL(ctx.acmeDirectoryUrl);
+          } catch {
+            throw new Error('ACME directory URL must use HTTPS');
+          }
+
+          if (acmeDirectoryUrl.protocol !== 'https:') {
+            throw new Error('ACME directory URL must use HTTPS');
+          }
+
           // Determine if this is initial run or renewal
           const command = ctx.isRenewal ? 'renew' : 'run';
 
@@ -145,7 +164,7 @@ export default function obtainLetsEncryptCertificateTaskFactory(
           // --disable-cn is needed for IP address certificates
           // --key-type rsa2048 is needed because node-forge doesn't support ECDSA
           const legoArgs = [
-            '--server=https://acme-v02.api.letsencrypt.org/directory',
+            `--server=${acmeDirectoryUrl.toString()}`,
             '--email', ctx.email,
             '--accept-tos',
             '--http',
@@ -186,16 +205,30 @@ export default function obtainLetsEncryptCertificateTaskFactory(
             }
           }
 
+          const binds = [`${ctx.legoDir}:/data`];
+          const env = [];
+
+          // An ACME directory that is not publicly trusted - a staging or local
+          // server - presents a certificate lego rejects unless told which CA
+          // signed it.
+          if (legoCaCertificatePath) {
+            binds.push(`${legoCaCertificatePath}:${LEGO_CA_CERTIFICATE_MOUNT_PATH}:ro`);
+            env.push(`LEGO_CA_CERTIFICATES=${LEGO_CA_CERTIFICATE_MOUNT_PATH}`);
+          }
+
           const container = await docker.createContainer({
             name: containerName,
             Image: LEGO_IMAGE,
             Cmd: legoArgs,
+            Env: env,
             User: `${uid}:${gid}`,
             ExposedPorts: { '80/tcp': {} },
+            ...legoContainerOptions,
             HostConfig: {
               AutoRemove: true,
-              Binds: [`${ctx.legoDir}:/data`],
+              Binds: binds,
               PortBindings: { '80/tcp': [{ HostPort: '80' }] },
+              ...legoContainerOptions.HostConfig,
             },
           });
 
@@ -236,27 +269,31 @@ export default function obtainLetsEncryptCertificateTaskFactory(
             throw new Error('Private key file was not created by lego');
           }
 
+          ctx.configurationUpdateRequired = true;
+
           // eslint-disable-next-line no-param-reassign
           task.output = 'Certificate obtained successfully';
         },
       },
       {
         title: 'Save certificate',
-        skip: (ctx) => ctx.certificateValid,
+        skip: (ctx) => ctx.certificateValid && ctx.isCertificatePairInstalled,
         task: async (ctx) => {
           // Read certificate and key from lego output
           ctx.certificateFile = fs.readFileSync(ctx.legoCertPath, 'utf8');
           ctx.privateKeyFile = fs.readFileSync(ctx.legoKeyPath, 'utf8');
-
-          // Update config
-          config.set('platform.gateway.ssl.enabled', true);
-          config.set('platform.gateway.ssl.provider', 'letsencrypt');
-
-          // Save config file
-          configFileRepository.write(configFile);
+          ctx.configurationUpdateRequired = true;
 
           // Save to gateway SSL directory
           return saveCertificateTask(config);
+        },
+      },
+      {
+        title: 'Update configuration',
+        enabled: (ctx) => ctx.configurationUpdateRequired,
+        task: async () => {
+          config.set('platform.gateway.ssl.enabled', true);
+          config.set('platform.gateway.ssl.provider', 'letsencrypt');
         },
       },
     ], {

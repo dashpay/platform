@@ -180,6 +180,13 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     /// swift-sdk/CLAUDE.md "no mnemonic round-tripping".
     private let mnemonicResolver: MnemonicResolver
 
+    /// The same `WalletStorage` handed to `mnemonicResolver`. The
+    /// `canSign` preflights consult it for `hasMnemonic` so preflight
+    /// and sign always answer from the same store — constructing a
+    /// fresh `WalletStorage()` there would desync the two when an
+    /// alternative storage is injected.
+    private let mnemonicStorage: WalletStorage
+
     /// Raw pointer to the FFI signer handle. Boxed by Rust and freed
     /// in `deinit`.
     private var handlePtr: OpaquePointer!
@@ -194,10 +201,14 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     ///   - network: forwarded to `dash_sdk_signer_create_from_private_key`
     ///     for WIF address derivation; does not affect signature output.
     ///   - keychain: defaults to `KeychainManager.shared`.
+    ///   - storage: mnemonic source for the resolver-based signing
+    ///     paths. Defaults to a fresh `WalletStorage()` — overridable
+    ///     for tests.
     public init(
         modelContainer: ModelContainer,
         network: Network = .testnet,
-        keychain: KeychainManager = .shared
+        keychain: KeychainManager = .shared,
+        storage: WalletStorage = WalletStorage()
     ) {
         self.modelContainer = modelContainer
         self.network = network
@@ -206,7 +217,8 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         // One resolver per signer instance. Cheap to keep around —
         // it's just an opaque handle + a Swift-side `WalletStorage`
         // reference. Used by the platform-address signing branch.
-        self.mnemonicResolver = MnemonicResolver()
+        self.mnemonicStorage = storage
+        self.mnemonicResolver = MnemonicResolver(storage: storage)
 
         // Hand Rust an opaque NON-owning pointer to self. The
         // Swift owner is responsible for keeping `self` alive
@@ -376,7 +388,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
             }
             // Existence check only — do NOT materialize the mnemonic
             // bytes on the preflight path.
-            return WalletStorage().hasMnemonic(for: resolved.walletId)
+            return mnemonicStorage.hasMnemonic(for: resolved.walletId)
         }
 
         var found = false
@@ -407,7 +419,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
                     wid.count == 32,
                     let path = row.identityDerivationPath,
                     !path.isEmpty,
-                    WalletStorage().hasMnemonic(for: wid)
+                    self.mnemonicStorage.hasMnemonic(for: wid)
                 {
                     found = true
                     return

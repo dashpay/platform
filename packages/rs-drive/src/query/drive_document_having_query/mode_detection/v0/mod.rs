@@ -1,72 +1,22 @@
-//! Request-shape validation for the having-range query, and the versioned
-//! `(select, group_by, having, order_by, limit)` → [`DocumentHavingMode`]
-//! resolution — including the operator → inclusive-bounds translation
-//! that turns a `HAVING <agg> <op> <value>` clause into an
-//! [`AxisRangeBounds`].
-//!
-//! Pure functions on the request shape — no Drive, no contract, no
-//! indexes. Available under `server` and `verify` for the same reason as
-//! [`super::super::drive_document_ranked_query::mode_detection`]: both
-//! sides must agree on which requests are well-formed and on the exact
-//! bounds a well-formed one resolves to, because the bounds are echoed
-//! (as a Merk query) inside the proof envelope.
-//!
-//! Versioned through
-//! `platform_version.drive.methods.document.query.detect_having_mode` —
-//! the accepted grammar is a consensus-adjacent contract on the query
-//! surface, so relaxing it later (multi-clause `HAVING`, `IN`, a
-//! pagination cursor) lands behind a method-version bump.
+//! Feature version 0 of the grammar — the frozen implementation
+//! behind the `mode_detection` dispatcher. Everything private in
+//! this file is a v0 internal: a later grammar version gets its own
+//! `vN/` sibling rather than editing this one.
 
-use super::super::drive_document_ranked_query::mode_detection::{
-    equality_pins_from_where_clauses, ranked_order_key,
-};
-use super::super::drive_document_ranked_query::{RankedAxis, RankedPaginationInputs};
 use super::{AxisRangeBounds, DocumentHavingMode, MAX_HAVING_LIMIT};
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::drive_document_ranked_query::mode_detection::{
+    equality_pins_from_where_clauses, ranked_order_key,
+};
+use crate::query::drive_document_ranked_query::{RankedAxis, RankedPaginationInputs};
 use crate::query::having::{
     HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
 };
 use crate::query::projection::{SelectFunction, SelectProjection};
 use crate::query::{OrderClause, WhereClause};
 use dpp::platform_value::Value;
-use dpp::version::PlatformVersion;
 use grovedb::element::indexed::AVG_FIXED_POINT_SCALE;
-
-/// Versioned entry point. Routes through
-/// `platform_version.drive.methods.document.query.detect_having_mode`;
-/// today only `0` is defined and maps to [`detect_having_mode_v0`]
-/// verbatim.
-#[allow(clippy::too_many_arguments)]
-pub fn detect_having_mode(
-    select: &SelectProjection,
-    group_by: &[String],
-    having: &[HavingClause],
-    order_by: &[OrderClause],
-    where_clauses: &[WhereClause],
-    pagination: RankedPaginationInputs,
-    platform_version: &PlatformVersion,
-) -> Result<DocumentHavingMode, Error> {
-    match platform_version
-        .drive
-        .methods
-        .document
-        .query
-        .detect_having_mode
-    {
-        0 => detect_having_mode_v0(
-            select,
-            group_by,
-            having,
-            order_by,
-            where_clauses,
-            pagination,
-        ),
-        version => Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-            "detect_having_mode: unknown method version {version}; only 0 is supported"
-        )))),
-    }
-}
 
 /// v0 of the having-range request grammar.
 ///

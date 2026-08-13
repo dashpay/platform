@@ -3785,3 +3785,453 @@ mod having_range_tests {
         );
     }
 }
+
+mod having_trust_boundary {
+    //! The client trust boundary, exercised from the server side: a
+    //! grovedb-valid having proof is only an authenticated platform
+    //! result once drive-proof-verifier's [`verify_having_range_proof`]
+    //! wrapper binds its reconstructed root hash to the quorum-signed
+    //! app hash. These tests generate a real AVG having proof from a
+    //! real Drive, sign the canonical tenderdash precommit with a test
+    //! quorum key, and run the client wrapper end to end: the correctly
+    //! signed root verifies, and a commit over a different app hash,
+    //! tampered response metadata, or a wrong quorum key each fail —
+    //! so omitting or miswiring `verify_tenderdash_proof` turns a test
+    //! red. The suite lives here rather than in drive-proof-verifier
+    //! because generating proofs needs drive's server feature, which
+    //! the client crate must not enable even as a dev-dependency.
+
+    use crate::platform_types::platform::Platform;
+    use crate::query::tests::{setup_platform, store_data_contract};
+    use crate::rpc::core::MockCoreRPCLike;
+    use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
+    use dpp::block::block_info::BlockInfo;
+    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey, SignatureSchemes};
+    use dpp::dashcore::Network;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::data_contract::TokenConfiguration;
+    use dpp::document::{Document, DocumentV0Setters};
+    use dpp::platform_value::Value;
+    use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
+    use dpp::tests::json_document::json_document_to_contract;
+    use dpp::version::PlatformVersion;
+    use drive::drive::Drive;
+    use drive::query::drive_document_having_query::drive_dispatcher::{
+        DocumentHavingRequest, DocumentHavingResponse,
+    };
+    use drive::query::drive_document_having_query::mode_detection::detect_having_mode;
+    use drive::query::drive_document_ranked_query::index_picker::find_ranked_index_for_axis;
+    use drive::query::having::{
+        HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
+    };
+    use drive::query::projection::SelectProjection;
+    use drive::query::{DriveDocumentHavingQuery, RankedPaginationInputs};
+    use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use drive_proof_verifier::{
+        verify_having_range_proof, ContextProvider, ContextProviderError,
+        Error as ProofVerifierError,
+    };
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+    use tenderdash_abci::proto::types::{CanonicalVote, SignedMsgType, StateId};
+    use tenderdash_abci::signatures::{Hashable, Signable};
+
+    /// Shared with rs-drive's having suite — same cross-crate path
+    /// convention as `RESTAURANTS_CONTRACT_PATH` above.
+    const GRADES_RANKED_CONTRACT_PATH: &str =
+        "../rs-drive/tests/supporting_files/contract/grades/grades-ranked-contract.json";
+
+    const CHAIN_ID: &str = "test-having-chain";
+    const HEIGHT: u64 = 4242;
+    const ROUND: u32 = 0;
+    const QUORUM_TYPE: u32 = 1; // LLMQ_50_60
+    const CORE_LOCKED_HEIGHT: u32 = 1200;
+    const TIME_MS: u64 = 1_755_000_000_000;
+
+    /// Provider that knows exactly one quorum key — the test one.
+    struct TestQuorumProvider {
+        pubkey: [u8; 48],
+    }
+
+    impl ContextProvider for TestQuorumProvider {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            Ok(self.pubkey)
+        }
+
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(1)
+        }
+    }
+
+    fn platform_version() -> &'static PlatformVersion {
+        PlatformVersion::latest()
+    }
+
+    /// A deterministic, valid BLS scalar — no RNG dependency.
+    fn quorum_secret_key() -> SecretKey<Bls12381G2Impl> {
+        let mut bytes = [0u8; 32];
+        bytes[31] = 42;
+        SecretKey::<Bls12381G2Impl>::from_be_bytes(&bytes)
+            .into_option()
+            .expect("a small nonzero scalar is a valid secret key")
+    }
+
+    fn register_grades(
+        platform: &Platform<MockCoreRPCLike>,
+        platform_version: &PlatformVersion,
+    ) -> DataContract {
+        let contract =
+            json_document_to_contract(GRADES_RANKED_CONTRACT_PATH, false, platform_version)
+                .expect("expected to parse the ranked grades contract");
+        store_data_contract(platform, &contract, platform_version);
+        contract
+    }
+
+    /// A few grade documents so the axis secondary has content to
+    /// prove over: identity `[1; 32]` averages 75, identity `[2; 32]`
+    /// averages 90.
+    fn insert_grades(platform: &Platform<MockCoreRPCLike>, contract: &DataContract) {
+        let pv = platform_version();
+        let document_type = contract
+            .document_type_for_name("grade")
+            .expect("grade doctype exists");
+        let rows: [([u8; 32], i64); 4] = [
+            ([1u8; 32], 70),
+            ([1u8; 32], 80),
+            ([2u8; 32], 85),
+            ([2u8; 32], 95),
+        ];
+        for (i, (identity, grade)) in rows.iter().enumerate() {
+            let mut doc: Document = document_type
+                .random_document(Some(9000 + i as u64), pv)
+                .expect("random document");
+            let mut props = BTreeMap::new();
+            props.insert("identityId".to_string(), Value::Identifier(*identity));
+            props.insert("grade".to_string(), Value::I64(*grade));
+            doc.set_properties(props);
+            platform
+                .drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert a grade document");
+        }
+    }
+
+    /// `AVG(grade) > 80 LIMIT 10` — matches identity `[2; 32]`
+    /// (average 90) and excludes identity `[1; 32]` (average 75).
+    fn having_clause() -> HavingClause {
+        HavingClause {
+            aggregate: HavingAggregate {
+                function: HavingAggregateFunction::Avg,
+                field: "grade".to_string(),
+            },
+            operator: HavingOperator::GreaterThan,
+            right: HavingRightOperand::Value(Value::U64(80)),
+        }
+    }
+
+    fn client_side_query(contract: &DataContract) -> DriveDocumentHavingQuery<'_> {
+        let group_by = vec!["identityId".to_string()];
+        let having = vec![having_clause()];
+        let mode = detect_having_mode(
+            &SelectProjection::avg("grade"),
+            &group_by,
+            &having,
+            &[],
+            &[],
+            RankedPaginationInputs {
+                limit: Some(10),
+                offset: None,
+                has_start_at: false,
+            },
+            platform_version(),
+        )
+        .expect("the case is well-formed");
+        let index = find_ranked_index_for_axis(
+            contract
+                .document_types()
+                .get("grade")
+                .expect("grade doctype exists")
+                .indexes(),
+            &mode.group_by_property,
+            mode.bounds.axis(),
+            &mode.aggregate_field,
+        )
+        .expect("the fixture declares the avg axis");
+        DriveDocumentHavingQuery {
+            document_type: contract
+                .document_type_for_name("grade")
+                .expect("grade doctype exists"),
+            contract_id: contract.id_ref().to_buffer(),
+            document_type_name: "grade".to_string(),
+            index,
+            bounds: mode.bounds,
+            descending: mode.descending,
+            limit: mode.limit,
+        }
+    }
+
+    /// Prove the having request against the live Drive and return
+    /// `(grovedb proof bytes, live root hash)`.
+    fn prove(drive: &Drive, contract: &DataContract) -> (Vec<u8>, [u8; 32]) {
+        let group_by = vec!["identityId".to_string()];
+        let having = vec![having_clause()];
+        let response = drive
+            .execute_document_having_request(
+                DocumentHavingRequest {
+                    contract,
+                    document_type: contract
+                        .document_type_for_name("grade")
+                        .expect("grade doctype exists"),
+                    group_by: &group_by,
+                    select: SelectProjection::avg("grade"),
+                    having: &having,
+                    order_by: &[],
+                    where_clauses: &[],
+                    limit: Some(10),
+                    offset: None,
+                    has_start_at: false,
+                    prove: true,
+                },
+                None,
+                platform_version(),
+            )
+            .expect("the prove request must execute");
+        let proof_bytes = match response {
+            DocumentHavingResponse::Proof(proof) => proof,
+            DocumentHavingResponse::Entries(_) => panic!("expected a proof, got entries"),
+        };
+        let root_hash = drive
+            .grove
+            .root_hash(None, &platform_version().drive.grove_version)
+            .unwrap()
+            .expect("root hash must be readable");
+        (proof_bytes, root_hash)
+    }
+
+    fn metadata() -> ResponseMetadata {
+        ResponseMetadata {
+            height: HEIGHT,
+            core_chain_locked_height: CORE_LOCKED_HEIGHT,
+            epoch: 0,
+            time_ms: TIME_MS,
+            protocol_version: platform_version().protocol_version,
+            chain_id: CHAIN_ID.to_string(),
+        }
+    }
+
+    /// Sign a tenderdash precommit whose state id carries `app_hash` —
+    /// the same canonical construction `verify_tenderdash_proof`
+    /// rebuilds on the verify side.
+    fn signed_proof(
+        grovedb_proof: Vec<u8>,
+        app_hash: &[u8; 32],
+        mtd: &ResponseMetadata,
+        secret_key: &SecretKey<Bls12381G2Impl>,
+        quorum_hash: [u8; 32],
+    ) -> Proof {
+        let block_id_hash = [7u8; 32].to_vec();
+        let state_id = StateId {
+            app_version: mtd.protocol_version as u64,
+            core_chain_locked_height: mtd.core_chain_locked_height,
+            time: mtd.time_ms,
+            app_hash: app_hash.to_vec(),
+            height: mtd.height,
+        };
+        let state_id_hash = state_id
+            .calculate_msg_hash(&mtd.chain_id, mtd.height as i64, ROUND as i32)
+            .expect("state id hash");
+        let commit = CanonicalVote {
+            r#type: SignedMsgType::Precommit.into(),
+            block_id: block_id_hash.clone(),
+            chain_id: mtd.chain_id.clone(),
+            height: mtd.height as i64,
+            round: ROUND as i64,
+            state_id: state_id_hash,
+        };
+        let sign_digest = commit
+            .calculate_sign_hash(
+                &mtd.chain_id,
+                QUORUM_TYPE.try_into().expect("valid quorum type"),
+                &quorum_hash,
+                mtd.height as i64,
+                ROUND as i32,
+            )
+            .expect("sign digest");
+        let signature = secret_key
+            .sign(SignatureSchemes::Basic, &sign_digest)
+            .expect("signing with a valid key succeeds")
+            .as_raw_value()
+            .to_compressed()
+            .to_vec();
+        Proof {
+            grovedb_proof,
+            quorum_hash: quorum_hash.to_vec(),
+            signature,
+            round: ROUND,
+            block_id_hash,
+            quorum_type: QUORUM_TYPE,
+        }
+    }
+
+    /// The full composition succeeds end to end: merk verification
+    /// reconstructs the root, the tenderdash commit over that root
+    /// verifies against the quorum key, and the verified entries are
+    /// exactly the matching groups.
+    #[test]
+    fn a_correctly_signed_root_verifies_and_returns_the_matches() {
+        let (platform, _state, _version) = setup_platform(None, Network::Testnet, None);
+        let contract = register_grades(&platform, platform_version());
+        insert_grades(&platform, &contract);
+        let (grovedb_proof, root_hash) = prove(&platform.drive, &contract);
+        let secret_key = quorum_secret_key();
+        let quorum_hash = [3u8; 32];
+        let mtd = metadata();
+        let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, quorum_hash);
+        let provider = TestQuorumProvider {
+            pubkey: secret_key.public_key().0.to_compressed(),
+        };
+
+        let query = client_side_query(&contract);
+        let (verified_root, entries) =
+            verify_having_range_proof(&query, &proof, &mtd, platform_version(), &provider)
+                .expect("a correctly signed root must verify");
+
+        assert_eq!(verified_root, root_hash);
+        assert_eq!(
+            entries.iter().map(|e| e.key.clone()).collect::<Vec<_>>(),
+            vec![[2u8; 32].to_vec()],
+            "only the identity averaging 90 clears the > 80 bound"
+        );
+    }
+
+    /// A commit signed over a *different* app hash must not verify:
+    /// the node's grovedb proof reconstructs the true root, and the
+    /// tenderdash binding is what catches the mismatch.
+    #[test]
+    fn a_commit_over_a_different_app_hash_is_rejected() {
+        let (platform, _state, _version) = setup_platform(None, Network::Testnet, None);
+        let contract = register_grades(&platform, platform_version());
+        insert_grades(&platform, &contract);
+        let (grovedb_proof, _root_hash) = prove(&platform.drive, &contract);
+        let secret_key = quorum_secret_key();
+        let quorum_hash = [3u8; 32];
+        let mtd = metadata();
+        let wrong_app_hash = [0xAA; 32];
+        let proof = signed_proof(
+            grovedb_proof,
+            &wrong_app_hash,
+            &mtd,
+            &secret_key,
+            quorum_hash,
+        );
+        let provider = TestQuorumProvider {
+            pubkey: secret_key.public_key().0.to_compressed(),
+        };
+
+        let query = client_side_query(&contract);
+        let error = verify_having_range_proof(&query, &proof, &mtd, platform_version(), &provider)
+            .expect_err("a commit over a different app hash must be rejected");
+        assert!(
+            matches!(error, ProofVerifierError::InvalidSignature { .. }),
+            "the rejection must be the signature binding, got: {error:?}"
+        );
+    }
+
+    /// Tampered response metadata changes the canonical state id, so a
+    /// signature over the honest metadata stops verifying.
+    #[test]
+    fn tampered_metadata_is_rejected() {
+        let (platform, _state, _version) = setup_platform(None, Network::Testnet, None);
+        let contract = register_grades(&platform, platform_version());
+        insert_grades(&platform, &contract);
+        let (grovedb_proof, root_hash) = prove(&platform.drive, &contract);
+        let secret_key = quorum_secret_key();
+        let quorum_hash = [3u8; 32];
+        let mtd = metadata();
+        let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, quorum_hash);
+        let provider = TestQuorumProvider {
+            pubkey: secret_key.public_key().0.to_compressed(),
+        };
+
+        let mut tampered = mtd;
+        tampered.height += 1;
+
+        let query = client_side_query(&contract);
+        let error =
+            verify_having_range_proof(&query, &proof, &tampered, platform_version(), &provider)
+                .expect_err("tampered metadata must be rejected");
+        assert!(
+            matches!(error, ProofVerifierError::InvalidSignature { .. }),
+            "the rejection must be the signature binding, got: {error:?}"
+        );
+    }
+
+    /// A provider vending a different quorum key models a signer
+    /// outside the expected quorum: the commit must not verify.
+    #[test]
+    fn a_wrong_quorum_key_is_rejected() {
+        let (platform, _state, _version) = setup_platform(None, Network::Testnet, None);
+        let contract = register_grades(&platform, platform_version());
+        insert_grades(&platform, &contract);
+        let (grovedb_proof, root_hash) = prove(&platform.drive, &contract);
+        let secret_key = quorum_secret_key();
+        let quorum_hash = [3u8; 32];
+        let mtd = metadata();
+        let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, quorum_hash);
+
+        let mut other_bytes = [0u8; 32];
+        other_bytes[31] = 43;
+        let other_key = SecretKey::<Bls12381G2Impl>::from_be_bytes(&other_bytes)
+            .into_option()
+            .expect("valid scalar");
+        let provider = TestQuorumProvider {
+            pubkey: other_key.public_key().0.to_compressed(),
+        };
+
+        let query = client_side_query(&contract);
+        let error = verify_having_range_proof(&query, &proof, &mtd, platform_version(), &provider)
+            .expect_err("a commit signed outside the expected quorum must be rejected");
+        assert!(
+            matches!(error, ProofVerifierError::InvalidSignature { .. }),
+            "the rejection must be the signature binding, got: {error:?}"
+        );
+    }
+}
