@@ -1028,6 +1028,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         var prefetchedTxids: Set<Data> = []
         var prefetchedOutpoints: Set<Data> = []
         var prefetchedAddresses: Set<String> = []
+
+        /// Outpoints whose pending-input fallback fetch THREW. The cache
+        /// holds no authoritative answer for these: reads retry the fetch,
+        /// and inserts must not seed a dictionary entry that would read as
+        /// "this is the complete set".
+        var pendingFetchFailed: Set<Data> = []
     }
 
     /// Walk the changeset's account buckets, collect every txid /
@@ -1219,7 +1225,15 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         let descriptor = FetchDescriptor<PersistentPendingInput>(
             predicate: #Predicate { $0.outpoint == outpoint }
         )
-        let rows = (try? backgroundContext.fetch(descriptor)) ?? []
+        guard let rows = try? backgroundContext.fetch(descriptor) else {
+            // A thrown fetch is not "no rows" — leave the dictionary
+            // unpopulated so the next read retries, and remember the
+            // failure so an insert can't seed an entry that would read
+            // as the complete set.
+            cache.pendingFetchFailed.insert(outpoint)
+            return []
+        }
+        cache.pendingFetchFailed.remove(outpoint)
         cache.pendingInputs[outpoint] = rows
         return rows
     }
@@ -1688,7 +1702,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     walletId: walletId
                 )
                 backgroundContext.insert(pending)
-                cache.pendingInputs[outpoint, default: []].append(pending)
+                // When the fallback fetch for this outpoint failed, the
+                // dictionary must stay unpopulated: seeding it with just
+                // this row would read as the complete set. The staged row
+                // is still found by the retrying fallback fetch (pending
+                // changes are visible to fetches).
+                if !cache.pendingFetchFailed.contains(outpoint) {
+                    cache.pendingInputs[outpoint, default: []].append(pending)
+                }
             }
         }
     }
@@ -1702,10 +1723,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         for row in cachedPendingInputs(outpoint: outpoint, cache: cache) {
             backgroundContext.delete(row)
         }
-        // Authoritatively empty for the rest of the round —
-        // `cachedPendingInputs` has already left an entry here, so
-        // this only overwrites rows we just deleted.
-        cache.pendingInputs[outpoint] = []
+        // Authoritatively empty for the rest of the round — but only
+        // after a successful lookup: when the fallback fetch threw, rows
+        // may survive in the store, and writing `[]` would hide them
+        // from every later access in the round.
+        if !cache.pendingFetchFailed.contains(outpoint) {
+            cache.pendingInputs[outpoint] = []
+        }
     }
 
     private func upsertUtxo(

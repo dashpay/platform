@@ -163,7 +163,7 @@ final class WalletChangesetRoundTests: XCTestCase {
         let txos = try fetchAll(PersistentTxo.self, in: container)
         XCTAssertEqual(txos.count, count)
         for txo in txos {
-            let fundingIndex = txo.outpoint.withUnsafeBytes { $0.load(as: UInt64.self) }
+            let fundingIndex = txo.outpoint.withUnsafeBytes { $0.loadUnaligned(as: UInt64.self) }
             if fundingIndex < UInt64(count - 1) {
                 XCTAssertTrue(txo.isSpent, "TXO of tx \(fundingIndex) should be spent")
                 XCTAssertEqual(
