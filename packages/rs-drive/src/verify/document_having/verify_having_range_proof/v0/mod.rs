@@ -1,5 +1,8 @@
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::query::drive_document_ranked_query::branches::{
+    decode_branch_proofs, merge_branch_pages,
+};
 use crate::query::{DriveDocumentHavingQuery, RankedAxis, RankedEntry, RankedEntryValue};
 use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
@@ -43,7 +46,54 @@ impl DriveDocumentHavingQuery<'_> {
         proof: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<RankedEntry>), Error> {
-        let path = self.indexed_property_name_tree_path()?;
+        if self.prefix_branches.len() > 1 {
+            // `IN`-pinned request: same branch-container discipline as
+            // the ranked verifier — count from this query's own
+            // resolution, one root hash across branches, page re-derived
+            // by the shared merge.
+            let branch_proofs = decode_branch_proofs(proof, self.prefix_branches.len())?;
+            let mut root_hash: Option<RootHash> = None;
+            let mut per_branch = Vec::with_capacity(branch_proofs.len());
+            for (branch, branch_proof) in branch_proofs.iter().enumerate() {
+                let (branch_root, entries) =
+                    self.verify_having_range_proof_v0_branch(branch, branch_proof)?;
+                match root_hash {
+                    None => root_hash = Some(branch_root),
+                    Some(existing) if existing == branch_root => {}
+                    Some(_) => {
+                        return Err(Error::Drive(DriveError::CorruptedDriveState(
+                            "branch proofs attest different root hashes: every branch of \
+                             one response must be proved against one platform state"
+                                .to_string(),
+                        )));
+                    }
+                }
+                per_branch.push(entries);
+            }
+            let entries = merge_branch_pages(
+                per_branch,
+                &self.prefix_branches,
+                self.descending,
+                self.limit as usize,
+            )?;
+            let root_hash = root_hash.ok_or_else(|| {
+                Error::Drive(DriveError::CorruptedDriveState(
+                    "branch container verified to zero branches".to_string(),
+                ))
+            })?;
+            return Ok((root_hash, entries));
+        }
+        self.verify_having_range_proof_v0_branch(0, proof)
+    }
+
+    /// One branch's verification — the entire pre-`IN` verifier,
+    /// parameterized by the prefix branch.
+    fn verify_having_range_proof_v0_branch(
+        &self,
+        branch: usize,
+        proof: &[u8],
+    ) -> Result<(RootHash, Vec<RankedEntry>), Error> {
+        let path = self.indexed_property_name_tree_path(branch)?;
         let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
         let secondary_query = self.bounds.merk_query(self.descending);
 
@@ -77,6 +127,7 @@ impl DriveDocumentHavingQuery<'_> {
                 .into_iter()
                 .map(|entry| entry.key_pair())
                 .map(|(count, key)| RankedEntry {
+                    in_key: None,
                     key,
                     value: RankedEntryValue::Count(count),
                 })
@@ -85,6 +136,7 @@ impl DriveDocumentHavingQuery<'_> {
                 .into_iter()
                 .map(|entry| entry.key_pair())
                 .map(|(sum, key)| RankedEntry {
+                    in_key: None,
                     key,
                     value: RankedEntryValue::Sum(sum),
                 })
@@ -93,6 +145,7 @@ impl DriveDocumentHavingQuery<'_> {
                 .into_iter()
                 .map(|entry| entry.key_pair())
                 .map(|(avg, key)| RankedEntry {
+                    in_key: None,
                     key,
                     value: RankedEntryValue::AvgFixedPoint(avg),
                 })

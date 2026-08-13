@@ -85,6 +85,8 @@ use dpp::platform_value::Value;
 pub use grovedb::element::indexed::AVG_FIXED_POINT_SCALE as RANKED_AVG_SCALE;
 
 #[cfg(any(feature = "server", feature = "verify"))]
+pub mod branches;
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod index_picker;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod mode_detection;
@@ -126,6 +128,20 @@ mod tests;
 /// module docs and [`DriveDocumentRankedQuery::offset`].
 #[cfg(any(feature = "server", feature = "verify"))]
 pub const MAX_RANKED_LIMIT: u16 = 100;
+
+/// Hard ceiling on the element count of the (at most one) `IN` prefix
+/// pin — the number of prefix **branches** one ranked / having-range
+/// request may fan out into.
+///
+/// Each element is one full secondary walk and one proof branch, each
+/// carrying up to `limit` committed entries plus boundary commitments,
+/// so worst-case proof size is `MAX_PREFIX_IN_BRANCHES ×
+/// MAX_RANKED_LIMIT` entries (≈100–150 KB at the ceiling). A hard
+/// rejection rather than a clamp, for the same reason as the limit: the
+/// branch set is echoed in the proof container and re-checked by the
+/// verifier.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub const MAX_PREFIX_IN_BRANCHES: usize = 10;
 
 /// The `ORDER BY` field name that means "the group's `COUNT(*)`".
 ///
@@ -256,6 +272,13 @@ pub struct RankedEntry {
     pub key: Vec<u8>,
     /// The group's aggregate on the requested axis.
     pub value: RankedEntryValue,
+    /// The branch this entry came from, on an `IN`-pinned request: the
+    /// encoded index-key segment of the `IN` position's pinned value
+    /// (empty bytes for the `null` branch). `None` on single-branch
+    /// responses — the same group key can appear under two prefixes, so
+    /// only a merged page needs the discriminator. See
+    /// [`branches::branch_in_key`].
+    pub in_key: Option<Vec<u8>>,
 }
 
 /// A resolved ranked query. Shared by the prover and the verifier — both
@@ -279,17 +302,20 @@ pub struct DriveDocumentRankedQuery<'a> {
     pub document_type_name: String,
     /// The covering ranked index. Its **last** property is the `GROUP
     /// BY` property and the final path segment; any leading properties
-    /// are pinned by [`Self::equality_prefix_values`].
+    /// are pinned by [`Self::prefix_branches`].
     pub index: &'a Index,
-    /// Encoded index-key bytes of each leading index property's pinned
-    /// value, in index-property order — empty for a single-property
-    /// index. Together with `index` these determine the grove path
-    /// (each leading property contributes a name segment and a value
-    /// segment), so they are as much a part of the prover/verifier
-    /// agreement as the path builder itself. Produced by
-    /// [`index_picker::encode_equality_prefix_values`] from the
-    /// request's equality `where` pins.
-    pub equality_prefix_values: Vec<Vec<u8>>,
+    /// The prefix **branches** — one inner `Vec<Vec<u8>>` of encoded
+    /// index-key path segments per branch, each in index-property
+    /// order. Always at least one branch; a single-property index or an
+    /// all-`==` pinned request has exactly one (possibly empty) branch,
+    /// and the (at most one) `IN` pin contributes one branch per
+    /// element, in canonical encoded-ascending order. Together with
+    /// `index` these determine the grove path(s), so the branch set is
+    /// as much a part of the prover/verifier agreement as the path
+    /// builder itself. Produced by
+    /// [`index_picker::encode_prefix_branches`] from the request's
+    /// `where` pins.
+    pub prefix_branches: Vec<Vec<Vec<u8>>>,
     /// Which aggregate the groups are ranked by. Must be covered by
     /// `index`'s matching `ranked_*` flag.
     pub axis: RankedAxis,
@@ -423,12 +449,27 @@ pub struct DocumentRankedMode {
     /// [`RankedAxis::Count`] (`COUNT(*)`); the index's `summable`
     /// property for [`RankedAxis::Sum`] / [`RankedAxis::Avg`].
     pub aggregate_field: String,
-    /// The equality `where` pins, `(property, value)` per clause —
-    /// exactly one per leading property of the covering compound index,
-    /// in whatever order the request supplied them (the resolver
-    /// re-orders them into index-property order when it encodes the
-    /// path). Empty for the single-property form. Shape-validated only:
-    /// the index-aware checks (does a compound index exist whose leading
-    /// properties these pin?) live in [`index_picker`].
-    pub equality_pins: Vec<(String, Value)>,
+    /// The `where` pins — exactly one per leading property of the
+    /// covering compound index, in whatever order the request supplied
+    /// them (the resolver re-orders them into index-property order when
+    /// it encodes the path). Empty for the single-property form.
+    /// Shape-validated only: the index-aware checks (does a compound
+    /// index exist whose leading properties these pin?) live in
+    /// [`index_picker`].
+    pub prefix_pins: Vec<PrefixPin>,
+}
+
+/// One pinned leading property of the covering compound index.
+///
+/// An `==` clause pins exactly one value; the (at most one) `IN` clause
+/// pins several, each element selecting its own prefix **branch** — the
+/// executors walk one secondary per branch and merge deterministically.
+/// A single-element `IN` is normalized to an equality pin at grammar
+/// time, so `values.len() > 1` is exactly "this is the branching pin".
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrefixPin {
+    /// The pinned property's name.
+    pub field: String,
+    /// The pinned value(s); never empty.
+    pub values: Vec<Value>,
 }

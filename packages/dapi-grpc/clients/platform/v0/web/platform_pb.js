@@ -30659,7 +30659,8 @@ proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Rank
     key: msg.getKey_asB64(),
     count: jspb.Message.getFieldWithDefault(msg, 2, "0"),
     sum: jspb.Message.getFieldWithDefault(msg, 3, "0"),
-    avg: jspb.Message.getFloatingPointFieldWithDefault(msg, 4, 0.0)
+    avg: jspb.Message.getFloatingPointFieldWithDefault(msg, 4, 0.0),
+    inKey: msg.getInKey_asB64()
   };
 
   if (includeInstance) {
@@ -30711,6 +30712,10 @@ proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Rank
     case 4:
       var value = /** @type {number} */ (reader.readDouble());
       msg.setAvg(value);
+      break;
+    case 5:
+      var value = /** @type {!Uint8Array} */ (reader.readBytes());
+      msg.setInKey(value);
       break;
     default:
       reader.skipField();
@@ -30766,6 +30771,13 @@ proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Rank
   if (f != null) {
     writer.writeDouble(
       4,
+      f
+    );
+  }
+  f = /** @type {!(string|Uint8Array)} */ (jspb.Message.getField(message, 5));
+  if (f != null) {
+    writer.writeBytes(
+      5,
       f
     );
   }
@@ -30919,6 +30931,66 @@ proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Rank
  */
 proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.prototype.hasAvg = function() {
   return jspb.Message.getField(this, 4) != null;
+};
+
+
+/**
+ * optional bytes in_key = 5;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.prototype.getInKey = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 5, ""));
+};
+
+
+/**
+ * optional bytes in_key = 5;
+ * This is a type-conversion wrapper around `getInKey()`
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.prototype.getInKey_asB64 = function() {
+  return /** @type {string} */ (jspb.Message.bytesAsB64(
+      this.getInKey()));
+};
+
+
+/**
+ * optional bytes in_key = 5;
+ * Note that Uint8Array is not supported on all browsers.
+ * @see http://caniuse.com/Uint8Array
+ * This is a type-conversion wrapper around `getInKey()`
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.prototype.getInKey_asU8 = function() {
+  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
+      this.getInKey()));
+};
+
+
+/**
+ * @param {!(string|Uint8Array)} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.prototype.setInKey = function(value) {
+  return jspb.Message.setField(this, 5, value);
+};
+
+
+/**
+ * Clears the field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.prototype.clearInKey = function() {
+  return jspb.Message.setField(this, 5, undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.prototype.hasInKey = function() {
+  return jspb.Message.getField(this, 5) != null;
 };
 
 

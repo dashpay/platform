@@ -101,12 +101,15 @@ impl DriveDocumentRankedQuery<'_> {
     /// Errors when the number of encoded prefix values does not match
     /// the index's leading-property count — the fail-closed backstop
     /// for a caller that resolved the query against the wrong index.
-    pub fn indexed_property_name_tree_path(&self) -> Result<Vec<Vec<u8>>, Error> {
+    ///
+    /// `branch` indexes into [`Self::prefix_branches`]; single-branch
+    /// queries (no `IN` pin) always pass `0`.
+    pub fn indexed_property_name_tree_path(&self, branch: usize) -> Result<Vec<Vec<u8>>, Error> {
         indexed_property_name_tree_path_for_index(
             &self.contract_id,
             &self.document_type_name,
             self.index,
-            &self.equality_prefix_values,
+            &self.prefix_branches[branch],
         )
     }
 }

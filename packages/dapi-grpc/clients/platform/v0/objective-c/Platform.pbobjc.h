@@ -2941,11 +2941,11 @@ typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase) {
  * - a is the In field AND b is the range field, in that order → existing compound distinct shape; entries carry both `in_key` (= a's value) and `key` (= b's value).
  *
  * `select=<COUNT(*)|SUM(f)|AVG(f)>, group_by=[p], order_by=[<the selected aggregate>]` (protocol v14+) — **ranked mode**:
- * - exactly one `group_by` property, exactly one `order_by` clause naming the select's aggregate (`f` for `SUM(f)` / `AVG(f)`, the `$count` sentinel for `COUNT(*)`), a `limit` in `1 ..= 100`, an optional `offset`, and no `having` / `start_at`, on an index declaring the matching `rankedCountable` / `rankedSummable` / `rankedAverageable` axis → ranked executor, answered in `ResultData.ranked`. On a single-property ranked index no `where` is accepted; on a compound ranked index every leading index property must be pinned with an `EQUAL` where clause (one per property, `group_by` names the trailing property), selecting which prefix's ranking is read.
+ * - exactly one `group_by` property, exactly one `order_by` clause naming the select's aggregate (`f` for `SUM(f)` / `AVG(f)`, the `$count` sentinel for `COUNT(*)`), a `limit` in `1 ..= 100`, an optional `offset`, and no `having` / `start_at`, on an index declaring the matching `rankedCountable` / `rankedSummable` / `rankedAverageable` axis → ranked executor, answered in `ResultData.ranked`. On a single-property ranked index no `where` is accepted; on a compound ranked index every leading index property must be pinned (one clause per property, `group_by` names the trailing property) — `EQUAL` pins one prefix, and **at most one** clause may be `IN` (2..=10 distinct elements, `null` legal), fanning the walk out across one prefix branch per element and merging by `(aggregate, encoded prefix, group key)`; merged entries carry `in_key`. `offset` is rejected together with `IN` (rank-skip is per-secondary).
  * - `DESC` is the "top n" reading (walk the axis from the largest aggregate down), `ASC` the "bottom n" reading. Worked example: `SELECT AVG(grade) GROUP BY restaurantId ORDER BY grade DESC LIMIT 1 OFFSET 4` is the 5th-best restaurant.
  *
  * `select=<COUNT(*)|SUM(f)|AVG(f)>, group_by=[p], having=[<the selected aggregate> <op> <value>]` (protocol v14+) — **having-range mode**:
- * - exactly one `group_by` property, exactly one `having` clause whose aggregate is the select's aggregate, an operator describing one contiguous range (`EQUAL`, `GREATER_THAN[_OR_EQUALS]`, `LESS_THAN[_OR_EQUALS]`, `BETWEEN*`; `NOT_EQUAL` / `IN` rejected), a `limit` in `1 ..= 100`, an optional `order_by` naming the same aggregate (walk direction; ascending by default), and no `offset` / `start_at` / `start_after`, on an index declaring the matching ranked axis → having-range executor, answered in `ResultData.ranked`. `where` follows the same rule as ranked mode: none on a single-property ranked index; exactly one `EQUAL` pin per leading index property on a compound ranked index.
+ * - exactly one `group_by` property, exactly one `having` clause whose aggregate is the select's aggregate, an operator describing one contiguous range (`EQUAL`, `GREATER_THAN[_OR_EQUALS]`, `LESS_THAN[_OR_EQUALS]`, `BETWEEN*`; `NOT_EQUAL` / `IN` rejected), a `limit` in `1 ..= 100`, an optional `order_by` naming the same aggregate (walk direction; ascending by default), and no `offset` / `start_at` / `start_after`, on an index declaring the matching ranked axis → having-range executor, answered in `ResultData.ranked`. `where` follows the same rule as ranked mode: none on a single-property ranked index; exactly one pin per leading index property on a compound ranked index, at most one of them an `IN` (2..=10 distinct elements) that fans the bound out across prefix branches and merges, entries carrying `in_key`.
  * - no offset or cursor pagination: a page cut at `limit` continues only by tightening the bound past the last *distinct* aggregate value seen; a cut inside a tie (several groups sharing the boundary aggregate) cannot be continued, so size `limit` above the widest expected tie.
  *
  * **Rejected shapes** (return `Unsupported`):
@@ -3717,6 +3717,7 @@ typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNu
   GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_Count = 2,
   GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_Sum = 3,
   GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_Avg = 4,
+  GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_InKey = 5,
 };
 
 typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_Value_OneOfCase) {
@@ -3800,6 +3801,19 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry : G
  * than hardcoding the literal.
  **/
 @property(nonatomic, readwrite) double avg;
+
+/**
+ * The prefix branch this entry came from, set **only** on an
+ * `IN`-pinned request (see the supported-shape table): the
+ * encoded index-key bytes of the `IN` property's pinned value —
+ * empty bytes for the `null` (absent-value) branch. Absent on
+ * single-prefix responses. The same group key can legally appear
+ * under two prefixes, so `(in_key, key)` is the entry's identity
+ * on a merged page, exactly as on `CountEntry`.
+ **/
+@property(nonatomic, readwrite, copy, null_resettable) NSData *inKey;
+/** Test to see if @c inKey has been set. */
+@property(nonatomic, readwrite) BOOL hasInKey;
 
 @end
 

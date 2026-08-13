@@ -3,6 +3,7 @@
 //! this file is a v0 internal: a later grammar version gets its own
 //! `vN/` sibling rather than editing this one.
 
+use super::super::{PrefixPin, MAX_PREFIX_IN_BRANCHES};
 use super::ranked_order_key;
 use super::{
     DocumentRankedMode, RankedAxis, RankedPaginationInputs, MAX_RANKED_LIMIT,
@@ -22,46 +23,26 @@ use dpp::platform_value::Value;
 /// Both surfaces read a compound index's per-prefix secondary by
 /// descending through one prefix value tree per **leading** index
 /// property, and only an equality clause names a single value tree to
-/// descend into. So the grammar is: every `where` clause must be an
-/// equality (`==`), each on a distinct property. `IN` is rejected
-/// separately from the other operators because it *will* eventually be
-/// serviceable (one branch per element, once multi-`IN` branching lands
-/// on the document query surface) — the message says so — while a range
-/// operator on a prefix property can never pin a single subtree.
+/// descend into. So the grammar is: every `where` clause is an equality
+/// (`==`) on a distinct property, except that **at most one** clause may
+/// be an `IN` — each of its elements selects its own prefix *branch*,
+/// and the executors walk one secondary per branch and merge (see
+/// [`MAX_PREFIX_IN_BRANCHES`] for the fan-out ceiling). A
+/// range operator on a prefix property can never pin a subtree and is
+/// rejected outright. A single-element `IN` is normalized to an
+/// equality pin, so the degenerate case is byte-identical to `==`.
 ///
 /// Shape-only, like everything in this module: whether the pinned
 /// properties are exactly the leading properties of a covering compound
-/// index is the index picker's call.
-pub fn equality_pins_from_where_clauses(
+/// index is the index picker's call, and element distinctness is
+/// enforced post-encoding by the prefix encoder (two spellings of one
+/// value are one branch, and must be rejected as a duplicate).
+pub fn prefix_pins_from_where_clauses(
     where_clauses: &[WhereClause],
-) -> Result<Vec<(String, Value)>, Error> {
-    let mut pins: Vec<(String, Value)> = Vec::with_capacity(where_clauses.len());
+) -> Result<Vec<PrefixPin>, Error> {
+    let mut pins: Vec<PrefixPin> = Vec::with_capacity(where_clauses.len());
+    let mut branching_field: Option<&str> = None;
     for clause in where_clauses {
-        match clause.operator {
-            WhereOperator::Equal => {}
-            WhereOperator::In => {
-                return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-                    "`{} IN …` is not yet supported on a ranked / having-range query's \
-                     prefix properties: each `IN` element names a different prefix value \
-                     tree, so serving it means one secondary walk per element and a merged \
-                     result — a future capability layered on multi-`IN` branching. Pin \
-                     each leading index property with `==`, or issue one request per \
-                     value.",
-                    clause.field
-                ))));
-            }
-            _ => {
-                return Err(Error::Query(
-                    QuerySyntaxError::InvalidWhereClauseComponents(
-                        "a ranked / having-range query's `where` clauses must pin the covering \
-                     compound index's leading properties with `==`: the per-prefix \
-                     secondary lives under one prefix value tree per leading property, and \
-                     only an equality names a single value tree to descend into — a range \
-                     operator cannot pin a prefix",
-                    ),
-                ));
-            }
-        }
         if clause.field.is_empty() {
             return Err(Error::Query(
                 QuerySyntaxError::InvalidWhereClauseComponents(
@@ -69,15 +50,72 @@ pub fn equality_pins_from_where_clauses(
                 ),
             ));
         }
-        if pins.iter().any(|(field, _)| field == &clause.field) {
+        if pins.iter().any(|pin| pin.field == clause.field) {
             return Err(Error::Query(
                 QuerySyntaxError::InvalidWhereClauseComponents(
                     "a ranked / having-range query pins the same property twice: each leading \
-                 index property takes exactly one equality pin",
+                 index property takes exactly one pin",
                 ),
             ));
         }
-        pins.push((clause.field.clone(), clause.value.clone()));
+        let values = match clause.operator {
+            WhereOperator::Equal => vec![clause.value.clone()],
+            WhereOperator::In => {
+                if let Some(first) = branching_field {
+                    return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                        "a ranked / having-range query takes at most one `IN` across its \
+                         prefix properties (`{first}` already carries it): several `IN`s \
+                         multiply into a cartesian product of prefix branches, each a \
+                         separate secondary walk inside one proof — a fan-out the branch \
+                         ceiling exists to prevent. Pin `{}` with `==`.",
+                        clause.field
+                    ))));
+                }
+                let Value::Array(elements) = &clause.value else {
+                    return Err(Error::Query(
+                        QuerySyntaxError::InvalidWhereClauseComponents(
+                            "an `IN` pin's right operand must be an array of candidate values",
+                        ),
+                    ));
+                };
+                if elements.is_empty() {
+                    return Err(Error::Query(
+                        QuerySyntaxError::InvalidWhereClauseComponents(
+                            "an `IN` pin's element list is empty: it can match nothing, and \
+                             a pin that cannot match any prefix is a caller error",
+                        ),
+                    ));
+                }
+                if elements.len() > MAX_PREFIX_IN_BRANCHES {
+                    return Err(Error::Query(QuerySyntaxError::InvalidParameter(format!(
+                        "an `IN` pin fans out into one secondary walk (and one proof \
+                         branch) per element; {} elements exceeds the ceiling of {}. \
+                         Split the request.",
+                        elements.len(),
+                        MAX_PREFIX_IN_BRANCHES
+                    ))));
+                }
+                if elements.len() > 1 {
+                    branching_field = Some(clause.field.as_str());
+                }
+                elements.clone()
+            }
+            _ => {
+                return Err(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "a ranked / having-range query's `where` clauses must pin the covering \
+                     compound index's leading properties with `==` (or one `IN`): the \
+                     per-prefix secondary lives under one prefix value tree per leading \
+                     property, and only equality names value trees to descend into — a \
+                     range operator cannot pin a prefix",
+                    ),
+                ));
+            }
+        };
+        pins.push(PrefixPin {
+            field: clause.field.clone(),
+            values,
+        });
     }
     Ok(pins)
 }
@@ -98,7 +136,7 @@ pub fn equality_pins_from_where_clauses(
 /// `m ≥ 0`. `WHERE` clauses, when present, must be **equality pins** on
 /// distinct properties — one per leading property of a covering
 /// compound ranked index (see
-/// [`equality_pins_from_where_clauses`]); the ranking then reads that
+/// [`prefix_pins_from_where_clauses`]); the ranking then reads that
 /// pinned prefix's own secondary. With no `where` the covering index is
 /// single-property, exactly as before.
 ///
@@ -263,7 +301,7 @@ pub fn detect_ranked_mode_v0(
     // serve). Anything other than a distinct-property equality is
     // rejected loudly here; whether the pinned set matches a covering
     // index's leading properties exactly is the index picker's call.
-    let equality_pins = equality_pins_from_where_clauses(where_clauses)?;
+    let prefix_pins = prefix_pins_from_where_clauses(where_clauses)?;
 
     // ---- LIMIT: required, 1 ..= MAX_RANKED_LIMIT ---------------------
     //
@@ -328,6 +366,24 @@ pub fn detect_ranked_mode_v0(
         )));
     }
 
+    // ---- OFFSET × IN: mutually exclusive -----------------------------
+    //
+    // Rank-skip is served from counted subtree commitments *inside one
+    // secondary*; there is no counted structure spanning a branch
+    // union, so a cross-branch offset would have to walk (and prove)
+    // the skipped region in every branch — silently expensive. Callers
+    // who need deep pages issue per-prefix requests, where offset works
+    // exactly as documented.
+    if offset > 0 && prefix_pins.iter().any(|pin| pin.values.len() > 1) {
+        return Err(Error::Query(QuerySyntaxError::InvalidLimit(
+            "`OFFSET` cannot combine with an `IN` prefix pin: rank-skip is attested from \
+             one secondary's counted commitments, and an `IN` merges several secondaries \
+             with no counted structure over the union. Page one prefix at a time (`==` \
+             pin + `OFFSET`), or drop the offset."
+                .to_string(),
+        )));
+    }
+
     Ok(DocumentRankedMode {
         axis,
         descending,
@@ -335,6 +391,6 @@ pub fn detect_ranked_mode_v0(
         offset,
         group_by_property,
         aggregate_field,
-        equality_pins,
+        prefix_pins,
     })
 }

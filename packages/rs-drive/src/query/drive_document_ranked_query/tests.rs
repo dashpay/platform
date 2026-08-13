@@ -495,9 +495,9 @@ fn sum_and_avg_selects_require_a_field() {
 /// properties. Detection is shape-only: an equality clause becomes a
 /// pin (whether a compound index actually covers it is the resolver's
 /// call — see `pins_without_a_covering_compound_index_are_rejected`);
-/// anything that is not a distinct-property equality is refused
-/// loudly, `IN` with its own not-yet message because it will become
-/// serviceable once multi-`IN` branching lands.
+/// anything that is not a distinct-property equality — or the one
+/// permitted `IN`, which resolves to a multi-value branching pin — is
+/// refused loudly.
 #[test]
 fn where_clauses_resolve_to_equality_pins_and_reject_everything_else() {
     // Equality pin: accepted at detection, carried in the mode.
@@ -516,8 +516,11 @@ fn where_clauses_resolve_to_equality_pins_and_reject_everything_else() {
     )
     .expect("an equality pin is a well-formed prefix pin");
     assert_eq!(
-        mode.equality_pins,
-        vec![("chefId".to_string(), Value::Text("alpha".to_string()))]
+        mode.prefix_pins,
+        vec![PrefixPin {
+            field: "chefId".to_string(),
+            values: vec![Value::Text("alpha".to_string())],
+        }]
     );
 
     // A range operator can never pin a single prefix value tree.
@@ -540,14 +543,17 @@ fn where_clauses_resolve_to_equality_pins_and_reject_everything_else() {
         Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(_))
     ));
 
-    // `IN` is rejected with its own message: v1 pins are equality-only,
-    // multi-`IN` branching is a future capability.
+    // `IN` resolves to a branching pin — one value per element — and a
+    // single-element `IN` is exactly an equality pin.
     let in_clause = vec![WhereClause {
         field: "chefId".to_string(),
         operator: WhereOperator::In,
-        value: Value::Array(vec![Value::Text("alpha".to_string())]),
+        value: Value::Array(vec![
+            Value::Text("beta".to_string()),
+            Value::Text("alpha".to_string()),
+        ]),
     }];
-    let error = detect_ranked_mode_v0(
+    let mode = detect_ranked_mode_v0(
         &SelectProjection::avg("grade"),
         &group_by(),
         &[],
@@ -555,16 +561,19 @@ fn where_clauses_resolve_to_equality_pins_and_reject_everything_else() {
         &in_clause,
         page(Some(2), None),
     )
-    .expect_err("IN prefixes are not yet supported");
-    match error {
-        Error::Query(QuerySyntaxError::Unsupported(message)) => {
-            assert!(
-                message.contains("IN") && message.contains("not yet supported"),
-                "the IN rejection must say it is a not-yet capability, got: {message}"
-            );
-        }
-        other => panic!("expected Unsupported for an IN prefix, got {other:?}"),
-    }
+    .expect("an IN pin is a well-formed branching pin");
+    assert_eq!(
+        mode.prefix_pins,
+        vec![PrefixPin {
+            field: "chefId".to_string(),
+            values: vec![
+                Value::Text("beta".to_string()),
+                Value::Text("alpha".to_string()),
+            ],
+        }],
+        "the pin carries the elements verbatim; canonical branch order \
+         is the encoder's job, not the grammar's"
+    );
 
     // The same property pinned twice is a caller error, not a silent
     // last-write-wins.
@@ -2121,7 +2130,7 @@ mod pinned_prefix {
 
     use super::super::drive_dispatcher::{DocumentRankedRequest, DocumentRankedResponse};
     use super::super::index_picker::resolve_ranked_query_for_mode;
-    use super::super::mode_detection::detect_ranked_mode;
+    use super::super::mode_detection::{detect_ranked_mode, detect_ranked_mode_v0};
     use super::super::{DriveDocumentRankedQuery, RankedEntry, RankedEntryValue};
     use crate::drive::Drive;
     use crate::error::query::QuerySyntaxError;
@@ -2335,10 +2344,12 @@ mod pinned_prefix {
             page.entries,
             vec![
                 RankedEntry {
+                    in_key: None,
                     key: b"art".to_vec(),
                     value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(180, 2)),
                 },
                 RankedEntry {
+                    in_key: None,
                     key: b"english".to_vec(),
                     value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(161, 2)),
                 },
@@ -2477,10 +2488,12 @@ mod pinned_prefix {
             page.entries,
             vec![
                 RankedEntry {
+                    in_key: None,
                     key: b"math".to_vec(),
                     value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(170, 2)),
                 },
                 RankedEntry {
+                    in_key: None,
                     key: b"science".to_vec(),
                     value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(60, 1)),
                 },
@@ -2526,8 +2539,8 @@ mod pinned_prefix {
         )
         .expect("the compound index covers the null-pinned request");
         assert_eq!(
-            query.equality_prefix_values,
-            vec![Vec::<u8>::new()],
+            query.prefix_branches,
+            vec![vec![Vec::<u8>::new()]],
             "a null pin must encode as the write path's empty segment"
         );
         let (root_hash, verified) = query
@@ -2541,6 +2554,361 @@ mod pinned_prefix {
                 .root_hash(None, &pv.drive.grove_version)
                 .unwrap()
                 .expect("root hash must be readable"),
+        );
+    }
+
+    fn in_pin(identities: &[[u8; 32]]) -> Vec<WhereClause> {
+        vec![WhereClause {
+            field: PREFIX_PROPERTY.to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(
+                identities
+                    .iter()
+                    .map(|identity| Value::Identifier(*identity))
+                    .collect(),
+            ),
+        }]
+    }
+
+    /// `identityId IN [X, Y]` walks each identity's own secondary and
+    /// merges: descending aggregate order, entries tagged with their
+    /// branch's `in_key`, and a **cross-prefix aggregate tie** breaking
+    /// by encoded prefix ascending (X's 32 `1`-bytes before Y's `2`s) —
+    /// the comparator's middle term, observable only here. The proof is
+    /// a branch container, round-tripped through the shared resolver
+    /// against the live root hash.
+    #[test]
+    fn in_pinned_top_k_merges_branches_and_proves() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        insert_grades(
+            &drive,
+            &contract,
+            &[
+                // X: art 90, math 80. Y: science 95, history 90 — the
+                // two 90s are the cross-prefix tie.
+                (IDENTITY_X, "art", 90),
+                (IDENTITY_X, "math", 80),
+                (IDENTITY_Y, "science", 95),
+                (IDENTITY_Y, "history", 90),
+            ],
+        );
+
+        // Request order [Y, X] deliberately reversed: canonical branch
+        // order is by encoded prefix, not by element order.
+        let pins = in_pin(&[IDENTITY_Y, IDENTITY_X]);
+        let page = match run(&drive, &contract, &pins, 3, false).expect("read succeeds") {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries, got a proof"),
+        };
+        assert_eq!(page.skipped, 0);
+        assert_eq!(
+            page.entries,
+            vec![
+                RankedEntry {
+                    in_key: Some(IDENTITY_Y.to_vec()),
+                    key: b"science".to_vec(),
+                    value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(95, 1)),
+                },
+                RankedEntry {
+                    in_key: Some(IDENTITY_X.to_vec()),
+                    key: b"art".to_vec(),
+                    value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(90, 1)),
+                },
+                RankedEntry {
+                    in_key: Some(IDENTITY_Y.to_vec()),
+                    key: b"history".to_vec(),
+                    value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(90, 1)),
+                },
+            ],
+            "top 3 across the union: science 95, then the 90–90 tie broken \
+             by encoded prefix ascending (X's art before Y's history)"
+        );
+
+        let proof = match run(&drive, &contract, &pins, 3, true).expect("prove succeeds") {
+            DocumentRankedResponse::Proof(proof) => proof,
+            DocumentRankedResponse::Entries(_) => panic!("expected a proof, got entries"),
+        };
+        let query = client_side_query(&contract, &pins, 3);
+        assert_eq!(query.prefix_branches.len(), 2, "two branches resolved");
+        let (root_hash, verified) = query
+            .verify_ranked_top_k_proof(&proof, platform_version())
+            .expect("the branch container must verify");
+        assert_eq!(verified.entries, page.entries);
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &platform_version().drive.grove_version)
+                .unwrap()
+                .expect("root hash must be readable"),
+        );
+    }
+
+    /// The tamper matrix on the branch container: a response whose
+    /// branch proofs are reordered, dropped, duplicated, re-versioned,
+    /// or padded must fail verification — never silently reorder or
+    /// shrink the merged page.
+    #[test]
+    fn tampered_branch_containers_do_not_verify() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        insert_grades(
+            &drive,
+            &contract,
+            &[(IDENTITY_X, "art", 90), (IDENTITY_Y, "science", 95)],
+        );
+        let pins = in_pin(&[IDENTITY_X, IDENTITY_Y]);
+        let proof = match run(&drive, &contract, &pins, 2, true).expect("prove succeeds") {
+            DocumentRankedResponse::Proof(proof) => proof,
+            DocumentRankedResponse::Entries(_) => panic!("expected a proof, got entries"),
+        };
+        let query = client_side_query(&contract, &pins, 2);
+
+        // Baseline sanity: untampered verifies.
+        query
+            .verify_ranked_top_k_proof(&proof, platform_version())
+            .expect("untampered container verifies");
+
+        // Decompose the container by hand: [version][u16 count]([u32 len][bytes])*
+        assert_eq!(proof[0], 1, "container version byte");
+        let count = u16::from_be_bytes([proof[1], proof[2]]) as usize;
+        assert_eq!(count, 2);
+        let mut branch_proofs = Vec::new();
+        let mut rest = &proof[3..];
+        for _ in 0..count {
+            let len = u32::from_be_bytes([rest[0], rest[1], rest[2], rest[3]]) as usize;
+            branch_proofs.push(rest[4..4 + len].to_vec());
+            rest = &rest[4 + len..];
+        }
+        let reframe = |proofs: &[Vec<u8>]| {
+            let mut out = vec![1u8];
+            out.extend_from_slice(&(proofs.len() as u16).to_be_bytes());
+            for p in proofs {
+                out.extend_from_slice(&(p.len() as u32).to_be_bytes());
+                out.extend_from_slice(p);
+            }
+            out
+        };
+
+        // Reordered: branch 0's proof is verified against branch 1's
+        // path and fails inside grovedb.
+        let reordered = reframe(&[branch_proofs[1].clone(), branch_proofs[0].clone()]);
+        assert!(
+            query
+                .verify_ranked_top_k_proof(&reordered, platform_version())
+                .is_err(),
+            "reordered branch proofs must not verify"
+        );
+
+        // Dropped: count mismatch against the query's own resolution.
+        let dropped = reframe(&[branch_proofs[0].clone()]);
+        assert!(
+            query
+                .verify_ranked_top_k_proof(&dropped, platform_version())
+                .is_err(),
+            "a dropped branch must not verify"
+        );
+
+        // Duplicated: same count, but branch 1's slot holds branch 0's
+        // proof — wrong path again.
+        let duplicated = reframe(&[branch_proofs[0].clone(), branch_proofs[0].clone()]);
+        assert!(
+            query
+                .verify_ranked_top_k_proof(&duplicated, platform_version())
+                .is_err(),
+            "a duplicated branch proof must not verify"
+        );
+
+        // Unknown container version.
+        let mut reversioned = proof.clone();
+        reversioned[0] = 2;
+        assert!(
+            query
+                .verify_ranked_top_k_proof(&reversioned, platform_version())
+                .is_err(),
+            "an unknown container version must not verify"
+        );
+
+        // Trailing bytes after the declared proofs.
+        let mut padded = proof.clone();
+        padded.push(0);
+        assert!(
+            query
+                .verify_ranked_top_k_proof(&padded, platform_version())
+                .is_err(),
+            "trailing bytes must not verify"
+        );
+    }
+
+    /// A single-element `IN` is normalized to an equality pin at
+    /// grammar time: same resolved branch set, same entries, and the
+    /// **same proof bytes** — the degenerate case is byte-identical to
+    /// `==`, so no client can observe which spelling was used.
+    #[test]
+    fn single_element_in_is_byte_identical_to_an_equality_pin() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        insert_grades(&drive, &contract, &[(IDENTITY_X, "art", 90)]);
+
+        let equality = pin(IDENTITY_X);
+        let single_in = in_pin(&[IDENTITY_X]);
+
+        let eq_query = client_side_query(&contract, &equality, 2);
+        let in_query = client_side_query(&contract, &single_in, 2);
+        assert_eq!(eq_query.prefix_branches, in_query.prefix_branches);
+
+        let eq_proof = match run(&drive, &contract, &equality, 2, true).expect("prove") {
+            DocumentRankedResponse::Proof(proof) => proof,
+            DocumentRankedResponse::Entries(_) => panic!("expected a proof"),
+        };
+        let in_proof = match run(&drive, &contract, &single_in, 2, true).expect("prove") {
+            DocumentRankedResponse::Proof(proof) => proof,
+            DocumentRankedResponse::Entries(_) => panic!("expected a proof"),
+        };
+        assert_eq!(eq_proof, in_proof, "no container for a single branch");
+
+        let eq_page = match run(&drive, &contract, &equality, 2, false).expect("read") {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries"),
+        };
+        assert!(
+            eq_page.entries.iter().all(|e| e.in_key.is_none()),
+            "single-branch entries carry no in_key"
+        );
+    }
+
+    /// `OFFSET` is rejected together with an `IN` pin — rank-skip is
+    /// attested per-secondary and has no meaning across a branch union.
+    #[test]
+    fn offset_is_rejected_with_an_in_pin() {
+        let error = detect_ranked_mode_v0(
+            &SelectProjection::avg("grade"),
+            &vec![CLASS_PROPERTY.to_string()],
+            &[],
+            &[OrderClause {
+                field: "grade".to_string(),
+                ascending: false,
+            }],
+            &in_pin(&[IDENTITY_X, IDENTITY_Y]),
+            RankedPaginationInputs {
+                limit: Some(2),
+                offset: Some(1),
+                has_start_at: false,
+            },
+        )
+        .expect_err("offset cannot combine with IN");
+        match error {
+            Error::Query(QuerySyntaxError::InvalidLimit(message)) => {
+                assert!(
+                    message.contains("OFFSET") && message.contains("IN"),
+                    "the rejection must name the offset × IN exclusion, got: {message}"
+                );
+            }
+            other => panic!("expected InvalidLimit, got {other:?}"),
+        }
+    }
+
+    /// Grammar rejections around the `IN` pin: over-cap element lists,
+    /// empty lists, a second `IN`, a non-array operand, and elements
+    /// that encode to the same segment.
+    #[test]
+    fn in_pin_shape_rejections() {
+        let detect = |where_clauses: &[WhereClause]| {
+            detect_ranked_mode_v0(
+                &SelectProjection::avg("grade"),
+                &vec![CLASS_PROPERTY.to_string()],
+                &[],
+                &[OrderClause {
+                    field: "grade".to_string(),
+                    ascending: false,
+                }],
+                where_clauses,
+                RankedPaginationInputs {
+                    limit: Some(2),
+                    offset: None,
+                    has_start_at: false,
+                },
+            )
+        };
+
+        // Over the branch ceiling.
+        let identities: Vec<[u8; 32]> = (0..11).map(|i| [i as u8 + 1; 32]).collect();
+        let error = detect(&in_pin(&identities)).expect_err("11 branches is over the cap");
+        match error {
+            Error::Query(QuerySyntaxError::InvalidParameter(message)) => {
+                assert!(
+                    message.contains("ceiling of 10"),
+                    "the rejection must name the ceiling, got: {message}"
+                );
+            }
+            other => panic!("expected InvalidParameter, got {other:?}"),
+        }
+
+        // Empty element list.
+        let empty = vec![WhereClause {
+            field: PREFIX_PROPERTY.to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![]),
+        }];
+        assert!(detect(&empty).is_err(), "an empty IN list must be rejected");
+
+        // A second IN (on another property) once one already branches.
+        let two_ins = vec![
+            WhereClause {
+                field: PREFIX_PROPERTY.to_string(),
+                operator: WhereOperator::In,
+                value: Value::Array(vec![
+                    Value::Identifier(IDENTITY_X),
+                    Value::Identifier(IDENTITY_Y),
+                ]),
+            },
+            WhereClause {
+                field: "other".to_string(),
+                operator: WhereOperator::In,
+                value: Value::Array(vec![Value::U64(1), Value::U64(2)]),
+            },
+        ];
+        let error = detect(&two_ins).expect_err("two branching INs must be rejected");
+        assert!(
+            matches!(error, Error::Query(QuerySyntaxError::Unsupported(_))),
+            "expected Unsupported for a second IN, got {error:?}"
+        );
+
+        // Non-array operand.
+        let scalar = vec![WhereClause {
+            field: PREFIX_PROPERTY.to_string(),
+            operator: WhereOperator::In,
+            value: Value::U64(7),
+        }];
+        assert!(
+            detect(&scalar).is_err(),
+            "a scalar IN operand must be rejected"
+        );
+
+        // Duplicate elements surface at the encoder (post-encoding
+        // distinctness), through the resolver.
+        let (_, contract) = setup_grades_compound_ranked();
+        let duplicated = in_pin(&[IDENTITY_X, IDENTITY_X]);
+        let mode = detect(&duplicated).expect("shape-valid; duplicates are the encoder's call");
+        let error = resolve_ranked_query_for_mode(
+            contract.id_ref().to_buffer(),
+            contract
+                .document_type_for_name(DOCUMENT_TYPE)
+                .expect("grade doctype exists"),
+            DOCUMENT_TYPE.to_string(),
+            contract
+                .document_types()
+                .get(DOCUMENT_TYPE)
+                .expect("grade doctype exists")
+                .indexes(),
+            &mode,
+            platform_version(),
+        )
+        .expect_err("duplicate encoded elements must be rejected");
+        assert!(
+            matches!(
+                error,
+                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(_))
+            ),
+            "expected the duplicate-encoding rejection, got {error:?}"
         );
     }
 

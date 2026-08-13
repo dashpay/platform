@@ -11,6 +11,9 @@
 //! Whole module is gated `feature = "server"` via the parent's
 //! `pub mod execute_range;` declaration.
 
+use super::super::drive_document_ranked_query::branches::{
+    encode_branch_proofs, merge_branch_pages,
+};
 use super::super::drive_document_ranked_query::{RankedAxis, RankedEntry, RankedEntryValue};
 use super::{AxisRangeBounds, DriveDocumentHavingQuery};
 use crate::drive::Drive;
@@ -39,8 +42,36 @@ impl DriveDocumentHavingQuery<'_> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<RankedEntry>, Error> {
+        if self.prefix_branches.len() > 1 {
+            // One bounded walk per branch, each fetching up to the full
+            // limit (the merge lemma needs every branch's own in-bound
+            // prefix), merged with the shared comparator.
+            let per_branch = (0..self.prefix_branches.len())
+                .map(|branch| {
+                    self.execute_range_no_proof_branch(branch, drive, transaction, platform_version)
+                })
+                .collect::<Result<Vec<_>, Error>>()?;
+            return merge_branch_pages(
+                per_branch,
+                &self.prefix_branches,
+                self.descending,
+                self.limit as usize,
+            );
+        }
+        self.execute_range_no_proof_branch(0, drive, transaction, platform_version)
+    }
+
+    /// One branch's in-bound page — the entire pre-`IN` executor,
+    /// parameterized by which prefix branch's terminal tree it walks.
+    fn execute_range_no_proof_branch(
+        &self,
+        branch: usize,
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<RankedEntry>, Error> {
         let grove_version = &platform_version.drive.grove_version;
-        let path = self.indexed_property_name_tree_path()?;
+        let path = self.indexed_property_name_tree_path(branch)?;
         let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
 
         // Costs are destructured away rather than `.unwrap()`-ed, same
@@ -61,6 +92,7 @@ impl DriveDocumentHavingQuery<'_> {
                     .map_err(|e| Error::GroveDB(Box::new(e)))?
                     .into_iter()
                     .map(|(count, key)| RankedEntry {
+                        in_key: None,
                         key,
                         value: RankedEntryValue::Count(count),
                     })
@@ -80,6 +112,7 @@ impl DriveDocumentHavingQuery<'_> {
                     .map_err(|e| Error::GroveDB(Box::new(e)))?
                     .into_iter()
                     .map(|(sum, key)| RankedEntry {
+                        in_key: None,
                         key,
                         value: RankedEntryValue::Sum(sum),
                     })
@@ -99,6 +132,7 @@ impl DriveDocumentHavingQuery<'_> {
                     .map_err(|e| Error::GroveDB(Box::new(e)))?
                     .into_iter()
                     .map(|(avg, key)| RankedEntry {
+                        in_key: None,
                         key,
                         value: RankedEntryValue::AvgFixedPoint(avg),
                     })
@@ -142,8 +176,35 @@ impl DriveDocumentHavingQuery<'_> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
+        if self.prefix_branches.len() > 1 {
+            // One indexed-axis range proof per branch, framed into the
+            // versioned container in canonical branch order.
+            let proofs = (0..self.prefix_branches.len())
+                .map(|branch| {
+                    self.execute_range_with_proof_branch(
+                        branch,
+                        drive,
+                        transaction,
+                        platform_version,
+                    )
+                })
+                .collect::<Result<Vec<_>, Error>>()?;
+            return Ok(encode_branch_proofs(&proofs));
+        }
+        self.execute_range_with_proof_branch(0, drive, transaction, platform_version)
+    }
+
+    /// One branch's proof — the entire pre-`IN` prover, parameterized by
+    /// the prefix branch.
+    fn execute_range_with_proof_branch(
+        &self,
+        branch: usize,
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, Error> {
         let grove_version = &platform_version.drive.grove_version;
-        let path = self.indexed_property_name_tree_path()?;
+        let path = self.indexed_property_name_tree_path(branch)?;
         let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
         let secondary_query = self.bounds.merk_query(self.descending);
 

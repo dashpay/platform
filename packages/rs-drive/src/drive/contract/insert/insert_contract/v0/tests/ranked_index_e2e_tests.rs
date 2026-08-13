@@ -1573,7 +1573,7 @@ fn verified_ranked_avg_page(
         document_type_name: "review".to_string(),
         index: find_ranked_index_for_axis(indexes, GROUP_PROPERTY, &[], RankedAxis::Avg, "grade")
             .expect("the fixture declares rankedAverageable on grade"),
-        equality_prefix_values: vec![],
+        prefix_branches: vec![vec![]],
         axis: RankedAxis::Avg,
         descending: true,
         k: limit as u16,

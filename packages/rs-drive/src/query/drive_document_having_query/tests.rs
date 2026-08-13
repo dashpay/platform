@@ -1496,10 +1496,12 @@ mod identifier_group_keys {
             entries,
             vec![
                 RankedEntry {
+                    in_key: None,
                     key: just_above.to_vec(),
                     value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(161, 2)),
                 },
                 RankedEntry {
+                    in_key: None,
                     key: well_above.to_vec(),
                     value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(180, 2)),
                 },
@@ -1817,10 +1819,12 @@ mod pinned_prefix {
             entries,
             vec![
                 RankedEntry {
+                    in_key: None,
                     key: b"english".to_vec(),
                     value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(161, 2)),
                 },
                 RankedEntry {
+                    in_key: None,
                     key: b"art".to_vec(),
                     value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(180, 2)),
                 },
@@ -1852,10 +1856,12 @@ mod pinned_prefix {
             y_entries,
             vec![
                 RankedEntry {
+                    in_key: None,
                     key: b"math".to_vec(),
                     value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(185, 2)),
                 },
                 RankedEntry {
+                    in_key: None,
                     key: b"science".to_vec(),
                     value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(190, 2)),
                 },
@@ -1893,29 +1899,54 @@ mod pinned_prefix {
     /// on a property that is not the index's leading property fails
     /// resolution.
     #[test]
-    fn in_prefix_and_wrong_pins_are_rejected() {
+    fn in_prefix_merges_branches_and_wrong_pins_are_rejected() {
         let (drive, contract) = setup_grades_compound_ranked();
         insert_two_identities(&drive, &contract);
 
+        // `identityId IN [X, Y]` bounds each identity's own secondary
+        // and merges: ascending aggregate order, with every X entry
+        // (in_key = X's 32 bytes, all `1`s) sorting before Y's on the
+        // branch tie-break where aggregates tie. Bound is AVG > 80.
         let in_clause = vec![WhereClause {
             field: PREFIX_PROPERTY.to_string(),
             operator: WhereOperator::In,
             value: Value::Array(vec![
-                Value::Identifier(IDENTITY_X),
                 Value::Identifier(IDENTITY_Y),
+                Value::Identifier(IDENTITY_X),
             ]),
         }];
-        let error = run(&drive, &contract, &in_clause, &[], false)
-            .expect_err("IN prefixes are not yet supported");
-        match error {
-            Error::Query(QuerySyntaxError::Unsupported(message)) => {
-                assert!(
-                    message.contains("IN") && message.contains("not yet supported"),
-                    "the IN rejection must say it is a not-yet capability, got: {message}"
-                );
-            }
-            other => panic!("expected Unsupported for an IN prefix, got {other:?}"),
-        }
+        let entries = entries_of(
+            run(&drive, &contract, &in_clause, &[], false).expect("the IN bound is served"),
+        );
+        assert_eq!(
+            entries,
+            vec![
+                RankedEntry {
+                    in_key: Some(IDENTITY_X.to_vec()),
+                    key: b"english".to_vec(),
+                    value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(161, 2)),
+                },
+                RankedEntry {
+                    in_key: Some(IDENTITY_X.to_vec()),
+                    key: b"art".to_vec(),
+                    value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(180, 2)),
+                },
+                RankedEntry {
+                    in_key: Some(IDENTITY_Y.to_vec()),
+                    key: b"math".to_vec(),
+                    value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(185, 2)),
+                },
+                RankedEntry {
+                    in_key: Some(IDENTITY_Y.to_vec()),
+                    key: b"science".to_vec(),
+                    value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(190, 2)),
+                },
+            ],
+            "the merged bound: X's english 80.5 and art 90, then Y's math \
+             92.5 and science 95, in ascending aggregate order with \
+             branch-tagged entries — element order in the request must \
+             not matter"
+        );
 
         // A pin on the wrong property: `grade` is not the index's
         // leading property, so nothing covers [grade, class].
@@ -2049,6 +2080,7 @@ mod pinned_prefix {
         assert_eq!(
             entries,
             vec![RankedEntry {
+                in_key: None,
                 key: b"math".to_vec(),
                 value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(170, 2)),
             }],
@@ -2091,13 +2123,169 @@ mod pinned_prefix {
         )
         .expect("the compound index covers the null-pinned request");
         assert_eq!(
-            query.equality_prefix_values,
-            vec![Vec::<u8>::new()],
+            query.prefix_branches,
+            vec![vec![Vec::<u8>::new()]],
             "a null pin must encode as the write path's empty segment"
         );
         let (root_hash, verified) = query
             .verify_having_range_proof(&proof, pv)
             .expect("the null-pinned proof must verify");
+        assert_eq!(verified, entries);
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &pv.drive.grove_version)
+                .unwrap()
+                .expect("root hash must be readable"),
+        );
+    }
+
+    /// A `null` element mixed with a real value in one `IN` pin: the
+    /// null branch is the write path's empty segment, which sorts
+    /// **first** in canonical branch order, and the merged bound covers
+    /// both subtrees — proved through the branch container.
+    #[test]
+    fn a_mixed_null_in_pin_bounds_both_prefixes_and_proves() {
+        const TAGGED_DOCTYPE: &str = "taggedGrade";
+        let (drive, contract) = setup_grades_compound_ranked();
+        let pv = platform_version();
+        let document_type = contract
+            .document_type_for_name(TAGGED_DOCTYPE)
+            .expect("taggedGrade doctype exists");
+
+        for (i, (tag, class, grade)) in [
+            (None, "math", 90i64),
+            (Some("honors"), "math", 95),
+            (Some("honors"), "art", 60),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let mut doc: Document = document_type
+                .random_document(Some(9000 + i as u64), pv)
+                .expect("random document");
+            let mut props = BTreeMap::new();
+            if let Some(tag) = tag {
+                props.insert("tag".to_string(), Value::Text(tag.to_string()));
+            }
+            props.insert(GROUP_PROPERTY.to_string(), Value::Text(class.to_string()));
+            props.insert("grade".to_string(), Value::I64(*grade));
+            doc.set_properties(props);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert a tagged grade document");
+        }
+
+        let mixed_pin = vec![WhereClause {
+            field: "tag".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![Value::Text("honors".to_string()), Value::Null]),
+        }];
+        let group_by = vec![GROUP_PROPERTY.to_string()];
+        let having = vec![clause(
+            HavingAggregateFunction::Avg,
+            "grade",
+            HavingOperator::GreaterThan,
+            Value::U64(80),
+        )];
+        let request = |prove: bool| DocumentHavingRequest {
+            contract: &contract,
+            document_type,
+            group_by: &group_by,
+            select: SelectProjection::avg("grade"),
+            having: &having,
+            order_by: &[],
+            where_clauses: &mixed_pin,
+            limit: Some(10),
+            offset: None,
+            has_start_at: false,
+            prove,
+        };
+
+        let entries = match drive
+            .execute_document_having_request(request(false), None, pv)
+            .expect("the mixed-null IN bound is served")
+        {
+            DocumentHavingResponse::Entries(entries) => entries,
+            DocumentHavingResponse::Proof(_) => panic!("expected entries, got a proof"),
+        };
+        assert_eq!(
+            entries,
+            vec![
+                RankedEntry {
+                    in_key: Some(Vec::new()),
+                    key: b"math".to_vec(),
+                    value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(90, 1)),
+                },
+                RankedEntry {
+                    in_key: Some(b"honors".to_vec()),
+                    key: b"math".to_vec(),
+                    value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(95, 1)),
+                },
+            ],
+            "both prefixes' in-bound groups, ascending; the same group key \
+             appears twice, disambiguated by in_key, with the null branch's \
+             empty in_key present (not None)"
+        );
+
+        let proof = match drive
+            .execute_document_having_request(request(true), None, pv)
+            .expect("the mixed-null IN prove succeeds")
+        {
+            DocumentHavingResponse::Proof(proof) => proof,
+            DocumentHavingResponse::Entries(_) => panic!("expected a proof, got entries"),
+        };
+        let mode = detect_having_mode(
+            &SelectProjection::avg("grade"),
+            &group_by,
+            &having,
+            &[],
+            &mixed_pin,
+            RankedPaginationInputs {
+                limit: Some(10),
+                offset: None,
+                has_start_at: false,
+            },
+            pv,
+        )
+        .expect("the mixed-null case is well-formed");
+        let query = resolve_having_query_for_mode(
+            contract.id_ref().to_buffer(),
+            document_type,
+            TAGGED_DOCTYPE.to_string(),
+            contract
+                .document_types()
+                .get(TAGGED_DOCTYPE)
+                .expect("taggedGrade doctype exists")
+                .indexes(),
+            &mode,
+            pv,
+        )
+        .expect("the compound index covers the mixed-null request");
+        assert_eq!(
+            query.prefix_branches,
+            vec![vec![Vec::new()], vec![b"honors".to_vec()]],
+            "canonical branch order: the empty (null) segment first"
+        );
+        let (root_hash, verified) = query
+            .verify_having_range_proof(&proof, pv)
+            .expect("the mixed-null branch container must verify");
         assert_eq!(verified, entries);
         assert_eq!(
             root_hash,

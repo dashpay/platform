@@ -73,11 +73,11 @@ use std::collections::BTreeMap;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 use super::drive_document_ranked_query::index_picker::{
-    encode_equality_prefix_values, find_ranked_index_for_axis, no_covering_index_message,
+    encode_prefix_branches, find_ranked_index_for_axis, no_covering_index_message,
 };
 #[cfg(any(feature = "server", feature = "verify"))]
 use super::drive_document_ranked_query::{
-    path::indexed_property_name_tree_path_for_index, RankedAxis,
+    path::indexed_property_name_tree_path_for_index, PrefixPin, RankedAxis,
 };
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::error::query::QuerySyntaxError;
@@ -247,7 +247,9 @@ pub struct DocumentHavingMode {
     /// exactly one per leading property of the covering compound index,
     /// in request order (the resolver re-orders them into index order
     /// when it encodes the path). Empty for the single-property form.
-    pub equality_pins: Vec<(String, Value)>,
+    /// At most one pin carries several values (the `IN` pin); see
+    /// [`PrefixPin`].
+    pub prefix_pins: Vec<PrefixPin>,
 }
 
 /// A resolved having-range query. Shared by the prover and the verifier —
@@ -267,15 +269,15 @@ pub struct DriveDocumentHavingQuery<'a> {
     pub document_type_name: String,
     /// The covering ranked index. Its **last** property is the `GROUP
     /// BY` property and the final path segment; any leading properties
-    /// are pinned by [`Self::equality_prefix_values`].
+    /// are pinned by [`Self::prefix_branches`].
     pub index: &'a Index,
-    /// Encoded index-key bytes of each leading index property's pinned
-    /// value, in index-property order — empty for a single-property
-    /// index. Part of the prover/verifier agreement exactly as on the
-    /// ranked surface: the segments feed straight into the shared path
-    /// builder. Produced by
-    /// [`super::drive_document_ranked_query::index_picker::encode_equality_prefix_values`].
-    pub equality_prefix_values: Vec<Vec<u8>>,
+    /// The prefix **branches** — one inner `Vec<Vec<u8>>` of encoded
+    /// path segments per branch, in index-property order; always at
+    /// least one branch, several exactly when the request carried a
+    /// multi-element `IN` pin. Part of the prover/verifier agreement
+    /// exactly as on the ranked surface. Produced by
+    /// [`super::drive_document_ranked_query::index_picker::encode_prefix_branches`].
+    pub prefix_branches: Vec<Vec<Vec<u8>>>,
     /// Inclusive bounds on the aggregate. Carry the axis; the index must
     /// declare the matching `ranked_*` flag.
     pub bounds: AxisRangeBounds,
@@ -297,17 +299,17 @@ pub struct DriveDocumentHavingQuery<'a> {
 
 #[cfg(any(feature = "server", feature = "verify"))]
 impl DriveDocumentHavingQuery<'_> {
-    /// Path of the terminal property-name tree the axis secondary hangs
-    /// off — identical to the ranked surface's path (including the
-    /// pinned-prefix segments of a compound index), because both read
-    /// the same indexed tree. See
+    /// Path of one branch's terminal property-name tree — identical to
+    /// the ranked surface's path (including the pinned-prefix segments
+    /// of a compound index), because both read the same indexed
+    /// tree(s). See
     /// [`DriveDocumentRankedQuery::indexed_property_name_tree_path`](super::drive_document_ranked_query::DriveDocumentRankedQuery::indexed_property_name_tree_path).
-    pub fn indexed_property_name_tree_path(&self) -> Result<Vec<Vec<u8>>, Error> {
+    pub fn indexed_property_name_tree_path(&self, branch: usize) -> Result<Vec<Vec<u8>>, Error> {
         indexed_property_name_tree_path_for_index(
             &self.contract_id,
             &self.document_type_name,
             self.index,
-            &self.equality_prefix_values,
+            &self.prefix_branches[branch],
         )
     }
 }
@@ -338,9 +340,9 @@ pub fn resolve_having_query_for_mode<'a>(
 ) -> Result<DriveDocumentHavingQuery<'a>, Error> {
     let axis = mode.bounds.axis();
     let pin_fields: Vec<String> = mode
-        .equality_pins
+        .prefix_pins
         .iter()
-        .map(|(field, _)| field.clone())
+        .map(|pin| pin.field.clone())
         .collect();
     let index = find_ranked_index_for_axis(
         indexes,
@@ -355,19 +357,19 @@ pub fn resolve_having_query_for_mode<'a>(
                 "having-range",
                 axis,
                 &mode.group_by_property,
-                &mode.equality_pins,
+                &mode.prefix_pins,
                 &mode.aggregate_field,
             ),
         ))
     })?;
-    let equality_prefix_values =
-        encode_equality_prefix_values(document_type, index, &mode.equality_pins, platform_version)?;
+    let prefix_branches =
+        encode_prefix_branches(document_type, index, &mode.prefix_pins, platform_version)?;
     Ok(DriveDocumentHavingQuery {
         document_type,
         contract_id,
         document_type_name,
         index,
-        equality_prefix_values,
+        prefix_branches,
         bounds: mode.bounds,
         descending: mode.descending,
         limit: mode.limit,

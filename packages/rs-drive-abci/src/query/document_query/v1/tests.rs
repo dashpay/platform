@@ -3478,6 +3478,88 @@ mod having_range_tests {
         }
     }
 
+    /// The `IN`-pinned form end to end on the wire: `WHERE identityId
+    /// IN [X, Y] GROUP BY class HAVING AVG(grade) > 80 LIMIT 10` fans
+    /// out across both identities' secondaries and answers one merged
+    /// `ResultData.ranked` page whose entries carry `in_key`; the
+    /// proved variant returns the branch container as its Proof
+    /// payload. Merge/proof semantics are pinned in rs-drive's suites;
+    /// this pins the wire encoding, routing, and `in_key` mapping.
+    #[test]
+    fn in_pinned_having_is_served_end_to_end() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let contract = register_grades_compound(&platform, version);
+        let identity_x = [1u8; 32];
+        let identity_y = [2u8; 32];
+        insert_grade_docs(
+            &platform,
+            &contract,
+            21_000,
+            &[
+                (identity_x, "art", 90),
+                (identity_x, "math", 60),
+                (identity_y, "science", 95),
+            ],
+            version,
+        );
+
+        let mut request = having_request(
+            &contract,
+            "grade",
+            select(v1_select::Function::Avg, "grade"),
+            hc(
+                having_aggregate::Function::Avg,
+                "grade",
+                having_clause::Operator::GreaterThan,
+                Value::U64(80),
+            ),
+            Vec::new(),
+            Some(10),
+            false,
+        );
+        request.group_by = vec!["class".to_string()];
+        request.where_clauses = vec![wc(
+            "identityId",
+            ProtoWhereOperator::In,
+            Value::Array(vec![
+                Value::Bytes(identity_y.to_vec()),
+                Value::Bytes(identity_x.to_vec()),
+            ]),
+        )];
+
+        let page = ranked_page(&platform, &state, request.clone(), version);
+        assert_eq!(
+            group_keys(&page.entries),
+            vec!["art", "science"],
+            "merged ascending: X's art (90) then Y's science (95); X's math \
+             (60) misses the bound"
+        );
+        assert_eq!(
+            page.entries
+                .iter()
+                .map(|e| e.in_key.clone())
+                .collect::<Vec<_>>(),
+            vec![Some(identity_x.to_vec()), Some(identity_y.to_vec())],
+            "merged entries carry their branch's in_key on the wire"
+        );
+
+        // The proved variant answers with a Proof payload (the branch
+        // container — decoded and verified client-side, pinned in
+        // rs-drive's tamper suite).
+        request.prove = true;
+        let result = platform
+            .query_documents_v1(request, &state, version)
+            .expect("query should succeed");
+        assert!(result.errors.is_empty(), "got {:?}", result.errors);
+        match result.data {
+            Some(GetDocumentsResponseV1 {
+                result: Some(get_documents_response_v1::Result::Proof(proof)),
+                ..
+            }) => assert!(!proof.grovedb_proof.is_empty()),
+            other => panic!("expected a Proof response, got {:?}", other),
+        }
+    }
+
     /// The pinned-prefix form end to end on the wire: `WHERE identityId
     /// = X GROUP BY class HAVING AVG(grade) > 80 LIMIT 10` routes to
     /// the same having executor, descends to X's terminal `class` tree,
@@ -4011,7 +4093,7 @@ mod having_trust_boundary {
             document_type_name: "grade".to_string(),
             index,
             bounds: mode.bounds,
-            equality_prefix_values: Vec::new(),
+            prefix_branches: vec![Vec::new()],
             descending: mode.descending,
             limit: mode.limit,
         }

@@ -275,6 +275,9 @@ pub(crate) fn ranked_entry_from_proto(entry: &ProtoRankedEntry) -> Result<Ranked
         }
     };
     Ok(RankedEntry {
+        // Present exactly on `IN`-pinned responses; the wire's absent
+        // state maps to the drive type's `None` untouched.
+        in_key: entry.in_key.clone(),
         key: entry.key.clone(),
         value,
     })
@@ -407,6 +410,7 @@ mod tests {
 
     fn count_entry(key: &str, count: u64) -> ProtoRankedEntry {
         ProtoRankedEntry {
+            in_key: None,
             key: key.as_bytes().to_vec(),
             value: Some(ranked_entry::Value::Count(count)),
         }
@@ -424,6 +428,7 @@ mod tests {
     /// that no fixed point maps to.
     fn avg_entry_raw(key: &str, avg: f64) -> ProtoRankedEntry {
         ProtoRankedEntry {
+            in_key: None,
             key: key.as_bytes().to_vec(),
             value: Some(ranked_entry::Value::Avg(avg)),
         }
@@ -566,6 +571,7 @@ mod tests {
     #[test]
     fn decodes_signed_sum_entries() {
         let response = ranked_response(vec![ProtoRankedEntry {
+            in_key: None,
             key: b"refunds".to_vec(),
             value: Some(ranked_entry::Value::Sum(-1_000)),
         }]);
@@ -666,6 +672,7 @@ mod tests {
     #[test]
     fn rejects_an_entry_with_no_value() {
         let response = ranked_response(vec![ProtoRankedEntry {
+            in_key: None,
             key: b"alpha".to_vec(),
             value: None,
         }]);
@@ -734,10 +741,12 @@ mod tests {
     fn from_verified_carries_both_halves_of_the_page() {
         let entries = vec![
             RankedEntry {
+                in_key: None,
                 key: b"gamma".to_vec(),
                 value: RankedEntryValue::Count(9),
             },
             RankedEntry {
+                in_key: None,
                 key: b"alpha".to_vec(),
                 value: RankedEntryValue::Count(2),
             },

@@ -236,6 +236,7 @@ mod tests {
 
     fn count_entry(key: &str, count: u64) -> ProtoRankedEntry {
         ProtoRankedEntry {
+            in_key: None,
             key: key.as_bytes().to_vec(),
             value: Some(ranked_entry::Value::Count(count)),
         }

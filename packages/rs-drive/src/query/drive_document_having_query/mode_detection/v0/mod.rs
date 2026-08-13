@@ -7,7 +7,7 @@ use super::{AxisRangeBounds, DocumentHavingMode, MAX_HAVING_LIMIT};
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::drive_document_ranked_query::mode_detection::{
-    equality_pins_from_where_clauses, ranked_order_key,
+    prefix_pins_from_where_clauses, ranked_order_key,
 };
 use crate::query::drive_document_ranked_query::{RankedAxis, RankedPaginationInputs};
 use crate::query::having::{
@@ -29,10 +29,12 @@ use grovedb::element::indexed::AVG_FIXED_POINT_SCALE;
 /// ```
 ///
 /// with no `OFFSET`, no `START AT` / `START AFTER`, exactly one
-/// `GROUP BY` property, `WHERE` clauses (when present) that are
-/// equality pins on distinct properties — one per leading property of a
-/// covering compound ranked index, selecting which prefix's secondary
-/// the bound reads — exactly one `HAVING` clause whose aggregate
+/// `GROUP BY` property, `WHERE` clauses (when present) that pin the
+/// covering compound ranked index's leading properties — one clause per
+/// property, each an equality, at most one of them an `IN` whose
+/// elements fan the bound out across one prefix branch per element
+/// (merged deterministically; see the ranked surface's
+/// `prefix_pins_from_where_clauses`) — exactly one `HAVING` clause whose aggregate
 /// **is the selected aggregate** (same function, same field), an operator
 /// from the contiguous-range family (`=`, `>`, `>=`, `<`, `<=`, and the
 /// four `BETWEEN*` variants — `!=` and `IN` describe non-contiguous
@@ -244,7 +246,7 @@ pub fn detect_having_mode_v0(
     // pin per leading property selects which prefix's secondary the
     // bound reads. Shape-only here; the index picker enforces the
     // exact-cover rule.
-    let equality_pins = equality_pins_from_where_clauses(where_clauses)?;
+    let prefix_pins = prefix_pins_from_where_clauses(where_clauses)?;
 
     // ---- LIMIT: required, 1 ..= MAX_HAVING_LIMIT ---------------------
     //
@@ -312,7 +314,7 @@ pub fn detect_having_mode_v0(
         limit,
         group_by_property,
         aggregate_field,
-        equality_pins,
+        prefix_pins,
     })
 }
 

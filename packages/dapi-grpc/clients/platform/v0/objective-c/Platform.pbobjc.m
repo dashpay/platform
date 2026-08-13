@@ -7164,10 +7164,12 @@ void GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_ClearVariantOneO
 @dynamic count;
 @dynamic sum;
 @dynamic avg;
+@dynamic hasInKey, inKey;
 
 typedef struct GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry__storage_ {
   uint32_t _has_storage_[2];
   NSData *key;
+  NSData *inKey;
   uint64_t count;
   int64_t sum;
   double avg;
@@ -7214,6 +7216,15 @@ typedef struct GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry__storage_
         .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry__storage_, avg),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeDouble,
+      },
+      {
+        .name = "inKey",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_InKey,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry__storage_, inKey),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
       },
     };
     GPBDescriptor *localDescriptor =

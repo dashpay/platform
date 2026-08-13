@@ -10,6 +10,7 @@
 //! Whole module is gated `feature = "server"` via the parent's
 //! `pub mod execute_top_k;` declaration.
 
+use super::branches::{encode_branch_proofs, merge_branch_pages};
 use super::{DriveDocumentRankedQuery, RankedAxis, RankedEntry, RankedEntryValue, RankedPage};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -71,8 +72,48 @@ impl DriveDocumentRankedQuery<'_> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<RankedPage, Error> {
+        if self.prefix_branches.len() > 1 {
+            // One walk per branch, each fetching a full page (the merge
+            // lemma needs every branch's own top-k), merged with the
+            // shared comparator. `offset` is grammar-rejected with `IN`,
+            // so `skipped` is always 0 here.
+            let per_branch = (0..self.prefix_branches.len())
+                .map(|branch| {
+                    Ok(self
+                        .execute_top_k_no_proof_branch(
+                            branch,
+                            drive,
+                            transaction,
+                            platform_version,
+                        )?
+                        .entries)
+                })
+                .collect::<Result<Vec<_>, Error>>()?;
+            let entries = merge_branch_pages(
+                per_branch,
+                &self.prefix_branches,
+                self.descending,
+                self.k as usize,
+            )?;
+            return Ok(RankedPage {
+                skipped: 0,
+                entries,
+            });
+        }
+        self.execute_top_k_no_proof_branch(0, drive, transaction, platform_version)
+    }
+
+    /// One branch's page — the entire pre-`IN` executor, parameterized
+    /// by which prefix branch's terminal tree it walks.
+    fn execute_top_k_no_proof_branch(
+        &self,
+        branch: usize,
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<RankedPage, Error> {
         let grove_version = &platform_version.drive.grove_version;
-        let path = self.indexed_property_name_tree_path()?;
+        let path = self.indexed_property_name_tree_path(branch)?;
         let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
         let offset = self.offset as u64;
 
@@ -101,6 +142,7 @@ impl DriveDocumentRankedQuery<'_> {
                     entries
                         .into_iter()
                         .map(|(count, key)| RankedEntry {
+                            in_key: None,
                             key,
                             value: RankedEntryValue::Count(count),
                         })
@@ -123,6 +165,7 @@ impl DriveDocumentRankedQuery<'_> {
                     entries
                         .into_iter()
                         .map(|(sum, key)| RankedEntry {
+                            in_key: None,
                             key,
                             value: RankedEntryValue::Sum(sum),
                         })
@@ -145,6 +188,7 @@ impl DriveDocumentRankedQuery<'_> {
                     entries
                         .into_iter()
                         .map(|(avg, key)| RankedEntry {
+                            in_key: None,
                             key,
                             value: RankedEntryValue::AvgFixedPoint(avg),
                         })
@@ -207,8 +251,37 @@ impl DriveDocumentRankedQuery<'_> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
+        if self.prefix_branches.len() > 1 {
+            // One indexed-axis proof per branch, framed into the
+            // versioned container in canonical branch order. The
+            // verifier re-derives the branch set from the request, so a
+            // dropped, duplicated, or reordered branch fails there.
+            let proofs = (0..self.prefix_branches.len())
+                .map(|branch| {
+                    self.execute_top_k_with_proof_branch(
+                        branch,
+                        drive,
+                        transaction,
+                        platform_version,
+                    )
+                })
+                .collect::<Result<Vec<_>, Error>>()?;
+            return Ok(encode_branch_proofs(&proofs));
+        }
+        self.execute_top_k_with_proof_branch(0, drive, transaction, platform_version)
+    }
+
+    /// One branch's proof — the entire pre-`IN` prover, parameterized by
+    /// the prefix branch.
+    fn execute_top_k_with_proof_branch(
+        &self,
+        branch: usize,
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, Error> {
         let grove_version = &platform_version.drive.grove_version;
-        let path = self.indexed_property_name_tree_path()?;
+        let path = self.indexed_property_name_tree_path(branch)?;
         let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
 
         // Same destructure-don't-unwrap rationale as the no-proof arm.

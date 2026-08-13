@@ -26219,6 +26219,7 @@ $root.org = (function() {
                                  * @property {number|Long|null} [count] RankedEntry count
                                  * @property {number|Long|null} [sum] RankedEntry sum
                                  * @property {number|null} [avg] RankedEntry avg
+                                 * @property {Uint8Array|null} [inKey] RankedEntry inKey
                                  */
 
                                 /**
@@ -26268,6 +26269,14 @@ $root.org = (function() {
                                  */
                                 RankedEntry.prototype.avg = 0;
 
+                                /**
+                                 * RankedEntry inKey.
+                                 * @member {Uint8Array} inKey
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry
+                                 * @instance
+                                 */
+                                RankedEntry.prototype.inKey = $util.newBuffer([]);
+
                                 // OneOf field names bound to virtual getters and setters
                                 var $oneOfFields;
 
@@ -26314,6 +26323,8 @@ $root.org = (function() {
                                         writer.uint32(/* id 3, wireType 0 =*/24).sint64(message.sum);
                                     if (message.avg != null && Object.hasOwnProperty.call(message, "avg"))
                                         writer.uint32(/* id 4, wireType 1 =*/33).double(message.avg);
+                                    if (message.inKey != null && Object.hasOwnProperty.call(message, "inKey"))
+                                        writer.uint32(/* id 5, wireType 2 =*/42).bytes(message.inKey);
                                     return writer;
                                 };
 
@@ -26359,6 +26370,9 @@ $root.org = (function() {
                                             break;
                                         case 4:
                                             message.avg = reader.double();
+                                            break;
+                                        case 5:
+                                            message.inKey = reader.bytes();
                                             break;
                                         default:
                                             reader.skipType(tag & 7);
@@ -26418,6 +26432,9 @@ $root.org = (function() {
                                         if (typeof message.avg !== "number")
                                             return "avg: number expected";
                                     }
+                                    if (message.inKey != null && message.hasOwnProperty("inKey"))
+                                        if (!(message.inKey && typeof message.inKey.length === "number" || $util.isString(message.inKey)))
+                                            return "inKey: buffer expected";
                                     return null;
                                 };
 
@@ -26458,6 +26475,11 @@ $root.org = (function() {
                                             message.sum = new $util.LongBits(object.sum.low >>> 0, object.sum.high >>> 0).toNumber();
                                     if (object.avg != null)
                                         message.avg = Number(object.avg);
+                                    if (object.inKey != null)
+                                        if (typeof object.inKey === "string")
+                                            $util.base64.decode(object.inKey, message.inKey = $util.newBuffer($util.base64.length(object.inKey)), 0);
+                                        else if (object.inKey.length >= 0)
+                                            message.inKey = object.inKey;
                                     return message;
                                 };
 
@@ -26474,7 +26496,7 @@ $root.org = (function() {
                                     if (!options)
                                         options = {};
                                     var object = {};
-                                    if (options.defaults)
+                                    if (options.defaults) {
                                         if (options.bytes === String)
                                             object.key = "";
                                         else {
@@ -26482,6 +26504,14 @@ $root.org = (function() {
                                             if (options.bytes !== Array)
                                                 object.key = $util.newBuffer(object.key);
                                         }
+                                        if (options.bytes === String)
+                                            object.inKey = "";
+                                        else {
+                                            object.inKey = [];
+                                            if (options.bytes !== Array)
+                                                object.inKey = $util.newBuffer(object.inKey);
+                                        }
+                                    }
                                     if (message.key != null && message.hasOwnProperty("key"))
                                         object.key = options.bytes === String ? $util.base64.encode(message.key, 0, message.key.length) : options.bytes === Array ? Array.prototype.slice.call(message.key) : message.key;
                                     if (message.count != null && message.hasOwnProperty("count")) {
@@ -26505,6 +26535,8 @@ $root.org = (function() {
                                         if (options.oneofs)
                                             object.value = "avg";
                                     }
+                                    if (message.inKey != null && message.hasOwnProperty("inKey"))
+                                        object.inKey = options.bytes === String ? $util.base64.encode(message.inKey, 0, message.inKey.length) : options.bytes === Array ? Array.prototype.slice.call(message.inKey) : message.inKey;
                                     return object;
                                 };
 

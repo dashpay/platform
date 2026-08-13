@@ -1,5 +1,8 @@
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::query::drive_document_ranked_query::branches::{
+    decode_branch_proofs, merge_branch_pages,
+};
 use crate::query::{
     DriveDocumentRankedQuery, RankedAxis, RankedEntry, RankedEntryValue, RankedPage,
 };
@@ -51,7 +54,64 @@ impl DriveDocumentRankedQuery<'_> {
         proof: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, RankedPage), Error> {
-        let path = self.indexed_property_name_tree_path()?;
+        if self.prefix_branches.len() > 1 {
+            // `IN`-pinned request: the proof bytes are the branch
+            // container. The branch count comes from *this* query's own
+            // resolution, so a container with a dropped, duplicated, or
+            // added branch fails to parse; a reordered or substituted
+            // branch proof fails its branch's own path verification; and
+            // all branches must attest one root hash. The page is then
+            // re-derived by the shared merge — the client never trusts a
+            // server-side merge.
+            let branch_proofs = decode_branch_proofs(proof, self.prefix_branches.len())?;
+            let mut root_hash: Option<RootHash> = None;
+            let mut per_branch = Vec::with_capacity(branch_proofs.len());
+            for (branch, branch_proof) in branch_proofs.iter().enumerate() {
+                let (branch_root, page) =
+                    self.verify_ranked_top_k_proof_v0_branch(branch, branch_proof)?;
+                match root_hash {
+                    None => root_hash = Some(branch_root),
+                    Some(existing) if existing == branch_root => {}
+                    Some(_) => {
+                        return Err(Error::Drive(DriveError::CorruptedDriveState(
+                            "branch proofs attest different root hashes: every branch of \
+                             one response must be proved against one platform state"
+                                .to_string(),
+                        )));
+                    }
+                }
+                per_branch.push(page.entries);
+            }
+            let entries = merge_branch_pages(
+                per_branch,
+                &self.prefix_branches,
+                self.descending,
+                self.k as usize,
+            )?;
+            let root_hash = root_hash.ok_or_else(|| {
+                Error::Drive(DriveError::CorruptedDriveState(
+                    "branch container verified to zero branches".to_string(),
+                ))
+            })?;
+            return Ok((
+                root_hash,
+                RankedPage {
+                    skipped: 0,
+                    entries,
+                },
+            ));
+        }
+        self.verify_ranked_top_k_proof_v0_branch(0, proof)
+    }
+
+    /// One branch's verification — the entire pre-`IN` verifier,
+    /// parameterized by the prefix branch.
+    fn verify_ranked_top_k_proof_v0_branch(
+        &self,
+        branch: usize,
+        proof: &[u8],
+    ) -> Result<(RootHash, RankedPage), Error> {
+        let path = self.indexed_property_name_tree_path(branch)?;
         let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
 
         let result = GroveDb::verify_indexed_axis_top_k_paginated(
@@ -70,6 +130,7 @@ impl DriveDocumentRankedQuery<'_> {
                 .into_iter()
                 .map(|entry| entry.key_pair())
                 .map(|(count, key)| RankedEntry {
+                    in_key: None,
                     key,
                     value: RankedEntryValue::Count(count),
                 })
@@ -78,6 +139,7 @@ impl DriveDocumentRankedQuery<'_> {
                 .into_iter()
                 .map(|entry| entry.key_pair())
                 .map(|(sum, key)| RankedEntry {
+                    in_key: None,
                     key,
                     value: RankedEntryValue::Sum(sum),
                 })
@@ -86,6 +148,7 @@ impl DriveDocumentRankedQuery<'_> {
                 .into_iter()
                 .map(|entry| entry.key_pair())
                 .map(|(avg, key)| RankedEntry {
+                    in_key: None,
                     key,
                     value: RankedEntryValue::AvgFixedPoint(avg),
                 })

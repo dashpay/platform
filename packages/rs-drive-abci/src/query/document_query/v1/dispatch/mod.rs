@@ -34,6 +34,10 @@ use drive::query::{RankedEntry as DriveRankedEntry, RankedEntryValue};
 /// silent about).
 fn into_v1_ranked_entry(e: DriveRankedEntry) -> RankedEntry {
     RankedEntry {
+        // Set exactly when the request carried an `IN` prefix pin —
+        // drive's merge tags entries with their branch, single-branch
+        // responses stay untagged.
+        in_key: e.in_key,
         key: e.key,
         value: Some(match e.value {
             RankedEntryValue::Count(count) => ranked_entry::Value::Count(count),

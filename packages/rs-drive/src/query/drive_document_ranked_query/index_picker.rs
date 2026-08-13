@@ -7,7 +7,7 @@
 //! and the SDK verifier both call these so they land on the same index
 //! (and therefore the same grove path) for the same request.
 
-use super::{DocumentRankedMode, DriveDocumentRankedQuery, RankedAxis};
+use super::{DocumentRankedMode, DriveDocumentRankedQuery, PrefixPin, RankedAxis};
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
@@ -104,9 +104,9 @@ pub fn find_ranked_index_for_mode<'b>(
     mode: &DocumentRankedMode,
 ) -> Option<&'b Index> {
     let pin_fields: Vec<String> = mode
-        .equality_pins
+        .prefix_pins
         .iter()
-        .map(|(field, _)| field.clone())
+        .map(|pin| pin.field.clone())
         .collect();
     find_ranked_index_for_axis(
         indexes,
@@ -152,19 +152,19 @@ pub fn resolve_ranked_query_for_mode<'a>(
                 "ranked",
                 mode.axis,
                 &mode.group_by_property,
-                &mode.equality_pins,
+                &mode.prefix_pins,
                 &mode.aggregate_field,
             ),
         ))
     })?;
-    let equality_prefix_values =
-        encode_equality_prefix_values(document_type, index, &mode.equality_pins, platform_version)?;
+    let prefix_branches =
+        encode_prefix_branches(document_type, index, &mode.prefix_pins, platform_version)?;
     Ok(DriveDocumentRankedQuery {
         document_type,
         contract_id,
         document_type_name,
         index,
-        equality_prefix_values,
+        prefix_branches,
         axis: mode.axis,
         descending: mode.descending,
         k: mode.k,
@@ -182,17 +182,17 @@ pub fn no_covering_index_message(
     surface: &str,
     axis: RankedAxis,
     group_by_property: &str,
-    equality_pins: &[(String, Value)],
+    prefix_pins: &[PrefixPin],
     aggregate_field: &str,
 ) -> String {
     let pin_fields = || {
-        equality_pins
+        prefix_pins
             .iter()
-            .map(|(field, _)| field.as_str())
+            .map(|pin| pin.field.as_str())
             .collect::<Vec<_>>()
             .join(", ")
     };
-    let index_shape = if equality_pins.is_empty() {
+    let index_shape = if prefix_pins.is_empty() {
         format!("a single-property index on `{group_by_property}`")
     } else {
         format!(
@@ -204,7 +204,7 @@ pub fn no_covering_index_message(
     format!(
         "no ranked index covers `group_by = [{group_by_property}]`{} on the {axis:?} axis \
          for this {surface} query: the document type needs {index_shape} declaring `{}`{}",
-        if equality_pins.is_empty() {
+        if prefix_pins.is_empty() {
             String::new()
         } else {
             format!(" with equality pins on [{}]", pin_fields())
@@ -218,61 +218,105 @@ pub fn no_covering_index_message(
     )
 }
 
-/// Encode the equality pins into the grove path's prefix-value
-/// segments: for each **leading** property of `index`, in index order,
-/// the pinned value's index-key bytes
-/// (`DocumentType::serialize_value_for_key` — the same encoding the
-/// write path used to key that prefix's value tree).
+/// Encode the resolved prefix pins into **branches** — one
+/// `Vec<Vec<u8>>` of prefix path segments per branch, in index-property
+/// order (the same order and encoding the write path used to key those
+/// prefix value trees). A request with only `==` pins yields exactly
+/// one branch; the (at most one) `IN` pin yields one branch per
+/// element.
 ///
 /// This is part of the prover/verifier agreement: server executors and
 /// the SDK's proof helpers both come through here, so a pinned value
-/// can only ever name one subtree, identically on both sides.
+/// can only ever name one subtree — and a branch *set* only ever one
+/// ordered subtree list — identically on both sides. Branch order is
+/// canonical: ascending by encoded segment bytes, independent of the
+/// caller's element order (which also makes `null`, the empty segment,
+/// sort first deterministically).
 ///
 /// `index` must have been picked by [`find_ranked_index_for_axis`]
 /// against these same pins — every leading property is then guaranteed
-/// a pin. A value the property's type cannot encode (a string against
-/// an integer property, an out-of-range integer) is a caller error,
-/// reported as a query-syntax rejection naming the property.
-pub fn encode_equality_prefix_values(
+/// a pin. A value the property's type cannot encode is a caller error
+/// naming the property; two `IN` elements that encode to the same
+/// segment (two spellings of one value) are one branch and are rejected
+/// as a duplicate rather than walked twice.
+pub fn encode_prefix_branches(
     document_type: DocumentTypeRef,
     index: &Index,
-    equality_pins: &[(String, Value)],
+    prefix_pins: &[PrefixPin],
     platform_version: &PlatformVersion,
-) -> Result<Vec<Vec<u8>>, Error> {
+) -> Result<Vec<Vec<Vec<u8>>>, Error> {
     let leading = &index.properties[..index.properties.len().saturating_sub(1)];
-    leading
+    let per_property: Vec<Vec<Vec<u8>>> = leading
         .iter()
         .map(|property| {
-            let (_, value) = equality_pins
+            let pin = prefix_pins
                 .iter()
-                .find(|(field, _)| field == &property.name)
+                .find(|pin| pin.field == property.name)
                 .ok_or_else(|| {
                     Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
                         "internal resolution mismatch: the picked compound ranked index has \
-                         a leading property with no equality pin — the index picker and the \
-                         prefix encoder disagreed on the pins",
+                         a leading property with no pin — the index picker and the prefix \
+                         encoder disagreed on the pins",
                     ))
                 })?;
-            // A null pin addresses the subtree the write walkers create
-            // for an **absent** value: they encode it as
-            // `get_raw_for_document_type(..).unwrap_or_default()` — an
-            // empty path segment — for user and system properties alike.
-            // Null must short-circuit here because the system-property
-            // encoders (`$updatedAt`, `$creatorId`, …) reject null before
-            // any encoding happens, which would make the stored
-            // empty-segment prefix unaddressable.
-            if value.is_null() {
-                return Ok(Vec::new());
-            }
-            document_type
-                .serialize_value_for_key(&property.name, value, platform_version)
-                .map_err(|e| {
-                    Error::Query(QuerySyntaxError::InvalidParameter(format!(
-                        "the equality pin on `{}` does not encode as that property's \
-                         index key: {e}",
-                        property.name
-                    )))
+            let mut encoded = pin
+                .values
+                .iter()
+                .map(|value| {
+                    // A null pin addresses the subtree the write walkers
+                    // create for an **absent** value: they encode it as
+                    // `get_raw_for_document_type(..).unwrap_or_default()`
+                    // — an empty path segment — for user and system
+                    // properties alike. Null must short-circuit here
+                    // because the system-property encoders (`$updatedAt`,
+                    // `$creatorId`, …) reject null before any encoding
+                    // happens, which would make the stored empty-segment
+                    // prefix unaddressable.
+                    if value.is_null() {
+                        return Ok(Vec::new());
+                    }
+                    document_type
+                        .serialize_value_for_key(&property.name, value, platform_version)
+                        .map_err(|e| {
+                            Error::Query(QuerySyntaxError::InvalidParameter(format!(
+                                "the pin on `{}` does not encode as that property's \
+                                 index key: {e}",
+                                property.name
+                            )))
+                        })
                 })
+                .collect::<Result<Vec<_>, Error>>()?;
+            if encoded.len() > 1 {
+                encoded.sort();
+                if encoded.windows(2).any(|pair| pair[0] == pair[1]) {
+                    return Err(Error::Query(
+                        QuerySyntaxError::InvalidWhereClauseComponents(
+                            "an `IN` pin's elements encode to the same index key: two \
+                             spellings of one value are one prefix branch — deduplicate \
+                             the element list",
+                        ),
+                    ));
+                }
+            }
+            Ok(encoded)
         })
-        .collect()
+        .collect::<Result<Vec<_>, Error>>()?;
+
+    // The grammar admits at most one multi-value pin, so this product
+    // is |IN| branches (or exactly one), already in canonical order
+    // because the only varying position was sorted above.
+    let mut branches: Vec<Vec<Vec<u8>>> = vec![Vec::with_capacity(leading.len())];
+    for candidates in per_property {
+        branches = branches
+            .into_iter()
+            .flat_map(|prefix| {
+                candidates.iter().map(move |segment| {
+                    let mut branch = prefix.clone();
+                    branch.push(segment.clone());
+                    branch
+                })
+            })
+            .collect();
+    }
+    Ok(branches)
 }
