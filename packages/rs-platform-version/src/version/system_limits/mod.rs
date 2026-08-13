@@ -74,7 +74,7 @@ pub struct SystemLimits {
 #[cfg(test)]
 mod tests {
     use crate::version::protocol_version::PLATFORM_VERSIONS;
-    use crate::version::PlatformVersion;
+    use crate::version::{PlatformVersion, LATEST_VERSION};
 
     /// The cap is what keeps two document operations out of a shared GroveDB batch, and with
     /// them the phantom index groups described on `max_transitions_in_documents_batch`. It has
@@ -82,11 +82,19 @@ mod tests {
     /// reviewed decision rather than a copy-paste into a new `SYSTEM_LIMITS_V*`.
     #[test]
     fn documents_batch_is_capped_at_one_transition_at_every_protocol_version() {
-        // Without this the loop below asserts nothing if the registry is ever
-        // emptied or truncated.
-        assert!(
-            PLATFORM_VERSIONS.len() >= 14,
-            "the protocol version registry lost entries; this test only covers what it holds"
+        // The loop below only inspects what the registry holds, so the registry
+        // has to be known complete first. `LATEST_VERSION` is declared
+        // independently of `PLATFORM_VERSIONS`, which is what makes it a usable
+        // reference point: a version that is declared but never added to the
+        // registry leaves the count short and fails here, and so does a registry
+        // that loses entries. Deriving the expectation from the registry itself
+        // — `PlatformVersion::latest()` is `PLATFORM_VERSIONS.last()` — would
+        // pass in both cases.
+        assert_eq!(
+            PLATFORM_VERSIONS.len(),
+            LATEST_VERSION as usize,
+            "the protocol version registry does not hold every declared version, so the cap \
+             would go unchecked on the ones it is missing"
         );
         for platform_version in PLATFORM_VERSIONS {
             assert_eq!(
