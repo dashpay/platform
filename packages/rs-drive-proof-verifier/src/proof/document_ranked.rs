@@ -188,10 +188,11 @@ impl DocumentRankedEntries {
                 return Err(Error::ResponseDecodeError {
                     error: format!(
                         "expected a `ResultData.ranked` payload for a ranked request, got \
-                         {other:?}. A response on another variant means the node routed the \
+                         {}. A response on another variant means the node routed the \
                          request to a different executor — check that the request carries a \
                          `group_by` and a single `order_by` naming the single `select`'s \
-                         aggregate (`$count` for `COUNT(*)`)."
+                         aggregate (`$count` for `COUNT(*)`).",
+                        result_variant_name(other)
                     ),
                 });
             }
@@ -203,6 +204,28 @@ impl DocumentRankedEntries {
             },
             metadata,
         ))
+    }
+}
+
+/// The received-but-unexpected shape of a `getDocuments` V1 result, by
+/// **name only** — never the payload. Interpolating the payload into an
+/// error would make the message (and any log line carrying it) grow
+/// with an untrusted response, and could copy returned document bytes
+/// into logs. Shared by the ranked and having-range decoders.
+pub(crate) fn result_variant_name(
+    result: Option<&get_documents_response_v1::Result>,
+) -> &'static str {
+    match result {
+        None => "an absent result",
+        Some(get_documents_response_v1::Result::Proof(_)) => "a proof",
+        Some(get_documents_response_v1::Result::Data(ResultData { variant })) => match variant {
+            None => "a ResultData with no variant",
+            Some(result_data::Variant::Documents(_)) => "a ResultData.documents payload",
+            Some(result_data::Variant::Counts(_)) => "a ResultData.counts payload",
+            Some(result_data::Variant::Sums(_)) => "a ResultData.sums payload",
+            Some(result_data::Variant::Averages(_)) => "a ResultData.averages payload",
+            Some(result_data::Variant::Ranked(_)) => "a ResultData.ranked payload",
+        },
     }
 }
 

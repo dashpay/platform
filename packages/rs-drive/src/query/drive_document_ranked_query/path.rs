@@ -31,11 +31,11 @@ pub(crate) fn indexed_property_name_tree_path_for_index(
 ) -> Result<Vec<Vec<u8>>, Error> {
     let [property] = index.properties.as_slice() else {
         return Err(Error::Drive(DriveError::NotSupported(
-            "ranked queries require a single-property index: the ranked secondary \
-             lives on the index's terminal property-name tree, and for a compound \
-             index that tree sits under a prefix value tree whose value only a \
-             `where` clause could name — but ranked queries accept no `where` \
-             clauses",
+            "ranked and having-range queries require a single-property index: the \
+             axis secondary lives on the index's terminal property-name tree, and \
+             for a compound index that tree sits under a prefix value tree whose \
+             value only a `where` clause could name — but these queries accept no \
+             `where` clauses",
         )));
     };
     Ok(vec![

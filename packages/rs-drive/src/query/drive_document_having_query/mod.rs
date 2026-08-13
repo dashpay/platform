@@ -44,11 +44,18 @@
 //!    share one bounds-to-query translation, exactly as they share the
 //!    grove path. Completeness comes from the Merk range proof: the
 //!    boundary commitments show no in-range group was omitted.
-//! 2. **No `OFFSET`, no `start_at`.** The range primitives take a limit
-//!    but no skip; pagination of an over-long result set is a future
-//!    capability (a cursor on the `(sort_key ‖ group_key)` composite
-//!    keyspace), not an emulated one. A request carrying either is
-//!    rejected loudly.
+//! 2. **No `OFFSET`, no `start_at` — and no full pagination.** The
+//!    range primitives take a limit but no skip, and a request carrying
+//!    either knob is rejected loudly. A page cut at `limit` can only be
+//!    continued past **distinct** aggregate values, by tightening the
+//!    bound past the last value seen; a cut that lands **inside a tie**
+//!    (several groups sharing the boundary aggregate) cannot be
+//!    continued at all — moving the threshold past the tied value skips
+//!    the uncollected tied groups, and keeping it returns the same
+//!    page. Enumerating through a tie wider than [`MAX_HAVING_LIMIT`]
+//!    needs a cursor on the `(sort_key ‖ group_key)` composite
+//!    keyspace, a future capability; until then, size `limit` above the
+//!    widest tie the data can produce, or accept the cut.
 //! 3. **Entry order is axis order in the walk direction.** Ascending by
 //!    default (`ORDER BY` is optional here — the bound, not the
 //!    ordering, is the point of the query); an explicit `ORDER BY` on
@@ -252,8 +259,12 @@ pub struct DriveDocumentHavingQuery<'a> {
     /// Maximum number of matching groups to return. Fewer entries come
     /// back when fewer groups fall inside the bounds; that is not an
     /// error. **More matching groups than `limit` are silently cut at
-    /// `limit`** — the walk stops, and nothing marks the cut; a caller
-    /// that needs the full set must widen the limit or narrow the bound.
+    /// `limit`** — the walk stops, and nothing marks the cut. A caller
+    /// can continue past *distinct* aggregate values by tightening the
+    /// bound, but a cut inside a **tie** cannot be continued (see the
+    /// module docs): groups tied at the boundary aggregate that fell
+    /// past the limit stay unreachable until a composite-key cursor
+    /// exists, so size the limit above the widest expected tie.
     pub limit: u16,
 }
 
