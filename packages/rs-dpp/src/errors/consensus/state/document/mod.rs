@@ -18,3 +18,6 @@ pub mod invalid_document_revision_error;
 pub mod referenced_document_type_deletable_error;
 pub mod referenced_document_type_not_found_error;
 pub mod referenced_entity_not_found_error;
+pub mod referenced_identity_key_disabled_error;
+pub mod referenced_identity_key_not_found_error;
+pub mod referenced_key_id_property_invalid_error;

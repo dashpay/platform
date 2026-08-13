@@ -5371,6 +5371,55 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn should_register_contract_with_valid_identity_key_reference() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-key-registration-valid.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_contract_with_undefined_key_id_property() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-key-registration-missing-prop.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedKeyIdPropertyInvalidError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_contract_with_non_integer_key_id_property() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-key-registration-non-integer.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedKeyIdPropertyInvalidError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
+        #[tokio::test]
         async fn should_reject_contract_referencing_missing_contract() {
             let result = run_contract_create(
                 "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-registration-missing-contract.json",

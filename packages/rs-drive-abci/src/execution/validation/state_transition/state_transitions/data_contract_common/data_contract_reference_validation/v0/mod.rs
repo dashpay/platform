@@ -5,6 +5,7 @@ use dpp::data_contract::document_type::{DocumentPropertyReferenceTarget, Documen
 use dpp::data_contract::DataContract;
 use dpp::errors::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
+use dpp::errors::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
 use dpp::identifier::Identifier;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -21,13 +22,18 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 
-/// Checks every `permanentDocument` reference declaration of the given
-/// contract: the referenced contract must exist (the declaring contract
-/// itself when no contract id is named, including when it names its own id),
-/// the referenced document type must exist in it, and that type must forbid
-/// deletion. Self references are checked against the in-flight contract, so a
-/// contract may reference its own document types on creation; foreign contract
-/// fetches are billed.
+/// Checks every reference declaration of the given contract that carries
+/// declaration content.
+///
+/// `permanentDocument`: the referenced contract must exist (the declaring
+/// contract itself when no contract id is named, including when it names its
+/// own id), the referenced document type must exist in it, and that type must
+/// forbid deletion. Self references are checked against the in-flight
+/// contract, so a contract may reference its own document types on creation;
+/// foreign contract fetches are billed.
+///
+/// `identityPublicKey`: the declared key id property must exist in the same
+/// document type and be an integer.
 ///
 /// The error paths name the failing declaration as
 /// `documentTypeName.propertyPath`. Validation stops at the first invalid
@@ -50,17 +56,55 @@ pub(super) fn validate_data_contract_references_v0(
 
     for (declaring_type_name, document_type) in contract.document_types() {
         for (path, property) in document_type.as_ref().flattened_properties() {
-            let DocumentPropertyType::IdentifierWithReference(
-                DocumentPropertyReferenceTarget::PermanentDocument {
-                    contract_id,
-                    document_type_name,
-                },
-            ) = &property.property_type
+            let DocumentPropertyType::IdentifierWithReference(reference_target) =
+                &property.property_type
             else {
                 continue;
             };
 
             let declaration_path = format!("{declaring_type_name}.{path}");
+
+            // The key id property must exist in the same document type and be
+            // an integer; nothing else about the declaration is state-dependent
+            if let DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } =
+                reference_target
+            {
+                match document_type
+                    .as_ref()
+                    .flattened_properties()
+                    .get(key_id_property)
+                {
+                    None => {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            ReferencedKeyIdPropertyInvalidError::new(
+                                key_id_property.clone(),
+                                declaration_path,
+                                "the document type does not define this property".to_string(),
+                            )
+                            .into(),
+                        ));
+                    }
+                    Some(key_property) if !key_property.property_type.is_integer() => {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            ReferencedKeyIdPropertyInvalidError::new(
+                                key_id_property.clone(),
+                                declaration_path,
+                                "the property must be an integer".to_string(),
+                            )
+                            .into(),
+                        ));
+                    }
+                    Some(_) => continue,
+                }
+            }
+
+            let DocumentPropertyReferenceTarget::PermanentDocument {
+                contract_id,
+                document_type_name,
+            } = reference_target
+            else {
+                continue;
+            };
 
             let effective_contract_id = contract_id.unwrap_or(contract.id());
 

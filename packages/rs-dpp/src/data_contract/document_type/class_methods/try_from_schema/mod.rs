@@ -382,6 +382,22 @@ fn apply_property_reference_v0(
                 document_type_name: document_type_name.to_string(),
             }
         }
+        "identityPublicKey" => {
+            let key_id_property = refers_to_map
+                .get_str(property_names::KEY_ID_PROPERTY)
+                .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
+
+            if key_id_property.is_empty() || key_id_property.len() > 256 {
+                return Err(DataContractError::InvalidContractStructure(
+                    "identityPublicKey refersTo keyIdProperty must be between 1 and 256 characters"
+                        .to_string(),
+                ));
+            }
+
+            DocumentPropertyReferenceTarget::IdentityPublicKey {
+                key_id_property: key_id_property.to_string(),
+            }
+        }
         other => {
             return Err(DataContractError::InvalidContractStructure(format!(
                 "invalid refersTo type {other}"
@@ -649,6 +665,73 @@ mod tests {
                     "refersTo": {
                         "type": "permanentDocument",
                         "contractId": Identifier::from([7u8; 32]).to_string(Encoding::Base58)
+                    }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect_err("should fail");
+    }
+
+    #[test]
+    fn should_parse_identity_public_key_refers_to() {
+        let document_type = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "toUserId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "identityPublicKey",
+                        "keyIdProperty": "toKeyIndex"
+                    }
+                },
+                "toKeyIndex": {
+                    "type": "integer",
+                    "position": 1
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect("should parse");
+
+        let property_type = document_type
+            .as_ref()
+            .flattened_properties()
+            .get("toUserId")
+            .map(|p| p.property_type.clone())
+            .expect("property should be present");
+
+        assert_eq!(
+            property_type,
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::IdentityPublicKey {
+                    key_id_property: "toKeyIndex".to_string(),
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn should_reject_identity_public_key_refers_to_without_key_id_property() {
+        try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "toUserId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "identityPublicKey"
                     }
                 }
             },

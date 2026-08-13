@@ -426,6 +426,70 @@ mod tests {
     }
 
     #[test]
+    fn should_accept_identity_public_key_refers_to_in_v3_document_schema() {
+        let schema = document_schema_with_refers_to(json!({
+            "type": "identityPublicKey",
+            "keyIdProperty": "toKeyIndex"
+        }));
+
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+            "expected identityPublicKey refersTo to be valid"
+        );
+    }
+
+    #[test]
+    fn should_reject_identity_public_key_refers_to_without_key_id_property() {
+        let schema = document_schema_with_refers_to(json!({
+            "type": "identityPublicKey"
+        }));
+
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+            "expected identityPublicKey refersTo without keyIdProperty to be invalid"
+        );
+    }
+
+    #[test]
+    fn should_reject_key_id_property_on_non_key_refers_to_targets() {
+        for target in ["identity", "contract", "token", "permanentDocument"] {
+            let mut refers_to = serde_json::json!({
+                "type": target,
+                "keyIdProperty": "toKeyIndex"
+            });
+            if target == "permanentDocument" {
+                refers_to["documentType"] = serde_json::json!("note");
+            }
+
+            let schema = document_schema_with_refers_to(refers_to);
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+                "expected keyIdProperty on a {target} target to be invalid"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_identity_public_key_refers_to_with_invalid_key_id_property() {
+        for bad in [
+            serde_json::json!(""),
+            serde_json::json!("bad name!"),
+            serde_json::json!(3),
+        ] {
+            let schema = document_schema_with_refers_to(json!({
+                "type": "identityPublicKey",
+                "keyIdProperty": bad
+            }));
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+                "expected invalid keyIdProperty {bad} to be rejected"
+            );
+        }
+    }
+
+    #[test]
     fn should_reject_refers_to_with_unknown_properties() {
         let schema = document_schema_with_refers_to(json!({
             "type": "identity",
