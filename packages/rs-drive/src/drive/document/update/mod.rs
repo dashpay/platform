@@ -918,6 +918,57 @@ mod tests {
             0,
             "no index entry should remain under the old index value"
         );
+
+        // An update that leaves the index values unchanged (revision bump
+        // only) takes the refresh path, which must also address the
+        // non-unique layout the entry lives in
+
+        let document_values = platform_value!({
+           "$id": Identifier::new(bs58::decode("DLRWw2eRbLAW5zDU2c7wwsSFQypTSZPhFYzpY48tnaXN").into_vec()
+                        .unwrap().try_into().unwrap()),
+           "$type": "indexedDocument",
+           "$dataContractId": Identifier::new(bs58::decode("BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54").into_vec()
+                        .unwrap().try_into().unwrap()),
+           "$ownerId": Identifier::new(bs58::decode("GZVdTnLFAN2yE9rLeCHBDBCr7YQgmXJuoExkY347j7Z5").into_vec()
+                        .unwrap().try_into().unwrap()),
+           "$revision": 3,
+           "firstName": "updatedName",
+        });
+
+        let document = document_from_legacy_value(document_values);
+
+        drive
+            .update_document_for_contract(
+                &document,
+                &contract,
+                document_type,
+                None,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+            )
+            .expect("should update document without changing indexed fields");
+
+        let query = DriveDocumentQuery::from_sql_expr(
+            "select * from indexedDocument where firstName = 'updatedName'",
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
+
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("expected to execute query after the no-index-change update");
+
+        assert_eq!(
+            results.len(),
+            1,
+            "document should remain queryable after an update that does not touch indexed fields"
+        );
     }
 
     #[test]
