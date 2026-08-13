@@ -564,6 +564,65 @@ mod tests {
     }
 
     #[test]
+    fn should_reject_permanent_document_refers_to_with_invalid_contract_id() {
+        let err = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "parentNoteId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "permanentDocument",
+                        "contractId": "not-a-valid-identifier",
+                        "documentType": "note"
+                    }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect_err("should fail");
+
+        let message = err.to_string();
+        assert!(message.contains("base 58"), "unexpected error: {message}");
+    }
+
+    #[test]
+    fn should_reject_permanent_document_refers_to_with_oversized_document_type_name() {
+        let err = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "parentNoteId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "permanentDocument",
+                        "contractId": Identifier::from([7u8; 32]).to_string(Encoding::Base58),
+                        "documentType": "a".repeat(65)
+                    }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect_err("should fail");
+
+        let message = err.to_string();
+        assert!(
+            message.contains("between 1 and 64 characters"),
+            "unexpected error: {message}"
+        );
+    }
+
+    #[test]
     fn should_reject_permanent_document_refers_to_without_document_type() {
         try_document_type_from_schema(json!({
             "type": "object",
