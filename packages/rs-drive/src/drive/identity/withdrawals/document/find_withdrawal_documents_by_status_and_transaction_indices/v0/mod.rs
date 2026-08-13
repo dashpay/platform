@@ -26,9 +26,9 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Document>, Error> {
-        let mut equal_clauses = BTreeMap::new();
+        let mut where_clauses = BTreeMap::new();
 
-        equal_clauses.insert(
+        where_clauses.insert(
             withdrawal::properties::STATUS.to_string(),
             WhereClause {
                 field: withdrawal::properties::STATUS.to_string(),
@@ -37,16 +37,19 @@ impl Drive {
             },
         );
 
-        let transaction_index_in_clause = WhereClause {
-            field: withdrawal::properties::TRANSACTION_INDEX.to_string(),
-            operator: crate::query::WhereOperator::In,
-            value: Value::Array(
-                transaction_indices
-                    .iter()
-                    .map(|index| Value::U64(*index))
-                    .collect::<Vec<_>>(),
-            ),
-        };
+        where_clauses.insert(
+            withdrawal::properties::TRANSACTION_INDEX.to_string(),
+            WhereClause {
+                field: withdrawal::properties::TRANSACTION_INDEX.to_string(),
+                operator: crate::query::WhereOperator::In,
+                value: Value::Array(
+                    transaction_indices
+                        .iter()
+                        .map(|index| Value::U64(*index))
+                        .collect::<Vec<_>>(),
+                ),
+            },
+        );
 
         let mut order_by = IndexMap::new();
 
@@ -71,9 +74,9 @@ impl Drive {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clauses: vec![transaction_index_in_clause],
+                in_clauses: Vec::new(),
                 range_clause: None,
-                equal_clauses,
+                equal_clauses: where_clauses,
             },
             offset: None,
             limit: Some(limit),
@@ -162,16 +165,22 @@ mod tests {
             Some(&transaction),
         );
 
-        let found_document = drive
-            .find_withdrawal_documents_by_status_and_transaction_indices(
-                withdrawals_contract::WithdrawalStatus::POOLED,
-                &[transaction_index],
-                DEFAULT_QUERY_LIMIT,
-                Some(&transaction),
-                platform_version,
-            )
-            .expect("to find document by it's transaction id");
+        // Protocol version 13 routes to v0, 14 to v1 — both must find the
+        // same document (the two builders lower identically)
+        for protocol_version in [13u32, 14u32] {
+            let version =
+                PlatformVersion::get(protocol_version).expect("expected platform version to exist");
+            let found_document = drive
+                .find_withdrawal_documents_by_status_and_transaction_indices(
+                    withdrawals_contract::WithdrawalStatus::POOLED,
+                    &[transaction_index],
+                    DEFAULT_QUERY_LIMIT,
+                    Some(&transaction),
+                    version,
+                )
+                .expect("to find document by it's transaction id");
 
-        assert_eq!(found_document.len(), 1);
+            assert_eq!(found_document.len(), 1);
+        }
     }
 }

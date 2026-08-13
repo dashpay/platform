@@ -8522,11 +8522,12 @@ mod multi_in_tests {
 #[cfg(feature = "server")]
 #[cfg(test)]
 mod withdrawal_in_clause_placement_equivalence {
-    //! Pins that moving the withdrawal transaction-index `In` clause from
-    //! `equal_clauses` into `in_clauses` (review follow-up on the multi-`In`
-    //! PR) is behavior-preserving: both shapes lower to the identical
-    //! grovedb path query at protocol version 13 and 14, so the withdrawal
-    //! processing path executes the same operations at the same cost.
+    //! Pins that the v0 (protocol version <= 13) and v1 (protocol version
+    //! 14) withdrawal-by-transaction-index query builders are
+    //! behavior-preserving twins: the `In` clause riding in `equal_clauses`
+    //! (v0) and in `in_clauses` (v1) lower to the identical grovedb path
+    //! query at both protocol versions, so withdrawal processing executes
+    //! the same operations at the same cost across the version flip.
 
     use super::*;
     use dpp::data_contracts::SystemDataContract;

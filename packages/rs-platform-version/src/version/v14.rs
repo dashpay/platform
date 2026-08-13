@@ -238,6 +238,34 @@ mod tests {
         );
     }
 
+    /// The withdrawal-by-transaction-index query builder flips to v1 at v14
+    /// (the transaction-index `In` clause moves into
+    /// `InternalClauses.in_clauses`); both builders lower to the identical
+    /// path query, but v0 stays byte-frozen for already-live versions.
+    #[test]
+    fn withdrawal_transaction_index_query_builder_gate_is_v14_only() {
+        assert_eq!(
+            PLATFORM_V13
+                .drive
+                .methods
+                .identity
+                .withdrawals
+                .document
+                .find_withdrawal_documents_by_status_and_transaction_indices,
+            0
+        );
+        assert_eq!(
+            PLATFORM_V14
+                .drive
+                .methods
+                .identity
+                .withdrawals
+                .document
+                .find_withdrawal_documents_by_status_and_transaction_indices,
+            1
+        );
+    }
+
     /// The ranked index keywords are gated by the meta-schema version, so v14
     /// must select meta-schema v3 while v13 stays on v2.
     #[test]
