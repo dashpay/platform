@@ -197,6 +197,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         };
 
         let stub_document = Document::V0(DocumentV0 {
+            contract_version: None,
             id: Identifier::from([0u8; 32]),
             owner_id: *identity_id,
             properties,
@@ -358,6 +359,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         };
 
         let updated_document = Document::V0(DocumentV0 {
+            contract_version: None,
             id: existing_doc_id,
             owner_id: *identity_id,
             properties,

@@ -2808,6 +2808,7 @@ mod tests {
         // We intentionally omit 'transactionIndex' to simulate missing field
 
         let starts_at_document = DocumentV0 {
+            contract_version: None,
             id: Identifier::from([3u8; 32]), // The same as start_at
             owner_id: Identifier::random(),
             properties,

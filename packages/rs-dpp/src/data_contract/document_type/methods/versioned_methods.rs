@@ -166,6 +166,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         {
             0 => {
                 let mut document = DocumentV0 {
+                    contract_version: None,
                     id: document_id,
                     owner_id,
                     properties: data
@@ -328,6 +329,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
             .document_structure_version
         {
             0 => Ok(DocumentV0 {
+                contract_version: None,
                 id,
                 owner_id,
                 properties,

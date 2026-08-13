@@ -886,6 +886,7 @@ mod tests {
             let created_at = base_time + i * 20000;
             // Create a Document with the desired properties
             let random_document: Document = DocumentV0 {
+                contract_version: None,
                 id: Identifier::random_with_rng(&mut std_rng),
                 owner_id: Identifier::random_with_rng(&mut std_rng),
                 properties: {
@@ -1052,6 +1053,7 @@ mod tests {
             let created_at = base_time + i * 20000;
             // Create a Document with the desired properties
             let random_document: Document = DocumentV0 {
+                contract_version: None,
                 id: Identifier::random_with_rng(&mut std_rng),
                 owner_id: Identifier::random_with_rng(&mut std_rng),
                 properties: {
@@ -1218,6 +1220,7 @@ mod tests {
             let created_at = base_time + i * 20000;
             // Create a Document with the desired properties
             let random_document: Document = DocumentV0 {
+                contract_version: None,
                 id: Identifier::random_with_rng(&mut std_rng),
                 owner_id: Identifier::random_with_rng(&mut std_rng),
                 properties: {
@@ -1377,6 +1380,7 @@ mod tests {
             let created_at = base_time + i * 20000;
             // Create a Document with the desired properties
             let random_document: Document = DocumentV0 {
+                contract_version: None,
                 id: Identifier::random_with_rng(&mut std_rng),
                 owner_id: Identifier::random_with_rng(&mut std_rng),
                 properties: {
@@ -1551,6 +1555,7 @@ mod tests {
             let created_at = base_time + i * 20000;
             // Create a Document with the desired properties
             let random_document: Document = DocumentV0 {
+                contract_version: None,
                 id: Identifier::random_with_rng(&mut std_rng),
                 owner_id: Identifier::random_with_rng(&mut std_rng),
                 properties: {

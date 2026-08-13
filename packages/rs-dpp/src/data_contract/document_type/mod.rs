@@ -62,6 +62,7 @@ pub(crate) mod property_names {
     pub const PROPERTIES: &str = "properties";
     pub const POSITION: &str = "position";
     pub const REQUIRED: &str = "required";
+    pub const REQUIRED_SINCE: &str = "requiredSince";
     pub const TRANSIENT: &str = "transient";
     pub const TYPE: &str = "type";
     pub const REF: &str = "$ref";

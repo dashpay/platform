@@ -2,7 +2,7 @@ use crate::version::consensus_versions::ConsensusVersions;
 use crate::version::dpp_versions::dpp_asset_lock_versions::v1::DPP_ASSET_LOCK_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_contract_versions::v6::CONTRACT_VERSIONS_V6;
 use crate::version::dpp_versions::dpp_costs_versions::v1::DPP_COSTS_VERSIONS_V1;
-use crate::version::dpp_versions::dpp_document_versions::v3::DOCUMENT_VERSIONS_V3;
+use crate::version::dpp_versions::dpp_document_versions::v4::DOCUMENT_VERSIONS_V4;
 use crate::version::dpp_versions::dpp_factory_versions::v1::DPP_FACTORY_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_identity_versions::v1::IDENTITY_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_method_versions::v2::DPP_METHOD_VERSIONS_V2;
@@ -113,6 +113,17 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   reference property names an identity or contract that does not exist
 ///   is rejected. v13 keeps the v9 table and therefore keeps
 ///   accepting all of these, so replay of pre-upgrade blocks is unchanged.
+/// * `DOCUMENT_VERSIONS_V4` bumps `document_serialization_version` to
+///   default 3: documents are stamped with the contract version their bytes
+///   conform to (a varint after the format prefix), enabling the
+///   `requiredSince` property keyword — a contract update may add a new
+///   required property annotated with the version that update creates.
+///   Documents stamped below a property's `requiredSince` keep the
+///   presence-flagged layout they were written with, so the latest contract
+///   alone reconstructs every stamp's layout and no historical contract
+///   lookups are ever needed. Reads dispatch on the byte prefix, so
+///   formats 0–2 (all pre-v14 documents) deserialize exactly as before with
+///   an unstamped (pre-annotation) layout.
 ///
 /// The wire surface is deliberately unchanged: `GetDocumentsRequestV1`
 /// already carries `selects` / `group_by` / `order_by` / `limit` /
@@ -137,7 +148,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V1,
         state_transitions: STATE_TRANSITION_VERSIONS_V3,
         contract_versions: CONTRACT_VERSIONS_V6, // changed: v3 document meta-schema hosts the ranked index keywords
-        document_versions: DOCUMENT_VERSIONS_V3,
+        document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3 — the contract version stamp that enables `requiredSince` properties
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
         token_versions: TOKEN_VERSIONS_V2,

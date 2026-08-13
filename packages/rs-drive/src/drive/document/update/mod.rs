@@ -2747,6 +2747,7 @@ mod tests {
         properties_initial.insert("color".to_string(), Value::Text("red".to_string()));
         properties_initial.insert("amount".to_string(), Value::U64(5));
         let document_initial: dpp::document::Document = DocumentV0 {
+            contract_version: None,
             id: doc_id,
             owner_id: Identifier::from([0u8; 32]),
             properties: properties_initial,
@@ -2795,6 +2796,7 @@ mod tests {
         properties_updated.insert("color".to_string(), Value::Text("red".to_string()));
         properties_updated.insert("amount".to_string(), Value::U64(42));
         let document_updated: dpp::document::Document = DocumentV0 {
+            contract_version: None,
             id: doc_id,
             owner_id: Identifier::from([0u8; 32]),
             properties: properties_updated,
@@ -2998,6 +3000,7 @@ mod tests {
         properties_initial.insert("color".to_string(), Value::Text("red".to_string()));
         properties_initial.insert("amount".to_string(), Value::U64(11));
         let document_initial: dpp::document::Document = DocumentV0 {
+            contract_version: None,
             id: doc_id,
             owner_id: Identifier::from([0u8; 32]),
             properties: properties_initial,
@@ -3043,6 +3046,7 @@ mod tests {
         properties_updated.insert("color".to_string(), Value::Text("blue".to_string()));
         properties_updated.insert("amount".to_string(), Value::U64(17));
         let document_updated: dpp::document::Document = DocumentV0 {
+            contract_version: None,
             id: doc_id,
             owner_id: Identifier::from([0u8; 32]),
             properties: properties_updated,

@@ -1,5 +1,6 @@
 pub mod transformer;
 
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::{Document, DocumentV0};
 use dpp::identity::TimestampMillis;
 use dpp::platform_value::{Identifier, Value};
@@ -151,12 +152,28 @@ impl DocumentFromReplaceTransitionActionV0 for Document {
 
         let id = base.id();
 
+        // A replace re-supplies the full document contents, so the document
+        // is re-stamped with the current contract version (the stamp exists
+        // exactly when document serialization format 3 is in effect)
+        let contract_version = if platform_version
+            .dpp
+            .document_versions
+            .document_serialization_version
+            .default_current_version
+            >= 3
+        {
+            Some(base.data_contract_fetch_info_ref().contract.version())
+        } else {
+            None
+        };
+
         match platform_version
             .dpp
             .document_versions
             .document_structure_version
         {
             0 => Ok(DocumentV0 {
+                contract_version,
                 id,
                 owner_id,
                 properties: data.clone(),
@@ -205,12 +222,28 @@ impl DocumentFromReplaceTransitionActionV0 for Document {
 
         let id = base.id();
 
+        // A replace re-supplies the full document contents, so the document
+        // is re-stamped with the current contract version (the stamp exists
+        // exactly when document serialization format 3 is in effect)
+        let contract_version = if platform_version
+            .dpp
+            .document_versions
+            .document_serialization_version
+            .default_current_version
+            >= 3
+        {
+            Some(base.data_contract_fetch_info_ref().contract.version())
+        } else {
+            None
+        };
+
         match platform_version
             .dpp
             .document_versions
             .document_structure_version
         {
             0 => Ok(DocumentV0 {
+                contract_version,
                 id,
                 owner_id,
                 properties: data,

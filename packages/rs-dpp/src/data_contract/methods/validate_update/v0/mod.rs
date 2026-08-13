@@ -107,9 +107,11 @@ impl DataContract {
             };
 
             // Validate document type update rules
-            let validate_update_result = old_document_type
-                .as_ref()
-                .validate_update(new_document_type, platform_version)?;
+            let validate_update_result = old_document_type.as_ref().validate_update(
+                new_document_type,
+                new_data_contract.version(),
+                platform_version,
+            )?;
 
             if !validate_update_result.is_valid() {
                 return Ok(SimpleConsensusValidationResult::new_with_errors(

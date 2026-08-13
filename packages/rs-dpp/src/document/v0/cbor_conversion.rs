@@ -80,6 +80,8 @@ impl TryFrom<DocumentV0> for DocumentForCbor {
             updated_at_core_block_height,
             transferred_at_core_block_height,
             creator_id,
+            // The CBOR document form predates the contract-version stamp
+            contract_version: _,
         } = value;
         Ok(DocumentForCbor {
             id: id.to_buffer(),
@@ -148,6 +150,7 @@ impl DocumentV0 {
 
         // dev-note: properties is everything other than the id and owner id
         Ok(DocumentV0 {
+            contract_version: None,
             properties: document_map,
             owner_id: Identifier::new(owner_id),
             id: Identifier::new(id),
@@ -229,6 +232,7 @@ mod tests {
         properties.insert("name".to_string(), Value::Text("Alice".to_string()));
         properties.insert("age".to_string(), Value::U64(30));
         DocumentV0 {
+            contract_version: None,
             id,
             owner_id,
             properties,

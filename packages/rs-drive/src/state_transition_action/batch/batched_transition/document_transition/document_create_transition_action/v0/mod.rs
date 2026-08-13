@@ -164,6 +164,23 @@ impl DocumentFromCreateTransitionActionV0 for Document {
                     None
                 };
 
+                // The contract-version stamp exists exactly when document
+                // serialization format 3 (the format that writes it) is in
+                // effect; earlier formats have no stamp on the wire, so
+                // building one into the struct would only desync in-memory
+                // documents from their deserialized counterparts on replay
+                let contract_version = if platform_version
+                    .dpp
+                    .document_versions
+                    .document_serialization_version
+                    .default_current_version
+                    >= 3
+                {
+                    Some(data_contract.contract.version())
+                } else {
+                    None
+                };
+
                 let is_created_at_required = required_fields.contains(CREATED_AT);
                 let is_updated_at_required = required_fields.contains(UPDATED_AT);
                 let is_transferred_at_required = required_fields.contains(TRANSFERRED_AT);
@@ -188,6 +205,7 @@ impl DocumentFromCreateTransitionActionV0 for Document {
                     .document_structure_version
                 {
                     0 => Ok(DocumentV0 {
+                        contract_version,
                         id,
                         owner_id,
                         properties: data,
@@ -296,6 +314,21 @@ impl DocumentFromCreateTransitionActionV0 for Document {
                     None
                 };
 
+                // The contract-version stamp exists exactly when document
+                // serialization format 3 (the format that writes it) is in
+                // effect
+                let contract_version = if platform_version
+                    .dpp
+                    .document_versions
+                    .document_serialization_version
+                    .default_current_version
+                    >= 3
+                {
+                    Some(data_contract.contract.version())
+                } else {
+                    None
+                };
+
                 let is_created_at_required = required_fields.contains(CREATED_AT);
                 let is_updated_at_required = required_fields.contains(UPDATED_AT);
                 let is_transferred_at_required = required_fields.contains(TRANSFERRED_AT);
@@ -320,6 +353,7 @@ impl DocumentFromCreateTransitionActionV0 for Document {
                     .document_structure_version
                 {
                     0 => Ok(DocumentV0 {
+                        contract_version,
                         id: *id,
                         owner_id,
                         properties: data,

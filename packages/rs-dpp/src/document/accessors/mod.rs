@@ -223,6 +223,7 @@ mod tests {
 
     fn make_doc() -> Document {
         Document::V0(DocumentV0 {
+            contract_version: None,
             id: Identifier::new([1u8; 32]),
             owner_id: Identifier::new([2u8; 32]),
             properties: BTreeMap::new(),
