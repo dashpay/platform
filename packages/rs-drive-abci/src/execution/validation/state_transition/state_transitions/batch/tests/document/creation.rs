@@ -5007,4 +5007,261 @@ mod creation_tests {
             }
         );
     }
+
+    const REFERENCE_VALIDATION_PERMANENT_DOC_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc.json";
+
+    /// Registers the permanent-document fixture contract, creates and commits a
+    /// `note` document (its type has `canBeDeleted: false`), then creates a
+    /// `message` document mutated by the test and returns that second
+    /// transition's execution result. The mutator receives the committed note's
+    /// id so the happy path can point a reference at a document known to exist.
+    async fn run_permanent_document_reference_creation<F>(
+        mutator: F,
+    ) -> StateTransitionExecutionResult
+    where
+        F: FnOnce(&mut Document, Identifier),
+    {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(433);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+        let contract = setup_contract(
+            &platform.drive,
+            REFERENCE_VALIDATION_PERMANENT_DOC_CONTRACT_PATH,
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            None,
+        );
+
+        let note = contract
+            .document_type_for_name("note")
+            .expect("expected a note document type");
+
+        let note_entropy = Bytes32::random_with_rng(&mut rng);
+
+        let note_document = note
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                note_entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random note document");
+
+        let note_id = note_document.id();
+
+        let note_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                note_document,
+                note,
+                note_entropy.0,
+                &key,
+                2,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create note batch transition");
+
+        let note_create_serialized_transition = note_create_transition
+            .serialize_to_bytes()
+            .expect("expected note batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[note_create_serialized_transition],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let message = contract
+            .document_type_for_name("message")
+            .expect("expected a message document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = message
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                // The reference properties are all optional; each test sets
+                // only the one it exercises
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random message document");
+
+        mutator(&mut document, note_id);
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document,
+                message,
+                entropy.0,
+                &key,
+                3,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[documents_batch_create_serialized_transition],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        processing_result
+            .execution_results()
+            .first()
+            .expect("expected one execution result")
+            .clone()
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_referenced_permanent_document_exists() {
+        let result = run_permanent_document_reference_creation(|document, note_id| {
+            document.set("noteId", note_id.into());
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_referenced_permanent_document_missing() {
+        let result = run_permanent_document_reference_creation(|document, _| {
+            document.set("noteId", Identifier::random().into());
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_)),
+                ..
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_referenced_document_type_is_deletable() {
+        // The referenced document type exists but allows deletion, so even an
+        // existing document of that type may not be referenced
+        let result = run_permanent_document_reference_creation(|document, note_id| {
+            document.set("deletableNoteId", note_id.into());
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::ReferencedDocumentTypeDeletableError(_)
+                ),
+                ..
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_referenced_document_type_missing() {
+        let result = run_permanent_document_reference_creation(|document, note_id| {
+            document.set("unknownTypeNoteId", note_id.into());
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedDocumentTypeNotFoundError(
+                    _
+                )),
+                ..
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_referenced_document_contract_missing() {
+        let result = run_permanent_document_reference_creation(|document, note_id| {
+            document.set("foreignNoteId", note_id.into());
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedDocumentTypeNotFoundError(
+                    _
+                )),
+                ..
+            }
+        );
+    }
 }

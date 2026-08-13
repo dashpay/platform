@@ -53,6 +53,8 @@ pub struct ByteArrayPropertySizes {
     pub max_size: Option<u16>,
 }
 
+// This enum is embedded in consensus errors, so it is consensus-serialized.
+// @append_only
 #[derive(
     Debug, PartialEq, Eq, Clone, Serialize, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
@@ -61,6 +63,16 @@ pub enum DocumentPropertyReferenceTarget {
     Identity,
     Contract,
     Token,
+    /// A document of a document type whose documents can never be deleted
+    /// (`canBeDeleted: false`). Only such document types may be referenced:
+    /// together with document types being non-removable and the
+    /// `canBeDeleted` flag being immutable on contract updates, this
+    /// guarantees a validated reference can never dangle.
+    #[serde(rename = "permanentDocument")]
+    PermanentDocument {
+        contract_id: Identifier,
+        document_type_name: String,
+    },
 }
 
 impl std::fmt::Display for DocumentPropertyReferenceTarget {
@@ -69,6 +81,13 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
             DocumentPropertyReferenceTarget::Identity => write!(f, "identity"),
             DocumentPropertyReferenceTarget::Contract => write!(f, "contract"),
             DocumentPropertyReferenceTarget::Token => write!(f, "token"),
+            DocumentPropertyReferenceTarget::PermanentDocument {
+                contract_id,
+                document_type_name,
+            } => write!(
+                f,
+                "permanent document (contract {contract_id}, document type {document_type_name})"
+            ),
         }
     }
 }

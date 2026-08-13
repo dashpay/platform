@@ -41,6 +41,8 @@ use crate::consensus::state::document::document_contest_index_mismatch_error::Do
 use crate::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
 use crate::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
 use crate::consensus::state::document::document_contest_not_required_error::DocumentContestNotRequiredError;
+use crate::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
+use crate::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use crate::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
 use crate::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use crate::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
@@ -366,6 +368,12 @@ pub enum StateError {
 
     #[error(transparent)]
     ReferencedEntityNotFoundError(ReferencedEntityNotFoundError),
+
+    #[error(transparent)]
+    ReferencedDocumentTypeNotFoundError(ReferencedDocumentTypeNotFoundError),
+
+    #[error(transparent)]
+    ReferencedDocumentTypeDeletableError(ReferencedDocumentTypeDeletableError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -441,6 +449,26 @@ mod tests {
                 )
             )),
             93
+        );
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentTypeNotFoundError(
+                ReferencedDocumentTypeNotFoundError::new(
+                    Identifier::from([1; 32]),
+                    "note".to_string(),
+                    "parentNoteId".to_string(),
+                )
+            )),
+            94
+        );
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentTypeDeletableError(
+                ReferencedDocumentTypeDeletableError::new(
+                    Identifier::from([1; 32]),
+                    "note".to_string(),
+                    "parentNoteId".to_string(),
+                )
+            )),
+            95
         );
     }
 }

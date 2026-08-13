@@ -10,6 +10,9 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentTypeRef,
 };
+use dpp::data_contract::DataContract;
+use dpp::errors::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
+use dpp::errors::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use dpp::errors::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
 use dpp::identifier::Identifier;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapPathHelper;
@@ -26,6 +29,7 @@ use crate::execution::types::execution_operation::{RetrieveIdentityInfo, Validat
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
+use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::fetch_document_with_id;
 use crate::platform_types::platform::PlatformStateRef;
 
 /// Versioned, stateful validation of document references using the v0 rules.
@@ -71,6 +75,7 @@ impl DocumentReferenceValidationV0 for DocumentBaseTransitionAction {
         };
 
         validate_document_type_references_v0(
+            contract,
             document_type,
             document_data,
             changed_fields,
@@ -85,6 +90,7 @@ impl DocumentReferenceValidationV0 for DocumentBaseTransitionAction {
 
 #[allow(clippy::too_many_arguments)]
 fn validate_document_type_references_v0(
+    contract: &DataContract,
     document_type: DocumentTypeRef<'_>,
     document_data: &BTreeMap<String, Value>,
     changed_fields: Option<&BTreeSet<String>>,
@@ -164,6 +170,90 @@ fn validate_document_type_references_v0(
                 execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
 
                 referenced_token_info.is_some()
+            }
+            DocumentPropertyReferenceTarget::PermanentDocument {
+                contract_id: referenced_contract_id,
+                document_type_name,
+            } => {
+                // The declaring contract may reference its own document types; it is
+                // already loaded for this transition, so no fetch is billed for it
+                let referenced_contract_fetch_info;
+                let referenced_contract = if *referenced_contract_id == contract.id() {
+                    contract
+                } else {
+                    let (fee, fetch_info) = platform.drive.get_contract_with_fetch_info_and_fee(
+                        referenced_contract_id.to_buffer(),
+                        Some(&block_info.epoch),
+                        false,
+                        transaction,
+                        platform_version,
+                    )?;
+
+                    let fee =
+                        fee.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "fee must exist when fetching a referenced contract with an epoch",
+                        )))?;
+
+                    // The cost is added even if the referenced contract does not exist or was cached
+                    execution_context
+                        .add_operation(ValidationOperation::PrecalculatedOperation(fee));
+
+                    let Some(fetch_info) = fetch_info else {
+                        // A missing contract and a missing document type resolve to the
+                        // same failure: the declared document type could not be found
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            ReferencedDocumentTypeNotFoundError::new(
+                                *referenced_contract_id,
+                                document_type_name.clone(),
+                                path.to_string(),
+                            )
+                            .into(),
+                        ));
+                    };
+
+                    referenced_contract_fetch_info = fetch_info;
+                    &referenced_contract_fetch_info.contract
+                };
+
+                let Some(referenced_document_type) =
+                    referenced_contract.document_type_optional_for_name(document_type_name)
+                else {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ReferencedDocumentTypeNotFoundError::new(
+                            *referenced_contract_id,
+                            document_type_name.clone(),
+                            path.to_string(),
+                        )
+                        .into(),
+                    ));
+                };
+
+                // Only document types whose documents can never be deleted may be
+                // referenced: `canBeDeleted` is immutable on contract updates and
+                // document types can not be removed, so a reference validated here
+                // can never dangle
+                if referenced_document_type.documents_can_be_deleted() {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ReferencedDocumentTypeDeletableError::new(
+                            *referenced_contract_id,
+                            document_type_name.clone(),
+                            path.to_string(),
+                        )
+                        .into(),
+                    ));
+                }
+
+                fetch_document_with_id(
+                    platform.drive,
+                    referenced_contract,
+                    referenced_document_type,
+                    Identifier::from(referenced_id),
+                    &block_info.epoch,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                )?
+                .is_some()
             }
         };
 

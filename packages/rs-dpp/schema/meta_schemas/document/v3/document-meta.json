@@ -98,14 +98,56 @@
               "enum": [
                 "identity",
                 "contract",
-                "token"
+                "token",
+                "permanentDocument"
               ]
+            },
+            "contractId": {
+              "description": "The id of the data contract the referenced document lives in, as a base58 string or a 32-byte array",
+              "oneOf": [
+                {
+                  "type": "string",
+                  "minLength": 32,
+                  "maxLength": 44,
+                  "pattern": "^[123456789A-HJ-NP-Za-km-z]{32,44}$"
+                },
+                {
+                  "type": "array",
+                  "minItems": 32,
+                  "maxItems": 32,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 255
+                  }
+                }
+              ]
+            },
+            "documentType": {
+              "description": "The name of the referenced document type; it must forbid deletion (canBeDeleted: false)",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[a-zA-Z0-9-_]{1,64}$"
             }
           },
           "required": [
             "type"
           ],
-          "additionalProperties": false
+          "additionalProperties": false,
+          "if": {
+            "properties": { "type": { "const": "permanentDocument" } },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["type", "contractId", "documentType"]
+          },
+          "else": {
+            "properties": {
+              "contractId": false,
+              "documentType": false
+            }
+          }
         },
         "contains": {
           "$ref": "https://json-schema.org/draft/2020-12/meta/applicator#/properties/contains"
