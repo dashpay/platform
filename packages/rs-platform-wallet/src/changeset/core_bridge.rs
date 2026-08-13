@@ -381,6 +381,10 @@ async fn run_wallet_event_adapter<P>(
         // that has started must be allowed to finish, and dropping the handle
         // would not stop the thread anyway. Shutdown is observed at the next
         // `recv` instead.
+        // Captured before the batch moves into the closure: if the commit
+        // thread panics, these are the wallets whose rows have an unknown fate
+        // and whose watermark must therefore be frozen.
+        let batch_wallet_ids: Vec<WalletId> = batch.keys().copied().collect();
         let persister_for_commit = Arc::clone(&persister);
         let sync_fault_for_commit = Arc::clone(&sync_fault);
         let fault_for_commit = Arc::clone(&fault);
@@ -408,14 +412,34 @@ async fn run_wallet_event_adapter<P>(
 
         let diag = match committed {
             Ok(diag) => diag,
-            // The commit thread panicked. The fault state survives (it lives
-            // behind the handle above), but this batch's outcome is unknown,
-            // so it is reported rather than silently folded into the next one.
+            // The commit thread panicked, so `commit_batch` never reached the
+            // `store()` rejection arm that would have frozen the affected
+            // wallets. Freeze them here instead.
+            //
+            // Before this call moved off the runtime a panic unwound the whole
+            // adapter task, which stopped every later watermark advance by
+            // killing the writer. `spawn_blocking` turns that into a recoverable
+            // `JoinError`, and simply continuing would let the NEXT batch
+            // persist a higher `synced_height` for a wallet whose rows from this
+            // batch may never have landed — the exact hole the fail-closed rule
+            // exists to prevent. Faulting per wallet rather than stopping the
+            // adapter keeps the existing design: a wallet whose commit is in
+            // doubt freezes, its siblings keep syncing.
             Err(join_error) => {
+                {
+                    let mut fault = fault
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    for wallet_id in &batch_wallet_ids {
+                        fault.fault_wallet(*wallet_id, &sync_fault);
+                    }
+                }
                 tracing::error!(
                     error = %join_error,
                     folded,
-                    "wallet-event commit thread failed; batch outcome unknown"
+                    wallets = batch_wallet_ids.len(),
+                    "wallet-event commit thread failed; freezing the batch's \
+                     wallets because their rows have an unknown outcome"
                 );
                 continue;
             }
@@ -1932,6 +1956,10 @@ mod tests {
     struct ProbePersister {
         obs: UnboundedSender<StoreObserved>,
         fail_once: Mutex<HashSet<WalletId>>,
+        /// Wallets whose NEXT `store()` panics instead of returning. Models a
+        /// backend that dies mid-write — the case that used to unwind the whole
+        /// adapter task and now surfaces as a `JoinError`.
+        panic_once: Mutex<HashSet<WalletId>>,
     }
 
     impl ProbePersister {
@@ -1939,10 +1967,14 @@ mod tests {
             Self {
                 obs,
                 fail_once: Mutex::new(HashSet::new()),
+                panic_once: Mutex::new(HashSet::new()),
             }
         }
         fn fail_next(&self, wallet_id: WalletId) {
             self.fail_once.lock().unwrap().insert(wallet_id);
+        }
+        fn panic_next(&self, wallet_id: WalletId) {
+            self.panic_once.lock().unwrap().insert(wallet_id);
         }
     }
 
@@ -1953,6 +1985,9 @@ mod tests {
             changeset: PlatformWalletChangeSet,
         ) -> Result<(), PersistenceError> {
             let core = changeset.core.as_ref();
+            if self.panic_once.lock().unwrap().remove(&wallet_id) {
+                panic!("probe persister: store panicked for {wallet_id:?}");
+            }
             let rejected = self.fail_once.lock().unwrap().remove(&wallet_id);
             let _ = self.obs.send(StoreObserved {
                 wallet_id,
@@ -2303,6 +2338,75 @@ mod tests {
             obs_rx.try_recv().is_err(),
             "one store per wallet, not per event"
         );
+    }
+
+    /// (h) SAFETY INVARIANT under a commit-thread PANIC: a wallet whose
+    /// `store()` panicked must be frozen just as if the store had been
+    /// rejected, because its rows have an unknown fate.
+    ///
+    /// This is a regression guard on the move to `spawn_blocking`. Before it,
+    /// a panic unwound the adapter task itself, which stopped every later
+    /// watermark advance by killing the writer outright. `spawn_blocking`
+    /// turns that into a recoverable `JoinError` — and merely logging it would
+    /// let the NEXT batch persist a higher `synced_height` for a wallet whose
+    /// earlier rows may never have landed, which is exactly the hole
+    /// dashpay/platform#4069 closed.
+    #[tokio::test]
+    async fn a_panicking_commit_freezes_the_batch_wallets() {
+        let wallet_id = [0xEEu8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        persister.panic_next(wallet_id);
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            test_manager(),
+            Arc::clone(&persister),
+            rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
+        ));
+
+        // The store for this batch panics: no observation is emitted, and the
+        // adapter must fault the wallet rather than carry on unaffected.
+        tx.send(block_processed_event(wallet_id, 10)).unwrap();
+        // Bounded, so a regression fails the test instead of hanging it: with
+        // the fault-on-panic path removed, `sync_fault` is simply never raised
+        // and an unbounded spin would wedge CI with no diagnosis.
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while !sync_fault.load(Ordering::Relaxed) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("a panicked commit must raise the hard-fault signal");
+
+        // The adapter must still be alive — the point of moving the commit off
+        // the runtime is that one bad batch does not take the writer with it.
+        assert!(
+            !handle.is_finished(),
+            "a panicked commit must not kill the adapter"
+        );
+
+        // A later watermark for the same wallet must not reach the store.
+        tx.send(block_processed_event(wallet_id, 60)).unwrap();
+        tx.send(sync_height_event(wallet_id, 900)).unwrap();
+
+        let post = obs_rx
+            .recv()
+            .await
+            .expect("the record-bearing event must still persist while faulted");
+        assert_eq!(post.wallet_id, wallet_id);
+        assert_eq!(
+            post.synced_height, None,
+            "a wallet whose commit panicked must not advance its durable watermark"
+        );
+
+        cancel.cancel();
+        drop(tx);
+        handle.await.unwrap();
     }
 
     /// (g) SAFETY INVARIANT under a fault: once the per-wallet fault latch is
