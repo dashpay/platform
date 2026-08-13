@@ -5,10 +5,14 @@ use dpp::data_contract::document_type::{DocumentPropertyReferenceTarget, Documen
 use dpp::data_contract::DataContract;
 use dpp::errors::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
+use dpp::identifier::Identifier;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
+use drive::drive::contract::DataContractFetchInfo;
 use drive::drive::Drive;
 use drive::query::TransactionArg;
+use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -26,7 +30,11 @@ use crate::execution::types::state_transition_execution_context::{
 /// fetches are billed.
 ///
 /// The error paths name the failing declaration as
-/// `documentTypeName.propertyPath`.
+/// `documentTypeName.propertyPath`. Validation stops at the first invalid
+/// declaration: this bounds the billed work an invalid contract can cause and
+/// matches document write-time reference validation. Foreign contract
+/// resolutions are memoized per contract id, so a contract declaring many
+/// references into the same foreign contract is billed one fetch for it.
 pub(super) fn validate_data_contract_references_v0(
     contract: &DataContract,
     drive: &Drive,
@@ -35,6 +43,11 @@ pub(super) fn validate_data_contract_references_v0(
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {
+    // Memoizes foreign contract resolutions (including misses) so repeated
+    // declarations naming the same contract are billed a single fetch
+    let mut fetched_contracts: BTreeMap<Identifier, Option<Arc<DataContractFetchInfo>>> =
+        BTreeMap::new();
+
     for (declaring_type_name, document_type) in contract.document_types() {
         for (path, property) in document_type.as_ref().flattened_properties() {
             let DocumentPropertyType::IdentifierWithReference(
@@ -55,22 +68,34 @@ pub(super) fn validate_data_contract_references_v0(
             let referenced_contract = if effective_contract_id == contract.id() {
                 contract
             } else {
-                let (fee, fetch_info) = drive.get_contract_with_fetch_info_and_fee(
-                    effective_contract_id.to_buffer(),
-                    Some(&block_info.epoch),
-                    false,
-                    transaction,
-                    platform_version,
-                )?;
+                let resolved = match fetched_contracts.get(&effective_contract_id) {
+                    Some(cached) => cached.clone(),
+                    None => {
+                        let (fee, fetch_info) = drive.get_contract_with_fetch_info_and_fee(
+                            effective_contract_id.to_buffer(),
+                            Some(&block_info.epoch),
+                            false,
+                            transaction,
+                            platform_version,
+                        )?;
 
-                let fee = fee.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "fee must exist when fetching a referenced contract with an epoch",
-                )))?;
+                        let fee =
+                            fee.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                                "fee must exist when fetching a referenced contract with an epoch",
+                            )))?;
 
-                // The cost is added even if the referenced contract does not exist or was cached
-                execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+                        // The cost is added even if the referenced contract does not exist
+                        // or was cached
+                        execution_context
+                            .add_operation(ValidationOperation::PrecalculatedOperation(fee));
 
-                let Some(fetch_info) = fetch_info else {
+                        fetched_contracts.insert(effective_contract_id, fetch_info.clone());
+
+                        fetch_info
+                    }
+                };
+
+                let Some(fetch_info) = resolved else {
                     // A missing contract and a missing document type resolve to the
                     // same failure: the declared document type could not be found
                     return Ok(SimpleConsensusValidationResult::new_with_error(

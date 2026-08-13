@@ -45,6 +45,19 @@
             "contractId": "YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf",
             "documentType": "note"
           }
+        },
+        "secondCrossContractNoteId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 2,
+          "refersTo": {
+            "type": "permanentDocument",
+            "contractId": "YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf",
+            "documentType": "note"
+          }
         }
       },
       "required": [],

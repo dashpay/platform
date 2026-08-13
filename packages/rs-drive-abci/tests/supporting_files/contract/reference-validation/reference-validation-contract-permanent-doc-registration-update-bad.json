@@ -52,10 +52,23 @@
           "minItems": 32,
           "maxItems": 32,
           "contentMediaType": "application/x.dash.dpp.identifier",
-          "position": 2,
+          "position": 3,
           "refersTo": {
             "type": "permanentDocument",
             "documentType": "ghost"
+          }
+        },
+        "secondCrossContractNoteId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 2,
+          "refersTo": {
+            "type": "permanentDocument",
+            "contractId": "YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf",
+            "documentType": "note"
           }
         }
       },
