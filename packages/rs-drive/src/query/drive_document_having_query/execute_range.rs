@@ -48,6 +48,12 @@ impl DriveDocumentHavingQuery<'_> {
             // prefix), merged with the shared comparator.
             let per_branch = (0..self.prefix_branches.len())
                 .map(|branch| {
+                    // Absent element = empty branch; same union
+                    // semantics as the ranked surface and the proved
+                    // path's authenticated absence.
+                    if self.branch_is_absent(branch, drive, transaction, platform_version)? {
+                        return Ok(Vec::new());
+                    }
                     self.execute_range_no_proof_branch(branch, drive, transaction, platform_version)
                 })
                 .collect::<Result<Vec<_>, Error>>()?;
@@ -59,6 +65,31 @@ impl DriveDocumentHavingQuery<'_> {
             );
         }
         self.execute_range_no_proof_branch(0, drive, transaction, platform_version)
+    }
+
+    /// Whether this branch's key is absent at the branching Merk — see
+    /// the ranked sibling for the contract.
+    pub(crate) fn branch_is_absent(
+        &self,
+        branch: usize,
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, Error> {
+        let grove_version = &platform_version.drive.grove_version;
+        let paths = (0..self.prefix_branches.len())
+            .map(|b| self.indexed_property_name_tree_path(b))
+            .collect::<Result<Vec<_>, Error>>()?;
+        let (prefix, keys, _suffix) =
+            super::super::drive_document_ranked_query::branches::decompose_branch_paths(&paths)?;
+        let prefix_refs: Vec<&[u8]> = prefix.iter().map(|s| s.as_slice()).collect();
+        let CostContext { value, cost: _ } = drive.grove.get_raw_optional(
+            prefix_refs.as_slice().into(),
+            &keys[branch],
+            transaction,
+            grove_version,
+        );
+        Ok(value.map_err(|e| Error::GroveDB(Box::new(e)))?.is_none())
     }
 
     /// One branch's in-bound page — the entire pre-`IN` executor,

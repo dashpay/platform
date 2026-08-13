@@ -2910,6 +2910,51 @@ mod pinned_prefix {
         );
     }
 
+    /// An `IN` element whose prefix was never written contributes the
+    /// **empty branch** — union semantics — while the single-`==`-pin
+    /// contract keeps erroring on an unknown value (pinned separately
+    /// by `unknown_prefix_value_errors_rather_than_fabricating_an_empty_page`).
+    /// The proved path authenticates the absence inside the branched
+    /// envelope, so read, proof, and verification agree.
+    #[test]
+    fn an_absent_in_element_contributes_an_empty_branch() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        insert_grades(&drive, &contract, &[(IDENTITY_X, "art", 90)]);
+
+        let never_written = [9u8; 32];
+        let pins = in_pin(&[IDENTITY_X, never_written]);
+        let page = match run(&drive, &contract, &pins, 2, false).expect("read succeeds") {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries, got a proof"),
+        };
+        assert_eq!(
+            page.entries,
+            vec![RankedEntry {
+                in_key: Some(IDENTITY_X.to_vec()),
+                key: b"art".to_vec(),
+                value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(90, 1)),
+            }],
+            "only the existing branch contributes; the absent one is empty, not an error"
+        );
+
+        let proof = match run(&drive, &contract, &pins, 2, true).expect("prove succeeds") {
+            DocumentRankedResponse::Proof(proof) => proof,
+            DocumentRankedResponse::Entries(_) => panic!("expected a proof, got entries"),
+        };
+        let (root_hash, verified) = client_side_query(&contract, &pins, 2)
+            .verify_ranked_top_k_proof(&proof, platform_version())
+            .expect("the envelope authenticates the absent branch");
+        assert_eq!(verified.entries, page.entries);
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &platform_version().drive.grove_version)
+                .unwrap()
+                .expect("root hash must be readable"),
+        );
+    }
+
     /// An unpinned request over the compound-only contract has no
     /// covering index — there is no global cross-prefix ordering to
     /// serve, so the rejection names the missing coverage.

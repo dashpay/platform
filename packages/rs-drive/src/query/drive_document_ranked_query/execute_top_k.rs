@@ -26,8 +26,11 @@ impl DriveDocumentRankedQuery<'_> {
     /// the direction and the tie contract.
     ///
     /// Fewer than `k` entries is normal (the index simply has fewer
-    /// groups than `offset + k`) and is not an error. A missing path
-    /// *is* an error rather than an empty result: the indexed
+    /// groups than `offset + k`) and is not an error. On an `IN`-pinned
+    /// request, an element whose prefix was never written contributes
+    /// an **empty branch** (union semantics). A missing path under a
+    /// single `==` pin — or under a *present* branch key — *is* an
+    /// error rather than an empty result: the indexed
     /// property-name tree is created when the contract is registered, so
     /// its absence means the contract-level state is not what the
     /// request claims, not that the ranking is empty. (An index with no
@@ -76,9 +79,18 @@ impl DriveDocumentRankedQuery<'_> {
             // One walk per branch, each fetching a full page (the merge
             // lemma needs every branch's own top-k), merged with the
             // shared comparator. `offset` is grammar-rejected with `IN`,
-            // so `skipped` is always 0 here.
+            // so `skipped` is always 0 here. An `IN` element whose
+            // prefix was never written contributes the empty page —
+            // union semantics, decided at the branching Merk exactly
+            // like the proved path's authenticated absence (deeper
+            // breakage under a *present* key stays an error, and the
+            // single-`==`-pin contract is untouched: there, an unknown
+            // value is still an error, not an empty page).
             let per_branch = (0..self.prefix_branches.len())
                 .map(|branch| {
+                    if self.branch_is_absent(branch, drive, transaction, platform_version)? {
+                        return Ok(Vec::new());
+                    }
                     Ok(self
                         .execute_top_k_no_proof_branch(
                             branch,
@@ -101,6 +113,31 @@ impl DriveDocumentRankedQuery<'_> {
             });
         }
         self.execute_top_k_no_proof_branch(0, drive, transaction, platform_version)
+    }
+
+    /// Whether this branch's key is absent at the branching Merk — the
+    /// union's empty-set case. Mirrors the proved path, where grovedb
+    /// authenticates the same absence at the same level.
+    pub(crate) fn branch_is_absent(
+        &self,
+        branch: usize,
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, Error> {
+        let grove_version = &platform_version.drive.grove_version;
+        let paths = (0..self.prefix_branches.len())
+            .map(|b| self.indexed_property_name_tree_path(b))
+            .collect::<Result<Vec<_>, Error>>()?;
+        let (prefix, keys, _suffix) = super::branches::decompose_branch_paths(&paths)?;
+        let prefix_refs: Vec<&[u8]> = prefix.iter().map(|s| s.as_slice()).collect();
+        let CostContext { value, cost: _ } = drive.grove.get_raw_optional(
+            prefix_refs.as_slice().into(),
+            &keys[branch],
+            transaction,
+            grove_version,
+        );
+        Ok(value.map_err(|e| Error::GroveDB(Box::new(e)))?.is_none())
     }
 
     /// One branch's page — the entire pre-`IN` executor, parameterized

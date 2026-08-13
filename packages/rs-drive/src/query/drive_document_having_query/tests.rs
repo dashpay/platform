@@ -2296,4 +2296,37 @@ mod pinned_prefix {
                 .expect("root hash must be readable"),
         );
     }
+
+    /// The having sibling of the ranked surface's absent-element test:
+    /// `identityId IN [X, never-written]` bounds X's groups and treats
+    /// the absent branch as empty, on both the read and the proved
+    /// path.
+    #[test]
+    fn an_absent_in_element_contributes_an_empty_branch() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        insert_grades(&drive, &contract, 3000, &[(IDENTITY_X, "art", 90)]);
+
+        let never_written = [9u8; 32];
+        let pins = vec![WhereClause {
+            field: PREFIX_PROPERTY.to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![
+                Value::Identifier(IDENTITY_X),
+                Value::Identifier(never_written),
+            ]),
+        }];
+        let entries =
+            entries_of(run(&drive, &contract, &pins, &[], false).expect("the read succeeds"));
+        assert_eq!(
+            entries,
+            vec![RankedEntry {
+                in_key: Some(IDENTITY_X.to_vec()),
+                key: b"art".to_vec(),
+                value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(90, 1)),
+            }],
+            "only the existing branch is bounded; the absent one is empty, not an error"
+        );
+
+        assert_proof_round_trips(&drive, &contract, &pins, &[], &entries);
+    }
 }
