@@ -61,16 +61,6 @@ pub fn prefix_pins_from_where_clauses(
         let values = match clause.operator {
             WhereOperator::Equal => vec![clause.value.clone()],
             WhereOperator::In => {
-                if let Some(first) = branching_field {
-                    return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-                        "a ranked / having-range query takes at most one `IN` across its \
-                         prefix properties (`{first}` already carries it): several `IN`s \
-                         multiply into a cartesian product of prefix branches, each a \
-                         separate secondary walk inside one proof — a fan-out the branch \
-                         ceiling exists to prevent. Pin `{}` with `==`.",
-                        clause.field
-                    ))));
-                }
                 let Value::Array(elements) = &clause.value else {
                     return Err(Error::Query(
                         QuerySyntaxError::InvalidWhereClauseComponents(
@@ -95,7 +85,21 @@ pub fn prefix_pins_from_where_clauses(
                         MAX_PREFIX_IN_BRANCHES
                     ))));
                 }
+                // Only a multi-element `IN` branches; a singleton is an
+                // equality pin and never counts against the one-`IN`
+                // budget — in either clause order.
                 if elements.len() > 1 {
+                    if let Some(first) = branching_field {
+                        return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                            "a ranked / having-range query takes at most one branching \
+                             `IN` across its prefix properties (`{first}` already carries \
+                             it): several `IN`s multiply into a cartesian product of \
+                             prefix branches, each a separate secondary walk inside one \
+                             proof — a fan-out the branch ceiling exists to prevent. Pin \
+                             `{}` with `==` or a single-element `IN`.",
+                            clause.field
+                        ))));
+                    }
                     branching_field = Some(clause.field.as_str());
                 }
                 elements.clone()

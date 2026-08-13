@@ -2850,27 +2850,50 @@ mod pinned_prefix {
         }];
         assert!(detect(&empty).is_err(), "an empty IN list must be rejected");
 
-        // A second IN (on another property) once one already branches.
-        let two_ins = vec![
-            WhereClause {
-                field: PREFIX_PROPERTY.to_string(),
-                operator: WhereOperator::In,
-                value: Value::Array(vec![
-                    Value::Identifier(IDENTITY_X),
-                    Value::Identifier(IDENTITY_Y),
-                ]),
-            },
-            WhereClause {
-                field: "other".to_string(),
-                operator: WhereOperator::In,
-                value: Value::Array(vec![Value::U64(1), Value::U64(2)]),
-            },
-        ];
-        let error = detect(&two_ins).expect_err("two branching INs must be rejected");
-        assert!(
-            matches!(error, Error::Query(QuerySyntaxError::Unsupported(_))),
-            "expected Unsupported for a second IN, got {error:?}"
-        );
+        // Two *branching* INs are rejected in either clause order.
+        let multi = |field: &str| WhereClause {
+            field: field.to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![Value::U64(1), Value::U64(2)]),
+        };
+        for two_ins in [
+            vec![multi(PREFIX_PROPERTY), multi("other")],
+            vec![multi("other"), multi(PREFIX_PROPERTY)],
+        ] {
+            let error = detect(&two_ins).expect_err("two branching INs must be rejected");
+            assert!(
+                matches!(error, Error::Query(QuerySyntaxError::Unsupported(_))),
+                "expected Unsupported for a second branching IN, got {error:?}"
+            );
+        }
+
+        // A singleton IN is an equality pin and never counts against
+        // the one-`IN` budget — in either clause order relative to the
+        // branching one.
+        let singleton = WhereClause {
+            field: "other".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![Value::U64(1)]),
+        };
+        for mixed in [
+            vec![multi(PREFIX_PROPERTY), singleton.clone()],
+            vec![singleton.clone(), multi(PREFIX_PROPERTY)],
+        ] {
+            let mode = detect(&mixed)
+                .expect("a singleton IN alongside a branching IN is well-formed either way");
+            assert_eq!(
+                mode.prefix_pins
+                    .iter()
+                    .map(|pin| pin.values.len())
+                    .collect::<Vec<_>>(),
+                if mixed[0].field == "other" {
+                    vec![1, 2]
+                } else {
+                    vec![2, 1]
+                },
+                "one branching pin and one singleton pin, in clause order"
+            );
+        }
 
         // Non-array operand.
         let scalar = vec![WhereClause {
