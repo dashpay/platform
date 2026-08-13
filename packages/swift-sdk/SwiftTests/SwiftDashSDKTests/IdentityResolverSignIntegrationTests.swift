@@ -47,6 +47,13 @@ final class IdentityResolverSignIntegrationTests: XCTestCase {
             defer { lock.unlock() }
             mnemonics[walletId] = nil
         }
+
+        // `hasMnemonic` (the `canSign` preflight) delegates here.
+        override func mnemonicAvailability(for walletId: Data) -> MnemonicAvailability {
+            lock.lock()
+            defer { lock.unlock() }
+            return mnemonics[walletId] != nil ? .present : .absent
+        }
     }
 
     /// A consistent breadcrumb (the path derives to the row's pubkey) signs via
@@ -81,6 +88,11 @@ final class IdentityResolverSignIntegrationTests: XCTestCase {
         try ctx.save()
 
         let signer = KeychainSigner(modelContainer: container, network: .testnet, storage: storage)
+
+        // The preflight consults the same injected storage as the sign
+        // path, so a resolver-signable key must report signable.
+        XCTAssertTrue(signer.canSign(publicKey: pubkey, keyType: 0))
+
         let message = Data("identity state transition".utf8)
         let result = signer.signIdentityKeyOnDemand(publicKey: pubkey, keyType: 0, data: message)
 
