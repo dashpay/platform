@@ -385,6 +385,12 @@ async fn run_wallet_event_adapter<P>(
         // thread panics, these are the wallets whose rows have an unknown fate
         // and whose watermark must therefore be frozen.
         let batch_wallet_ids: Vec<WalletId> = batch.keys().copied().collect();
+        // Filled by `commit_batch` as each wallet's `store()` returns. Lives
+        // out here so a panicking commit thread cannot take it down with it:
+        // what it holds is the difference between "this wallet's rows are
+        // accounted for" and "nobody knows".
+        let settled: Arc<Mutex<Vec<WalletId>>> = Arc::new(Mutex::new(Vec::new()));
+        let settled_for_commit = Arc::clone(&settled);
         let persister_for_commit = Arc::clone(&persister);
         let sync_fault_for_commit = Arc::clone(&sync_fault);
         let fault_for_commit = Arc::clone(&fault);
@@ -397,6 +403,9 @@ async fn run_wallet_event_adapter<P>(
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             let mut freeze_logged = freeze_for_commit.load(Ordering::Relaxed);
+            let mut settled = settled_for_commit
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             let diag = commit_batch(
                 &*persister_for_commit,
                 batch,
@@ -404,6 +413,7 @@ async fn run_wallet_event_adapter<P>(
                 &mut fault,
                 &sync_fault_for_commit,
                 &mut freeze_logged,
+                &mut settled,
             );
             freeze_for_commit.store(freeze_logged, Ordering::Relaxed);
             diag
@@ -426,20 +436,44 @@ async fn run_wallet_event_adapter<P>(
             // adapter keeps the existing design: a wallet whose commit is in
             // doubt freezes, its siblings keep syncing.
             Err(join_error) => {
+                // `commit_batch` walks the batch serially, so a panic partitions
+                // it: wallets whose `store()` already returned are settled — their
+                // rows were accepted or rejected, and a rejection already faulted
+                // them from inside. Freezing those too would strip a healthy
+                // wallet's watermark for the rest of the session over a sibling's
+                // bad batch.
+                //
+                // What is left — the wallet that panicked, plus every wallet the
+                // loop never reached — has no known outcome, and its events are
+                // gone from the lossless channel. Those must freeze, or a later
+                // batch advances their watermark past rows that may never have
+                // landed.
+                let settled_ids = settled
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .iter()
+                    .copied()
+                    .collect::<HashSet<_>>();
+                let unsettled: Vec<WalletId> = batch_wallet_ids
+                    .iter()
+                    .copied()
+                    .filter(|id| !settled_ids.contains(id))
+                    .collect();
                 {
                     let mut fault = fault
                         .lock()
                         .unwrap_or_else(|poisoned| poisoned.into_inner());
-                    for wallet_id in &batch_wallet_ids {
+                    for wallet_id in &unsettled {
                         fault.fault_wallet(*wallet_id, &sync_fault);
                     }
                 }
                 tracing::error!(
                     error = %join_error,
                     folded,
-                    wallets = batch_wallet_ids.len(),
-                    "wallet-event commit thread failed; freezing the batch's \
-                     wallets because their rows have an unknown outcome"
+                    settled = settled_ids.len(),
+                    frozen = unsettled.len(),
+                    "wallet-event commit thread failed; freezing the wallets whose \
+                     rows have an unknown outcome"
                 );
                 continue;
             }
@@ -487,6 +521,7 @@ fn commit_batch<P>(
     fault: &mut AdapterFaultState,
     sync_fault: &AtomicBool,
     freeze_logged: &mut bool,
+    settled: &mut Vec<WalletId>,
 ) -> BatchDiagnostics
 where
     P: PlatformWalletPersistence + ?Sized,
@@ -535,7 +570,15 @@ where
             asset_locks: (!Merge::is_empty(&asset_locks)).then_some(asset_locks),
             ..PlatformWalletChangeSet::default()
         };
-        match persister.store(wallet_id, cs) {
+        let store_result = persister.store(wallet_id, cs);
+        // Recorded only once the store has RETURNED, and whether it accepted
+        // or rejected — both are answers. A wallet whose store panicked never
+        // reaches this line, and one the loop never got to is never pushed at
+        // all, so what is missing from `settled` is exactly the set whose
+        // outcome the caller cannot reason about. See the `JoinError` arm in
+        // `run_wallet_event_adapter`.
+        settled.push(wallet_id);
+        match store_result {
             Ok(()) => {
                 if let Some(h) = offered_height {
                     diag.record_persisted(h);
@@ -1960,6 +2003,13 @@ mod tests {
         /// backend that dies mid-write — the case that used to unwind the whole
         /// adapter task and now surfaces as a `JoinError`.
         panic_once: Mutex<HashSet<WalletId>>,
+        /// Held closed to keep a `store()` call parked. The SQLite backend
+        /// commits a real transaction per call, so a slow disk parks the caller
+        /// for real; this makes that duration controllable.
+        block_until: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
+        /// Raised as soon as a blocked `store()` is entered, so a test can wait
+        /// for the block to be in effect rather than sleeping and hoping.
+        blocked: Arc<AtomicBool>,
     }
 
     impl ProbePersister {
@@ -1968,7 +2018,16 @@ mod tests {
                 obs,
                 fail_once: Mutex::new(HashSet::new()),
                 panic_once: Mutex::new(HashSet::new()),
+                block_until: Mutex::new(None),
+                blocked: Arc::new(AtomicBool::new(false)),
             }
+        }
+        /// Park the next `store()` until the returned sender is dropped or
+        /// signalled. `blocked` reports when the park is actually in effect.
+        fn block_next(&self) -> (std::sync::mpsc::Sender<()>, Arc<AtomicBool>) {
+            let (tx, rx) = std::sync::mpsc::channel();
+            *self.block_until.lock().unwrap() = Some(rx);
+            (tx, Arc::clone(&self.blocked))
         }
         fn fail_next(&self, wallet_id: WalletId) {
             self.fail_once.lock().unwrap().insert(wallet_id);
@@ -1985,6 +2044,14 @@ mod tests {
             changeset: PlatformWalletChangeSet,
         ) -> Result<(), PersistenceError> {
             let core = changeset.core.as_ref();
+            if let Some(gate) = self.block_until.lock().unwrap().take() {
+                self.blocked.store(true, Ordering::Relaxed);
+                // Blocks the calling thread outright — the whole point is to
+                // model a synchronous backend, so an async wait would prove
+                // nothing.
+                let _ = gate.recv();
+                self.blocked.store(false, Ordering::Relaxed);
+            }
             if self.panic_once.lock().unwrap().remove(&wallet_id) {
                 panic!("probe persister: store panicked for {wallet_id:?}");
             }
@@ -2394,14 +2461,182 @@ mod tests {
         tx.send(block_processed_event(wallet_id, 60)).unwrap();
         tx.send(sync_height_event(wallet_id, 900)).unwrap();
 
-        let post = obs_rx
-            .recv()
+        let post = tokio::time::timeout(std::time::Duration::from_secs(5), obs_rx.recv())
             .await
+            .expect("a faulted wallet must still persist its rows")
             .expect("the record-bearing event must still persist while faulted");
         assert_eq!(post.wallet_id, wallet_id);
         assert_eq!(
             post.synced_height, None,
             "a wallet whose commit panicked must not advance its durable watermark"
+        );
+
+        cancel.cancel();
+        drop(tx);
+        handle.await.unwrap();
+    }
+
+    /// (j) THE PRIMARY BEHAVIOUR OF THIS PR: a blocked `store()` must not park
+    /// the async runtime.
+    ///
+    /// `store()` is synchronous and, for the SQLite backend, commits a real
+    /// transaction per call. Called inline on a tokio worker it held that
+    /// worker for the duration — a field restore showed one drain park the
+    /// runtime long enough for the metrics tick covering it to report a 1.4s
+    /// mean poll, with the durable watermark left hundreds of thousands of
+    /// blocks behind the chain tip.
+    ///
+    /// Every other test in this module would still pass with `commit_batch`
+    /// moved back inline, because they only check persistence outcomes. This
+    /// one runs the adapter on a SINGLE worker, parks a `store()`, and requires
+    /// a spawned task to still get scheduled.
+    ///
+    /// Deliberately built out of `std` primitives — a `std::mpsc` handoff and
+    /// `std::thread::sleep` on the test thread — rather than `tokio::time`.
+    /// The regression parks the runtime's only worker, and a tokio timer needs
+    /// that runtime to fire: an async timeout here hangs instead of failing,
+    /// which is worse than the bug it is meant to catch.
+    #[test]
+    fn a_blocked_store_does_not_park_the_runtime() {
+        use std::sync::mpsc as std_mpsc;
+        use std::time::{Duration, Instant};
+
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let wallet_id = [0x33u8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        let (release, blocked) = persister.block_next();
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let cancel = CancellationToken::new();
+
+        let handle = runtime.spawn(run_wallet_event_adapter(
+            test_manager(),
+            Arc::clone(&persister),
+            rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
+        ));
+
+        // Park the commit inside a synchronous `store()`.
+        tx.send(block_processed_event(wallet_id, 10)).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !blocked.load(Ordering::Relaxed) {
+            assert!(
+                Instant::now() < deadline,
+                "the store must actually park before the assertion below means anything"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+
+        // The discriminator: a SPAWNED task has to be scheduled on the
+        // runtime's single worker. With the commit on `spawn_blocking` the
+        // worker is free and this arrives at once; with it inline the worker is
+        // sitting inside `store()` and this times out.
+        let (sentinel_tx, sentinel_rx) = std_mpsc::channel();
+        runtime.spawn(async move {
+            let _ = sentinel_tx.send(());
+        });
+        sentinel_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("a blocked store must not hold the runtime's only worker");
+
+        // Release, then let the drain finish so the adapter shuts down cleanly.
+        drop(release);
+        runtime.block_on(async {
+            let observed = tokio::time::timeout(Duration::from_secs(5), obs_rx.recv())
+                .await
+                .expect("the released store must complete")
+                .expect("store observed");
+            assert_eq!(observed.wallet_id, wallet_id);
+
+            cancel.cancel();
+            drop(tx);
+            handle.await.unwrap();
+        });
+    }
+
+    /// (i) A commit panic must not punish the wallets it did not reach.
+    ///
+    /// `commit_batch` walks the batch serially (a `BTreeMap`, so in wallet-id
+    /// order). If an earlier wallet's `store()` returned and a later one
+    /// panics, the earlier wallet's rows are on disk and its watermark is
+    /// safe — freezing it would strip its `synced_height` for the rest of the
+    /// session over a sibling's bad batch.
+    ///
+    /// Guards the fix for the first version of the panic handler, which
+    /// faulted every wallet in the drain.
+    #[tokio::test]
+    async fn a_panicking_commit_spares_the_wallets_it_already_stored() {
+        // `BTreeMap` order decides who is committed first, so the ids are
+        // chosen to put the healthy wallet ahead of the panicking one.
+        let healthy = [0x11u8; 32];
+        let doomed = [0x22u8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        persister.panic_next(doomed);
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            test_manager(),
+            Arc::clone(&persister),
+            rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
+        ));
+
+        // Both wallets in one drain: `healthy` stores, then `doomed` panics.
+        // Sent before either is observed so they fold into a single batch.
+        tx.send(block_processed_event(healthy, 10)).unwrap();
+        tx.send(block_processed_event(doomed, 10)).unwrap();
+
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while !sync_fault.load(Ordering::Relaxed) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the panicked commit must raise the hard-fault signal");
+
+        // Drain what the panicking batch managed to observe.
+        while obs_rx.try_recv().is_ok() {}
+
+        // The healthy wallet's watermark must still advance: its store
+        // returned, so its rows are accounted for.
+        tx.send(sync_height_event(healthy, 900)).unwrap();
+        // Bounded: on a regression the healthy wallet is frozen, its
+        // watermark-only changeset collapses to nothing, and no store is
+        // observed at all — an unbounded `recv` would hang CI instead of
+        // reporting which invariant broke.
+        let after_healthy = tokio::time::timeout(std::time::Duration::from_secs(5), obs_rx.recv())
+            .await
+            .expect("a wallet whose store completed must still be storable")
+            .expect("healthy wallet still stores");
+        assert_eq!(after_healthy.wallet_id, healthy);
+        assert_eq!(
+            after_healthy.synced_height,
+            Some(900),
+            "a wallet whose store completed must not be frozen by a sibling's panic"
+        );
+
+        // The wallet whose store panicked must be frozen.
+        tx.send(block_processed_event(doomed, 60)).unwrap();
+        tx.send(sync_height_event(doomed, 900)).unwrap();
+        let after_doomed = tokio::time::timeout(std::time::Duration::from_secs(5), obs_rx.recv())
+            .await
+            .expect("a faulted wallet must still persist its rows")
+            .expect("doomed wallet still persists rows");
+        assert_eq!(after_doomed.wallet_id, doomed);
+        assert_eq!(
+            after_doomed.synced_height, None,
+            "the wallet whose commit panicked must not advance its watermark"
         );
 
         cancel.cancel();
@@ -2827,6 +3062,7 @@ mod tests {
             &mut fault,
             &sync_fault,
             &mut freeze_logged,
+            &mut Vec::new(),
         );
 
         let observed = obs_rx
@@ -2899,6 +3135,7 @@ mod tests {
             &mut fault,
             &sync_fault,
             &mut freeze_logged,
+            &mut Vec::new(),
         );
 
         assert_eq!(diag.persisted, Some(500));
@@ -2930,6 +3167,7 @@ mod tests {
             &mut fault,
             &sync_fault,
             &mut freeze_logged,
+            &mut Vec::new(),
         );
 
         // The height was genuinely offered to the store...
@@ -2999,6 +3237,7 @@ mod tests {
             &mut fault,
             &sync_fault,
             &mut freeze_logged,
+            &mut Vec::new(),
         );
 
         assert_eq!(diag.persisted, None, "a frozen watermark is not persisted");
@@ -3046,6 +3285,7 @@ mod tests {
             &mut fault,
             &sync_fault,
             &mut freeze_logged,
+            &mut Vec::new(),
         );
 
         assert_eq!(diag.frozen, Some(1234));
@@ -3082,6 +3322,7 @@ mod tests {
             &mut fault,
             &sync_fault,
             &mut freeze_logged,
+            &mut Vec::new(),
         );
 
         assert_eq!(
@@ -3125,6 +3366,7 @@ mod tests {
             &mut fault,
             &sync_fault,
             &mut freeze_logged,
+            &mut Vec::new(),
         );
 
         assert_eq!(diag.wallets, 1);
