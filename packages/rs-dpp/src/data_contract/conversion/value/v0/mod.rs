@@ -1,6 +1,8 @@
+use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::Value;
+use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 
 /// `platform_value` deserialization for `DataContract` with an explicit
 /// validation flag.
@@ -29,5 +31,19 @@ pub trait DataContractValueConversionMethodsV0 {
 
     /// Serialize to a `platform_value::Value` at an explicit platform
     /// version, independent of the process-global current version.
-    fn to_value(&self, platform_version: &PlatformVersion) -> Result<Value, ProtocolError>;
+    ///
+    /// Provided by default for any implementor convertible to
+    /// `DataContractInSerializationFormat` (`DataContract`, `DataContractV0`,
+    /// `DataContractV1`); other implementors of this trait need not provide
+    /// it, keeping the added method source-compatible.
+    fn to_value(&self, platform_version: &PlatformVersion) -> Result<Value, ProtocolError>
+    where
+        Self: Sized,
+        for<'a> DataContractInSerializationFormat:
+            TryFromPlatformVersioned<&'a Self, Error = ProtocolError>,
+    {
+        let format: DataContractInSerializationFormat =
+            self.try_into_platform_versioned(platform_version)?;
+        platform_value::to_value(&format).map_err(ProtocolError::ValueError)
+    }
 }

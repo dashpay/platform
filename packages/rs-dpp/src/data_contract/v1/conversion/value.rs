@@ -3,12 +3,10 @@ use crate::data_contract::conversion::value::v0::DataContractValueConversionMeth
 use crate::data_contract::serialized_version::property_names;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::v1::DataContractInSerializationFormatV1;
-use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::data_contract::DataContractV1;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{ReplacementType, Value};
-use platform_version::TryIntoPlatformVersioned;
 
 pub const DATA_CONTRACT_IDENTIFIER_FIELDS_V0: [&str; 2] =
     [property_names::ID, property_names::OWNER_ID];
@@ -55,11 +53,5 @@ impl DataContractValueConversionMethodsV0 for DataContractV1 {
                     .map_err(|_| ProtocolError::Generic("Conversion error".to_string()))?,
             }),
         }
-    }
-
-    fn to_value(&self, platform_version: &PlatformVersion) -> Result<Value, ProtocolError> {
-        let format: DataContractInSerializationFormat =
-            self.try_into_platform_versioned(platform_version)?;
-        platform_value::to_value(&format).map_err(ProtocolError::ValueError)
     }
 }
