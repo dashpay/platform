@@ -26,9 +26,9 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Document>, Error> {
-        let mut where_clauses = BTreeMap::new();
+        let mut equal_clauses = BTreeMap::new();
 
-        where_clauses.insert(
+        equal_clauses.insert(
             withdrawal::properties::STATUS.to_string(),
             WhereClause {
                 field: withdrawal::properties::STATUS.to_string(),
@@ -37,19 +37,16 @@ impl Drive {
             },
         );
 
-        where_clauses.insert(
-            withdrawal::properties::TRANSACTION_INDEX.to_string(),
-            WhereClause {
-                field: withdrawal::properties::TRANSACTION_INDEX.to_string(),
-                operator: crate::query::WhereOperator::In,
-                value: Value::Array(
-                    transaction_indices
-                        .iter()
-                        .map(|index| Value::U64(*index))
-                        .collect::<Vec<_>>(),
-                ),
-            },
-        );
+        let transaction_index_in_clause = WhereClause {
+            field: withdrawal::properties::TRANSACTION_INDEX.to_string(),
+            operator: crate::query::WhereOperator::In,
+            value: Value::Array(
+                transaction_indices
+                    .iter()
+                    .map(|index| Value::U64(*index))
+                    .collect::<Vec<_>>(),
+            ),
+        };
 
         let mut order_by = IndexMap::new();
 
@@ -74,9 +71,9 @@ impl Drive {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clauses: Vec::new(),
+                in_clauses: vec![transaction_index_in_clause],
                 range_clause: None,
-                equal_clauses: where_clauses,
+                equal_clauses,
             },
             offset: None,
             limit: Some(limit),

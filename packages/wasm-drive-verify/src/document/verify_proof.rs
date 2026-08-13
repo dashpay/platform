@@ -168,6 +168,12 @@ fn parse_internal_clauses(where_clauses: &JsValue) -> Result<InternalClauses, Js
     // Parse in_clauses (array form; protocol version 14+ accepts several)
     if let Ok(clauses) = Reflect::get(&obj, &JsValue::from_str("in_clauses")) {
         if !clauses.is_null() && !clauses.is_undefined() {
+            if !Array::is_array(&clauses) {
+                return Err(format_error(
+                    ErrorCategory::InvalidInput,
+                    "in_clauses must be an array",
+                ));
+            }
             let clauses_array = Array::from(&clauses);
             for i in 0..clauses_array.length() {
                 internal_clauses
