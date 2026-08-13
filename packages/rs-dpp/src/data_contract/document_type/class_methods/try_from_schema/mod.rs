@@ -355,15 +355,16 @@ fn apply_property_reference_v0(
         "contract" => DocumentPropertyReferenceTarget::Contract,
         "token" => DocumentPropertyReferenceTarget::Token,
         "permanentDocument" => {
+            // An absent contractId means the reference targets a document
+            // type of the declaring contract itself
             let contract_id = refers_to_map
                 .get(property_names::CONTRACT_ID)
-                .ok_or_else(|| {
-                    DataContractError::InvalidContractStructure(
-                        "permanentDocument refersTo requires a contractId".to_string(),
-                    )
-                })?
-                .to_identifier()
-                .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
+                .map(|value| {
+                    value
+                        .to_identifier()
+                        .map_err(|e| DataContractError::ValueWrongType(e.to_string()))
+                })
+                .transpose()?;
 
             let document_type_name = refers_to_map
                 .get_str(property_names::DOCUMENT_TYPE)
@@ -526,7 +527,7 @@ mod tests {
             property_type,
             DocumentPropertyType::IdentifierWithReference(
                 DocumentPropertyReferenceTarget::PermanentDocument {
-                    contract_id,
+                    contract_id: Some(contract_id),
                     document_type_name: "note".to_string(),
                 }
             )
@@ -534,8 +535,8 @@ mod tests {
     }
 
     #[test]
-    fn should_reject_permanent_document_refers_to_without_contract_id() {
-        let err = try_document_type_from_schema(json!({
+    fn should_parse_permanent_document_refers_to_without_contract_id_as_own_contract() {
+        let document_type = try_document_type_from_schema(json!({
             "type": "object",
             "properties": {
                 "parentNoteId": {
@@ -554,12 +555,23 @@ mod tests {
             "required": [],
             "additionalProperties": false
         }))
-        .expect_err("should fail");
+        .expect("should parse");
 
-        let message = err.to_string();
-        assert!(
-            message.contains("permanentDocument refersTo requires a contractId"),
-            "unexpected error: {message}"
+        let property_type = document_type
+            .as_ref()
+            .flattened_properties()
+            .get("parentNoteId")
+            .map(|p| p.property_type.clone())
+            .expect("property should be present");
+
+        assert_eq!(
+            property_type,
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::PermanentDocument {
+                    contract_id: None,
+                    document_type_name: "note".to_string(),
+                }
+            )
         );
     }
 

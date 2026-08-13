@@ -103,7 +103,7 @@
               ]
             },
             "contractId": {
-              "description": "The id of the data contract the referenced document lives in, as a base58 string or a 32-byte array",
+              "description": "The id of the data contract the referenced document lives in, as a base58 string or a 32-byte array; when absent the reference targets the declaring contract itself",
               "oneOf": [
                 {
                   "type": "string",
@@ -140,7 +140,7 @@
             "required": ["type"]
           },
           "then": {
-            "required": ["type", "contractId", "documentType"]
+            "required": ["type", "documentType"]
           },
           "else": {
             "properties": {

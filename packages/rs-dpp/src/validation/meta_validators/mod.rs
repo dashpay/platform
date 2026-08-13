@@ -368,15 +368,16 @@ mod tests {
     }
 
     #[test]
-    fn should_reject_permanent_document_refers_to_without_contract_id() {
+    fn should_accept_permanent_document_refers_to_without_contract_id() {
+        // An absent contractId targets the declaring contract itself
         let schema = document_schema_with_refers_to(json!({
             "type": "permanentDocument",
             "documentType": "note"
         }));
 
         assert!(
-            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
-            "expected permanentDocument refersTo without contractId to be invalid"
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+            "expected permanentDocument refersTo without contractId to be valid"
         );
     }
 

@@ -175,14 +175,17 @@ fn validate_document_type_references_v0(
                 contract_id: referenced_contract_id,
                 document_type_name,
             } => {
-                // The declaring contract may reference its own document types; it is
-                // already loaded for this transition, so no fetch is billed for it
+                // An absent contract id targets the declaring contract itself; the
+                // declaring contract may also name its own id explicitly. Either
+                // way it is already loaded for this transition, so no fetch is
+                // billed for it
+                let effective_contract_id = referenced_contract_id.unwrap_or(contract.id());
                 let referenced_contract_fetch_info;
-                let referenced_contract = if *referenced_contract_id == contract.id() {
+                let referenced_contract = if effective_contract_id == contract.id() {
                     contract
                 } else {
                     let (fee, fetch_info) = platform.drive.get_contract_with_fetch_info_and_fee(
-                        referenced_contract_id.to_buffer(),
+                        effective_contract_id.to_buffer(),
                         Some(&block_info.epoch),
                         false,
                         transaction,
@@ -203,7 +206,7 @@ fn validate_document_type_references_v0(
                         // same failure: the declared document type could not be found
                         return Ok(SimpleConsensusValidationResult::new_with_error(
                             ReferencedDocumentTypeNotFoundError::new(
-                                *referenced_contract_id,
+                                effective_contract_id,
                                 document_type_name.clone(),
                                 path.to_string(),
                             )
@@ -220,7 +223,7 @@ fn validate_document_type_references_v0(
                 else {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         ReferencedDocumentTypeNotFoundError::new(
-                            *referenced_contract_id,
+                            effective_contract_id,
                             document_type_name.clone(),
                             path.to_string(),
                         )
@@ -235,7 +238,7 @@ fn validate_document_type_references_v0(
                 if referenced_document_type.documents_can_be_deleted() {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         ReferencedDocumentTypeDeletableError::new(
-                            *referenced_contract_id,
+                            effective_contract_id,
                             document_type_name.clone(),
                             path.to_string(),
                         )

@@ -15,21 +15,6 @@
         }
       },
       "required": [],
-      "indices": [],
-      "additionalProperties": false
-    },
-    "deletableNote": {
-      "type": "object",
-      "canBeDeleted": true,
-      "properties": {
-        "content": {
-          "type": "string",
-          "position": 0,
-          "maxLength": 100
-        }
-      },
-      "required": [],
-      "indices": [],
       "additionalProperties": false
     },
     "message": {
@@ -48,7 +33,7 @@
             "documentType": "note"
           }
         },
-        "deletableNoteId": {
+        "crossContractNoteId": {
           "type": "array",
           "byteArray": true,
           "minItems": 32,
@@ -57,11 +42,11 @@
           "position": 1,
           "refersTo": {
             "type": "permanentDocument",
-            "contractId": "4Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVd",
-            "documentType": "deletableNote"
+            "contractId": "YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf",
+            "documentType": "note"
           }
         },
-        "unknownTypeNoteId": {
+        "secondNoteId": {
           "type": "array",
           "byteArray": true,
           "minItems": 32,
@@ -70,44 +55,11 @@
           "position": 2,
           "refersTo": {
             "type": "permanentDocument",
-            "contractId": "4Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVd",
-            "documentType": "ghost"
-          }
-        },
-        "foreignNoteId": {
-          "type": "array",
-          "byteArray": true,
-          "minItems": 32,
-          "maxItems": 32,
-          "contentMediaType": "application/x.dash.dpp.identifier",
-          "position": 3,
-          "refersTo": {
-            "type": "permanentDocument",
-            "contractId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
             "documentType": "note"
           }
-        },
-        "crossContractNoteId": {
-          "type": "array",
-          "byteArray": true,
-          "minItems": 32,
-          "maxItems": 32,
-          "contentMediaType": "application/x.dash.dpp.identifier",
-          "position": 4,
-          "refersTo": {
-            "type": "permanentDocument",
-            "contractId": "YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf",
-            "documentType": "note"
-          }
-        },
-        "note": {
-          "type": "string",
-          "position": 5,
-          "maxLength": 64
         }
       },
       "required": [],
-      "indices": [],
       "additionalProperties": false
     }
   }

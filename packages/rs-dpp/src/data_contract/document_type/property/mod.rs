@@ -70,7 +70,9 @@ pub enum DocumentPropertyReferenceTarget {
     /// guarantees a validated reference can never dangle.
     #[serde(rename = "permanentDocument")]
     PermanentDocument {
-        contract_id: Identifier,
+        /// The contract the referenced document type lives in; `None` means
+        /// the declaring contract itself
+        contract_id: Option<Identifier>,
         document_type_name: String,
     },
 }
@@ -82,11 +84,18 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
             DocumentPropertyReferenceTarget::Contract => write!(f, "contract"),
             DocumentPropertyReferenceTarget::Token => write!(f, "token"),
             DocumentPropertyReferenceTarget::PermanentDocument {
-                contract_id,
+                contract_id: Some(contract_id),
                 document_type_name,
             } => write!(
                 f,
                 "permanent document (contract {contract_id}, document type {document_type_name})"
+            ),
+            DocumentPropertyReferenceTarget::PermanentDocument {
+                contract_id: None,
+                document_type_name,
+            } => write!(
+                f,
+                "permanent document (own contract, document type {document_type_name})"
             ),
         }
     }
@@ -7169,11 +7178,19 @@ mod tests {
         assert_eq!(DocumentPropertyReferenceTarget::Token.to_string(), "token");
         assert_eq!(
             DocumentPropertyReferenceTarget::PermanentDocument {
-                contract_id,
+                contract_id: Some(contract_id),
                 document_type_name: "note".to_string(),
             }
             .to_string(),
             format!("permanent document (contract {contract_id}, document type note)")
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::PermanentDocument {
+                contract_id: None,
+                document_type_name: "note".to_string(),
+            }
+            .to_string(),
+            "permanent document (own contract, document type note)"
         );
     }
 }
