@@ -41,6 +41,14 @@ pub struct DriveDocumentQueryMethodVersions {
     /// versions; the routing itself is unreachable before the ranked
     /// contract grammar activates.
     pub detect_ranked_mode: FeatureVersion,
+    /// Mode-detection routing table for boolean `HAVING` range queries
+    /// (`GROUP BY p HAVING <agg> <op> <value> LIMIT n`) served from an
+    /// indexed tree's axis secondary. Same versioning rationale and
+    /// same dormancy pattern as `detect_ranked_mode`: the slot exists
+    /// in every table, and the routing is unreachable before both the
+    /// ranked contract grammar and the v2 aggregate-routing helper
+    /// activate (protocol v14).
+    pub detect_having_mode: FeatureVersion,
     /// Lowering of a `DriveDocumentQuery` over a secondary index into a
     /// grovedb `PathQuery`. Versioned because the set of accepted query
     /// shapes is part of the consensus query contract: v0 rejects more

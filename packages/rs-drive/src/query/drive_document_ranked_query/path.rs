@@ -17,6 +17,35 @@ use super::DriveDocumentRankedQuery;
 use crate::drive::RootTree;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::data_contract::document_type::Index;
+
+/// Path of a single-property index's terminal property-name tree —
+/// shared by the ranked and having-range query surfaces, which read
+/// the same indexed tree. See
+/// [`DriveDocumentRankedQuery::indexed_property_name_tree_path`] for
+/// the segment layout and the single-property requirement.
+pub(crate) fn indexed_property_name_tree_path_for_index(
+    contract_id: &[u8; 32],
+    document_type_name: &str,
+    index: &Index,
+) -> Result<Vec<Vec<u8>>, Error> {
+    let [property] = index.properties.as_slice() else {
+        return Err(Error::Drive(DriveError::NotSupported(
+            "ranked and having-range queries require a single-property index: the \
+             axis secondary lives on the index's terminal property-name tree, and \
+             for a compound index that tree sits under a prefix value tree whose \
+             value only a `where` clause could name — but these queries accept no \
+             `where` clauses",
+        )));
+    };
+    Ok(vec![
+        vec![RootTree::DataContractDocuments as u8],
+        contract_id.to_vec(),
+        vec![1u8],
+        document_type_name.as_bytes().to_vec(),
+        property.name.as_bytes().to_vec(),
+    ])
+}
 
 impl DriveDocumentRankedQuery<'_> {
     /// Path of the **terminal property-name tree** — the indexed tree
@@ -44,21 +73,10 @@ impl DriveDocumentRankedQuery<'_> {
     /// typed error than a path pointing at a prefix level whose element
     /// is not an indexed tree at all.
     pub fn indexed_property_name_tree_path(&self) -> Result<Vec<Vec<u8>>, Error> {
-        let [property] = self.index.properties.as_slice() else {
-            return Err(Error::Drive(DriveError::NotSupported(
-                "ranked queries require a single-property index: the ranked secondary \
-                 lives on the index's terminal property-name tree, and for a compound \
-                 index that tree sits under a prefix value tree whose value only a \
-                 `where` clause could name — but ranked queries accept no `where` \
-                 clauses",
-            )));
-        };
-        Ok(vec![
-            vec![RootTree::DataContractDocuments as u8],
-            self.contract_id.to_vec(),
-            vec![1u8],
-            self.document_type_name.as_bytes().to_vec(),
-            property.name.as_bytes().to_vec(),
-        ])
+        indexed_property_name_tree_path_for_index(
+            &self.contract_id,
+            &self.document_type_name,
+            self.index,
+        )
     }
 }
