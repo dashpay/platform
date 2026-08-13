@@ -369,11 +369,13 @@ fn verified_page(
         index: find_ranked_index_for_axis(
             indexes,
             GROUP_PROPERTY,
+            &[],
             axis.ranked,
             axis.aggregate_field(),
         )
         .expect("the fixture declares this axis"),
         axis: axis.ranked,
+        equality_prefix_values: Vec::new(),
         descending: !ascending,
         k: 100,
         offset: 0,

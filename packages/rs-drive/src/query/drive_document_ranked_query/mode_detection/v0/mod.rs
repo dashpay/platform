@@ -13,6 +13,7 @@ use crate::error::Error;
 use crate::query::having::HavingClause;
 use crate::query::projection::{SelectFunction, SelectProjection};
 use crate::query::{OrderClause, WhereClause, WhereOperator};
+use dpp::platform_value::Value;
 
 /// Translate a request's `where` clauses into equality pins —
 /// `(property, value)` pairs, one per clause — for the ranked and

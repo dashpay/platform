@@ -3991,6 +3991,7 @@ mod having_trust_boundary {
                 .expect("grade doctype exists")
                 .indexes(),
             &mode.group_by_property,
+            &[],
             mode.bounds.axis(),
             &mode.aggregate_field,
         )
@@ -4003,6 +4004,7 @@ mod having_trust_boundary {
             document_type_name: "grade".to_string(),
             index,
             bounds: mode.bounds,
+            equality_prefix_values: Vec::new(),
             descending: mode.descending,
             limit: mode.limit,
         }
