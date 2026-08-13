@@ -312,6 +312,8 @@ impl ErrorWithCode for StateError {
             Self::DocumentContestIndexMismatchError(_) => 40118,
             Self::DocumentContestNotRequiredError(_) => 40119,
             Self::ReferencedEntityNotFoundError(_) => 40120,
+            Self::ReferencedDocumentTypeNotFoundError(_) => 40121,
+            Self::ReferencedDocumentTypeDeletableError(_) => 40122,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,

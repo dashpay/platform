@@ -340,6 +340,92 @@ mod tests {
     }
 
     #[test]
+    fn should_accept_permanent_document_refers_to_in_v3_document_schema() {
+        let schema = document_schema_with_refers_to(json!({
+            "type": "permanentDocument",
+            "contractId": "4Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVd",
+            "documentType": "note"
+        }));
+
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+            "expected permanentDocument refersTo to be valid"
+        );
+    }
+
+    #[test]
+    fn should_accept_permanent_document_refers_to_with_byte_array_contract_id() {
+        let schema = document_schema_with_refers_to(json!({
+            "type": "permanentDocument",
+            "contractId": vec![7u8; 32],
+            "documentType": "note"
+        }));
+
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+            "expected a byte-array contractId to be valid"
+        );
+    }
+
+    #[test]
+    fn should_accept_permanent_document_refers_to_without_contract_id() {
+        // An absent contractId targets the declaring contract itself
+        let schema = document_schema_with_refers_to(json!({
+            "type": "permanentDocument",
+            "documentType": "note"
+        }));
+
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+            "expected permanentDocument refersTo without contractId to be valid"
+        );
+    }
+
+    #[test]
+    fn should_reject_permanent_document_refers_to_without_document_type() {
+        let schema = document_schema_with_refers_to(json!({
+            "type": "permanentDocument",
+            "contractId": "4Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVd"
+        }));
+
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+            "expected permanentDocument refersTo without documentType to be invalid"
+        );
+    }
+
+    #[test]
+    fn should_reject_contract_id_on_non_document_refers_to_targets() {
+        for target in ["identity", "contract", "token"] {
+            let schema = document_schema_with_refers_to(json!({
+                "type": target,
+                "contractId": "4Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVd"
+            }));
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+                "expected contractId on a {target} target to be invalid"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_permanent_document_refers_to_with_invalid_contract_id() {
+        for bad in [json!("not-base58-0OIl"), json!(vec![7u8; 31]), json!(42)] {
+            let schema = document_schema_with_refers_to(json!({
+                "type": "permanentDocument",
+                "contractId": bad,
+                "documentType": "note"
+            }));
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+                "expected invalid contractId {bad} to be rejected"
+            );
+        }
+    }
+
+    #[test]
     fn should_reject_refers_to_with_unknown_properties() {
         let schema = document_schema_with_refers_to(json!({
             "type": "identity",

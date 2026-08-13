@@ -354,6 +354,34 @@ fn apply_property_reference_v0(
         "identity" => DocumentPropertyReferenceTarget::Identity,
         "contract" => DocumentPropertyReferenceTarget::Contract,
         "token" => DocumentPropertyReferenceTarget::Token,
+        "permanentDocument" => {
+            // An absent contractId means the reference targets a document
+            // type of the declaring contract itself
+            let contract_id = refers_to_map
+                .get(property_names::CONTRACT_ID)
+                .map(|value| {
+                    value
+                        .to_identifier()
+                        .map_err(|e| DataContractError::ValueWrongType(e.to_string()))
+                })
+                .transpose()?;
+
+            let document_type_name = refers_to_map
+                .get_str(property_names::DOCUMENT_TYPE)
+                .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
+
+            if document_type_name.is_empty() || document_type_name.len() > 64 {
+                return Err(DataContractError::InvalidContractStructure(
+                    "permanentDocument refersTo documentType must be between 1 and 64 characters"
+                        .to_string(),
+                ));
+            }
+
+            DocumentPropertyReferenceTarget::PermanentDocument {
+                contract_id,
+                document_type_name: document_type_name.to_string(),
+            }
+        }
         other => {
             return Err(DataContractError::InvalidContractStructure(format!(
                 "invalid refersTo type {other}"
@@ -369,6 +397,7 @@ mod tests {
     use super::*;
     use crate::data_contract::config::DataContractConfig;
     use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use platform_value::string_encoding::Encoding;
     use serde_json::json;
 
     fn try_document_type_from_schema(
@@ -459,6 +488,174 @@ mod tests {
             message.contains("refersTo is only allowed on identifier properties"),
             "unexpected error: {message}"
         );
+    }
+
+    #[test]
+    fn should_parse_permanent_document_refers_to() {
+        let contract_id = Identifier::from([7u8; 32]);
+
+        let document_type = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "parentNoteId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "permanentDocument",
+                        "contractId": contract_id.to_string(Encoding::Base58),
+                        "documentType": "note"
+                    }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect("should parse");
+
+        let property_type = document_type
+            .as_ref()
+            .flattened_properties()
+            .get("parentNoteId")
+            .map(|p| p.property_type.clone())
+            .expect("property should be present");
+
+        assert_eq!(
+            property_type,
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::PermanentDocument {
+                    contract_id: Some(contract_id),
+                    document_type_name: "note".to_string(),
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn should_parse_permanent_document_refers_to_without_contract_id_as_own_contract() {
+        let document_type = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "parentNoteId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "permanentDocument",
+                        "documentType": "note"
+                    }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect("should parse");
+
+        let property_type = document_type
+            .as_ref()
+            .flattened_properties()
+            .get("parentNoteId")
+            .map(|p| p.property_type.clone())
+            .expect("property should be present");
+
+        assert_eq!(
+            property_type,
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::PermanentDocument {
+                    contract_id: None,
+                    document_type_name: "note".to_string(),
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn should_reject_permanent_document_refers_to_with_invalid_contract_id() {
+        let err = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "parentNoteId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "permanentDocument",
+                        "contractId": "not-a-valid-identifier",
+                        "documentType": "note"
+                    }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect_err("should fail");
+
+        let message = err.to_string();
+        assert!(message.contains("base 58"), "unexpected error: {message}");
+    }
+
+    #[test]
+    fn should_reject_permanent_document_refers_to_with_oversized_document_type_name() {
+        let err = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "parentNoteId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "permanentDocument",
+                        "contractId": Identifier::from([7u8; 32]).to_string(Encoding::Base58),
+                        "documentType": "a".repeat(65)
+                    }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect_err("should fail");
+
+        let message = err.to_string();
+        assert!(
+            message.contains("between 1 and 64 characters"),
+            "unexpected error: {message}"
+        );
+    }
+
+    #[test]
+    fn should_reject_permanent_document_refers_to_without_document_type() {
+        try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "parentNoteId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "permanentDocument",
+                        "contractId": Identifier::from([7u8; 32]).to_string(Encoding::Base58)
+                    }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect_err("should fail");
     }
 
     #[test]

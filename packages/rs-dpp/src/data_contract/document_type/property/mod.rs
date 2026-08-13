@@ -53,6 +53,8 @@ pub struct ByteArrayPropertySizes {
     pub max_size: Option<u16>,
 }
 
+// This enum is embedded in consensus errors, so it is consensus-serialized.
+// @append_only
 #[derive(
     Debug, PartialEq, Eq, Clone, Serialize, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
@@ -61,6 +63,18 @@ pub enum DocumentPropertyReferenceTarget {
     Identity,
     Contract,
     Token,
+    /// A document of a document type whose documents can never be deleted
+    /// (`canBeDeleted: false`). Only such document types may be referenced:
+    /// together with document types being non-removable and the
+    /// `canBeDeleted` flag being immutable on contract updates, this
+    /// guarantees a validated reference can never dangle.
+    #[serde(rename = "permanentDocument")]
+    PermanentDocument {
+        /// The contract the referenced document type lives in; `None` means
+        /// the declaring contract itself
+        contract_id: Option<Identifier>,
+        document_type_name: String,
+    },
 }
 
 impl std::fmt::Display for DocumentPropertyReferenceTarget {
@@ -69,6 +83,20 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
             DocumentPropertyReferenceTarget::Identity => write!(f, "identity"),
             DocumentPropertyReferenceTarget::Contract => write!(f, "contract"),
             DocumentPropertyReferenceTarget::Token => write!(f, "token"),
+            DocumentPropertyReferenceTarget::PermanentDocument {
+                contract_id: Some(contract_id),
+                document_type_name,
+            } => write!(
+                f,
+                "permanent document (contract {contract_id}, document type {document_type_name})"
+            ),
+            DocumentPropertyReferenceTarget::PermanentDocument {
+                contract_id: None,
+                document_type_name,
+            } => write!(
+                f,
+                "permanent document (own contract, document type {document_type_name})"
+            ),
         }
     }
 }
@@ -7132,6 +7160,37 @@ mod tests {
             Some(&serde_json::json!({
                 "IdentifierWithReference": "identity"
             }))
+        );
+    }
+
+    #[test]
+    fn should_display_reference_targets() {
+        let contract_id = Identifier::from([7u8; 32]);
+
+        assert_eq!(
+            DocumentPropertyReferenceTarget::Identity.to_string(),
+            "identity"
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::Contract.to_string(),
+            "contract"
+        );
+        assert_eq!(DocumentPropertyReferenceTarget::Token.to_string(), "token");
+        assert_eq!(
+            DocumentPropertyReferenceTarget::PermanentDocument {
+                contract_id: Some(contract_id),
+                document_type_name: "note".to_string(),
+            }
+            .to_string(),
+            format!("permanent document (contract {contract_id}, document type note)")
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::PermanentDocument {
+                contract_id: None,
+                document_type_name: "note".to_string(),
+            }
+            .to_string(),
+            "permanent document (own contract, document type note)"
         );
     }
 }

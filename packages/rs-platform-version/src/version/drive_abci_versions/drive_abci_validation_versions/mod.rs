@@ -115,6 +115,10 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub masternode_vote_state_transition_balance_pre_check: FeatureVersion,
     pub contract_create_state_transition: DriveAbciStateTransitionValidationVersion,
     pub contract_update_state_transition: DriveAbciStateTransitionValidationVersion,
+    /// Validation of the `refersTo` reference declarations a contract's
+    /// document types carry, run at contract create and update. Only
+    /// reachable from contract create/update state validation 1 and above.
+    pub data_contract_reference_validation: FeatureVersion,
     pub batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions,
     pub identity_create_from_addresses_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_top_up_from_addresses_state_transition: DriveAbciStateTransitionValidationVersion,
