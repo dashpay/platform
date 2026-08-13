@@ -109,12 +109,14 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // and freshness under this guard proves the reservation is still
             // ours to pin (see the method docs). The pin outlives the guard,
             // and — unless the send is definitively rejected — outlives the
-            // broadcaster return too, as a pending-spend fence anchored at the
-            // height sampled right here.
-            info.map(|info| {
-                info.generation
-                    .pin_in_broadcast(transaction, info.core_wallet.last_processed_height())
-            })
+            // broadcaster return too, as a pending-spend fence.
+            //
+            // That fence is anchored on the SAME `height` the freshness check
+            // just consumed, not a fresh sample: the two must not be able to
+            // disagree, or the fence could be stamped against a clock the
+            // check never saw.
+            info.zip(height)
+                .map(|(info, height)| info.generation.pin_in_broadcast(transaction, height))
             // Guard dropped here — holding it across the await starves the
             // SPV pipeline that must complete the wait; the pin, not the
             // guard, covers check-to-wire.
