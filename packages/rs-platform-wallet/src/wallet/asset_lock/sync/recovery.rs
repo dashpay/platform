@@ -260,6 +260,19 @@ fn first_confirmed_input_conflict(
         .last_applied_chain_lock()
         .map(|chain_lock| chain_lock.block_height);
 
+    // The persistence mirror's answer, restored at load. This is the only
+    // source that works at app-launch catch-up: `transaction_history()` is
+    // empty then except for the unresolved locks themselves, so the scan
+    // below has nothing to find however dead the lock is. The mirror knows
+    // because it recorded which transaction took the outpoint.
+    if let Some((input, spend)) = lock_inputs.iter().find_map(|input| {
+        info.restored_asset_lock_input_spends
+            .get_key_value(input)
+            .filter(|(_, spend)| spend.spender != lock_txid && spend.in_block)
+    }) {
+        return Some((*input, spend.spender, spend.height, spend.chain_locked));
+    }
+
     info.core_wallet
         .transaction_history()
         .into_iter()
@@ -1071,6 +1084,7 @@ mod tests {
             generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
+            restored_asset_lock_input_spends: Default::default(),
             dpns_name_states: BTreeMap::new(),
         };
         let out_point = OutPoint::new(tx.txid(), 0);

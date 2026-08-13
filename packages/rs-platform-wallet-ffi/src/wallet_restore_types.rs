@@ -516,6 +516,30 @@ pub struct UnresolvedAssetLockTxRecordFFI {
     pub first_seen: u64,
 }
 
+/// One outpoint an unresolved asset lock spends, together with the
+/// transaction the persistence mirror recorded as having spent it.
+///
+/// Emitted only when that spender is a *different* transaction from the lock
+/// itself: the lock spending its own input is the normal case and carries no
+/// information. A spender that reached a block can never be undone, which is
+/// what makes the lock provably dead rather than merely unlucky.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct AssetLockInputSpendFFI {
+    /// The outpoint the asset lock spends: funding txid, then index.
+    pub prev_txid: [u8; 32],
+    pub vout: u32,
+    /// The transaction that actually took it.
+    pub spender_txid: [u8; 32],
+    /// Height of the block holding the spender; `0` when unknown.
+    pub spender_height: u32,
+    /// The spender's `TransactionContext` discriminant, verbatim: `0`
+    /// mempool, `1` InstantSend, `2` in a block, `3` in a chain-locked
+    /// block. The host reports what it stored; deciding which of those
+    /// count as final is Rust's call, not the mirror's.
+    pub spender_context: u32,
+}
+
 /// A persisted provider special transaction (ProRegTx / ProUpServTx /
 /// ProUpRegTx / ProUpRevTx) staged back into the wallet at load so its
 /// DIP-3 payload record is resident on the provider-key accounts again.
@@ -625,6 +649,21 @@ pub struct WalletRestoreEntryFFI {
     /// unresolved asset locks.
     pub unresolved_asset_lock_tx_records: *const UnresolvedAssetLockTxRecordFFI,
     pub unresolved_asset_lock_tx_records_count: usize,
+    /// Outpoints an unresolved asset lock spends that the persisted state
+    /// already knows were taken by a *different* transaction.
+    ///
+    /// The double-spend screen in `resume_asset_lock` reads the in-memory
+    /// transaction history, which this load path deliberately leaves empty
+    /// apart from the unresolved locks themselves — so at app-launch
+    /// catch-up it scans nothing and cannot fire, however dead the lock is.
+    /// The persistence mirror does know: the funding outpoint's row carries
+    /// the txid that spent it. Handing those few outpoints over is what lets
+    /// the screen work at the only moment it matters.
+    ///
+    /// Only conflicts are listed — an outpoint spent by the lock's own
+    /// transaction is not one. `null` / `0` when there are none.
+    pub asset_lock_input_spends: *const AssetLockInputSpendFFI,
+    pub asset_lock_input_spends_count: usize,
     /// Persisted provider special transactions (ProRegTx / ProUpServTx /
     /// ProUpRegTx / ProUpRevTx) re-staged onto the wallet's provider-key
     /// accounts so rust-dashcore #876 retention keeps them resident and

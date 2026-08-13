@@ -3586,6 +3586,7 @@ mod sweep_tests {
             generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
+            restored_asset_lock_input_spends: Default::default(),
             dpns_name_states: BTreeMap::new(),
         }
     }

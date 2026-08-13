@@ -6,6 +6,7 @@
 //! SwiftData on iOS).
 
 use bincode::config;
+use dashcore::prelude::CoreBlockHeight;
 use key_wallet::account::account_collection::AccountCollection;
 use key_wallet::account::{Account, AccountType, BLSAccount, EdDSAAccount, StandardAccountType};
 use key_wallet::bip32::DerivationPath;
@@ -4796,12 +4797,14 @@ fn build_wallet_start_state(
     // was interrupted by an app kill can resume from the latest
     // status without rebroadcasting.
     let unused_asset_locks = build_unused_asset_locks(entry)?;
+    let asset_lock_input_spends = build_asset_lock_input_spends(entry);
 
     let wallet_state = ClientWalletStartState {
         wallet,
         wallet_info,
         identity_manager,
         unused_asset_locks,
+        asset_lock_input_spends,
     };
 
     let platform_address_state = if per_account.is_empty()
@@ -4843,6 +4846,66 @@ fn build_wallet_start_state(
 /// registration whose key-persist round hasn't completed) loads with
 /// an empty map and gets refreshed on the next sync round —
 /// degraded-but-usable for that narrow case.
+/// Decode the host mirror's report of which transaction took each outpoint
+/// an unresolved asset lock spends.
+///
+/// A malformed row is skipped rather than failing the load: the map is
+/// evidence for a screen that degrades to its old behaviour without it, so a
+/// bad row must not cost the user their wallet.
+fn build_asset_lock_input_spends(
+    entry: &WalletRestoreEntryFFI,
+) -> BTreeMap<dashcore::OutPoint, platform_wallet::wallet::platform_wallet::RestoredSpend> {
+    use dashcore::hashes::Hash;
+
+    let mut spends = BTreeMap::new();
+    if entry.asset_lock_input_spends.is_null() || entry.asset_lock_input_spends_count == 0 {
+        return spends;
+    }
+    let rows = unsafe {
+        slice::from_raw_parts(
+            entry.asset_lock_input_spends,
+            entry.asset_lock_input_spends_count,
+        )
+    };
+    for row in rows {
+        let (Ok(prev_txid), Ok(spender_txid)) = (
+            dashcore::Txid::from_slice(&row.prev_txid),
+            dashcore::Txid::from_slice(&row.spender_txid),
+        ) else {
+            tracing::warn!(
+                wallet_id = %hex::encode(entry.wallet_id),
+                "load: skipping asset-lock input-spend row with malformed txid bytes"
+            );
+            continue;
+        };
+        // Both facts are kept, and the readers apply their own bar: the
+        // double-spend screen needs a spender that reached a block, the
+        // abandon cascade needs any spender at all.
+        const CONTEXT_IN_BLOCK: u32 = 2;
+        const CONTEXT_IN_CHAIN_LOCKED_BLOCK: u32 = 3;
+        spends.insert(
+            dashcore::OutPoint {
+                txid: prev_txid,
+                vout: row.vout,
+            },
+            platform_wallet::wallet::platform_wallet::RestoredSpend {
+                spender: spender_txid,
+                height: (row.spender_height != 0).then_some(row.spender_height),
+                in_block: row.spender_context >= CONTEXT_IN_BLOCK,
+                chain_locked: row.spender_context >= CONTEXT_IN_CHAIN_LOCKED_BLOCK,
+            },
+        );
+    }
+    if !spends.is_empty() {
+        tracing::info!(
+            wallet_id = %hex::encode(entry.wallet_id),
+            count = spends.len(),
+            "load: restored asset-lock input-spend conflicts"
+        );
+    }
+    spends
+}
+
 /// Rebuild the `unused_asset_locks` map carried on
 /// [`ClientWalletStartState`] from the `tracked_asset_locks` slice the
 /// Swift load callback hands back. Mirrors the encoding used by

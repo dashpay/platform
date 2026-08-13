@@ -5023,6 +5023,19 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             entry.unresolved_asset_lock_tx_records = unresolvedBuf.map { UnsafePointer($0) }
             entry.unresolved_asset_lock_tx_records_count = UInt(unresolvedCount)
 
+            // Which transaction took each output this wallet spent in a
+            // block. Rust filters this down to the outpoints its unresolved
+            // locks spend and uses it to screen them for a double spend —
+            // evidence it cannot obtain for itself at load, since the
+            // transaction history that screen normally reads is empty then.
+            let (inputSpendBuf, inputSpendCount) =
+                buildAssetLockInputSpendBuffer(
+                    walletId: w.walletId,
+                    allocation: allocation
+                )
+            entry.asset_lock_input_spends = inputSpendBuf.map { UnsafePointer($0) }
+            entry.asset_lock_input_spends_count = UInt(inputSpendCount)
+
             // Provider special transactions (ProRegTx / ProUpServTx /
             // ProUpRegTx / ProUpRevTx) re-staged onto the provider-key
             // accounts so #876 retention keeps them and the masternode
@@ -5417,6 +5430,67 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// transaction table) are skipped — the Rust side has no way to
     /// reconstruct the funding tx without its consensus bytes, so
     /// projecting an empty row would just bloat the FFI surface.
+    /// Cap on spend-linkage rows handed to Rust. The set is a wallet's
+    /// spent TXOs, which stays small for the wallets this screen matters
+    /// for; the cap only exists so a pathological history cannot balloon
+    /// the load callback.
+    private static let assetLockInputSpendCap = 4096
+
+    /// Report which transaction the mirror recorded as spending each output
+    /// of this wallet, whether or not that spender ever reached a block.
+    ///
+    /// Rust knows the outpoints its locks spend and filters this set down to
+    /// them; it cannot know the spender, because the in-memory transaction
+    /// history it would normally consult is empty at load. The spender's
+    /// context is passed through verbatim; which contexts count as final is
+    /// Rust's decision.
+    private func buildAssetLockInputSpendBuffer(
+        walletId: Data,
+        allocation: LoadAllocation
+    ) -> (UnsafeMutablePointer<AssetLockInputSpendFFI>?, Int) {
+        // Deliberately not filtered on `isSpent`. A row keeps that flag
+        // false until its spender reaches a block, so the outputs of a
+        // transaction that never got there — exactly the chain the abandon
+        // cascade has to follow — sit in the unspent set with their linkage
+        // recorded and nothing else pointing at them.
+        var descriptor = FetchDescriptor<PersistentTxo>(
+            predicate: #Predicate { txo in
+                txo.walletId == walletId && txo.spendingTransaction != nil
+            }
+        )
+        descriptor.relationshipKeyPathsForPrefetching = [\.spendingTransaction]
+        descriptor.fetchLimit = Self.assetLockInputSpendCap
+        guard let spent = try? backgroundContext.fetch(descriptor), !spent.isEmpty else {
+            return (nil, 0)
+        }
+
+        let buf = UnsafeMutablePointer<AssetLockInputSpendFFI>.allocate(capacity: spent.count)
+        allocation.assetLockInputSpendBuffers.append((buf, spent.count))
+        var written = 0
+        for txo in spent {
+            guard let spender = txo.spendingTransaction else { continue }
+
+            guard txo.txid.count == 32, spender.txid.count == 32 else { continue }
+            var row = AssetLockInputSpendFFI()
+            txo.txid.withUnsafeBytes { src in
+                Swift.withUnsafeMutableBytes(of: &row.prev_txid) { dst in
+                    dst.copyMemory(from: src)
+                }
+            }
+            row.vout = txo.vout
+            spender.txid.withUnsafeBytes { src in
+                Swift.withUnsafeMutableBytes(of: &row.spender_txid) { dst in
+                    dst.copyMemory(from: src)
+                }
+            }
+            row.spender_height = spender.blockHeight
+            row.spender_context = spender.context
+            buf[written] = row
+            written += 1
+        }
+        return written == 0 ? (nil, 0) : (buf, written)
+    }
+
     private func buildUnresolvedAssetLockTxRecordBuffer(
         walletId: Data,
         allocation: LoadAllocation
@@ -6345,6 +6419,10 @@ private final class LoadAllocation {
     /// so the next chain-lock event can cascade-promote them. The
     /// `tx_bytes` buffer each row references lives in `scalarBuffers`.
     var unresolvedAssetLockTxRecordArrays: [(UnsafeMutablePointer<UnresolvedAssetLockTxRecordFFI>, Int)] = []
+    /// `AssetLockInputSpendFFI` arrays per wallet — which transaction took
+    /// each output this wallet spent, so Rust can screen an unresolved asset
+    /// lock for a double spend at load time.
+    var assetLockInputSpendBuffers: [(UnsafeMutablePointer<AssetLockInputSpendFFI>, Int)] = []
     /// Per-wallet `ProviderSpecialTxRestoreEntryFFI` arrays — provider
     /// special txs re-staged so #876 retention keeps them resident after a
     /// restart. The `tx_bytes` buffer each row references lives in
@@ -6418,6 +6496,10 @@ private final class LoadAllocation {
             ptr.deallocate()
         }
         for (ptr, count) in assetLockArrays {
+            ptr.deinitialize(count: count)
+            ptr.deallocate()
+        }
+        for (ptr, count) in assetLockInputSpendBuffers {
             ptr.deinitialize(count: count)
             ptr.deallocate()
         }

@@ -9,7 +9,10 @@ use std::collections::BTreeMap;
 
 use crate::changeset::identity_manager_start_state::IdentityManagerStartState;
 use crate::wallet::asset_lock::tracked::TrackedAssetLock;
+use crate::wallet::platform_wallet::RestoredSpend;
+use dashcore::prelude::CoreBlockHeight;
 use dashcore::OutPoint;
+use dashcore::Txid;
 use key_wallet::wallet::ManagedWalletInfo;
 use key_wallet::Wallet;
 
@@ -33,4 +36,10 @@ pub struct ClientWalletStartState {
     /// Asset locks that have not yet been consumed by an identity
     /// registration / top-up, keyed by account index → outpoint.
     pub unused_asset_locks: BTreeMap<u32, BTreeMap<OutPoint, TrackedAssetLock>>,
+    /// Outpoints those asset locks spend that the host mirror reports were
+    /// taken by a *different* transaction — the evidence the double-spend
+    /// screen cannot obtain for itself at load time, since the in-memory
+    /// transaction history it reads is empty then. Values are
+    /// `(spender txid, spender height, spender is chain-locked)`.
+    pub asset_lock_input_spends: BTreeMap<OutPoint, RestoredSpend>,
 }
