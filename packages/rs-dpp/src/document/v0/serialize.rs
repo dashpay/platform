@@ -3153,6 +3153,169 @@ mod tests {
     ///   - `a`: required at every version
     ///   - `b`: required since contract version 2
     ///   - `c`: plain optional
+    /// A document type exercising every schema-reachable property type in
+    /// both required and optional positions (u128/i128 are not inferable
+    /// from i64-bounded schemas, so they have no reachable serializer arm).
+    fn kitchen_sink_document_type() -> crate::data_contract::document_type::DocumentType {
+        use crate::data_contract::config::DataContractConfig;
+        use crate::data_contract::document_type::DocumentType;
+        use platform_value::platform_value;
+        use std::collections::BTreeMap;
+
+        let platform_version = PlatformVersion::latest();
+        let schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "u8v":  {"type": "integer", "position": 0, "minimum": 0, "maximum": 255},
+                "u16v": {"type": "integer", "position": 1, "minimum": 0, "maximum": 65535},
+                "u32v": {"type": "integer", "position": 2, "minimum": 0, "maximum": 4294967295_u64},
+                "i8v":  {"type": "integer", "position": 3, "minimum": -128, "maximum": 127},
+                "i16v": {"type": "integer", "position": 4, "minimum": -32768, "maximum": 32767},
+                "i32v": {"type": "integer", "position": 5, "minimum": -2147483648_i64, "maximum": 2147483647_i64},
+                "i64v": {"type": "integer", "position": 6},
+                "f64v": {"type": "number", "position": 7},
+                "strv": {"type": "string", "position": 8, "maxLength": 60_u32},
+                "bytv": {"type": "array", "position": 9, "byteArray": true, "minItems": 0, "maxItems": 32},
+                "idv":  {"type": "array", "position": 10, "byteArray": true, "minItems": 32, "maxItems": 32, "contentMediaType": "application/x.dash.dpp.identifier"},
+                "boolv": {"type": "boolean", "position": 11},
+                "u8o":  {"type": "integer", "position": 12, "minimum": 0, "maximum": 255},
+                "u16o": {"type": "integer", "position": 13, "minimum": 0, "maximum": 65535},
+                "u32o": {"type": "integer", "position": 14, "minimum": 0, "maximum": 4294967295_u64},
+                "i8o":  {"type": "integer", "position": 15, "minimum": -128, "maximum": 127},
+                "i16o": {"type": "integer", "position": 16, "minimum": -32768, "maximum": 32767},
+                "i32o": {"type": "integer", "position": 17, "minimum": -2147483648_i64, "maximum": 2147483647_i64},
+                "i64o": {"type": "integer", "position": 18},
+                "f64o": {"type": "number", "position": 19},
+                "stro": {"type": "string", "position": 20, "maxLength": 60_u32},
+                "byto": {"type": "array", "position": 21, "byteArray": true, "minItems": 0, "maxItems": 32},
+                "ido":  {"type": "array", "position": 22, "byteArray": true, "minItems": 32, "maxItems": 32, "contentMediaType": "application/x.dash.dpp.identifier"},
+                "boolo": {"type": "boolean", "position": 23},
+            },
+            "required": ["u8v", "u16v", "u32v", "i8v", "i16v", "i32v", "i64v", "f64v", "strv", "bytv", "idv", "boolv"],
+            "additionalProperties": false,
+        });
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config");
+        DocumentType::try_from_schema(
+            platform_value::Identifier::new([2; 32]),
+            1,
+            config.version(),
+            "sink",
+            schema,
+            None,
+            &BTreeMap::new(),
+            &config,
+            false,
+            &mut Vec::new(),
+            platform_version,
+        )
+        .expect("failed to create kitchen-sink document type")
+    }
+
+    fn kitchen_sink_required_properties() -> BTreeMap<String, Value> {
+        let mut properties = BTreeMap::new();
+        properties.insert("u8v".to_string(), Value::U8(200));
+        properties.insert("u16v".to_string(), Value::U16(60000));
+        properties.insert("u32v".to_string(), Value::U32(4000000000));
+        properties.insert("i8v".to_string(), Value::I8(-100));
+        properties.insert("i16v".to_string(), Value::I16(-30000));
+        properties.insert("i32v".to_string(), Value::I32(-2000000000));
+        properties.insert("i64v".to_string(), Value::I64(-9000000000000000000));
+        properties.insert("f64v".to_string(), Value::Float(1.5));
+        properties.insert("strv".to_string(), Value::Text("hello".to_string()));
+        properties.insert("bytv".to_string(), Value::Bytes(vec![1, 2, 3]));
+        properties.insert("idv".to_string(), Value::Identifier([7; 32]));
+        properties.insert("boolv".to_string(), Value::Bool(true));
+        properties
+    }
+
+    #[test]
+    fn serialize_v3_round_trips_every_property_type() {
+        let platform_version = PlatformVersion::latest();
+        let document_type = kitchen_sink_document_type();
+
+        // Every optional present alongside every required
+        let mut properties = kitchen_sink_required_properties();
+        properties.insert("u8o".to_string(), Value::U8(1));
+        properties.insert("u16o".to_string(), Value::U16(2));
+        properties.insert("u32o".to_string(), Value::U32(3));
+        properties.insert("i8o".to_string(), Value::I8(-1));
+        properties.insert("i16o".to_string(), Value::I16(-2));
+        properties.insert("i32o".to_string(), Value::I32(-3));
+        properties.insert("i64o".to_string(), Value::I64(-4));
+        properties.insert("f64o".to_string(), Value::Float(-2.75));
+        properties.insert("stro".to_string(), Value::Text(String::new()));
+        properties.insert("byto".to_string(), Value::Bytes(Vec::new()));
+        properties.insert("ido".to_string(), Value::Identifier([9; 32]));
+        properties.insert("boolo".to_string(), Value::Bool(false));
+
+        let document = stamped_document(None, properties, document_type.as_ref());
+        let serialized = document
+            .serialize_v3(document_type.as_ref())
+            .expect("expected to serialize all property types");
+        let deserialized =
+            DocumentV0::from_bytes(&serialized, document_type.as_ref(), platform_version)
+                .expect("expected to deserialize all property types");
+        assert_eq!(document, deserialized);
+
+        // Determinism: same document, same bytes
+        let serialized_again = document
+            .serialize_v3(document_type.as_ref())
+            .expect("expected to serialize again");
+        assert_eq!(serialized, serialized_again);
+
+        // Every optional absent (the flag-0 arm of each type), stamped
+        let document = stamped_document(
+            Some(1),
+            kitchen_sink_required_properties(),
+            document_type.as_ref(),
+        );
+        let serialized = document
+            .serialize_v3(document_type.as_ref())
+            .expect("expected to serialize with absent optionals");
+        let deserialized =
+            DocumentV0::from_bytes(&serialized, document_type.as_ref(), platform_version)
+                .expect("expected to deserialize with absent optionals");
+        assert_eq!(document, deserialized);
+    }
+
+    #[test]
+    fn serialize_v3_missing_plain_required_property_errors() {
+        let document_type = kitchen_sink_document_type();
+        let mut properties = kitchen_sink_required_properties();
+        properties.remove("u16v");
+
+        let document = stamped_document(None, properties, document_type.as_ref());
+        assert!(
+            document.serialize_v3(document_type.as_ref()).is_err(),
+            "serializing without a required property must error"
+        );
+    }
+
+    #[test]
+    fn from_bytes_v3_never_panics_on_truncated_input() {
+        let platform_version = PlatformVersion::latest();
+        let document_type = kitchen_sink_document_type();
+
+        let mut properties = kitchen_sink_required_properties();
+        properties.insert("stro".to_string(), Value::Text("tail".to_string()));
+        let document = stamped_document(Some(1), properties, document_type.as_ref());
+        let serialized = document
+            .serialize_v3(document_type.as_ref())
+            .expect("expected to serialize");
+
+        // Every strict prefix must produce a Result, never a panic. (Some
+        // prefixes legitimately succeed: format 3 tolerates EOF at property
+        // boundaries so appended properties stay readable by old data.)
+        for length in 0..serialized.len() {
+            let _ = DocumentV0::from_bytes(
+                &serialized[..length],
+                document_type.as_ref(),
+                platform_version,
+            );
+        }
+    }
+
     fn required_since_document_type() -> crate::data_contract::document_type::DocumentType {
         use crate::data_contract::config::DataContractConfig;
         use crate::data_contract::document_type::DocumentType;
