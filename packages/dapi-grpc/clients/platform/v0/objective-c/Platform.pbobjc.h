@@ -3155,11 +3155,14 @@ GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1 : GPBMessage
  * routes to the ranked executor (`group_by` + a single `order_by`
  * naming the selected aggregate), `offset` skips that many ranks
  * before the returned page, so `ORDER BY avg(grade) DESC LIMIT 1
- * OFFSET 4` is the 5th-best group. The skip is **count-attested**,
- * not walked: grovedb proves it from the counted subtree
- * commitments, so the proof stays `O(log n + k)` at any offset and
- * the response echoes the attested number in
- * `RankedEntries.skipped`. There is deliberately no ceiling — an
+ * OFFSET 4` is the 5th-best group. The skip is **counted, not
+ * walked**: grovedb descends on each subtree's aggregate count and
+ * collapses whole subtrees that fit inside the remaining offset, so
+ * the work stays `O(log n + k)` at any offset and the response
+ * reports the skip it performed in `RankedEntries.skipped`. On a
+ * proved request that count is additionally *attested* — committed
+ * to by the proof and re-derived by the verifier; on an unproved
+ * one it is the node's own report. See `RankedEntries.skipped`. There is deliberately no ceiling — an
  * offset of 4 and an offset of four billion cost the same, so
  * there is no denial-of-service lever a cap would close. An offset
  * past the end of the ranking is a provable answer rather than an
