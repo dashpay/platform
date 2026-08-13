@@ -46,18 +46,12 @@ derive_more = { version = "1.0", features = ["from"] }
 [dev-dependencies]
 dpp = { path = "../rs-dpp", features = [
   "fixtures-and-mocks",
-  "random-documents",
 ], default-features = false }
 dapi-grpc = { path = "../dapi-grpc", default-features = false, features = [
   "platform",
   "client",
 ] }
-# `full` (the server write/prove path) on top of `verify`: the
-# trust-boundary tests in `proof::document_having` build a real Drive,
-# insert documents through the real write path, and generate the very
-# proofs the tenderdash-composition wrapper is then asked to verify.
 drive = { path = "../rs-drive", default-features = false, features = [
-  "full",
   "verify",
 ] }
 hex = { version = "0.4.3" }
