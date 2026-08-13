@@ -5,8 +5,11 @@ use crate::version::drive_versions::drive_document_method_versions::{
     DriveDocumentQueryMethodVersions, DriveDocumentUpdateMethodVersions,
 };
 
-/// V4 is protocol version 14's document-method table. It hosts two
-/// independent changes that both gate at v14.
+/// V4 is protocol version 14's document-method table. It hosts three
+/// independent changes that all gate at v14 (ranked aggregates, the
+/// shared-prefix aggregate index fix, and multi-`In` document queries
+/// via `query.non_primary_key_path_query: 1` — v13 and earlier keep
+/// the v0 lowering, which rejects more than one `In` clause).
 ///
 /// ## 1. Contract-level ranked aggregates
 ///
@@ -72,6 +75,8 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             detect_sum_mode: 0,
             detect_ranked_mode: 0,
             detect_having_mode: 0,
+            non_primary_key_path_query: 1,
+            where_clause_grouping: 1,
         },
         delete: DriveDocumentDeleteMethodVersions {
             add_estimation_costs_for_remove_document_to_primary_storage: 0,

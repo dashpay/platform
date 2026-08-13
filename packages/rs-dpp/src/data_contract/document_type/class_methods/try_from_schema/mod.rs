@@ -2,7 +2,8 @@ use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::{
-    property_names, DocumentProperty, DocumentPropertyType, DocumentType,
+    property_names, DocumentProperty, DocumentPropertyReferenceTarget, DocumentPropertyType,
+    DocumentType,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -121,6 +122,7 @@ fn insert_values(
     property_value: &Value,
     root_schema: &Value,
     config: &DataContractConfig,
+    platform_version: &PlatformVersion,
 ) -> Result<(), DataContractError> {
     let mut to_visit: Vec<(Option<String>, String, &Value)> =
         vec![(prefix, property_key, property_value)];
@@ -169,6 +171,8 @@ fn insert_values(
                 }
             }
             property_type => {
+                let property_type =
+                    apply_property_reference(&inner_properties, property_type, platform_version)?;
                 document_properties.insert(
                     prefixed_property_key,
                     DocumentProperty {
@@ -185,6 +189,7 @@ fn insert_values(
 }
 
 // TODO: This is quite big
+#[allow(clippy::too_many_arguments)]
 fn insert_values_nested(
     document_properties: &mut IndexMap<String, DocumentProperty>,
     known_required: &BTreeSet<String>,
@@ -193,6 +198,7 @@ fn insert_values_nested(
     property_value: &Value,
     root_schema: &Value,
     config: &DataContractConfig,
+    platform_version: &PlatformVersion,
 ) -> Result<(), DataContractError> {
     let mut inner_properties = property_value.to_btree_ref_string_map()?;
 
@@ -269,6 +275,7 @@ fn insert_values_nested(
                             object_property_value,
                             root_schema,
                             config,
+                            platform_version,
                         )?;
                     }
                 }
@@ -277,6 +284,9 @@ fn insert_values_nested(
             }
             property_type => property_type,
         };
+
+    let property_type =
+        apply_property_reference(&inner_properties, property_type, platform_version)?;
 
     document_properties.insert(
         property_key,
@@ -288,4 +298,510 @@ fn insert_values_nested(
     );
 
     Ok(())
+}
+
+/// Folds a `refersTo` declaration into the property type: an identifier property
+/// with `refersTo` becomes `IdentifierWithReference(target)`. Non-identifier
+/// properties cannot carry `refersTo`.
+///
+/// Versioned on `apply_property_reference` in the platform version's document
+/// type schema versions. `None` selects the behavior of the versions that
+/// predate the keyword: it is ignored entirely, so their parses stay
+/// byte-for-byte identical to what they always produced.
+fn apply_property_reference(
+    inner_properties: &BTreeMap<String, &Value>,
+    property_type: DocumentPropertyType,
+    platform_version: &PlatformVersion,
+) -> Result<DocumentPropertyType, DataContractError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .apply_property_reference
+    {
+        None => Ok(property_type),
+        Some(0) => apply_property_reference_v0(inner_properties, property_type),
+        Some(version) => Err(DataContractError::Unsupported(format!(
+            "apply_property_reference version {version} is not supported"
+        ))),
+    }
+}
+
+fn apply_property_reference_v0(
+    inner_properties: &BTreeMap<String, &Value>,
+    property_type: DocumentPropertyType,
+) -> Result<DocumentPropertyType, DataContractError> {
+    let Some(refers_to_value) = inner_properties.get(property_names::REFERS_TO) else {
+        return Ok(property_type);
+    };
+
+    if !matches!(
+        property_type,
+        DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
+    ) {
+        return Err(DataContractError::InvalidContractStructure(
+            "refersTo is only allowed on identifier properties".to_string(),
+        ));
+    }
+
+    let refers_to_map = refers_to_value.to_btree_ref_string_map()?;
+
+    let target = match refers_to_map
+        .get_str(property_names::TYPE)
+        .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?
+    {
+        "identity" => DocumentPropertyReferenceTarget::Identity,
+        "contract" => DocumentPropertyReferenceTarget::Contract,
+        "token" => DocumentPropertyReferenceTarget::Token,
+        "permanentDocument" => {
+            // An absent contractId means the reference targets a document
+            // type of the declaring contract itself
+            let contract_id = refers_to_map
+                .get(property_names::CONTRACT_ID)
+                .map(|value| {
+                    value
+                        .to_identifier()
+                        .map_err(|e| DataContractError::ValueWrongType(e.to_string()))
+                })
+                .transpose()?;
+
+            let document_type_name = refers_to_map
+                .get_str(property_names::DOCUMENT_TYPE)
+                .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
+
+            if document_type_name.is_empty() || document_type_name.len() > 64 {
+                return Err(DataContractError::InvalidContractStructure(
+                    "permanentDocument refersTo documentType must be between 1 and 64 characters"
+                        .to_string(),
+                ));
+            }
+
+            DocumentPropertyReferenceTarget::PermanentDocument {
+                contract_id,
+                document_type_name: document_type_name.to_string(),
+            }
+        }
+        "identityPublicKey" => {
+            let key_id_property = refers_to_map
+                .get_str(property_names::KEY_ID_PROPERTY)
+                .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
+
+            if key_id_property.is_empty() || key_id_property.len() > 256 {
+                return Err(DataContractError::InvalidContractStructure(
+                    "identityPublicKey refersTo keyIdProperty must be between 1 and 256 characters"
+                        .to_string(),
+                ));
+            }
+
+            DocumentPropertyReferenceTarget::IdentityPublicKey {
+                key_id_property: key_id_property.to_string(),
+            }
+        }
+        other => {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "invalid refersTo type {other}"
+            )))
+        }
+    };
+
+    Ok(DocumentPropertyType::IdentifierWithReference(target))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data_contract::config::DataContractConfig;
+    use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use platform_value::string_encoding::Encoding;
+    use serde_json::json;
+
+    fn try_document_type_from_schema(
+        schema: serde_json::Value,
+    ) -> Result<DocumentType, ProtocolError> {
+        try_document_type_from_schema_on_version(schema, PlatformVersion::latest())
+    }
+
+    fn try_document_type_from_schema_on_version(
+        schema: serde_json::Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<DocumentType, ProtocolError> {
+        let config =
+            DataContractConfig::default_for_version(platform_version).expect("config should build");
+
+        let value = platform_value::to_value(schema).expect("schema should convert");
+
+        DocumentType::try_from_schema(
+            Identifier::random(),
+            0,
+            config.version(),
+            "msg",
+            value,
+            None,
+            &BTreeMap::new(),
+            &config,
+            false,
+            &mut vec![],
+            platform_version,
+        )
+    }
+
+    #[test]
+    fn should_parse_refers_to_on_identifier_property() {
+        let document_type = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "toUserId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "identity"
+                    }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect("should parse");
+
+        let property_type = document_type
+            .as_ref()
+            .flattened_properties()
+            .get("toUserId")
+            .map(|p| p.property_type.clone())
+            .expect("property should be present");
+
+        assert!(matches!(
+            property_type,
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::Identity
+            )
+        ));
+    }
+
+    #[test]
+    fn should_reject_refers_to_on_non_identifier_property() {
+        let err = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "position": 0,
+                    "refersTo": { "type": "identity" }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect_err("should fail");
+
+        let message = err.to_string();
+        assert!(
+            message.contains("refersTo is only allowed on identifier properties"),
+            "unexpected error: {message}"
+        );
+    }
+
+    #[test]
+    fn should_parse_permanent_document_refers_to() {
+        let contract_id = Identifier::from([7u8; 32]);
+
+        let document_type = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "parentNoteId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "permanentDocument",
+                        "contractId": contract_id.to_string(Encoding::Base58),
+                        "documentType": "note"
+                    }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect("should parse");
+
+        let property_type = document_type
+            .as_ref()
+            .flattened_properties()
+            .get("parentNoteId")
+            .map(|p| p.property_type.clone())
+            .expect("property should be present");
+
+        assert_eq!(
+            property_type,
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::PermanentDocument {
+                    contract_id: Some(contract_id),
+                    document_type_name: "note".to_string(),
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn should_parse_permanent_document_refers_to_without_contract_id_as_own_contract() {
+        let document_type = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "parentNoteId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "permanentDocument",
+                        "documentType": "note"
+                    }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect("should parse");
+
+        let property_type = document_type
+            .as_ref()
+            .flattened_properties()
+            .get("parentNoteId")
+            .map(|p| p.property_type.clone())
+            .expect("property should be present");
+
+        assert_eq!(
+            property_type,
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::PermanentDocument {
+                    contract_id: None,
+                    document_type_name: "note".to_string(),
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn should_reject_permanent_document_refers_to_with_invalid_contract_id() {
+        let err = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "parentNoteId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "permanentDocument",
+                        "contractId": "not-a-valid-identifier",
+                        "documentType": "note"
+                    }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect_err("should fail");
+
+        let message = err.to_string();
+        assert!(message.contains("base 58"), "unexpected error: {message}");
+    }
+
+    #[test]
+    fn should_reject_permanent_document_refers_to_with_oversized_document_type_name() {
+        let err = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "parentNoteId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "permanentDocument",
+                        "contractId": Identifier::from([7u8; 32]).to_string(Encoding::Base58),
+                        "documentType": "a".repeat(65)
+                    }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect_err("should fail");
+
+        let message = err.to_string();
+        assert!(
+            message.contains("between 1 and 64 characters"),
+            "unexpected error: {message}"
+        );
+    }
+
+    #[test]
+    fn should_reject_permanent_document_refers_to_without_document_type() {
+        try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "parentNoteId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "permanentDocument",
+                        "contractId": Identifier::from([7u8; 32]).to_string(Encoding::Base58)
+                    }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect_err("should fail");
+    }
+
+    #[test]
+    fn should_parse_identity_public_key_refers_to() {
+        let document_type = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "toUserId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "identityPublicKey",
+                        "keyIdProperty": "toKeyIndex"
+                    }
+                },
+                "toKeyIndex": {
+                    "type": "integer",
+                    "position": 1
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect("should parse");
+
+        let property_type = document_type
+            .as_ref()
+            .flattened_properties()
+            .get("toUserId")
+            .map(|p| p.property_type.clone())
+            .expect("property should be present");
+
+        assert_eq!(
+            property_type,
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::IdentityPublicKey {
+                    key_id_property: "toKeyIndex".to_string(),
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn should_reject_identity_public_key_refers_to_without_key_id_property() {
+        try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "toUserId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "identityPublicKey"
+                    }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }))
+        .expect_err("should fail");
+    }
+
+    #[test]
+    fn should_ignore_refers_to_on_platform_versions_predating_it() {
+        // Platform versions whose tables carry `apply_property_reference: None`
+        // predate the `refersTo` keyword: even if it appears in a schema they
+        // parse (only possible without full validation — their meta-schemas
+        // reject it), they must ignore it and keep producing the plain
+        // identifier type they always produced.
+        let platform_version = PlatformVersion::get(13).expect("platform version 13 should exist");
+
+        let document_type = try_document_type_from_schema_on_version(
+            json!({
+                "type": "object",
+                "properties": {
+                    "toUserId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0,
+                        "refersTo": {
+                            "type": "identity"
+                        }
+                    }
+                },
+                "required": [],
+                "additionalProperties": false
+            }),
+            platform_version,
+        )
+        .expect("should parse");
+
+        let property_type = document_type
+            .as_ref()
+            .flattened_properties()
+            .get("toUserId")
+            .map(|p| p.property_type.clone())
+            .expect("property should be present");
+
+        assert!(matches!(property_type, DocumentPropertyType::Identifier));
+    }
+
+    #[test]
+    fn should_not_reject_refers_to_on_non_identifier_property_on_platform_versions_predating_it() {
+        let platform_version = PlatformVersion::get(13).expect("platform version 13 should exist");
+
+        try_document_type_from_schema_on_version(
+            json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "position": 0,
+                        "refersTo": { "type": "identity" }
+                    }
+                },
+                "required": [],
+                "additionalProperties": false
+            }),
+            platform_version,
+        )
+        .expect("a parse predating refersTo should ignore the keyword entirely");
+    }
 }
