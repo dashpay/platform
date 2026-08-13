@@ -46,6 +46,16 @@
 //! secondary entries `indexed_*_top_k` returns are keyed by those same group
 //! keys. A compound index `[a, b]` inserts `<a> / <value_of_a>` between the
 //! doctype and the terminal `<b>` level.
+//!
+//! [`batched_group_drain`] extends this suite to the one shape it does not
+//! otherwise reach: several document operations applied in a *single* grovedb
+//! batch. It reuses the fixture and the assertion helpers below, which is why
+//! it is a child module rather than a sibling.
+
+/// Declared with `#[path]` so it can sit beside the other test files while
+/// still reaching this module's fixture and assertion helpers.
+#[path = "batched_group_drain.rs"]
+mod batched_group_drain;
 
 use crate::drive::Drive;
 use crate::util::grove_operations::DirectQueryType;
