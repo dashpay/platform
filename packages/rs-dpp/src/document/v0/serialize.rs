@@ -3154,8 +3154,11 @@ mod tests {
     ///   - `b`: required since contract version 2
     ///   - `c`: plain optional
     /// A document type exercising every schema-reachable property type in
-    /// both required and optional positions (u128/i128 are not inferable
-    /// from i64-bounded schemas, so they have no reachable serializer arm).
+    /// both required and optional positions. Not represented because no
+    /// document schema can produce them (`try_from_value_map` dispatches on
+    /// `"type"` only): `Date` (no `"date"` arm; only array item types and
+    /// system fields use it via `try_from_name`) and u128/i128 (integer
+    /// bound inference is i64-limited).
     fn kitchen_sink_document_type() -> crate::data_contract::document_type::DocumentType {
         use crate::data_contract::config::DataContractConfig;
         use crate::data_contract::document_type::DocumentType;
