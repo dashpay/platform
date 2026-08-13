@@ -1223,6 +1223,25 @@ mod tests {
             );
         }
 
+        /// Install a restored spend-linkage row for the lock's funded input,
+        /// the way the FFI load path does — the only source available at
+        /// app-launch catch-up, when `transaction_history()` is empty.
+        async fn restore_spend(&self, spender: Txid, in_block: bool) {
+            let mut wm = self.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&self.wallet_id)
+                .expect("wallet must remain registered");
+            info.restored_asset_lock_input_spends.insert(
+                self.funded_input(),
+                crate::wallet::platform_wallet::RestoredSpend {
+                    spender,
+                    height: in_block.then_some(1_532_949),
+                    in_block,
+                    chain_locked: in_block,
+                },
+            );
+        }
+
         /// File `record` in the wallet's BIP44 account by direct map
         /// insertion. Going through the detection pipeline instead would
         /// route the record by relevance and, for a chainlocked context,
@@ -1308,6 +1327,72 @@ mod tests {
     /// must fail with the typed terminal error and must not touch the
     /// network on the way out.
     ///
+    /// At app-launch catch-up `transaction_history()` is empty — the load
+    /// path restores only the unresolved locks' own funding records — so the
+    /// restored spend linkage is the sole evidence available. A confirmed
+    /// spender there must condemn the lock exactly as a history record does.
+    #[tokio::test]
+    async fn restored_spend_linkage_reports_the_conflict_with_an_empty_history() {
+        let fixture = ConflictFixture::new().await;
+        fixture.track(AssetLockStatus::Broadcast, None).await;
+
+        let spender_txid = transaction_spending(fixture.funded_input()).txid();
+        fixture.restore_spend(spender_txid, true).await;
+
+        let error = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect_err("a double-spent asset lock must fail, not wait");
+        match error {
+            PlatformWalletError::AssetLockInputConflict {
+                input,
+                spent_by,
+                spender_chain_locked,
+                ..
+            } => {
+                assert_eq!(input, fixture.funded_input());
+                assert_eq!(spent_by, spender_txid);
+                assert!(spender_chain_locked);
+            }
+            other => panic!("expected AssetLockInputConflict, got {other:?}"),
+        }
+        assert_eq!(
+            fixture.broadcast_count(),
+            0,
+            "the screen must fire before the re-broadcast"
+        );
+    }
+
+    /// A restored spender that never reached a block proves nothing — a
+    /// mempool sighting can still be replaced — and the lock's own txid is
+    /// not a conflict with itself. Neither may condemn the lock.
+    #[tokio::test]
+    async fn restored_spend_linkage_ignores_a_non_final_spender_and_the_lock_itself() {
+        for (spender_is_the_lock, in_block) in [(false, false), (true, true)] {
+            let fixture = ConflictFixture::new().await;
+            fixture.track(AssetLockStatus::Broadcast, None).await;
+
+            let spender_txid = if spender_is_the_lock {
+                fixture.transaction.txid()
+            } else {
+                transaction_spending(fixture.funded_input()).txid()
+            };
+            fixture.restore_spend(spender_txid, in_block).await;
+
+            let error = fixture
+                .manager
+                .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
+                .await
+                .expect_err("no proof means the resume runs and then times out");
+            assert!(
+                !matches!(error, PlatformWalletError::AssetLockInputConflict { .. }),
+                "spender_is_the_lock={spender_is_the_lock} in_block={in_block}: \
+                 got {error:?}"
+            );
+        }
+    }
+
     /// The spender here is merely `InBlock`, which is the shape the screen
     /// actually meets in production: under the default
     /// `keep-finalized-transactions = OFF` build a chainlocked record is

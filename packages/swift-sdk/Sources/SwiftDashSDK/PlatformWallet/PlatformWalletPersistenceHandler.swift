@@ -5448,14 +5448,16 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         walletId: Data,
         allocation: LoadAllocation
     ) -> (UnsafeMutablePointer<AssetLockInputSpendFFI>?, Int) {
-        // Deliberately not filtered on `isSpent`. A row keeps that flag
-        // false until its spender reaches a block, so the outputs of a
-        // transaction that never got there — exactly the chain the abandon
-        // cascade has to follow — sit in the unspent set with their linkage
-        // recorded and nothing else pointing at them.
+        // Filter on the scalar column, never on `spendingTransaction`:
+        // chasing that optional relationship in a predicate drops SwiftData
+        // onto a nested-optional codepath that crashes the process, which
+        // `try?` cannot recover from — see `PersistentTxo.isSpent`, which
+        // exists for exactly this reason. No rows are lost here: `isSpent`
+        // flips under the same in-block condition the conflict screen
+        // requires of a spender, so every row it can act on is included.
         var descriptor = FetchDescriptor<PersistentTxo>(
             predicate: #Predicate { txo in
-                txo.walletId == walletId && txo.spendingTransaction != nil
+                txo.walletId == walletId && txo.isSpent == true
             }
         )
         descriptor.relationshipKeyPathsForPrefetching = [\.spendingTransaction]

@@ -58,8 +58,8 @@ use crate::platform_address_types::AddressBalanceEntryFFI;
 use crate::token_persistence::{TokenBalanceRemovalFFI, TokenBalanceUpsertFFI};
 use crate::wallet_registration_persistence::AccountAddressPoolFFI;
 use crate::wallet_restore_types::{
-    AccountSpecFFI, AccountTypeTagFFI, ContactProfileRestoreEntryFFI, IdentityKeyRestoreFFI,
-    IdentityRestoreEntryFFI, LoadWalletListFreeFn, PaymentRestoreEntryFFI,
+    AccountSpecFFI, AccountTypeTagFFI, AssetLockInputSpendFFI, ContactProfileRestoreEntryFFI,
+    IdentityKeyRestoreFFI, IdentityRestoreEntryFFI, LoadWalletListFreeFn, PaymentRestoreEntryFFI,
     ProviderSpecialTxRestoreEntryFFI, StandardAccountTypeTagFFI, UnresolvedAssetLockTxRecordFFI,
     UtxoRestoreEntryFFI, WalletRestoreEntryFFI,
 };
@@ -4878,9 +4878,12 @@ fn build_asset_lock_input_spends(
             );
             continue;
         };
-        // Both facts are kept, and the readers apply their own bar: the
-        // double-spend screen needs a spender that reached a block, the
-        // abandon cascade needs any spender at all.
+        // Match the known discriminants exactly rather than comparing by
+        // order: the contract defines 0..=3, and an unknown value must
+        // degrade to "no evidence" rather than being read as finality. The
+        // screen treats `in_block` as conclusive and returns a terminal code
+        // the host may act on by discarding the lock, so a malformed or
+        // forward-versioned byte manufacturing that verdict would be unsafe.
         const CONTEXT_IN_BLOCK: u32 = 2;
         const CONTEXT_IN_CHAIN_LOCKED_BLOCK: u32 = 3;
         spends.insert(
@@ -4891,8 +4894,11 @@ fn build_asset_lock_input_spends(
             platform_wallet::wallet::platform_wallet::RestoredSpend {
                 spender: spender_txid,
                 height: (row.spender_height != 0).then_some(row.spender_height),
-                in_block: row.spender_context >= CONTEXT_IN_BLOCK,
-                chain_locked: row.spender_context >= CONTEXT_IN_CHAIN_LOCKED_BLOCK,
+                in_block: matches!(
+                    row.spender_context,
+                    CONTEXT_IN_BLOCK | CONTEXT_IN_CHAIN_LOCKED_BLOCK
+                ),
+                chain_locked: row.spender_context == CONTEXT_IN_CHAIN_LOCKED_BLOCK,
             },
         );
     }
@@ -6021,6 +6027,43 @@ mod tests {
     //! exercising the in-memory mutation against synthetic input.
 
     use super::*;
+
+    // --- asset-lock input-spend linkage decode ---
+
+    /// The context byte decides whether persisted evidence may condemn a
+    /// tracked lock, so only the two known block discriminants may read as
+    /// final. An unknown value — corrupt row, forward-versioned host — must
+    /// degrade to "no evidence" rather than manufacture finality.
+    #[test]
+    fn asset_lock_input_spend_context_decodes_only_known_block_discriminants() {
+        for (context, expect_in_block, expect_chain_locked) in [
+            (0u32, false, false), // mempool
+            (1, false, false),    // InstantSend, replaceable
+            (2, true, false),     // in a block
+            (3, true, true),      // chain-locked block
+            (4, false, false),    //unknown / forward-versioned
+            (u32::MAX, false, false),
+        ] {
+            let row = AssetLockInputSpendFFI {
+                prev_txid: [7u8; 32],
+                vout: 1,
+                spender_txid: [9u8; 32],
+                spender_height: 1_532_949,
+                spender_context: context,
+            };
+            // The decoder reads only `wallet_id` (for the log line) and the
+            // spend slice, so a zeroed entry is a sound stand-in for the
+            // ~40 pointer fields it never touches.
+            let mut entry: WalletRestoreEntryFFI = unsafe { std::mem::zeroed() };
+            entry.asset_lock_input_spends = &row;
+            entry.asset_lock_input_spends_count = 1;
+
+            let spends = build_asset_lock_input_spends(&entry);
+            let spend = spends.values().next().expect("row decodes");
+            assert_eq!(spend.in_block, expect_in_block, "context={context}");
+            assert_eq!(spend.chain_locked, expect_chain_locked, "context={context}");
+        }
+    }
 
     // --- persists_durably: the fail-closed durability attestation ---
 
