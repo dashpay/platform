@@ -4154,8 +4154,9 @@ mod tests {
             .expect("expected to load contract");
 
             // Convert the contract back to Value so we can mutate its fields
-            let mut contract_value =
-                dpp::platform_value::to_value(&data_contract).expect("to_value failed");
+            let mut contract_value = data_contract
+                .to_value(platform_version)
+                .expect("to_value failed");
 
             // Insert 21 keywords to exceed the max limit
             let mut excessive_keywords: Vec<Value> = vec![];
@@ -4236,8 +4237,9 @@ mod tests {
             .expect("expected to load contract");
 
             // Convert to Value to mutate fields
-            let mut contract_value =
-                dpp::platform_value::to_value(&data_contract).expect("to_value failed");
+            let mut contract_value = data_contract
+                .to_value(platform_version)
+                .expect("to_value failed");
 
             // Insert some duplicates
             let duplicated_keywords = vec!["keyword1", "keyword2", "keyword2"];
@@ -4320,8 +4322,9 @@ mod tests {
             .expect("expected to load contract");
 
             // Convert to Value for mutation
-            let mut contract_value =
-                dpp::platform_value::to_value(&data_contract).expect("to_value failed");
+            let mut contract_value = data_contract
+                .to_value(platform_version)
+                .expect("to_value failed");
 
             // Insert a keyword with length < 3
             contract_value["keywords"] = Value::Array(vec![Value::Text("hi".to_string())]);
@@ -4392,8 +4395,9 @@ mod tests {
             )
             .expect("expected to load contract");
 
-            let mut contract_value =
-                dpp::platform_value::to_value(&data_contract).expect("to_value failed");
+            let mut contract_value = data_contract
+                .to_value(platform_version)
+                .expect("to_value failed");
 
             // Create a 51-char keyword
             let too_long_keyword = "x".repeat(51);
@@ -4465,8 +4469,9 @@ mod tests {
             .expect("expected to load contract");
 
             // Convert to Value so we can adjust fields if needed
-            let mut contract_value =
-                dpp::platform_value::to_value(&data_contract).expect("to_value failed");
+            let mut contract_value = data_contract
+                .to_value(platform_version)
+                .expect("to_value failed");
 
             // Insert a valid set of keywords: all distinct, fewer than 20
             let valid_keywords = vec!["key1", "key2", "key3"];
@@ -4629,8 +4634,9 @@ mod tests {
             )
             .expect("expected to load contract");
 
-            let mut contract_value =
-                dpp::platform_value::to_value(&data_contract).expect("to_value failed");
+            let mut contract_value = data_contract
+                .to_value(platform_version)
+                .expect("to_value failed");
 
             // Inject `keywords` onto the `preorder` document type schema — the
             // wrong place for it. This should be rejected by the v1 meta
@@ -4718,8 +4724,9 @@ mod tests {
             )
             .expect("expected to load contract");
 
-            let mut contract_value =
-                dpp::platform_value::to_value(&data_contract).expect("to_value failed");
+            let mut contract_value = data_contract
+                .to_value(platform_version)
+                .expect("to_value failed");
 
             // Ensure the `keywords` array is not empty so that Drive will attempt
             // to create the description documents.
