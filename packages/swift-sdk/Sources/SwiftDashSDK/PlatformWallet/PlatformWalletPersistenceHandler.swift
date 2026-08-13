@@ -827,13 +827,20 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     let tx = txsPtr[t]
                     let txid = hashData(tx.txid)
                     cache.prefetchedTxids.insert(txid)
+                    // Only the input OUTPOINTS are collected here — the
+                    // apply helpers look inputs up as TXOs / pending
+                    // rows, never as transactions, so pulling every
+                    // prevout's parent tx row would only inflate the
+                    // `IN` fetch (hundreds of foreign parents per
+                    // CoinJoin record).
                     if let inPtr = tx.input_outpoints, tx.input_outpoints_count > 0 {
                         for j in 0..<Int(tx.input_outpoints_count) {
                             let entry = inPtr[j]
-                            let prevTxid = hashData(entry.txid)
-                            cache.prefetchedTxids.insert(prevTxid)
                             cache.prefetchedOutpoints.insert(
-                                PersistentTxo.makeOutpoint(txid: prevTxid, vout: entry.vout)
+                                PersistentTxo.makeOutpoint(
+                                    txid: hashData(entry.txid),
+                                    vout: entry.vout
+                                )
                             )
                         }
                     }
@@ -872,34 +879,48 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             }
         }
 
+        // A failed chunk fetch must NOT leave its keys in the
+        // `prefetched*` sets: membership there declares dictionary
+        // absence authoritative, so an error would silently read as
+        // "these ~900 rows don't exist" and the upsert paths would
+        // insert duplicates over `.unique` columns. Dropping the
+        // chunk's keys instead routes every lookup through the
+        // single-row fallback fetch — the pre-cache behavior.
         for chunk in Self.chunked(Array(cache.prefetchedTxids)) {
             let descriptor = FetchDescriptor<PersistentTransaction>(
                 predicate: #Predicate { chunk.contains($0.txid) }
             )
-            for row in (try? backgroundContext.fetch(descriptor)) ?? [] {
-                cache.transactions[row.txid] = row
+            if let rows = try? backgroundContext.fetch(descriptor) {
+                for row in rows { cache.transactions[row.txid] = row }
+            } else {
+                cache.prefetchedTxids.subtract(chunk)
             }
         }
         for chunk in Self.chunked(Array(cache.prefetchedOutpoints)) {
             let txoDescriptor = FetchDescriptor<PersistentTxo>(
                 predicate: #Predicate { chunk.contains($0.outpoint) }
             )
-            for row in (try? backgroundContext.fetch(txoDescriptor)) ?? [] {
-                cache.txos[row.outpoint] = row
-            }
             let pendingDescriptor = FetchDescriptor<PersistentPendingInput>(
                 predicate: #Predicate { chunk.contains($0.outpoint) }
             )
-            for row in (try? backgroundContext.fetch(pendingDescriptor)) ?? [] {
-                cache.pendingInputs[row.outpoint, default: []].append(row)
+            if let txoRows = try? backgroundContext.fetch(txoDescriptor),
+               let pendingRows = try? backgroundContext.fetch(pendingDescriptor) {
+                for row in txoRows { cache.txos[row.outpoint] = row }
+                for row in pendingRows {
+                    cache.pendingInputs[row.outpoint, default: []].append(row)
+                }
+            } else {
+                cache.prefetchedOutpoints.subtract(chunk)
             }
         }
         for chunk in Self.chunked(Array(cache.prefetchedAddresses)) {
             let descriptor = FetchDescriptor<PersistentCoreAddress>(
                 predicate: #Predicate { chunk.contains($0.address) }
             )
-            for row in (try? backgroundContext.fetch(descriptor)) ?? [] {
-                cache.coreAddresses[row.address] = row
+            if let rows = try? backgroundContext.fetch(descriptor) {
+                for row in rows { cache.coreAddresses[row.address] = row }
+            } else {
+                cache.prefetchedAddresses.subtract(chunk)
             }
         }
 
@@ -3394,12 +3415,20 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         let allAddresses = entries.map(\.address)
         var existingRows: [String: PersistentCoreAddress] = [:]
         var txosByAddress: [String: [PersistentTxo]] = [:]
+        // Addresses whose bulk row fetch FAILED (threw) — a miss for
+        // these is not authoritative, so the upsert loop falls back to
+        // a single-row fetch instead of inserting over the `.unique`
+        // address column. A failed TXO-backfill fetch just skips the
+        // backfill for the chunk, matching the old per-row `try?`.
+        var unresolvedAddresses: Set<String> = []
         for chunk in Self.chunked(allAddresses) {
             let rowDescriptor = FetchDescriptor<PersistentCoreAddress>(
                 predicate: #Predicate { chunk.contains($0.address) }
             )
-            for row in (try? backgroundContext.fetch(rowDescriptor)) ?? [] {
-                existingRows[row.address] = row
+            if let rows = try? backgroundContext.fetch(rowDescriptor) {
+                for row in rows { existingRows[row.address] = row }
+            } else {
+                unresolvedAddresses.formUnion(chunk)
             }
             let txoDescriptor = FetchDescriptor<PersistentTxo>(
                 predicate: #Predicate { chunk.contains($0.address) }
@@ -3411,6 +3440,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
         for entry in entries {
             let address = entry.address
+            if existingRows[address] == nil, unresolvedAddresses.contains(address) {
+                let fallbackDescriptor = FetchDescriptor<PersistentCoreAddress>(
+                    predicate: #Predicate { $0.address == address }
+                )
+                if let row = try? backgroundContext.fetch(fallbackDescriptor).first {
+                    existingRows[address] = row
+                }
+            }
             let row: PersistentCoreAddress
             if let existing = existingRows[address] {
                 row = existing
