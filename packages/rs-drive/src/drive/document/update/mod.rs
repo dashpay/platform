@@ -921,6 +921,187 @@ mod tests {
     }
 
     #[test]
+    fn test_update_document_with_null_searchable_false_unique_index_all_fields_null() {
+        // On a `nullSearchable: false` index the insert walker writes no
+        // index entry at all when EVERY indexed property is null. The
+        // update walker must mirror that on all three of its paths: not
+        // delete an old entry that was never written (all-null → value),
+        // not write an entry queries must never see (value → all-null),
+        // and not refresh a reference that does not exist (all-null →
+        // all-null).
+        let drive = setup_drive_with_initial_state_structure(None);
+
+        let platform_version = PlatformVersion::latest();
+
+        let contract = platform_value!({
+            "$formatVersion": "0",
+            "id": "BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54",
+            "schema": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
+            "version": 1,
+            "ownerId": "GZVdTnLFAN2yE9rLeCHBDBCr7YQgmXJuoExkY347j7Z5",
+            "documentSchemas": {
+                "indexedDocument": {
+                    "type": "object",
+                    "indices": [
+                        {"name":"uniqueFirstLast", "properties": [{"firstName":"asc"}, {"lastName":"asc"}], "unique":true, "nullSearchable":false},
+                    ],
+                    "properties":{
+                        "firstName": {
+                            "type": "string",
+                            "maxLength": 63,
+                            "position": 0,
+                        },
+                        "lastName": {
+                            "type": "string",
+                            "maxLength": 63,
+                            "position": 1,
+                        }
+                    },
+                    "additionalProperties": false,
+                },
+            },
+        });
+
+        let contract = DataContract::from_value(contract, false, platform_version)
+            .expect("expected data contract");
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("should create a contract");
+
+        let document_type = contract
+            .document_type_for_name("indexedDocument")
+            .expect("expected to get a document type");
+
+        let make_document = |revision: u64, first_name: Option<&str>| {
+            let mut document_values = platform_value!({
+               "$id": Identifier::new(bs58::decode("DLRWw2eRbLAW5zDU2c7wwsSFQypTSZPhFYzpY48tnaXN").into_vec()
+                            .unwrap().try_into().unwrap()),
+               "$type": "indexedDocument",
+               "$dataContractId": Identifier::new(bs58::decode("BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54").into_vec()
+                            .unwrap().try_into().unwrap()),
+               "$ownerId": Identifier::new(bs58::decode("GZVdTnLFAN2yE9rLeCHBDBCr7YQgmXJuoExkY347j7Z5").into_vec()
+                            .unwrap().try_into().unwrap()),
+               "$revision": revision,
+            });
+            if let Some(first_name) = first_name {
+                document_values
+                    .insert("firstName".to_string(), first_name.into())
+                    .expect("should insert firstName");
+            }
+            document_from_legacy_value(document_values)
+        };
+
+        let count_documents_with_first_name = |first_name: &str| {
+            let query = DriveDocumentQuery::from_sql_expr(
+                &format!("select * from indexedDocument where firstName = '{first_name}'"),
+                &contract,
+                Some(&DriveConfig::default()),
+                platform_version,
+            )
+            .expect("should build query");
+            let (results, _, _) = query
+                .execute_raw_results_no_proof(&drive, None, None, platform_version)
+                .expect("expected to execute query");
+            results.len()
+        };
+
+        // Insert with both indexed fields null — no index entry is written
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentOwnedInfo((
+                            make_document(1, None),
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("should add document");
+
+        // all-null → all-null (no index change): nothing to refresh
+
+        drive
+            .update_document_for_contract(
+                &make_document(2, None),
+                &contract,
+                document_type,
+                None,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+            )
+            .expect("should update document with all indexed fields still null");
+
+        // all-null → value: no old entry to delete, new entry becomes queryable
+
+        drive
+            .update_document_for_contract(
+                &make_document(3, Some("myName")),
+                &contract,
+                document_type,
+                None,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+            )
+            .expect("should update document setting firstName");
+
+        assert_eq!(
+            count_documents_with_first_name("myName"),
+            1,
+            "document should be found once firstName is set"
+        );
+
+        // value → all-null: old entry removed, no new entry written
+
+        drive
+            .update_document_for_contract(
+                &make_document(4, None),
+                &contract,
+                document_type,
+                None,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+            )
+            .expect("should update document clearing firstName");
+
+        assert_eq!(
+            count_documents_with_first_name("myName"),
+            0,
+            "no index entry should remain after clearing all indexed fields"
+        );
+    }
+
+    #[test]
     fn test_modify_dashpay_contact_request() {
         let drive = setup_drive_with_initial_state_structure(None);
 
