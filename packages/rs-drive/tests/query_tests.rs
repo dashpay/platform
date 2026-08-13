@@ -8518,3 +8518,110 @@ mod multi_in_tests {
         );
     }
 }
+
+#[cfg(feature = "server")]
+#[cfg(test)]
+mod withdrawal_in_clause_placement_equivalence {
+    //! Pins that moving the withdrawal transaction-index `In` clause from
+    //! `equal_clauses` into `in_clauses` (review follow-up on the multi-`In`
+    //! PR) is behavior-preserving: both shapes lower to the identical
+    //! grovedb path query at protocol version 13 and 14, so the withdrawal
+    //! processing path executes the same operations at the same cost.
+
+    use super::*;
+    use dpp::data_contracts::SystemDataContract;
+    use dpp::system_data_contracts::load_system_data_contract;
+    use drive::query::{InternalClauses, OrderClause};
+    use indexmap::IndexMap;
+
+    #[test]
+    fn test_in_clause_bucket_placement_lowers_identically() {
+        let platform_version = PlatformVersion::latest();
+        let contract = load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
+            .expect("expected to load withdrawals contract");
+        let document_type = contract
+            .document_type_for_name("withdrawal")
+            .expect("expected withdrawal document type");
+
+        let status_clause = WhereClause {
+            field: "status".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::U8(1),
+        };
+        let transaction_index_clause = WhereClause {
+            field: "transactionIndex".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![Value::U64(1), Value::U64(3), Value::U64(7)]),
+        };
+        let mut order_by = IndexMap::new();
+        order_by.insert(
+            "transactionIndex".to_string(),
+            OrderClause {
+                field: "transactionIndex".to_string(),
+                ascending: true,
+            },
+        );
+
+        // The pre-change shape: the In clause rode in equal_clauses
+        let mut equal_clauses_with_in = BTreeMap::new();
+        equal_clauses_with_in.insert("status".to_string(), status_clause.clone());
+        equal_clauses_with_in.insert(
+            "transactionIndex".to_string(),
+            transaction_index_clause.clone(),
+        );
+        let legacy_shape = drive::query::DriveDocumentQuery {
+            contract: &contract,
+            document_type,
+            internal_clauses: InternalClauses {
+                primary_key_in_clause: None,
+                primary_key_equal_clause: None,
+                in_clauses: Vec::new(),
+                range_clause: None,
+                equal_clauses: equal_clauses_with_in,
+            },
+            offset: None,
+            limit: Some(16),
+            order_by: order_by.clone(),
+            start_at: None,
+            start_at_included: false,
+            block_time_ms: None,
+        };
+
+        // The current shape: the In clause in in_clauses
+        let mut equal_clauses = BTreeMap::new();
+        equal_clauses.insert("status".to_string(), status_clause);
+        let current_shape = drive::query::DriveDocumentQuery {
+            contract: &contract,
+            document_type,
+            internal_clauses: InternalClauses {
+                primary_key_in_clause: None,
+                primary_key_equal_clause: None,
+                in_clauses: vec![transaction_index_clause],
+                range_clause: None,
+                equal_clauses,
+            },
+            offset: None,
+            limit: Some(16),
+            order_by,
+            start_at: None,
+            start_at_included: false,
+            block_time_ms: None,
+        };
+
+        for protocol_version in [13u32, 14u32] {
+            let version =
+                PlatformVersion::get(protocol_version).expect("expected platform version to exist");
+            let legacy_path_query = legacy_shape
+                .construct_path_query(None, version)
+                .expect("legacy shape should lower");
+            let current_path_query = current_shape
+                .construct_path_query(None, version)
+                .expect("current shape should lower");
+            assert_eq!(
+                legacy_path_query, current_path_query,
+                "the two in-clause bucket placements must lower to the identical \
+                 path query at protocol version {protocol_version}"
+            );
+        }
+    }
+}
