@@ -3794,4 +3794,324 @@ mod tests {
             Query::new_range_full().items
         );
     }
+
+    /// Unit coverage for the v1 multi-`In` path-query lowering. These
+    /// mirror the storage-backed integration tests in
+    /// `tests/query_tests.rs::multi_in_tests`, but exercise the lowering
+    /// as the pure function it is (contract in, path query out), so the
+    /// selection, validation, and rejection branches are covered by the
+    /// lib test target.
+    mod multiple_in_clause_lowering {
+        use super::*;
+        use crate::error::query::QuerySyntaxError;
+        use crate::error::Error;
+
+        fn family_contract() -> DataContract {
+            json_document_to_contract(
+                "tests/supporting_files/contract/family/family-contract.json",
+                false,
+                PlatformVersion::latest(),
+            )
+            .expect("expected to load family contract")
+        }
+
+        fn text_array(values: &[&str]) -> Value {
+            Value::Array(
+                values
+                    .iter()
+                    .map(|value| Value::Text(value.to_string()))
+                    .collect(),
+            )
+        }
+
+        fn in_clause(field: &str, values: &[&str]) -> WhereClause {
+            WhereClause {
+                field: field.to_string(),
+                operator: WhereOperator::In,
+                value: text_array(values),
+            }
+        }
+
+        fn ascending_order_by(fields: &[&str]) -> IndexMap<String, OrderClause> {
+            fields
+                .iter()
+                .map(|field| {
+                    (
+                        field.to_string(),
+                        OrderClause {
+                            field: field.to_string(),
+                            ascending: true,
+                        },
+                    )
+                })
+                .collect()
+        }
+
+        fn person_query<'a>(
+            contract: &'a DataContract,
+            where_clauses: Vec<WhereClause>,
+            order_by_fields: &[&str],
+        ) -> DriveDocumentQuery<'a> {
+            let internal_clauses = InternalClauses::extract_from_clauses(where_clauses)
+                .expect("clauses should group structurally");
+            DriveDocumentQuery {
+                contract,
+                document_type: contract
+                    .document_type_for_name("person")
+                    .expect("person document type should exist"),
+                internal_clauses,
+                offset: None,
+                limit: Some(100),
+                order_by: ascending_order_by(order_by_fields),
+                start_at: None,
+                start_at_included: false,
+                block_time_ms: None,
+            }
+        }
+
+        #[test]
+        fn two_in_clauses_lower_to_nested_key_sets() {
+            let contract = family_contract();
+            let platform_version = PlatformVersion::latest();
+            let query = person_query(
+                &contract,
+                vec![
+                    in_clause("firstName", &["Adey", "Briney"]),
+                    in_clause("lastName", &["Kriskov", "Randolf"]),
+                ],
+                &["firstName", "lastName"],
+            );
+
+            let path_query = query
+                .construct_path_query(None, platform_version)
+                .expect("two in clauses should lower at protocol version 14");
+
+            // The path descends to the first in field of the
+            // [firstName, lastName] index
+            assert_eq!(
+                path_query.path.last().expect("path should not be empty"),
+                &b"firstName".to_vec()
+            );
+
+            // Outer level: one key per firstName in value
+            let outer = &path_query.query.query;
+            assert_eq!(outer.items.len(), 2);
+            assert!(outer.left_to_right);
+
+            // Second level: a key set over lastName under the subquery
+            // path [lastName]
+            assert_eq!(
+                outer.default_subquery_branch.subquery_path,
+                Some(vec![b"lastName".to_vec()])
+            );
+            let inner = outer
+                .default_subquery_branch
+                .subquery
+                .as_deref()
+                .expect("expected a lastName subquery");
+            assert_eq!(inner.items.len(), 2);
+
+            // Terminal level: the document id tree under [0]
+            assert_eq!(
+                inner.default_subquery_branch.subquery_path,
+                Some(vec![vec![0]])
+            );
+        }
+
+        #[test]
+        fn two_in_clauses_rejected_at_protocol_version_13() {
+            let contract = family_contract();
+            let platform_version_13 =
+                PlatformVersion::get(13).expect("protocol version 13 should exist");
+            let query = person_query(
+                &contract,
+                vec![
+                    in_clause("firstName", &["Adey", "Briney"]),
+                    in_clause("lastName", &["Kriskov", "Randolf"]),
+                ],
+                &["firstName", "lastName"],
+            );
+
+            let error = query
+                .construct_path_query(None, platform_version_13)
+                .expect_err("multiple in clauses must be rejected before protocol version 14");
+            assert!(
+                matches!(error, Error::Query(QuerySyntaxError::MultipleInClauses(_))),
+                "expected MultipleInClauses, got {error:?}"
+            );
+
+            query
+                .construct_path_query(None, PlatformVersion::latest())
+                .expect("the same query should lower at protocol version 14");
+        }
+
+        #[test]
+        fn equality_prefix_two_in_clauses_and_trailing_range_lowering() {
+            let contract = family_contract();
+            let platform_version = PlatformVersion::latest();
+            let mut query = person_query(
+                &contract,
+                vec![
+                    WhereClause {
+                        field: "age".to_string(),
+                        operator: WhereOperator::Equal,
+                        value: Value::U8(30),
+                    },
+                    in_clause("firstName", &["Adey", "Briney"]),
+                    in_clause("middleName", &["Ivanna", "Evangeline"]),
+                    WhereClause {
+                        field: "lastName".to_string(),
+                        operator: WhereOperator::GreaterThan,
+                        value: Value::Text("M".to_string()),
+                    },
+                ],
+                &["firstName", "middleName", "lastName"],
+            );
+            query.limit = Some(50);
+
+            // Matches the [age, firstName, middleName, lastName] index:
+            // equality prefix on age, then two consecutive in levels, then
+            // the range level
+            let path_query = query
+                .construct_path_query(None, platform_version)
+                .expect("equality + in + in + range should lower");
+
+            let path_len = path_query.path.len();
+            assert_eq!(path_query.path[path_len - 3], b"age".to_vec());
+            assert_eq!(
+                path_query.path.last().expect("path should not be empty"),
+                &b"firstName".to_vec()
+            );
+
+            let outer = &path_query.query.query;
+            assert_eq!(outer.items.len(), 2);
+            assert_eq!(
+                outer.default_subquery_branch.subquery_path,
+                Some(vec![b"middleName".to_vec()])
+            );
+            let middle = outer
+                .default_subquery_branch
+                .subquery
+                .as_deref()
+                .expect("expected a middleName subquery");
+            assert_eq!(middle.items.len(), 2);
+            assert_eq!(
+                middle.default_subquery_branch.subquery_path,
+                Some(vec![b"lastName".to_vec()])
+            );
+            let range_level = middle
+                .default_subquery_branch
+                .subquery
+                .as_deref()
+                .expect("expected a lastName subquery");
+            // The trailing range is a single range item, not a key set
+            assert_eq!(range_level.items.len(), 1);
+            assert_eq!(
+                range_level.default_subquery_branch.subquery_path,
+                Some(vec![vec![0]])
+            );
+        }
+
+        #[test]
+        fn cross_product_above_cap_is_rejected() {
+            let contract = family_contract();
+            let first_names: Vec<String> = (0..20).map(|i| format!("First{i:02}")).collect();
+            let last_names: Vec<String> = (0..6).map(|i| format!("Last{i}")).collect();
+            let query = person_query(
+                &contract,
+                vec![
+                    WhereClause {
+                        field: "firstName".to_string(),
+                        operator: WhereOperator::In,
+                        value: Value::Array(first_names.iter().cloned().map(Value::Text).collect()),
+                    },
+                    WhereClause {
+                        field: "lastName".to_string(),
+                        operator: WhereOperator::In,
+                        value: Value::Array(last_names.iter().cloned().map(Value::Text).collect()),
+                    },
+                ],
+                &["firstName", "lastName"],
+            );
+
+            let error = query
+                .construct_path_query(None, PlatformVersion::latest())
+                .expect_err("a 120-branch cross product must be rejected");
+            assert!(
+                matches!(error, Error::Query(QuerySyntaxError::InvalidInClause(_))),
+                "expected InvalidInClause, got {error:?}"
+            );
+        }
+
+        #[test]
+        fn non_consecutive_in_fields_are_rejected() {
+            let contract = family_contract();
+            // [firstName, middleName, lastName] holds middleName and
+            // lastName at positions 1 and 2 with no equality on firstName,
+            // so no index conforms
+            let query = person_query(
+                &contract,
+                vec![
+                    in_clause("middleName", &["Ivanna", "Evangeline"]),
+                    in_clause("lastName", &["Kriskov", "Randolf"]),
+                ],
+                &["middleName", "lastName"],
+            );
+
+            let error = query
+                .construct_path_query(None, PlatformVersion::latest())
+                .expect_err("non-consecutive in clauses must be rejected");
+            assert!(
+                matches!(
+                    error,
+                    Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(_))
+                ),
+                "expected WhereClauseOnNonIndexedProperty, got {error:?}"
+            );
+        }
+
+        #[test]
+        fn cursor_pagination_is_rejected() {
+            let contract = family_contract();
+            let mut query = person_query(
+                &contract,
+                vec![
+                    in_clause("firstName", &["Adey", "Briney"]),
+                    in_clause("lastName", &["Kriskov", "Randolf"]),
+                ],
+                &["firstName", "lastName"],
+            );
+            query.start_at = Some([5u8; 32]);
+            query.start_at_included = false;
+
+            let error = query
+                .construct_path_query(None, PlatformVersion::latest())
+                .expect_err("cursor pagination with multiple in clauses must be rejected");
+            assert!(
+                matches!(error, Error::Query(QuerySyntaxError::Unsupported(_))),
+                "expected Unsupported, got {error:?}"
+            );
+        }
+
+        #[test]
+        fn missing_order_by_on_an_in_field_is_rejected() {
+            let contract = family_contract();
+            let query = person_query(
+                &contract,
+                vec![
+                    in_clause("firstName", &["Adey", "Briney"]),
+                    in_clause("lastName", &["Kriskov", "Randolf"]),
+                ],
+                &["firstName"],
+            );
+
+            let error = query
+                .construct_path_query(None, PlatformVersion::latest())
+                .expect_err("missing order by on an in field must be rejected");
+            assert!(
+                matches!(error, Error::Query(_)),
+                "expected a query error, got {error:?}"
+            );
+        }
+    }
 }
