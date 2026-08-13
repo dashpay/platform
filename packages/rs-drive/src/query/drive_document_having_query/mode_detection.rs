@@ -17,7 +17,9 @@
 //! surface, so relaxing it later (multi-clause `HAVING`, `IN`, a
 //! pagination cursor) lands behind a method-version bump.
 
-use super::super::drive_document_ranked_query::mode_detection::ranked_order_key;
+use super::super::drive_document_ranked_query::mode_detection::{
+    equality_pins_from_where_clauses, ranked_order_key,
+};
 use super::super::drive_document_ranked_query::{RankedAxis, RankedPaginationInputs};
 use super::{AxisRangeBounds, DocumentHavingMode, MAX_HAVING_LIMIT};
 use crate::error::query::QuerySyntaxError;
@@ -76,8 +78,11 @@ pub fn detect_having_mode(
 /// SELECT AVG(f)    GROUP BY p  HAVING AVG(f)   <op> <value>  [ORDER BY f      [ASC|DESC]]  LIMIT n
 /// ```
 ///
-/// with no `WHERE`, no `OFFSET`, no `START AT` / `START AFTER`, exactly
-/// one `GROUP BY` property, exactly one `HAVING` clause whose aggregate
+/// with no `OFFSET`, no `START AT` / `START AFTER`, exactly one
+/// `GROUP BY` property, `WHERE` clauses (when present) that are
+/// equality pins on distinct properties — one per leading property of a
+/// covering compound ranked index, selecting which prefix's secondary
+/// the bound reads — exactly one `HAVING` clause whose aggregate
 /// **is the selected aggregate** (same function, same field), an operator
 /// from the contiguous-range family (`=`, `>`, `>=`, `<`, `<=`, and the
 /// four `BETWEEN*` variants — `!=` and `IN` describe non-contiguous
@@ -120,15 +125,17 @@ pub fn detect_having_mode_v0(
 ) -> Result<DocumentHavingMode, Error> {
     // ---- GROUP BY: exactly one property ----------------------------
     //
-    // Same contract as the ranked surface: ranked indexes are
-    // single-property, and the sole property is what the secondary's
-    // group keys are.
+    // Same contract as the ranked surface: the one property is the
+    // covering index's LAST property, whose distinct values are the
+    // secondary's group keys. A compound ranked index filters each
+    // prefix's groups separately — its leading properties are pinned by
+    // equality `where` clauses, never grouped over.
     if group_by.len() != 1 {
         return Err(Error::Query(QuerySyntaxError::InvalidParameter(format!(
-            "having-range queries require exactly one `group_by` property (the ranked \
-             index's only property); got {}. Ranked indexes are single-property — compound \
-             ranked indexes are rejected at contract-parse time — so there is no compound \
-             grouping to filter over.",
+            "having-range queries require exactly one `group_by` property (the covering \
+             ranked index's trailing property); got {}. A compound ranked index bounds \
+             each prefix's groups separately — pin every leading index property with an \
+             equality `where` clause and `group_by` the trailing property.",
             group_by.len()
         ))));
     }
@@ -288,21 +295,14 @@ pub fn detect_having_mode_v0(
         }
     };
 
-    // ---- WHERE: must be absent --------------------------------------
+    // ---- WHERE: equality pins on the compound prefix ------------------
     //
-    // Identical rationale to the ranked surface: single-property
-    // indexes have no equality prefix to narrow, and the secondary is
-    // ordered by aggregate, not by group key.
-    if !where_clauses.is_empty() {
-        return Err(Error::Query(
-            QuerySyntaxError::InvalidWhereClauseComponents(
-                "having-range queries do not accept `where` clauses: ranked indexes are \
-                 single-property, so there is no equality prefix to narrow, and the axis \
-                 secondary is ordered by aggregate rather than by group key — it cannot \
-                 bound a filtered subset. Bound the whole index, or add a narrower index.",
-            ),
-        ));
-    }
+    // Identical contract to the ranked surface: empty for the
+    // single-property form; for a compound ranked index, one equality
+    // pin per leading property selects which prefix's secondary the
+    // bound reads. Shape-only here; the index picker enforces the
+    // exact-cover rule.
+    let equality_pins = equality_pins_from_where_clauses(where_clauses)?;
 
     // ---- LIMIT: required, 1 ..= MAX_HAVING_LIMIT ---------------------
     //
@@ -368,6 +368,7 @@ pub fn detect_having_mode_v0(
         limit,
         group_by_property,
         aggregate_field,
+        equality_pins,
     })
 }
 

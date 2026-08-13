@@ -28,7 +28,8 @@ use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::having::HavingClause;
 use crate::query::projection::{SelectFunction, SelectProjection};
-use crate::query::{OrderClause, WhereClause};
+use crate::query::{OrderClause, WhereClause, WhereOperator};
+use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
 
 /// Versioned entry point. Routes through
@@ -85,20 +86,92 @@ pub fn ranked_order_key(select: &SelectProjection) -> &str {
     }
 }
 
+/// Translate a request's `where` clauses into equality pins —
+/// `(property, value)` pairs, one per clause — for the ranked and
+/// having-range surfaces.
+///
+/// Both surfaces read a compound index's per-prefix secondary by
+/// descending through one prefix value tree per **leading** index
+/// property, and only an equality clause names a single value tree to
+/// descend into. So the grammar is: every `where` clause must be an
+/// equality (`==`), each on a distinct property. `IN` is rejected
+/// separately from the other operators because it *will* eventually be
+/// serviceable (one branch per element, once multi-`IN` branching lands
+/// on the document query surface) — the message says so — while a range
+/// operator on a prefix property can never pin a single subtree.
+///
+/// Shape-only, like everything in this module: whether the pinned
+/// properties are exactly the leading properties of a covering compound
+/// index is the index picker's call.
+pub fn equality_pins_from_where_clauses(
+    where_clauses: &[WhereClause],
+) -> Result<Vec<(String, Value)>, Error> {
+    let mut pins: Vec<(String, Value)> = Vec::with_capacity(where_clauses.len());
+    for clause in where_clauses {
+        match clause.operator {
+            WhereOperator::Equal => {}
+            WhereOperator::In => {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                    "`{} IN …` is not yet supported on a ranked / having-range query's \
+                     prefix properties: each `IN` element names a different prefix value \
+                     tree, so serving it means one secondary walk per element and a merged \
+                     result — a future capability layered on multi-`IN` branching. Pin \
+                     each leading index property with `==`, or issue one request per \
+                     value.",
+                    clause.field
+                ))));
+            }
+            _ => {
+                return Err(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "a ranked / having-range query's `where` clauses must pin the covering \
+                     compound index's leading properties with `==`: the per-prefix \
+                     secondary lives under one prefix value tree per leading property, and \
+                     only an equality names a single value tree to descend into — a range \
+                     operator cannot pin a prefix",
+                    ),
+                ));
+            }
+        }
+        if clause.field.is_empty() {
+            return Err(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "a ranked / having-range query's `where` clause names an empty property",
+                ),
+            ));
+        }
+        if pins.iter().any(|(field, _)| field == &clause.field) {
+            return Err(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "a ranked / having-range query pins the same property twice: each leading \
+                 index property takes exactly one equality pin",
+                ),
+            ));
+        }
+        pins.push((clause.field.clone(), clause.value.clone()));
+    }
+    Ok(pins)
+}
+
 /// v0 of the ranked request grammar.
 ///
 /// Accepts exactly:
 ///
 /// ```text
-/// SELECT COUNT(*)  GROUP BY p  ORDER BY $count [ASC|DESC]  LIMIT n [OFFSET m]
-/// SELECT SUM(f)    GROUP BY p  ORDER BY f      [ASC|DESC]  LIMIT n [OFFSET m]
-/// SELECT AVG(f)    GROUP BY p  ORDER BY f      [ASC|DESC]  LIMIT n [OFFSET m]
+/// SELECT COUNT(*)  [WHERE q1 = v1 [AND …]]  GROUP BY p  ORDER BY $count [ASC|DESC]  LIMIT n [OFFSET m]
+/// SELECT SUM(f)    [WHERE q1 = v1 [AND …]]  GROUP BY p  ORDER BY f      [ASC|DESC]  LIMIT n [OFFSET m]
+/// SELECT AVG(f)    [WHERE q1 = v1 [AND …]]  GROUP BY p  ORDER BY f      [ASC|DESC]  LIMIT n [OFFSET m]
 /// ```
 ///
-/// with no `WHERE`, no `HAVING`, no `START AT` / `START AFTER`, exactly
-/// one `GROUP BY` property, exactly one `ORDER BY` clause naming the
+/// with no `HAVING`, no `START AT` / `START AFTER`, exactly one
+/// `GROUP BY` property, exactly one `ORDER BY` clause naming the
 /// selected aggregate, `1 ≤ n ≤` [`MAX_RANKED_LIMIT`], and any
-/// `m ≥ 0`.
+/// `m ≥ 0`. `WHERE` clauses, when present, must be **equality pins** on
+/// distinct properties — one per leading property of a covering
+/// compound ranked index (see
+/// [`equality_pins_from_where_clauses`]); the ranking then reads that
+/// pinned prefix's own secondary. With no `where` the covering index is
+/// single-property, exactly as before.
 ///
 /// `DESC` walks the axis from the largest aggregate down (the "top n"
 /// reading), `ASC` from the smallest up (the "bottom n" reading).
@@ -134,16 +207,19 @@ pub fn detect_ranked_mode_v0(
 ) -> Result<DocumentRankedMode, Error> {
     // ---- GROUP BY: exactly one property ----------------------------
     //
-    // Ranked indexes are single-property (rs-dpp rejects compound ones
-    // at parse time), and the sole property is what the secondary's
-    // group keys are. Zero group_by would ask to rank a single global
-    // aggregate against itself; two or more would need a compound index.
+    // The one property is the covering ranked index's LAST property —
+    // the level whose distinct values are the secondary's group keys.
+    // Zero group_by would ask to rank a single global aggregate against
+    // itself. Two or more is rejected because a compound ranked index
+    // ranks per prefix, not across a compound grouping: its leading
+    // properties are pinned by equality `where` clauses, and only the
+    // trailing property is grouped over.
     if group_by.len() != 1 {
         return Err(Error::Query(QuerySyntaxError::InvalidParameter(format!(
-            "ranked queries require exactly one `group_by` property (the ranked index's \
-             only property); got {}. Ranked indexes are single-property — compound ranked \
-             indexes are rejected at contract-parse time — so there is no compound \
-             grouping to rank over.",
+            "ranked queries require exactly one `group_by` property (the covering ranked \
+             index's trailing property); got {}. A compound ranked index ranks each \
+             prefix's groups separately — pin every leading index property with an \
+             equality `where` clause and `group_by` the trailing property.",
             group_by.len()
         ))));
     }
@@ -249,24 +325,16 @@ pub fn detect_ranked_mode_v0(
         ))));
     }
 
-    // ---- WHERE: must be absent --------------------------------------
+    // ---- WHERE: equality pins on the compound prefix ------------------
     //
-    // Rejected rather than ignored. A single-property ranked index has no
-    // equality prefix a clause could narrow, and a clause on the ranked
-    // property itself asks for a ranking over a filtered subset — which
-    // the secondary cannot answer, because it is ordered by aggregate,
-    // not by group key. Silently dropping the filter would return the
-    // global ranking under the guise of a filtered one.
-    if !where_clauses.is_empty() {
-        return Err(Error::Query(
-            QuerySyntaxError::InvalidWhereClauseComponents(
-                "ranked queries do not accept `where` clauses: ranked indexes are \
-                 single-property, so there is no equality prefix to narrow, and the axis \
-                 secondary is ordered by aggregate rather than by group key — it cannot \
-                 rank a filtered subset. Rank the whole index, or add a narrower index.",
-            ),
-        ));
-    }
+    // Empty for the single-property form. For a compound ranked index,
+    // each `where` clause must pin one leading index property with `==`
+    // — that is what selects which prefix's secondary the walk reads
+    // (per-prefix semantics: there is no global cross-prefix ordering to
+    // serve). Anything other than a distinct-property equality is
+    // rejected loudly here; whether the pinned set matches a covering
+    // index's leading properties exactly is the index picker's call.
+    let equality_pins = equality_pins_from_where_clauses(where_clauses)?;
 
     // ---- LIMIT: required, 1 ..= MAX_RANKED_LIMIT ---------------------
     //
@@ -331,5 +399,6 @@ pub fn detect_ranked_mode_v0(
         offset,
         group_by_property,
         aggregate_field,
+        equality_pins,
     })
 }

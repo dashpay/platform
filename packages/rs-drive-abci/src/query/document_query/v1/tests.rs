@@ -3070,6 +3070,11 @@ mod having_range_tests {
         GROUP_PROPERTY, PROTOCOL_VERSION_V13,
     };
     use super::*;
+    use crate::rpc::core::MockCoreRPCLike;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::document::{Document, DocumentV0Setters};
+    use dpp::tests::json_document::json_document_to_contract;
+    use std::collections::BTreeMap;
 
     /// The canonical having-range request: one aggregate select, one
     /// `group_by`, one `having` clause on the selected aggregate, a
@@ -3242,11 +3247,14 @@ mod having_range_tests {
         }
     }
 
-    /// `GROUP BY restaurantId, guests HAVING …` — the routing layer
-    /// sends any grouped single-clause having down the having path
-    /// (it owns *where* the request goes, not the grammar), and
-    /// drive's mode detection rejects the compound grouping: ranked
-    /// axes live on single-property indexes.
+    /// `GROUP BY restaurantId, guests HAVING …` — an **unpinned**
+    /// two-field grouping — is still rejected: the routing layer sends
+    /// any grouped single-clause having down the having path (it owns
+    /// *where* the request goes, not the grammar), and drive's mode
+    /// detection rejects the compound grouping, steering the caller to
+    /// the served pinned form (`WHERE <leading> = X GROUP BY
+    /// <trailing>` — exercised end to end in
+    /// [`pinned_prefix_having_is_served_end_to_end`]).
     #[test]
     fn compound_group_by_is_rejected_on_the_having_path() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
@@ -3271,11 +3279,184 @@ mod having_range_tests {
         match ranked_error(&platform, &state, request, version) {
             QueryError::Query(QuerySyntaxError::InvalidParameter(message)) => {
                 assert!(
-                    message.contains("exactly one `group_by` property"),
-                    "the rejection must say the surface is single-property, got: {message}"
+                    message.contains("exactly one `group_by` property")
+                        && message.contains("equality `where` clause"),
+                    "the rejection must steer to the pinned-prefix form, got: {message}"
                 );
             }
             other => panic!("expected InvalidParameter, got {other:?}"),
+        }
+    }
+
+    /// Shared with rs-drive's `pinned_prefix` suites — the compound
+    /// ranked index `[identityId, class]` with the Avg axis on `grade`.
+    const GRADES_COMPOUND_CONTRACT_PATH: &str =
+        "../rs-drive/tests/supporting_files/contract/grades/grades-compound-ranked-contract.json";
+
+    fn register_grades_compound(
+        platform: &Platform<MockCoreRPCLike>,
+        platform_version: &PlatformVersion,
+    ) -> dpp::prelude::DataContract {
+        let contract =
+            json_document_to_contract(GRADES_COMPOUND_CONTRACT_PATH, false, platform_version)
+                .expect("expected to parse the compound ranked grades contract");
+        store_data_contract(platform, &contract, platform_version);
+        contract
+    }
+
+    fn insert_grade_docs(
+        platform: &Platform<MockCoreRPCLike>,
+        contract: &dpp::prelude::DataContract,
+        first_seed: u64,
+        rows: &[([u8; 32], &str, i64)],
+        platform_version: &PlatformVersion,
+    ) {
+        let document_type = contract
+            .document_type_for_name("grade")
+            .expect("grade doctype exists");
+        for (i, (identity, class, grade)) in rows.iter().enumerate() {
+            let mut document: Document = document_type
+                .random_document(Some(first_seed + i as u64), platform_version)
+                .expect("random document");
+            let mut properties = BTreeMap::new();
+            properties.insert("identityId".to_string(), Value::Identifier(*identity));
+            properties.insert("class".to_string(), Value::Text(class.to_string()));
+            properties.insert("grade".to_string(), Value::I64(*grade));
+            document.set_properties(properties);
+            store_document(
+                platform,
+                contract,
+                document_type,
+                &document,
+                platform_version,
+            );
+        }
+    }
+
+    /// The pinned-prefix form end to end on the wire: `WHERE identityId
+    /// = X GROUP BY class HAVING AVG(grade) > 80 LIMIT 10` routes to
+    /// the same having executor, descends to X's terminal `class` tree,
+    /// and answers with `ResultData.ranked` (`skipped` unset) — with
+    /// per-prefix isolation visible in the entries. Value-level
+    /// behaviour (bounds, proofs, tamper) is pinned in rs-drive's
+    /// `pinned_prefix` suite; this pins the wire encoding and routing.
+    #[test]
+    fn pinned_prefix_having_is_served_end_to_end() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let contract = register_grades_compound(&platform, version);
+        let identity_x = [1u8; 32];
+        let identity_y = [2u8; 32];
+        insert_grade_docs(
+            &platform,
+            &contract,
+            20_000,
+            &[
+                (identity_x, "math", 80),
+                (identity_x, "math", 80),
+                (identity_x, "english", 80),
+                (identity_x, "english", 81),
+                (identity_x, "art", 85),
+                (identity_x, "art", 95),
+                // Y's science (avg 95) would qualify for X's bound too
+                // if the prefixes shared a secondary.
+                (identity_y, "science", 95),
+                (identity_y, "science", 95),
+            ],
+            version,
+        );
+
+        let mut request = having_request(
+            &contract,
+            "grade",
+            select(v1_select::Function::Avg, "grade"),
+            hc(
+                having_aggregate::Function::Avg,
+                "grade",
+                having_clause::Operator::GreaterThan,
+                Value::U64(80),
+            ),
+            Vec::new(),
+            Some(10),
+            false,
+        );
+        request.group_by = vec!["class".to_string()];
+        request.where_clauses = vec![wc(
+            "identityId",
+            ProtoWhereOperator::Equal,
+            Value::Bytes(identity_x.to_vec()),
+        )];
+
+        let page = ranked_page(&platform, &state, request.clone(), version);
+        assert_eq!(
+            page.skipped, None,
+            "a having-range page must leave the rank-based `skipped` field unset"
+        );
+        assert_eq!(
+            group_keys(&page.entries),
+            vec!["english", "art"],
+            "ascending average order over X's own classes: english (80.5) before art (90); \
+             math sits exactly at the threshold and Y's science must not leak in"
+        );
+
+        // The proved variant answers with a Proof payload.
+        request.prove = true;
+        let result = platform
+            .query_documents_v1(request, &state, version)
+            .expect("query call should not error at the transport layer");
+        assert!(
+            result.errors.is_empty(),
+            "expected no validation errors, got {:?}",
+            result.errors
+        );
+        match result.data {
+            Some(GetDocumentsResponseV1 {
+                result: Some(get_documents_response_v1::Result::Proof(_)),
+                metadata: Some(_),
+            }) => {}
+            other => panic!("expected a Proof result, got {:?}", other),
+        }
+    }
+
+    /// The pinned-prefix shape is still a HAVING request, and protocol
+    /// version 13's query table (v0 helper) has no having path: the
+    /// same request a v14 node serves is refused with the blanket
+    /// rejection before any contract fetch.
+    #[test]
+    fn pinned_prefix_having_still_rejected_at_protocol_version_13() {
+        let (platform, state, version) =
+            setup_platform(None, Network::Testnet, Some(PROTOCOL_VERSION_V13));
+
+        let request = GetDocumentsRequestV1 {
+            data_contract_id: vec![0u8; 32],
+            document_type: "grade".to_string(),
+            where_clauses: vec![wc(
+                "identityId",
+                ProtoWhereOperator::Equal,
+                Value::Bytes(vec![1u8; 32]),
+            )],
+            order_by: Vec::new(),
+            limit: Some(10),
+            start: None,
+            prove: false,
+            selects: select(v1_select::Function::Avg, "grade"),
+            group_by: vec!["class".to_string()],
+            having: vec![hc(
+                having_aggregate::Function::Avg,
+                "grade",
+                having_clause::Operator::GreaterThan,
+                Value::U64(80),
+            )],
+            offset: None,
+        };
+
+        match ranked_error(&platform, &state, request, version) {
+            QueryError::Query(QuerySyntaxError::Unsupported(message)) => {
+                assert!(
+                    message.contains("HAVING clause") && message.contains("not yet implemented"),
+                    "expected v13's blanket rejection, got: {message}"
+                );
+            }
+            other => panic!("expected Unsupported, got {other:?}"),
         }
     }
 

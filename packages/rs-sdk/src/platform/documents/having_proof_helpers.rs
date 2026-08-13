@@ -4,9 +4,10 @@
 //! caller-built [`DocumentQuery`] plus the node's response into a
 //! verified entry list. The routing decisions — which axis, which
 //! inclusive bounds the operator translates to, which direction, which
-//! index covers them — are **not** re-derived here. They come from
-//! rs-drive's own [`detect_having_mode`] and
-//! [`find_ranked_index_for_axis`], the same two functions the server
+//! index covers them, which prefix-value segments a pinned compound
+//! request descends through — are **not** re-derived here. They come
+//! from rs-drive's own [`detect_having_mode`] and
+//! [`resolve_having_query_for_mode`], the same two functions the server
 //! calls, so client and server land on the same grove path and the same
 //! bounds by construction rather than by two copies of a grammar
 //! agreeing. The bounds matter doubly here: the verifier rebuilds the
@@ -25,10 +26,8 @@ use dpp::{
     data_contract::document_type::accessors::DocumentTypeV0Getters,
 };
 use drive::query::drive_document_having_query::mode_detection::detect_having_mode;
-use drive::query::drive_document_ranked_query::index_picker::find_ranked_index_for_axis;
-use drive::query::{
-    DocumentHavingMode, DriveDocumentHavingQuery, RankedEntry, RankedPaginationInputs,
-};
+use drive::query::drive_document_having_query::resolve_having_query_for_mode;
+use drive::query::{DocumentHavingMode, RankedEntry, RankedPaginationInputs};
 use drive_proof_verifier::verify_having_range_proof;
 
 /// Validate that the caller-built [`DocumentQuery`] really describes a
@@ -71,8 +70,9 @@ pub(super) fn assert_having_shape(
              query is `.with_select(<COUNT(*)|SUM(f)|AVG(f)>)`, `.with_group_by(<property>)`, \
              `.with_having(<one clause bounding the selected aggregate with a range \
              operator>)` and `.with_limit(n)`, optionally \
-             `.order_by_selected_aggregate(<direction>)`, with no where clauses, no offset \
-             and no start_at."
+             `.order_by_selected_aggregate(<direction>)`, with no offset and no start_at; \
+             where clauses, when present, must be equality pins on the covering compound \
+             index's leading properties."
         ),
     })
 }
@@ -110,40 +110,28 @@ pub(super) fn verify_having_query(
         .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
 
     let mode = assert_having_shape(&request, platform_version)?;
-    let axis = mode.bounds.axis();
 
-    // Pick the index the prover picked — rs-drive's own picker, shared
-    // with the ranked surface because both read the same indexed tree.
-    let index = find_ranked_index_for_axis(
+    // Resolve the query exactly as the prover did — rs-drive's own
+    // resolution (covering-index pick, shared with the ranked surface
+    // because both read the same indexed tree, plus the equality-pin
+    // encoding into prefix path segments for pinned compound requests).
+    let having_query = resolve_having_query_for_mode(
+        request.data_contract.id().to_buffer(),
+        document_type,
+        request.document_type_name.clone(),
         document_type.indexes(),
-        &mode.group_by_property,
-        axis,
-        &mode.aggregate_field,
+        &mode,
+        platform_version,
     )
-    .ok_or_else(|| drive_proof_verifier::Error::RequestError {
+    .map_err(|e| drive_proof_verifier::Error::RequestError {
         error: format!(
-            "no index on document type `{}` can serve a `{:?}` having bound grouped on \
-             `{}`: a having-range query needs a single-property index over `{}` declaring \
-             `{}` (and, for SUM / AVG, `summable: \"{}\"`). Ranked indexes are opt-in \
-             contract grammar (meta-schema v3, protocol version 14+).",
+            "document type `{}` cannot serve this having-range query: {e}. Ranked indexes \
+             are opt-in contract grammar (meta-schema v3, protocol version 14+); a pinned \
+             (compound-index) bound additionally needs every leading index property pinned \
+             by an equality where clause.",
             request.document_type_name,
-            axis,
-            mode.group_by_property,
-            mode.group_by_property,
-            axis.required_index_keyword(),
-            mode.aggregate_field,
         ),
     })?;
-
-    let having_query = DriveDocumentHavingQuery {
-        document_type,
-        contract_id: request.data_contract.id().to_buffer(),
-        document_type_name: request.document_type_name.clone(),
-        index,
-        bounds: mode.bounds,
-        descending: mode.descending,
-        limit: mode.limit,
-    };
 
     // Binds the reconstructed grovedb root hash to the quorum-signed
     // app hash before returning — see the module docs.

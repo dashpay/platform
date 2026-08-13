@@ -31,7 +31,7 @@
 //! `adjustment` exists for the write-path suite's signed-average coverage
 //! (`delta` admits negatives, `grade` does not) and is unused here.
 
-use super::index_picker::find_ranked_index_for_axis;
+use super::index_picker::{find_ranked_index_for_axis, resolve_ranked_query_for_mode};
 use super::mode_detection::{detect_ranked_mode, detect_ranked_mode_v0};
 use super::*;
 use crate::drive::Drive;
@@ -490,15 +490,39 @@ fn sum_and_avg_selects_require_a_field() {
     }
 }
 
-/// A `where` clause is refused, not ignored. The axis secondary is
-/// ordered by aggregate, not by group key, so it cannot rank a filtered
-/// subset — silently dropping the filter would answer the unfiltered
-/// question under the guise of the filtered one.
+/// `where` clauses are equality pins on a compound index's leading
+/// properties. Detection is shape-only: an equality clause becomes a
+/// pin (whether a compound index actually covers it is the resolver's
+/// call — see `pins_without_a_covering_compound_index_are_rejected`);
+/// anything that is not a distinct-property equality is refused
+/// loudly, `IN` with its own not-yet message because it will become
+/// serviceable once multi-`IN` branching lands.
 #[test]
-fn where_clauses_are_rejected() {
-    let where_clauses = vec![WhereClause {
-        field: GROUP_PROPERTY.to_string(),
+fn where_clauses_resolve_to_equality_pins_and_reject_everything_else() {
+    // Equality pin: accepted at detection, carried in the mode.
+    let pinned = vec![WhereClause {
+        field: "chefId".to_string(),
         operator: WhereOperator::Equal,
+        value: Value::Text("alpha".to_string()),
+    }];
+    let mode = detect_ranked_mode_v0(
+        &SelectProjection::avg("grade"),
+        &group_by(),
+        &[],
+        &order_by("grade", false),
+        &pinned,
+        page(Some(2), None),
+    )
+    .expect("an equality pin is a well-formed prefix pin");
+    assert_eq!(
+        mode.equality_pins,
+        vec![("chefId".to_string(), Value::Text("alpha".to_string()))]
+    );
+
+    // A range operator can never pin a single prefix value tree.
+    let ranged = vec![WhereClause {
+        field: "chefId".to_string(),
+        operator: WhereOperator::GreaterThan,
         value: Value::Text("alpha".to_string()),
     }];
     let error = detect_ranked_mode_v0(
@@ -506,10 +530,64 @@ fn where_clauses_are_rejected() {
         &group_by(),
         &[],
         &order_by("grade", false),
-        &where_clauses,
+        &ranged,
         page(Some(2), None),
     )
-    .expect_err("ranked queries take no where clauses");
+    .expect_err("a range operator cannot pin a prefix");
+    assert!(matches!(
+        error,
+        Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(_))
+    ));
+
+    // `IN` is rejected with its own message: v1 pins are equality-only,
+    // multi-`IN` branching is a future capability.
+    let in_clause = vec![WhereClause {
+        field: "chefId".to_string(),
+        operator: WhereOperator::In,
+        value: Value::Array(vec![Value::Text("alpha".to_string())]),
+    }];
+    let error = detect_ranked_mode_v0(
+        &SelectProjection::avg("grade"),
+        &group_by(),
+        &[],
+        &order_by("grade", false),
+        &in_clause,
+        page(Some(2), None),
+    )
+    .expect_err("IN prefixes are not yet supported");
+    match error {
+        Error::Query(QuerySyntaxError::Unsupported(message)) => {
+            assert!(
+                message.contains("IN") && message.contains("not yet supported"),
+                "the IN rejection must say it is a not-yet capability, got: {message}"
+            );
+        }
+        other => panic!("expected Unsupported for an IN prefix, got {other:?}"),
+    }
+
+    // The same property pinned twice is a caller error, not a silent
+    // last-write-wins.
+    let duplicated = vec![
+        WhereClause {
+            field: "chefId".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("alpha".to_string()),
+        },
+        WhereClause {
+            field: "chefId".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("beta".to_string()),
+        },
+    ];
+    let error = detect_ranked_mode_v0(
+        &SelectProjection::avg("grade"),
+        &group_by(),
+        &[],
+        &order_by("grade", false),
+        &duplicated,
+        page(Some(2), None),
+    )
+    .expect_err("duplicate pins on one property must fail");
     assert!(matches!(
         error,
         Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(_))
@@ -633,12 +711,12 @@ fn picker_requires_the_index_to_declare_the_requested_axis() {
     let indexes = index_map(vec![index]);
 
     assert!(
-        find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, RankedAxis::Count, "").is_some(),
+        find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], RankedAxis::Count, "").is_some(),
         "the declared axis resolves"
     );
     for (axis, field) in [(RankedAxis::Sum, "grade"), (RankedAxis::Avg, "grade")] {
         assert!(
-            find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, axis, field).is_none(),
+            find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], axis, field).is_none(),
             "{axis:?} is not declared even though the index is summable and the stored \
              element could host that secondary"
         );
@@ -657,11 +735,11 @@ fn picker_requires_the_select_field_to_be_the_indexed_summable() {
 
     for axis in [RankedAxis::Sum, RankedAxis::Avg] {
         assert!(
-            find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, axis, "grade").is_some(),
+            find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], axis, "grade").is_some(),
             "{axis:?} on the indexed summable resolves"
         );
         assert!(
-            find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, axis, "tipAmount").is_none(),
+            find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], axis, "tipAmount").is_none(),
             "{axis:?} on a different field must not resolve"
         );
     }
@@ -676,7 +754,7 @@ fn picker_rejects_an_unknown_group_property() {
     let indexes = index_map(vec![index]);
 
     assert!(
-        find_ranked_index_for_axis(&indexes, "chefId", RankedAxis::Avg, "grade").is_none(),
+        find_ranked_index_for_axis(&indexes, "chefId", &[], RankedAxis::Avg, "grade").is_none(),
         "no index groups by `chefId`"
     );
 }
@@ -697,7 +775,8 @@ fn picker_rejects_compound_indexes() {
     let indexes = index_map(vec![index]);
 
     assert!(
-        find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, RankedAxis::Avg, "price").is_none()
+        find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], RankedAxis::Avg, "price")
+            .is_none()
     );
 }
 
@@ -943,25 +1022,17 @@ fn client_side_query<'a>(
         .get(case.document_type_name)
         .expect("doctype exists")
         .indexes();
-    let index = find_ranked_index_for_axis(
-        indexes,
-        &mode.group_by_property,
-        mode.axis,
-        &mode.aggregate_field,
-    )
-    .expect("the fixture declares the axis");
-    DriveDocumentRankedQuery {
-        document_type: contract
+    resolve_ranked_query_for_mode(
+        contract.id_ref().to_buffer(),
+        contract
             .document_type_for_name(case.document_type_name)
             .expect("doctype exists"),
-        contract_id: contract.id_ref().to_buffer(),
-        document_type_name: case.document_type_name.to_string(),
-        index,
-        axis: mode.axis,
-        descending: mode.descending,
-        k: mode.k,
-        offset: mode.offset,
-    }
+        case.document_type_name.to_string(),
+        indexes,
+        &mode,
+        platform_version(),
+    )
+    .expect("the fixture declares the axis")
 }
 
 fn grovedb_root_hash(drive: &Drive) -> [u8; 32] {
@@ -1958,13 +2029,13 @@ fn a_doctype_with_several_indexes_ranks_each_group_property_on_its_own_index() {
     );
     assert_eq!(client_side_query(&contract, &by_chef).index.name, "byChef");
     assert_eq!(
-        find_ranked_index_for_axis(indexes, GROUP_PROPERTY, RankedAxis::Avg, "grade")
+        find_ranked_index_for_axis(indexes, GROUP_PROPERTY, &[], RankedAxis::Avg, "grade")
             .expect("the Avg ranking resolves")
             .name,
         "byRestaurant",
     );
     assert_eq!(
-        find_ranked_index_for_axis(indexes, CHEF_PROPERTY, RankedAxis::Count, "")
+        find_ranked_index_for_axis(indexes, CHEF_PROPERTY, &[], RankedAxis::Count, "")
             .expect("the Count ranking resolves")
             .name,
         "byChef",
@@ -2015,7 +2086,7 @@ fn a_doctype_with_several_indexes_ranks_each_group_property_on_its_own_index() {
     // ranking over chefs has no index — and `byChefRestaurant` must not
     // be press-ganged into serving it.
     assert!(
-        find_ranked_index_for_axis(indexes, CHEF_PROPERTY, RankedAxis::Avg, "grade").is_none(),
+        find_ranked_index_for_axis(indexes, CHEF_PROPERTY, &[], RankedAxis::Avg, "grade").is_none(),
         "`byChefRestaurant` leads with chefId but is compound and unranked"
     );
     let avg_by_chef = RankedCase {
@@ -2032,4 +2103,300 @@ fn a_doctype_with_several_indexes_ranks_each_group_property_on_its_own_index() {
         ),
         "the error must name the missing keyword, got: {error}"
     );
+}
+
+mod pinned_prefix {
+    //! `SELECT AVG(grade) FROM grades WHERE identityId = X GROUP BY
+    //! class ORDER BY AVG(grade) DESC LIMIT k` — the ranked top-k
+    //! surface over a compound ranked index `[identityId, class]` with
+    //! its leading property pinned. Per-prefix semantics: the walk
+    //! reads (and proves) the pinned identity's own secondary, so two
+    //! identities' class rankings never mix. The having-path sibling
+    //! (`drive_document_having_query::tests::pinned_prefix`) shares the
+    //! fixture and pins the write path; this module pins the rank walk
+    //! and its paginated proof.
+
+    use super::super::drive_dispatcher::{DocumentRankedRequest, DocumentRankedResponse};
+    use super::super::index_picker::resolve_ranked_query_for_mode;
+    use super::super::mode_detection::detect_ranked_mode;
+    use super::super::{DriveDocumentRankedQuery, RankedEntry, RankedEntryValue};
+    use crate::drive::Drive;
+    use crate::error::query::QuerySyntaxError;
+    use crate::error::Error;
+    use crate::query::drive_document_ranked_query::RankedPaginationInputs;
+    use crate::query::projection::SelectProjection;
+    use crate::query::{OrderClause, WhereClause, WhereOperator};
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::document::{Document, DocumentV0Setters};
+    use dpp::platform_value::Value;
+    use dpp::prelude::DataContract;
+    use dpp::tests::json_document::json_document_to_contract;
+    use dpp::version::PlatformVersion;
+    use grovedb::element::indexed::compute_avg_fixed_point;
+    use std::collections::BTreeMap;
+
+    const PREFIX_PROPERTY: &str = "identityId";
+    const CLASS_PROPERTY: &str = "class";
+    const DOCUMENT_TYPE: &str = "grade";
+    const IDENTITY_X: [u8; 32] = [1u8; 32];
+    const IDENTITY_Y: [u8; 32] = [2u8; 32];
+
+    fn platform_version() -> &'static PlatformVersion {
+        PlatformVersion::latest()
+    }
+
+    fn setup_grades_compound_ranked() -> (Drive, DataContract) {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = platform_version();
+        let contract = json_document_to_contract(
+            "tests/supporting_files/contract/grades/grades-compound-ranked-contract.json",
+            false,
+            pv,
+        )
+        .expect("expected to parse the compound ranked grades contract");
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply the compound ranked grades contract");
+        (drive, contract)
+    }
+
+    fn insert_grades(drive: &Drive, contract: &DataContract, rows: &[([u8; 32], &str, i64)]) {
+        let pv = platform_version();
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("grade doctype exists");
+        for (i, (identity, class, grade)) in rows.iter().enumerate() {
+            let mut doc: Document = document_type
+                .random_document(Some(4000 + i as u64), pv)
+                .expect("random document");
+            let mut props = BTreeMap::new();
+            props.insert(PREFIX_PROPERTY.to_string(), Value::Identifier(*identity));
+            props.insert(CLASS_PROPERTY.to_string(), Value::Text(class.to_string()));
+            props.insert("grade".to_string(), Value::I64(*grade));
+            doc.set_properties(props);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert a grade document");
+        }
+    }
+
+    fn pin(identity: [u8; 32]) -> Vec<WhereClause> {
+        vec![WhereClause {
+            field: PREFIX_PROPERTY.to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Identifier(identity),
+        }]
+    }
+
+    fn run(
+        drive: &Drive,
+        contract: &DataContract,
+        where_clauses: &[WhereClause],
+        limit: u32,
+        prove: bool,
+    ) -> Result<DocumentRankedResponse, Error> {
+        let group_by = vec![CLASS_PROPERTY.to_string()];
+        let order_by = vec![OrderClause {
+            field: "grade".to_string(),
+            ascending: false,
+        }];
+        drive.execute_document_ranked_request(
+            DocumentRankedRequest {
+                contract,
+                document_type: contract
+                    .document_type_for_name(DOCUMENT_TYPE)
+                    .expect("grade doctype exists"),
+                group_by: &group_by,
+                select: SelectProjection::avg("grade"),
+                having: &[],
+                order_by: &order_by,
+                where_clauses,
+                limit: Some(limit),
+                offset: None,
+                has_start_at: false,
+                prove,
+            },
+            None,
+            platform_version(),
+        )
+    }
+
+    fn client_side_query<'a>(
+        contract: &'a DataContract,
+        where_clauses: &[WhereClause],
+        limit: u32,
+    ) -> DriveDocumentRankedQuery<'a> {
+        let group_by = vec![CLASS_PROPERTY.to_string()];
+        let order_by = vec![OrderClause {
+            field: "grade".to_string(),
+            ascending: false,
+        }];
+        let mode = detect_ranked_mode(
+            &SelectProjection::avg("grade"),
+            &group_by,
+            &[],
+            &order_by,
+            where_clauses,
+            RankedPaginationInputs {
+                limit: Some(limit),
+                offset: None,
+                has_start_at: false,
+            },
+            platform_version(),
+        )
+        .expect("the case is well-formed");
+        let indexes = contract
+            .document_types()
+            .get(DOCUMENT_TYPE)
+            .expect("grade doctype exists")
+            .indexes();
+        resolve_ranked_query_for_mode(
+            contract.id_ref().to_buffer(),
+            contract
+                .document_type_for_name(DOCUMENT_TYPE)
+                .expect("grade doctype exists"),
+            DOCUMENT_TYPE.to_string(),
+            indexes,
+            &mode,
+            platform_version(),
+        )
+        .expect("the fixture's compound index covers the pinned request")
+    }
+
+    /// Top-k per pinned prefix, with the paginated proof round-tripped
+    /// against the live root hash — and isolation between prefixes:
+    /// X's and Y's class rankings come off different secondaries.
+    #[test]
+    fn top_k_over_pinned_prefix_reads_and_proves() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        insert_grades(
+            &drive,
+            &contract,
+            &[
+                // X: art 90, english 80.5, math 80, history 70.
+                (IDENTITY_X, "math", 80),
+                (IDENTITY_X, "math", 80),
+                (IDENTITY_X, "english", 80),
+                (IDENTITY_X, "english", 81),
+                (IDENTITY_X, "art", 85),
+                (IDENTITY_X, "art", 95),
+                (IDENTITY_X, "history", 60),
+                (IDENTITY_X, "history", 80),
+                // Y: science 95, math 92.5.
+                (IDENTITY_Y, "math", 90),
+                (IDENTITY_Y, "math", 95),
+                (IDENTITY_Y, "science", 95),
+                (IDENTITY_Y, "science", 95),
+            ],
+        );
+
+        // X's top 2 by average, best first: art (90) then english (80.5).
+        // Y's science (95) and math (92.5) would both outrank them if the
+        // prefixes shared a secondary.
+        let x_pin = pin(IDENTITY_X);
+        let page = match run(&drive, &contract, &x_pin, 2, false).expect("read succeeds") {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries, got a proof"),
+        };
+        assert_eq!(page.skipped, 0);
+        assert_eq!(
+            page.entries,
+            vec![
+                RankedEntry {
+                    key: b"art".to_vec(),
+                    value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(180, 2)),
+                },
+                RankedEntry {
+                    key: b"english".to_vec(),
+                    value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(161, 2)),
+                },
+            ],
+            "X's own top 2: art 90 then english 80.5"
+        );
+
+        let proof = match run(&drive, &contract, &x_pin, 2, true).expect("prove succeeds") {
+            DocumentRankedResponse::Proof(proof) => proof,
+            DocumentRankedResponse::Entries(_) => panic!("expected a proof, got entries"),
+        };
+        let (root_hash, verified) = client_side_query(&contract, &x_pin, 2)
+            .verify_ranked_top_k_proof(&proof, platform_version())
+            .expect("the proof must verify");
+        assert_eq!(
+            verified.entries, page.entries,
+            "verified entries must equal the unproven read"
+        );
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &platform_version().drive.grove_version)
+                .unwrap()
+                .expect("root hash must be readable"),
+            "the proof must reconstruct the live grovedb root hash"
+        );
+
+        // Y's own ranking, proving the prefixes are separate secondaries.
+        let y_pin = pin(IDENTITY_Y);
+        let y_page = match run(&drive, &contract, &y_pin, 2, false).expect("read succeeds") {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries, got a proof"),
+        };
+        assert_eq!(
+            y_page
+                .entries
+                .iter()
+                .map(|e| e.key.as_slice())
+                .collect::<Vec<_>>(),
+            vec![b"science".as_slice(), b"math".as_slice()],
+            "Y's own top 2: science 95 then math 92.5"
+        );
+    }
+
+    /// An unpinned request over the compound-only contract has no
+    /// covering index — there is no global cross-prefix ordering to
+    /// serve, so the rejection names the missing coverage.
+    #[test]
+    fn unpinned_prefix_is_rejected() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        insert_grades(&drive, &contract, &[(IDENTITY_X, "math", 80)]);
+
+        let error = run(&drive, &contract, &[], 2, false)
+            .expect_err("an unpinned compound prefix must not resolve");
+        assert!(
+            matches!(
+                error,
+                Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(_))
+            ),
+            "expected a no-covering-index rejection, got {error:?}"
+        );
+    }
 }

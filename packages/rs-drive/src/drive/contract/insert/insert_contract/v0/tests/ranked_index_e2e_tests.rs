@@ -751,13 +751,11 @@ fn try_build_dish_contract(
 
 /// The write path's terminal-level resolver has to pick the indexed variant
 /// for a **compound** ranked index too — that level lives one step below the
-/// doctype tree and is materialized lazily by the document index walker, not
-/// at contract registration.
-///
-/// Compound ranked indexes are rejected at contract-parse time (rs-dpp,
-/// single-property restriction), so the index is built as a struct literal
-/// here: this pins that the drive dispatch is already correct for the day a
-/// future protocol version relaxes the grammar.
+/// doctype tree and is materialized lazily, per prefix value, by the
+/// document index walker rather than at contract registration. This pins
+/// the resolver's half of that contract; the end-to-end half (documents
+/// inserted, per-prefix secondaries read and proved) lives in the query
+/// suites' `pinned_prefix` modules.
 #[test]
 fn compound_ranked_index_resolves_its_terminal_level_to_an_indexed_tree() {
     use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes;
@@ -819,23 +817,24 @@ fn compound_ranked_index_resolves_its_terminal_level_to_an_indexed_tree() {
     assert_eq!(terminal_axes, vec![IndexAxis::Avg]);
 }
 
-/// Compound ranked indexes are rejected at contract-parse time (rs-dpp's
-/// single-property restriction) — a v1 scope choice: a ranked terminal
-/// level under an aggregating prefix would need a NonCounted/NotSummed
-/// wrapper, which grovedb structurally rejects for indexed trees, and the
-/// ranked query surface has no equality-prefix routing yet. (GroveDB's
-/// merged PR #657 does support creating and populating an indexed tree in
-/// one batch, so lazy terminal creation itself is no longer a blocker —
-/// the restriction is relaxable at a future protocol version.)
+/// A compound ranked index parses on its own (per-prefix semantics —
+/// the terminal level's indexed tree is materialized lazily per prefix
+/// by the document walker; grovedb's PR #657 supports creating and
+/// populating an indexed tree in one batch). What stays rejected, at
+/// contract-parse time, is the one structurally impossible pairing: a
+/// countable/summable index terminating at the compound's full leading
+/// prefix, whose aggregating value trees would demand the
+/// NonCounted/NotSummed wrapper grovedb structurally rejects for
+/// indexed trees.
 ///
-/// Storage-level backstop behind this gate: both wrapper dispatchers in
-/// `fees/op.rs` fail closed (`DriveError::NotSupported`) for a ranked
-/// terminal level inside an aggregating value tree — the frozen v0
-/// diagonal and the v14 zero-contribution matrix alike. The latter
-/// matters since the v14 shared-prefix fix: its unwrapped fallback for
-/// non-sum children of sum-only parents would otherwise have accepted an
-/// indexed continuation, quietly creating a ranked tree that neither the
-/// grammar nor the ranked query picker supports.
+/// Storage-level backstop behind that parse-time gate: both wrapper
+/// dispatchers in `fees/op.rs` fail closed (`DriveError::NotSupported`)
+/// for a ranked terminal level inside an aggregating value tree — the
+/// frozen v0 diagonal and the v14 zero-contribution matrix alike. The
+/// latter matters since the v14 shared-prefix fix: its unwrapped
+/// fallback for non-sum children of sum-only parents would otherwise
+/// have accepted an indexed continuation, quietly creating a ranked
+/// tree the picker never resolves.
 ///
 /// Note that a ranked index *sharing* its property with a compound index
 /// — `[a]` ranked next to `[a, b]` — is a different (and, since v14,
@@ -843,16 +842,21 @@ fn compound_ranked_index_resolves_its_terminal_level_to_an_indexed_tree() {
 /// one, and the continuation hangs *below* it. See
 /// `ranked_index_ranks_correctly_next_to_a_compound_index_sharing_its_property`.
 #[test]
-fn compound_ranked_index_contract_is_rejected_at_parse_time() {
-    for standalone_prefix_index in [false, true] {
-        let error = try_build_dish_contract(standalone_prefix_index)
-            .expect_err("a compound ranked index must be rejected at contract-parse time");
-        let message = error.to_string();
-        assert!(
-            message.contains("single-property"),
-            "expected the single-property restriction, got: {message}"
-        );
-    }
+fn compound_ranked_index_contract_parses_unless_its_prefix_aggregates() {
+    try_build_dish_contract(false)
+        .expect("a compound ranked index with no aggregating prefix index must parse");
+
+    let error = try_build_dish_contract(true).expect_err(
+        "a countable index terminating at the ranked compound's prefix must be rejected",
+    );
+    let message = error.to_string();
+    assert!(
+        message.contains("byRestaurantCourse")
+            && message.contains("byRestaurant")
+            && message.contains("NonCounted"),
+        "expected the prefix-overlap rejection naming both indexes and the structural \
+         conflict, got: {message}"
+    );
 }
 
 /// Build a `visit` contract whose single-property `rankedCountable` index
@@ -1427,8 +1431,9 @@ fn verified_ranked_avg_page(
         document_type,
         contract_id: contract.id().to_buffer(),
         document_type_name: "review".to_string(),
-        index: find_ranked_index_for_axis(indexes, GROUP_PROPERTY, RankedAxis::Avg, "grade")
+        index: find_ranked_index_for_axis(indexes, GROUP_PROPERTY, &[], RankedAxis::Avg, "grade")
             .expect("the fixture declares rankedAverageable on grade"),
+        equality_prefix_values: vec![],
         axis: RankedAxis::Avg,
         descending: true,
         k: limit as u16,

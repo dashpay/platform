@@ -22,17 +22,20 @@
 //! a contiguous-range operator (`=`, `>`, `>=`, `<`, `<=`, `BETWEEN*` —
 //! `!=` and `IN` are rejected), and a `LIMIT`. `ORDER BY` is optional:
 //! omitted means ascending by the aggregate; naming the selected
-//! aggregate sets the direction. No `where`, no `offset`, no
-//! `start_at`.
+//! aggregate sets the direction. `where` clauses are equality pins on a
+//! covering compound ranked index's leading properties (one per leading
+//! property, selecting which prefix's groups the bound reads) — absent
+//! for a single-property index. No `offset`, no `start_at`.
 //!
 //! ## Contract prerequisites
 //!
 //! Same as the ranked surface: the index must opt in with
 //! `rankedCountable` / `rankedSummable` / `rankedAverageable`
-//! (meta-schema v3, **protocol version 14+**), and ranked indexes are
-//! single-property. Against a pre-v14 node the request is refused with
-//! "HAVING clause is not yet implemented" — the intended activation
-//! gate.
+//! (meta-schema v3, **protocol version 14+**). The index may be
+//! single-property (`group_by` its property, no `where`) or compound
+//! (`group_by` its trailing property, equality-pin every leading one).
+//! Against a pre-v14 node the request is refused with "HAVING clause
+//! is not yet implemented" — the intended activation gate.
 //!
 //! ## Reading the result
 //!
