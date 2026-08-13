@@ -746,8 +746,17 @@ export default {
                         email: {
                           type: ['string', 'null'],
                         },
+                        acmeDirectoryUrl: {
+                          type: 'string',
+                          format: 'uri',
+                          // The response decides what certificate this node
+                          // will serve, so it has to be authenticated. Every
+                          // real ACME directory is HTTPS; a plaintext one lets
+                          // anyone on the path choose the certificate.
+                          pattern: '^https://',
+                        },
                       },
-                      required: ['email'],
+                      required: ['email', 'acmeDirectoryUrl'],
                       additionalProperties: false,
                     },
                   },

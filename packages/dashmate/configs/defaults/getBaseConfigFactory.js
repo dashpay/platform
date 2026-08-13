@@ -6,6 +6,7 @@ import Config from '../../src/config/Config.js';
 import {
   NETWORK_MAINNET,
   PACKAGE_ROOT_DIR,
+  LETSENCRYPT_ACME_DIRECTORY_URL,
 } from '../../src/constants.js';
 
 const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
@@ -255,6 +256,7 @@ export default function getBaseConfigFactory() {
               },
               letsencrypt: {
                 email: null,
+                acmeDirectoryUrl: LETSENCRYPT_ACME_DIRECTORY_URL,
               },
             },
           },
