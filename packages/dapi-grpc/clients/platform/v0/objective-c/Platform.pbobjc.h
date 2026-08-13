@@ -3842,7 +3842,7 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries :
  * group rather than the best.
  *
  * **When a requested offset exceeds the population**, `entries`
- * is empty and `skipped` is the ranking's attested *total*
+ * is empty and `skipped` is the ranking's *total* reported
  * population — a positive, useful answer ("there are only 12
  * groups") rather than a bare empty list.
  *

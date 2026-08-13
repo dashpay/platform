@@ -1558,9 +1558,9 @@ fn an_offset_window_spanning_the_end_returns_the_short_tail() {
 /// offset — and *that shape* is the proof that the ranking holds exactly
 /// `skipped` groups in total, because the counted commitments cover the whole
 /// walk. It is the only way this surface reports a population, and both paths
-/// now report it: grovedb's counted descent tracks how far the skip got and
-/// returns it on the page, so the unproven read no longer has to echo the
-/// request back. What proving still adds is that the number is attested.
+/// report it: grovedb's counted descent tracks how far the skip got and returns
+/// it on the page, so an unproven read reports the population rather than the
+/// offset it was asked for. What proving adds is that the number is attested.
 #[test]
 fn an_offset_past_the_end_returns_an_empty_page_whose_skip_attests_the_population() {
     let (drive, contract) = setup_restaurants();

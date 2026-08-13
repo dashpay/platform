@@ -2507,9 +2507,8 @@ mod ranked_tests {
         // error, and `skipped` collapses to the population the walk
         // actually reached. That reaches the wire on this *unproven*
         // path too: grovedb's counted descent tracks how far the skip
-        // got and returns it on the page, so the server no longer has
-        // to echo the requested 9 back. This is the wire-visible half
-        // of that behaviour change.
+        // got and returns it on the page, so the response carries a
+        // population rather than the offset that was requested.
         let past_end = ranked_page(&platform, &state, paged(2, 9), version);
         assert!(
             past_end.entries.is_empty(),

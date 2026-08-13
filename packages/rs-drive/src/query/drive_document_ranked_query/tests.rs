@@ -1299,10 +1299,9 @@ fn top_k_larger_than_the_group_count_returns_every_group() {
 /// 3. **A window entirely past the end** — the page is empty *and*
 ///    `skipped` collapses to the secondary's true population, which is
 ///    the counted walk's way of saying "there is nothing here, and here
-///    is how much there is in total". Both paths report it — the
-///    unproven read gets it from grovedb's counted descent rather than
-///    echoing the request, as it used to — so case (3) is where that
-///    echo is pinned as gone.
+///    is how much there is in total". Both paths report it: the counted
+///    descent tracks how far the skip got, so an unproven read reports a
+///    population rather than the offset it was asked for.
 #[test]
 fn offset_pages_through_the_ranking_and_the_proof_attests_the_starting_rank() {
     let (drive, contract) = setup_restaurants();
@@ -1364,7 +1363,7 @@ fn offset_pages_through_the_ranking_and_the_proof_attests_the_starting_rank() {
         page.skipped, 5,
         "the unproven read reports the population it actually reached, not the requested \
          offset of 9: grovedb's counted descent knows how far the walk got and returns it \
-         on the page. This assertion is where the old echo is pinned as gone."
+         on the page"
     );
     let verified = assert_proof_round_trips(&drive, &contract, &past_end, &page.entries);
     assert_eq!(
