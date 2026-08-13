@@ -1,20 +1,23 @@
 //! Branch mechanics for `IN`-pinned ranked / having-range queries —
 //! shared by the executors (walk one secondary per branch, merge) and
-//! the verifiers (verify one proof per branch, re-merge), so both sides
-//! implement one comparator and one proof-container layout.
+//! the verifiers (verify one branched envelope, re-merge), so both
+//! sides implement one comparator and one grove-path decomposition.
 //!
 //! ## Why a merge needs no proof of its own
 //!
-//! Each branch's walk is independently proved complete against the same
-//! root hash, and the merged page is a *deterministic function* of the
-//! branch pages: any union entry that precedes a returned entry in the
-//! merge order is preceded, within its own branch, by fewer than `limit`
+//! Each branch's walk is proved complete inside one grovedb **branched
+//! envelope** (shared ancestor layers once, one multi-key proof at the
+//! branching level, one secondary proof per branch, one root hash),
+//! and the merged page is a *deterministic function* of the branch
+//! pages: any union entry that precedes a returned entry in the merge
+//! order is preceded, within its own branch, by fewer than `limit`
 //! entries — so it is in its branch's returned page. The union's first
 //! `limit` entries are therefore contained in the union of the branch
-//! pages, and re-merging verified branch pages reconstructs a complete,
-//! correctly ordered page. (This is the same argument for both surfaces:
-//! "first `limit` in merge order restricted to the branch" is top-k for
-//! ranked and the in-bound range prefix for having.)
+//! pages, and re-merging verified branch pages reconstructs a
+//! complete, correctly ordered page. (This is the same argument for
+//! both surfaces: "first `limit` in merge order restricted to the
+//! branch" is top-k for ranked and the in-bound range prefix for
+//! having.)
 //!
 //! ## The merge order
 //!
@@ -25,15 +28,11 @@
 //! element order — which also makes `null` (the empty segment) sort
 //! first deterministically.
 
-use super::{RankedEntry, RankedEntryValue};
+use super::{RankedAxis, RankedEntry, RankedEntryValue};
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use grovedb::operations::proof::indexed_axis::AxisEntries;
 use std::cmp::Ordering;
-
-/// Version byte of the branch-proof container. Bumped only with a
-/// method-version bump on the prove/verify pair — the container is part
-/// of the prover/verifier agreement, not a transport detail.
-const BRANCH_PROOF_CONTAINER_VERSION: u8 = 1;
 
 /// The position (index into a branch's segment list) at which the
 /// branches differ — the `IN` pin's position in the covering index's
@@ -127,68 +126,89 @@ pub fn merge_branch_pages(
     Ok(merged)
 }
 
-/// Frame per-branch grovedb proofs into the single opaque byte string
-/// the wire's `Proof` carries: version byte, `u16` branch count, then
-/// each proof length-prefixed with a `u32` (all big-endian). Used only
-/// when there are two or more branches — a single-branch proof stays
-/// the raw grovedb envelope, byte-identical to the pre-`IN` surface.
-pub fn encode_branch_proofs(proofs: &[Vec<u8>]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(3 + proofs.iter().map(|p| 4 + p.len()).sum::<usize>());
-    out.push(BRANCH_PROOF_CONTAINER_VERSION);
-    out.extend_from_slice(&(proofs.len() as u16).to_be_bytes());
-    for proof in proofs {
-        out.extend_from_slice(&(proof.len() as u32).to_be_bytes());
-        out.extend_from_slice(proof);
+/// Decompose per-branch grove paths into the `(shared prefix, branch
+/// keys, shared suffix)` triple grovedb's branched proof primitives
+/// take. The paths differ at exactly one segment position by
+/// construction (one `IN` pin); anything else is an internal
+/// resolution error.
+pub fn decompose_branch_paths(
+    paths: &[Vec<Vec<u8>>],
+) -> Result<(Vec<Vec<u8>>, Vec<Vec<u8>>, Vec<Vec<u8>>), Error> {
+    let first = paths.first().ok_or_else(|| {
+        Error::Drive(DriveError::CorruptedDriveState(
+            "branch decomposition over zero paths".to_string(),
+        ))
+    })?;
+    let mut varying: Option<usize> = None;
+    for other in &paths[1..] {
+        if other.len() != first.len() {
+            return Err(Error::Drive(DriveError::CorruptedDriveState(
+                "branch paths of different lengths".to_string(),
+            )));
+        }
+        for (position, (a, b)) in first.iter().zip(other.iter()).enumerate() {
+            if a != b {
+                match varying {
+                    None => varying = Some(position),
+                    Some(existing) if existing == position => {}
+                    Some(_) => {
+                        return Err(Error::Drive(DriveError::CorruptedDriveState(
+                            "branch paths differ at more than one segment".to_string(),
+                        )));
+                    }
+                }
+            }
+        }
     }
-    out
+    let position = varying.ok_or_else(|| {
+        Error::Drive(DriveError::CorruptedDriveState(
+            "branch paths are identical; the encoder rejects duplicate branches".to_string(),
+        ))
+    })?;
+    let prefix = first[..position].to_vec();
+    let keys = paths
+        .iter()
+        .map(|path| path[position].clone())
+        .collect::<Vec<_>>();
+    let suffix = first[position + 1..].to_vec();
+    Ok((prefix, keys, suffix))
 }
 
-/// Parse the branch-proof container, requiring exactly
-/// `expected_branches` proofs — the verifier derives that count from
-/// its own resolution of the request, so a server cannot drop or
-/// duplicate a branch without the container failing to parse. Trailing
-/// bytes are rejected: an envelope is exactly its declared content.
-pub fn decode_branch_proofs(bytes: &[u8], expected_branches: usize) -> Result<Vec<Vec<u8>>, Error> {
-    let malformed = |what: &str| {
-        Error::Drive(DriveError::CorruptedDriveState(format!(
-            "branch-proof container: {what}"
-        )))
-    };
-    let (&version, mut rest) = bytes.split_first().ok_or_else(|| malformed("empty"))?;
-    if version != BRANCH_PROOF_CONTAINER_VERSION {
-        return Err(malformed(&format!(
-            "unknown container version {version}; expected {BRANCH_PROOF_CONTAINER_VERSION}"
-        )));
+/// Translate one branch's verified [`AxisEntries`] into drive entries
+/// on the requested axis — the same mapping the single-path verifiers
+/// perform, shared here so both surfaces' branched verifiers agree.
+pub fn axis_entries_to_ranked(
+    axis: RankedAxis,
+    entries: AxisEntries,
+) -> Result<Vec<RankedEntry>, Error> {
+    match (axis, entries) {
+        (RankedAxis::Count, AxisEntries::Count(entries)) => Ok(entries
+            .into_iter()
+            .map(|(count, key)| RankedEntry {
+                in_key: None,
+                key,
+                value: RankedEntryValue::Count(count),
+            })
+            .collect()),
+        (RankedAxis::Sum, AxisEntries::Sum(entries)) => Ok(entries
+            .into_iter()
+            .map(|(sum, key)| RankedEntry {
+                in_key: None,
+                key,
+                value: RankedEntryValue::Sum(sum),
+            })
+            .collect()),
+        (RankedAxis::Avg, AxisEntries::Avg(entries)) => Ok(entries
+            .into_iter()
+            .map(|(avg, key)| RankedEntry {
+                in_key: None,
+                key,
+                value: RankedEntryValue::AvgFixedPoint(avg),
+            })
+            .collect()),
+        (axis, other) => Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+            "a branch of a {axis:?} proof verified to {} entries of a different axis shape",
+            other.len()
+        )))),
     }
-    if rest.len() < 2 {
-        return Err(malformed("truncated branch count"));
-    }
-    let (count_bytes, tail) = rest.split_at(2);
-    let count = u16::from_be_bytes([count_bytes[0], count_bytes[1]]) as usize;
-    rest = tail;
-    if count != expected_branches {
-        return Err(malformed(&format!(
-            "container carries {count} branch proofs; the request resolves to \
-             {expected_branches} branches"
-        )));
-    }
-    let mut proofs = Vec::with_capacity(count);
-    for _ in 0..count {
-        if rest.len() < 4 {
-            return Err(malformed("truncated proof length"));
-        }
-        let (len_bytes, tail) = rest.split_at(4);
-        let len =
-            u32::from_be_bytes([len_bytes[0], len_bytes[1], len_bytes[2], len_bytes[3]]) as usize;
-        if tail.len() < len {
-            return Err(malformed("truncated proof body"));
-        }
-        let (proof, tail) = tail.split_at(len);
-        proofs.push(proof.to_vec());
-        rest = tail;
-    }
-    if !rest.is_empty() {
-        return Err(malformed("trailing bytes after the declared proofs"));
-    }
-    Ok(proofs)
 }

@@ -10,7 +10,7 @@
 //! Whole module is gated `feature = "server"` via the parent's
 //! `pub mod execute_top_k;` declaration.
 
-use super::branches::{encode_branch_proofs, merge_branch_pages};
+use super::branches::{decompose_branch_paths, merge_branch_pages};
 use super::{DriveDocumentRankedQuery, RankedAxis, RankedEntry, RankedEntryValue, RankedPage};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -252,21 +252,32 @@ impl DriveDocumentRankedQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         if self.prefix_branches.len() > 1 {
-            // One indexed-axis proof per branch, framed into the
-            // versioned container in canonical branch order. The
-            // verifier re-derives the branch set from the request, so a
-            // dropped, duplicated, or reordered branch fails there.
-            let proofs = (0..self.prefix_branches.len())
-                .map(|branch| {
-                    self.execute_top_k_with_proof_branch(
-                        branch,
-                        drive,
-                        transaction,
-                        platform_version,
-                    )
-                })
+            // One grovedb **branched** envelope: shared ancestor layers
+            // once, one multi-key proof at the branching level, one
+            // secondary proof per branch — a single proof with a single
+            // root hash. The verifier re-derives the branch set from
+            // the request, so a dropped, duplicated, or reordered
+            // branch fails there.
+            let grove_version = &platform_version.drive.grove_version;
+            let paths = (0..self.prefix_branches.len())
+                .map(|branch| self.indexed_property_name_tree_path(branch))
                 .collect::<Result<Vec<_>, Error>>()?;
-            return Ok(encode_branch_proofs(&proofs));
+            let (prefix, keys, suffix) = decompose_branch_paths(&paths)?;
+            let prefix_refs: Vec<&[u8]> = prefix.iter().map(|s| s.as_slice()).collect();
+            let suffix_refs: Vec<&[u8]> = suffix.iter().map(|s| s.as_slice()).collect();
+            let CostContext { value, cost: _ } =
+                drive.grove.prove_indexed_axis_top_k_paginated_branched(
+                    &prefix_refs,
+                    &keys,
+                    &suffix_refs,
+                    self.axis.into(),
+                    self.k,
+                    self.offset as u64,
+                    self.descending,
+                    transaction,
+                    grove_version,
+                );
+            return value.map_err(|e| Error::GroveDB(Box::new(e)));
         }
         self.execute_top_k_with_proof_branch(0, drive, transaction, platform_version)
     }

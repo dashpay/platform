@@ -31,9 +31,9 @@ use grovedb::element::indexed::AVG_FIXED_POINT_SCALE;
 /// with no `OFFSET`, no `START AT` / `START AFTER`, exactly one
 /// `GROUP BY` property, `WHERE` clauses (when present) that pin the
 /// covering compound ranked index's leading properties — one clause per
-/// property, each an equality, at most one of them an `IN` whose
-/// elements fan the bound out across one prefix branch per element
-/// (merged deterministically; see the ranked surface's
+/// property, each an equality except that **at most one** clause may be
+/// an `IN` whose elements fan the bound out across one prefix branch
+/// per element (merged deterministically; see the ranked surface's
 /// `prefix_pins_from_where_clauses`) — exactly one `HAVING` clause whose aggregate
 /// **is the selected aggregate** (same function, same field), an operator
 /// from the contiguous-range family (`=`, `>`, `>=`, `<`, `<=`, and the

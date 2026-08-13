@@ -1,7 +1,7 @@
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::drive_document_ranked_query::branches::{
-    decode_branch_proofs, merge_branch_pages,
+    axis_entries_to_ranked, decompose_branch_paths, merge_branch_pages,
 };
 use crate::query::{
     DriveDocumentRankedQuery, RankedAxis, RankedEntry, RankedEntryValue, RankedPage,
@@ -55,46 +55,55 @@ impl DriveDocumentRankedQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, RankedPage), Error> {
         if self.prefix_branches.len() > 1 {
-            // `IN`-pinned request: the proof bytes are the branch
-            // container. The branch count comes from *this* query's own
-            // resolution, so a container with a dropped, duplicated, or
-            // added branch fails to parse; a reordered or substituted
-            // branch proof fails its branch's own path verification; and
-            // all branches must attest one root hash. The page is then
-            // re-derived by the shared merge — the client never trusts a
-            // server-side merge.
-            let branch_proofs = decode_branch_proofs(proof, self.prefix_branches.len())?;
-            let mut root_hash: Option<RootHash> = None;
-            let mut per_branch = Vec::with_capacity(branch_proofs.len());
-            for (branch, branch_proof) in branch_proofs.iter().enumerate() {
-                let (branch_root, page) =
-                    self.verify_ranked_top_k_proof_v0_branch(branch, branch_proof)?;
-                match root_hash {
-                    None => root_hash = Some(branch_root),
-                    Some(existing) if existing == branch_root => {}
-                    Some(_) => {
-                        return Err(Error::Drive(DriveError::CorruptedDriveState(
-                            "branch proofs attest different root hashes: every branch of \
-                             one response must be proved against one platform state"
-                                .to_string(),
-                        )));
+            // `IN`-pinned request: the proof is one grovedb branched
+            // envelope. The branch set (and its order) comes from
+            // *this* query's own resolution; grovedb binds each branch
+            // tail to its branch key through the branching-level
+            // multi-key proof, reconstructs one root hash, and echoes
+            // `(axis, k, offset, direction)`. The page is then
+            // re-derived by the shared merge — the client never trusts
+            // a server-side merge.
+            let paths = (0..self.prefix_branches.len())
+                .map(|branch| self.indexed_property_name_tree_path(branch))
+                .collect::<Result<Vec<_>, Error>>()?;
+            let (prefix, keys, suffix) = decompose_branch_paths(&paths)?;
+            let prefix_refs: Vec<&[u8]> = prefix.iter().map(|s| s.as_slice()).collect();
+            let suffix_refs: Vec<&[u8]> = suffix.iter().map(|s| s.as_slice()).collect();
+            let result = grovedb::GroveDb::verify_indexed_axis_top_k_paginated_branched(
+                proof,
+                &prefix_refs,
+                &keys,
+                &suffix_refs,
+                self.axis.into(),
+                self.k,
+                self.offset as u64,
+                self.descending,
+            )
+            .map_err(|e| Error::GroveDB(Box::new(e)))?;
+            let per_branch = result
+                .branches
+                .into_iter()
+                .map(|(_skipped, entries)| {
+                    let entries = axis_entries_to_ranked(self.axis, entries)?;
+                    if entries.len() > self.k as usize {
+                        return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+                            "a branch of a ranked top-k proof verified to {} entries for \
+                             k = {}",
+                            entries.len(),
+                            self.k
+                        ))));
                     }
-                }
-                per_branch.push(page.entries);
-            }
+                    Ok(entries)
+                })
+                .collect::<Result<Vec<_>, Error>>()?;
             let entries = merge_branch_pages(
                 per_branch,
                 &self.prefix_branches,
                 self.descending,
                 self.k as usize,
             )?;
-            let root_hash = root_hash.ok_or_else(|| {
-                Error::Drive(DriveError::CorruptedDriveState(
-                    "branch container verified to zero branches".to_string(),
-                ))
-            })?;
             return Ok((
-                root_hash,
+                result.root_hash,
                 RankedPage {
                     skipped: 0,
                     entries,

@@ -78,6 +78,8 @@ use super::drive_document_ranked_query::{
     path::indexed_property_name_tree_path_for_index, PrefixPin, RankedAxis,
 };
 #[cfg(any(feature = "server", feature = "verify"))]
+use crate::error::drive::DriveError;
+#[cfg(any(feature = "server", feature = "verify"))]
 use crate::error::query::QuerySyntaxError;
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::error::Error;
@@ -303,11 +305,18 @@ impl DriveDocumentHavingQuery<'_> {
     /// tree(s). See
     /// [`DriveDocumentRankedQuery::indexed_property_name_tree_path`](super::drive_document_ranked_query::DriveDocumentRankedQuery::indexed_property_name_tree_path).
     pub fn indexed_property_name_tree_path(&self, branch: usize) -> Result<Vec<Vec<u8>>, Error> {
+        let prefix_values =
+            self.prefix_branches
+                .get(branch)
+                .ok_or(Error::Drive(DriveError::NotSupported(
+                    "ranked and having-range queries addressed a prefix branch outside the \
+                 query's resolved branch set",
+                )))?;
         indexed_property_name_tree_path_for_index(
             &self.contract_id,
             &self.document_type_name,
             self.index,
-            &self.prefix_branches[branch],
+            prefix_values,
         )
     }
 }

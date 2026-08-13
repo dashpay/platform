@@ -24,7 +24,7 @@ use dpp::data_contract::document_type::Index;
 /// tree. See [`DriveDocumentRankedQuery::indexed_property_name_tree_path`]
 /// for the segment layout.
 ///
-/// `equality_prefix_values` carries the **encoded index-key bytes** of
+/// The branch's prefix segments carry the **encoded index-key bytes** of
 /// each leading property's pinned value, in index-property order — one
 /// per property before the terminal one. Empty for a single-property
 /// index. The arity must match exactly: a compound index's terminal
@@ -84,7 +84,7 @@ impl DriveDocumentRankedQuery<'_> {
     /// For a compound index `[p1, …, pn]`, each leading property
     /// contributes two segments — its name and the **encoded index-key
     /// bytes of its pinned value** (from
-    /// [`Self::equality_prefix_values`]) — and the terminal property
+    /// [`Self::prefix_branches`]) — and the terminal property
     /// name closes the path:
     ///
     /// ```text
@@ -105,11 +105,18 @@ impl DriveDocumentRankedQuery<'_> {
     /// `branch` indexes into [`Self::prefix_branches`]; single-branch
     /// queries (no `IN` pin) always pass `0`.
     pub fn indexed_property_name_tree_path(&self, branch: usize) -> Result<Vec<Vec<u8>>, Error> {
+        let prefix_values =
+            self.prefix_branches
+                .get(branch)
+                .ok_or(Error::Drive(DriveError::NotSupported(
+                    "ranked and having-range queries addressed a prefix branch outside the \
+                 query's resolved branch set",
+                )))?;
         indexed_property_name_tree_path_for_index(
             &self.contract_id,
             &self.document_type_name,
             self.index,
-            &self.prefix_branches[branch],
+            prefix_values,
         )
     }
 }

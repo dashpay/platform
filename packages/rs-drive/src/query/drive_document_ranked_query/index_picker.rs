@@ -196,7 +196,7 @@ pub fn no_covering_index_message(
     } else {
         format!(
             "a compound index on [{}, {group_by_property}] (every leading property pinned \
-             by an equality `where` clause, the trailing property grouped over)",
+             by an equality or `IN` `where` clause, the trailing property grouped over)",
             pin_fields()
         )
     };
@@ -206,7 +206,7 @@ pub fn no_covering_index_message(
         if prefix_pins.is_empty() {
             String::new()
         } else {
-            format!(" with equality pins on [{}]", pin_fields())
+            format!(" with pins on [{}]", pin_fields())
         },
         axis.required_index_keyword(),
         if aggregate_field.is_empty() {
@@ -300,6 +300,34 @@ pub fn encode_prefix_branches(
             Ok(encoded)
         })
         .collect::<Result<Vec<_>, Error>>()?;
+
+    // Defense in depth at the shared choke point: the grammar enforces
+    // both invariants upstream, but this function is `pub` and the
+    // prover/verifier agreement hangs off it, so a mis-built pin set
+    // must fail here rather than collapse to zero branches (a
+    // downstream panic) or fan out into an unbounded cartesian product
+    // (which would also break the one-varying-position assumption
+    // `in_key` and the merge order rely on).
+    if per_property.iter().any(|candidates| candidates.is_empty()) {
+        return Err(Error::Query(
+            QuerySyntaxError::InvalidWhereClauseComponents(
+                "internal resolution mismatch: a prefix pin carries no values",
+            ),
+        ));
+    }
+    if per_property
+        .iter()
+        .filter(|candidates| candidates.len() > 1)
+        .count()
+        > 1
+    {
+        return Err(Error::Query(
+            QuerySyntaxError::InvalidWhereClauseComponents(
+                "internal resolution mismatch: more than one branching pin — the grammar \
+             admits at most one `IN` across the prefix properties",
+            ),
+        ));
+    }
 
     // The grammar admits at most one multi-value pin, so this product
     // is |IN| branches (or exactly one), already in canonical order

@@ -12,7 +12,7 @@
 //! `pub mod execute_range;` declaration.
 
 use super::super::drive_document_ranked_query::branches::{
-    encode_branch_proofs, merge_branch_pages,
+    decompose_branch_paths, merge_branch_pages,
 };
 use super::super::drive_document_ranked_query::{RankedAxis, RankedEntry, RankedEntryValue};
 use super::{AxisRangeBounds, DriveDocumentHavingQuery};
@@ -177,19 +177,26 @@ impl DriveDocumentHavingQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         if self.prefix_branches.len() > 1 {
-            // One indexed-axis range proof per branch, framed into the
-            // versioned container in canonical branch order.
-            let proofs = (0..self.prefix_branches.len())
-                .map(|branch| {
-                    self.execute_range_with_proof_branch(
-                        branch,
-                        drive,
-                        transaction,
-                        platform_version,
-                    )
-                })
+            // One grovedb **branched** envelope — see the ranked
+            // executor's multi-branch arm for the shape.
+            let grove_version = &platform_version.drive.grove_version;
+            let paths = (0..self.prefix_branches.len())
+                .map(|branch| self.indexed_property_name_tree_path(branch))
                 .collect::<Result<Vec<_>, Error>>()?;
-            return Ok(encode_branch_proofs(&proofs));
+            let (prefix, keys, suffix) = decompose_branch_paths(&paths)?;
+            let prefix_refs: Vec<&[u8]> = prefix.iter().map(|s| s.as_slice()).collect();
+            let suffix_refs: Vec<&[u8]> = suffix.iter().map(|s| s.as_slice()).collect();
+            let CostContext { value, cost: _ } = drive.grove.prove_indexed_axis_query_branched(
+                &prefix_refs,
+                &keys,
+                &suffix_refs,
+                self.bounds.axis().into(),
+                self.bounds.merk_query(self.descending),
+                Some(self.limit),
+                transaction,
+                grove_version,
+            );
+            return value.map_err(|e| Error::GroveDB(Box::new(e)));
         }
         self.execute_range_with_proof_branch(0, drive, transaction, platform_version)
     }

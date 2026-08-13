@@ -1,7 +1,7 @@
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::drive_document_ranked_query::branches::{
-    decode_branch_proofs, merge_branch_pages,
+    axis_entries_to_ranked, decompose_branch_paths, merge_branch_pages,
 };
 use crate::query::{DriveDocumentHavingQuery, RankedAxis, RankedEntry, RankedEntryValue};
 use crate::verify::RootHash;
@@ -47,41 +47,51 @@ impl DriveDocumentHavingQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<RankedEntry>), Error> {
         if self.prefix_branches.len() > 1 {
-            // `IN`-pinned request: same branch-container discipline as
-            // the ranked verifier — count from this query's own
-            // resolution, one root hash across branches, page re-derived
-            // by the shared merge.
-            let branch_proofs = decode_branch_proofs(proof, self.prefix_branches.len())?;
-            let mut root_hash: Option<RootHash> = None;
-            let mut per_branch = Vec::with_capacity(branch_proofs.len());
-            for (branch, branch_proof) in branch_proofs.iter().enumerate() {
-                let (branch_root, entries) =
-                    self.verify_having_range_proof_v0_branch(branch, branch_proof)?;
-                match root_hash {
-                    None => root_hash = Some(branch_root),
-                    Some(existing) if existing == branch_root => {}
-                    Some(_) => {
-                        return Err(Error::Drive(DriveError::CorruptedDriveState(
-                            "branch proofs attest different root hashes: every branch of \
-                             one response must be proved against one platform state"
-                                .to_string(),
-                        )));
+            // `IN`-pinned request: one grovedb branched envelope — same
+            // discipline as the ranked verifier (branch set from this
+            // query's own resolution, tails bound to keys by the
+            // branching-level proof, one root hash, page re-derived by
+            // the shared merge).
+            let paths = (0..self.prefix_branches.len())
+                .map(|branch| self.indexed_property_name_tree_path(branch))
+                .collect::<Result<Vec<_>, Error>>()?;
+            let (prefix, keys, suffix) = decompose_branch_paths(&paths)?;
+            let prefix_refs: Vec<&[u8]> = prefix.iter().map(|s| s.as_slice()).collect();
+            let suffix_refs: Vec<&[u8]> = suffix.iter().map(|s| s.as_slice()).collect();
+            let axis = self.bounds.axis();
+            let result = grovedb::GroveDb::verify_indexed_axis_query_branched(
+                proof,
+                &prefix_refs,
+                &keys,
+                &suffix_refs,
+                axis.into(),
+                self.bounds.merk_query(self.descending),
+                Some(self.limit),
+            )
+            .map_err(|e| Error::GroveDB(Box::new(e)))?;
+            let per_branch = result
+                .branches
+                .into_iter()
+                .map(|entries| {
+                    let entries = axis_entries_to_ranked(axis, entries)?;
+                    if entries.len() > self.limit as usize {
+                        return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+                            "a branch of a having range proof verified to {} entries for \
+                             limit = {}",
+                            entries.len(),
+                            self.limit
+                        ))));
                     }
-                }
-                per_branch.push(entries);
-            }
+                    Ok(entries)
+                })
+                .collect::<Result<Vec<_>, Error>>()?;
             let entries = merge_branch_pages(
                 per_branch,
                 &self.prefix_branches,
                 self.descending,
                 self.limit as usize,
             )?;
-            let root_hash = root_hash.ok_or_else(|| {
-                Error::Drive(DriveError::CorruptedDriveState(
-                    "branch container verified to zero branches".to_string(),
-                ))
-            })?;
-            return Ok((root_hash, entries));
+            return Ok((result.root_hash, entries));
         }
         self.verify_having_range_proof_v0_branch(0, proof)
     }

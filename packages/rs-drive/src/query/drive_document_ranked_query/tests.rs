@@ -2644,12 +2644,15 @@ mod pinned_prefix {
         );
     }
 
-    /// The tamper matrix on the branch container: a response whose
-    /// branch proofs are reordered, dropped, duplicated, re-versioned,
-    /// or padded must fail verification — never silently reorder or
-    /// shrink the merged page.
+    /// Platform-level tamper cases on the branched envelope. The deep
+    /// matrix — reordered branch keys, duplicated or dropped branch
+    /// tails, echo mismatches — is pinned in grovedb's
+    /// `indexed_axis_branched_proof_tests`, since the envelope is one
+    /// grovedb proof now; here we pin what the platform layer itself
+    /// must not confuse: corrupted bytes, and the single-branch /
+    /// multi-branch envelope shapes never cross-verifying.
     #[test]
-    fn tampered_branch_containers_do_not_verify() {
+    fn tampered_or_mismatched_branched_proofs_do_not_verify() {
         let (drive, contract) = setup_grades_compound_ranked();
         insert_grades(
             &drive,
@@ -2666,76 +2669,48 @@ mod pinned_prefix {
         // Baseline sanity: untampered verifies.
         query
             .verify_ranked_top_k_proof(&proof, platform_version())
-            .expect("untampered container verifies");
+            .expect("untampered branched envelope verifies");
 
-        // Decompose the container by hand: [version][u16 count]([u32 len][bytes])*
-        assert_eq!(proof[0], 1, "container version byte");
-        let count = u16::from_be_bytes([proof[1], proof[2]]) as usize;
-        assert_eq!(count, 2);
-        let mut branch_proofs = Vec::new();
-        let mut rest = &proof[3..];
-        for _ in 0..count {
-            let len = u32::from_be_bytes([rest[0], rest[1], rest[2], rest[3]]) as usize;
-            branch_proofs.push(rest[4..4 + len].to_vec());
-            rest = &rest[4 + len..];
-        }
-        let reframe = |proofs: &[Vec<u8>]| {
-            let mut out = vec![1u8];
-            out.extend_from_slice(&(proofs.len() as u16).to_be_bytes());
-            for p in proofs {
-                out.extend_from_slice(&(p.len() as u32).to_be_bytes());
-                out.extend_from_slice(p);
-            }
-            out
+        // Corrupted bytes.
+        let mut corrupted = proof.clone();
+        let mid = corrupted.len() / 2;
+        corrupted[mid] ^= 0xFF;
+        assert!(
+            query
+                .verify_ranked_top_k_proof(&corrupted, platform_version())
+                .is_err(),
+            "a flipped byte must not verify"
+        );
+
+        // Truncated bytes.
+        let truncated = &proof[..proof.len() - 8];
+        assert!(
+            query
+                .verify_ranked_top_k_proof(truncated, platform_version())
+                .is_err(),
+            "a truncated envelope must not verify"
+        );
+
+        // A single-pin proof must not verify under the branched query,
+        // nor a branched proof under a single-pin query — the two
+        // envelope shapes are distinct grovedb types.
+        let single = pin(IDENTITY_X);
+        let single_proof = match run(&drive, &contract, &single, 2, true).expect("prove") {
+            DocumentRankedResponse::Proof(proof) => proof,
+            DocumentRankedResponse::Entries(_) => panic!("expected a proof"),
         };
-
-        // Reordered: branch 0's proof is verified against branch 1's
-        // path and fails inside grovedb.
-        let reordered = reframe(&[branch_proofs[1].clone(), branch_proofs[0].clone()]);
         assert!(
             query
-                .verify_ranked_top_k_proof(&reordered, platform_version())
+                .verify_ranked_top_k_proof(&single_proof, platform_version())
                 .is_err(),
-            "reordered branch proofs must not verify"
+            "a single-branch envelope must not verify under an IN query"
         );
-
-        // Dropped: count mismatch against the query's own resolution.
-        let dropped = reframe(&[branch_proofs[0].clone()]);
+        let single_query = client_side_query(&contract, &single, 2);
         assert!(
-            query
-                .verify_ranked_top_k_proof(&dropped, platform_version())
+            single_query
+                .verify_ranked_top_k_proof(&proof, platform_version())
                 .is_err(),
-            "a dropped branch must not verify"
-        );
-
-        // Duplicated: same count, but branch 1's slot holds branch 0's
-        // proof — wrong path again.
-        let duplicated = reframe(&[branch_proofs[0].clone(), branch_proofs[0].clone()]);
-        assert!(
-            query
-                .verify_ranked_top_k_proof(&duplicated, platform_version())
-                .is_err(),
-            "a duplicated branch proof must not verify"
-        );
-
-        // Unknown container version.
-        let mut reversioned = proof.clone();
-        reversioned[0] = 2;
-        assert!(
-            query
-                .verify_ranked_top_k_proof(&reversioned, platform_version())
-                .is_err(),
-            "an unknown container version must not verify"
-        );
-
-        // Trailing bytes after the declared proofs.
-        let mut padded = proof.clone();
-        padded.push(0);
-        assert!(
-            query
-                .verify_ranked_top_k_proof(&padded, platform_version())
-                .is_err(),
-            "trailing bytes must not verify"
+            "a branched envelope must not verify under a single-pin query"
         );
     }
 
