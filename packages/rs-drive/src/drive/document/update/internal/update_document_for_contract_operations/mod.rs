@@ -58,7 +58,12 @@ impl Drive {
             // v1 (platform v14+): branches materialized by key-changing
             // updates get the shared-prefix aggregate treatment
             // (continuation demotion + zero-contribution wrapping),
-            // matching the v2 insert walkers.
+            // matching the v2 insert walkers. Also fixes the terminator
+            // layout dispatch for null-bearing unique-index entries to
+            // agree with the insert/delete walkers (`any_fields_null`
+            // instead of `all_fields_null`, old-document nullness for
+            // the old-entry delete, and the nullSearchable all-null
+            // skip).
             1 => self.update_document_for_contract_operations_v1(
                 document_and_contract_info,
                 block_info,

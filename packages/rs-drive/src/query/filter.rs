@@ -389,8 +389,8 @@ impl DriveDocumentQueryFilter<'_> {
             }
         }
 
-        // In clause
-        if let Some(in_clause) = &clauses.in_clause {
+        // In clauses
+        for in_clause in &clauses.in_clauses {
             let field_value = get_value_by_path(document_data, &in_clause.field);
             if let Some(value) = field_value {
                 if !in_clause.matches_value(value) {
@@ -770,11 +770,11 @@ mod tests {
         ];
 
         let internal_clauses = InternalClauses {
-            in_clause: Some(WhereClause {
+            in_clauses: vec![WhereClause {
                 field: "status".to_string(),
                 operator: WhereOperator::In,
                 value: Value::Array(allowed_values),
-            }),
+            }],
             ..Default::default()
         };
 
@@ -2338,11 +2338,11 @@ mod tests {
         let contract = fixture.data_contract_owned();
 
         let internal_clauses = InternalClauses {
-            in_clause: Some(WhereClause {
+            in_clauses: vec![WhereClause {
                 field: "nonexistent".to_string(),
                 operator: WhereOperator::In,
                 value: Value::Array(vec![Value::I64(1)]),
-            }),
+            }],
             ..Default::default()
         };
 

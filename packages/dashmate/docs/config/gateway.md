@@ -142,8 +142,27 @@ These settings control SSL/TLS for secure connections:
 | `platform.gateway.ssl.providerConfigs.zerossl.apiKey` | ZeroSSL API key | `null` | `"your-api-key"` |
 | `platform.gateway.ssl.providerConfigs.zerossl.id` | ZeroSSL certificate ID | `null` | `"certificate_id"` |
 
+### Let's Encrypt Provider Configuration
+
+| Option | Description | Default | Example |
+|--------|-------------|---------|---------|
+| `platform.gateway.ssl.providerConfigs.letsencrypt.email` | Contact address for expiry notices | `null` | `"admin@example.com"` |
+| `platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl` | ACME directory certificates are requested from | `https://acme-v02.api.letsencrypt.org/directory` | `https://acme-staging-v02.api.letsencrypt.org/directory` |
+
+A node is identified by its external IP rather than a domain name, and Let's Encrypt
+issues IP address certificates only under its short-lived profile, so these
+certificates are valid for about six days and are renewed automatically by the
+Dashmate helper.
+
+Point `acmeDirectoryUrl` at the staging directory to rehearse issuance. Production
+allows only a few failed validations per hour, and the usual cause of failure —
+inbound port 80 being unreachable — takes several attempts to sort out. Certificates
+from staging are not publicly trusted, so set it back afterwards and obtain again
+with `dashmate ssl obtain --force`.
+
 Available SSL providers:
 - `zerossl`: Commercial certificate provider with automated issuance
+- `letsencrypt`: Free certificates issued over ACME; requires inbound port 80 during issuance and renewal
 - `selfSigned`: Self-signed certificates (not trusted by browsers)
 - `file`: Use existing certificate files (requires certificate and key files to be manually provided)
 

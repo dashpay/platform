@@ -2268,7 +2268,7 @@ fn count_request<'a>(
     // bench keeps its compact fixture vocabulary while the
     // dispatcher consumes the same typed form the v1 ABCI handler
     // produces.
-    let where_clauses = where_clauses_from_value(&raw_where_value)
+    let where_clauses = where_clauses_from_value(&raw_where_value, PlatformVersion::latest())
         .expect("bench fixture builds a valid `where` shape");
     let order_clauses = order_clauses_from_value(&raw_order_by_value)
         .expect("bench fixture builds a valid `order_by` shape");

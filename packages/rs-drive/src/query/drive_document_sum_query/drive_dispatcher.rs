@@ -273,8 +273,14 @@ impl Drive {
 
 /// Parse the wire-CBOR `Value::Array` shape into structured
 /// `Vec<WhereClause>`. Delegates to count's parser.
-pub fn where_clauses_from_value(value: &Value) -> Result<Vec<WhereClause>, Error> {
-    crate::query::drive_document_count_query::drive_dispatcher::where_clauses_from_value(value)
+pub fn where_clauses_from_value(
+    value: &Value,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<WhereClause>, Error> {
+    crate::query::drive_document_count_query::drive_dispatcher::where_clauses_from_value(
+        value,
+        platform_version,
+    )
 }
 
 /// Parse the wire-CBOR `Value::Array` shape into structured
