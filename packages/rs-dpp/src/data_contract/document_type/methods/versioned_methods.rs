@@ -442,6 +442,13 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         Ok(total_size)
     }
 
+    /// Generation 0 plus the document serialization format 3
+    /// contract-version stamp varint (worst case 5 bytes for a u32).
+    /// Selected together with format 3 by the version table.
+    fn estimated_size_v1(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {
+        Ok(self.estimated_size_v0(platform_version)?.saturating_add(5))
+    }
+
     fn max_size_v0(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {
         let mut total_size = 0u16;
 

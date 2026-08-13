@@ -100,6 +100,12 @@ impl DataContractV1 {
             platform_version,
         )?;
 
+        crate::data_contract::document_type::validate_required_since_within_contract_version(
+            &document_types,
+            version,
+        )
+        .map_err(ProtocolError::DataContractError)?;
+
         let data_contract = DataContractV1 {
             id,
             version,
@@ -160,6 +166,12 @@ impl DataContractV1 {
             validation_operations,
             platform_version,
         )?;
+
+        crate::data_contract::document_type::validate_required_since_within_contract_version(
+            &document_types,
+            version,
+        )
+        .map_err(ProtocolError::DataContractError)?;
 
         let data_contract = DataContractV1 {
             id,

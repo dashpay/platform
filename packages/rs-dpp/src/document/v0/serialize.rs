@@ -1874,6 +1874,25 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             properties.insert(PRICE.to_string(), price.into());
         }
 
+        // Every property the document was serialized with must have been
+        // consumed. Trailing bytes mean the document was written under a
+        // newer contract version than the document type used to read it — a
+        // stale reader would otherwise silently drop the fields it does not
+        // know about. The stamp makes this detectable: callers should
+        // refetch the contract and retry.
+        let mut trailing_probe = [0u8; 1];
+        let trailing = buf.read(&mut trailing_probe).map_err(|_| {
+            DataContractError::CorruptedSerialization(
+                "error probing for trailing bytes in serialized document".to_string(),
+            )
+        })?;
+        if trailing > 0 {
+            return Err(DataContractError::CorruptedSerialization(format!(
+                "serialized document has trailing bytes: it was serialized under contract version {} with properties this document type does not know; refetch the contract",
+                stamp
+            )));
+        }
+
         Ok(DocumentV0 {
             contract_version,
             id: Identifier::new(id),
@@ -3341,6 +3360,68 @@ mod tests {
         assert!(!deserialized.properties.contains_key("b"));
         assert!(!deserialized.properties.contains_key("c"));
         assert_eq!(deserialized, document);
+    }
+
+    #[test]
+    fn stale_document_type_rejects_document_stamped_under_newer_contract() {
+        use crate::data_contract::config::DataContractConfig;
+        use crate::data_contract::document_type::DocumentType;
+        use platform_value::platform_value;
+
+        let platform_version = PlatformVersion::latest();
+
+        // The reader's stale view: the schema as of contract version 1,
+        // before `b` and `c` were appended
+        let stale_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "a": {"type": "string", "position": 0, "maxLength": 60_u32},
+            },
+            "required": ["a"],
+            "additionalProperties": false,
+        });
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config");
+        let stale_document_type = DocumentType::try_from_schema(
+            Identifier::new([1; 32]),
+            1,
+            config.version(),
+            "test",
+            stale_schema,
+            None,
+            &BTreeMap::new(),
+            &config,
+            false,
+            &mut Vec::new(),
+            platform_version,
+        )
+        .expect("failed to create stale document type");
+
+        // A document written under contract version 2, where `b` exists and
+        // is required
+        let current_document_type = required_since_document_type();
+        let mut properties = BTreeMap::new();
+        properties.insert("a".to_string(), Value::Text("alpha".to_string()));
+        properties.insert("b".to_string(), Value::Text("beta".to_string()));
+        let document = stamped_document(Some(2), properties, current_document_type.as_ref());
+
+        let serialized = document
+            .serialize_v3(current_document_type.as_ref())
+            .expect("expected serialization");
+
+        // A stale reader must hard-error on the trailing bytes instead of
+        // silently dropping the field it does not know about
+        let result =
+            DocumentV0::from_bytes(&serialized, stale_document_type.as_ref(), platform_version);
+        assert!(
+            matches!(
+                &result,
+                Err(ProtocolError::DataContractError(
+                    DataContractError::CorruptedSerialization(message)
+                )) if message.contains("trailing bytes")
+            ),
+            "a stale document type must reject a newer-stamped document, got {result:?}"
+        );
     }
 
     #[test]

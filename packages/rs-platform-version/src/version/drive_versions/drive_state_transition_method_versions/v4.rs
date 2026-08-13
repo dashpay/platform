@@ -5,8 +5,8 @@ use crate::version::drive_versions::drive_state_transition_method_versions::{
 };
 use crate::version::drive_versions::DriveDataContractOperationMethodVersions;
 
-// This started at protocol 11 (2.2)
-pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V2: DriveStateTransitionMethodVersions =
+// This started at protocol 14: document_from_action generation 1 stamps built documents with the contract version (paired with document serialization format 3)
+pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4: DriveStateTransitionMethodVersions =
     DriveStateTransitionMethodVersions {
         operations: DriveStateTransitionOperationMethodVersions {
             finalization_tasks: 0,
@@ -20,10 +20,14 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V2: DriveStateTransitionMethodV
                 data_contract_update_transition: 0,
                 document_create_transition: 0,
                 document_delete_transition: 0,
-                document_purchase_transition: 0,
+                // PROTOCOL_VERSION_13: v1 rewrites a transferred or purchased
+                // DPNS domain document's `records.identity` to the new owner
+                // so the username resolves to the buyer. v0 stays for
+                // PROTOCOL_VERSION_12 chain replay.
+                document_purchase_transition: 1, // changed
                 document_replace_transition: 0,
-                document_transfer_transition: 0,
-                document_update_price_transition: 0,
+                document_transfer_transition: 1,     // changed
+                document_update_price_transition: 1, // changed
                 token_burn_transition: 0,
                 token_mint_transition: 0,
                 token_transfer_transition: 0,
@@ -34,7 +38,7 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V2: DriveStateTransitionMethodV
                 identity_credit_withdrawal_transition: 0,
                 identity_top_up_transition: 0,
                 identity_top_up_from_addresses_transition: 0,
-                identity_update_transition: 1, //changed
+                identity_update_transition: 1,
                 masternode_vote_transition: 0,
                 bump_identity_data_contract_nonce: 0,
                 bump_identity_nonce: 0,
@@ -59,7 +63,7 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V2: DriveStateTransitionMethodV
                 identity_create_from_shielded_pool_transition: 0,
             },
         document_from_action: DriveDocumentFromActionVersions {
-            document_from_create_transition_action: 0,
-            document_from_replace_transition_action: 0,
+            document_from_create_transition_action: 1,  // changed
+            document_from_replace_transition_action: 1, // changed
         },
     };

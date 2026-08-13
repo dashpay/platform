@@ -82,7 +82,7 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
             create_document_with_prevalidated_properties: 0,
             prefunded_voting_balance_for_document: 0,
             contested_vote_poll_for_document: 0,
-            estimated_size: 0,
+            estimated_size: 1, // changed: adds the document serialization format 3 contract-version stamp varint (worst case 5 bytes) to the estimate
             index_for_types: 0,
             max_size: 0,
             serialize_value_for_key: 0,

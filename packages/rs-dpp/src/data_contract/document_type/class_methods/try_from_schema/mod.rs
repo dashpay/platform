@@ -955,6 +955,26 @@ mod tests {
     }
 
     #[test]
+    fn should_reject_required_since_above_u32_max() {
+        // The meta-schema caps the value at u32::MAX too; this pins the
+        // parser-side rejection so it does not depend on meta-schema
+        // coverage (parses without full validation skip the meta-schema)
+        let result = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "a": {"type": "string", "position": 0, "maxLength": 60, "requiredSince": 4_294_967_296_u64},
+            },
+            "required": ["a"],
+            "additionalProperties": false
+        }));
+
+        assert!(
+            result.is_err(),
+            "requiredSince above u32::MAX must be rejected"
+        );
+    }
+
+    #[test]
     fn should_reject_required_since_of_zero() {
         let result = try_document_type_from_schema(json!({
             "type": "object",
@@ -968,6 +988,80 @@ mod tests {
         assert!(
             result.is_err(),
             "requiredSince of 0 must be rejected (contract versions start at 1)"
+        );
+    }
+
+    #[test]
+    fn should_parse_required_since_reached_through_a_ref() {
+        // A `$ref`'d property resolves to its `$defs` entry before keywords
+        // are read, so an annotation hidden behind a reference is parsed
+        // exactly like a direct one — any validation that only scans raw
+        // property JSON would miss it, which is why the
+        // `requiredSince <= contract version` invariant is enforced on
+        // parsed properties (validate_required_since_within_contract_version)
+        let platform_version = PlatformVersion::latest();
+        let config =
+            DataContractConfig::default_for_version(platform_version).expect("config should build");
+
+        let schema_defs: BTreeMap<String, Value> = [(
+            "annotated".to_string(),
+            platform_value::to_value(json!({
+                "type": "string", "maxLength": 60, "requiredSince": 2
+            }))
+            .expect("defs should convert"),
+        )]
+        .into_iter()
+        .collect();
+
+        let schema = platform_value::to_value(json!({
+            "type": "object",
+            "properties": {
+                "a": {"type": "string", "position": 0, "maxLength": 60},
+                "b": {"$ref": "#/$defs/annotated", "position": 1},
+            },
+            "required": ["a", "b"],
+            "additionalProperties": false
+        }))
+        .expect("schema should convert");
+
+        let document_type = DocumentType::try_from_schema(
+            Identifier::random(),
+            0,
+            config.version(),
+            "msg",
+            schema,
+            Some(&schema_defs),
+            &BTreeMap::new(),
+            &config,
+            false,
+            &mut vec![],
+            platform_version,
+        )
+        .expect("should parse");
+
+        let properties = document_type.as_ref().flattened_properties().clone();
+        assert_eq!(properties.get("b").unwrap().required_since, Some(2));
+
+        // The parsed-property invariant check sees the annotation the raw
+        // JSON hides: version 1 (too old for requiredSince 2) rejects,
+        // version 2 accepts
+        let mut document_types = BTreeMap::new();
+        document_types.insert("msg".to_string(), document_type);
+
+        assert!(
+            crate::data_contract::document_type::validate_required_since_within_contract_version(
+                &document_types,
+                1
+            )
+            .is_err(),
+            "requiredSince 2 must be rejected on a version 1 contract even through $ref"
+        );
+        assert!(
+            crate::data_contract::document_type::validate_required_since_within_contract_version(
+                &document_types,
+                2
+            )
+            .is_ok()
         );
     }
 

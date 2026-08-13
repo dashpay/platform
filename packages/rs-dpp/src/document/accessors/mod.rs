@@ -116,6 +116,12 @@ impl DocumentV0Getters for Document {
             Document::V0(v0) => v0.creator_id,
         }
     }
+
+    fn contract_version(&self) -> Option<u32> {
+        match self {
+            Document::V0(v0) => v0.contract_version,
+        }
+    }
 }
 
 impl DocumentV0Setters for Document {
@@ -211,6 +217,12 @@ impl DocumentV0Setters for Document {
     fn set_creator_id(&mut self, creator_id: Option<Identifier>) {
         match self {
             Document::V0(v0) => v0.creator_id = creator_id,
+        }
+    }
+
+    fn set_contract_version(&mut self, contract_version: Option<u32>) {
+        match self {
+            Document::V0(v0) => v0.contract_version = contract_version,
         }
     }
 }
