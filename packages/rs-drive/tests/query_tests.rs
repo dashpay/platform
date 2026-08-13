@@ -4636,6 +4636,191 @@ mod tests {
 
     #[cfg(feature = "server")]
     #[test]
+    fn test_family_single_in_clause_with_cursor_v0_lowering_frozen_at_protocol_v13() {
+        // Freeze test for the pre-v14 lowering: protocol versions <= 13 are
+        // on chain, so their (defective) cursor lowering must replay
+        // byte-for-byte. The expected values below are the v0 outputs the
+        // sibling-branch fix corrects at v14 — see
+        // test_family_single_in_clause_with_cursor_keeps_sibling_branches_intact
+        // for the correct shapes. Never edit these expectations.
+        let platform_version = PlatformVersion::latest();
+        let protocol_v13 = PlatformVersion::get(13).expect("protocol version 13 exists");
+        assert_eq!(
+            protocol_v13
+                .drive
+                .methods
+                .document
+                .query
+                .non_primary_key_path_query,
+            0,
+            "protocol v13 must keep the v0 non-primary-key path query lowering"
+        );
+
+        let people: Vec<Person> = [
+            (1u8, "Adam", "Kline"),
+            (2, "Adam", "Moore"),
+            (3, "Adam", "Sinclair"),
+            (4, "Ben", "Barber"),
+            (5, "Ben", "Nichols"),
+            (6, "Cara", "Abbott"),
+            (7, "Cara", "Zane"),
+        ]
+        .into_iter()
+        .map(|(seed, first_name, last_name)| Person {
+            id: vec![seed; 32],
+            owner_id: vec![seed.wrapping_add(100); 32],
+            first_name: first_name.to_string(),
+            middle_name: format!("{}middle", first_name),
+            last_name: last_name.to_string(),
+            age: seed + 20,
+        })
+        .collect();
+
+        let (drive, contract) = setup_family_tests_with_people(&people, platform_version);
+        let person_document_type = contract
+            .document_type_for_name("person")
+            .expect("contract should have a person document type");
+
+        let root_hash = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("there is always a root hash");
+
+        let assert_v13_query_returns =
+            |query_value: &serde_json::Value, expected: Vec<(&str, &str)>| {
+                let where_cbor = cbor_serializer::serializable_value_to_cbor(query_value, None)
+                    .expect("expected to serialize to cbor");
+                let query = DriveDocumentQuery::from_cbor(
+                    where_cbor.as_slice(),
+                    &contract,
+                    person_document_type,
+                    &drive.config,
+                    protocol_v13,
+                )
+                .expect("query should be built");
+                let (results, _, _) = query
+                    .execute_raw_results_no_proof(&drive, None, None, protocol_v13)
+                    .expect("query should be executed");
+
+                let names: Vec<(String, String)> = results
+                    .iter()
+                    .map(|result| {
+                        let document = Document::from_bytes(
+                            result.as_slice(),
+                            person_document_type,
+                            protocol_v13,
+                        )
+                        .expect("we should be able to deserialize the document");
+                        let first_name = document
+                            .get("firstName")
+                            .expect("we should be able to get the first name")
+                            .as_text()
+                            .expect("the first name should be a string")
+                            .to_string();
+                        let last_name = document
+                            .get("lastName")
+                            .expect("we should be able to get the last name")
+                            .as_text()
+                            .expect("the last name should be a string")
+                            .to_string();
+                        (first_name, last_name)
+                    })
+                    .collect();
+                let expected: Vec<(String, String)> = expected
+                    .into_iter()
+                    .map(|(first, last)| (first.to_string(), last.to_string()))
+                    .collect();
+
+                assert_eq!(names, expected);
+
+                let (proof_root_hash, proof_results, _) = query
+                    .execute_with_proof_only_get_elements(&drive, None, None, protocol_v13)
+                    .expect("we should be able to a proof");
+                assert_eq!(root_hash, proof_root_hash);
+                assert_eq!(results, proof_results);
+            };
+
+        let encoded_id = |seed: u8| bs58::encode(vec![seed; 32]).into_string();
+
+        // v0 bakes the cursor's lastName ("Moore") into every branch's
+        // default subquery, dropping (Ben, Barber) and (Cara, Abbott).
+        assert_v13_query_returns(
+            &json!({
+                "where": [
+                    ["firstName", "in", ["Adam", "Ben", "Cara"]],
+                ],
+                "startAfter": encoded_id(2), // Adam Moore
+                "limit": 100,
+                "orderBy": [
+                    ["firstName", "asc"],
+                    ["lastName", "asc"]
+                ]
+            }),
+            vec![("Adam", "Sinclair"), ("Ben", "Nichols"), ("Cara", "Zane")],
+        );
+
+        // Cursor in a middle branch: v0 wrongly includes (Adam, Sinclair),
+        // which is ordered before the cursor, and drops (Cara, Abbott).
+        assert_v13_query_returns(
+            &json!({
+                "where": [
+                    ["firstName", "in", ["Adam", "Ben", "Cara"]],
+                ],
+                "startAfter": encoded_id(5), // Ben Nichols
+                "limit": 100,
+                "orderBy": [
+                    ["firstName", "asc"],
+                    ["lastName", "asc"]
+                ]
+            }),
+            vec![("Adam", "Sinclair"), ("Cara", "Zane")],
+        );
+
+        // Descending cursor: v0 keeps only earlier-branch values below the
+        // cursor's lastName and drops the entire Adam branch.
+        assert_v13_query_returns(
+            &json!({
+                "where": [
+                    ["firstName", "in", ["Adam", "Ben", "Cara"]],
+                ],
+                "startAfter": encoded_id(4), // Ben Barber
+                "limit": 100,
+                "orderBy": [
+                    ["firstName", "desc"],
+                    ["lastName", "desc"]
+                ]
+            }),
+            vec![("Cara", "Abbott")],
+        );
+
+        // Cursorless descending page: v0 iterates branches descending but
+        // each branch's lastNames ascending (index direction).
+        assert_v13_query_returns(
+            &json!({
+                "where": [
+                    ["firstName", "in", ["Adam", "Ben", "Cara"]],
+                ],
+                "limit": 100,
+                "orderBy": [
+                    ["firstName", "desc"],
+                    ["lastName", "desc"]
+                ]
+            }),
+            vec![
+                ("Cara", "Abbott"),
+                ("Cara", "Zane"),
+                ("Ben", "Barber"),
+                ("Ben", "Nichols"),
+                ("Adam", "Kline"),
+                ("Adam", "Moore"),
+                ("Adam", "Sinclair"),
+            ],
+        );
+    }
+
+    #[cfg(feature = "server")]
+    #[test]
     fn test_family_sql_query() {
         let platform_version = PlatformVersion::latest();
         // These helpers confirm that sql statements produce the same drive query
