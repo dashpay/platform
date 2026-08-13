@@ -99,6 +99,7 @@ impl DocumentTypeV1 {
                 // therefore has no ranked key ceiling to enforce.
                 admit_ranked: false,
                 ranked_index_key_length_check: common::no_ranked_index_key_length_check,
+                ranked_index_structure_check: common::no_ranked_index_structure_check,
             },
             platform_version,
         )

@@ -14,6 +14,11 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     //     failed transition only, for all transitions, or for none — and the
     //     transformer/dispatch code does not consistently express any of
     //     those policies (see issue #2867).
+    //   - The transitions of one batch are flattened into a single GroveDB
+    //     batch whose document operations cannot see each other, so two of
+    //     them that jointly empty an index group leave the group tree behind
+    //     — a document-less group that still ranks, and still proves. See
+    //     SystemLimits::max_transitions_in_documents_batch.
     // Before lifting this cap above 1, the whole batch validation +
     // transformer + nonce-bump path must be reviewed and the atomicity /
     // nonce semantics fixed. Pulling the cap higher today would expose

@@ -294,6 +294,81 @@ pub fn setup_family_tests(
 }
 
 #[cfg(feature = "server")]
+/// Inserts the test "family" contract and adds the given people to it, so
+/// tests that pin an exact document order (e.g. cursor-based pagination)
+/// can use explicit ids and names.
+fn setup_family_tests_with_people(
+    people: &[Person],
+    platform_version: &PlatformVersion,
+) -> (Drive, DataContract) {
+    let drive_config = DriveConfig::default();
+
+    let drive = setup_drive(Some(drive_config));
+
+    let db_transaction = drive.grove.start_transaction();
+
+    // Create contracts tree
+    let mut batch = GroveDbOpBatch::new();
+
+    add_init_contracts_structure_operations(&mut batch);
+
+    drive
+        .grove_apply_batch(batch, false, Some(&db_transaction), &platform_version.drive)
+        .expect("expected to create contracts tree successfully");
+
+    // setup code
+    let contract = test_helpers::setup_contract(
+        &drive,
+        "tests/supporting_files/contract/family/family-contract.json",
+        None,
+        None,
+        None::<fn(&mut DataContract)>,
+        Some(&db_transaction),
+        Some(platform_version),
+    );
+
+    for person in people {
+        let value = serde_json::to_value(person).expect("serialized person");
+        let document_cbor = cbor_serializer::serializable_value_to_cbor(&value, Some(0))
+            .expect("expected to serialize to cbor");
+        let document = Document::from_cbor(document_cbor.as_slice(), None, None, platform_version)
+            .expect("document should be properly deserialized");
+
+        let document_type = contract
+            .document_type_for_name("person")
+            .expect("expected to get document type");
+
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document, storage_flags)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                true,
+                BlockInfo::genesis(),
+                true,
+                Some(&db_transaction),
+                platform_version,
+                None,
+            )
+            .expect("document should be inserted");
+    }
+    drive
+        .grove
+        .commit_transaction(db_transaction)
+        .unwrap()
+        .expect("transaction should be committed");
+
+    (drive, contract)
+}
+
+#[cfg(feature = "server")]
 /// Inserts the test "family" contract and adds `count` documents containing randomly named people to it.
 pub fn setup_countable_family_tests(
     count: u32,
@@ -1208,6 +1283,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -1256,6 +1332,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -1323,6 +1400,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -1654,6 +1732,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -1710,6 +1789,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -1761,6 +1841,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -1813,6 +1894,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -1873,6 +1955,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -1921,6 +2004,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -1981,6 +2065,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -2040,6 +2125,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -2658,6 +2744,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -2989,6 +3076,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -3045,6 +3133,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -3096,6 +3185,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -3148,6 +3238,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -3208,6 +3299,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -3256,6 +3348,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -3316,6 +3409,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -3375,6 +3469,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -4045,6 +4140,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -4126,6 +4222,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -4185,6 +4282,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -4238,6 +4336,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -4297,6 +4396,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -4333,6 +4433,394 @@ mod tests {
 
     #[cfg(feature = "server")]
     #[test]
+    fn test_family_single_in_clause_with_cursor_keeps_sibling_branches_intact() {
+        let platform_version = PlatformVersion::latest();
+
+        // Every branch has last names on both sides of the cursors' last
+        // names, so wrongly applying the cursor's lastName filter to a
+        // sibling branch changes the result set.
+        let people: Vec<Person> = [
+            (1u8, "Adam", "Kline"),
+            (2, "Adam", "Moore"),
+            (3, "Adam", "Sinclair"),
+            (4, "Ben", "Barber"),
+            (5, "Ben", "Nichols"),
+            (6, "Cara", "Abbott"),
+            (7, "Cara", "Zane"),
+        ]
+        .into_iter()
+        .map(|(seed, first_name, last_name)| Person {
+            id: vec![seed; 32],
+            owner_id: vec![seed.wrapping_add(100); 32],
+            first_name: first_name.to_string(),
+            middle_name: format!("{}middle", first_name),
+            last_name: last_name.to_string(),
+            age: seed + 20,
+        })
+        .collect();
+
+        let (drive, contract) = setup_family_tests_with_people(&people, platform_version);
+        let person_document_type = contract
+            .document_type_for_name("person")
+            .expect("contract should have a person document type");
+
+        let root_hash = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("there is always a root hash");
+
+        let full_names = |results: &Vec<Vec<u8>>| -> Vec<(String, String)> {
+            results
+                .iter()
+                .map(|result| {
+                    let document = Document::from_bytes(
+                        result.as_slice(),
+                        person_document_type,
+                        platform_version,
+                    )
+                    .expect("we should be able to deserialize the document");
+                    let first_name = document
+                        .get("firstName")
+                        .expect("we should be able to get the first name")
+                        .as_text()
+                        .expect("the first name should be a string")
+                        .to_string();
+                    let last_name = document
+                        .get("lastName")
+                        .expect("we should be able to get the last name")
+                        .as_text()
+                        .expect("the last name should be a string")
+                        .to_string();
+                    (first_name, last_name)
+                })
+                .collect()
+        };
+
+        // Brute force over the inserted people: the full (firstName,
+        // lastName) ordering.
+        let ordered_names = |ascending: bool| -> Vec<(String, String)> {
+            let mut ordered: Vec<(String, String)> = people
+                .iter()
+                .map(|person| (person.first_name.clone(), person.last_name.clone()))
+                .collect();
+            ordered.sort();
+            if !ascending {
+                ordered.reverse();
+            }
+            ordered
+        };
+
+        // Everything strictly after the cursor person.
+        let expected_after = |cursor_id: u8, ascending: bool| -> Vec<(String, String)> {
+            let mut ordered = ordered_names(ascending);
+            let cursor = people
+                .iter()
+                .find(|person| person.id == vec![cursor_id; 32])
+                .expect("cursor person should exist");
+            let cursor_position = ordered
+                .iter()
+                .position(|name| name == &(cursor.first_name.clone(), cursor.last_name.clone()))
+                .expect("cursor person should be in the ordering");
+            ordered.split_off(cursor_position + 1)
+        };
+
+        let assert_query_returns =
+            |query_value: &serde_json::Value, expected: Vec<(String, String)>| {
+                let where_cbor = cbor_serializer::serializable_value_to_cbor(query_value, None)
+                    .expect("expected to serialize to cbor");
+                let query = DriveDocumentQuery::from_cbor(
+                    where_cbor.as_slice(),
+                    &contract,
+                    person_document_type,
+                    &drive.config,
+                    platform_version,
+                )
+                .expect("query should be built");
+                let (results, _, _) = query
+                    .execute_raw_results_no_proof(&drive, None, None, platform_version)
+                    .expect("query should be executed");
+
+                assert_eq!(full_names(&results), expected);
+
+                let (proof_root_hash, proof_results, _) = query
+                    .execute_with_proof_only_get_elements(&drive, None, None, platform_version)
+                    .expect("we should be able to a proof");
+                assert_eq!(root_hash, proof_root_hash);
+                assert_eq!(results, proof_results);
+            };
+
+        let encoded_id = |seed: u8| bs58::encode(vec![seed; 32]).into_string();
+
+        // Page-one (no cursor) queries: the cursor pages below must agree
+        // with these on ordering.
+        assert_query_returns(
+            &json!({
+                "where": [
+                    ["firstName", "in", ["Adam", "Ben", "Cara"]],
+                ],
+                "limit": 100,
+                "orderBy": [
+                    ["firstName", "asc"],
+                    ["lastName", "asc"]
+                ]
+            }),
+            ordered_names(true),
+        );
+
+        assert_query_returns(
+            &json!({
+                "where": [
+                    ["firstName", "in", ["Adam", "Ben", "Cara"]],
+                ],
+                "limit": 100,
+                "orderBy": [
+                    ["firstName", "desc"],
+                    ["lastName", "desc"]
+                ]
+            }),
+            ordered_names(false),
+        );
+
+        // Cursor in the first branch: both later branches must come back
+        // whole.
+        assert_query_returns(
+            &json!({
+                "where": [
+                    ["firstName", "in", ["Adam", "Ben", "Cara"]],
+                ],
+                "startAfter": encoded_id(2), // Adam Moore
+                "limit": 100,
+                "orderBy": [
+                    ["firstName", "asc"],
+                    ["lastName", "asc"]
+                ]
+            }),
+            expected_after(2, true),
+        );
+
+        // Cursor in a middle branch: the earlier branch must return
+        // nothing, the later branch must come back whole.
+        assert_query_returns(
+            &json!({
+                "where": [
+                    ["firstName", "in", ["Adam", "Ben", "Cara"]],
+                ],
+                "startAfter": encoded_id(5), // Ben Nichols
+                "limit": 100,
+                "orderBy": [
+                    ["firstName", "asc"],
+                    ["lastName", "asc"]
+                ]
+            }),
+            expected_after(5, true),
+        );
+
+        // Descending: the branch ordered after the cursor's branch must
+        // come back whole.
+        assert_query_returns(
+            &json!({
+                "where": [
+                    ["firstName", "in", ["Adam", "Ben", "Cara"]],
+                ],
+                "startAfter": encoded_id(4), // Ben Barber
+                "limit": 100,
+                "orderBy": [
+                    ["firstName", "desc"],
+                    ["lastName", "desc"]
+                ]
+            }),
+            expected_after(4, false),
+        );
+    }
+
+    #[cfg(feature = "server")]
+    #[test]
+    fn test_family_single_in_clause_with_cursor_v0_lowering_frozen_at_protocol_v13() {
+        // Freeze test for the pre-v14 lowering: protocol versions <= 13 are
+        // on chain, so their (defective) cursor lowering must replay
+        // byte-for-byte. The expected values below are the v0 outputs the
+        // sibling-branch fix corrects at v14 — see
+        // test_family_single_in_clause_with_cursor_keeps_sibling_branches_intact
+        // for the correct shapes. Never edit these expectations.
+        let platform_version = PlatformVersion::latest();
+        let protocol_v13 = PlatformVersion::get(13).expect("protocol version 13 exists");
+        assert_eq!(
+            protocol_v13
+                .drive
+                .methods
+                .document
+                .query
+                .non_primary_key_path_query,
+            0,
+            "protocol v13 must keep the v0 non-primary-key path query lowering"
+        );
+
+        let people: Vec<Person> = [
+            (1u8, "Adam", "Kline"),
+            (2, "Adam", "Moore"),
+            (3, "Adam", "Sinclair"),
+            (4, "Ben", "Barber"),
+            (5, "Ben", "Nichols"),
+            (6, "Cara", "Abbott"),
+            (7, "Cara", "Zane"),
+        ]
+        .into_iter()
+        .map(|(seed, first_name, last_name)| Person {
+            id: vec![seed; 32],
+            owner_id: vec![seed.wrapping_add(100); 32],
+            first_name: first_name.to_string(),
+            middle_name: format!("{}middle", first_name),
+            last_name: last_name.to_string(),
+            age: seed + 20,
+        })
+        .collect();
+
+        let (drive, contract) = setup_family_tests_with_people(&people, platform_version);
+        let person_document_type = contract
+            .document_type_for_name("person")
+            .expect("contract should have a person document type");
+
+        let root_hash = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("there is always a root hash");
+
+        let assert_v13_query_returns =
+            |query_value: &serde_json::Value, expected: Vec<(&str, &str)>| {
+                let where_cbor = cbor_serializer::serializable_value_to_cbor(query_value, None)
+                    .expect("expected to serialize to cbor");
+                let query = DriveDocumentQuery::from_cbor(
+                    where_cbor.as_slice(),
+                    &contract,
+                    person_document_type,
+                    &drive.config,
+                    protocol_v13,
+                )
+                .expect("query should be built");
+                let (results, _, _) = query
+                    .execute_raw_results_no_proof(&drive, None, None, protocol_v13)
+                    .expect("query should be executed");
+
+                let names: Vec<(String, String)> = results
+                    .iter()
+                    .map(|result| {
+                        let document = Document::from_bytes(
+                            result.as_slice(),
+                            person_document_type,
+                            protocol_v13,
+                        )
+                        .expect("we should be able to deserialize the document");
+                        let first_name = document
+                            .get("firstName")
+                            .expect("we should be able to get the first name")
+                            .as_text()
+                            .expect("the first name should be a string")
+                            .to_string();
+                        let last_name = document
+                            .get("lastName")
+                            .expect("we should be able to get the last name")
+                            .as_text()
+                            .expect("the last name should be a string")
+                            .to_string();
+                        (first_name, last_name)
+                    })
+                    .collect();
+                let expected: Vec<(String, String)> = expected
+                    .into_iter()
+                    .map(|(first, last)| (first.to_string(), last.to_string()))
+                    .collect();
+
+                assert_eq!(names, expected);
+
+                let (proof_root_hash, proof_results, _) = query
+                    .execute_with_proof_only_get_elements(&drive, None, None, protocol_v13)
+                    .expect("we should be able to a proof");
+                assert_eq!(root_hash, proof_root_hash);
+                assert_eq!(results, proof_results);
+            };
+
+        let encoded_id = |seed: u8| bs58::encode(vec![seed; 32]).into_string();
+
+        // v0 bakes the cursor's lastName ("Moore") into every branch's
+        // default subquery, dropping (Ben, Barber) and (Cara, Abbott).
+        assert_v13_query_returns(
+            &json!({
+                "where": [
+                    ["firstName", "in", ["Adam", "Ben", "Cara"]],
+                ],
+                "startAfter": encoded_id(2), // Adam Moore
+                "limit": 100,
+                "orderBy": [
+                    ["firstName", "asc"],
+                    ["lastName", "asc"]
+                ]
+            }),
+            vec![("Adam", "Sinclair"), ("Ben", "Nichols"), ("Cara", "Zane")],
+        );
+
+        // Cursor in a middle branch: v0 wrongly includes (Adam, Sinclair),
+        // which is ordered before the cursor, and drops (Cara, Abbott).
+        assert_v13_query_returns(
+            &json!({
+                "where": [
+                    ["firstName", "in", ["Adam", "Ben", "Cara"]],
+                ],
+                "startAfter": encoded_id(5), // Ben Nichols
+                "limit": 100,
+                "orderBy": [
+                    ["firstName", "asc"],
+                    ["lastName", "asc"]
+                ]
+            }),
+            vec![("Adam", "Sinclair"), ("Cara", "Zane")],
+        );
+
+        // Descending cursor: v0 keeps only earlier-branch values below the
+        // cursor's lastName and drops the entire Adam branch.
+        assert_v13_query_returns(
+            &json!({
+                "where": [
+                    ["firstName", "in", ["Adam", "Ben", "Cara"]],
+                ],
+                "startAfter": encoded_id(4), // Ben Barber
+                "limit": 100,
+                "orderBy": [
+                    ["firstName", "desc"],
+                    ["lastName", "desc"]
+                ]
+            }),
+            vec![("Cara", "Abbott")],
+        );
+
+        // Cursorless descending page: v0 iterates branches descending but
+        // each branch's lastNames ascending (index direction).
+        assert_v13_query_returns(
+            &json!({
+                "where": [
+                    ["firstName", "in", ["Adam", "Ben", "Cara"]],
+                ],
+                "limit": 100,
+                "orderBy": [
+                    ["firstName", "desc"],
+                    ["lastName", "desc"]
+                ]
+            }),
+            vec![
+                ("Cara", "Abbott"),
+                ("Cara", "Zane"),
+                ("Ben", "Barber"),
+                ("Ben", "Nichols"),
+                ("Adam", "Kline"),
+                ("Adam", "Moore"),
+                ("Adam", "Sinclair"),
+            ],
+        );
+    }
+
+    #[cfg(feature = "server")]
+    #[test]
     fn test_family_sql_query() {
         let platform_version = PlatformVersion::latest();
         // These helpers confirm that sql statements produce the same drive query
@@ -4360,13 +4848,18 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("should build query");
 
         let sql_string = "select * from person order by firstName asc limit 100";
-        let query2 =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query2 = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         assert_eq!(query1, query2);
 
@@ -4385,13 +4878,18 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("should build query");
 
         let sql_string = "select * from person where firstName = 'Chris'";
-        let query2 =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query2 = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         assert_eq!(query1, query2);
 
@@ -4414,14 +4912,19 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("should build query");
 
         let sql_string =
             "select * from person where firstName < 'Chris' order by firstName asc limit 100";
-        let query2 =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query2 = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         assert_eq!(query1, query2);
 
@@ -4444,14 +4947,19 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("should build query");
 
         let sql_string =
             "select * from person where firstName like 'C%' order by firstName asc limit 100";
-        let query2 =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query2 = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         assert_eq!(query1, query2);
 
@@ -4475,13 +4983,18 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("should build query");
 
         let sql_string = "select * from person where firstName > 'Chris' and firstName <= 'Noellyn' order by firstName asc limit 100";
-        let query2 =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query2 = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         assert_eq!(query1, query2);
 
@@ -4505,14 +5018,19 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("should build query");
 
         let sql_string =
             "select * from person where firstName in ('a', 'b') order by firstName limit 100";
-        let query2 =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query2 = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         assert_eq!(query1, query2);
     }
@@ -4575,6 +5093,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -5014,6 +5533,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -5065,6 +5585,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -5146,6 +5667,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -5205,6 +5727,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -5280,6 +5803,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -5336,6 +5860,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -5384,6 +5909,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -5575,6 +6101,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -5671,6 +6198,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -5767,6 +6295,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -5863,6 +6392,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -5959,6 +6489,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -6152,6 +6683,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
 
@@ -6359,6 +6891,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
 
@@ -6579,6 +7112,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -6633,6 +7167,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -6688,6 +7223,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -6773,6 +7309,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -6872,6 +7409,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -6976,6 +7514,7 @@ mod tests {
             &contract,
             domain_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
         let (results, _, _) = query
@@ -7054,6 +7593,7 @@ mod tests {
                 &contract,
                 withdrawal_document_type,
                 &drive.config,
+                platform_version,
             )
             .expect("query should be built");
             let (results, _, _) = query
@@ -7232,6 +7772,7 @@ mod tests {
                 &contract,
                 withdrawal_document_type,
                 &drive.config,
+                platform_version,
             )
             .expect("query should be built");
             let (results, _, _) = query
@@ -7599,6 +8140,7 @@ mod tests {
             &contract,
             document_type,
             &DriveConfig::default(),
+            platform_version,
         )
         .expect("should create a query from cbor");
 
@@ -7659,6 +8201,7 @@ mod tests {
             &contract,
             person_document_type,
             &drive.config,
+            platform_version,
         )
         .expect("query should be built");
 
@@ -7667,5 +8210,888 @@ mod tests {
             .expect("we should be able to a proof");
 
         assert!(!proof.is_empty(), "proof should not be empty");
+    }
+}
+
+#[cfg(feature = "server")]
+#[cfg(test)]
+mod multi_in_tests {
+    //! Multiple `In` clauses on consecutive compound-index properties
+    //! (protocol version 14+). Each positive case cross-checks the
+    //! index-driven results against a brute-force filter over every
+    //! stored document, and round-trips the proof against the live
+    //! root hash.
+
+    use super::*;
+
+    /// All people as (serialized bytes, document) pairs.
+    fn all_people(
+        drive: &Drive,
+        contract: &DataContract,
+        platform_version: &PlatformVersion,
+    ) -> Vec<(Vec<u8>, Document)> {
+        let person_document_type = contract
+            .document_type_for_name("person")
+            .expect("contract should have a person document type");
+        let query_value = json!({ "limit": 100 });
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
+        let query = DriveDocumentQuery::from_cbor(
+            where_cbor.as_slice(),
+            contract,
+            person_document_type,
+            &drive.config,
+            platform_version,
+        )
+        .expect("query should be built");
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(drive, None, None, platform_version)
+            .expect("expected to fetch all people");
+        results
+            .into_iter()
+            .map(|bytes| {
+                let document =
+                    Document::from_bytes(bytes.as_slice(), person_document_type, platform_version)
+                        .expect("document should deserialize");
+                (bytes, document)
+            })
+            .collect()
+    }
+
+    fn text_field(document: &Document, field: &str) -> String {
+        document
+            .get(field)
+            .expect("field should exist")
+            .as_text()
+            .expect("field should be text")
+            .to_string()
+    }
+
+    /// Run `query_value` both without proof and with proof, assert the
+    /// proof verifies against the live root hash and returns identical
+    /// results, and return the deserialized documents.
+    fn run_query_with_proof_round_trip(
+        drive: &Drive,
+        contract: &DataContract,
+        query_value: serde_json::Value,
+        platform_version: &PlatformVersion,
+    ) -> Vec<Document> {
+        let person_document_type = contract
+            .document_type_for_name("person")
+            .expect("contract should have a person document type");
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
+        let query = DriveDocumentQuery::from_cbor(
+            where_cbor.as_slice(),
+            contract,
+            person_document_type,
+            &drive.config,
+            platform_version,
+        )
+        .expect("query should be built");
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(drive, None, None, platform_version)
+            .expect("query should execute");
+
+        let root_hash = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("there is always a root hash");
+        let (proof_root_hash, proof_results, _) = query
+            .execute_with_proof_only_get_elements(drive, None, None, platform_version)
+            .expect("proof should be generated and verified");
+        assert_eq!(root_hash, proof_root_hash);
+        assert_eq!(results, proof_results);
+
+        results
+            .into_iter()
+            .map(|bytes| {
+                Document::from_bytes(bytes.as_slice(), person_document_type, platform_version)
+                    .expect("document should deserialize")
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_two_in_clauses_on_compound_index() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup_family_tests(10, 73509, platform_version);
+        let people = all_people(&drive, &contract, platform_version);
+
+        // Pick in lists that partially overlap the stored data
+        let first_names: Vec<String> = {
+            let mut names: Vec<String> = people
+                .iter()
+                .map(|(_, document)| text_field(document, "firstName"))
+                .collect();
+            names.sort();
+            names.dedup();
+            names.into_iter().take(3).collect()
+        };
+        let last_names: Vec<String> = {
+            let mut names: Vec<String> = people
+                .iter()
+                .map(|(_, document)| text_field(document, "lastName"))
+                .collect();
+            names.sort();
+            names.dedup();
+            names.into_iter().take(3).collect()
+        };
+        assert!(first_names.len() >= 2, "fixture should have enough names");
+        assert!(last_names.len() >= 2, "fixture should have enough names");
+
+        let query_value = json!({
+            "where": [
+                ["firstName", "in", first_names],
+                ["lastName", "in", last_names],
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["firstName", "asc"],
+                ["lastName", "asc"],
+            ]
+        });
+        let documents =
+            run_query_with_proof_round_trip(&drive, &contract, query_value, platform_version);
+
+        // Brute-force expectation in index traversal order
+        let mut expected: Vec<(String, String)> = people
+            .iter()
+            .filter_map(|(_, document)| {
+                let first_name = text_field(document, "firstName");
+                let last_name = text_field(document, "lastName");
+                (first_names.contains(&first_name) && last_names.contains(&last_name))
+                    .then_some((first_name, last_name))
+            })
+            .collect();
+        expected.sort();
+        assert!(!expected.is_empty(), "fixture should produce matches");
+
+        let returned: Vec<(String, String)> = documents
+            .iter()
+            .map(|document| {
+                (
+                    text_field(document, "firstName"),
+                    text_field(document, "lastName"),
+                )
+            })
+            .collect();
+        assert_eq!(returned, expected);
+    }
+
+    #[test]
+    fn test_two_in_clauses_descending_first_level() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup_family_tests(10, 73509, platform_version);
+        let people = all_people(&drive, &contract, platform_version);
+
+        let first_names: Vec<String> = {
+            let mut names: Vec<String> = people
+                .iter()
+                .map(|(_, document)| text_field(document, "firstName"))
+                .collect();
+            names.sort();
+            names.dedup();
+            names
+        };
+        let last_names: Vec<String> = {
+            let mut names: Vec<String> = people
+                .iter()
+                .map(|(_, document)| text_field(document, "lastName"))
+                .collect();
+            names.sort();
+            names.dedup();
+            names
+        };
+
+        let query_value = json!({
+            "where": [
+                ["firstName", "in", first_names],
+                ["lastName", "in", last_names],
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["firstName", "desc"],
+                ["lastName", "asc"],
+            ]
+        });
+        let documents =
+            run_query_with_proof_round_trip(&drive, &contract, query_value, platform_version);
+
+        let mut expected: Vec<(String, String)> = people
+            .iter()
+            .map(|(_, document)| {
+                (
+                    text_field(document, "firstName"),
+                    text_field(document, "lastName"),
+                )
+            })
+            .collect();
+        // firstName descending, lastName ascending within it
+        expected.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+
+        let returned: Vec<(String, String)> = documents
+            .iter()
+            .map(|document| {
+                (
+                    text_field(document, "firstName"),
+                    text_field(document, "lastName"),
+                )
+            })
+            .collect();
+        assert_eq!(returned, expected);
+    }
+
+    #[test]
+    fn test_three_in_clauses_on_compound_index() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup_family_tests(10, 73509, platform_version);
+        let people = all_people(&drive, &contract, platform_version);
+
+        let names_of = |field: &str| -> Vec<String> {
+            let mut names: Vec<String> = people
+                .iter()
+                .map(|(_, document)| text_field(document, field))
+                .collect();
+            names.sort();
+            names.dedup();
+            names
+        };
+        // Keep the cross product under the 100-branch cap (3 x 3 x 10 = 90)
+        // while guaranteeing matches: the shortened lists keep the first
+        // document's values.
+        let mut first_names = names_of("firstName");
+        first_names.sort_by_key(|name| *name != text_field(&people[0].1, "firstName"));
+        first_names.truncate(3);
+        first_names.sort();
+        let mut middle_names = names_of("middleName");
+        middle_names.sort_by_key(|name| *name != text_field(&people[0].1, "middleName"));
+        middle_names.truncate(3);
+        middle_names.sort();
+        let last_names = names_of("lastName");
+
+        let query_value = json!({
+            "where": [
+                ["firstName", "in", first_names],
+                ["middleName", "in", middle_names],
+                ["lastName", "in", last_names],
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["firstName", "asc"],
+                ["middleName", "asc"],
+                ["lastName", "asc"],
+            ]
+        });
+        let documents =
+            run_query_with_proof_round_trip(&drive, &contract, query_value, platform_version);
+
+        let mut expected: Vec<(String, String, String)> = people
+            .iter()
+            .filter_map(|(_, document)| {
+                let first_name = text_field(document, "firstName");
+                let middle_name = text_field(document, "middleName");
+                (first_names.contains(&first_name) && middle_names.contains(&middle_name))
+                    .then_some((first_name, middle_name, text_field(document, "lastName")))
+            })
+            .collect();
+        expected.sort();
+        assert!(!expected.is_empty(), "fixture should produce matches");
+
+        let returned: Vec<(String, String, String)> = documents
+            .iter()
+            .map(|document| {
+                (
+                    text_field(document, "firstName"),
+                    text_field(document, "middleName"),
+                    text_field(document, "lastName"),
+                )
+            })
+            .collect();
+        assert_eq!(returned, expected);
+    }
+
+    #[test]
+    fn test_two_in_clauses_with_trailing_range() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup_family_tests(10, 73509, platform_version);
+        let people = all_people(&drive, &contract, platform_version);
+
+        let names_of = |field: &str| -> Vec<String> {
+            let mut names: Vec<String> = people
+                .iter()
+                .map(|(_, document)| text_field(document, field))
+                .collect();
+            names.sort();
+            names.dedup();
+            names
+        };
+        let first_names = names_of("firstName");
+        let middle_names = names_of("middleName");
+
+        let query_value = json!({
+            "where": [
+                ["firstName", "in", first_names],
+                ["middleName", "in", middle_names],
+                ["lastName", ">", "M"],
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["firstName", "asc"],
+                ["middleName", "asc"],
+                ["lastName", "asc"],
+            ]
+        });
+        let documents =
+            run_query_with_proof_round_trip(&drive, &contract, query_value, platform_version);
+
+        let mut expected: Vec<(String, String, String)> = people
+            .iter()
+            .filter_map(|(_, document)| {
+                let last_name = text_field(document, "lastName");
+                (last_name.as_str() > "M").then(|| {
+                    (
+                        text_field(document, "firstName"),
+                        text_field(document, "middleName"),
+                        last_name,
+                    )
+                })
+            })
+            .collect();
+        expected.sort();
+        assert!(!expected.is_empty(), "fixture should produce matches");
+
+        let returned: Vec<(String, String, String)> = documents
+            .iter()
+            .map(|document| {
+                (
+                    text_field(document, "firstName"),
+                    text_field(document, "middleName"),
+                    text_field(document, "lastName"),
+                )
+            })
+            .collect();
+        assert_eq!(returned, expected);
+    }
+
+    #[test]
+    fn test_two_in_clauses_with_descending_left_over_property() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup_family_tests(10, 73509, platform_version);
+        let people = all_people(&drive, &contract, platform_version);
+
+        let names_of = |field: &str| -> Vec<String> {
+            let mut names: Vec<String> = people
+                .iter()
+                .map(|(_, document)| text_field(document, field))
+                .collect();
+            names.sort();
+            names.dedup();
+            names
+        };
+        let first_names = names_of("firstName");
+        let middle_names = names_of("middleName");
+
+        // [firstName, middleName, lastName]: lastName is left over and
+        // ordered descending
+        let query_value = json!({
+            "where": [
+                ["firstName", "in", first_names],
+                ["middleName", "in", middle_names],
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["firstName", "asc"],
+                ["middleName", "asc"],
+                ["lastName", "desc"],
+            ]
+        });
+        let documents =
+            run_query_with_proof_round_trip(&drive, &contract, query_value, platform_version);
+
+        let mut expected: Vec<(String, String, std::cmp::Reverse<String>)> = people
+            .iter()
+            .map(|(_, document)| {
+                (
+                    text_field(document, "firstName"),
+                    text_field(document, "middleName"),
+                    std::cmp::Reverse(text_field(document, "lastName")),
+                )
+            })
+            .collect();
+        expected.sort();
+
+        let returned: Vec<(String, String, std::cmp::Reverse<String>)> = documents
+            .iter()
+            .map(|document| {
+                (
+                    text_field(document, "firstName"),
+                    text_field(document, "middleName"),
+                    std::cmp::Reverse(text_field(document, "lastName")),
+                )
+            })
+            .collect();
+        assert_eq!(returned, expected);
+        assert_eq!(returned.len(), 10);
+    }
+
+    #[test]
+    fn test_equality_prefix_with_two_in_clauses() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup_family_tests(10, 73509, platform_version);
+        let people = all_people(&drive, &contract, platform_version);
+
+        // index: [age, firstName, middleName, lastName]
+        let age = people[0]
+            .1
+            .get("age")
+            .expect("age should exist")
+            .to_integer::<u8>()
+            .expect("age should be an integer");
+        let names_of = |field: &str| -> Vec<String> {
+            let mut names: Vec<String> = people
+                .iter()
+                .map(|(_, document)| text_field(document, field))
+                .collect();
+            names.sort();
+            names.dedup();
+            names
+        };
+        let first_names = names_of("firstName");
+        let middle_names = names_of("middleName");
+
+        let query_value = json!({
+            "where": [
+                ["age", "==", age],
+                ["firstName", "in", first_names],
+                ["middleName", "in", middle_names],
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["firstName", "asc"],
+                ["middleName", "asc"],
+            ]
+        });
+        let documents =
+            run_query_with_proof_round_trip(&drive, &contract, query_value, platform_version);
+
+        let mut expected: Vec<(String, String)> = people
+            .iter()
+            .filter_map(|(_, document)| {
+                let document_age = document
+                    .get("age")
+                    .expect("age should exist")
+                    .to_integer::<u8>()
+                    .expect("age should be an integer");
+                (document_age == age).then(|| {
+                    (
+                        text_field(document, "firstName"),
+                        text_field(document, "middleName"),
+                    )
+                })
+            })
+            .collect();
+        expected.sort();
+        assert!(!expected.is_empty(), "fixture should produce matches");
+
+        let returned: Vec<(String, String)> = documents
+            .iter()
+            .map(|document| {
+                (
+                    text_field(document, "firstName"),
+                    text_field(document, "middleName"),
+                )
+            })
+            .collect();
+        assert_eq!(returned, expected);
+    }
+
+    #[test]
+    fn test_multiple_in_clauses_rejected_before_protocol_version_14() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup_family_tests(10, 73509, platform_version);
+        let platform_version_13 =
+            PlatformVersion::get(13).expect("protocol version 13 should exist");
+
+        let person_document_type = contract
+            .document_type_for_name("person")
+            .expect("contract should have a person document type");
+        let query_value = json!({
+            "where": [
+                ["firstName", "in", ["Adey", "Briney"]],
+                ["lastName", "in", ["Kriskov", "Randolf"]],
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["firstName", "asc"],
+                ["lastName", "asc"],
+            ]
+        });
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
+        // The grammar groups multiple in clauses structurally
+        let query = DriveDocumentQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            person_document_type,
+            &drive.config,
+            platform_version,
+        )
+        .expect("query should be built");
+
+        // ... but the v0 (protocol version <= 13) lowering rejects them
+        let error = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version_13)
+            .expect_err("multiple in clauses must be rejected before protocol version 14");
+        assert!(
+            matches!(error, Error::Query(QuerySyntaxError::MultipleInClauses(_))),
+            "expected MultipleInClauses, got {error:?}"
+        );
+
+        let error = query
+            .clone()
+            .execute_with_proof(&drive, None, None, platform_version_13)
+            .expect_err("multiple in clauses must be rejected on the proof path too");
+        assert!(
+            matches!(error, Error::Query(QuerySyntaxError::MultipleInClauses(_))),
+            "expected MultipleInClauses, got {error:?}"
+        );
+
+        // ... and protocol version 14 accepts the very same query
+        query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("the same query should execute at protocol version 14");
+    }
+
+    #[test]
+    fn test_multiple_in_clauses_reject_cursor_pagination() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup_family_tests(10, 73509, platform_version);
+        let people = all_people(&drive, &contract, platform_version);
+        let start_after = people[0].1.id().to_string(Encoding::Base58);
+
+        let person_document_type = contract
+            .document_type_for_name("person")
+            .expect("contract should have a person document type");
+        let query_value = json!({
+            "where": [
+                ["firstName", "in", ["Adey", "Briney"]],
+                ["lastName", "in", ["Kriskov", "Randolf"]],
+            ],
+            "startAfter": start_after,
+            "limit": 100,
+            "orderBy": [
+                ["firstName", "asc"],
+                ["lastName", "asc"],
+            ]
+        });
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
+        let query = DriveDocumentQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            person_document_type,
+            &drive.config,
+            platform_version,
+        )
+        .expect("query should be built");
+        let error = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect_err("cursor pagination with multiple in clauses must be rejected");
+        assert!(
+            matches!(error, Error::Query(QuerySyntaxError::Unsupported(_))),
+            "expected Unsupported, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn test_multiple_in_clauses_cursor_rejection_precedes_cursor_lookup() {
+        // The shape preflight must fire before the startAfter document is
+        // fetched from storage: a nonexistent cursor may not surface as
+        // StartDocumentNotFound when the shape itself is unsupported (v14)
+        // or rejected (v13).
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup_family_tests(10, 73509, platform_version);
+        let platform_version_13 =
+            PlatformVersion::get(13).expect("protocol version 13 should exist");
+
+        let person_document_type = contract
+            .document_type_for_name("person")
+            .expect("contract should have a person document type");
+        let nonexistent = Identifier::from([77u8; 32]).to_string(Encoding::Base58);
+        let query_value = json!({
+            "where": [
+                ["firstName", "in", ["Adey", "Briney"]],
+                ["lastName", "in", ["Kriskov", "Randolf"]],
+            ],
+            "startAfter": nonexistent,
+            "limit": 100,
+            "orderBy": [
+                ["firstName", "asc"],
+                ["lastName", "asc"],
+            ]
+        });
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
+        let query = DriveDocumentQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            person_document_type,
+            &drive.config,
+            platform_version,
+        )
+        .expect("query should be built");
+
+        let error = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect_err("multi-in with a cursor must be rejected at protocol version 14");
+        assert!(
+            matches!(error, Error::Query(QuerySyntaxError::Unsupported(_))),
+            "expected Unsupported before the cursor lookup, got {error:?}"
+        );
+
+        let error = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version_13)
+            .expect_err("multi-in must be rejected at protocol version 13");
+        assert!(
+            matches!(error, Error::Query(QuerySyntaxError::MultipleInClauses(_))),
+            "expected MultipleInClauses before the cursor lookup, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn test_multiple_in_clauses_cross_product_cap() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup_family_tests(10, 73509, platform_version);
+
+        let person_document_type = contract
+            .document_type_for_name("person")
+            .expect("contract should have a person document type");
+        let first_names: Vec<String> = (0..20).map(|i| format!("First{i:02}")).collect();
+        let last_names: Vec<String> = (0..6).map(|i| format!("Last{i}")).collect();
+        let query_value = json!({
+            "where": [
+                ["firstName", "in", first_names],
+                ["lastName", "in", last_names],
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["firstName", "asc"],
+                ["lastName", "asc"],
+            ]
+        });
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
+        let query = DriveDocumentQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            person_document_type,
+            &drive.config,
+            platform_version,
+        )
+        .expect("query should be built");
+        let error = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect_err("a 120-branch cross product must be rejected");
+        assert!(
+            matches!(error, Error::Query(QuerySyntaxError::InvalidInClause(_))),
+            "expected InvalidInClause, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn test_multiple_in_clauses_must_be_consecutive_index_properties() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup_family_tests(10, 73509, platform_version);
+
+        let person_document_type = contract
+            .document_type_for_name("person")
+            .expect("contract should have a person document type");
+        // No index has middleName and lastName as a leading consecutive
+        // run: [firstName, middleName, lastName] holds them at positions
+        // 1 and 2 with no equality on firstName.
+        let query_value = json!({
+            "where": [
+                ["middleName", "in", ["Ivanna", "Evangeline"]],
+                ["lastName", "in", ["Kriskov", "Randolf"]],
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["middleName", "asc"],
+                ["lastName", "asc"],
+            ]
+        });
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
+        let query = DriveDocumentQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            person_document_type,
+            &drive.config,
+            platform_version,
+        )
+        .expect("query should be built");
+        let error = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect_err("non-consecutive in clauses must be rejected");
+        assert!(
+            matches!(
+                error,
+                Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(_))
+            ),
+            "expected WhereClauseOnNonIndexedProperty, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn test_multiple_in_clauses_require_order_by_on_each_in_field() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup_family_tests(10, 73509, platform_version);
+
+        let person_document_type = contract
+            .document_type_for_name("person")
+            .expect("contract should have a person document type");
+        let query_value = json!({
+            "where": [
+                ["firstName", "in", ["Adey", "Briney"]],
+                ["lastName", "in", ["Kriskov", "Randolf"]],
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["firstName", "asc"],
+            ]
+        });
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
+        let query = DriveDocumentQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            person_document_type,
+            &drive.config,
+            platform_version,
+        )
+        .expect("query should be built");
+        let error = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect_err("missing order by on an in field must be rejected");
+        // Index selection rejects the shape first: the order-by continuity
+        // rule in `Index::matches` disqualifies every candidate index before
+        // the per-field `MissingOrderByForRange` guard could fire
+        assert!(
+            matches!(
+                error,
+                Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(_))
+            ),
+            "expected WhereClauseOnNonIndexedProperty, got {error:?}"
+        );
+    }
+}
+
+#[cfg(feature = "server")]
+#[cfg(test)]
+mod withdrawal_in_clause_placement_equivalence {
+    //! Pins that the v0 (protocol version <= 13) and v1 (protocol version
+    //! 14) withdrawal-by-transaction-index query builders are
+    //! behavior-preserving twins: the `In` clause riding in `equal_clauses`
+    //! (v0) and in `in_clauses` (v1) lower to the identical grovedb path
+    //! query at both protocol versions, so withdrawal processing executes
+    //! the same operations at the same cost across the version flip.
+
+    use super::*;
+    use dpp::data_contracts::SystemDataContract;
+    use dpp::system_data_contracts::load_system_data_contract;
+    use drive::query::{InternalClauses, OrderClause};
+    use indexmap::IndexMap;
+
+    #[test]
+    fn test_in_clause_bucket_placement_lowers_identically() {
+        let platform_version = PlatformVersion::latest();
+        let contract = load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
+            .expect("expected to load withdrawals contract");
+        let document_type = contract
+            .document_type_for_name("withdrawal")
+            .expect("expected withdrawal document type");
+
+        let status_clause = WhereClause {
+            field: "status".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::U8(1),
+        };
+        let transaction_index_clause = WhereClause {
+            field: "transactionIndex".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![Value::U64(1), Value::U64(3), Value::U64(7)]),
+        };
+        let mut order_by = IndexMap::new();
+        order_by.insert(
+            "transactionIndex".to_string(),
+            OrderClause {
+                field: "transactionIndex".to_string(),
+                ascending: true,
+            },
+        );
+
+        // The pre-change shape: the In clause rode in equal_clauses
+        let mut equal_clauses_with_in = BTreeMap::new();
+        equal_clauses_with_in.insert("status".to_string(), status_clause.clone());
+        equal_clauses_with_in.insert(
+            "transactionIndex".to_string(),
+            transaction_index_clause.clone(),
+        );
+        let legacy_shape = drive::query::DriveDocumentQuery {
+            contract: &contract,
+            document_type,
+            internal_clauses: InternalClauses {
+                primary_key_in_clause: None,
+                primary_key_equal_clause: None,
+                in_clauses: Vec::new(),
+                range_clause: None,
+                equal_clauses: equal_clauses_with_in,
+            },
+            offset: None,
+            limit: Some(16),
+            order_by: order_by.clone(),
+            start_at: None,
+            start_at_included: false,
+            block_time_ms: None,
+        };
+
+        // The current shape: the In clause in in_clauses
+        let mut equal_clauses = BTreeMap::new();
+        equal_clauses.insert("status".to_string(), status_clause);
+        let current_shape = drive::query::DriveDocumentQuery {
+            contract: &contract,
+            document_type,
+            internal_clauses: InternalClauses {
+                primary_key_in_clause: None,
+                primary_key_equal_clause: None,
+                in_clauses: vec![transaction_index_clause],
+                range_clause: None,
+                equal_clauses,
+            },
+            offset: None,
+            limit: Some(16),
+            order_by,
+            start_at: None,
+            start_at_included: false,
+            block_time_ms: None,
+        };
+
+        for protocol_version in [13u32, 14u32] {
+            let version =
+                PlatformVersion::get(protocol_version).expect("expected platform version to exist");
+            let legacy_path_query = legacy_shape
+                .construct_path_query(None, version)
+                .expect("legacy shape should lower");
+            let current_path_query = current_shape
+                .construct_path_query(None, version)
+                .expect("current shape should lower");
+            assert_eq!(
+                legacy_path_query, current_path_query,
+                "the two in-clause bucket placements must lower to the identical \
+                 path query at protocol version {protocol_version}"
+            );
+        }
     }
 }

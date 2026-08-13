@@ -421,7 +421,11 @@ struct LoadIdentityView: View {
                     if let existing = existing {
                         existing.balance = Int64(bitPattern: fetchedBalance)
                         existing.alias = trimmedAlias
-                        existing.isLocal = false
+                        // The user just added/reloaded this identity
+                        // by hand — mark the provenance. (This flow
+                        // previously wrote `false`, which erased the
+                        // very thing the flag exists to record.)
+                        existing.isLocal = true
                         existing.identityType = identityType.rawValue
                         existing.network = network
                         existing.lastUpdated = Date()
@@ -434,7 +438,7 @@ struct LoadIdentityView: View {
                             identityId: validIdData,
                             balance: Int64(bitPattern: fetchedBalance),
                             revision: 0,
-                            isLocal: false,
+                            isLocal: true,
                             alias: trimmedAlias,
                             dpnsName: nil,
                             mainDpnsName: nil,

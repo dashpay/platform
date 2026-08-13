@@ -260,4 +260,39 @@ describe('migrateConfigFileFactory', () => {
       );
     }
   });
+
+  // Upgrading Dashmate has to leave a mark on the config file even when nothing
+  // needed migrating, because that recorded version is the only thing that tells
+  // the next command every config is stale. `ConfigFileJsonRepository.read()`
+  // marks all configs changed when the version moved, and that is what re-renders
+  // service templates after an upgrade. Stamping the version only when a
+  // migration happened to apply would leave nodes running templates rendered by
+  // an older Dashmate, with nothing to signal it.
+  it('should record the new version after an upgrade even when no migration applies', () => {
+    const configFileData = getConfigFileDataV0250();
+
+    // Both versions sit above every migration key, so nothing can match and the
+    // recorded version is the only thing the upgrade can change.
+    const installedVersion = '98.0.0';
+    const upgradedVersion = '99.0.0';
+
+    configFileData.configFormatVersion = installedVersion;
+
+    const migrated = migrateConfigFile(
+      configFileData,
+      configFileData.configFormatVersion,
+      upgradedVersion,
+    );
+
+    expect(migrated.configFormatVersion).to.equal(upgradedVersion);
+
+    // And migrating again from there is a no-op, so the mark does not repeat.
+    const again = migrateConfigFile(
+      migrated,
+      migrated.configFormatVersion,
+      upgradedVersion,
+    );
+
+    expect(again.configFormatVersion).to.equal(upgradedVersion);
+  });
 });

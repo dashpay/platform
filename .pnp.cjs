@@ -9698,6 +9698,7 @@ const RAW_RUNTIME_STATE =
           ["oclif", "npm:4.0.3"],\
           ["pretty-bytes", "npm:5.6.0"],\
           ["pretty-ms", "npm:7.0.1"],\
+          ["proper-lockfile", "npm:4.1.2"],\
           ["public-ip", "npm:6.0.1"],\
           ["qs", "npm:6.15.0"],\
           ["rxjs", "npm:6.6.7"],\
@@ -9707,7 +9708,8 @@ const RAW_RUNTIME_STATE =
           ["systeminformation", "npm:5.31.1"],\
           ["table", "npm:6.8.1"],\
           ["tar", "npm:7.5.10"],\
-          ["wrap-ansi", "npm:7.0.0"]\
+          ["wrap-ansi", "npm:7.0.0"],\
+          ["write-file-atomic", "npm:5.0.1"]\
         ],\
         "linkType": "SOFT"\
       }]\
@@ -18295,6 +18297,16 @@ const RAW_RUNTIME_STATE =
           ["signal-exit", "npm:3.0.7"]\
         ],\
         "linkType": "HARD"\
+      }],\
+      ["npm:4.1.2", {\
+        "packageLocation": "./.yarn/cache/proper-lockfile-npm-4.1.2-a140a3c928-000a4875f5.zip/node_modules/proper-lockfile/",\
+        "packageDependencies": [\
+          ["graceful-fs", "npm:4.2.10"],\
+          ["proper-lockfile", "npm:4.1.2"],\
+          ["retry", "npm:0.12.0"],\
+          ["signal-exit", "npm:3.0.7"]\
+        ],\
+        "linkType": "HARD"\
       }]\
     ]],\
     ["protobufjs", [\
@@ -23534,6 +23546,15 @@ const RAW_RUNTIME_STATE =
           ["imurmurhash", "npm:0.1.4"],\
           ["signal-exit", "npm:3.0.7"],\
           ["write-file-atomic", "npm:4.0.1"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
+      ["npm:5.0.1", {\
+        "packageLocation": "./.yarn/cache/write-file-atomic-npm-5.0.1-52283db6ee-648efddba5.zip/node_modules/write-file-atomic/",\
+        "packageDependencies": [\
+          ["imurmurhash", "npm:0.1.4"],\
+          ["signal-exit", "npm:4.1.0"],\
+          ["write-file-atomic", "npm:5.0.1"]\
         ],\
         "linkType": "HARD"\
       }]\

@@ -17,6 +17,8 @@ import listCertificates from '../../../../ssl/zerossl/listCertificates.js';
  * @param {obtainZeroSSLCertificateTask} obtainZeroSSLCertificateTask
  * @param {obtainSelfSignedCertificateTask} obtainSelfSignedCertificateTask
  * @param {obtainLetsEncryptCertificateTask} obtainLetsEncryptCertificateTask
+ * @param {ConfigFile} configFile
+ * @param {ConfigFileJsonRepository} configFileRepository
  * @returns {configureSSLCertificateTask}
  */
 export default function configureSSLCertificateTaskFactory(
@@ -24,6 +26,8 @@ export default function configureSSLCertificateTaskFactory(
   obtainZeroSSLCertificateTask,
   obtainSelfSignedCertificateTask,
   obtainLetsEncryptCertificateTask,
+  configFile,
+  configFileRepository,
 ) {
   /**
    * @typedef configureSSLCertificateTask
@@ -108,7 +112,12 @@ export default function configureSSLCertificateTaskFactory(
 
           ctx.config.set('platform.gateway.ssl.providerConfigs.zerossl.apiKey', apiKey);
 
-          return obtainZeroSSLCertificateTask(ctx.config);
+          return obtainZeroSSLCertificateTask(ctx.config, {
+            onCertificateCreated: () => {
+              configFile.setConfig(ctx.config);
+              configFileRepository.write(configFile);
+            },
+          });
         },
       },
       [SSL_PROVIDERS.SELF_SIGNED]: {

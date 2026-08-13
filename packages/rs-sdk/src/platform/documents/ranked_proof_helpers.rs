@@ -4,9 +4,10 @@
 //! caller-built [`DocumentQuery`] plus the node's response into a
 //! verified [`RankedPage`]. The routing decisions — which ranking axis,
 //! which direction, how many groups, how many ranks to skip, which
-//! index covers them — are **not** re-derived here. They come from
-//! rs-drive's own [`detect_ranked_mode`] and
-//! [`find_ranked_index_for_axis`], the same two functions the server
+//! index covers them, which prefix-value segments a pinned compound
+//! request descends through — are **not** re-derived here. They come
+//! from rs-drive's own [`detect_ranked_mode`] and
+//! [`resolve_ranked_query_for_mode`], the same two functions the server
 //! calls, so client and server land on the same grove path and the same
 //! `(axis, k, descending, offset)` tuple by construction rather than by
 //! two copies of a grammar agreeing.
@@ -27,11 +28,9 @@ use dpp::{
     data_contract::accessors::v0::DataContractV0Getters,
     data_contract::document_type::accessors::DocumentTypeV0Getters,
 };
-use drive::query::drive_document_ranked_query::index_picker::find_ranked_index_for_axis;
+use drive::query::drive_document_ranked_query::index_picker::resolve_ranked_query_for_mode;
 use drive::query::drive_document_ranked_query::mode_detection::detect_ranked_mode;
-use drive::query::{
-    DocumentRankedMode, DriveDocumentRankedQuery, RankedPage, RankedPaginationInputs,
-};
+use drive::query::{DocumentRankedMode, RankedPage, RankedPaginationInputs};
 use drive_proof_verifier::verify_ranked_top_k_proof;
 
 /// Validate that the caller-built [`DocumentQuery`] really describes a
@@ -88,8 +87,9 @@ pub(super) fn assert_ranked_shape(
             "this DocumentQuery is not a well-formed ranked query: {e}. A ranked query is \
              `.with_select(<COUNT(*)|SUM(f)|AVG(f)>)`, `.with_group_by(<property>)`, \
              `.order_by_selected_aggregate(<Descending|Ascending>)` and `.with_limit(n)`, \
-             optionally `.with_offset(m)`, with no where clauses, no having and no \
-             start_at."
+             optionally `.with_offset(m)`, with no having and no start_at; where clauses, \
+             when present, must be equality pins on the covering compound index's leading \
+             properties."
         ),
     })
 }
@@ -139,44 +139,30 @@ pub(super) fn verify_ranked_query(
 
     let mode = assert_ranked_shape(&request, platform_version)?;
 
-    // Pick the index the prover picked. Availability is decided from
-    // the index's `ranked_*` flags, not from the stored element
-    // variant, and this is rs-drive's own picker — a second
-    // implementation here could choose a different index on a
-    // contract with several candidates and then verify a proof of the
-    // wrong subtree's ranking (or, more likely, fail to verify at all
-    // with a confusing merk error).
-    let index = find_ranked_index_for_axis(
+    // Resolve the query exactly as the prover did — rs-drive's own
+    // resolution (covering-index pick + equality-pin encoding into
+    // prefix path segments). A second implementation here could choose
+    // a different index on a contract with several candidates, or
+    // encode a pinned prefix value differently, and then verify a proof
+    // of the wrong subtree's ranking (or, more likely, fail to verify
+    // at all with a confusing merk error).
+    let ranked_query = resolve_ranked_query_for_mode(
+        request.data_contract.id().to_buffer(),
+        document_type,
+        request.document_type_name.clone(),
         document_type.indexes(),
-        &mode.group_by_property,
-        mode.axis,
-        &mode.aggregate_field,
+        &mode,
+        platform_version,
     )
-    .ok_or_else(|| drive_proof_verifier::Error::RequestError {
+    .map_err(|e| drive_proof_verifier::Error::RequestError {
         error: format!(
-            "no index on document type `{}` can rank by `{:?}` grouped on `{}`: a ranked \
-             query needs a single-property index over `{}` declaring `{}` (and, for SUM / \
-             AVG, `summable: \"{}\"`). Ranked indexes are opt-in contract grammar \
-             (meta-schema v3, protocol version 14+).",
+            "document type `{}` cannot serve this ranked query: {e}. Ranked indexes are \
+             opt-in contract grammar (meta-schema v3, protocol version 14+); a pinned \
+             (compound-index) ranking additionally needs every leading index property \
+             pinned by an equality where clause.",
             request.document_type_name,
-            mode.axis,
-            mode.group_by_property,
-            mode.group_by_property,
-            mode.axis.required_index_keyword(),
-            mode.aggregate_field,
         ),
     })?;
-
-    let ranked_query = DriveDocumentRankedQuery {
-        document_type,
-        contract_id: request.data_contract.id().to_buffer(),
-        document_type_name: request.document_type_name.clone(),
-        index,
-        axis: mode.axis,
-        descending: mode.descending,
-        k: mode.k,
-        offset: mode.offset,
-    };
 
     // Binds the reconstructed grovedb root hash to the quorum-signed
     // app hash before returning — see the module docs.

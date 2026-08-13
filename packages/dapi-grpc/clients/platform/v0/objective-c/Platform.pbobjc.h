@@ -2648,12 +2648,21 @@ typedef GPB_ENUM(GetDocumentsRequest_HavingClause_Right_OneOfCase) {
  * before release rather than deprecated, because it invented
  * non-SQL grammar for something SQL already expresses.
  *
- * **`HAVING` cannot yet combine with an aggregate `ORDER BY`.**
- * The ranked executor reads a pre-sorted per-axis secondary and
- * has no way to drop groups from the middle of that walk, so a
- * request carrying both a non-empty `having` and a ranking
- * `order_by` is rejected with `Unsupported` rather than served
- * with one of the two silently ignored.
+ * **From protocol v14 a single `HAVING` clause is served as a
+ * bounded range read** (having-range mode): `SELECT <agg> GROUP BY
+ * p HAVING <agg> <op> <value> [ORDER BY <order-key> ASC|DESC]
+ * LIMIT n` answers from the same per-axis secondary as ranked
+ * mode, on an index declaring the matching ranked axis. The
+ * clause's aggregate must be the selected aggregate, the operator
+ * must describe one contiguous range (`NOT_EQUAL` / `IN` are
+ * rejected), and the optional `ORDER BY` picks the walk direction
+ * using the same order-key spelling as ranked mode: `f` for
+ * `SUM(f)` / `AVG(f)`, the `$count` sentinel for `COUNT(*)` —
+ * never an explicit `OrderClause.aggregate` target, which is
+ * rejected. See the supported-shape table on
+ * `GetDocumentsRequestV1`. On protocol v13 and earlier every
+ * non-empty `having` stays rejected with `Unsupported`, exactly as
+ * before.
  *
  * The operator set mirrors `WhereOperator` minus `STARTS_WITH`
  * (prefix matching has no natural meaning against a scalar
@@ -2897,12 +2906,16 @@ typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase) {
  * It returns `ResultData.ranked`. See `order_by` and the
  * supported-shape table below.
  *
- * `having` is a boolean per-group predicate and is **still**
- * `Unsupported` at every protocol version, ranked mode or not
- * (`"HAVING clause is not yet implemented"`). It carries no ranking
- * spelling: an earlier draft put cross-group ranking on the right of
- * a `HAVING` (`HAVING AVG(grade) IN TOP(5)`) and that grammar was
- * removed before release in favour of `ORDER BY` + `LIMIT`.
+ * **Having-range mode** is served from protocol v14: a single
+ * `having` clause whose aggregate is the selected aggregate turns
+ * the request into a bounded range read over the same per-axis
+ * secondary ranked mode walks, answered in `ResultData.ranked`.
+ * On protocol v13 and earlier every non-empty `having` is rejected
+ * (`"HAVING clause is not yet implemented"`). `having` carries no
+ * ranking spelling: an earlier draft put cross-group ranking on the
+ * right of a `HAVING` (`HAVING AVG(grade) IN TOP(5)`) and that
+ * grammar was removed before release in favour of `ORDER BY` +
+ * `LIMIT`. See the supported-shape table below.
  *
  * **Supported shapes** (everything else rejects with a typed
  * `QuerySyntaxError::Unsupported` so callers can detect un-wired
@@ -2928,12 +2941,16 @@ typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase) {
  * - a is the In field AND b is the range field, in that order → existing compound distinct shape; entries carry both `in_key` (= a's value) and `key` (= b's value).
  *
  * `select=<COUNT(*)|SUM(f)|AVG(f)>, group_by=[p], order_by=[<the selected aggregate>]` (protocol v14+) — **ranked mode**:
- * - exactly one `group_by` property, exactly one `order_by` clause naming the select's aggregate (`f` for `SUM(f)` / `AVG(f)`, the `$count` sentinel for `COUNT(*)`), a `limit` in `1 ..= 100`, an optional `offset`, and no `where` / `having` / `start_at`, on an index declaring the matching `rankedCountable` / `rankedSummable` / `rankedAverageable` axis → ranked executor, answered in `ResultData.ranked`.
+ * - exactly one `group_by` property, exactly one `order_by` clause naming the select's aggregate (`f` for `SUM(f)` / `AVG(f)`, the `$count` sentinel for `COUNT(*)`), a `limit` in `1 ..= 100`, an optional `offset`, and no `having` / `start_at`, on an index declaring the matching `rankedCountable` / `rankedSummable` / `rankedAverageable` axis → ranked executor, answered in `ResultData.ranked`. On a single-property ranked index no `where` is accepted; on a compound ranked index every leading index property must be pinned with an `EQUAL` where clause (one per property, `group_by` names the trailing property), selecting which prefix's ranking is read.
  * - `DESC` is the "top n" reading (walk the axis from the largest aggregate down), `ASC` the "bottom n" reading. Worked example: `SELECT AVG(grade) GROUP BY restaurantId ORDER BY grade DESC LIMIT 1 OFFSET 4` is the 5th-best restaurant.
  *
+ * `select=<COUNT(*)|SUM(f)|AVG(f)>, group_by=[p], having=[<the selected aggregate> <op> <value>]` (protocol v14+) — **having-range mode**:
+ * - exactly one `group_by` property, exactly one `having` clause whose aggregate is the select's aggregate, an operator describing one contiguous range (`EQUAL`, `GREATER_THAN[_OR_EQUALS]`, `LESS_THAN[_OR_EQUALS]`, `BETWEEN*`; `NOT_EQUAL` / `IN` rejected), a `limit` in `1 ..= 100`, an optional `order_by` naming the same aggregate (walk direction; ascending by default), and no `offset` / `start_at` / `start_after`, on an index declaring the matching ranked axis → having-range executor, answered in `ResultData.ranked`. `where` follows the same rule as ranked mode: none on a single-property ranked index; exactly one `EQUAL` pin per leading index property on a compound ranked index.
+ * - no offset or cursor pagination: a page cut at `limit` continues only by tightening the bound past the last *distinct* aggregate value seen; a cut inside a tie (several groups sharing the boundary aggregate) cannot be continued, so size `limit` above the widest expected tie.
+ *
  * **Rejected shapes** (return `Unsupported`):
- * - any non-empty `having`, at every protocol version.
- * - at v14+: a ranked-shaped request carrying a `where` clause, a `start_at` / `start_after` cursor, more than one `order_by`, or an `order_by` naming anything but the selected aggregate.
+ * - any non-empty `having` on protocol v13 and earlier; at v14+, any `having` shape outside having-range mode above (multiple clauses, an aggregate other than the select's, `NOT_EQUAL` / `IN`, a `where` shape other than the compound-index equality pins above, or a carried `offset` / cursor).
+ * - at v14+: a ranked-shaped request carrying a `where` shape other than the compound-index equality pins above (a non-`EQUAL` operator, a repeated or non-leading property, or a missing pin), a `start_at` / `start_after` cursor, more than one `order_by`, or an `order_by` naming anything but the selected aggregate.
  * - `select=DOCUMENTS` with non-empty `group_by`.
  * - `select=COUNT` with `group_by` on a field that is not constrained by an `In` or range where clause.
  * - `select=COUNT` with `group_by.len() > 2`.
@@ -3110,12 +3127,13 @@ GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1 : GPBMessage
  * `HavingClause` / `HavingAggregate` for the operator and
  * aggregate-function catalogs.
  *
- * **Every non-empty `having` is rejected**, at every protocol
- * version, with `Unsupported("HAVING clause is not yet
- * implemented")`. The wire shape ships ahead of evaluation so
- * callers can construct full `HAVING COUNT(*) > 5 AND
- * SUM(amount) > 100` requests in their builders, and so the
- * capability can land without another version bump.
+ * **From protocol v14 a single clause is served** as a bounded
+ * range read — having-range mode; see the message-level
+ * supported-shape table. On v13 and earlier every non-empty
+ * `having` is rejected with `Unsupported("HAVING clause is not
+ * yet implemented")`. Multi-clause `HAVING COUNT(*) > 5 AND
+ * SUM(amount) > 100` requests can still be constructed on the
+ * wire, but stay rejected until a multi-clause evaluator lands.
  *
  * **`having` does not express ranking.** "The n highest-scoring
  * groups" is `ORDER BY <the selected aggregate> DESC LIMIT n`

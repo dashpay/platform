@@ -145,9 +145,13 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName = 'Samuel' order by firstName asc limit 100";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
@@ -281,9 +285,13 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName = 'Samuel' order by firstName asc limit 100";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
@@ -460,9 +468,13 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName > 'A' order by firstName asc limit 5";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
@@ -500,9 +512,13 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName > 'A' order by firstName asc limit 5";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
@@ -540,9 +556,13 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName > 'A' order by firstName asc limit 5";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
@@ -643,9 +663,13 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName > 'A' order by firstName asc limit 5";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
@@ -757,9 +781,13 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName > 'A' order by firstName asc limit 5";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
@@ -1084,9 +1112,13 @@ mod tests {
         // Verify the document exists
         let sql_string =
             "select * from person where firstName = 'Samuel' order by firstName asc limit 100";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
@@ -1208,9 +1240,13 @@ mod tests {
         // Verify the document still exists after dry-run delete (apply=false)
         let sql_string =
             "select * from person where firstName = 'Samuel' order by firstName asc limit 100";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)

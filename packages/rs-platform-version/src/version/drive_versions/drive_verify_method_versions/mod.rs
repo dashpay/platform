@@ -73,13 +73,15 @@ pub struct DriveVerifyDocumentSumMethodVersions {
     pub verify_point_lookup_count_and_sum_proof: FeatureVersion,
 }
 
-/// Versions for the ranked-aggregate (`HAVING ... TOP/BOTTOM/MIN/MAX`)
-/// prove-path verifier. The single method is implemented on
-/// `DriveDocumentRankedQuery` and returns `(RootHash, Vec<RankedEntry>)`,
-/// delegating to grovedb's `verify_indexed_axis_top_k`.
+/// Versions for the indexed-axis prove-path verifiers: the ranked
+/// (top-k) verifier and the boolean-`HAVING` range verifier. Both are
+/// implemented on the respective drive query types and delegate to
+/// grovedb's indexed-axis proof verification
+/// (`verify_indexed_axis_top_k_paginated` / `verify_indexed_axis_query`).
 #[derive(Clone, Debug, Default)]
 pub struct DriveVerifyDocumentRankedMethodVersions {
     pub verify_ranked_top_k_proof: FeatureVersion,
+    pub verify_having_range_proof: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
