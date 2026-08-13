@@ -931,7 +931,7 @@ mod tests {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: None,
+                in_clauses: Vec::new(),
                 range_clause: None,
                 equal_clauses: BTreeMap::from([
                     (
@@ -1097,7 +1097,7 @@ mod tests {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: None,
+                in_clauses: Vec::new(),
                 range_clause: None,
                 equal_clauses: BTreeMap::from([
                     (
@@ -1257,7 +1257,7 @@ mod tests {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: Some(WhereClause {
+                in_clauses: vec![WhereClause {
                     field: "status".to_string(),
                     operator: WhereOperator::In,
                     value: Value::Array(vec![
@@ -1267,7 +1267,7 @@ mod tests {
                         Value::U8(3),
                         Value::U8(4),
                     ]),
-                }),
+                }],
                 range_clause: None,
                 equal_clauses: BTreeMap::default(),
             },
@@ -1305,8 +1305,9 @@ mod tests {
             0,
             drive_document_query
                 .internal_clauses
-                .in_clause
-                .clone()
+                .in_clauses
+                .first()
+                .cloned()
                 .unwrap(),
         );
 
@@ -1421,7 +1422,7 @@ mod tests {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: Some(WhereClause {
+                in_clauses: vec![WhereClause {
                     field: "status".to_string(),
                     operator: WhereOperator::In,
                     value: Value::Array(vec![
@@ -1431,7 +1432,7 @@ mod tests {
                         Value::I64(3),
                         Value::I64(4),
                     ]),
-                }),
+                }],
                 range_clause: None,
                 equal_clauses: BTreeMap::default(),
             },
@@ -1469,8 +1470,9 @@ mod tests {
             0,
             drive_document_query
                 .internal_clauses
-                .in_clause
-                .clone()
+                .in_clauses
+                .first()
+                .cloned()
                 .unwrap(),
         );
 
@@ -1594,7 +1596,7 @@ mod tests {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: Some(WhereClause {
+                in_clauses: vec![WhereClause {
                     field: "status".to_string(),
                     operator: WhereOperator::In,
                     value: Value::Array(vec![
@@ -1604,7 +1606,7 @@ mod tests {
                         Value::I64(3),
                         Value::I64(4),
                     ]),
-                }),
+                }],
                 range_clause: None,
                 equal_clauses: BTreeMap::from([
                     (
@@ -1650,8 +1652,9 @@ mod tests {
             0,
             drive_document_query
                 .internal_clauses
-                .in_clause
-                .clone()
+                .in_clauses
+                .first()
+                .cloned()
                 .unwrap(),
         );
 

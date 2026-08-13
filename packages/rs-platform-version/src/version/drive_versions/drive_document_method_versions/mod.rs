@@ -41,6 +41,13 @@ pub struct DriveDocumentQueryMethodVersions {
     /// versions; the routing itself is unreachable before the ranked
     /// contract grammar activates.
     pub detect_ranked_mode: FeatureVersion,
+    /// Lowering of a `DriveDocumentQuery` over a secondary index into a
+    /// grovedb `PathQuery`. Versioned because the set of accepted query
+    /// shapes is part of the consensus query contract: v0 rejects more
+    /// than one non-primary-key `In` clause per query; v1 (protocol
+    /// version 14) accepts multiple `In` clauses on consecutive index
+    /// properties, lowering them to multi-level key-set path queries.
+    pub non_primary_key_path_query: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

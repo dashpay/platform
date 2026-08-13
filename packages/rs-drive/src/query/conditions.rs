@@ -554,14 +554,19 @@ impl<'a> WhereClause {
         }
     }
 
-    /// Given a list of where clauses, returns them in groups of equal, range, and in clauses
+    /// Given a list of where clauses, returns them in groups of equal, range, and in clauses.
+    ///
+    /// Multiple `In` clauses (on distinct fields) are grouped structurally here;
+    /// whether more than one is *accepted* is decided later, at path-query
+    /// lowering, where the platform version is known (protocol version 14 is the
+    /// first to accept them).
     #[allow(clippy::type_complexity)]
     pub(crate) fn group_clauses(
         where_clauses: &'a [WhereClause],
         // TODO: Define a type/struct for return value
-    ) -> Result<(BTreeMap<String, Self>, Option<Self>, Option<Self>), Error> {
+    ) -> Result<(BTreeMap<String, Self>, Option<Self>, Vec<Self>), Error> {
         if where_clauses.is_empty() {
-            return Ok((BTreeMap::new(), None, None));
+            return Ok((BTreeMap::new(), None, Vec::new()));
         }
         let equal_clauses_array =
             where_clauses
@@ -601,25 +606,21 @@ impl<'a> WhereClause {
             })
             .collect::<Vec<WhereClause>>();
 
-        let in_clause = match in_clauses_array.len() {
-            0 => Ok(None),
-            1 => {
-                let clause = in_clauses_array.first().expect("there must be a value");
+        let in_clauses = in_clauses_array
+            .into_iter()
+            .map(|clause| {
                 if known_fields.contains(&clause.field) {
                     Err(Error::Query(
                         QuerySyntaxError::DuplicateNonGroupableClauseSameField(
-                            "in clause has same field as an equality clause",
+                            "in clause has same field as an equality or in clause",
                         ),
                     ))
                 } else {
                     known_fields.insert(clause.field.clone());
-                    Ok(Some(clause.clone()))
+                    Ok(clause)
                 }
-            }
-            _ => Err(Error::Query(QuerySyntaxError::MultipleInClauses(
-                "There should only be one in clause",
-            ))),
-        }?;
+            })
+            .collect::<Result<Vec<WhereClause>, Error>>()?;
 
         // In order to group range clauses
         let groupable_range_clauses: Vec<&WhereClause> = where_clauses
@@ -762,7 +763,7 @@ impl<'a> WhereClause {
                 )))
             }?;
 
-        Ok((equal_clauses, range_clause, in_clause))
+        Ok((equal_clauses, range_clause, in_clauses))
     }
 
     fn split_value_for_between(
@@ -3070,7 +3071,7 @@ mod tests {
         let (eq, range, in_c) = WhereClause::group_clauses(&clauses).expect("empty should succeed");
         assert!(eq.is_empty());
         assert!(range.is_none());
-        assert!(in_c.is_none());
+        assert!(in_c.is_empty());
     }
 
     #[test]
@@ -3084,7 +3085,7 @@ mod tests {
         assert_eq!(eq.len(), 1);
         assert!(eq.contains_key("name"));
         assert!(range.is_none());
-        assert!(in_c.is_none());
+        assert!(in_c.is_empty());
     }
 
     #[test]
@@ -3098,7 +3099,7 @@ mod tests {
         // $id equality is excluded from the equal_clauses map
         assert!(eq.is_empty());
         assert!(range.is_none());
-        assert!(in_c.is_none());
+        assert!(in_c.is_empty());
     }
 
     #[test]
@@ -3111,7 +3112,7 @@ mod tests {
         let (eq, range, in_c) = WhereClause::group_clauses(&clauses).unwrap();
         assert!(eq.is_empty());
         assert!(range.is_none());
-        assert!(in_c.is_none());
+        assert!(in_c.is_empty());
     }
 
     #[test]
@@ -3124,12 +3125,15 @@ mod tests {
         let (eq, range, in_c) = WhereClause::group_clauses(&clauses).unwrap();
         assert!(eq.is_empty());
         assert!(range.is_none());
-        assert!(in_c.is_some());
-        assert_eq!(in_c.unwrap().field, "status");
+        assert_eq!(in_c.len(), 1);
+        assert_eq!(in_c[0].field, "status");
     }
 
     #[test]
-    fn group_clauses_multiple_in_returns_error() {
+    fn group_clauses_multiple_in_on_distinct_fields_groups_structurally() {
+        // Whether more than one in clause is accepted is decided at
+        // path-query lowering (protocol version 14+); the grammar groups
+        // them structurally in query order.
         let clauses = vec![
             WhereClause {
                 field: "a".to_string(),
@@ -3138,6 +3142,28 @@ mod tests {
             },
             WhereClause {
                 field: "b".to_string(),
+                operator: In,
+                value: Value::Array(vec![Value::I64(2)]),
+            },
+        ];
+        let (eq, range, in_c) = WhereClause::group_clauses(&clauses).unwrap();
+        assert!(eq.is_empty());
+        assert!(range.is_none());
+        assert_eq!(in_c.len(), 2);
+        assert_eq!(in_c[0].field, "a");
+        assert_eq!(in_c[1].field, "b");
+    }
+
+    #[test]
+    fn group_clauses_multiple_in_on_same_field_returns_error() {
+        let clauses = vec![
+            WhereClause {
+                field: "a".to_string(),
+                operator: In,
+                value: Value::Array(vec![Value::I64(1)]),
+            },
+            WhereClause {
+                field: "a".to_string(),
                 operator: In,
                 value: Value::Array(vec![Value::I64(2)]),
             },
@@ -3190,7 +3216,7 @@ mod tests {
         assert!(eq.is_empty());
         assert!(range.is_some());
         assert_eq!(range.unwrap().operator, GreaterThan);
-        assert!(in_c.is_none());
+        assert!(in_c.is_empty());
     }
 
     #[test]
@@ -3204,7 +3230,7 @@ mod tests {
         assert!(eq.is_empty());
         assert!(range.is_some());
         assert_eq!(range.unwrap().operator, Between);
-        assert!(in_c.is_none());
+        assert!(in_c.is_empty());
     }
 
     #[test]
@@ -3228,7 +3254,7 @@ mod tests {
         assert!(eq.is_empty());
         assert!(range.is_some());
         assert_eq!(range.unwrap().operator, super::StartsWith);
-        assert!(in_c.is_none());
+        assert!(in_c.is_empty());
     }
 
     #[test]
@@ -3411,7 +3437,7 @@ mod tests {
         ];
         let (eq, _, in_c) = WhereClause::group_clauses(&clauses).unwrap();
         assert_eq!(eq.len(), 1);
-        assert!(in_c.is_some());
+        assert_eq!(in_c.len(), 1);
     }
 
     #[test]
@@ -3431,7 +3457,7 @@ mod tests {
         let (eq, range, in_c) = WhereClause::group_clauses(&clauses).unwrap();
         assert_eq!(eq.len(), 1);
         assert!(range.is_some());
-        assert!(in_c.is_none());
+        assert!(in_c.is_empty());
     }
 
     // ---- meta_field_property_type ----

@@ -188,6 +188,35 @@ mod tests {
         );
     }
 
+    /// Multiple `In` clauses in a document query are accepted by the v1
+    /// non-primary-key path-query lowering, which only v14 selects: a v13
+    /// node keeps the v0 lowering, which rejects them with
+    /// `MultipleInClauses`, so a mixed-version network agrees on the query
+    /// surface until the upgrade vote carries. The v13 half of this
+    /// assertion guards against accidentally opening the shape to
+    /// already-deployed protocol versions.
+    #[test]
+    fn multiple_in_clause_document_query_gate_is_v14_only() {
+        assert_eq!(
+            PLATFORM_V13
+                .drive
+                .methods
+                .document
+                .query
+                .non_primary_key_path_query,
+            0
+        );
+        assert_eq!(
+            PLATFORM_V14
+                .drive
+                .methods
+                .document
+                .query
+                .non_primary_key_path_query,
+            1
+        );
+    }
+
     /// The ranked index keywords are gated by the meta-schema version, so v14
     /// must select meta-schema v3 while v13 stays on v2.
     #[test]

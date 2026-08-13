@@ -32,7 +32,7 @@ The `InternalClauses` struct organizes WHERE clauses into categories:
 pub struct InternalClauses {
     pub primary_key_in_clause: Option<WhereClause>,      // IN clause on $id
     pub primary_key_equal_clause: Option<WhereClause>,   // == clause on $id
-    pub in_clause: Option<WhereClause>,                  // Single IN clause on indexed field
+    pub in_clauses: Vec<WhereClause>,                    // IN clauses on indexed fields (several allowed from protocol version 14)
     pub range_clause: Option<WhereClause>,               // Single range clause (may be combined from 2)
     pub equal_clauses: BTreeMap<String, WhereClause>,    // Multiple == clauses
 }
@@ -238,12 +238,17 @@ This creates the path: `/category=electronics/brand=Apple/price=[500,2000]/`
   - Maximum: 100 values
   - No duplicate values
 - **Range clauses**: Maximum 2 on the same field (combined into Between)
-- **One IN clause per query**: Cannot have multiple IN clauses
+- **IN clauses per query**: One before protocol version 14. From protocol
+  version 14, several IN clauses are allowed when they sit on consecutive
+  properties of one compound index (after any equality clauses, with an
+  optional range clause right after the last IN). Each IN'd property needs
+  an `orderBy` entry, the product of the IN list sizes is capped at 100,
+  and `startAt`/`startAfter` cannot be combined with more than one IN.
 - **Field overlap**: Same field cannot appear in different clause types
 
 ### 4. Invalid Query Examples
 
-#### Multiple IN clauses (INVALID)
+#### Multiple IN clauses (INVALID before protocol version 14)
 ```json
 {
   "where": [
@@ -252,6 +257,8 @@ This creates the path: `/category=electronics/brand=Apple/price=[500,2000]/`
   ]
 }
 ```
+Valid from protocol version 14 when `category` and `status` are consecutive
+properties of one compound index and both appear in `orderBy`.
 
 #### Range on multiple fields (INVALID)
 ```json

@@ -142,7 +142,9 @@ pub enum DocumentCountResponse {
 ///
 /// - Duplicate `Equal` clauses on the same field
 ///   (`DuplicateNonGroupableClauseSameField`).
-/// - Multiple `In` clauses (`MultipleInClauses`).
+/// - Multiple `In` clauses (`MultipleInClauses`) — rejected here: the
+///   shared grammar accepts them for protocol version 14+ document
+///   queries, but the aggregate surfaces do not.
 /// - Multiple non-groupable range clauses (`MultipleRangeClauses`).
 /// - Equality + `In` on the same field, range + equality/In on the
 ///   same field (`DuplicateNonGroupableClauseSameField` /
@@ -203,7 +205,9 @@ pub fn where_clauses_from_value(
 /// The validator (`WhereClause::group_clauses`) rejects:
 /// - Duplicate `Equal` clauses on the same field
 ///   (`DuplicateNonGroupableClauseSameField`).
-/// - Multiple `In` clauses (`MultipleInClauses`).
+/// - Multiple `In` clauses (`MultipleInClauses`) — rejected here: the
+///   shared grammar accepts them for protocol version 14+ document
+///   queries, but the aggregate surfaces do not.
 /// - Multiple non-groupable range clauses (`MultipleRangeClauses`).
 /// - Equality + `In` on the same field, range + equality/In on the
 ///   same field (`DuplicateNonGroupableClauseSameField` /
@@ -248,6 +252,14 @@ pub fn validate_and_canonicalize_where_clauses(
     clauses: Vec<WhereClause>,
 ) -> Result<Vec<WhereClause>, Error> {
     match WhereClause::group_clauses(&clauses) {
+        // Multiple `In` clauses are a document-query-only shape (protocol
+        // version 14+); the aggregate surfaces keep rejecting them since
+        // their mode detection and index pickers assume a single `In`.
+        Ok((_, _, in_clauses)) if in_clauses.len() > 1 => {
+            return Err(Error::Query(QuerySyntaxError::MultipleInClauses(
+                "aggregate queries support at most one in clause",
+            )));
+        }
         Ok(_) => {}
         Err(Error::Query(QuerySyntaxError::MultipleRangeClauses(_))) => {}
         Err(e) => return Err(e),

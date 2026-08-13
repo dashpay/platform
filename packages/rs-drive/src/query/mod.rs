@@ -291,8 +291,13 @@ pub struct InternalClauses {
     pub primary_key_in_clause: Option<WhereClause>,
     /// Primary key equal clause
     pub primary_key_equal_clause: Option<WhereClause>,
-    /// In clause
-    pub in_clause: Option<WhereClause>,
+    /// In clauses, on distinct non-primary-key fields.
+    ///
+    /// The grammar groups any number of them structurally; whether more
+    /// than one is accepted is a protocol-versioned decision made at
+    /// path-query lowering (protocol version 14 is the first to accept
+    /// multiple in clauses, on consecutive index properties).
+    pub in_clauses: Vec<WhereClause>,
     /// Range clause
     pub range_clause: Option<WhereClause>,
     /// Equal clause
@@ -310,7 +315,7 @@ impl InternalClauses {
             .bitxor(self.primary_key_equal_clause.is_some())
         {
             // One is set, all rest must be empty
-            !(self.in_clause.is_some()
+            !(!self.in_clauses.is_empty()
                 || self.range_clause.is_some()
                 || !self.equal_clauses.is_empty())
         } else {
@@ -327,7 +332,7 @@ impl InternalClauses {
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Returns true if self is empty.
     pub fn is_empty(&self) -> bool {
-        self.in_clause.is_none()
+        self.in_clauses.is_empty()
             && self.range_clause.is_none()
             && self.equal_clauses.is_empty()
             && self.primary_key_in_clause.is_none()
@@ -359,7 +364,7 @@ impl InternalClauses {
             })
             .collect::<Vec<WhereClause>>();
 
-        let (equal_clauses, range_clause, in_clause) =
+        let (equal_clauses, range_clause, in_clauses) =
             WhereClause::group_clauses(&all_where_clauses)?;
 
         let primary_key_equal_clause = match primary_key_equal_clauses_array.len() {
@@ -395,7 +400,7 @@ impl InternalClauses {
         let internal_clauses = InternalClauses {
             primary_key_equal_clause,
             primary_key_in_clause,
-            in_clause,
+            in_clauses,
             range_clause,
             equal_clauses,
         };
@@ -423,8 +428,8 @@ impl InternalClauses {
             );
         }
 
-        // Validate in_clause against schema
-        if let Some(in_clause) = &self.in_clause {
+        // Validate in_clauses against schema
+        for in_clause in &self.in_clauses {
             // Forbid $id in non-primary-key clauses
             if in_clause.field == "$id" {
                 return QuerySyntaxSimpleValidationResult::new_with_error(
@@ -521,9 +526,7 @@ impl From<InternalClauses> for Vec<WhereClause> {
     fn from(clauses: InternalClauses) -> Self {
         let mut result: Self = clauses.equal_clauses.into_values().collect();
 
-        if let Some(clause) = clauses.in_clause {
-            result.push(clause);
-        };
+        result.extend(clauses.in_clauses);
         if let Some(clause) = clauses.primary_key_equal_clause {
             result.push(clause);
         };
@@ -580,7 +583,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     operator: WhereOperator::Equal,
                     value: Value::Identifier(id.to_buffer()),
                 }),
-                in_clause: None,
+                in_clauses: Vec::new(),
                 range_clause: None,
                 equal_clauses: Default::default(),
             },
@@ -1495,7 +1498,15 @@ impl<'a> DriveDocumentQuery<'a> {
 
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Finds the best index for the query.
+    ///
+    /// Queries with more than one `In` clause use their own selection
+    /// ([`Self::find_best_index_for_multiple_in_clauses`]); they only
+    /// reach it through the v1 (protocol version 14+) path-query
+    /// lowering, since the v0 lowering rejects them first.
     pub fn find_best_index(&self, platform_version: &PlatformVersion) -> Result<&Index, Error> {
+        if self.internal_clauses.in_clauses.len() > 1 {
+            return Ok(self.find_best_index_for_multiple_in_clauses()?.0);
+        }
         let equal_fields = self
             .internal_clauses
             .equal_clauses
@@ -1504,8 +1515,8 @@ impl<'a> DriveDocumentQuery<'a> {
             .collect::<Vec<&str>>();
         let in_field = self
             .internal_clauses
-            .in_clause
-            .as_ref()
+            .in_clauses
+            .first()
             .map(|in_clause| in_clause.field.as_str());
         let range_field = self
             .internal_clauses
@@ -1553,6 +1564,131 @@ impl<'a> DriveDocumentQuery<'a> {
             )));
         }
         Ok(index)
+    }
+
+    #[cfg(any(feature = "server", feature = "verify"))]
+    /// Finds the best index for a query with more than one `In` clause, and
+    /// returns it together with the query's `In` clauses ordered by their
+    /// position in that index and the length of the equality prefix.
+    ///
+    /// A candidate index conforms when its properties decompose, left to
+    /// right, into: the equality-clause fields (exactly covering positions
+    /// `0..E`), then every `In` field on consecutive positions `E..E+K`,
+    /// then — when a range clause is present — the range field. The usual
+    /// tail rule from [`Index::matches`] still applies with the deepest `In`
+    /// field playing the role of the in field, as do the order-by continuity
+    /// rules and [`defaults::MAX_INDEX_DIFFERENCE`].
+    fn find_best_index_for_multiple_in_clauses(
+        &self,
+    ) -> Result<(&Index, Vec<&WhereClause>, usize), Error> {
+        let equal_clauses = &self.internal_clauses.equal_clauses;
+        let in_clauses = &self.internal_clauses.in_clauses;
+        let range_field = self
+            .internal_clauses
+            .range_clause
+            .as_ref()
+            .map(|range_clause| range_clause.field.as_str());
+
+        let mut fields = equal_clauses
+            .keys()
+            .map(|s| s.as_str())
+            .collect::<Vec<&str>>();
+        if let Some(range_field) = range_field {
+            fields.push(range_field);
+        }
+        fields.extend(in_clauses.iter().map(|in_clause| in_clause.field.as_str()));
+
+        let order_by_keys: Vec<&str> = self
+            .order_by
+            .keys()
+            .map(|key: &String| {
+                let str = key.as_str();
+                if !fields.contains(&str) {
+                    fields.push(str);
+                }
+                str
+            })
+            .collect();
+
+        let equality_len = equal_clauses.len();
+        let mut best: Option<(&Index, Vec<&WhereClause>, u16)> = None;
+        for index in self.document_type.indexes().values() {
+            let mut positioned: Vec<(usize, &WhereClause)> = Vec::with_capacity(in_clauses.len());
+            for in_clause in in_clauses {
+                match index
+                    .properties
+                    .iter()
+                    .position(|property| property.name == in_clause.field)
+                {
+                    Some(position) => positioned.push((position, in_clause)),
+                    None => break,
+                }
+            }
+            if positioned.len() != in_clauses.len() {
+                continue;
+            }
+            positioned.sort_by_key(|(position, _)| *position);
+
+            // The equality clauses must exactly cover the index prefix
+            if index.properties.len() < equality_len
+                || !index.properties[..equality_len]
+                    .iter()
+                    .all(|property| equal_clauses.contains_key(property.name.as_str()))
+            {
+                continue;
+            }
+            // The in clauses must sit on consecutive properties right after it
+            let consecutive_after_prefix = positioned
+                .iter()
+                .enumerate()
+                .all(|(i, (position, _))| *position == equality_len + i);
+            if !consecutive_after_prefix {
+                continue;
+            }
+            // A range clause must sit immediately after the in block
+            if let Some(range_field) = range_field {
+                match index.properties.get(equality_len + positioned.len()) {
+                    Some(property) if property.name == range_field => {}
+                    _ => continue,
+                }
+            }
+
+            let deepest_in_field = positioned
+                .last()
+                .expect("more than one in clause")
+                .1
+                .field
+                .as_str();
+            let Some(difference) = index.matches(&fields, Some(deepest_in_field), &order_by_keys)
+            else {
+                continue;
+            };
+            let ordered = positioned
+                .into_iter()
+                .map(|(_, in_clause)| in_clause)
+                .collect::<Vec<&WhereClause>>();
+            if difference == 0 {
+                return Ok((index, ordered, equality_len));
+            }
+            match &best {
+                Some((_, _, best_difference)) if *best_difference <= difference => {}
+                _ => best = Some((index, ordered, difference)),
+            }
+        }
+
+        let (index, ordered, difference) = best.ok_or(Error::Query(
+            QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
+                "query with multiple in clauses must be for valid indexes with the in clauses on \
+                 consecutive index properties after the equality clauses, valid indexes are: {:?}",
+                self.document_type.indexes()
+            )),
+        ))?;
+        if difference > defaults::MAX_INDEX_DIFFERENCE {
+            return Err(Error::Query(QuerySyntaxError::QueryTooFarFromIndex(
+                "query must better match an existing index",
+            )));
+        }
+        Ok((index, ordered, equality_len))
     }
 
     #[cfg(any(feature = "server", feature = "verify"))]
@@ -2076,54 +2212,284 @@ impl<'a> DriveDocumentQuery<'a> {
 
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Returns a path query for non-primary keys given a document type path and starting document.
+    ///
+    /// Versioned because the set of accepted query shapes is part of the
+    /// consensus query contract: v0 rejects more than one `In` clause per
+    /// query, v1 (protocol version 14) lowers multiple `In` clauses on
+    /// consecutive index properties to a multi-level key-set path query.
     pub fn get_non_primary_key_path_query(
         &self,
         document_type_path: Vec<Vec<u8>>,
         starts_at_document: Option<(Document, bool)>,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        match platform_version
+            .drive
+            .methods
+            .document
+            .query
+            .non_primary_key_path_query
+        {
+            0 => self.get_non_primary_key_path_query_v0(
+                document_type_path,
+                starts_at_document,
+                platform_version,
+            ),
+            1 => self.get_non_primary_key_path_query_v1(
+                document_type_path,
+                starts_at_document,
+                platform_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "DriveDocumentQuery::get_non_primary_key_path_query".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            })),
+        }
+    }
+
+    #[cfg(any(feature = "server", feature = "verify"))]
+    /// v1 of the non-primary-key path query lowering (protocol version 14):
+    /// accepts multiple `In` clauses. Single-`In` shapes lower exactly as v0.
+    fn get_non_primary_key_path_query_v1(
+        &self,
+        document_type_path: Vec<Vec<u8>>,
+        starts_at_document: Option<(Document, bool)>,
+        platform_version: &PlatformVersion,
+    ) -> Result<PathQuery, Error> {
+        if self.internal_clauses.in_clauses.len() > 1 {
+            self.get_non_primary_key_multiple_in_path_query(
+                document_type_path,
+                starts_at_document,
+                platform_version,
+            )
+        } else {
+            self.get_non_primary_key_path_query_v0(
+                document_type_path,
+                starts_at_document,
+                platform_version,
+            )
+        }
+    }
+
+    #[cfg(any(feature = "server", feature = "verify"))]
+    /// Lowers a query with multiple `In` clauses into a path query whose
+    /// levels carry one key set per `In` clause, in index property order,
+    /// followed by an optional range level and the usual left-over /
+    /// terminal levels. Only reachable through the v1 lowering.
+    fn get_non_primary_key_multiple_in_path_query(
+        &self,
+        document_type_path: Vec<Vec<u8>>,
+        starts_at_document: Option<(Document, bool)>,
+        platform_version: &PlatformVersion,
+    ) -> Result<PathQuery, Error> {
+        // Conservative v1: the cross-branch cursor machinery is not wired
+        // for key-set branching at more than one level, so reject cursors
+        // instead of shipping silently wrong pagination.
+        if starts_at_document.is_some() || self.start_at.is_some() {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(
+                "startAt/startAfter is not supported with multiple in clauses".to_string(),
+            )));
+        }
+
+        let (index, ordered_in_clauses, equality_len) =
+            self.find_best_index_for_multiple_in_clauses()?;
+
+        // Bound the branch enumeration: the product of the in list sizes is
+        // the number of index subtrees the query opens.
+        let mut cross_product: usize = 1;
+        for in_clause in &ordered_in_clauses {
+            let in_values = in_clause.in_values().into_data_with_error()??;
+            cross_product = cross_product.saturating_mul(in_values.len());
+        }
+        if cross_product > defaults::MAX_IN_CROSS_PRODUCT_SIZE {
+            return Err(Error::Query(QuerySyntaxError::InvalidInClause(format!(
+                "the product of in clause list sizes must be at most {}, got {}",
+                defaults::MAX_IN_CROSS_PRODUCT_SIZE,
+                cross_product
+            ))));
+        }
+
+        let left_over_index_properties = index
+            .properties
+            .iter()
+            .filter(|field| {
+                !(self
+                    .internal_clauses
+                    .equal_clauses
+                    .contains_key(field.name.as_str())
+                    || ordered_in_clauses
+                        .iter()
+                        .any(|in_clause| in_clause.field == field.name)
+                    || self
+                        .internal_clauses
+                        .range_clause
+                        .as_ref()
+                        .is_some_and(|range_clause| range_clause.field == field.name))
+            })
+            .collect::<Vec<&IndexProperty>>();
+
+        // Every level that fans out (each in clause, and the range clause)
+        // needs an explicit ordering, like any range-class clause.
+        let direction_for = |field: &str| -> Result<bool, Error> {
+            let order_clause: &OrderClause = self.order_by.get(field).ok_or(Error::Query(
+                QuerySyntaxError::MissingOrderByForRange(
+                    "query must have an orderBy field for each range element",
+                ),
+            ))?;
+            Ok(order_clause.ascending)
+        };
+
+        // Build the query bottom-up. The deepest clause level is the range
+        // clause when present, otherwise the last in clause; the left-over
+        // index properties and the terminal document level hang under it.
+        let (mut child_field, mut child_query, deepest_left_to_right) =
+            match &self.internal_clauses.range_clause {
+                Some(range_clause) => {
+                    let left_to_right = direction_for(range_clause.field.as_str())?;
+                    let query = range_clause.to_path_query(
+                        self.document_type,
+                        &None,
+                        left_to_right,
+                        platform_version,
+                    )?;
+                    (range_clause.field.clone(), query, left_to_right)
+                }
+                None => {
+                    let deepest_in_clause =
+                        *ordered_in_clauses.last().expect("more than one in clause");
+                    let left_to_right = direction_for(deepest_in_clause.field.as_str())?;
+                    let query = deepest_in_clause.to_path_query(
+                        self.document_type,
+                        &None,
+                        left_to_right,
+                        platform_version,
+                    )?;
+                    (deepest_in_clause.field.clone(), query, left_to_right)
+                }
+            };
+        Self::recursive_insert_on_query(
+            &mut child_query,
+            left_over_index_properties.as_slice(),
+            index.unique,
+            None,
+            deepest_left_to_right,
+            Some(&self.order_by),
+            platform_version,
+        )?;
+
+        // Wrap the remaining in levels around it, deepest first. When a
+        // range clause is present every in clause wraps; otherwise the
+        // deepest in clause is already the leaf built above.
+        let wrapped_in_clauses = if self.internal_clauses.range_clause.is_some() {
+            ordered_in_clauses.as_slice()
+        } else {
+            &ordered_in_clauses[..ordered_in_clauses.len() - 1]
+        };
+        for in_clause in wrapped_in_clauses.iter().rev() {
+            let left_to_right = direction_for(in_clause.field.as_str())?;
+            let mut query = in_clause.to_path_query(
+                self.document_type,
+                &None,
+                left_to_right,
+                platform_version,
+            )?;
+            query.set_subquery_key(child_field.as_bytes().to_vec());
+            query.set_subquery(child_query);
+            child_field = in_clause.field.clone();
+            child_query = query;
+        }
+
+        let intermediate_values = index.properties[..equality_len]
+            .iter()
+            .map(|field| {
+                let where_clause = self
+                    .internal_clauses
+                    .equal_clauses
+                    .get(field.name.as_str())
+                    .expect("equality prefix was validated during index selection");
+                self.document_type.serialize_value_for_key(
+                    field.name.as_str(),
+                    &where_clause.value,
+                    platform_version,
+                )
+            })
+            .collect::<Result<Vec<Vec<u8>>, ProtocolError>>()
+            .map_err(Error::from)?;
+
+        let mut path = document_type_path;
+        for (intermediate_index, intermediate_value) in index.properties[..equality_len]
+            .iter()
+            .zip(intermediate_values.iter())
+        {
+            path.push(intermediate_index.name.as_bytes().to_vec());
+            path.push(intermediate_value.as_slice().to_vec());
+        }
+        path.push(child_field.as_bytes().to_vec());
+
+        Ok(PathQuery::new(
+            path,
+            SizedQuery::new(child_query, self.limit, self.offset),
+        ))
+    }
+
+    #[cfg(any(feature = "server", feature = "verify"))]
+    /// v0 of the non-primary-key path query lowering: at most one `In`
+    /// clause per query, the behavior every protocol version up to 13
+    /// committed to.
+    fn get_non_primary_key_path_query_v0(
+        &self,
+        document_type_path: Vec<Vec<u8>>,
+        starts_at_document: Option<(Document, bool)>,
+        platform_version: &PlatformVersion,
+    ) -> Result<PathQuery, Error> {
+        if self.internal_clauses.in_clauses.len() > 1 {
+            return Err(Error::Query(QuerySyntaxError::MultipleInClauses(
+                "There should only be one in clause",
+            )));
+        }
         let index = self.find_best_index(platform_version)?;
         let ordered_clauses: Vec<&WhereClause> = index
             .properties
             .iter()
             .filter_map(|field| self.internal_clauses.equal_clauses.get(field.name.as_str()))
             .collect();
-        let (last_clause, last_clause_is_range, subquery_clause) = match &self
-            .internal_clauses
-            .in_clause
-        {
-            None => match &self.internal_clauses.range_clause {
-                None => (ordered_clauses.last().copied(), false, None),
-                Some(where_clause) => (Some(where_clause), true, None),
-            },
-            Some(in_clause) => match &self.internal_clauses.range_clause {
-                None => (Some(in_clause), true, None),
-                Some(range_clause) => {
-                    // Both an `in` clause and a range clause are present.
-                    // The outer path query must operate on the field that
-                    // appears *earlier* (closer to the index root) in the
-                    // chosen index, and the other clause becomes the leaf
-                    // subquery. Without this ordering, a query like
-                    // `status > 0 AND transactionIndex in [..]` on an index
-                    // `[status, transactionIndex]` builds a path that
-                    // terminates at the `status` subtree while the primary
-                    // query iterates `transactionIndex` keys, silently
-                    // returning []. See issue #2409.
-                    let position_of = |field: &str| -> Option<usize> {
-                        index
-                            .properties
-                            .iter()
-                            .position(|p| p.name.as_str() == field)
-                    };
-                    let in_pos = position_of(in_clause.field.as_str());
-                    let range_pos = position_of(range_clause.field.as_str());
-                    match (in_pos, range_pos) {
-                        (Some(i), Some(r)) if i > r => (Some(range_clause), true, Some(in_clause)),
-                        _ => (Some(in_clause), true, Some(range_clause)),
+        let (last_clause, last_clause_is_range, subquery_clause) =
+            match self.internal_clauses.in_clauses.first() {
+                None => match &self.internal_clauses.range_clause {
+                    None => (ordered_clauses.last().copied(), false, None),
+                    Some(where_clause) => (Some(where_clause), true, None),
+                },
+                Some(in_clause) => match &self.internal_clauses.range_clause {
+                    None => (Some(in_clause), true, None),
+                    Some(range_clause) => {
+                        // Both an `in` clause and a range clause are present.
+                        // The outer path query must operate on the field that
+                        // appears *earlier* (closer to the index root) in the
+                        // chosen index, and the other clause becomes the leaf
+                        // subquery. Without this ordering, a query like
+                        // `status > 0 AND transactionIndex in [..]` on an index
+                        // `[status, transactionIndex]` builds a path that
+                        // terminates at the `status` subtree while the primary
+                        // query iterates `transactionIndex` keys, silently
+                        // returning []. See issue #2409.
+                        let position_of = |field: &str| -> Option<usize> {
+                            index
+                                .properties
+                                .iter()
+                                .position(|p| p.name.as_str() == field)
+                        };
+                        let in_pos = position_of(in_clause.field.as_str());
+                        let range_pos = position_of(range_clause.field.as_str());
+                        match (in_pos, range_pos) {
+                            (Some(i), Some(r)) if i > r => {
+                                (Some(range_clause), true, Some(in_clause))
+                            }
+                            _ => (Some(in_clause), true, Some(range_clause)),
+                        }
                     }
-                }
-            },
-        };
+                },
+            };
 
         // We need to get the terminal indexes unused by clauses.
         let left_over_index_properties = index
@@ -2933,7 +3299,7 @@ mod tests {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: None,
+                in_clauses: Vec::new(),
                 range_clause: Some(WhereClause {
                     field: "records.identity".to_string(),
                     operator: WhereOperator::LessThan,
@@ -3351,7 +3717,7 @@ mod tests {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: Some(WhereClause {
+                in_clauses: vec![WhereClause {
                     field: "status".to_string(),
                     operator: WhereOperator::In,
                     value: Value::Array(vec![
@@ -3361,7 +3727,7 @@ mod tests {
                         Value::U64(3),
                         Value::U64(4),
                     ]),
-                }),
+                }],
                 range_clause: None,
                 equal_clauses: BTreeMap::default(),
             },
