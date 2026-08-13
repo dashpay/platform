@@ -752,6 +752,175 @@ mod tests {
     }
 
     #[test]
+    fn test_update_document_with_unique_index_when_some_indexed_fields_are_null() {
+        // A unique index where SOME (not all) of the indexed properties are
+        // null must use the non-unique storage layout (a `[0]` tree keyed by
+        // document id) because uniqueness can't be enforced on null — that is
+        // what the insert and delete walkers do. The update walker must agree
+        // on the layout, both when deleting the entry under the old values
+        // and when writing the entry under the new ones.
+        let drive = setup_drive_with_initial_state_structure(None);
+
+        let platform_version = PlatformVersion::latest();
+
+        let contract = platform_value!({
+            "$formatVersion": "0",
+            "id": "BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54",
+            "schema": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
+            "version": 1,
+            "ownerId": "GZVdTnLFAN2yE9rLeCHBDBCr7YQgmXJuoExkY347j7Z5",
+            "documentSchemas": {
+                "indexedDocument": {
+                    "type": "object",
+                    "indices": [
+                        {"name":"uniqueFirstLast", "properties": [{"firstName":"asc"}, {"lastName":"asc"}], "unique":true},
+                    ],
+                    "properties":{
+                        "firstName": {
+                            "type": "string",
+                            "maxLength": 63,
+                            "position": 0,
+                        },
+                        "lastName": {
+                            "type": "string",
+                            "maxLength": 63,
+                            "position": 1,
+                        }
+                    },
+                    "required": ["firstName"],
+                    "additionalProperties": false,
+                },
+            },
+        });
+
+        let contract = DataContract::from_value(contract, false, platform_version)
+            .expect("expected data contract");
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("should create a contract");
+
+        // Create a document with a null lastName (one of two indexed fields)
+
+        let document_values = platform_value!({
+           "$id": Identifier::new(bs58::decode("DLRWw2eRbLAW5zDU2c7wwsSFQypTSZPhFYzpY48tnaXN").into_vec()
+                        .unwrap().try_into().unwrap()),
+           "$type": "indexedDocument",
+           "$dataContractId": Identifier::new(bs58::decode("BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54").into_vec()
+                        .unwrap().try_into().unwrap()),
+           "$ownerId": Identifier::new(bs58::decode("GZVdTnLFAN2yE9rLeCHBDBCr7YQgmXJuoExkY347j7Z5").into_vec()
+                        .unwrap().try_into().unwrap()),
+           "$revision": 1,
+           "firstName": "myName",
+        });
+
+        let document = document_from_legacy_value(document_values);
+
+        let document_type = contract
+            .document_type_for_name("indexedDocument")
+            .expect("expected to get a document type");
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentOwnedInfo((
+                            document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("should add document");
+
+        // Update the non-null indexed property, lastName stays null
+
+        let document_values = platform_value!({
+           "$id": Identifier::new(bs58::decode("DLRWw2eRbLAW5zDU2c7wwsSFQypTSZPhFYzpY48tnaXN").into_vec()
+                        .unwrap().try_into().unwrap()),
+           "$type": "indexedDocument",
+           "$dataContractId": Identifier::new(bs58::decode("BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54").into_vec()
+                        .unwrap().try_into().unwrap()),
+           "$ownerId": Identifier::new(bs58::decode("GZVdTnLFAN2yE9rLeCHBDBCr7YQgmXJuoExkY347j7Z5").into_vec()
+                        .unwrap().try_into().unwrap()),
+           "$revision": 2,
+           "firstName": "updatedName",
+        });
+
+        let document = document_from_legacy_value(document_values);
+
+        drive
+            .update_document_for_contract(
+                &document,
+                &contract,
+                document_type,
+                None,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+            )
+            .expect("should update document");
+
+        // The document must be findable under the new index value…
+
+        let query = DriveDocumentQuery::from_sql_expr(
+            "select * from indexedDocument where firstName = 'updatedName'",
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
+
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("expected to execute query for the new index value");
+
+        assert_eq!(
+            results.len(),
+            1,
+            "updated document should be found under its new index value"
+        );
+
+        // …and no entry may remain under the old index value
+
+        let query = DriveDocumentQuery::from_sql_expr(
+            "select * from indexedDocument where firstName = 'myName'",
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
+
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("expected to execute query for the old index value");
+
+        assert_eq!(
+            results.len(),
+            0,
+            "no index entry should remain under the old index value"
+        );
+    }
+
+    #[test]
     fn test_modify_dashpay_contact_request() {
         let drive = setup_drive_with_initial_state_structure(None);
 
