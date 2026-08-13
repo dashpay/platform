@@ -14,11 +14,19 @@ use dpp::data_contract::DataContract;
 use dpp::errors::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use dpp::errors::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
+use dpp::errors::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
+use dpp::errors::consensus::state::document::referenced_identity_key_not_found_error::ReferencedIdentityKeyNotFoundError;
+use dpp::errors::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
 use dpp::identifier::Identifier;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::KeyID;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use dpp::platform_value::Value;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
+use drive::drive::identity::key::fetch::{
+    IdentityKeysRequest, OptionalSingleIdentityPublicKeyOutcome,
+};
 use drive::query::TransactionArg;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
@@ -257,6 +265,72 @@ fn validate_document_type_references_v0(
                     platform_version,
                 )?
                 .is_some()
+            }
+            DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } => {
+                // The referenced key id is carried by the named sibling property
+                let key_id: KeyID =
+                    match document_data.get_optional_integer_at_path(key_id_property) {
+                        Ok(Some(key_id)) => key_id,
+                        Ok(None) => {
+                            return Ok(SimpleConsensusValidationResult::new_with_error(
+                                ReferencedKeyIdPropertyInvalidError::new(
+                                    key_id_property.clone(),
+                                    path.to_string(),
+                                    "the key id property is not set".to_string(),
+                                )
+                                .into(),
+                            ))
+                        }
+                        Err(err) => {
+                            return Ok(SimpleConsensusValidationResult::new_with_error(
+                                ReferencedKeyIdPropertyInvalidError::new(
+                                    key_id_property.clone(),
+                                    path.to_string(),
+                                    err.to_string(),
+                                )
+                                .into(),
+                            ))
+                        }
+                    };
+
+                execution_context.add_operation(ValidationOperation::RetrieveIdentity(
+                    RetrieveIdentityInfo::one_key(),
+                ));
+
+                // A missing identity and a missing key resolve to the same
+                // failure: the referenced key could not be found
+                let Some(key) = platform
+                    .drive
+                    .fetch_identity_keys::<OptionalSingleIdentityPublicKeyOutcome>(
+                        IdentityKeysRequest::new_specific_key_query(&referenced_id, key_id),
+                        transaction,
+                        platform_version,
+                    )?
+                else {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ReferencedIdentityKeyNotFoundError::new(
+                            Identifier::from(referenced_id),
+                            key_id,
+                            path.to_string(),
+                        )
+                        .into(),
+                    ));
+                };
+
+                // Keys can never be removed, so an existing reference can not
+                // dangle; a disabled key is still rejected for fresh writes
+                if key.is_disabled() {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ReferencedIdentityKeyDisabledError::new(
+                            Identifier::from(referenced_id),
+                            key_id,
+                            path.to_string(),
+                        )
+                        .into(),
+                    ));
+                }
+
+                true
             }
         };
 

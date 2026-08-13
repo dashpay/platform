@@ -75,6 +75,17 @@ pub enum DocumentPropertyReferenceTarget {
         contract_id: Option<Identifier>,
         document_type_name: String,
     },
+    /// A specific public key of an identity: the property value holds the
+    /// identity id and the named sibling property of the same document type
+    /// holds the key id. Identity keys can be disabled but never removed, so
+    /// an existing reference can never dangle; at write time the key must
+    /// exist and must not be disabled.
+    #[serde(rename = "identityPublicKey")]
+    IdentityPublicKey {
+        /// The property of the same document type whose value carries the
+        /// referenced key id
+        key_id_property: String,
+    },
 }
 
 impl std::fmt::Display for DocumentPropertyReferenceTarget {
@@ -97,6 +108,9 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
                 f,
                 "permanent document (own contract, document type {document_type_name})"
             ),
+            DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } => {
+                write!(f, "identity public key (key id property {key_id_property})")
+            }
         }
     }
 }

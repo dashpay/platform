@@ -44,6 +44,9 @@ use crate::consensus::state::document::document_contest_not_required_error::Docu
 use crate::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
 use crate::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use crate::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
+use crate::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
+use crate::consensus::state::document::referenced_identity_key_not_found_error::ReferencedIdentityKeyNotFoundError;
+use crate::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
 use crate::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use crate::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use crate::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionAlreadySignedByIdentityError, GroupActionDoesNotExistError, IdentityMemberOfGroupNotFoundError, IdentityNotMemberOfGroupError, ModificationOfGroupActionMainParametersNotPermittedError};
@@ -374,6 +377,15 @@ pub enum StateError {
 
     #[error(transparent)]
     ReferencedDocumentTypeDeletableError(ReferencedDocumentTypeDeletableError),
+
+    #[error(transparent)]
+    ReferencedIdentityKeyNotFoundError(ReferencedIdentityKeyNotFoundError),
+
+    #[error(transparent)]
+    ReferencedIdentityKeyDisabledError(ReferencedIdentityKeyDisabledError),
+
+    #[error(transparent)]
+    ReferencedKeyIdPropertyInvalidError(ReferencedKeyIdPropertyInvalidError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -469,6 +481,36 @@ mod tests {
                 )
             )),
             95
+        );
+        assert_eq!(
+            discriminant_of(StateError::ReferencedIdentityKeyNotFoundError(
+                ReferencedIdentityKeyNotFoundError::new(
+                    Identifier::from([1; 32]),
+                    2,
+                    "toUserId".to_string(),
+                )
+            )),
+            96
+        );
+        assert_eq!(
+            discriminant_of(StateError::ReferencedIdentityKeyDisabledError(
+                ReferencedIdentityKeyDisabledError::new(
+                    Identifier::from([1; 32]),
+                    2,
+                    "toUserId".to_string(),
+                )
+            )),
+            97
+        );
+        assert_eq!(
+            discriminant_of(StateError::ReferencedKeyIdPropertyInvalidError(
+                ReferencedKeyIdPropertyInvalidError::new(
+                    "recipientKeyIndex".to_string(),
+                    "toUserId".to_string(),
+                    "missing".to_string(),
+                )
+            )),
+            98
         );
     }
 }

@@ -314,6 +314,9 @@ impl ErrorWithCode for StateError {
             Self::ReferencedEntityNotFoundError(_) => 40120,
             Self::ReferencedDocumentTypeNotFoundError(_) => 40121,
             Self::ReferencedDocumentTypeDeletableError(_) => 40122,
+            Self::ReferencedIdentityKeyNotFoundError(_) => 40123,
+            Self::ReferencedIdentityKeyDisabledError(_) => 40124,
+            Self::ReferencedKeyIdPropertyInvalidError(_) => 40125,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,

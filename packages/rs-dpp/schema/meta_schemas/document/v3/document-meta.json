@@ -99,7 +99,8 @@
                 "identity",
                 "contract",
                 "token",
-                "permanentDocument"
+                "permanentDocument",
+                "identityPublicKey"
               ]
             },
             "contractId": {
@@ -129,25 +130,50 @@
               "minLength": 1,
               "maxLength": 64,
               "pattern": "^[a-zA-Z0-9-_]{1,64}$"
+            },
+            "keyIdProperty": {
+              "description": "The property of the same document type whose value carries the referenced key id; the reference property's value carries the identity id",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[a-zA-Z0-9-_]{1,64}(\\.[a-zA-Z0-9-_]{1,64})*$"
             }
           },
           "required": [
             "type"
           ],
           "additionalProperties": false,
-          "if": {
-            "properties": { "type": { "const": "permanentDocument" } },
-            "required": ["type"]
-          },
-          "then": {
-            "required": ["type", "documentType"]
-          },
-          "else": {
-            "properties": {
-              "contractId": false,
-              "documentType": false
+          "allOf": [
+            {
+              "if": {
+                "properties": { "type": { "const": "permanentDocument" } },
+                "required": ["type"]
+              },
+              "then": {
+                "required": ["type", "documentType"]
+              },
+              "else": {
+                "properties": {
+                  "contractId": false,
+                  "documentType": false
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": { "type": { "const": "identityPublicKey" } },
+                "required": ["type"]
+              },
+              "then": {
+                "required": ["type", "keyIdProperty"]
+              },
+              "else": {
+                "properties": {
+                  "keyIdProperty": false
+                }
+              }
             }
-          }
+          ]
         },
         "contains": {
           "$ref": "https://json-schema.org/draft/2020-12/meta/applicator#/properties/contains"
