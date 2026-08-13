@@ -1421,16 +1421,27 @@ message GetDocumentsResponse {
       // population — a positive, useful answer ("there are only 12
       // groups") rather than a bare empty list.
       //
-      // On the proved path the number is grovedb's cryptographically
-      // attested count, re-derived by the verifier from the counted
-      // subtree commitments in the proof bytes rather than trusted
-      // from this field; a proving client should use the verified
-      // value. On the unproven read there is nothing to attest and
-      // grovedb's read API does not report a short walk, so the server
-      // echoes the requested offset. The two therefore disagree in
-      // exactly one case — an offset past the end, where the unproven
-      // read reports the request and the proved one reports the truth.
-      // Callers who need the population must prove.
+      // Both paths report the same quantity: the offset you asked for
+      // when the skip succeeded, and the ranking's total population
+      // when the walk ran out of groups first. They no longer disagree
+      // anywhere, including past the end.
+      //
+      // What differs is the *warrant*, not the value. On the proved
+      // path the number is cryptographically attested — re-derived by
+      // the verifier from the counted subtree commitments in the proof
+      // bytes rather than trusted from this field — so a proving client
+      // should use the verified value and ignore this one. On the
+      // unproven path it is an **unverified claim**, exactly like the
+      // entries beside it: it equals the attested value on an honest
+      // node, and nothing forces a node to be honest. Read "the true
+      // population" as "what this node says the population is".
+      // Callers who need to trust it, rather than merely receive it,
+      // must still prove.
+      //
+      // Do not assume this field equals the offset you requested. It
+      // equals the offset only when the skip succeeded; when the walk
+      // ran out of groups first it is smaller, and that is the answer
+      // rather than an inconsistency.
       optional uint64 skipped = 2 [jstype = JS_STRING];
     }
 

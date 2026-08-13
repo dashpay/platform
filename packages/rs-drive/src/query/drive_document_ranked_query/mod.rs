@@ -312,14 +312,17 @@ pub struct DriveDocumentRankedQuery<'a> {
     /// How many ranks to skip before the returned page — the request's
     /// `OFFSET`. `0` for an unpaginated ranking.
     ///
-    /// Unbounded above (any `u32`), on purpose. grovedb attests the
-    /// skipped region through the counted subtree commitments
-    /// (`HashWithCount` / `HashWithCountAndSum`) rather than by walking
-    /// it, so both the prover's work and the proof's size stay
-    /// `O(log n + k)` **at any offset** — an offset of 4 and an offset
-    /// of four billion cost the same. There is therefore no
-    /// denial-of-service lever to cap, and capping would only stop
-    /// honest deep pagination.
+    /// Unbounded above (any `u32`), on purpose. grovedb skips by
+    /// counting rather than walking — descending the secondary on each
+    /// subtree's aggregate count (`HashWithCount` /
+    /// `HashWithCountAndSum`) and collapsing any subtree that fits
+    /// inside the remaining offset — so work and proof size stay
+    /// `O(log n + k)` **at any offset**, and an offset of 4 and an
+    /// offset of four billion cost the same order of work, the deeper
+    /// one in fact slightly less. Both executors go through that
+    /// descent, the unproved one without building a proof, so there is
+    /// no denial-of-service lever to cap on either path and capping
+    /// would only stop honest deep pagination.
     ///
     /// An offset past the end of the secondary is a provable answer, not
     /// an error: the page comes back empty and
@@ -339,19 +342,28 @@ pub struct DriveDocumentRankedQuery<'a> {
 pub struct RankedPage {
     /// Number of secondary entries skipped before this page.
     ///
-    /// On the **proved** path this is grovedb's cryptographically
-    /// attested count, independently re-derived by the verifier from the
-    /// counted subtree commitments in the proof bytes: it equals the
-    /// requested offset unless the walk ran out of entries first, in
-    /// which case `entries` is empty and `skipped` is a proof that the
-    /// secondary holds exactly `skipped` groups in total.
+    /// Both paths report the same quantity, and it is never an echo of
+    /// the request: grovedb's counted descent tracks how far the skip
+    /// actually got, so this equals the requested offset when the skip
+    /// succeeded and the secondary's whole population when the walk ran
+    /// out of groups first (in which case `entries` is empty).
     ///
-    /// On the **unproven** read there is nothing to attest and grovedb's
-    /// read API does not report the short walk, so this is simply the
-    /// requested offset. The two paths therefore disagree in exactly one
-    /// case — an offset past the end — where the unproven read reports
-    /// the requested offset and the proved one reports the true
-    /// population. Callers that need the population must prove.
+    /// What differs between the paths is the warrant. On the **proved**
+    /// path the value is cryptographically attested — independently
+    /// re-derived by the verifier from the counted subtree commitments
+    /// in the proof bytes — so a verifying client uses its own
+    /// reconstruction rather than trusting the server's. On the
+    /// **unproven** read it is the node's unverified claim, exactly like
+    /// the entries beside it: equal to the attested value on an honest
+    /// node, with nothing forcing a node to be honest.
+    ///
+    /// One nuance worth knowing on the unproven path: the population is
+    /// read from the secondary's root aggregate, while grovedb's
+    /// per-node payload check only fires on nodes the descent visits. In
+    /// a *corrupt* secondary whose count violation lies outside the
+    /// visited region, this value can therefore disagree with the true
+    /// row count where the proved path's would not. On any valid
+    /// secondary the two are identical by construction.
     pub skipped: u64,
     /// The groups on this page, **in ranking order**. Never longer than
     /// the query's `k`.

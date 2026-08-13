@@ -300,14 +300,20 @@ pub fn detect_ranked_mode_v0(
     // ---- OFFSET: optional, unbounded --------------------------------
     //
     // No ceiling, and that is a deliberate statement about cost rather
-    // than an oversight: grovedb's paginated prover attests the skipped
-    // region from the counted subtree commitments instead of walking
-    // it, so proving `OFFSET 4` and `OFFSET 4_000_000_000` are the same
-    // O(log n + k) work and the same proof size. There is no
-    // denial-of-service lever here to cap, and an arbitrary cap would
-    // only break honest deep pagination. An offset past the end is a
-    // provable answer (empty page, `skipped` attesting the population),
-    // not an error.
+    // than an oversight. grovedb skips by *counting*, not by walking:
+    // it descends the secondary reading each subtree's aggregate count
+    // and collapses any subtree that fits inside the remaining offset,
+    // so `OFFSET 4` and `OFFSET 4_000_000_000` are the same order of
+    // O(log n + k) work — the deeper one in fact cheaper, since a tree
+    // that fits entirely inside the offset collapses at the root.
+    //
+    // Both executors get that: the prover attests the skipped region
+    // from the counted subtree commitments, and the unproved read
+    // performs the same counted descent without building a proof. So
+    // there is no denial-of-service lever here for a cap to close on
+    // either path, and an arbitrary cap would only break honest deep
+    // pagination. An offset past the end is a real answer (empty page,
+    // `skipped` reporting the population), not an error.
     let offset = pagination.offset.unwrap_or(0);
 
     // ---- START AT: must be absent -----------------------------------

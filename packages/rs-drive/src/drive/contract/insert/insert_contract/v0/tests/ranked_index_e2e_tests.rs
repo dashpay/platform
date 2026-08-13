@@ -1557,10 +1557,10 @@ fn an_offset_window_spanning_the_end_returns_the_short_tail() {
 /// The page comes back empty and `skipped` collapses below the requested
 /// offset — and *that shape* is the proof that the ranking holds exactly
 /// `skipped` groups in total, because the counted commitments cover the whole
-/// walk. It is the only way this surface reports a population, and the one
-/// place the proved and unproven paths differ: the unproven read cannot see
-/// the short walk (grovedb's read API returns an empty vector either way) and
-/// reports the requested offset.
+/// walk. It is the only way this surface reports a population, and both paths
+/// now report it: grovedb's counted descent tracks how far the skip got and
+/// returns it on the page, so the unproven read no longer has to echo the
+/// request back. What proving still adds is that the number is attested.
 #[test]
 fn an_offset_past_the_end_returns_an_empty_page_whose_skip_attests_the_population() {
     let (drive, contract) = setup_restaurants();
@@ -1572,8 +1572,9 @@ fn an_offset_past_the_end_returns_an_empty_page_whose_skip_attests_the_populatio
         "there is no rank 12 in a five-group ranking"
     );
     assert_eq!(
-        page.skipped, 12,
-        "the unproven read echoes the requested offset — it has nothing to attest with"
+        page.skipped, 5,
+        "the unproven read reports the five groups the ranking holds, not the requested \
+         offset of 12"
     );
 
     let verified = verified_ranked_avg_page(&drive, &contract, 3, 12);
