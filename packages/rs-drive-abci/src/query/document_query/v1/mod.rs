@@ -408,21 +408,37 @@ enum RoutingDecision {
 /// had, **message for message**: those callers paginate with
 /// `start_after` / `start_at`, or by narrowing the range clause.
 ///
-/// The message below is load-bearing and must not be reworded: clients
-/// match on it, and on a protocol version whose routing table has no
-/// ranked path (v13 and earlier) it is the *only* answer an offset can
-/// get, exactly as it was before the ranked surface existed.
+/// The legacy message below is load-bearing and must not be reworded:
+/// clients match on it, and on a protocol version whose routing table
+/// has no ranked path (v13 and earlier) it is the *only* answer an
+/// offset can get, exactly as it was before the ranked surface existed.
+///
+/// The having-range route gets its own message instead, because the
+/// legacy one gives that caller wrong advice: the having surface has
+/// neither offset nor cursor pagination (`start_after` / `start_at`
+/// are rejected by mode detection — a document-ID cursor cannot
+/// address the aggregate-sorted secondary). The only continuation is
+/// tightening the bound past the last distinct aggregate value, with
+/// the documented tie limitation.
 fn reject_offset_off_the_ranked_path(
     offset: Option<u32>,
     decision: &RoutingDecision,
 ) -> Result<(), QueryError> {
-    if offset.is_some() && !matches!(decision, RoutingDecision::Ranked) {
-        return Err(not_yet_implemented(
+    match decision {
+        _ if offset.is_none() => Ok(()),
+        RoutingDecision::Ranked => Ok(()),
+        RoutingDecision::HavingRange => Err(not_yet_implemented(
+            "OFFSET on a having-range query; this surface has no offset or cursor \
+             pagination — to continue past a page cut at the limit, tighten the \
+             `having` bound past the last aggregate value seen (this cannot cross \
+             a tie: several groups sharing the boundary aggregate must fit inside \
+             one limit)",
+        )),
+        _ => Err(not_yet_implemented(
             "OFFSET pagination (use cursor pagination via `start_after` / \
              `start_at` instead)",
-        ));
+        )),
     }
-    Ok(())
 }
 
 /// Test-only: expose the routing decision for unit tests without
@@ -563,7 +579,9 @@ impl<C> Platform<C> {
         // once `validate_and_route` has answered, in
         // `reject_offset_off_the_ranked_path`. Off the ranked path the
         // rejection is byte-identical to the one this block used to
-        // emit.
+        // emit, except on the having-range route, which gets its own
+        // message (the legacy one recommends cursors that route also
+        // rejects).
 
         // Decode the proto-typed `repeated WhereClause` / `repeated
         // OrderClause` into drive's structured forms once, up

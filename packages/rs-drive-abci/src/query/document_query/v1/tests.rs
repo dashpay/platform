@@ -3279,9 +3279,11 @@ mod having_range_tests {
         }
     }
 
-    /// `OFFSET` stays ranked-only: the having-range walk has no skip,
-    /// so the post-routing offset gate fires with its long-standing
-    /// message.
+    /// `OFFSET` stays ranked-only, and the having-range route gets its
+    /// own rejection: the legacy message recommends `start_after` /
+    /// `start_at`, which this surface also rejects, so the having
+    /// message explains continuation-by-bound instead of pointing at
+    /// an unsupported cursor.
     #[test]
     fn offset_is_rejected_on_the_having_path() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
@@ -3306,8 +3308,16 @@ mod having_range_tests {
         match ranked_error(&platform, &state, request, version) {
             QueryError::Query(QuerySyntaxError::Unsupported(message)) => {
                 assert!(
-                    message.contains("OFFSET pagination"),
-                    "expected the offset gate's message, got: {message}"
+                    message.contains("OFFSET on a having-range query"),
+                    "expected the having-specific offset message, got: {message}"
+                );
+                assert!(
+                    message.contains("tighten the `having` bound"),
+                    "the message must explain continuation-by-bound, got: {message}"
+                );
+                assert!(
+                    !message.contains("start_after"),
+                    "the message must not recommend cursors this surface rejects, got: {message}"
                 );
             }
             other => panic!("expected Unsupported, got {other:?}"),
