@@ -12,7 +12,6 @@ use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
-use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
 use std::collections::BTreeMap;
 

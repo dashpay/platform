@@ -2781,7 +2781,7 @@ mod pinned_prefix {
     fn offset_is_rejected_with_an_in_pin() {
         let error = detect_ranked_mode_v0(
             &SelectProjection::avg("grade"),
-            &vec![CLASS_PROPERTY.to_string()],
+            &[CLASS_PROPERTY.to_string()],
             &[],
             &[OrderClause {
                 field: "grade".to_string(),
@@ -2814,7 +2814,7 @@ mod pinned_prefix {
         let detect = |where_clauses: &[WhereClause]| {
             detect_ranked_mode_v0(
                 &SelectProjection::avg("grade"),
-                &vec![CLASS_PROPERTY.to_string()],
+                &[CLASS_PROPERTY.to_string()],
                 &[],
                 &[OrderClause {
                     field: "grade".to_string(),

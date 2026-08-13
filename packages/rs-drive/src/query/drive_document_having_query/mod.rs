@@ -65,8 +65,6 @@
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
 #[cfg(any(feature = "server", feature = "verify"))]
-use dpp::platform_value::Value;
-#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::version::PlatformVersion;
 #[cfg(any(feature = "server", feature = "verify"))]
 use std::collections::BTreeMap;

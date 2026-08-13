@@ -732,7 +732,9 @@ impl MockResponse for drive_proof_verifier::DocumentSplitAverages {
 /// is already an `i128`. One numeric column keeps the tuple flat while
 /// the tag preserves which axis produced it, so a mock expectation
 /// can't quietly turn a count into a sum.
-type DocumentRankedPage = (u64, Vec<(Vec<u8>, u8, i128, Option<Vec<u8>>)>);
+/// One mock-serialized ranked entry: `(key, axis tag, value, in_key)`.
+type MockRankedEntry = (Vec<u8>, u8, i128, Option<Vec<u8>>);
+type DocumentRankedPage = (u64, Vec<MockRankedEntry>);
 
 const RANKED_TAG_COUNT: u8 = 0;
 const RANKED_TAG_SUM: u8 = 1;
@@ -741,7 +743,7 @@ const RANKED_TAG_AVG: u8 = 2;
 impl MockResponse for drive_proof_verifier::DocumentRankedEntries {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
         let bincode_config = standard();
-        let triples: Vec<(Vec<u8>, u8, i128, Option<Vec<u8>>)> = self
+        let triples: Vec<MockRankedEntry> = self
             .entries
             .iter()
             .map(|e| match e.value {
