@@ -1683,20 +1683,6 @@ where
     // work; only the spend-auth key must survive to the bundle build.
     drop(sk);
 
-    // Advisory only: the shielded tree has no height→note-index oracle (a chunk's
-    // block_height is the proof-tip height, not per-note inclusion height), so the
-    // transient scan cannot seed its start from a height; it bounds itself by
-    // value coverage plus a coordinator-owned resume checkpoint (one
-    // full-history scan per key per coordinator — see
-    // `scan_notes_for_foreign_key`). Logged so
-    // the hint is observable and not silently dropped.
-    if let Some(h) = funding_birth_height {
-        debug!(
-            funding_birth_height = h,
-            "identity_create_from_one_time_key: birth-height hint (advisory; scan is value-bounded)"
-        );
-    }
-
     let num_keys = public_keys.len();
 
     // The invitee's re-derivable MASTER auth key hash: the unique, Platform-indexed
@@ -1731,6 +1717,131 @@ where
     let claim_record_key = one_time_claim_record_key(&fvk);
     let lifecycle_entry = claim_guards.entry_for(claim_record_key);
     let _lifecycle_guard = lifecycle_entry.lock().await;
+
+    // ---- Store-level lifecycle admission (#4313 review finding cr-7e6c98b9) ----
+    //
+    // The guard above is per-COORDINATOR: it serializes same-key claims that
+    // share this `NetworkShieldedCoordinator`, and nothing else. It cannot
+    // order this claim against `clear` / `unregister_wallet` / `remove_wallet`,
+    // which take the coordinator's `lifecycle` mutex (a claim takes neither),
+    // and it cannot reach a SECOND coordinator or process at all — those get
+    // their own `FileBackedShieldedStore` with its own SQLite connections to
+    // the same file. Without admission, such a purge deletes this claim's
+    // pending record while its transition is broadcasting, and the identity it
+    // creates is unrecoverable.
+    //
+    // So admission is taken where the contention actually is — the store. A
+    // destructive operation that already holds admission refuses this claim
+    // outright (nothing scanned, built or broadcast); one that starts later
+    // sees this lease and waits for it. Both directions are decided by a
+    // single atomic store step on each side, so there is no interleaving in
+    // which both proceed — see `store::LifecycleAdmission`.
+    //
+    // Released deterministically after the claim body below. A claim CANCELLED
+    // mid-flight (a dropped JNI call) cannot run an async release from `Drop`,
+    // so its lease is reclaimed by expiry instead — which errs toward "the
+    // purge waits", never toward "the record is deleted".
+    let admission = super::store::AdmissionToken::new();
+    let admitted = store
+        .write()
+        .await
+        .begin_claim_admission(
+            wallet_id,
+            admission,
+            super::store::admission_now_ms(),
+            super::store::CLAIM_LEASE_MS,
+        )
+        .map_err(|e| {
+            PlatformWalletError::Persistence(format!(
+                "one-time claim: could not take store lifecycle admission: {e}"
+            ))
+        })?;
+    if !admitted {
+        return Err(PlatformWalletError::ShieldedLifecycleBusy {
+            reason: "this wallet's shielded state is being cleared or removed; the invitation \
+                     claim was not started"
+                .to_string(),
+        });
+    }
+
+    let claim_result = one_time_claim_admitted(
+        sdk,
+        store,
+        scan_checkpoints,
+        wallet_id,
+        claim_record_key,
+        admission,
+        fvk,
+        ivk,
+        ask,
+        funding_birth_height,
+        change_address,
+        public_keys,
+        num_keys,
+        master_key_hash,
+        submitted_public_keys,
+        denomination,
+        send_to_address_on_creation_failure,
+        identity_signer,
+        prover,
+    )
+    .await;
+
+    if let Err(e) = store.write().await.end_claim_admission(admission) {
+        warn!(
+            error = %e,
+            "one-time claim: failed to release the store lifecycle admission; it expires on its own"
+        );
+    }
+    claim_result
+}
+
+/// The one-time-key claim body, running under a held store admission lease.
+///
+/// Split out of [`identity_create_from_one_time_key`] purely so the lease is
+/// released on EVERY exit — including the many `?` paths — without threading a
+/// release through each of them (#4313). The caller owns acquire/release; this
+/// function owns the claim.
+#[allow(clippy::too_many_arguments)]
+async fn one_time_claim_admitted<S, P, IS>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    scan_checkpoints: &super::sync::ForeignScanCheckpointCache,
+    wallet_id: WalletId,
+    claim_record_key: [u8; 32],
+    admission: super::store::AdmissionToken,
+    fvk: grovedb_commitment_tree::FullViewingKey,
+    ivk: grovedb_commitment_tree::IncomingViewingKey,
+    ask: super::keys::ScrubOnDrop<grovedb_commitment_tree::SpendAuthorizingKey>,
+    funding_birth_height: Option<u32>,
+    change_address: &OrchardAddress,
+    public_keys: Vec<(IdentityPublicKey, IdentityPublicKeyInCreation)>,
+    num_keys: usize,
+    master_key_hash: Option<[u8; 20]>,
+    submitted_public_keys: BTreeMap<u32, IdentityPublicKey>,
+    denomination: u64,
+    send_to_address_on_creation_failure: PlatformAddress,
+    identity_signer: &IS,
+    prover: &P,
+) -> Result<(Identifier, Identity), PlatformWalletError>
+where
+    S: ShieldedStore,
+    P: OrchardProver,
+    IS: Signer<IdentityPublicKey>,
+{
+    // Advisory only: the shielded tree has no height→note-index oracle (a chunk's
+    // block_height is the proof-tip height, not per-note inclusion height), so the
+    // transient scan cannot seed its start from a height; it bounds itself by
+    // value coverage plus a coordinator-owned resume checkpoint (one
+    // full-history scan per key per coordinator — see
+    // `scan_notes_for_foreign_key`). Logged so
+    // the hint is observable and not silently dropped.
+    if let Some(h) = funding_birth_height {
+        debug!(
+            funding_birth_height = h,
+            "identity_create_from_one_time_key: birth-height hint (advisory; scan is value-bounded)"
+        );
+    }
 
     // ---- Durable pending-claim resume (#4204 review finding c0781f9d387f) ----
     //
@@ -1903,6 +2014,7 @@ where
         anchor_bytes,
         &selected_nullifiers,
         &st,
+        admission,
     )
     .await?;
 
@@ -2279,8 +2391,21 @@ async fn find_one_time_claim_record<S: ShieldedStore>(
         })
 }
 
-/// Persist the pending-claim record. Called BEFORE the broadcast; a failure
-/// aborts the claim (fail-closed — see the call site).
+/// Persist the pending-claim record UNDER this claim's store-level admission
+/// lease. Called BEFORE the broadcast; a failure aborts the claim (fail-closed
+/// — see the call site).
+///
+/// The lease re-check and the record write are one atomic store step
+/// ([`ShieldedStore::arm_redrive_under_claim`]), which is what leaves no gap
+/// between "still admitted" and "record written" for a concurrent
+/// `clear`/`unregister_wallet` to slot into (#4313). The same step re-stamps
+/// the lease, so the window that protects the freshly written record runs from
+/// here — covering the broadcast and confirmation wait — rather than from the
+/// start of a claim that may have spent minutes scanning.
+///
+/// A lost lease is a hard stop, not a warning: nothing has been broadcast yet,
+/// so refusing is clean and retryable, whereas broadcasting without the record
+/// is how a padded single-note claim's identity becomes unrecoverable.
 async fn arm_one_time_claim_record<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
@@ -2288,16 +2413,17 @@ async fn arm_one_time_claim_record<S: ShieldedStore>(
     anchor: [u8; 32],
     nullifiers: &[[u8; 32]],
     st: &StateTransition,
+    admission: super::store::AdmissionToken,
 ) -> Result<(), PlatformWalletError> {
     use dpp::serialization::PlatformSerializable;
 
     let st_bytes = st
         .serialize_to_bytes()
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
-    store
+    let admitted = store
         .write()
         .await
-        .arm_redrive(
+        .arm_redrive_under_claim(
             id,
             PendingRedrive {
                 activity_id: key,
@@ -2306,12 +2432,24 @@ async fn arm_one_time_claim_record<S: ShieldedStore>(
                 st_bytes,
                 attempts: 0,
             },
+            admission,
+            super::store::admission_now_ms(),
+            super::store::CLAIM_LEASE_MS,
         )
         .map_err(|e| {
             PlatformWalletError::Persistence(format!(
                 "failed to persist the pending one-time-claim record before broadcast: {e}"
             ))
-        })
+        })?;
+    if !admitted {
+        return Err(PlatformWalletError::ShieldedLifecycleBusy {
+            reason: "this claim's store admission lapsed before its recovery record could be \
+                     written (the wallet was cleared or removed, or the claim outran its lease); \
+                     nothing was broadcast — retry the claim"
+                .to_string(),
+        });
+    }
+    Ok(())
 }
 
 /// Drop the pending-claim record. Best-effort: a failure only means the next

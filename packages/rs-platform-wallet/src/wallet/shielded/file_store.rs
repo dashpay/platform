@@ -20,8 +20,8 @@ use std::sync::Mutex;
 use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retention};
 
 use super::store::{
-    PendingRedrive, ShieldedNote, ShieldedOutgoingNote, ShieldedStore, StalePendingSpend,
-    SubwalletId, SubwalletState,
+    AdmissionToken, PendingRedrive, ShieldedNote, ShieldedOutgoingNote, ShieldedStore,
+    StalePendingSpend, SubwalletId, SubwalletState,
 };
 use crate::wallet::platform_wallet::WalletId;
 
@@ -118,6 +118,30 @@ impl FileBackedShieldedStore {
                 [],
             )
             .map_err(|e| FileShieldedStoreError(format!("create pending_spends table: {e}")))?;
+        // Cross-instance / cross-PROCESS lifecycle admission (#4313). Lives in
+        // the same SQLite file as the records it protects — that file is the
+        // only thing two `FileBackedShieldedStore` instances (or two
+        // processes) opened on the same path actually share, and SQLite's
+        // one-writer-at-a-time rule is what makes the protocol's two entry
+        // points totally ordered. See `store::LifecycleAdmission`.
+        //
+        // Deliberately NOT rehydrated into memory and deliberately not wiped
+        // at open: rows are judged purely by `expires_at`, so a holder that
+        // died leaves an entry that simply ages out, and a LIVE holder in
+        // another process keeps its admission across our open.
+        pending_conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS shielded_lifecycle_admission (
+                    token       BLOB    NOT NULL PRIMARY KEY,
+                    destructive INTEGER NOT NULL,
+                    wallet_id   BLOB,
+                    expires_at  INTEGER NOT NULL
+                )",
+                [],
+            )
+            .map_err(|e| {
+                FileShieldedStoreError(format!("create lifecycle_admission table: {e}"))
+            })?;
         let mut store = Self {
             tree: Mutex::new(tree),
             path,
@@ -223,6 +247,34 @@ impl FileBackedShieldedStore {
         conn.busy_timeout(std::time::Duration::from_secs(5))
             .map_err(|e| FileShieldedStoreError(format!("busy_timeout: {e}")))?;
         Ok(conn)
+    }
+
+    /// Unix millis as SQLite's native signed 64-bit integer.
+    ///
+    /// Saturating rather than wrapping: a caller that adds an absurd lease to
+    /// `now` must produce a far-future deadline, never a negative one that
+    /// would read as already expired and silently drop the fence.
+    fn as_sqlite_millis(millis: u64) -> i64 {
+        i64::try_from(millis).unwrap_or(i64::MAX)
+    }
+
+    /// Drop every admission whose deadline has passed.
+    ///
+    /// Called at the top of both admission-taking transactions, so a holder
+    /// that died — process kill, cancelled coroutine — cannot block the other
+    /// side forever. This is a LIVENESS backstop only: it never removes a live
+    /// admission, so it cannot let a purge delete a record out from under a
+    /// claim that is still running.
+    fn reap_expired_admissions(
+        tx: &rusqlite::Transaction<'_>,
+        now_ms: u64,
+    ) -> Result<(), FileShieldedStoreError> {
+        tx.execute(
+            "DELETE FROM shielded_lifecycle_admission WHERE expires_at <= ?1",
+            rusqlite::params![Self::as_sqlite_millis(now_ms)],
+        )
+        .map_err(|e| FileShieldedStoreError(format!("reap expired admissions: {e}")))?;
+        Ok(())
     }
 
     /// Delete the single persisted redrive row for `id` keyed by
@@ -733,6 +785,181 @@ impl ShieldedStore for FileBackedShieldedStore {
         let conn = Self::open_tuned_connection(&self.path)?;
         *tree = ClientPersistentCommitmentTree::open(conn, self.max_checkpoints)
             .map_err(|e| FileShieldedStoreError(format!("reopen commitment tree: {e}")))?;
+        Ok(())
+    }
+
+    // ── Lifecycle admission ────────────────────────────────────────────
+    //
+    // Every method below runs its whole check-and-write inside ONE
+    // `BEGIN IMMEDIATE` transaction. That is the entire correctness argument:
+    // SQLite admits a single write transaction at a time across every
+    // connection AND every process on the file, so `begin_claim_admission` and
+    // `begin_destructive_admission` are totally ordered even between two
+    // `FileBackedShieldedStore` instances that share nothing else. See
+    // `store::LifecycleAdmission` for both orders and why each is safe.
+    //
+    // `busy_timeout` (5 s, set in `open_tuned_connection`) absorbs contention;
+    // no transaction here spans an await, a scan, a proof or a broadcast.
+
+    fn begin_claim_admission(
+        &mut self,
+        wallet_id: WalletId,
+        token: AdmissionToken,
+        now_ms: u64,
+        lease_ms: u64,
+    ) -> Result<bool, Self::Error> {
+        let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|e| FileShieldedStoreError(format!("begin claim admission: {e}")))?;
+        Self::reap_expired_admissions(&tx, now_ms)?;
+        // A store-wide barrier (`wallet_id IS NULL`, from `clear`) covers every
+        // wallet; a scoped one covers only its own.
+        let blocked: i64 = tx
+            .query_row(
+                "SELECT COUNT(*) FROM shielded_lifecycle_admission \
+                 WHERE destructive = 1 AND (wallet_id IS NULL OR wallet_id = ?1)",
+                rusqlite::params![wallet_id.as_slice()],
+                |row| row.get(0),
+            )
+            .map_err(|e| FileShieldedStoreError(format!("read destructive barriers: {e}")))?;
+        if blocked > 0 {
+            // Roll back explicitly: nothing was written, and the claim must
+            // see a clean refusal rather than a half-open admission.
+            return Ok(false);
+        }
+        tx.execute(
+            "INSERT OR REPLACE INTO shielded_lifecycle_admission \
+             (token, destructive, wallet_id, expires_at) VALUES (?1, 0, ?2, ?3)",
+            rusqlite::params![
+                token.0.as_slice(),
+                wallet_id.as_slice(),
+                Self::as_sqlite_millis(now_ms.saturating_add(lease_ms)),
+            ],
+        )
+        .map_err(|e| FileShieldedStoreError(format!("insert claim lease: {e}")))?;
+        tx.commit()
+            .map_err(|e| FileShieldedStoreError(format!("commit claim admission: {e}")))?;
+        Ok(true)
+    }
+
+    fn arm_redrive_under_claim(
+        &mut self,
+        id: SubwalletId,
+        redrive: PendingRedrive,
+        token: AdmissionToken,
+        now_ms: u64,
+        lease_ms: u64,
+    ) -> Result<bool, Self::Error> {
+        {
+            let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
+            let tx = conn
+                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+                .map_err(|e| FileShieldedStoreError(format!("begin armed claim write: {e}")))?;
+            let live: i64 = tx
+                .query_row(
+                    "SELECT COUNT(*) FROM shielded_lifecycle_admission \
+                     WHERE token = ?1 AND destructive = 0 AND expires_at > ?2",
+                    rusqlite::params![token.0.as_slice(), Self::as_sqlite_millis(now_ms)],
+                    |row| row.get(0),
+                )
+                .map_err(|e| FileShieldedStoreError(format!("read claim lease: {e}")))?;
+            if live == 0 {
+                // Lease gone (expired, or released). Write NOTHING and let the
+                // caller fail closed — arming a record the store is no longer
+                // holding open for us is how an in-flight claim loses its only
+                // recovery handle.
+                return Ok(false);
+            }
+            let nullifier_blob: Vec<u8> = redrive.nullifiers.iter().flatten().copied().collect();
+            tx.execute(
+                "INSERT OR REPLACE INTO shielded_pending_spends \
+                 (wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, attempts) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![
+                    id.wallet_id.as_slice(),
+                    id.account_index,
+                    redrive.activity_id.as_slice(),
+                    redrive.anchor.as_slice(),
+                    nullifier_blob,
+                    redrive.st_bytes,
+                    redrive.attempts,
+                ],
+            )
+            .map_err(|e| FileShieldedStoreError(format!("persist claim record: {e}")))?;
+            // Re-stamp in the SAME transaction, so the lease that admitted this
+            // write is the one that covers the broadcast which follows it.
+            tx.execute(
+                "UPDATE shielded_lifecycle_admission SET expires_at = ?2 WHERE token = ?1",
+                rusqlite::params![
+                    token.0.as_slice(),
+                    Self::as_sqlite_millis(now_ms.saturating_add(lease_ms)),
+                ],
+            )
+            .map_err(|e| FileShieldedStoreError(format!("restamp claim lease: {e}")))?;
+            tx.commit()
+                .map_err(|e| FileShieldedStoreError(format!("commit armed claim write: {e}")))?;
+        }
+        self.subwallets.entry(id).or_default().arm_redrive(redrive);
+        Ok(true)
+    }
+
+    fn end_claim_admission(&mut self, token: AdmissionToken) -> Result<(), Self::Error> {
+        let conn = self.pending_conn.lock().expect("pending_conn mutex");
+        conn.execute(
+            "DELETE FROM shielded_lifecycle_admission WHERE token = ?1 AND destructive = 0",
+            rusqlite::params![token.0.as_slice()],
+        )
+        .map_err(|e| FileShieldedStoreError(format!("release claim lease: {e}")))?;
+        Ok(())
+    }
+
+    fn begin_destructive_admission(
+        &mut self,
+        scope: Option<WalletId>,
+        token: AdmissionToken,
+        now_ms: u64,
+        barrier_ms: u64,
+    ) -> Result<usize, Self::Error> {
+        let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|e| FileShieldedStoreError(format!("begin destructive admission: {e}")))?;
+        Self::reap_expired_admissions(&tx, now_ms)?;
+        let scope_bytes = scope.map(|id| id.to_vec());
+        // Barrier first, count second, one transaction: a claim is either
+        // refused by the barrier or counted here, never both and never neither.
+        tx.execute(
+            "INSERT OR REPLACE INTO shielded_lifecycle_admission \
+             (token, destructive, wallet_id, expires_at) VALUES (?1, 1, ?2, ?3)",
+            rusqlite::params![
+                token.0.as_slice(),
+                scope_bytes,
+                Self::as_sqlite_millis(now_ms.saturating_add(barrier_ms)),
+            ],
+        )
+        .map_err(|e| FileShieldedStoreError(format!("insert destructive barrier: {e}")))?;
+        // `?1 IS NULL` makes a store-wide purge count every wallet's claims.
+        let live: i64 = tx
+            .query_row(
+                "SELECT COUNT(*) FROM shielded_lifecycle_admission \
+                 WHERE destructive = 0 AND (?1 IS NULL OR wallet_id = ?1)",
+                rusqlite::params![scope_bytes],
+                |row| row.get(0),
+            )
+            .map_err(|e| FileShieldedStoreError(format!("count live claim leases: {e}")))?;
+        tx.commit()
+            .map_err(|e| FileShieldedStoreError(format!("commit destructive admission: {e}")))?;
+        Ok(live.max(0) as usize)
+    }
+
+    fn end_destructive_admission(&mut self, token: AdmissionToken) -> Result<(), Self::Error> {
+        let conn = self.pending_conn.lock().expect("pending_conn mutex");
+        conn.execute(
+            "DELETE FROM shielded_lifecycle_admission WHERE token = ?1 AND destructive = 1",
+            rusqlite::params![token.0.as_slice()],
+        )
+        .map_err(|e| FileShieldedStoreError(format!("release destructive barrier: {e}")))?;
         Ok(())
     }
 }
@@ -1246,5 +1473,321 @@ mod tests {
             "the two block-boundary anchors differ (the tree grew), so drive's \
              recorded set is exactly these two and the mid-block anchor is outside it"
         );
+    }
+
+    // ── Lifecycle admission (#4313) ────────────────────────────────────
+    //
+    // The fence's whole point is that it works between store INSTANCES, which
+    // is what a coordinator-local `tokio::sync::Mutex` cannot do: every test
+    // below that matters opens two `FileBackedShieldedStore`s on the same file,
+    // exactly as two `NetworkShieldedCoordinator`s (or two processes) would.
+
+    /// The reserved account claim records live under, mirrored here so these
+    /// tests exercise the real key space.
+    const CLAIM_ACCOUNT: u32 = u32::MAX;
+
+    fn admission_record(activity: u8) -> PendingRedrive {
+        PendingRedrive {
+            activity_id: [activity; 32],
+            anchor: [0x0A; 32],
+            nullifiers: vec![[0x0B; 32]],
+            st_bytes: vec![0xCD; 64],
+            attempts: 0,
+        }
+    }
+
+    /// A destructive barrier taken by one store instance REFUSES a claim
+    /// admitted through a different instance on the same file.
+    ///
+    /// This is the interleaving the coordinator-local guard cannot cover: the
+    /// two stores share the SQLite file and nothing else.
+    #[test]
+    fn a_barrier_in_one_store_instance_refuses_a_claim_in_another() {
+        let path = temp_tree_path("admission_barrier_blocks");
+        let wallet_id: WalletId = [0x21; 32];
+        let mut purger = FileBackedShieldedStore::open_path(&path, 8).expect("store a");
+        let mut claimer = FileBackedShieldedStore::open_path(&path, 8).expect("store b");
+        let now = 1_000_000;
+
+        let barrier = AdmissionToken::new();
+        assert_eq!(
+            purger
+                .begin_destructive_admission(Some(wallet_id), barrier, now, 60_000)
+                .expect("barrier"),
+            0,
+            "no claim is in flight yet"
+        );
+
+        assert!(
+            !claimer
+                .begin_claim_admission(wallet_id, AdmissionToken::new(), now, 60_000)
+                .expect("claim admission"),
+            "a claim must be refused while another instance holds destructive admission"
+        );
+
+        // Releasing the barrier lets claims back in.
+        purger
+            .end_destructive_admission(barrier)
+            .expect("release barrier");
+        assert!(claimer
+            .begin_claim_admission(wallet_id, AdmissionToken::new(), now, 60_000)
+            .expect("claim admission"));
+
+        drop((purger, claimer));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// The other order: a claim lease taken through one instance is COUNTED by
+    /// a destructive admission taken through another, so the purge waits
+    /// instead of deleting the record out from under an in-flight claim.
+    #[test]
+    fn a_live_claim_in_one_store_instance_is_counted_by_another() {
+        let path = temp_tree_path("admission_lease_counted");
+        let wallet_id: WalletId = [0x22; 32];
+        let mut claimer = FileBackedShieldedStore::open_path(&path, 8).expect("store a");
+        let mut purger = FileBackedShieldedStore::open_path(&path, 8).expect("store b");
+        let now = 1_000_000;
+
+        let lease = AdmissionToken::new();
+        assert!(claimer
+            .begin_claim_admission(wallet_id, lease, now, 60_000)
+            .expect("claim admission"));
+
+        assert_eq!(
+            purger
+                .begin_destructive_admission(Some(wallet_id), AdmissionToken::new(), now, 60_000)
+                .expect("barrier"),
+            1,
+            "the purge must see the other instance's in-flight claim and wait"
+        );
+
+        // Once the claim releases, the next poll drains.
+        claimer.end_claim_admission(lease).expect("release lease");
+        assert_eq!(
+            purger
+                .begin_destructive_admission(Some(wallet_id), AdmissionToken::new(), now, 60_000)
+                .expect("barrier refresh"),
+            0
+        );
+
+        drop((claimer, purger));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Arming is admitted in the SAME step as the lease re-check, and refuses —
+    /// writing nothing — once the lease is gone. This is the gap a separate
+    /// "check, then write" would leave open for a purge to slot into.
+    #[test]
+    fn arming_refuses_and_writes_nothing_once_the_lease_is_gone() {
+        let path = temp_tree_path("admission_arm_refuses");
+        let wallet_id: WalletId = [0x23; 32];
+        let id = SubwalletId::new(wallet_id, CLAIM_ACCOUNT);
+        let mut store = FileBackedShieldedStore::open_path(&path, 8).expect("store");
+        let now = 1_000_000;
+
+        let lease = AdmissionToken::new();
+        assert!(store
+            .begin_claim_admission(wallet_id, lease, now, 60_000)
+            .expect("claim admission"));
+        assert!(
+            store
+                .arm_redrive_under_claim(id, admission_record(0x01), lease, now, 60_000)
+                .expect("arm under a live lease"),
+            "a live lease must admit the record write"
+        );
+        assert_eq!(store.pending_redrives(id).expect("records").len(), 1);
+
+        // Lease released (or expired): a further arm must be refused outright.
+        store.end_claim_admission(lease).expect("release lease");
+        assert!(
+            !store
+                .arm_redrive_under_claim(id, admission_record(0x02), lease, now, 60_000)
+                .expect("arm without a lease"),
+            "arming without a live lease must be refused"
+        );
+        let records = store.pending_redrives(id).expect("records");
+        assert_eq!(
+            records.len(),
+            1,
+            "the refused arm must not have written anything"
+        );
+        assert_eq!(records[0].activity_id, [0x01; 32]);
+
+        // …and the refusal is durable, not just in-memory: a cold reopen sees
+        // only the admitted record.
+        drop(store);
+        let reopened = FileBackedShieldedStore::open_path(&path, 8).expect("reopen");
+        assert_eq!(reopened.pending_redrives(id).expect("records").len(), 1);
+        drop(reopened);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// An expired lease is a LIVENESS backstop, not a hole: it never removes a
+    /// live claim, it only stops a holder that died from blocking wallet
+    /// removal forever.
+    #[test]
+    fn an_expired_lease_stops_blocking_the_purge() {
+        let path = temp_tree_path("admission_lease_expiry");
+        let wallet_id: WalletId = [0x24; 32];
+        let mut store = FileBackedShieldedStore::open_path(&path, 8).expect("store");
+        let now = 1_000_000;
+
+        // A lease that is already dead by the time the purge looks.
+        assert!(store
+            .begin_claim_admission(wallet_id, AdmissionToken::new(), now, 10)
+            .expect("claim admission"));
+        assert_eq!(
+            store
+                .begin_destructive_admission(
+                    Some(wallet_id),
+                    AdmissionToken::new(),
+                    now + 5,
+                    60_000
+                )
+                .expect("barrier while the lease is live"),
+            1,
+            "a lease that has not expired yet must still block"
+        );
+        assert_eq!(
+            store
+                .begin_destructive_admission(
+                    Some(wallet_id),
+                    AdmissionToken::new(),
+                    now + 5_000,
+                    60_000
+                )
+                .expect("barrier after the lease expired"),
+            0,
+            "an expired lease must be reaped so wallet removal can proceed"
+        );
+
+        drop(store);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Scope: `purge_wallet`'s barrier is wallet-scoped and must not refuse
+    /// another wallet's claim, while `clear`'s store-wide barrier refuses both.
+    #[test]
+    fn barrier_scope_matches_the_lifecycle_operation() {
+        let path = temp_tree_path("admission_scope");
+        let mine: WalletId = [0x25; 32];
+        let theirs: WalletId = [0x26; 32];
+        let mut store = FileBackedShieldedStore::open_path(&path, 8).expect("store");
+        let now = 1_000_000;
+
+        let scoped = AdmissionToken::new();
+        store
+            .begin_destructive_admission(Some(mine), scoped, now, 60_000)
+            .expect("scoped barrier");
+        assert!(
+            !store
+                .begin_claim_admission(mine, AdmissionToken::new(), now, 60_000)
+                .expect("own-wallet claim"),
+            "a wallet-scoped barrier must refuse that wallet's claims"
+        );
+        let other_lease = AdmissionToken::new();
+        assert!(
+            store
+                .begin_claim_admission(theirs, other_lease, now, 60_000)
+                .expect("other-wallet claim"),
+            "a wallet-scoped barrier must not refuse an unrelated wallet's claim"
+        );
+        store
+            .end_destructive_admission(scoped)
+            .expect("release scoped");
+        store
+            .end_claim_admission(other_lease)
+            .expect("release other lease");
+
+        // Store-wide (`clear`) refuses everything…
+        let wide = AdmissionToken::new();
+        store
+            .begin_destructive_admission(None, wide, now, 60_000)
+            .expect("store-wide barrier");
+        assert!(!store
+            .begin_claim_admission(mine, AdmissionToken::new(), now, 60_000)
+            .expect("claim under a store-wide barrier"));
+        assert!(!store
+            .begin_claim_admission(theirs, AdmissionToken::new(), now, 60_000)
+            .expect("claim under a store-wide barrier"));
+        store.end_destructive_admission(wide).expect("release wide");
+
+        // …and counts every wallet's claims when deciding whether to wait.
+        assert!(store
+            .begin_claim_admission(mine, AdmissionToken::new(), now, 60_000)
+            .expect("claim"));
+        assert!(store
+            .begin_claim_admission(theirs, AdmissionToken::new(), now, 60_000)
+            .expect("claim"));
+        assert_eq!(
+            store
+                .begin_destructive_admission(None, AdmissionToken::new(), now, 60_000)
+                .expect("store-wide barrier"),
+            2,
+            "clear() must wait for every wallet's in-flight claims"
+        );
+
+        drop(store);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// THE FINDING, end to end at the store: an armed claim record is NOT
+    /// deleted by a concurrent purge, because the purge cannot get past the
+    /// live lease — even though the purge runs through a different store
+    /// instance, which is precisely where the coordinator-local guard failed.
+    ///
+    /// The second half shows the fence is a fence and not a lock-out: once the
+    /// claim releases, the purge is admitted and the record goes with it, so
+    /// `remove_wallet`'s full-wipe contract is unchanged.
+    #[test]
+    fn a_purge_cannot_delete_a_record_while_the_claim_that_armed_it_is_live() {
+        let path = temp_tree_path("admission_end_to_end");
+        let wallet_id: WalletId = [0x27; 32];
+        let id = SubwalletId::new(wallet_id, CLAIM_ACCOUNT);
+        let mut claimer = FileBackedShieldedStore::open_path(&path, 8).expect("claimer store");
+        let mut purger = FileBackedShieldedStore::open_path(&path, 8).expect("purger store");
+        let now = 1_000_000;
+
+        let lease = AdmissionToken::new();
+        assert!(claimer
+            .begin_claim_admission(wallet_id, lease, now, 60_000)
+            .expect("claim admission"));
+        assert!(claimer
+            .arm_redrive_under_claim(id, admission_record(0x09), lease, now, 60_000)
+            .expect("arm"));
+
+        // The purge's own admission tells it to wait — so it never calls
+        // `purge_wallet`, and the record survives.
+        assert_eq!(
+            purger
+                .begin_destructive_admission(Some(wallet_id), AdmissionToken::new(), now, 60_000)
+                .expect("barrier"),
+            1,
+            "the purge must be told to wait, not cleared to delete"
+        );
+        assert_eq!(
+            claimer.pending_redrives(id).expect("records").len(),
+            1,
+            "the in-flight claim's recovery record must still be there"
+        );
+
+        // Claim done: the purge drains and the full wipe proceeds as before.
+        claimer.end_claim_admission(lease).expect("release lease");
+        assert_eq!(
+            purger
+                .begin_destructive_admission(Some(wallet_id), AdmissionToken::new(), now, 60_000)
+                .expect("barrier refresh"),
+            0
+        );
+        purger.purge_wallet(wallet_id).expect("purge");
+        drop((claimer, purger));
+
+        let reopened = FileBackedShieldedStore::open_path(&path, 8).expect("reopen");
+        assert!(
+            reopened.pending_redrives(id).expect("records").is_empty(),
+            "once admitted, the purge is still a FULL wipe — no reserved account is exempted"
+        );
+        drop(reopened);
+        let _ = std::fs::remove_file(&path);
     }
 }

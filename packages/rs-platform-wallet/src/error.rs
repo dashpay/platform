@@ -636,6 +636,24 @@ pub enum PlatformWalletError {
     )]
     ShieldedClaimBindingMismatch { mismatch: String },
 
+    /// A shielded lifecycle operation could not obtain admission at the store, so it was refused
+    /// rather than allowed to run concurrently with the operation that holds it.
+    ///
+    /// Two directions, both retryable:
+    ///
+    /// * A **one-time-key claim** refused because `clear` / `unregister_wallet` / `remove_wallet`
+    ///   holds destructive admission over its wallet. Nothing was scanned, built or broadcast.
+    /// * A **destructive operation** refused because in-flight claims still hold admission and did
+    ///   not drain within the wait. Nothing was purged — deleting a pending-claim record while its
+    ///   transition is on the wire strands the created identity, so the purge fails closed and the
+    ///   caller retries.
+    ///
+    /// Admission is taken at the store rather than on the coordinator because that is the only
+    /// state two coordinators — or two processes on the same SQLite file — actually share
+    /// (`dashpay/platform#4313`).
+    #[error("Shielded lifecycle operation refused: {reason}")]
+    ShieldedLifecycleBusy { reason: String },
+
     #[error("Shielded key derivation failed: {0}")]
     ShieldedKeyDerivation(String),
 

@@ -769,11 +769,134 @@ impl NetworkShieldedCoordinator {
             .retain(|id, _| id.wallet_id != wallet_id);
         self.persisters.write().await.remove(&wallet_id);
         self.hydrated.write().await.remove(&wallet_id);
-        if let Err(e) = self.store.write().await.purge_wallet(wallet_id) {
+
+        // The purge runs under STORE-level destructive admission (#4313): the
+        // `lifecycle` mutex above serializes this against `clear` and against
+        // bind installs, but a one-time-key claim never takes it — and could
+        // not be made to, since a second coordinator on the same SQLite file
+        // would hold a different mutex. Admission waits for claims that are
+        // already in flight and locks out new ones; on failure the purge is
+        // SKIPPED rather than forced, because deleting a pending-claim record
+        // while its transition is on the wire strands the identity it created.
+        // Skipping is consistent with this method's existing contract, which
+        // already tolerates (and warns about) a purge that did not happen.
+        match self
+            .acquire_destructive_admission(Some(wallet_id), "unregister_wallet")
+            .await
+        {
+            Ok(admission) => {
+                if let Err(e) = self.store.write().await.purge_wallet(wallet_id) {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        error = %e,
+                        "Failed to purge per-subwallet store state on unregister"
+                    );
+                }
+                self.release_destructive_admission(admission).await;
+            }
+            Err(e) => {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error = %e,
+                    "Skipping the per-subwallet store purge on unregister: a one-time-key claim \
+                     still holds lifecycle admission and its pending-claim record must survive. \
+                     The registries are cleared regardless, so no sync runs; retry the removal to \
+                     purge the store state."
+                );
+            }
+        }
+    }
+
+    /// Take store-level destructive admission over `scope` and wait for
+    /// in-flight one-time-key claims to drain (#4313).
+    ///
+    /// `scope` is `None` for a whole-store operation and `Some(wallet_id)` for
+    /// one wallet. On `Ok` the caller holds the barrier — no NEW claim can be
+    /// admitted for that scope — and no claim is mid-flight inside it; it must
+    /// pass the token to [`Self::release_destructive_admission`] when done.
+    ///
+    /// # Why this is at the store and not here
+    ///
+    /// The coordinator's `lifecycle` mutex is coordinator-local, and
+    /// `FileBackedShieldedStore::open_path` opens independent SQLite
+    /// connections to the same file, so two coordinators (or two processes)
+    /// share the pending-claim records but not any in-process lock. The
+    /// admission table lives in that same SQLite file, and both this call and
+    /// the claim's own admission are single `BEGIN IMMEDIATE` transactions, so
+    /// SQLite's one-writer rule totally orders them: either the claim's lease
+    /// is committed and counted here (we wait), or this barrier is committed
+    /// first and the claim is refused. See `store::LifecycleAdmission`.
+    ///
+    /// # Failing closed
+    ///
+    /// If claims do not drain within
+    /// [`DESTRUCTIVE_DRAIN_TIMEOUT`](super::store::DESTRUCTIVE_DRAIN_TIMEOUT)
+    /// this returns [`PlatformWalletError::ShieldedLifecycleBusy`] and drops
+    /// the barrier. Refusing to purge is the safe direction: a retry costs a
+    /// user gesture, whereas deleting an armed record mid-broadcast makes a
+    /// padded single-note claim's identity unrecoverable forever.
+    ///
+    /// The store write lock is taken only for each individual admission call,
+    /// never across the sleep — a waiting purge must not block the very claims
+    /// it is waiting for.
+    async fn acquire_destructive_admission(
+        &self,
+        scope: Option<WalletId>,
+        operation: &str,
+    ) -> Result<super::store::AdmissionToken, crate::error::PlatformWalletError> {
+        use super::store::{
+            admission_now_ms, AdmissionToken, DESTRUCTIVE_BARRIER_MS, DESTRUCTIVE_DRAIN_POLL,
+            DESTRUCTIVE_DRAIN_TIMEOUT,
+        };
+
+        let token = AdmissionToken::new();
+        // `tokio::time::Instant`, not `std::time::Instant`: the drain wait and
+        // the sleep below must run on the same clock, which also lets tests
+        // drive the whole wait deterministically under a paused runtime.
+        let started = tokio::time::Instant::now();
+        loop {
+            // Re-taking the barrier each pass also REFRESHES its expiry, so a
+            // long drain cannot let the barrier lapse and admit a new claim.
+            let live = {
+                let mut store = self.store.write().await;
+                store
+                    .begin_destructive_admission(
+                        scope,
+                        token,
+                        admission_now_ms(),
+                        DESTRUCTIVE_BARRIER_MS,
+                    )
+                    .map_err(|e| {
+                        crate::error::PlatformWalletError::ShieldedStoreError(format!(
+                            "{operation}: could not take lifecycle admission: {e}"
+                        ))
+                    })?
+            };
+            if live == 0 {
+                return Ok(token);
+            }
+            if started.elapsed() >= DESTRUCTIVE_DRAIN_TIMEOUT {
+                self.release_destructive_admission(token).await;
+                return Err(crate::error::PlatformWalletError::ShieldedLifecycleBusy {
+                    reason: format!(
+                        "{operation}: {live} one-time-key claim(s) still in flight after \
+                             {}s; refusing to purge state a live claim may still need",
+                        DESTRUCTIVE_DRAIN_TIMEOUT.as_secs()
+                    ),
+                });
+            }
+            tokio::time::sleep(DESTRUCTIVE_DRAIN_POLL).await;
+        }
+    }
+
+    /// Drop the destructive barrier taken by
+    /// [`Self::acquire_destructive_admission`]. Best-effort: the barrier also
+    /// expires on its own, so a failure here only delays new claims.
+    async fn release_destructive_admission(&self, token: super::store::AdmissionToken) {
+        if let Err(e) = self.store.write().await.end_destructive_admission(token) {
             tracing::warn!(
-                wallet_id = %hex::encode(wallet_id),
                 error = %e,
-                "Failed to purge per-subwallet store state on unregister"
+                "Failed to release shielded lifecycle admission; it will expire on its own"
             );
         }
     }
@@ -1013,6 +1136,18 @@ impl NetworkShieldedCoordinator {
         // order.
         let _lifecycle = self.lifecycle.lock().await;
 
+        // Store-level destructive admission over EVERY wallet (#4313). The
+        // `lifecycle` mutex above excludes binds and `unregister_wallet`, but
+        // one-time-key claims never take it and a second coordinator on the
+        // same SQLite file would not share it anyway. This waits for in-flight
+        // claims and locks out new ones for the duration of the wipe.
+        //
+        // Unlike `unregister_wallet`, a failure here is PROPAGATED rather than
+        // logged: `clear()`'s contract is that the host only wipes its own
+        // per-wallet rows once this returns `Ok`, so reporting success while
+        // the store was left intact would desynchronize the two halves.
+        let admission = self.acquire_destructive_admission(None, "clear").await?;
+
         // Reset the persistent store FIRST and bail before mutating any
         // in-memory state if it fails. Clearing `accounts` / `persisters`
         // makes the coordinator forget every bound wallet (no syncs until
@@ -1075,6 +1210,11 @@ impl NetworkShieldedCoordinator {
                 }
             }
         }
+        // The wipe is done; new claims may be admitted again. Released before
+        // the tail below so a failed clear does not hold the barrier for the
+        // rest of the call.
+        self.release_destructive_admission(admission).await;
+
         // Hydration and snapshot validity go regardless of the outcome
         // above, because the subwallet purge runs FIRST: a failure in a
         // later step still leaves the per-subwallet notes and watermarks
@@ -2686,6 +2826,212 @@ mod tests {
             remaining[0].0, live_nf,
             "the still-recorded reservation must survive"
         );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── Lifecycle admission (#4313 review finding cr-7e6c98b9) ─────────
+    //
+    // `clear` / `unregister_wallet` hold the coordinator's `lifecycle` mutex;
+    // a one-time-key claim holds none of it, and a SECOND coordinator on the
+    // same SQLite file could not share it anyway. These tests drive the claim
+    // side through the store — exactly as `identity_create_from_one_time_key`
+    // does, and exactly as a second coordinator would — and assert the purge
+    // refuses rather than deleting the claim's recovery record.
+
+    /// The claim side of a one-time-key claim that is in flight: take the
+    /// store lease and arm the recovery record under it, leaving both live.
+    async fn arm_an_in_flight_claim(
+        coordinator: &NetworkShieldedCoordinator,
+        wallet_id: WalletId,
+    ) -> (crate::wallet::shielded::store::AdmissionToken, SubwalletId) {
+        use crate::wallet::shielded::store::{
+            admission_now_ms, AdmissionToken, PendingRedrive, CLAIM_LEASE_MS,
+        };
+
+        let id = SubwalletId::new(wallet_id, u32::MAX);
+        let lease = AdmissionToken::new();
+        let mut store = coordinator.store().write().await;
+        assert!(store
+            .begin_claim_admission(wallet_id, lease, admission_now_ms(), CLAIM_LEASE_MS)
+            .expect("claim admission"));
+        assert!(store
+            .arm_redrive_under_claim(
+                id,
+                PendingRedrive {
+                    activity_id: [0x5A; 32],
+                    anchor: [0x0A; 32],
+                    nullifiers: vec![[0x0B; 32]],
+                    st_bytes: vec![0xCD; 64],
+                    attempts: 0,
+                },
+                lease,
+                admission_now_ms(),
+                CLAIM_LEASE_MS,
+            )
+            .expect("arm under lease"));
+        (lease, id)
+    }
+
+    /// `clear()` must FAIL rather than wipe a record an in-flight claim is
+    /// still depending on. Failing is the load-bearing direction: the host
+    /// only wipes its own per-wallet rows once `clear()` returns `Ok`, so a
+    /// silent skip would desynchronize the two halves — and deleting the
+    /// record would strand the identity the claim's transition creates.
+    ///
+    /// Time is paused, so the full drain wait elapses instantly; the lease's
+    /// own expiry is wall-clock and therefore does NOT advance, which is what
+    /// keeps the claim "live" for the whole wait.
+    #[tokio::test(start_paused = true)]
+    async fn clear_refuses_while_a_one_time_claim_holds_admission() {
+        let dir = temp_dir("clear_admission_busy");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let (lease, id) = arm_an_in_flight_claim(&coordinator, wallet_id).await;
+
+        let cleared = coordinator.clear().await;
+        assert!(
+            matches!(
+                cleared,
+                Err(crate::error::PlatformWalletError::ShieldedLifecycleBusy { .. })
+            ),
+            "clear() must refuse while a claim holds admission, got {cleared:?}"
+        );
+        assert_eq!(
+            coordinator
+                .store()
+                .read()
+                .await
+                .pending_redrives(id)
+                .expect("records")
+                .len(),
+            1,
+            "the in-flight claim's recovery record must survive the refused clear"
+        );
+
+        // Claim finishes: the very next clear() drains immediately and wipes.
+        coordinator
+            .store()
+            .write()
+            .await
+            .end_claim_admission(lease)
+            .expect("release lease");
+        coordinator
+            .clear()
+            .await
+            .expect("clear must succeed once the claim has released");
+        assert!(
+            coordinator
+                .store()
+                .read()
+                .await
+                .pending_redrives(id)
+                .expect("records")
+                .is_empty(),
+            "an admitted clear is still a FULL wipe — no account is exempted from it"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `unregister_wallet` returns `()` and has always tolerated a purge that
+    /// did not happen (it warns). A live claim is one more such case: the
+    /// registries are dropped either way — so no sync runs — but the store
+    /// purge is SKIPPED rather than forced, leaving the claim's recovery
+    /// record intact.
+    #[tokio::test(start_paused = true)]
+    async fn unregister_skips_the_purge_while_a_one_time_claim_holds_admission() {
+        let dir = temp_dir("unregister_admission_busy");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let (lease, id) = arm_an_in_flight_claim(&coordinator, wallet_id).await;
+
+        coordinator.unregister_wallet(wallet_id).await;
+
+        assert!(
+            coordinator.registered_subwallets().await.is_empty(),
+            "the registries are dropped regardless, so no sync runs for a removed wallet"
+        );
+        assert_eq!(
+            coordinator
+                .store()
+                .read()
+                .await
+                .pending_redrives(id)
+                .expect("records")
+                .len(),
+            1,
+            "the in-flight claim's recovery record must survive the skipped purge"
+        );
+
+        // Retrying after the claim settles completes the purge.
+        coordinator
+            .store()
+            .write()
+            .await
+            .end_claim_admission(lease)
+            .expect("release lease");
+        coordinator.unregister_wallet(wallet_id).await;
+        assert!(
+            coordinator
+                .store()
+                .read()
+                .await
+                .pending_redrives(id)
+                .expect("records")
+                .is_empty(),
+            "the retry must complete the full purge"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A wallet-scoped purge must not be stalled by an UNRELATED wallet's
+    /// claim — the fence is scoped like the operation that takes it, so
+    /// removing wallet A while wallet B is mid-claim still works.
+    #[tokio::test(start_paused = true)]
+    async fn unregister_is_not_blocked_by_another_wallets_claim() {
+        let dir = temp_dir("unregister_admission_scope");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let registered: WalletId = [0x11; 32];
+        let other: WalletId = [0x99; 32];
+        let (_lease, other_id) = arm_an_in_flight_claim(&coordinator, other).await;
+
+        use crate::wallet::shielded::store::PendingRedrive;
+
+        let purged_id = SubwalletId::new(registered, u32::MAX);
+        coordinator
+            .store()
+            .write()
+            .await
+            .arm_redrive(
+                purged_id,
+                PendingRedrive {
+                    activity_id: [0x11; 32],
+                    anchor: [0x0A; 32],
+                    nullifiers: vec![[0x0C; 32]],
+                    st_bytes: vec![0xEF; 32],
+                    attempts: 0,
+                },
+            )
+            .expect("arm an unrelated record");
+
+        coordinator.unregister_wallet(registered).await;
+
+        let store = coordinator.store().read().await;
+        assert!(
+            store
+                .pending_redrives(purged_id)
+                .expect("records")
+                .is_empty(),
+            "the removed wallet's rows must go — an unrelated wallet's claim must not stall it"
+        );
+        assert_eq!(
+            store.pending_redrives(other_id).expect("records").len(),
+            1,
+            "the other wallet's in-flight claim record is untouched"
+        );
+        drop(store);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

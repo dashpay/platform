@@ -473,6 +473,242 @@ pub trait ShieldedStore: Send + Sync {
     /// tree_size`) and the "Checked" progress bar stays pinned at
     /// the stale leaf count while "Downloaded" climbs from 0.
     fn reset_commitment_tree(&mut self) -> Result<(), Self::Error>;
+
+    // ── Lifecycle admission (store-level, cross-instance) ──────────────
+    //
+    // See the [`LifecycleAdmission`] module docs for the protocol and its
+    // correctness argument. These five methods exist on the STORE, not on the
+    // coordinator, because the store is the only object two coordinators —
+    // or two processes — sharing the same backing state actually have in
+    // common (`dashpay/platform#4313`).
+
+    /// Admit a one-time-key claim for `wallet_id`, or refuse it because a
+    /// destructive lifecycle operation holds admission over that scope.
+    ///
+    /// On `Ok(true)` a claim lease keyed by `token` is durable and live until
+    /// `now_ms + lease_ms`; the caller owns it until it calls
+    /// [`Self::end_claim_admission`]. On `Ok(false)` nothing was written and
+    /// the caller must not touch the claim record.
+    ///
+    /// Implementations MUST make the barrier check and the lease insert one
+    /// atomic step against every other admission operation on the same
+    /// underlying state.
+    fn begin_claim_admission(
+        &mut self,
+        wallet_id: WalletId,
+        token: AdmissionToken,
+        now_ms: u64,
+        lease_ms: u64,
+    ) -> Result<bool, Self::Error>;
+
+    /// Arm `redrive` **only if** the claim lease `token` is still live,
+    /// re-stamping that lease to `now_ms + lease_ms` in the same atomic step.
+    ///
+    /// Returns `Ok(false)` — with nothing written — when the lease has expired
+    /// or was already released. Callers fail the claim closed on `false`: the
+    /// record is the only handle that recovers a padded single-note claim, so
+    /// broadcasting without it is unrecoverable.
+    ///
+    /// Arming under the lease rather than next to it is what closes the gap
+    /// between "the claim checked that it was admitted" and "the claim wrote
+    /// the record": the two are one transaction, so a destructive operation
+    /// cannot slot in between them.
+    fn arm_redrive_under_claim(
+        &mut self,
+        id: SubwalletId,
+        redrive: PendingRedrive,
+        token: AdmissionToken,
+        now_ms: u64,
+        lease_ms: u64,
+    ) -> Result<bool, Self::Error>;
+
+    /// Release the claim lease `token`. Idempotent; unknown tokens are a
+    /// no-op (a lease that already expired was reaped).
+    fn end_claim_admission(&mut self, token: AdmissionToken) -> Result<(), Self::Error>;
+
+    /// Take (or refresh) destructive admission over `scope` and report how
+    /// many claim leases are still live inside it.
+    ///
+    /// `scope` is `None` for a whole-store operation (`purge_all_subwallets`)
+    /// and `Some(wallet_id)` for a single wallet (`purge_wallet`). The barrier
+    /// is installed **and** the live-lease count taken in one atomic step, so
+    /// a claim is either counted here or refused by
+    /// [`Self::begin_claim_admission`] — never both, never neither.
+    ///
+    /// A non-zero count means the caller must wait and call again; it must not
+    /// purge. The barrier carries its own expiry so a crashed holder cannot
+    /// block claims forever, and refreshing it is exactly re-calling this.
+    fn begin_destructive_admission(
+        &mut self,
+        scope: Option<WalletId>,
+        token: AdmissionToken,
+        now_ms: u64,
+        barrier_ms: u64,
+    ) -> Result<usize, Self::Error>;
+
+    /// Drop the destructive barrier `token`, whether the operation went ahead
+    /// or gave up. Idempotent.
+    fn end_destructive_admission(&mut self, token: AdmissionToken) -> Result<(), Self::Error>;
+}
+
+/// How long a one-time-claim lease stays live without being re-stamped.
+///
+/// It has to comfortably exceed the longest single phase a claim spends between
+/// two store touches — the transient full-history scan of a cold wallet, or a
+/// Halo 2 proof on a slow phone — because a lease that lapses mid-claim makes
+/// the record arming fail closed (safe, but a wasted attempt). It also bounds
+/// how long a claim that was CANCELLED without releasing (a dropped JNI call)
+/// can block wallet removal, so it must not be unbounded either. Five minutes
+/// sits well above both phases and well below a user's patience for "try
+/// removing the wallet again".
+///
+/// The lease is re-stamped when the record is armed
+/// ([`ShieldedStore::arm_redrive_under_claim`]), so the window that actually
+/// protects the durable record runs from the arm — not from the start of the
+/// claim — and covers the broadcast and confirmation wait that follow it.
+pub(crate) const CLAIM_LEASE_MS: u64 = 5 * 60 * 1_000;
+
+/// How long a destructive barrier survives without being refreshed.
+///
+/// Only has to outlive one drain wait (it is refreshed on every poll), plus
+/// margin. Kept short so a purge whose process died cannot keep refusing
+/// claims for long.
+pub(crate) const DESTRUCTIVE_BARRIER_MS: u64 = 60 * 1_000;
+
+/// How long a destructive lifecycle operation waits for in-flight claims to
+/// drain before giving up.
+///
+/// Giving up means REFUSING to purge, not purging anyway: deleting a record
+/// under a live claim is the unrecoverable outcome this whole mechanism
+/// exists to prevent, while a refused purge is a retry.
+pub(crate) const DESTRUCTIVE_DRAIN_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_secs(30);
+
+/// Poll interval while waiting for claim leases to drain. Each poll also
+/// refreshes the barrier, so no new claim slips in during the wait.
+pub(crate) const DESTRUCTIVE_DRAIN_POLL: std::time::Duration =
+    std::time::Duration::from_millis(250);
+
+/// Opaque owner token for one lifecycle admission — a claim lease or a
+/// destructive barrier.
+///
+/// 16 random bytes from the OS CSPRNG rather than a counter: admissions are
+/// compared across independent store instances and, for the file-backed store,
+/// across PROCESSES sharing one SQLite file, so a per-process counter could
+/// collide and let one holder release another's admission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AdmissionToken(pub [u8; 16]);
+
+impl AdmissionToken {
+    /// A fresh token from the OS CSPRNG.
+    pub fn new() -> Self {
+        use rand::{rngs::OsRng, RngCore};
+
+        let mut bytes = [0u8; 16];
+        OsRng.fill_bytes(&mut bytes);
+        Self(bytes)
+    }
+}
+
+impl Default for AdmissionToken {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Wall-clock milliseconds since the Unix epoch — the one clock every
+/// admission lease and barrier is stamped and judged against.
+///
+/// Wall clock rather than a monotonic instant because the leases are compared
+/// across processes, which share no monotonic origin. Both holders read the
+/// same system clock on the same machine, which is what the comparison needs.
+pub fn admission_now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// One row of the lifecycle-admission table.
+///
+/// # The protocol, and why it is at the store
+///
+/// A one-time-key claim and a destructive lifecycle operation (`clear`,
+/// `unregister_wallet`, and `remove_wallet` through it) both act on the same
+/// durable pending-claim record. `clear` and `unregister_wallet` serialize
+/// against each other on the coordinator's `lifecycle` mutex, but a claim never
+/// takes it, and the per-FVK single-flight guards are owned by ONE
+/// `NetworkShieldedCoordinator` — so a purge could delete an armed record while
+/// its transition was still broadcasting. A coordinator-local `tokio` mutex
+/// cannot fix that: `FileBackedShieldedStore::open_path` opens independent
+/// SQLite connections to the same file, so two coordinators (or two processes)
+/// share the state but not the mutex (`dashpay/platform#4313`).
+///
+/// Admission therefore lives at the only thing they do share — the store:
+///
+/// 1. A claim takes a **lease** ([`ShieldedStore::begin_claim_admission`]),
+///    refused if a barrier already covers its wallet.
+/// 2. A destructive operation installs a **barrier**
+///    ([`ShieldedStore::begin_destructive_admission`]), which blocks new leases
+///    and reports the leases already live in scope. It waits for that count to
+///    reach zero and refuses to purge if it does not.
+/// 3. The claim arms its record *under* its lease
+///    ([`ShieldedStore::arm_redrive_under_claim`]), which re-checks and
+///    re-stamps the lease in the same atomic step.
+///
+/// # Why there is no residual race
+///
+/// Step 1 and step 2 are each ONE atomic step against the shared state. They
+/// therefore have a total order, and both orders are safe:
+///
+/// * lease commits first → the barrier's count sees it → the purge waits.
+/// * barrier commits first → the lease's check sees it → the claim is refused.
+///
+/// For [`FileBackedShieldedStore`](super::file_store::FileBackedShieldedStore)
+/// that atomicity is a `BEGIN IMMEDIATE` SQLite transaction: SQLite admits one
+/// writer at a time across every connection **and every process** on the file,
+/// so the total order holds exactly where a process-local mutex does not. For
+/// [`InMemoryShieldedStore`] the shared object *is* the store, reached through
+/// the same `RwLock`, so the write guard supplies the same total order.
+///
+/// No admission call holds a write transaction across scanning, proof
+/// construction, broadcast, or a confirmation wait: each is a handful of
+/// statements, and the long phases run between them holding only the lease row.
+///
+/// # Expiry
+///
+/// Both kinds carry `expires_at`, because a holder can die (process kill,
+/// cancelled coroutine) with no chance to release. Expiry is a liveness
+/// backstop only — it never lets a purge delete a record under a *live* claim,
+/// it only bounds how long a dead one can block wallet removal, and how long a
+/// dead purge can block claims.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LifecycleAdmission {
+    /// Owner token.
+    pub token: AdmissionToken,
+    /// `true` for a destructive barrier, `false` for a claim lease.
+    pub destructive: bool,
+    /// Scope: `None` is store-wide, `Some(id)` is one wallet.
+    pub wallet_id: Option<WalletId>,
+    /// Unix millis after which this admission is dead and reapable.
+    pub expires_at: u64,
+}
+
+impl LifecycleAdmission {
+    /// Whether this admission's scope covers `wallet_id`. A store-wide entry
+    /// covers every wallet; a wallet-scoped one covers only its own.
+    pub fn covers(&self, wallet_id: WalletId) -> bool {
+        self.wallet_id.is_none_or(|scoped| scoped == wallet_id)
+    }
+
+    /// Whether this admission's scope overlaps `scope` (the same containment
+    /// relation as [`Self::covers`], in whichever direction applies).
+    pub fn overlaps(&self, scope: Option<WalletId>) -> bool {
+        match (self.wallet_id, scope) {
+            (None, _) | (_, None) => true,
+            (Some(mine), Some(theirs)) => mine == theirs,
+        }
+    }
 }
 
 // ── Per-subwallet bookkeeping ──────────────────────────────────────────
@@ -782,6 +1018,13 @@ pub struct InMemoryShieldedStore {
     checkpoints: Vec<u32>,
     /// Placeholder anchor; production stores compute the real Sinsemilla root.
     anchor: [u8; 32],
+    /// Live lifecycle admissions — see [`LifecycleAdmission`].
+    ///
+    /// For this store the shared object two coordinators would contend over is
+    /// the store itself, reached through one `RwLock<S>`, so holding the table
+    /// here gives the same total order between a claim lease and a destructive
+    /// barrier that the file store gets from SQLite's single-writer rule.
+    admissions: Vec<LifecycleAdmission>,
 }
 
 impl InMemoryShieldedStore {
@@ -1037,6 +1280,92 @@ impl ShieldedStore for InMemoryShieldedStore {
         self.marked_positions.clear();
         self.checkpoints.clear();
         self.anchor = [0u8; 32];
+        Ok(())
+    }
+
+    // ── Lifecycle admission ────────────────────────────────────────────
+    //
+    // Each of these is one uninterruptible `&mut self` step, and every caller
+    // reaches this store through the same `RwLock<S>`, so the write guard
+    // supplies exactly the total order the protocol needs — see
+    // [`LifecycleAdmission`].
+
+    fn begin_claim_admission(
+        &mut self,
+        wallet_id: WalletId,
+        token: AdmissionToken,
+        now_ms: u64,
+        lease_ms: u64,
+    ) -> Result<bool, Self::Error> {
+        self.admissions.retain(|a| a.expires_at > now_ms);
+        if self
+            .admissions
+            .iter()
+            .any(|a| a.destructive && a.covers(wallet_id))
+        {
+            return Ok(false);
+        }
+        self.admissions.retain(|a| a.token != token);
+        self.admissions.push(LifecycleAdmission {
+            token,
+            destructive: false,
+            wallet_id: Some(wallet_id),
+            expires_at: now_ms.saturating_add(lease_ms),
+        });
+        Ok(true)
+    }
+
+    fn arm_redrive_under_claim(
+        &mut self,
+        id: SubwalletId,
+        redrive: PendingRedrive,
+        token: AdmissionToken,
+        now_ms: u64,
+        lease_ms: u64,
+    ) -> Result<bool, Self::Error> {
+        let Some(lease) = self
+            .admissions
+            .iter_mut()
+            .find(|a| a.token == token && !a.destructive && a.expires_at > now_ms)
+        else {
+            return Ok(false);
+        };
+        lease.expires_at = now_ms.saturating_add(lease_ms);
+        self.subwallets.entry(id).or_default().arm_redrive(redrive);
+        Ok(true)
+    }
+
+    fn end_claim_admission(&mut self, token: AdmissionToken) -> Result<(), Self::Error> {
+        self.admissions
+            .retain(|a| a.destructive || a.token != token);
+        Ok(())
+    }
+
+    fn begin_destructive_admission(
+        &mut self,
+        scope: Option<WalletId>,
+        token: AdmissionToken,
+        now_ms: u64,
+        barrier_ms: u64,
+    ) -> Result<usize, Self::Error> {
+        self.admissions.retain(|a| a.expires_at > now_ms);
+        self.admissions.retain(|a| a.token != token);
+        self.admissions.push(LifecycleAdmission {
+            token,
+            destructive: true,
+            wallet_id: scope,
+            expires_at: now_ms.saturating_add(barrier_ms),
+        });
+        Ok(self
+            .admissions
+            .iter()
+            .filter(|a| !a.destructive && a.overlaps(scope))
+            .count())
+    }
+
+    fn end_destructive_admission(&mut self, token: AdmissionToken) -> Result<(), Self::Error> {
+        self.admissions
+            .retain(|a| !a.destructive || a.token != token);
         Ok(())
     }
 }
