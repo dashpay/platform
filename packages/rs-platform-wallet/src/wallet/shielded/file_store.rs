@@ -824,8 +824,10 @@ impl ShieldedStore for FileBackedShieldedStore {
             )
             .map_err(|e| FileShieldedStoreError(format!("read destructive barriers: {e}")))?;
         if blocked > 0 {
-            // Roll back explicitly: nothing was written, and the claim must
-            // see a clean refusal rather than a half-open admission.
+            // Return WITHOUT committing: dropping the `Transaction` rolls it
+            // back, so a refused claim leaves no lease row and no half-open
+            // admission behind (the reap above is rolled back with it, which
+            // is harmless — the next admission call reaps again).
             return Ok(false);
         }
         tx.execute(
