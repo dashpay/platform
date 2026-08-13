@@ -333,7 +333,8 @@ mod replacement_tests {
     async fn test_document_replace_on_document_type_that_is_mutable() {
         run_document_replace_on_document_type_that_is_mutable_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            1432760,
+            // v14: replaced documents carry the contract-version stamp
+            1433220,
         )
         .await;
     }
@@ -1037,7 +1038,7 @@ mod replacement_tests {
     async fn test_document_replace_on_document_type_that_is_not_mutable() {
         run_document_replace_on_document_type_that_is_not_mutable_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            460920,
+            460940, // v14: stamped documents (see happy-path baseline note)
         )
         .await;
     }
@@ -1293,7 +1294,7 @@ mod replacement_tests {
     async fn test_document_replace_on_document_type_that_is_not_mutable_but_is_transferable() {
         run_document_replace_on_document_type_that_is_not_mutable_but_is_transferable_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            457660,
+            457680, // v14: stamped documents (see happy-path baseline note)
         )
         .await;
     }

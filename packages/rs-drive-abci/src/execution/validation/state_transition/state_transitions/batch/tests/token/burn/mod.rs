@@ -3958,7 +3958,9 @@ mod token_burn_tests {
         // sizes and therefore the byte-billed group-action contract reads.
         run_token_burn_group_action_confirmer_fee_includes_transformer_reads_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            4_367_880,
+            // PROTOCOL_VERSION_14: +400 — genesis system documents now carry
+            // the contract-version stamp, shifting byte-billed subtree reads
+            4_368_280,
         )
         .await;
     }

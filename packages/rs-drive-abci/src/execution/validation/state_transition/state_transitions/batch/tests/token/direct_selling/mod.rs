@@ -24,7 +24,10 @@ mod token_selling_tests {
         // sizes and therefore the byte-billed contract reads.
         run_successful_direct_purchase_single_price_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            699_868_073_580,
+            // PROTOCOL_VERSION_14: 27_400 credits more in fees — genesis system
+            // documents now carry the contract-version stamp, shifting
+            // byte-billed subtree reads
+            699_868_046_180,
         )
         .await;
     }
