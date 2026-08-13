@@ -2650,13 +2650,16 @@ typedef GPB_ENUM(GetDocumentsRequest_HavingClause_Right_OneOfCase) {
  *
  * **From protocol v14 a single `HAVING` clause is served as a
  * bounded range read** (having-range mode): `SELECT <agg> GROUP BY
- * p HAVING <agg> <op> <value> [ORDER BY <agg> ASC|DESC] LIMIT n`
- * answers from the same per-axis secondary as ranked mode, on an
- * index declaring the matching ranked axis. The clause's aggregate
- * must be the selected aggregate, the operator must describe one
- * contiguous range (`NOT_EQUAL` / `IN` are rejected), and the
- * optional `ORDER BY` names the same aggregate to pick the walk
- * direction. See the supported-shape table on
+ * p HAVING <agg> <op> <value> [ORDER BY <order-key> ASC|DESC]
+ * LIMIT n` answers from the same per-axis secondary as ranked
+ * mode, on an index declaring the matching ranked axis. The
+ * clause's aggregate must be the selected aggregate, the operator
+ * must describe one contiguous range (`NOT_EQUAL` / `IN` are
+ * rejected), and the optional `ORDER BY` picks the walk direction
+ * using the same order-key spelling as ranked mode: `f` for
+ * `SUM(f)` / `AVG(f)`, the `$count` sentinel for `COUNT(*)` —
+ * never an explicit `OrderClause.aggregate` target, which is
+ * rejected. See the supported-shape table on
  * `GetDocumentsRequestV1`. On protocol v13 and earlier every
  * non-empty `having` stays rejected with `Unsupported`, exactly as
  * before.
