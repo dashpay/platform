@@ -48,6 +48,19 @@ pub struct DriveDocumentQueryMethodVersions {
     /// version 14) accepts multiple `In` clauses on consecutive index
     /// properties, lowering them to multi-level key-set path queries.
     pub non_primary_key_path_query: FeatureVersion,
+    /// Lowering for query shapes with at most one non-primary-key `In`
+    /// clause. Same consensus rationale as
+    /// `non_primary_key_path_query`, which routes those shapes here
+    /// from its v1 on. Present in every version table so the slot
+    /// exists for older protocol versions; unreachable while
+    /// `non_primary_key_path_query` is 0, whose v0 lowering carries its
+    /// own frozen single-`In` construction.
+    pub non_primary_key_single_in_path_query: FeatureVersion,
+    /// Lowering for query shapes with multiple non-primary-key `In`
+    /// clauses on consecutive index properties, producing multi-level
+    /// key-set path queries. Same consensus rationale and reachability
+    /// as `non_primary_key_single_in_path_query`.
+    pub non_primary_key_multiple_in_path_query: FeatureVersion,
     /// Grouping of a query's raw where clauses into equality / range /
     /// in buckets (`WhereClause::group_clauses`). Versioned because the
     /// error surface for rejected shapes is part of the query contract:
