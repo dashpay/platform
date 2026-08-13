@@ -53,9 +53,18 @@
 //! the one-time asset-lock WIF and the identity's private keys — is
 //! written to the `--out-env` file **before** the transaction is
 //! broadcast. If any later step fails, the locked funds are still
-//! recoverable via the one-time key (retry the identity-create or
-//! top-up with the same outpoint). Only the final identity id is ever
+//! recoverable via the one-time key. Only the final identity id is ever
 //! printed to stdout; key material never touches stdout or the logs.
+//!
+//! The ChainLock wait can legitimately take minutes (platform ingests a
+//! fresh core ChainLock with some lag), so the proof timeout is generous.
+//! If it is nonetheless exceeded, the tool does NOT strand the funds: it
+//! reports that the asset lock is broadcast and on-chain, points at the
+//! saved one-time WIF, and prints the exact command to finish the
+//! registration against the existing lock — re-run with `--resume-txid
+//! <txid>`, which reuses the lock and spends nothing new. Re-running
+//! without `--resume-txid` would broadcast a second asset lock and strand
+//! the first, so the resume path exists precisely to avoid that.
 //!
 //! # Endpoints
 //!
@@ -69,6 +78,7 @@
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::process::ExitCode;
+use std::str::FromStr;
 use std::time::{Duration, Instant};
 
 use clap::Parser;
@@ -80,7 +90,9 @@ use dpp::dashcore::consensus::encode::{deserialize, serialize};
 use dpp::dashcore::secp256k1::Secp256k1;
 use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
-use dpp::dashcore::{Address, Network, OutPoint, PrivateKey, ScriptBuf, Transaction, TxIn, TxOut};
+use dpp::dashcore::{
+    Address, Network, OutPoint, PrivateKey, ScriptBuf, Transaction, TxIn, TxOut, Txid,
+};
 use dpp::dashcore_rpc::{Auth, Client, RpcApi};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -102,8 +114,12 @@ const ASSET_LOCK_FEE_DUFFS: u64 = 100_000;
 /// Minimum change worth returning; below this, fold into the fee.
 const DUST_DUFFS: u64 = 10_000;
 /// How long to wait for the asset-lock tx to be ChainLocked and for
-/// platform to reach that core height before giving up.
-const PROOF_TIMEOUT: Duration = Duration::from_secs(300);
+/// platform to reach that core height before giving up. Generous, because
+/// platform's ingestion of a fresh core ChainLock can lag by minutes; a
+/// short budget here risks the tool giving up on a lock that is about to
+/// become usable. On timeout the tool still prints a resume recipe rather
+/// than stranding the funds (see the timeout handling in `run`).
+const PROOF_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Parser, Debug)]
 #[command(
@@ -153,6 +169,14 @@ struct Args {
     /// here (never printed to stdout).
     #[arg(long = "out-env")]
     out_env: String,
+
+    /// Resume a previously-broadcast asset lock instead of creating a new
+    /// one. Pass the asset-lock txid; the one-time WIF is read from the
+    /// `--out-env` file (`ASSET_LOCK_ONE_TIME_WIF`). Registers the identity
+    /// against the existing chainlocked asset lock — NO new funds are spent.
+    /// Use this to recover after a proof-wait timeout stranded a lock.
+    #[arg(long = "resume-txid")]
+    resume_txid: Option<String>,
 }
 
 fn parse_network(s: &str) -> Result<Network, String> {
@@ -180,6 +204,34 @@ fn append_creds(path: &str, lines: &[(String, String)]) -> Result<(), String> {
         writeln!(f, "{k}={v}").map_err(|e| format!("failed to write creds file: {e}"))?;
     }
     Ok(())
+}
+
+/// Read the last value for `key` from a `KEY=value` credentials file.
+/// Last-wins, matching how the file is sourced by a shell.
+fn read_creds_value(path: &str, key: &str) -> Result<Option<String>, String> {
+    let contents = std::fs::read_to_string(path)
+        .map_err(|e| format!("failed to read creds file {path}: {e}"))?;
+    let prefix = format!("{key}=");
+    Ok(contents
+        .lines()
+        .filter_map(|l| l.strip_prefix(&prefix))
+        .next_back()
+        .map(str::to_string))
+}
+
+/// Message for a proof-wait timeout that makes the failure NON-stranding:
+/// the asset lock is already broadcast and on-chain, so the funds are not
+/// lost — they are pending. It names the recoverable one-time key and the
+/// exact command to resume without spending new funds.
+fn strand_safe_timeout(txid: &Txid, out_env: &str, waiting_for: &str) -> String {
+    format!(
+        "timed out waiting for {waiting_for}.\n\
+         The asset lock IS broadcast and on-chain — the funds are NOT lost, only pending.\n\
+         The one-time key that owns it is saved in {out_env} (ASSET_LOCK_ONE_TIME_WIF).\n\
+         Resume WITHOUT spending new funds by re-running the same command plus:\n\
+         \x20   --resume-txid {txid}\n\
+         Do NOT re-run without --resume-txid — that broadcasts a second asset lock and strands this one."
+    )
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -252,8 +304,10 @@ async fn run() -> Result<(), String> {
     )
     .map_err(|e| format!("failed to connect to Core RPC: {e}"))?;
 
-    // --- Generate the identity (with private keys) and a one-time
-    //     asset-lock key ---
+    // --- Generate the identity keys ---
+    // The identity id derives from the asset-lock outpoint, not from these
+    // keys, so the key set is generated the same way in both the fresh and
+    // resume paths.
     let mut rng = StdRng::from_entropy();
     let (identity, key_material): (Identity, Vec<(IdentityPublicKey, [u8; 32])>) =
         Identity::random_identity_with_main_keys_with_private_key(
@@ -263,101 +317,128 @@ async fn run() -> Result<(), String> {
         )
         .map_err(|e| format!("failed to generate identity: {e}"))?;
 
-    let secp = Secp256k1::new();
-    let mut secp_rng = dpp::dashcore::secp256k1::rand::thread_rng();
-    let one_time_secret = dpp::dashcore::secp256k1::SecretKey::new(&mut secp_rng);
-    let one_time_private_key = PrivateKey::new(one_time_secret, network);
-    let one_time_public_key = one_time_private_key.public_key(&secp);
-    let one_time_key_hash = one_time_public_key.pubkey_hash();
-    let one_time_address = Address::p2pkh(&one_time_public_key, network);
-
-    // --- Build the asset-lock funding transaction ---
-    let tx = build_asset_lock_transaction(&core, amount_duffs, &one_time_key_hash)?;
-    let unsigned_hex = hex::encode(serialize(&tx));
-
-    eprintln!(
-        "Signing asset-lock tx ({} inputs, locking {} DASH) via Core wallet...",
-        tx.input.len(),
-        args.fund_dash
-    );
-    let signed = core
-        .sign_raw_transaction_with_wallet(unsigned_hex.as_str(), None, None)
-        .map_err(|e| format!("signrawtransactionwithwallet failed: {e}"))?;
-    if !signed.complete {
-        return Err(
-            "Core could not fully sign the asset-lock tx (signrawtransactionwithwallet returned \
-             incomplete — is the faucet wallet loaded and are the inputs spendable?)"
-                .to_string(),
-        );
-    }
-    let signed_hex = hex::encode(&signed.hex);
-    let signed_tx: Transaction =
-        deserialize(&signed.hex).map_err(|e| format!("failed to parse signed tx: {e}"))?;
-    let txid = signed_tx.txid();
-
-    // --- Capture recovery credentials BEFORE broadcast ---
-    // Once the asset lock is on-chain, the locked funds are recoverable
-    // only via the one-time key + tx outpoint (retry identity-create or
-    // top-up). Persist everything needed for that before we spend.
-    let mut pre_creds: Vec<(String, String)> = vec![
-        ("ASSET_LOCK_TXID".to_string(), txid.to_string()),
-        (
-            "ASSET_LOCK_ONE_TIME_WIF".to_string(),
-            one_time_private_key.to_wif(),
-        ),
-        (
-            "ASSET_LOCK_ONE_TIME_ADDRESS".to_string(),
-            one_time_address.to_string(),
-        ),
-        (
-            "ASSET_LOCK_FUND_DASH".to_string(),
-            args.fund_dash.to_string(),
-        ),
-    ];
+    // Encode the identity key material for the credentials file.
+    let mut identity_creds: Vec<(String, String)> = Vec::new();
     for (pk, secret) in &key_material {
         let wif = PrivateKey::from_byte_array(secret, network)
             .map(|k| k.to_wif())
             .map_err(|e| format!("failed to encode identity key {} as WIF: {e}", pk.id()))?;
-        pre_creds.push((format!("IDENTITY_KEY_{}_WIF", pk.id()), wif));
+        identity_creds.push((format!("IDENTITY_KEY_{}_WIF", pk.id()), wif));
     }
     if let Some((critical_key, critical_secret)) = find_critical_auth_key(&identity, &key_material)
     {
         let wif = PrivateKey::from_byte_array(&critical_secret, network)
             .map(|k| k.to_wif())
             .map_err(|e| format!("failed to encode critical key as WIF: {e}"))?;
-        pre_creds.push((
+        identity_creds.push((
             "IDENTITY_CRITICAL_AUTH_KEY_ID".to_string(),
             critical_key.id().to_string(),
         ));
-        pre_creds.push(("IDENTITY_CRITICAL_AUTH_KEY_WIF".to_string(), wif));
+        identity_creds.push(("IDENTITY_CRITICAL_AUTH_KEY_WIF".to_string(), wif));
     }
-    append_creds(&args.out_env, &pre_creds)?;
-    eprintln!(
-        "Recovery credentials written to {} before broadcast.",
-        args.out_env
-    );
 
-    // --- Broadcast ---
-    let broadcast_txid = core
-        .send_raw_transaction(signed_hex.as_str())
-        .map_err(|e| format!("sendrawtransaction failed: {e}"))?;
-    if broadcast_txid != txid {
-        return Err(format!(
-            "broadcast txid {broadcast_txid} does not match signed txid {txid}"
-        ));
-    }
-    eprintln!("Broadcast asset-lock tx {txid}; waiting for ChainLock proof...");
+    // --- Obtain the asset lock: resume an existing one, or create+broadcast ---
+    let (txid, one_time_private_key): (Txid, PrivateKey) = if let Some(resume) = &args.resume_txid {
+        // RESUME: reuse an already-broadcast asset lock — NO new funds spent.
+        // The one-time key that owns the lock is read from the credentials
+        // file written before the original broadcast; the freshly generated
+        // identity keys are recorded now so the resumed identity is
+        // recoverable too.
+        let txid =
+            Txid::from_str(resume.trim()).map_err(|e| format!("invalid --resume-txid: {e}"))?;
+        let wif = read_creds_value(&args.out_env, "ASSET_LOCK_ONE_TIME_WIF")?.ok_or_else(|| {
+            format!(
+                "resume needs ASSET_LOCK_ONE_TIME_WIF in {} (the one-time key that owns the asset lock)",
+                args.out_env
+            )
+        })?;
+        let one_time_private_key = PrivateKey::from_wif(wif.trim())
+            .map_err(|e| format!("failed to parse ASSET_LOCK_ONE_TIME_WIF: {e}"))?;
+        append_creds(&args.out_env, &identity_creds)?;
+        eprintln!(
+            "Resuming existing asset-lock tx {txid} (no new broadcast; no new funds spent)..."
+        );
+        (txid, one_time_private_key)
+    } else {
+        // FRESH: generate a one-time key, build + Core-sign + broadcast the
+        // asset lock, capturing all recovery credentials BEFORE broadcast.
+        let secp = Secp256k1::new();
+        let mut secp_rng = dpp::dashcore::secp256k1::rand::thread_rng();
+        let one_time_secret = dpp::dashcore::secp256k1::SecretKey::new(&mut secp_rng);
+        let one_time_private_key = PrivateKey::new(one_time_secret, network);
+        let one_time_public_key = one_time_private_key.public_key(&secp);
+        let one_time_key_hash = one_time_public_key.pubkey_hash();
+        let one_time_address = Address::p2pkh(&one_time_public_key, network);
+
+        let tx = build_asset_lock_transaction(&core, amount_duffs, &one_time_key_hash)?;
+        let unsigned_hex = hex::encode(serialize(&tx));
+
+        eprintln!(
+            "Signing asset-lock tx ({} inputs, locking {} DASH) via Core wallet...",
+            tx.input.len(),
+            args.fund_dash
+        );
+        let signed = core
+            .sign_raw_transaction_with_wallet(unsigned_hex.as_str(), None, None)
+            .map_err(|e| format!("signrawtransactionwithwallet failed: {e}"))?;
+        if !signed.complete {
+            return Err(
+                "Core could not fully sign the asset-lock tx (signrawtransactionwithwallet \
+                 returned incomplete — is the faucet wallet loaded and are the inputs spendable?)"
+                    .to_string(),
+            );
+        }
+        let signed_hex = hex::encode(&signed.hex);
+        let signed_tx: Transaction =
+            deserialize(&signed.hex).map_err(|e| format!("failed to parse signed tx: {e}"))?;
+        let txid = signed_tx.txid();
+
+        // Capture recovery credentials BEFORE broadcast: once on-chain, the
+        // locked funds are recoverable only via the one-time key + outpoint.
+        let mut pre_creds: Vec<(String, String)> = vec![
+            ("ASSET_LOCK_TXID".to_string(), txid.to_string()),
+            (
+                "ASSET_LOCK_ONE_TIME_WIF".to_string(),
+                one_time_private_key.to_wif(),
+            ),
+            (
+                "ASSET_LOCK_ONE_TIME_ADDRESS".to_string(),
+                one_time_address.to_string(),
+            ),
+            (
+                "ASSET_LOCK_FUND_DASH".to_string(),
+                args.fund_dash.to_string(),
+            ),
+        ];
+        pre_creds.extend(identity_creds.iter().cloned());
+        append_creds(&args.out_env, &pre_creds)?;
+        eprintln!(
+            "Recovery credentials written to {} before broadcast.",
+            args.out_env
+        );
+
+        let broadcast_txid = core
+            .send_raw_transaction(signed_hex.as_str())
+            .map_err(|e| format!("sendrawtransaction failed: {e}"))?;
+        if broadcast_txid != txid {
+            return Err(format!(
+                "broadcast txid {broadcast_txid} does not match signed txid {txid}"
+            ));
+        }
+        eprintln!("Broadcast asset-lock tx {txid}; waiting for ChainLock proof...");
+        (txid, one_time_private_key)
+    };
 
     // --- ChainLock asset-lock proof (no DAPI stream) ---
     let started = Instant::now();
     // 1. Wait for Core to report the tx as ChainLocked and give its height.
     let core_chain_locked_height: u32 = loop {
         if started.elapsed() > PROOF_TIMEOUT {
-            return Err(
-                "timed out waiting for the asset-lock tx to be ChainLocked (the ChainLock proof \
-                 path did not complete — do not retry on this path)"
-                    .to_string(),
-            );
+            return Err(strand_safe_timeout(
+                &txid,
+                &args.out_env,
+                "the asset-lock tx to be ChainLocked",
+            ));
         }
         let info = core
             .get_raw_transaction_info(&txid, None)
@@ -379,11 +460,11 @@ async fn run() -> Result<(), String> {
     //    drive will accept the proof.
     loop {
         if started.elapsed() > PROOF_TIMEOUT {
-            return Err(
-                "timed out waiting for platform to reach the ChainLocked core height (do not retry \
-                 on this path)"
-                    .to_string(),
-            );
+            return Err(strand_safe_timeout(
+                &txid,
+                &args.out_env,
+                "platform to reach the ChainLocked core height",
+            ));
         }
         let (_epoch, metadata) = Epoch::fetch_current_with_metadata(&sdk)
             .await
