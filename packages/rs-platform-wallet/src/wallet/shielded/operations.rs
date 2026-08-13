@@ -2199,6 +2199,14 @@ fn one_time_claim_record_key(fvk: &grovedb_commitment_tree::FullViewingKey) -> [
     sha256::Hash::hash(&preimage).to_byte_array()
 }
 
+/// The shared per-FVK lifecycle mutex handed to every same-key claimer.
+type ClaimGuard = Arc<tokio::sync::Mutex<()>>;
+
+/// One registry row: the guard key (see `one_time_claim_record_key`) paired
+/// with a non-owning handle to its guard, so abandoned keys are pruned on the
+/// next acquisition rather than pinning the mutex alive.
+type ClaimGuardEntry = ([u8; 32], std::sync::Weak<tokio::sync::Mutex<()>>);
+
 /// Per-FVK single-flight guards for the one-time-key claim lifecycle.
 ///
 /// Owned by `NetworkShieldedCoordinator` (the same owner as the durable
@@ -2225,14 +2233,14 @@ fn one_time_claim_record_key(fvk: &grovedb_commitment_tree::FullViewingKey) -> [
 /// cannot grow the map beyond the keys currently in flight.
 #[derive(Default)]
 pub struct ForeignClaimGuards {
-    entries: std::sync::Mutex<Vec<([u8; 32], std::sync::Weak<tokio::sync::Mutex<()>>)>>,
+    entries: std::sync::Mutex<Vec<ClaimGuardEntry>>,
 }
 
 impl ForeignClaimGuards {
     /// The shared lifecycle mutex for `key`. Callers `.lock().await` the
     /// returned handle and hold the guard across the whole claim; the
     /// internal registry lock is sync-only and released before any await.
-    fn entry_for(&self, key: [u8; 32]) -> Arc<tokio::sync::Mutex<()>> {
+    fn entry_for(&self, key: [u8; 32]) -> ClaimGuard {
         let mut entries = self
             .entries
             .lock()
