@@ -19,38 +19,59 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::document_type::Index;
 
-/// Path of a single-property index's terminal property-name tree —
-/// shared by the ranked and having-range query surfaces, which read
-/// the same indexed tree. See
-/// [`DriveDocumentRankedQuery::indexed_property_name_tree_path`] for
-/// the segment layout and the single-property requirement.
+/// Path of an index's terminal property-name tree — shared by the
+/// ranked and having-range query surfaces, which read the same indexed
+/// tree. See [`DriveDocumentRankedQuery::indexed_property_name_tree_path`]
+/// for the segment layout.
+///
+/// `equality_prefix_values` carries the **encoded index-key bytes** of
+/// each leading property's pinned value, in index-property order — one
+/// per property before the terminal one. Empty for a single-property
+/// index. The arity must match exactly: a compound index's terminal
+/// tree sits under one prefix value tree per leading property, and only
+/// an equality `where` clause can name those values, so a missing or
+/// surplus value means the caller resolved the wrong index — a typed
+/// error, not a guess.
 pub(crate) fn indexed_property_name_tree_path_for_index(
     contract_id: &[u8; 32],
     document_type_name: &str,
     index: &Index,
+    equality_prefix_values: &[Vec<u8>],
 ) -> Result<Vec<Vec<u8>>, Error> {
-    let [property] = index.properties.as_slice() else {
+    let Some((terminal_property, leading_properties)) = index.properties.split_last() else {
         return Err(Error::Drive(DriveError::NotSupported(
-            "ranked and having-range queries require a single-property index: the \
-             axis secondary lives on the index's terminal property-name tree, and \
-             for a compound index that tree sits under a prefix value tree whose \
-             value only a `where` clause could name — but these queries accept no \
-             `where` clauses",
+            "ranked and having-range queries require an index with at least one \
+             property",
         )));
     };
-    Ok(vec![
-        vec![RootTree::DataContractDocuments as u8],
-        contract_id.to_vec(),
-        vec![1u8],
-        document_type_name.as_bytes().to_vec(),
-        property.name.as_bytes().to_vec(),
-    ])
+    if leading_properties.len() != equality_prefix_values.len() {
+        return Err(Error::Drive(DriveError::NotSupported(
+            "ranked and having-range queries over a compound index require exactly one \
+             encoded equality value per leading index property: the axis secondary lives \
+             on the index's terminal property-name tree, which for a compound index sits \
+             under one prefix value tree per leading property, and only an equality \
+             `where` clause can name those values",
+        )));
+    }
+    let mut path = Vec::with_capacity(5 + 2 * leading_properties.len());
+    path.push(vec![RootTree::DataContractDocuments as u8]);
+    path.push(contract_id.to_vec());
+    path.push(vec![1u8]);
+    path.push(document_type_name.as_bytes().to_vec());
+    for (property, value) in leading_properties.iter().zip(equality_prefix_values) {
+        path.push(property.name.as_bytes().to_vec());
+        path.push(value.clone());
+    }
+    path.push(terminal_property.name.as_bytes().to_vec());
+    Ok(path)
 }
 
 impl DriveDocumentRankedQuery<'_> {
     /// Path of the **terminal property-name tree** — the indexed tree
     /// whose primary holds one value tree per group and whose per-axis
     /// secondaries hold the ranking.
+    ///
+    /// For a single-property index:
     ///
     /// ```text
     /// [ RootTree::DataContractDocuments as u8 ]   // 0x01
@@ -60,23 +81,32 @@ impl DriveDocumentRankedQuery<'_> {
     ///   / <index property name: utf-8>
     /// ```
     ///
-    /// The children of that tree are the groups, keyed by the raw
-    /// index-key bytes of the property value — the same bytes that come
-    /// back as [`super::RankedEntry::key`].
+    /// For a compound index `[p1, …, pn]`, each leading property
+    /// contributes two segments — its name and the **encoded index-key
+    /// bytes of its pinned value** (from
+    /// [`Self::equality_prefix_values`]) — and the terminal property
+    /// name closes the path:
     ///
-    /// Errors when the index is not single-property. A compound ranked
-    /// index would terminate one level *below* a prefix value tree, so
-    /// its path would need the prefix property's value — which only a
-    /// `where` clause could supply, and ranked queries take none. rs-dpp
-    /// rejects compound ranked indexes at contract-parse time, so this is
-    /// a fail-closed backstop for the day that grammar relaxes: better a
-    /// typed error than a path pointing at a prefix level whose element
-    /// is not an indexed tree at all.
+    /// ```text
+    ///   … / <p1 name> / <p1 pinned value bytes> / … / <pn name>
+    /// ```
+    ///
+    /// so the ranking read lands on **that prefix's** indexed tree: the
+    /// per-prefix secondary orders only the pinned prefix's groups.
+    ///
+    /// The children of the terminal tree are the groups, keyed by the
+    /// raw index-key bytes of the terminal property value — the same
+    /// bytes that come back as [`super::RankedEntry::key`].
+    ///
+    /// Errors when the number of encoded prefix values does not match
+    /// the index's leading-property count — the fail-closed backstop
+    /// for a caller that resolved the query against the wrong index.
     pub fn indexed_property_name_tree_path(&self) -> Result<Vec<Vec<u8>>, Error> {
         indexed_property_name_tree_path_for_index(
             &self.contract_id,
             &self.document_type_name,
             self.index,
+            &self.equality_prefix_values,
         )
     }
 }

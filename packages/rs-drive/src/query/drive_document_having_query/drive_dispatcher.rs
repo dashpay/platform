@@ -21,12 +21,11 @@ use grovedb::TransactionArg;
 /// wire-decoding + contract lookup — the same construction pattern as
 /// [`super::super::drive_document_ranked_query::DocumentRankedRequest`].
 ///
-/// `where_clauses`, `offset` and `start_at` are carried even though a
-/// having-range request must leave all of them empty: drive owns the
-/// rejection, so the contract is enforced identically no matter which
-/// upstream path built the request. See
-/// [`super::mode_detection::detect_having_mode_v0`] for why each is
-/// refused rather than ignored.
+/// `offset` and `start_at` are carried even though a having-range
+/// request must leave both empty: drive owns the rejection, so the
+/// contract is enforced identically no matter which upstream path built
+/// the request. See [`super::mode_detection::detect_having_mode_v0`]
+/// for why each is refused rather than ignored.
 pub struct DocumentHavingRequest<'a> {
     /// Live contract (already loaded by the handler).
     pub contract: &'a DataContract,
@@ -44,7 +43,9 @@ pub struct DocumentHavingRequest<'a> {
     /// The `ORDER BY` clauses. Empty (ascending default) or exactly
     /// one, naming the selected aggregate.
     pub order_by: &'a [OrderClause],
-    /// Structured `where` clauses. Must be empty.
+    /// Structured `where` clauses. Empty for the single-property form;
+    /// equality pins on the covering compound index's leading
+    /// properties for the pinned-prefix form.
     pub where_clauses: &'a [WhereClause],
     /// Request `limit`. **Required**; `1 ..= MAX_HAVING_LIMIT`.
     pub limit: Option<u32>,

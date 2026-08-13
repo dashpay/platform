@@ -310,11 +310,13 @@ mod grammar {
         assert!(result.is_err(), "cross-aggregate having must fail");
     }
 
-    /// `GROUP BY identityId, class HAVING AVG(grade) > 80` — compound
-    /// grouping — is rejected: ranked axes live on single-property
-    /// indexes (a contract declaring a ranked flag on a compound index
-    /// is already rejected at contract-parse time), so there is no
-    /// compound grouping for a bound to filter over.
+    /// `GROUP BY identityId, class HAVING AVG(grade) > 80` — an
+    /// **unpinned** two-field grouping — is still rejected: a compound
+    /// ranked index bounds each prefix's groups separately, so the
+    /// served form pins the leading property with an equality `where`
+    /// and groups over the trailing one (`WHERE identityId = X GROUP BY
+    /// class …` — exercised end to end in the `pinned_prefix` suite).
+    /// The rejection must steer the caller to that form.
     #[test]
     fn compound_group_by_is_rejected() {
         let result = detect_having_mode_v0(
@@ -330,10 +332,12 @@ mod grammar {
             &[],
             pagination(10),
         );
-        let error = result.expect_err("compound group_by must fail");
+        let error = result.expect_err("unpinned compound group_by must fail");
+        let message = format!("{error}");
         assert!(
-            format!("{error}").contains("exactly one `group_by` property"),
-            "the rejection must say the surface is single-property, got: {error}"
+            message.contains("exactly one `group_by` property")
+                && message.contains("equality `where` clause"),
+            "the rejection must steer to the pinned-prefix form, got: {error}"
         );
     }
 
@@ -571,7 +575,7 @@ mod execution {
     use super::clause;
     use crate::drive::Drive;
     use crate::error::Error;
-    use crate::query::drive_document_ranked_query::index_picker::find_ranked_index_for_axis;
+    use crate::query::drive_document_having_query::resolve_having_query_for_mode;
     use crate::query::drive_document_ranked_query::{
         RankedEntry, RankedEntryValue, RankedPaginationInputs, RANKED_COUNT_ORDER_KEY,
     };
@@ -818,24 +822,17 @@ mod execution {
             .get(case.document_type_name)
             .expect("doctype exists")
             .indexes();
-        let index = find_ranked_index_for_axis(
-            indexes,
-            &mode.group_by_property,
-            mode.bounds.axis(),
-            &mode.aggregate_field,
-        )
-        .expect("the fixture declares the axis");
-        DriveDocumentHavingQuery {
-            document_type: contract
+        resolve_having_query_for_mode(
+            contract.id_ref().to_buffer(),
+            contract
                 .document_type_for_name(case.document_type_name)
                 .expect("doctype exists"),
-            contract_id: contract.id_ref().to_buffer(),
-            document_type_name: case.document_type_name.to_string(),
-            index,
-            bounds: mode.bounds,
-            descending: mode.descending,
-            limit: mode.limit,
-        }
+            case.document_type_name.to_string(),
+            indexes,
+            &mode,
+            platform_version(),
+        )
+        .expect("the fixture declares the axis")
     }
 
     fn grovedb_root_hash(drive: &Drive) -> [u8; 32] {
@@ -1266,7 +1263,7 @@ mod identifier_group_keys {
     use super::super::DriveDocumentHavingQuery;
     use super::clause;
     use crate::drive::Drive;
-    use crate::query::drive_document_ranked_query::index_picker::find_ranked_index_for_axis;
+    use crate::query::drive_document_having_query::resolve_having_query_for_mode;
     use crate::query::drive_document_ranked_query::{
         RankedEntry, RankedEntryValue, RankedPaginationInputs,
     };
@@ -1423,24 +1420,17 @@ mod identifier_group_keys {
             .get(DOCUMENT_TYPE)
             .expect("grade doctype exists")
             .indexes();
-        let index = find_ranked_index_for_axis(
-            indexes,
-            &mode.group_by_property,
-            mode.bounds.axis(),
-            &mode.aggregate_field,
-        )
-        .expect("the fixture declares the avg axis");
-        DriveDocumentHavingQuery {
-            document_type: contract
+        resolve_having_query_for_mode(
+            contract.id_ref().to_buffer(),
+            contract
                 .document_type_for_name(DOCUMENT_TYPE)
                 .expect("grade doctype exists"),
-            contract_id: contract.id_ref().to_buffer(),
-            document_type_name: DOCUMENT_TYPE.to_string(),
-            index,
-            bounds: mode.bounds,
-            descending: mode.descending,
-            limit: mode.limit,
-        }
+            DOCUMENT_TYPE.to_string(),
+            indexes,
+            &mode,
+            platform_version(),
+        )
+        .expect("the fixture declares the avg axis")
     }
 
     fn assert_proof_round_trips(
@@ -1535,5 +1525,587 @@ mod identifier_group_keys {
             "descending walk: 90 then 80.5"
         );
         assert_proof_round_trips(&drive, &contract, &descending, &flipped);
+    }
+}
+
+mod pinned_prefix {
+    //! `SELECT AVG(grade) FROM grades WHERE identityId = X GROUP BY
+    //! class HAVING AVG(grade) > 80` — the compound ranked index
+    //! `[identityId, class]` with its leading property pinned by an
+    //! equality `where` clause. Per-prefix semantics: each identity's
+    //! terminal `class` property-name tree is its own indexed tree, so
+    //! the bound reads (and proves) only the pinned identity's class
+    //! groups. Documents are inserted through the real write path, so
+    //! these tests also pin that the document walkers create and
+    //! maintain the per-prefix secondaries for compound ranked indexes.
+
+    use super::super::drive_dispatcher::{DocumentHavingRequest, DocumentHavingResponse};
+    use super::super::mode_detection::detect_having_mode;
+    use super::super::DriveDocumentHavingQuery;
+    use super::clause;
+    use crate::drive::Drive;
+    use crate::error::query::QuerySyntaxError;
+    use crate::error::Error;
+    use crate::query::drive_document_having_query::resolve_having_query_for_mode;
+    use crate::query::drive_document_ranked_query::{
+        RankedEntry, RankedEntryValue, RankedPaginationInputs,
+    };
+    use crate::query::having::{HavingAggregateFunction, HavingOperator};
+    use crate::query::projection::SelectProjection;
+    use crate::query::{OrderClause, WhereClause, WhereOperator};
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::document::{Document, DocumentV0Setters};
+    use dpp::platform_value::Value;
+    use dpp::prelude::DataContract;
+    use dpp::tests::json_document::json_document_to_contract;
+    use dpp::version::PlatformVersion;
+    use grovedb::element::indexed::compute_avg_fixed_point;
+    use std::collections::BTreeMap;
+
+    const PREFIX_PROPERTY: &str = "identityId";
+    const GROUP_PROPERTY: &str = "class";
+    const DOCUMENT_TYPE: &str = "grade";
+
+    fn platform_version() -> &'static PlatformVersion {
+        PlatformVersion::latest()
+    }
+
+    fn setup_grades_compound_ranked() -> (Drive, DataContract) {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = platform_version();
+        let contract = json_document_to_contract(
+            "tests/supporting_files/contract/grades/grades-compound-ranked-contract.json",
+            false,
+            pv,
+        )
+        .expect("expected to parse the compound ranked grades contract");
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply the compound ranked grades contract");
+        (drive, contract)
+    }
+
+    fn insert_grades(
+        drive: &Drive,
+        contract: &DataContract,
+        first_seed: u64,
+        rows: &[([u8; 32], &str, i64)],
+    ) {
+        let pv = platform_version();
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("grade doctype exists");
+        for (i, (identity, class, grade)) in rows.iter().enumerate() {
+            let mut doc: Document = document_type
+                .random_document(Some(first_seed + i as u64), pv)
+                .expect("random document");
+            let mut props = BTreeMap::new();
+            props.insert(PREFIX_PROPERTY.to_string(), Value::Identifier(*identity));
+            props.insert(GROUP_PROPERTY.to_string(), Value::Text(class.to_string()));
+            props.insert("grade".to_string(), Value::I64(*grade));
+            doc.set_properties(props);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert a grade document");
+        }
+    }
+
+    fn pin(identity: [u8; 32]) -> Vec<WhereClause> {
+        vec![WhereClause {
+            field: PREFIX_PROPERTY.to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Identifier(identity),
+        }]
+    }
+
+    fn run(
+        drive: &Drive,
+        contract: &DataContract,
+        where_clauses: &[WhereClause],
+        order_by: &[OrderClause],
+        prove: bool,
+    ) -> Result<DocumentHavingResponse, Error> {
+        let group_by = vec![GROUP_PROPERTY.to_string()];
+        let having = vec![clause(
+            HavingAggregateFunction::Avg,
+            "grade",
+            HavingOperator::GreaterThan,
+            Value::U64(80),
+        )];
+        drive.execute_document_having_request(
+            DocumentHavingRequest {
+                contract,
+                document_type: contract
+                    .document_type_for_name(DOCUMENT_TYPE)
+                    .expect("grade doctype exists"),
+                group_by: &group_by,
+                select: SelectProjection::avg("grade"),
+                having: &having,
+                order_by,
+                where_clauses,
+                limit: Some(10),
+                offset: None,
+                has_start_at: false,
+                prove,
+            },
+            None,
+            platform_version(),
+        )
+    }
+
+    fn entries_of(response: DocumentHavingResponse) -> Vec<RankedEntry> {
+        match response {
+            DocumentHavingResponse::Entries(entries) => entries,
+            DocumentHavingResponse::Proof(_) => panic!("expected entries, got a proof"),
+        }
+    }
+
+    fn client_side_query<'a>(
+        contract: &'a DataContract,
+        where_clauses: &[WhereClause],
+        order_by: &[OrderClause],
+    ) -> DriveDocumentHavingQuery<'a> {
+        let group_by = vec![GROUP_PROPERTY.to_string()];
+        let having = vec![clause(
+            HavingAggregateFunction::Avg,
+            "grade",
+            HavingOperator::GreaterThan,
+            Value::U64(80),
+        )];
+        let mode = detect_having_mode(
+            &SelectProjection::avg("grade"),
+            &group_by,
+            &having,
+            order_by,
+            where_clauses,
+            RankedPaginationInputs {
+                limit: Some(10),
+                offset: None,
+                has_start_at: false,
+            },
+            platform_version(),
+        )
+        .expect("the case is well-formed");
+        let indexes = contract
+            .document_types()
+            .get(DOCUMENT_TYPE)
+            .expect("grade doctype exists")
+            .indexes();
+        resolve_having_query_for_mode(
+            contract.id_ref().to_buffer(),
+            contract
+                .document_type_for_name(DOCUMENT_TYPE)
+                .expect("grade doctype exists"),
+            DOCUMENT_TYPE.to_string(),
+            indexes,
+            &mode,
+            platform_version(),
+        )
+        .expect("the fixture's compound index covers the pinned request")
+    }
+
+    fn assert_proof_round_trips(
+        drive: &Drive,
+        contract: &DataContract,
+        where_clauses: &[WhereClause],
+        order_by: &[OrderClause],
+        expected: &[RankedEntry],
+    ) {
+        let proof = match run(drive, contract, where_clauses, order_by, true)
+            .expect("prove must succeed")
+        {
+            DocumentHavingResponse::Proof(proof) => proof,
+            DocumentHavingResponse::Entries(_) => panic!("expected a proof, got entries"),
+        };
+        let (root_hash, verified) = client_side_query(contract, where_clauses, order_by)
+            .verify_having_range_proof(&proof, platform_version())
+            .expect("the proof must verify");
+        assert_eq!(
+            verified, expected,
+            "verified entries must equal what the unproven read returned"
+        );
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &platform_version().drive.grove_version)
+                .unwrap()
+                .expect("root hash must be readable"),
+            "the proof must reconstruct the live grovedb root hash"
+        );
+    }
+
+    const IDENTITY_X: [u8; 32] = [1u8; 32];
+    const IDENTITY_Y: [u8; 32] = [2u8; 32];
+
+    /// The shared dataset: two identities whose class groups overlap by
+    /// name, so cross-prefix leakage is visible by construction —
+    /// `math` fails X's bound (avg 80, strict `>`) but passes Y's (avg
+    /// 92.5), and `science` exists only under Y.
+    fn insert_two_identities(drive: &Drive, contract: &DataContract) {
+        insert_grades(
+            drive,
+            contract,
+            1000,
+            &[
+                // Identity X: math avg 80 (at threshold, excluded under >),
+                // english avg 80.5 (fractional, just above), art avg 90,
+                // history avg 70.
+                (IDENTITY_X, "math", 80),
+                (IDENTITY_X, "math", 80),
+                (IDENTITY_X, "english", 80),
+                (IDENTITY_X, "english", 81),
+                (IDENTITY_X, "art", 85),
+                (IDENTITY_X, "art", 95),
+                (IDENTITY_X, "history", 60),
+                (IDENTITY_X, "history", 80),
+                // Identity Y: math avg 92.5, science avg 95 — both would
+                // qualify for X's bound too if prefixes leaked.
+                (IDENTITY_Y, "math", 90),
+                (IDENTITY_Y, "math", 95),
+                (IDENTITY_Y, "science", 95),
+                (IDENTITY_Y, "science", 95),
+            ],
+        );
+    }
+
+    /// Exact-threshold exclusion, fractional inclusion, byte-exact
+    /// string group keys, both walk directions, proof round-trips —
+    /// and isolation: identity Y's qualifying classes never appear in
+    /// X's result, even where the class *name* collides.
+    #[test]
+    fn avg_threshold_over_pinned_prefix_reads_and_proves() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        insert_two_identities(&drive, &contract);
+
+        // Pinned to X, ascending: english (80.5) then art (90). math sits
+        // exactly at the threshold and stays out under `>`; Y's math
+        // (92.5) and science (95) must not leak in.
+        let x_pin = pin(IDENTITY_X);
+        let entries =
+            entries_of(run(&drive, &contract, &x_pin, &[], false).expect("read succeeds"));
+        assert_eq!(
+            entries,
+            vec![
+                RankedEntry {
+                    key: b"english".to_vec(),
+                    value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(161, 2)),
+                },
+                RankedEntry {
+                    key: b"art".to_vec(),
+                    value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(180, 2)),
+                },
+            ],
+            "ascending walk over X's classes: 80.5 then 90, keyed by raw utf-8 class bytes"
+        );
+        assert_proof_round_trips(&drive, &contract, &x_pin, &[], &entries);
+
+        // Same pin, descending: art then english, with its own proof.
+        let descending = vec![OrderClause {
+            field: "grade".to_string(),
+            ascending: false,
+        }];
+        let flipped =
+            entries_of(run(&drive, &contract, &x_pin, &descending, false).expect("read succeeds"));
+        assert_eq!(
+            flipped.iter().map(|e| &e.key).collect::<Vec<_>>(),
+            vec![&b"art".to_vec(), &b"english".to_vec()],
+            "descending walk: 90 then 80.5"
+        );
+        assert_proof_round_trips(&drive, &contract, &x_pin, &descending, &flipped);
+
+        // Pinned to Y: math qualifies *here* (92.5) even though the same
+        // class name failed X's bound — the two prefixes rank separately.
+        let y_pin = pin(IDENTITY_Y);
+        let y_entries =
+            entries_of(run(&drive, &contract, &y_pin, &[], false).expect("read succeeds"));
+        assert_eq!(
+            y_entries,
+            vec![
+                RankedEntry {
+                    key: b"math".to_vec(),
+                    value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(185, 2)),
+                },
+                RankedEntry {
+                    key: b"science".to_vec(),
+                    value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(190, 2)),
+                },
+            ],
+            "Y's own classes: math 92.5 then science 95"
+        );
+        assert_proof_round_trips(&drive, &contract, &y_pin, &[], &y_entries);
+    }
+
+    /// An unpinned prefix cannot be served: with `group_by = class` and
+    /// no `where`, no single-property ranked index on `class` exists,
+    /// and the compound index's per-prefix secondaries have no global
+    /// ordering to read. The rejection names the missing coverage.
+    #[test]
+    fn unpinned_prefix_is_rejected() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        insert_two_identities(&drive, &contract);
+
+        let error = run(&drive, &contract, &[], &[], false)
+            .expect_err("an unpinned compound prefix must not resolve");
+        match error {
+            Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(message)) => {
+                assert!(
+                    message.contains("no ranked index covers")
+                        && message.contains("single-property index on `class`"),
+                    "the rejection must explain the missing coverage, got: {message}"
+                );
+            }
+            other => panic!("expected a no-covering-index rejection, got {other:?}"),
+        }
+    }
+
+    /// `IN` on the prefix is rejected at detection with the
+    /// not-yet-supported message (v1 pins are equality-only), and a pin
+    /// on a property that is not the index's leading property fails
+    /// resolution.
+    #[test]
+    fn in_prefix_and_wrong_pins_are_rejected() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        insert_two_identities(&drive, &contract);
+
+        let in_clause = vec![WhereClause {
+            field: PREFIX_PROPERTY.to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![
+                Value::Identifier(IDENTITY_X),
+                Value::Identifier(IDENTITY_Y),
+            ]),
+        }];
+        let error = run(&drive, &contract, &in_clause, &[], false)
+            .expect_err("IN prefixes are not yet supported");
+        match error {
+            Error::Query(QuerySyntaxError::Unsupported(message)) => {
+                assert!(
+                    message.contains("IN") && message.contains("not yet supported"),
+                    "the IN rejection must say it is a not-yet capability, got: {message}"
+                );
+            }
+            other => panic!("expected Unsupported for an IN prefix, got {other:?}"),
+        }
+
+        // A pin on the wrong property: `grade` is not the index's
+        // leading property, so nothing covers [grade, class].
+        let wrong_pin = vec![WhereClause {
+            field: "grade".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::I64(80),
+        }];
+        let error = run(&drive, &contract, &wrong_pin, &[], false)
+            .expect_err("a pin on a non-leading property must not resolve");
+        assert!(
+            matches!(
+                error,
+                Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(_))
+            ),
+            "expected a no-covering-index rejection, got {error:?}"
+        );
+    }
+
+    /// A pin on an identity that never inserted a document addresses a
+    /// prefix value tree that does not exist. The read and the prover
+    /// both surface an error rather than fabricating an empty page —
+    /// same contract as the empty-secondary limitation on the
+    /// single-property surface (the abci layer maps these to a
+    /// client-visible rejection).
+    #[test]
+    fn unknown_prefix_value_errors_rather_than_fabricating_an_empty_page() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        insert_two_identities(&drive, &contract);
+
+        let unknown = pin([9u8; 32]);
+        assert!(
+            run(&drive, &contract, &unknown, &[], false).is_err(),
+            "reading a never-written prefix value tree must error"
+        );
+        assert!(
+            run(&drive, &contract, &unknown, &[], true).is_err(),
+            "proving a never-written prefix value tree must error"
+        );
+    }
+
+    /// A **null** pin addresses the empty-segment prefix the write path
+    /// creates for an absent optional leading property — the having
+    /// bound reads (and proves) the tagless subtree, and tagged rows
+    /// stay in their own prefix. Sibling of the ranked suite's
+    /// `a_null_pin_addresses_the_absent_value_prefix`.
+    #[test]
+    fn a_null_pin_bounds_the_absent_value_prefix() {
+        const TAGGED_DOCTYPE: &str = "taggedGrade";
+        let (drive, contract) = setup_grades_compound_ranked();
+        let pv = platform_version();
+        let document_type = contract
+            .document_type_for_name(TAGGED_DOCTYPE)
+            .expect("taggedGrade doctype exists");
+
+        for (i, (tag, class, grade)) in [
+            (None, "math", 80i64),
+            (None, "math", 90),
+            (None, "science", 60),
+            (Some("honors"), "science", 100),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let mut doc: Document = document_type
+                .random_document(Some(8000 + i as u64), pv)
+                .expect("random document");
+            let mut props = BTreeMap::new();
+            if let Some(tag) = tag {
+                props.insert("tag".to_string(), Value::Text(tag.to_string()));
+            }
+            props.insert(GROUP_PROPERTY.to_string(), Value::Text(class.to_string()));
+            props.insert("grade".to_string(), Value::I64(*grade));
+            doc.set_properties(props);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert a tagged grade document");
+        }
+
+        let null_pin = vec![WhereClause {
+            field: "tag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Null,
+        }];
+        let group_by = vec![GROUP_PROPERTY.to_string()];
+        let having = vec![clause(
+            HavingAggregateFunction::Avg,
+            "grade",
+            HavingOperator::GreaterThan,
+            Value::U64(70),
+        )];
+        let request = |prove: bool| DocumentHavingRequest {
+            contract: &contract,
+            document_type,
+            group_by: &group_by,
+            select: SelectProjection::avg("grade"),
+            having: &having,
+            order_by: &[],
+            where_clauses: &null_pin,
+            limit: Some(10),
+            offset: None,
+            has_start_at: false,
+            prove,
+        };
+
+        // Only the tagless math group (avg 85) clears the bound: the
+        // tagless science (60) misses it, and the tagged science (100)
+        // lives under its own prefix.
+        let entries = match drive
+            .execute_document_having_request(request(false), None, pv)
+            .expect("the null-pinned read succeeds")
+        {
+            DocumentHavingResponse::Entries(entries) => entries,
+            DocumentHavingResponse::Proof(_) => panic!("expected entries, got a proof"),
+        };
+        assert_eq!(
+            entries,
+            vec![RankedEntry {
+                key: b"math".to_vec(),
+                value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(170, 2)),
+            }],
+            "the tagless bound: math 85 only — the honors science row \
+             must not leak into the null prefix"
+        );
+
+        let proof = match drive
+            .execute_document_having_request(request(true), None, pv)
+            .expect("the null-pinned prove succeeds")
+        {
+            DocumentHavingResponse::Proof(proof) => proof,
+            DocumentHavingResponse::Entries(_) => panic!("expected a proof, got entries"),
+        };
+        let mode = detect_having_mode(
+            &SelectProjection::avg("grade"),
+            &group_by,
+            &having,
+            &[],
+            &null_pin,
+            RankedPaginationInputs {
+                limit: Some(10),
+                offset: None,
+                has_start_at: false,
+            },
+            pv,
+        )
+        .expect("the null-pinned case is well-formed");
+        let query = resolve_having_query_for_mode(
+            contract.id_ref().to_buffer(),
+            document_type,
+            TAGGED_DOCTYPE.to_string(),
+            contract
+                .document_types()
+                .get(TAGGED_DOCTYPE)
+                .expect("taggedGrade doctype exists")
+                .indexes(),
+            &mode,
+            pv,
+        )
+        .expect("the compound index covers the null-pinned request");
+        assert_eq!(
+            query.equality_prefix_values,
+            vec![Vec::<u8>::new()],
+            "a null pin must encode as the write path's empty segment"
+        );
+        let (root_hash, verified) = query
+            .verify_having_range_proof(&proof, pv)
+            .expect("the null-pinned proof must verify");
+        assert_eq!(verified, entries);
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &pv.drive.grove_version)
+                .unwrap()
+                .expect("root hash must be readable"),
+        );
     }
 }

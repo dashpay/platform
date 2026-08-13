@@ -64,11 +64,23 @@
 
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::platform_value::Value;
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::version::PlatformVersion;
+#[cfg(any(feature = "server", feature = "verify"))]
+use std::collections::BTreeMap;
 
+#[cfg(any(feature = "server", feature = "verify"))]
+use super::drive_document_ranked_query::index_picker::{
+    encode_equality_prefix_values, find_ranked_index_for_axis, no_covering_index_message,
+};
 #[cfg(any(feature = "server", feature = "verify"))]
 use super::drive_document_ranked_query::{
     path::indexed_property_name_tree_path_for_index, RankedAxis,
 };
+#[cfg(any(feature = "server", feature = "verify"))]
+use crate::error::query::QuerySyntaxError;
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::error::Error;
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -210,7 +222,10 @@ impl AxisRangeBounds {
 ///
 /// Produced by [`mode_detection::detect_having_mode`]. Parallels
 /// [`super::drive_document_ranked_query::DocumentRankedMode`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Not `Eq`: the equality pins carry [`Value`]s, whose float variant
+/// keeps the type at `PartialEq`.
+#[derive(Debug, Clone, PartialEq)]
 #[cfg(any(feature = "server", feature = "verify"))]
 pub struct DocumentHavingMode {
     /// Inclusive bounds on the aggregate, in the axis's own domain.
@@ -223,11 +238,16 @@ pub struct DocumentHavingMode {
     /// `1 ..= MAX_HAVING_LIMIT`, required.
     pub limit: u16,
     /// The single `GROUP BY` property; must be the covering ranked
-    /// index's only property.
+    /// index's **last** property.
     pub group_by_property: String,
     /// The field the aggregate applies to. Empty for `COUNT(*)`; the
     /// index's `summable` property for `SUM` / `AVG`.
     pub aggregate_field: String,
+    /// The equality `where` pins, `(property, value)` per clause —
+    /// exactly one per leading property of the covering compound index,
+    /// in request order (the resolver re-orders them into index order
+    /// when it encodes the path). Empty for the single-property form.
+    pub equality_pins: Vec<(String, Value)>,
 }
 
 /// A resolved having-range query. Shared by the prover and the verifier —
@@ -245,10 +265,17 @@ pub struct DriveDocumentHavingQuery<'a> {
     pub contract_id: [u8; 32],
     /// The document type name — a path segment.
     pub document_type_name: String,
-    /// The covering ranked index. Single-property by construction; its
-    /// one property is both the `GROUP BY` property and the last path
-    /// segment.
+    /// The covering ranked index. Its **last** property is the `GROUP
+    /// BY` property and the final path segment; any leading properties
+    /// are pinned by [`Self::equality_prefix_values`].
     pub index: &'a Index,
+    /// Encoded index-key bytes of each leading index property's pinned
+    /// value, in index-property order — empty for a single-property
+    /// index. Part of the prover/verifier agreement exactly as on the
+    /// ranked surface: the segments feed straight into the shared path
+    /// builder. Produced by
+    /// [`super::drive_document_ranked_query::index_picker::encode_equality_prefix_values`].
+    pub equality_prefix_values: Vec<Vec<u8>>,
     /// Inclusive bounds on the aggregate. Carry the axis; the index must
     /// declare the matching `ranked_*` flag.
     pub bounds: AxisRangeBounds,
@@ -271,7 +298,8 @@ pub struct DriveDocumentHavingQuery<'a> {
 #[cfg(any(feature = "server", feature = "verify"))]
 impl DriveDocumentHavingQuery<'_> {
     /// Path of the terminal property-name tree the axis secondary hangs
-    /// off — identical to the ranked surface's path, because both read
+    /// off — identical to the ranked surface's path (including the
+    /// pinned-prefix segments of a compound index), because both read
     /// the same indexed tree. See
     /// [`DriveDocumentRankedQuery::indexed_property_name_tree_path`](super::drive_document_ranked_query::DriveDocumentRankedQuery::indexed_property_name_tree_path).
     pub fn indexed_property_name_tree_path(&self) -> Result<Vec<Vec<u8>>, Error> {
@@ -279,6 +307,69 @@ impl DriveDocumentHavingQuery<'_> {
             &self.contract_id,
             &self.document_type_name,
             self.index,
+            &self.equality_prefix_values,
         )
     }
+}
+
+/// Resolve a validated [`DocumentHavingMode`] against a document type's
+/// indexes into the executable [`DriveDocumentHavingQuery`]: pick the
+/// covering index (shared with the ranked surface — both read the same
+/// indexed tree), encode the equality pins into prefix-value path
+/// segments, and assemble the query.
+///
+/// The **one** resolution path for the having surface, mirroring
+/// [`super::drive_document_ranked_query::index_picker::resolve_ranked_query_for_mode`]:
+/// the server's executors and the SDK's proof helpers both call it, so a
+/// proof and an unproven read (and the client's verification) are about
+/// the same subtree by construction.
+///
+/// `indexes` is threaded in separately for the same lifetime reason as
+/// the ranked resolver: the returned query's `&'a Index` must outlive
+/// this frame. Callers pass `document_type.indexes()`.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn resolve_having_query_for_mode<'a>(
+    contract_id: [u8; 32],
+    document_type: DocumentTypeRef<'a>,
+    document_type_name: String,
+    indexes: &'a BTreeMap<String, Index>,
+    mode: &DocumentHavingMode,
+    platform_version: &PlatformVersion,
+) -> Result<DriveDocumentHavingQuery<'a>, Error> {
+    let axis = mode.bounds.axis();
+    let pin_fields: Vec<String> = mode
+        .equality_pins
+        .iter()
+        .map(|(field, _)| field.clone())
+        .collect();
+    let index = find_ranked_index_for_axis(
+        indexes,
+        &mode.group_by_property,
+        &pin_fields,
+        axis,
+        &mode.aggregate_field,
+    )
+    .ok_or_else(|| {
+        Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
+            no_covering_index_message(
+                "having-range",
+                axis,
+                &mode.group_by_property,
+                &mode.equality_pins,
+                &mode.aggregate_field,
+            ),
+        ))
+    })?;
+    let equality_prefix_values =
+        encode_equality_prefix_values(document_type, index, &mode.equality_pins, platform_version)?;
+    Ok(DriveDocumentHavingQuery {
+        document_type,
+        contract_id,
+        document_type_name,
+        index,
+        equality_prefix_values,
+        bounds: mode.bounds,
+        descending: mode.descending,
+        limit: mode.limit,
+    })
 }
