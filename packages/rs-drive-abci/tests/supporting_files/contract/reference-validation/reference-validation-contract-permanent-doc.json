@@ -88,9 +88,22 @@
             "documentType": "note"
           }
         },
+        "crossContractNoteId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 4,
+          "refersTo": {
+            "type": "permanentDocument",
+            "contractId": "YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf",
+            "documentType": "note"
+          }
+        },
         "note": {
           "type": "string",
-          "position": 4,
+          "position": 5,
           "maxLength": 64
         }
       },

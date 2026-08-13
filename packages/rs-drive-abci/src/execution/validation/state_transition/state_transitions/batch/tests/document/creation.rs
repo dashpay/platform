@@ -5010,17 +5010,26 @@ mod creation_tests {
 
     const REFERENCE_VALIDATION_PERMANENT_DOC_CONTRACT_PATH: &str =
         "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc.json";
+    const REFERENCE_VALIDATION_PERMANENT_DOC_FOREIGN_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-foreign.json";
 
-    /// Registers the permanent-document fixture contract, creates and commits a
-    /// `note` document (its type has `canBeDeleted: false`), then creates a
-    /// `message` document mutated by the test and returns that second
-    /// transition's execution result. The mutator receives the committed note's
-    /// id so the happy path can point a reference at a document known to exist.
+    /// Committed documents the permanent-document reference tests can point at:
+    /// a `note` in the declaring contract and a `note` in the foreign fixture
+    /// contract (both types have `canBeDeleted: false`).
+    struct PermanentReferenceTargets {
+        note_id: Identifier,
+        foreign_note_id: Identifier,
+    }
+
+    /// Registers the permanent-document fixture contract and its foreign
+    /// counterpart, creates and commits a `note` document in each, then creates
+    /// a `message` document mutated by the test and returns that transition's
+    /// execution result.
     async fn run_permanent_document_reference_creation<F>(
         mutator: F,
     ) -> StateTransitionExecutionResult
     where
-        F: FnOnce(&mut Document, Identifier),
+        F: FnOnce(&mut Document, &PermanentReferenceTargets),
     {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
@@ -5044,71 +5053,90 @@ mod creation_tests {
             None,
         );
 
-        let note = contract
-            .document_type_for_name("note")
-            .expect("expected a note document type");
-
-        let note_entropy = Bytes32::random_with_rng(&mut rng);
-
-        let note_document = note
-            .random_document_with_identifier_and_entropy(
-                &mut rng,
-                identity.id(),
-                note_entropy,
-                DocumentFieldFillType::FillIfNotRequired,
-                DocumentFieldFillSize::AnyDocumentFillSize,
-                platform_version,
-            )
-            .expect("expected a random note document");
-
-        let note_id = note_document.id();
-
-        let note_create_transition =
-            BatchTransition::new_document_creation_transition_from_document(
-                note_document,
-                note,
-                note_entropy.0,
-                &key,
-                2,
-                0,
-                None,
-                &signer,
-                platform_version,
-                None,
-            )
-            .await
-            .expect("expect to create note batch transition");
-
-        let note_create_serialized_transition = note_create_transition
-            .serialize_to_bytes()
-            .expect("expected note batch serialized state transition");
-
-        let transaction = platform.drive.grove.start_transaction();
-
-        let processing_result = platform
-            .platform
-            .process_raw_state_transitions(
-                &[note_create_serialized_transition],
-                &platform_state,
-                &BlockInfo::default(),
-                &transaction,
-                platform_version,
-                false,
-                None,
-            )
-            .expect("expected to process state transition");
-
-        assert_matches!(
-            processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        let foreign_contract = setup_contract(
+            &platform.drive,
+            REFERENCE_VALIDATION_PERMANENT_DOC_FOREIGN_CONTRACT_PATH,
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            None,
         );
 
-        platform
-            .drive
-            .grove
-            .commit_transaction(transaction)
-            .unwrap()
-            .expect("expected to commit transaction");
+        let mut note_ids = Vec::new();
+
+        for (note_contract, nonce) in [(&contract, 2), (&foreign_contract, 3)] {
+            let note = note_contract
+                .document_type_for_name("note")
+                .expect("expected a note document type");
+
+            let note_entropy = Bytes32::random_with_rng(&mut rng);
+
+            let note_document = note
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    identity.id(),
+                    note_entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random note document");
+
+            note_ids.push(note_document.id());
+
+            let note_create_transition =
+                BatchTransition::new_document_creation_transition_from_document(
+                    note_document,
+                    note,
+                    note_entropy.0,
+                    &key,
+                    nonce,
+                    0,
+                    None,
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expect to create note batch transition");
+
+            let note_create_serialized_transition = note_create_transition
+                .serialize_to_bytes()
+                .expect("expected note batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[note_create_serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+        }
+
+        let targets = PermanentReferenceTargets {
+            note_id: note_ids[0],
+            foreign_note_id: note_ids[1],
+        };
 
         let message = contract
             .document_type_for_name("message")
@@ -5129,7 +5157,7 @@ mod creation_tests {
             )
             .expect("expected a random message document");
 
-        mutator(&mut document, note_id);
+        mutator(&mut document, &targets);
 
         let documents_batch_create_transition =
             BatchTransition::new_document_creation_transition_from_document(
@@ -5137,7 +5165,7 @@ mod creation_tests {
                 message,
                 entropy.0,
                 &key,
-                3,
+                4,
                 0,
                 None,
                 &signer,
@@ -5182,8 +5210,25 @@ mod creation_tests {
 
     #[tokio::test]
     async fn should_document_creation_succeed_when_referenced_permanent_document_exists() {
-        let result = run_permanent_document_reference_creation(|document, note_id| {
-            document.set("noteId", note_id.into());
+        let result = run_permanent_document_reference_creation(|document, targets| {
+            document.set("noteId", targets.note_id.into());
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_referenced_permanent_document_in_other_contract()
+    {
+        // Exercises the foreign-contract path: the referenced contract is
+        // fetched from state (billed), its document type resolved, and the
+        // referenced document's existence checked in that contract's tree
+        let result = run_permanent_document_reference_creation(|document, targets| {
+            document.set("crossContractNoteId", targets.foreign_note_id.into());
         })
         .await;
 
@@ -5213,8 +5258,8 @@ mod creation_tests {
     async fn should_document_creation_fail_when_referenced_document_type_is_deletable() {
         // The referenced document type exists but allows deletion, so even an
         // existing document of that type may not be referenced
-        let result = run_permanent_document_reference_creation(|document, note_id| {
-            document.set("deletableNoteId", note_id.into());
+        let result = run_permanent_document_reference_creation(|document, targets| {
+            document.set("deletableNoteId", targets.note_id.into());
         })
         .await;
 
@@ -5231,8 +5276,8 @@ mod creation_tests {
 
     #[tokio::test]
     async fn should_document_creation_fail_when_referenced_document_type_missing() {
-        let result = run_permanent_document_reference_creation(|document, note_id| {
-            document.set("unknownTypeNoteId", note_id.into());
+        let result = run_permanent_document_reference_creation(|document, targets| {
+            document.set("unknownTypeNoteId", targets.note_id.into());
         })
         .await;
 
@@ -5249,8 +5294,8 @@ mod creation_tests {
 
     #[tokio::test]
     async fn should_document_creation_fail_when_referenced_document_contract_missing() {
-        let result = run_permanent_document_reference_creation(|document, note_id| {
-            document.set("foreignNoteId", note_id.into());
+        let result = run_permanent_document_reference_creation(|document, targets| {
+            document.set("foreignNoteId", targets.note_id.into());
         })
         .await;
 
