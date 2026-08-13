@@ -292,11 +292,17 @@ impl DocumentQuery {
 
     /// Set the `HAVING` clauses (replaces any prior value).
     ///
-    /// Non-empty values are rejected by the server with
-    /// `QuerySyntaxError::Unsupported("HAVING clause is not yet
-    /// implemented")`. The builder exists so SDK callers can
-    /// encode `HAVING` ahead of server support landing without
-    /// another version bump.
+    /// From protocol version 14, a grouped aggregate query carrying
+    /// **exactly one** clause that bounds the selected aggregate with
+    /// a contiguous-range operator (`=`, `>`, `>=`, `<`, `<=`, the
+    /// `BETWEEN` variants) is served as a value-bounded range read of
+    /// the covering ranked index's axis secondary — fetch the result
+    /// through `DocumentHavingEntries::fetch`, which verifies the
+    /// proof including its completeness. The server still rejects
+    /// multiple clauses, a clause on a different aggregate than the
+    /// select's, and the non-contiguous operators (`!=`, `IN`);
+    /// protocol version 13 and earlier reject every non-empty
+    /// `having`.
     ///
     /// This is **not** how you ask for a ranking — see
     /// [`Self::order_by_selected_aggregate`].
