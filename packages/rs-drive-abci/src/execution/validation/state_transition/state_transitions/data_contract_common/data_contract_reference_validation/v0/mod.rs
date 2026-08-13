@@ -85,7 +85,8 @@ pub(super) fn validate_data_contract_references_v0(
                             )))?;
 
                         // The cost is added even if the referenced contract does not exist
-                        // or was cached
+                        // or was served from Drive's own contract cache; only locally
+                        // memoized repeats above skip it
                         execution_context
                             .add_operation(ValidationOperation::PrecalculatedOperation(fee));
 
