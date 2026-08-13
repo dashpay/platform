@@ -1327,6 +1327,7 @@ mod tests {
             "select * from profile",
             &dashpay_v2_fetch_info.contract,
             Some(&platform.config.drive),
+            PlatformVersion::get(14).expect("expected platform version 14"),
         )
         .expect("expected a document query");
         let query_results = platform

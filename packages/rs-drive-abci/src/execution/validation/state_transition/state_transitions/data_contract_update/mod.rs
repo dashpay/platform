@@ -3137,4 +3137,148 @@ mod tests {
             assert!(!docs_after.contains(&"old1".to_string()));
         }
     }
+
+    mod permanent_document_reference_declarations {
+        use super::*;
+        use dpp::consensus::state::state_error::StateError;
+        use drive::util::test_helpers::setup_contract;
+
+        const V1_PATH: &str =
+            "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-registration-valid.json";
+        const FOREIGN_CONTRACT_PATH: &str =
+            "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-foreign.json";
+
+        /// Applies the valid permanent-document reference fixture (and its
+        /// foreign counterpart) to the state, then processes an update built
+        /// from the given fixture at version 2 and returns the execution
+        /// result.
+        async fn run_contract_update(updated_fixture_path: &str) -> StateTransitionExecutionResult {
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let platform_state = platform.state.load();
+            let platform_version = platform_state
+                .current_platform_version()
+                .expect("expected to get current platform version");
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+
+            setup_contract(
+                &platform.drive,
+                FOREIGN_CONTRACT_PATH,
+                None,
+                None,
+                None::<fn(&mut DataContract)>,
+                None,
+                None,
+            );
+
+            let mut contract = json_document_to_contract(V1_PATH, true, platform_version)
+                .expect("expected to get data contract");
+
+            contract.set_owner_id(identity.id());
+            contract.set_config(DataContractConfig::default_for_version(platform_version).unwrap());
+
+            platform
+                .drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract successfully");
+
+            let mut updated_contract =
+                json_document_to_contract(updated_fixture_path, true, platform_version)
+                    .expect("expected to get updated data contract");
+
+            updated_contract.set_owner_id(identity.id());
+            updated_contract
+                .set_config(DataContractConfig::default_for_version(platform_version).unwrap());
+            updated_contract.set_version(2);
+
+            let data_contract_update_transition =
+                DataContractUpdateTransition::new_from_data_contract(
+                    updated_contract,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expect to create data contract update transition");
+
+            let data_contract_update_serialized_transition = data_contract_update_transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[data_contract_update_serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            processing_result
+                .execution_results()
+                .first()
+                .expect("expected one execution result")
+                .clone()
+        }
+
+        #[tokio::test]
+        async fn should_update_contract_adding_valid_permanent_document_reference() {
+            let result = run_contract_update(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-registration-update-good.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_contract_update_adding_invalid_permanent_document_reference() {
+            // The updated version adds a property referencing a document type
+            // the contract does not define
+            let result = run_contract_update(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-registration-update-bad.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentTypeNotFoundError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+    }
 }

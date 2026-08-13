@@ -793,8 +793,14 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
             .document_type_for_name(&request.document_type_name)
             .map_err(ProtocolError::DataContractError)?;
 
-        let internal_clauses = InternalClauses::extract_from_clauses(request.where_clauses.clone())
-            .map_err(Error::Drive)?;
+        // Client-side construction groups under the latest grammar; the
+        // server and the proof verifier enforce the network's protocol
+        // version at path-query lowering.
+        let internal_clauses = InternalClauses::extract_from_clauses(
+            request.where_clauses.clone(),
+            PlatformVersion::latest(),
+        )
+        .map_err(Error::Drive)?;
 
         let limit = if request.limit != 0 {
             Some(request.limit as u16)
