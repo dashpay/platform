@@ -133,8 +133,32 @@ pub fn apply(
     // Sweeps run last so a winner arriving in this very changeset has its
     // own rows committed before the removal below touches the coins it took.
     if !cs.swept_transactions.is_empty() {
-        let released: HashSet<dashcore::OutPoint> =
-            cs.swept_released_outpoints.iter().copied().collect();
+        // The released set describes the wallet when each sweep was emitted,
+        // and a round can fold in a later transaction that legitimately spent
+        // one of the freed coins. `core_utxos` never records *who* spent a
+        // row (`spent_in_txid` stays null on every write path), so unlike the
+        // mobile mirrors this cannot tell a live claim from the dead one by
+        // looking at the table — but the changeset carries the answer: any
+        // record in this round that is not itself being swept and spends a
+        // released outpoint is that live claim, and the coin stays spent.
+        let swept_txids: HashSet<dashcore::Txid> = cs
+            .swept_transactions
+            .iter()
+            .map(|swept| swept.txid)
+            .collect();
+        let claimed_by_survivors: HashSet<dashcore::OutPoint> = cs
+            .records
+            .iter()
+            .filter(|record| !swept_txids.contains(&record.txid))
+            .flat_map(|record| record.transaction.input.iter())
+            .map(|input| input.previous_output)
+            .collect();
+        let released: HashSet<dashcore::OutPoint> = cs
+            .swept_released_outpoints
+            .iter()
+            .filter(|outpoint| !claimed_by_survivors.contains(outpoint))
+            .copied()
+            .collect();
         for swept in &cs.swept_transactions {
             apply_sweep(tx, wallet_id, &swept.txid, &released)?;
         }
@@ -189,6 +213,14 @@ fn apply_sweep(
 
     tx.execute(
         "DELETE FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+        params![wallet_id.as_slice(), AsRef::<[u8]>::as_ref(loser_txid)],
+    )?;
+    // An InstantSend-locked loser is evictable by a chainlocked winner, so a
+    // swept transaction can own a row here. Nothing ties that table to
+    // `core_transactions` — no foreign key, no trigger — so the lock would
+    // outlive the transaction it describes forever.
+    tx.execute(
+        "DELETE FROM core_instant_locks WHERE wallet_id = ?1 AND txid = ?2",
         params![wallet_id.as_slice(), AsRef::<[u8]>::as_ref(loser_txid)],
     )?;
     let mut delete_output_stmt =

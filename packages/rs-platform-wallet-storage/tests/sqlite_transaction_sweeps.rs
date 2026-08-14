@@ -398,3 +398,169 @@ fn an_absent_winner_still_keeps_its_own_input_spent() {
     assert!(row_exists(&conn, &w, &taken_by_winner));
     assert!(row_exists(&conn, &w, &loser_exclusive));
 }
+
+/// A round can carry both a release and a later transaction that legitimately
+/// spends the freed coin: merging folds several events together, and every
+/// record is applied before sweeps. `core_utxos` never records who spent a
+/// row, so the release has to defer to the surviving record in the changeset
+/// itself — otherwise it hands a coin the later transaction consumed back to
+/// the unspent set.
+#[test]
+fn a_released_coin_a_surviving_record_reclaims_stays_spent() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xE4);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = p2pkh(0x04);
+    let funding_txid = Txid::from_byte_array([0x50; 32]);
+    let freed_coin = OutPoint::new(funding_txid, 1);
+
+    let loser_txid = Txid::from_byte_array([0x51; 32]);
+    let winner_txid = Txid::from_byte_array([0x52; 32]);
+    let reclaimer_txid = Txid::from_byte_array([0x53; 32]);
+
+    let loser = tx_record(
+        loser_txid,
+        vec![OutPoint::new(funding_txid, 0), freed_coin],
+        vec![TxOut {
+            value: 1_000,
+            script_pubkey: addr.script_pubkey(),
+        }],
+    );
+    let reclaimer = tx_record(
+        reclaimer_txid,
+        vec![freed_coin],
+        vec![TxOut {
+            value: 400,
+            script_pubkey: addr.script_pubkey(),
+        }],
+    );
+
+    let mut conn = persister.lock_conn_for_test();
+    derive_address(&conn, &w, 0, &addr);
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            new_utxos: vec![
+                make_utxo(&addr, funding_txid, 0, 500),
+                make_utxo(&addr, funding_txid, 1, 500),
+            ],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![loser],
+            spent_utxos: vec![
+                make_utxo(&addr, funding_txid, 0, 500),
+                make_utxo(&addr, funding_txid, 1, 500),
+            ],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    // One round: the sweep frees the coin, and a surviving record in the very
+    // same round already spent it.
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![reclaimer],
+            spent_utxos: vec![make_utxo(&addr, funding_txid, 1, 500)],
+            swept_transactions: vec![SweptTransaction {
+                txid: loser_txid,
+                superseded_by: winner_txid,
+            }],
+            swept_released_outpoints: vec![freed_coin],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    assert!(
+        !unspent(&conn, &w).contains(&freed_coin),
+        "a coin a surviving record in the same round already spent must stay spent"
+    );
+}
+
+/// A chainlocked winner may evict an InstantSend-locked loser, so a swept
+/// transaction can own a row in `core_instant_locks`. Nothing ties that table
+/// to `core_transactions`, so the lock has to be deleted explicitly or it
+/// outlives the transaction it describes forever.
+#[test]
+fn sweeping_a_transaction_deletes_its_instant_lock() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xE5);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = p2pkh(0x05);
+    let loser_txid = Txid::from_byte_array([0x60; 32]);
+    let loser = tx_record(
+        loser_txid,
+        vec![],
+        vec![TxOut {
+            value: 1_000,
+            script_pubkey: addr.script_pubkey(),
+        }],
+    );
+
+    let mut conn = persister.lock_conn_for_test();
+    derive_address(&conn, &w, 0, &addr);
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![loser],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.execute(
+            "INSERT INTO core_instant_locks (wallet_id, txid, islock_blob) VALUES (?1, ?2, ?3)",
+            params![
+                w.as_slice(),
+                AsRef::<[u8]>::as_ref(&loser_txid),
+                vec![0u8; 8]
+            ],
+        )
+        .unwrap();
+        tx.commit().unwrap();
+    }
+
+    assert_eq!(
+        instant_lock_count(&conn, &w, &loser_txid),
+        1,
+        "sanity: the lock is there"
+    );
+
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            swept_transactions: vec![SweptTransaction {
+                txid: loser_txid,
+                superseded_by: Txid::from_byte_array([0x61; 32]),
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    assert_eq!(
+        instant_lock_count(&conn, &w, &loser_txid),
+        0,
+        "the swept transaction's InstantLock must go with it"
+    );
+}
+
+fn instant_lock_count(conn: &rusqlite::Connection, w: &WalletId, txid: &Txid) -> i64 {
+    conn.query_row(
+        "SELECT COUNT(*) FROM core_instant_locks WHERE wallet_id = ?1 AND txid = ?2",
+        params![w.as_slice(), AsRef::<[u8]>::as_ref(txid)],
+        |row| row.get(0),
+    )
+    .unwrap()
+}
