@@ -2,6 +2,7 @@
 
 #[cfg(any(test, feature = "__test-helpers"))]
 use std::collections::BTreeMap;
+use std::collections::HashSet;
 
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
@@ -129,6 +130,96 @@ pub fn apply(
     if cs.last_processed_height.is_some() || cs.synced_height.is_some() {
         upsert_sync_state(tx, wallet_id, cs.last_processed_height, cs.synced_height)?;
     }
+    // Sweeps run last so a winner arriving in this very changeset has its
+    // own rows committed before the removal below touches the coins it took.
+    if !cs.swept_transactions.is_empty() {
+        let released: HashSet<dashcore::OutPoint> =
+            cs.swept_released_outpoints.iter().copied().collect();
+        for swept in &cs.swept_transactions {
+            apply_sweep(tx, wallet_id, &swept.txid, &released)?;
+        }
+    }
+    Ok(())
+}
+
+/// Delete a swept transaction's row and outputs, then resolve the coins it
+/// claimed to spend.
+///
+/// A swept transaction was a recorded spend that a later, final transaction
+/// provably beat to one of its inputs, so it can never confirm — the wallet
+/// has already dropped it. Leaving the mirrored row in place would hand it
+/// back at the next `load()` and replay a balance the wallet has already
+/// corrected. It would also leave an InstantSend loser answerable through
+/// `get_core_tx_record`, which sent-payment reconciliation reads as final and
+/// would use to advance a dead DashPay payment to `Confirmed`.
+///
+/// Deleting the row and the UTXOs it created is the easy half. The coins it
+/// claimed to *spend* split in two, and `released` — computed upstream and
+/// carried on the changeset — is the authority on which is which: an input
+/// named there came free, because no surviving transaction spends it too;
+/// every other input the loser claimed was taken by the transaction that beat
+/// it and is gone for good.
+///
+/// Recomputing that split here is not an option even though this schema
+/// stores whole records. The transaction that took the rest need not be
+/// wallet-relevant at all — it can spend our coin while paying only external
+/// addresses, and then it is never recorded anywhere in this store — and even
+/// a relevant one is not guaranteed to arrive in the same round as the sweep.
+///
+/// Idempotent: a txid this store never recorded is a successful no-op, not an
+/// error. A sweep can legitimately name a transaction this wallet dropped, or
+/// never derived an address for in the first place.
+fn apply_sweep(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    loser_txid: &dashcore::Txid,
+    released: &HashSet<dashcore::OutPoint>,
+) -> Result<(), WalletStorageError> {
+    let loser_blob: Option<Vec<u8>> = tx
+        .query_row(
+            "SELECT record_blob FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+            params![wallet_id.as_slice(), AsRef::<[u8]>::as_ref(loser_txid)],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(loser_blob) = loser_blob else {
+        return Ok(());
+    };
+    let loser: TransactionRecord = blob::decode(&loser_blob)?;
+
+    tx.execute(
+        "DELETE FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+        params![wallet_id.as_slice(), AsRef::<[u8]>::as_ref(loser_txid)],
+    )?;
+    let mut delete_output_stmt =
+        tx.prepare_cached("DELETE FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2")?;
+    for vout in 0..loser.transaction.output.len() as u32 {
+        let op = blob::encode_outpoint(&dashcore::OutPoint {
+            txid: *loser_txid,
+            vout,
+        })?;
+        delete_output_stmt.execute(params![wallet_id.as_slice(), &op[..]])?;
+    }
+    drop(delete_output_stmt);
+
+    // Each input is set outright rather than only touched when it changes:
+    // whichever way it went, the row must end this round agreeing with the
+    // wallet, and a coin the sweep did not free stays out of the unspent
+    // query even if nothing had marked it spent yet (upstream sweeps only
+    // unconfirmed records, whose spends this schema does not mark).
+    let mut spend_stmt = tx.prepare_cached(
+        "UPDATE core_utxos SET spent = ?3 WHERE wallet_id = ?1 AND outpoint = ?2",
+    )?;
+    for input in &loser.transaction.input {
+        let outpoint = input.previous_output;
+        let key = blob::encode_outpoint(&outpoint)?;
+        spend_stmt.execute(params![
+            wallet_id.as_slice(),
+            &key[..],
+            !released.contains(&outpoint)
+        ])?;
+    }
+
     Ok(())
 }
 
