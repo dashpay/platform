@@ -86,6 +86,7 @@ use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::types::epoch::Epoch;
 use dash_sdk::{Sdk, SdkBuilder};
+use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::dashcore::consensus::encode::{deserialize, serialize};
 use dpp::dashcore::secp256k1::Secp256k1;
 use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
@@ -194,12 +195,19 @@ fn parse_network(s: &str) -> Result<Network, String> {
 /// Append `KEY=value` lines to the mode-600 credentials file. Creates
 /// the file if absent; never truncates.
 fn append_creds(path: &str, lines: &[(String, String)]) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
     let mut f = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .mode(0o600)
         .open(path)
         .map_err(|e| format!("failed to open creds file {path}: {e}"))?;
+    // `.mode(0o600)` only applies to a freshly created inode. If the file
+    // already existed with looser permissions, tighten it to 0600 BEFORE
+    // writing any secret, so a pre-existing world-readable file cannot
+    // silently keep exposing the keys we are about to append.
+    f.set_permissions(std::fs::Permissions::from_mode(0o600))
+        .map_err(|e| format!("failed to enforce mode 600 on {path}: {e}"))?;
     for (k, v) in lines {
         writeln!(f, "{k}={v}").map_err(|e| format!("failed to write creds file: {e}"))?;
     }
@@ -219,15 +227,60 @@ fn read_creds_value(path: &str, key: &str) -> Result<Option<String>, String> {
         .map(str::to_string))
 }
 
-/// Message for a proof-wait timeout that makes the failure NON-stranding:
-/// the asset lock is already broadcast and on-chain, so the funds are not
-/// lost — they are pending. It names the recoverable one-time key and the
-/// exact command to resume without spending new funds.
-fn strand_safe_timeout(txid: &Txid, out_env: &str, waiting_for: &str) -> String {
+/// Minimum asset-lock funding, in duffs, that an identity-create with
+/// `key_count` keys needs to clear its required-balance validation. Mirrors
+/// `IdentityCreateTransition::calculate_min_required_fee` (versioned): the
+/// asset-lock processing-start floor plus, on fee-calc v1+, the base
+/// identity-create cost and the per-key creation cost. Locking below this
+/// broadcasts and mines a transaction whose identity-create then fails —
+/// stranding the funds, the exact failure this tool exists to avoid.
+fn min_asset_lock_duffs(key_count: u32, pv: &PlatformVersion) -> u64 {
+    let identities = &pv.dpp.state_transitions.identities;
+    let floor_credits = identities
+        .asset_locks
+        .required_asset_lock_duff_balance_for_processing_start_for_identity_create
+        .saturating_mul(CREDITS_PER_DUFF);
+    let required_credits = match identities.calculate_min_required_fee_on_identity_create_transition
+    {
+        0 => floor_credits,
+        _ => {
+            let min_fees = &pv.fee_version.state_transition_min_fees;
+            min_fees.identity_create_base_cost.saturating_add(
+                floor_credits.saturating_add(
+                    min_fees
+                        .identity_key_in_creation_cost
+                        .saturating_mul(key_count as u64),
+                ),
+            )
+        }
+    };
+    // Convert the required credits back to the minimum asset-lock duffs
+    // (ceil, so rounding never lands us a duff short).
+    required_credits.div_ceil(CREDITS_PER_DUFF)
+}
+
+/// Message for a proof-wait timeout that makes the failure NON-stranding.
+/// The funds are recoverable via the saved one-time key either way, but the
+/// finality claim must match what Core actually reported: `chainlocked=false`
+/// means the tx may still be unconfirmed/in the mempool (verify in Core
+/// first), while `chainlocked=true` means only Platform's catch-up timed out.
+fn strand_safe_timeout(txid: &Txid, out_env: &str, chainlocked: bool) -> String {
+    let state = if chainlocked {
+        "The asset lock IS broadcast and ChainLocked on L1 — only Platform's catch-up to that \
+         core height timed out. The funds are NOT lost; re-running will finish once Platform \
+         has caught up."
+            .to_string()
+    } else {
+        format!(
+            "The asset lock was broadcast but Core has NOT yet reported it as ChainLocked — it may \
+             still be unconfirmed or in the mempool. The funds are NOT lost. First verify in Core \
+             (`getrawtransaction {txid} 1` → chainlock:true); resume only once it is chainlocked."
+        )
+    };
     format!(
-        "timed out waiting for {waiting_for}.\n\
-         The asset lock IS broadcast and on-chain — the funds are NOT lost, only pending.\n\
-         The one-time key that owns it is saved in {out_env} (ASSET_LOCK_ONE_TIME_WIF).\n\
+        "timed out waiting for the ChainLock proof.\n\
+         {state}\n\
+         The one-time key that owns the lock is saved in {out_env} (ASSET_LOCK_ONE_TIME_WIF__{txid}).\n\
          Resume WITHOUT spending new funds by re-running the same command plus:\n\
          \x20   --resume-txid {txid}\n\
          Do NOT re-run without --resume-txid — that broadcasts a second asset lock and strands this one."
@@ -250,12 +303,31 @@ async fn run() -> Result<(), String> {
     let network = parse_network(&args.network)?;
     let platform_version = PlatformVersion::latest();
 
+    // Key count: lower bound (need MASTER + HIGH + CRITICAL) and Platform's
+    // versioned upper bound. Exceeding the max would sign and broadcast the
+    // irreversible funding tx before the SDK rejects the over-large transition.
+    let max_key_count = platform_version
+        .dpp
+        .state_transitions
+        .identities
+        .max_public_keys_in_creation;
     if args.key_count < 3 {
         return Err("--key-count must be >= 3 (need MASTER + CRITICAL + HIGH keys)".to_string());
+    }
+    if args.key_count > max_key_count as u32 {
+        return Err(format!(
+            "--key-count {} exceeds Platform's identity-create limit of {} \
+             (max_public_keys_in_creation); the transition would be rejected AFTER the funding \
+             transaction is broadcast",
+            args.key_count, max_key_count
+        ));
     }
 
     let core_password = std::env::var("CORE_RPC_PASSWORD")
         .ok()
+        // An exported-but-empty CORE_RPC_PASSWORD must NOT shadow
+        // --core-rpc-password; treat it as unset.
+        .filter(|p| !p.is_empty())
         .or(args.core_rpc_password.clone())
         .ok_or_else(|| {
             "Core RPC password required: set CORE_RPC_PASSWORD or pass --core-rpc-password"
@@ -265,6 +337,21 @@ async fn run() -> Result<(), String> {
     let amount_duffs = (args.fund_dash * DUFFS_PER_DASH as f64) as u64;
     if amount_duffs == 0 {
         return Err("--fund-dash must be > 0".to_string());
+    }
+    // Reject an asset lock below the identity-create minimum BEFORE locking
+    // funds: a smaller lock is broadcast and mined, then its identity-create
+    // fails required-balance validation and the funds are stranded. Only the
+    // fresh path spends; a resume reuses an existing lock.
+    if args.resume_txid.is_none() {
+        let min_duffs = min_asset_lock_duffs(args.key_count, platform_version);
+        if amount_duffs < min_duffs {
+            return Err(format!(
+                "--fund-dash {} = {} duffs is below the identity-create minimum of {} duffs for {} \
+                 keys (asset-lock floor + base + per-key create fee); a smaller lock would be \
+                 broadcast and then stranded when registration fails its required-balance check",
+                args.fund_dash, amount_duffs, min_duffs, args.key_count
+            ));
+        }
     }
 
     // --- Platform SDK (DAPI + Core for quorum public keys) ---
@@ -340,21 +427,22 @@ async fn run() -> Result<(), String> {
     // --- Obtain the asset lock: resume an existing one, or create+broadcast ---
     let (txid, one_time_private_key): (Txid, PrivateKey) = if let Some(resume) = &args.resume_txid {
         // RESUME: reuse an already-broadcast asset lock — NO new funds spent.
-        // The one-time key that owns the lock is read from the credentials
-        // file written before the original broadcast; the freshly generated
-        // identity keys are recorded now so the resumed identity is
-        // recoverable too.
+        // Read the one-time key SCOPED TO THIS txid, so a credentials file that
+        // accumulated several asset locks cannot pair the requested txid with a
+        // different lock's one-time key. Identity keys are written on success
+        // below, not here.
         let txid =
             Txid::from_str(resume.trim()).map_err(|e| format!("invalid --resume-txid: {e}"))?;
-        let wif = read_creds_value(&args.out_env, "ASSET_LOCK_ONE_TIME_WIF")?.ok_or_else(|| {
+        let wif_key = format!("ASSET_LOCK_ONE_TIME_WIF__{txid}");
+        let wif = read_creds_value(&args.out_env, &wif_key)?.ok_or_else(|| {
             format!(
-                "resume needs ASSET_LOCK_ONE_TIME_WIF in {} (the one-time key that owns the asset lock)",
+                "resume found no {wif_key} in {} — the one-time key for txid {txid} is not recorded \
+                 there; point --out-env at the credentials file written when this lock was created",
                 args.out_env
             )
         })?;
         let one_time_private_key = PrivateKey::from_wif(wif.trim())
-            .map_err(|e| format!("failed to parse ASSET_LOCK_ONE_TIME_WIF: {e}"))?;
-        append_creds(&args.out_env, &identity_creds)?;
+            .map_err(|e| format!("failed to parse {wif_key}: {e}"))?;
         eprintln!(
             "Resuming existing asset-lock tx {txid} (no new broadcast; no new funds spent)..."
         );
@@ -370,7 +458,17 @@ async fn run() -> Result<(), String> {
         let one_time_key_hash = one_time_public_key.pubkey_hash();
         let one_time_address = Address::p2pkh(&one_time_public_key, network);
 
-        let tx = build_asset_lock_transaction(&core, amount_duffs, &one_time_key_hash)?;
+        let tx = build_asset_lock_transaction(
+            &core,
+            amount_duffs,
+            &one_time_key_hash,
+            platform_version
+                .dpp
+                .state_transitions
+                .identities
+                .asset_locks
+                .max_asset_lock_transaction_inputs,
+        )?;
         let unsigned_hex = hex::encode(serialize(&tx));
 
         eprintln!(
@@ -393,33 +491,59 @@ async fn run() -> Result<(), String> {
             deserialize(&signed.hex).map_err(|e| format!("failed to parse signed tx: {e}"))?;
         let txid = signed_tx.txid();
 
-        // Capture recovery credentials BEFORE broadcast: once on-chain, the
-        // locked funds are recoverable only via the one-time key + outpoint.
-        let mut pre_creds: Vec<(String, String)> = vec![
-            ("ASSET_LOCK_TXID".to_string(), txid.to_string()),
-            (
-                "ASSET_LOCK_ONE_TIME_WIF".to_string(),
-                one_time_private_key.to_wif(),
-            ),
-            (
-                "ASSET_LOCK_ONE_TIME_ADDRESS".to_string(),
-                one_time_address.to_string(),
-            ),
-            (
-                "ASSET_LOCK_FUND_DASH".to_string(),
-                args.fund_dash.to_string(),
-            ),
-        ];
-        pre_creds.extend(identity_creds.iter().cloned());
-        append_creds(&args.out_env, &pre_creds)?;
+        // Capture recovery credentials BEFORE broadcast, SCOPED TO THIS txid so
+        // multiple asset locks in one file never cross-contaminate. Identity
+        // keys are written only on success (below), so the file never advertises
+        // keys that do not control the registered identity.
+        append_creds(
+            &args.out_env,
+            &[
+                ("ASSET_LOCK_TXID".to_string(), txid.to_string()),
+                (
+                    format!("ASSET_LOCK_ONE_TIME_WIF__{txid}"),
+                    one_time_private_key.to_wif(),
+                ),
+                (
+                    format!("ASSET_LOCK_ONE_TIME_ADDRESS__{txid}"),
+                    one_time_address.to_string(),
+                ),
+                (
+                    format!("ASSET_LOCK_FUND_DASH__{txid}"),
+                    args.fund_dash.to_string(),
+                ),
+            ],
+        )?;
         eprintln!(
-            "Recovery credentials written to {} before broadcast.",
+            "Recovery credentials (scoped to {txid}) written to {} before broadcast.",
             args.out_env
         );
 
-        let broadcast_txid = core
-            .send_raw_transaction(signed_hex.as_str())
-            .map_err(|e| format!("sendrawtransaction failed: {e}"))?;
+        // sendrawtransaction can return a transport error AFTER Core already
+        // accepted the tx. Do not treat that as a clean failure: check Core,
+        // proceed if the tx is there, otherwise report the ambiguity and the
+        // resume path rather than inviting a blind re-run (a second lock).
+        let broadcast_txid = match core.send_raw_transaction(signed_hex.as_str()) {
+            Ok(t) => t,
+            Err(e) => match core.get_raw_transaction_info(&txid, None) {
+                Ok(_) => {
+                    eprintln!(
+                        "sendrawtransaction returned an error ({e}) but tx {txid} is present in \
+                         Core — treating as broadcast."
+                    );
+                    txid
+                }
+                Err(_) => {
+                    return Err(format!(
+                        "sendrawtransaction failed ({e}) and tx {txid} is NOT yet visible in Core \
+                         — acceptance is ambiguous. Recovery credentials (scoped to {txid}) are \
+                         saved in {}. Check Core: `getrawtransaction {txid} 1`. If it appears, \
+                         resume with --resume-txid {txid}; do NOT blindly re-run, which could \
+                         broadcast a second asset lock.",
+                        args.out_env
+                    ));
+                }
+            },
+        };
         if broadcast_txid != txid {
             return Err(format!(
                 "broadcast txid {broadcast_txid} does not match signed txid {txid}"
@@ -434,15 +558,20 @@ async fn run() -> Result<(), String> {
     // 1. Wait for Core to report the tx as ChainLocked and give its height.
     let core_chain_locked_height: u32 = loop {
         if started.elapsed() > PROOF_TIMEOUT {
-            return Err(strand_safe_timeout(
-                &txid,
-                &args.out_env,
-                "the asset-lock tx to be ChainLocked",
-            ));
+            // Not yet chainlocked when we gave up.
+            return Err(strand_safe_timeout(&txid, &args.out_env, false));
         }
-        let info = core
-            .get_raw_transaction_info(&txid, None)
-            .map_err(|e| format!("getrawtransaction failed: {e}"))?;
+        // A transient Core RPC error after broadcast is retryable — the asset
+        // lock is already on-chain, so keep polling until PROOF_TIMEOUT rather
+        // than forcing manual recovery over a brief transport blip.
+        let info = match core.get_raw_transaction_info(&txid, None) {
+            Ok(info) => info,
+            Err(e) => {
+                eprintln!("transient: getrawtransaction failed ({e}); retrying in 2s...");
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                continue;
+            }
+        };
         if info.chainlock {
             let h = info
                 .height
@@ -460,15 +589,20 @@ async fn run() -> Result<(), String> {
     //    drive will accept the proof.
     loop {
         if started.elapsed() > PROOF_TIMEOUT {
-            return Err(strand_safe_timeout(
-                &txid,
-                &args.out_env,
-                "platform to reach the ChainLocked core height",
-            ));
+            // Chainlocked on L1; only Platform's catch-up timed out.
+            return Err(strand_safe_timeout(&txid, &args.out_env, true));
         }
-        let (_epoch, metadata) = Epoch::fetch_current_with_metadata(&sdk)
-            .await
-            .map_err(|e| format!("failed to fetch platform metadata: {e}"))?;
+        // Transient DAPI metadata-fetch errors are retryable for the same
+        // reason: the lock is chainlocked and recoverable, so retry until the
+        // timeout instead of bailing to manual recovery.
+        let metadata = match Epoch::fetch_current_with_metadata(&sdk).await {
+            Ok((_epoch, metadata)) => metadata,
+            Err(e) => {
+                eprintln!("transient: platform metadata fetch failed ({e}); retrying in 2s...");
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                continue;
+            }
+        };
         if metadata.core_chain_locked_height >= core_chain_locked_height {
             break;
         }
@@ -511,7 +645,33 @@ async fn run() -> Result<(), String> {
     let balance = registered.balance();
     let total_elapsed = started.elapsed();
 
-    // Persist final identity facts (key material already written pre-broadcast).
+    // Write the identity key material ONLY now that registration succeeded, and
+    // ONLY if the on-chain identity actually carries the keys we generated. If
+    // the asset lock had already produced an identity in a prior run,
+    // put_to_platform resolves the AlreadyExists response by fetching that
+    // identity — whose keys are NOT ours. Advertising ours would hand out keys
+    // that cannot sign for it.
+    let our_key_data: std::collections::BTreeSet<Vec<u8>> = key_material
+        .iter()
+        .map(|(pk, _)| pk.data().as_slice().to_vec())
+        .collect();
+    let onchain_key_data: std::collections::BTreeSet<Vec<u8>> = registered
+        .public_keys()
+        .values()
+        .map(|pk| pk.data().as_slice().to_vec())
+        .collect();
+    if our_key_data == onchain_key_data {
+        append_creds(&args.out_env, &identity_creds)?;
+    } else {
+        eprintln!(
+            "WARNING: identity {identity_id_b58} already existed with different keys (from a prior \
+             run); this run's freshly generated keys do NOT control it and were NOT written to {}. \
+             The controlling keys are whatever the original run saved.",
+            args.out_env
+        );
+    }
+
+    // Persist final identity facts.
     append_creds(
         &args.out_env,
         &[
@@ -549,6 +709,7 @@ fn build_asset_lock_transaction(
     core: &Client,
     amount_duffs: u64,
     one_time_key_hash: &dpp::dashcore::PubkeyHash,
+    max_inputs: u16,
 ) -> Result<Transaction, String> {
     let target = amount_duffs
         .checked_add(ASSET_LOCK_FEE_DUFFS)
@@ -581,6 +742,19 @@ fn build_asset_lock_transaction(
     if selected < target {
         return Err(format!(
             "faucet wallet has insufficient spendable funds: need {target} duffs, have {selected}"
+        ));
+    }
+    // Platform rejects an asset-lock proof whose transaction has more than
+    // `max_asset_lock_transaction_inputs` inputs. Core would still sign, mine,
+    // and chainlock such a tx, but every Platform use of its proof would be
+    // invalid — the locked output permanently unusable. Refuse before signing.
+    if inputs.len() > max_inputs as usize {
+        return Err(format!(
+            "funding this amount needs {} inputs, but Platform's asset-lock cap is {} \
+             (max_asset_lock_transaction_inputs); the lock would be unusable. Consolidate the \
+             faucet wallet into fewer, larger UTXOs or lock a smaller amount",
+            inputs.len(),
+            max_inputs
         ));
     }
     let change_script = change_script.expect("at least one input selected");
@@ -683,13 +857,40 @@ mod tests {
         let txid =
             Txid::from_str("c913da3655688c10c79e0d8b8e059c94625b939cfa99e848f0f24dc48ec4f685")
                 .unwrap();
-        let msg = strand_safe_timeout(&txid, "/tmp/creds.env", "the tx to be ChainLocked");
+        // Post-ChainLock timeout message.
+        let msg = strand_safe_timeout(&txid, "/tmp/creds.env", true);
+        // Pre-ChainLock message must NOT assert L1 finality it hasn't established.
+        let pre = strand_safe_timeout(&txid, "/tmp/creds.env", false);
+        assert!(pre.contains("--resume-txid") && pre.to_lowercase().contains("not lost"));
+        assert!(msg.contains("ChainLocked on L1"));
         // Must name the txid, the creds path, and the exact resume flag, and must
         // reassure the funds are not lost — that is the whole point of the change.
         assert!(msg.contains("c913da3655688c10c79e0d8b8e059c94625b939cfa99e848f0f24dc48ec4f685"));
         assert!(msg.contains("/tmp/creds.env"));
         assert!(msg.contains("--resume-txid"));
         assert!(msg.to_lowercase().contains("not lost"));
+    }
+
+    #[test]
+    fn min_asset_lock_clears_the_floor_and_grows_with_keys() {
+        // The minimum guard exists so a lock below the identity-create
+        // requirement is never broadcast (which would strand it): the computed
+        // minimum must be at least the versioned processing-start floor and must
+        // increase as more keys are added.
+        let pv = PlatformVersion::latest();
+        let floor = pv
+            .dpp
+            .state_transitions
+            .identities
+            .asset_locks
+            .required_asset_lock_duff_balance_for_processing_start_for_identity_create;
+        let min3 = min_asset_lock_duffs(3, pv);
+        let min6 = min_asset_lock_duffs(6, pv);
+        assert!(
+            min3 >= floor,
+            "minimum must clear the processing-start floor"
+        );
+        assert!(min6 > min3, "more keys must require a larger minimum lock");
     }
 
     #[test]
