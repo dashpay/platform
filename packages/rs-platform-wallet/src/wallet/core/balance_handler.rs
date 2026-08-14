@@ -50,6 +50,15 @@ impl EventHandler for BalanceUpdateHandler {
             }
             | WalletEvent::BlockProcessed {
                 wallet_id, balance, ..
+            }
+            // A sweep is the one event that can lower the balance: the
+            // removed transactions' outputs are gone from the UTXO set.
+            // The snapshot it carries is post-removal, like every other
+            // variant's, so it routes identically — dropping it would
+            // leave the corrected-away amount on screen until the next
+            // balance-bearing event happened to arrive.
+            | WalletEvent::TransactionsSwept {
+                wallet_id, balance, ..
             } => (wallet_id, balance),
             // No balance on SyncHeightAdvanced — checkpoint advance only.
             WalletEvent::SyncHeightAdvanced { .. } => return,

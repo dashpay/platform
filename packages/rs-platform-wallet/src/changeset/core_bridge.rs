@@ -712,6 +712,32 @@ async fn build_core_changeset(
             cs.account_highest_used = account_highest_used;
             cs
         }
+        WalletEvent::TransactionsSwept {
+            txids,
+            superseded_by,
+            ..
+        } => {
+            // The only subtractive event upstream emits. Each txid was a
+            // recorded spend that `superseded_by` beat to an input, so it can
+            // never confirm and the wallet has already dropped it. Mirroring
+            // the removal is not optional: every other arm here appends, so a
+            // persister that skipped this would keep the dead rows, hand them
+            // back on the next load, and re-create the balance the wallet
+            // just corrected — the exact bug the upstream sweep fixes.
+            //
+            // No `spent_utxos` entry for the inputs: the winner's own record
+            // flows through `TransactionDetected` / `BlockProcessed` and
+            // claims them. This arm only names the dead.
+            tracing::debug!(
+                swept = txids.len(),
+                superseded_by = %superseded_by,
+                "Mirroring swept transactions to the persister"
+            );
+            CoreChangeSet {
+                swept_txids: txids.clone(),
+                ..CoreChangeSet::default()
+            }
+        }
         WalletEvent::SyncHeightAdvanced { height, .. } => CoreChangeSet {
             synced_height: Some(*height),
             ..CoreChangeSet::default()
@@ -1116,6 +1142,7 @@ impl CoreChangeSet {
     /// circuits on the common case.
     fn is_empty_no_records(&self) -> bool {
         self.records.is_empty()
+            && self.swept_txids.is_empty()
             && self.spent_utxos.is_empty()
             && self.new_utxos.is_empty()
             && self.instant_locks_for_non_final_records.is_empty()
@@ -1125,6 +1152,78 @@ impl CoreChangeSet {
             && self.addresses_derived.is_empty()
             && self.addresses_marked_used.is_empty()
             && self.account_highest_used.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod swept_transaction_projection_tests {
+    //! Coverage for the one subtractive arm of [`build_core_changeset`].
+    //!
+    //! A sweep carries txids and no records, so it has to survive the
+    //! `is_empty_no_records` filter on the strength of the txids alone —
+    //! that filter is what decides whether the persister is called at all,
+    //! and a sweep that never reaches it leaves the dead rows on disk.
+
+    use super::*;
+    use dashcore::hashes::Hash;
+    use dashcore::Txid;
+    use key_wallet::WalletCoreBalance;
+    use key_wallet_manager::WalletManager;
+
+    const WALLET_ID: WalletId = [7u8; 32];
+
+    fn test_manager() -> Arc<RwLock<WalletManager<PlatformWalletInfo>>> {
+        Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
+            dashcore::Network::Testnet,
+        )))
+    }
+
+    fn txid(byte: u8) -> Txid {
+        Txid::from_byte_array([byte; 32])
+    }
+
+    fn swept(txids: Vec<Txid>) -> WalletEvent {
+        WalletEvent::TransactionsSwept {
+            wallet_id: WALLET_ID,
+            txids,
+            superseded_by: txid(0xff),
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn sweep_names_the_dead_transactions_and_nothing_else() {
+        let cs = build_core_changeset(&test_manager(), &swept(vec![txid(1), txid(2)])).await;
+
+        assert_eq!(cs.swept_txids, vec![txid(1), txid(2)]);
+        // The winner's own claim on the inputs arrives through its own
+        // record; this arm must not invent UTXO deltas of its own.
+        assert!(cs.records.is_empty(), "a sweep carries no records");
+        assert!(cs.spent_utxos.is_empty(), "a sweep spends nothing");
+        assert!(cs.new_utxos.is_empty(), "a sweep creates nothing");
+    }
+
+    #[tokio::test]
+    async fn sweep_reaches_the_persister() {
+        let cs = build_core_changeset(&test_manager(), &swept(vec![txid(1)])).await;
+
+        assert!(
+            !cs.is_empty_no_records(),
+            "a sweep-only round must not be filtered out as empty — that \
+             filter decides whether the persister is called at all"
+        );
+        assert!(!Merge::is_empty(&cs));
+    }
+
+    #[tokio::test]
+    async fn merged_sweeps_name_each_transaction_once() {
+        let mut cs = build_core_changeset(&test_manager(), &swept(vec![txid(1), txid(2)])).await;
+        let second = build_core_changeset(&test_manager(), &swept(vec![txid(2), txid(3)])).await;
+
+        cs.merge(second);
+
+        assert_eq!(cs.swept_txids, vec![txid(1), txid(2), txid(3)]);
     }
 }
 

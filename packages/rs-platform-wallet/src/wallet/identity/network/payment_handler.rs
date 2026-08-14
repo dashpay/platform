@@ -251,7 +251,14 @@ fn dashpay_payment_records(event: &WalletEvent) -> Vec<&TransactionRecord> {
         WalletEvent::BlockProcessed {
             inserted, updated, ..
         } => inserted.iter().chain(updated.iter()).collect(),
+        // `TransactionsSwept` carries txids, not records: the wallet has
+        // already dropped the records these name. A sent DashPay payment
+        // whose transaction was swept stays `Pending` here — the hooks
+        // below only ever advance a payment forward, and inventing a
+        // failure transition off this event is a change to the payment
+        // state machine, not to event routing.
         WalletEvent::TransactionInstantLocked { .. }
+        | WalletEvent::TransactionsSwept { .. }
         | WalletEvent::SyncHeightAdvanced { .. }
         | WalletEvent::ChainLockProcessed { .. } => Vec::new(),
     }
@@ -274,7 +281,12 @@ fn drives_payment_hooks(event: &WalletEvent) -> bool {
         WalletEvent::BlockProcessed {
             inserted, updated, ..
         } => !inserted.is_empty() || !updated.is_empty(),
-        WalletEvent::SyncHeightAdvanced { .. } | WalletEvent::ChainLockProcessed { .. } => false,
+        // No records to route (see `dashpay_payment_records`), so a task
+        // here would take and release the wallet-manager write lock for
+        // nothing.
+        WalletEvent::TransactionsSwept { .. }
+        | WalletEvent::SyncHeightAdvanced { .. }
+        | WalletEvent::ChainLockProcessed { .. } => false,
     }
 }
 

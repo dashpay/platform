@@ -62,10 +62,10 @@ use crate::wallet::identity::{
 /// `WalletEvent` bus delivers.
 ///
 /// Built by the platform-wallet event adapter from `WalletEvent` variants
-/// emitted by `WalletManager`. Every field is purely additive — the
-/// merge implementation uses last-write-wins for the height watermarks
-/// (monotonic-max), `extend` for the records / utxos vecs, and
-/// last-write-wins for the IS-lock map.
+/// emitted by `WalletManager`. Every field is additive except
+/// [`Self::swept_txids`] — the merge implementation uses last-write-wins for
+/// the height watermarks (monotonic-max), `extend` for the records / utxos
+/// vecs, and last-write-wins for the IS-lock map.
 ///
 /// # Why a projection instead of the upstream type
 ///
@@ -197,6 +197,23 @@ pub struct CoreChangeSet {
     /// lower height never overwrites a higher one — chain locks are
     /// strictly forward-advancing per upstream's contract).
     pub last_applied_chain_lock: Option<ChainLock>,
+
+    /// Transactions the wallet **removed**: each was a recorded spend that a
+    /// later, final transaction provably beat to one of its inputs, so it can
+    /// never confirm. From `WalletEvent::TransactionsSwept`.
+    ///
+    /// The one subtractive field on this type. Every other field is additive,
+    /// which is exactly why this one has to exist: a persister that only ever
+    /// appends keeps the dead rows and replays them on the next load,
+    /// re-creating a balance the wallet has already corrected. The persister
+    /// deletes the transaction rows named here along with any UTXO they
+    /// created, and drops its spend attribution to them — the transaction that
+    /// actually took those inputs re-asserts its own claim through `records` /
+    /// `spent_utxos`.
+    ///
+    /// Deduplicated on merge: a sweep is idempotent, and a flush can fold
+    /// several sweeps together.
+    pub swept_txids: Vec<Txid>,
 }
 
 /// Highest-used derivation index per pool slot for one account, as
@@ -332,10 +349,25 @@ impl Merge for CoreChangeSet {
                 .or_default()
                 .merge_max(indexes);
         }
+
+        // Sweeps: append, first-seen order, deduplicated. Deleting the
+        // same txid twice is harmless at the persister, so the dedup is
+        // only there to keep a coalesced round's payload honest about how
+        // many distinct transactions died.
+        if !other.swept_txids.is_empty() {
+            let mut seen: std::collections::HashSet<Txid> =
+                self.swept_txids.iter().copied().collect();
+            for txid in other.swept_txids {
+                if seen.insert(txid) {
+                    self.swept_txids.push(txid);
+                }
+            }
+        }
     }
 
     fn is_empty(&self) -> bool {
         self.records.is_empty()
+            && self.swept_txids.is_empty()
             && self.spent_utxos.is_empty()
             && self.new_utxos.is_empty()
             && self.instant_locks_for_non_final_records.is_empty()
