@@ -63,14 +63,25 @@ interface TxoDao {
 
     /**
      * Mark one outpoint unspent again — a coin a sweep released, meaning no
-     * surviving transaction spends it.
+     * surviving transaction spent it *at the time the sweep was computed*.
      *
      * Keyed by outpoint rather than by spender because that is how upstream
-     * reports it: the transaction that took the *other* inputs may never be
+     * reports it: the transaction that took the other inputs may never be
      * recorded here at all, so the released set is the only authority on
      * which coins came free.
+     *
+     * `spendingTxid IS NULL` is what keeps that from overreaching. A round
+     * can carry both a release and a later transaction that legitimately
+     * spends the freed coin — merging folds several events together, and
+     * every record is written before sweeps are processed — so by the time
+     * this runs the coin may already be claimed again. Only rows
+     * [holdSpentWithoutSpender] just detached qualify; anything a live
+     * transaction still claims keeps that claim.
      */
-    @Query("UPDATE txos SET isSpent = 0, spendingTxid = NULL, spendingInputIndex = NULL WHERE outpoint = :outpoint")
+    @Query(
+        "UPDATE txos SET isSpent = 0, spendingInputIndex = NULL " +
+            "WHERE outpoint = :outpoint AND spendingTxid IS NULL",
+    )
     suspend fun releaseByOutpoint(outpoint: ByteArray)
 
     @Upsert

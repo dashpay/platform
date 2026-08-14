@@ -1035,6 +1035,12 @@ class PlatformWalletPersistenceHandler(
             // Hold every input first, then free the ones upstream named: the
             // released set is wallet-scoped across the round's removals, so
             // it is applied once rather than per transaction.
+            //
+            // The order is load-bearing, not cosmetic. Holding detaches the
+            // rows this round's removals still claim, and the release only
+            // touches detached rows — so a coin some later transaction in the
+            // same round already re-claimed keeps that claim instead of being
+            // freed out from under it.
             for (txid in txids) {
                 db.txoDao().holdSpentWithoutSpender(txid)
             }

@@ -2218,6 +2218,98 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun aReleasedCoinAlreadyReclaimedInTheSameRoundKeepsItsNewSpender() = runTest {
+        // A round can carry both a release and a later transaction that
+        // legitimately spends the freed coin: merging folds several events
+        // together, and every record is written before sweeps are processed.
+        // By the time the release runs the coin is claimed again, and freeing
+        // it would hand a spent coin back to the restore set.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yUtxoAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 50 }
+        val sweptTxid = ByteArray(32) { 51 }
+        val winnerTxid = ByteArray(32) { 52 }
+        val reclaimerTxid = ByteArray(32) { 53 }
+        val freedCoin = makeOutpoint(fundingTxid, 1)
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, fundingTxid, ByteArray(10) { 4 }, 2, 100, ByteArray(32) { 7 },
+            1_700_000_000, 0, "Standard", 0, 140_000, 0, false, "", 1_699_999_000,
+            ByteArray(0), 0,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 100_000, "yUtxoAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 1, 40_000, "yUtxoAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // The doomed transaction claims both coins, unconfirmed as every
+        // swept loser is.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, sweptTxid, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -140_000, 0, false, "", 1_700_000_050,
+            makeOutpoint(fundingTxid, 0) + freedCoin, 2,
+        )
+        handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 0, sweptTxid)
+        handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 1, sweptTxid)
+        handler.onChangesetEnd(walletId, success = true)
+
+        // One round now carries the winner, the sweep releasing the coin the
+        // winner did not take, and a later transaction that already spent
+        // that freed coin. Records are applied first, sweeps last.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, winnerTxid, ByteArray(10) { 6 }, 2, 101, ByteArray(32) { 8 },
+            1_700_000_100, 1, "Standard", 0, -100_000, 0, false, "", 1_700_000_090,
+            makeOutpoint(fundingTxid, 0), 1,
+        )
+        handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 0, winnerTxid)
+        handler.onWalletChangesetTransaction(
+            walletId, reclaimerTxid, ByteArray(10) { 7 }, 2, 102, ByteArray(32) { 9 },
+            1_700_000_200, 1, "Standard", 0, -40_000, 0, false, "", 1_700_000_150,
+            freedCoin, 1,
+        )
+        handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 1, reclaimerTxid)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(sweptTxid), arrayOf(winnerTxid), arrayOf(freedCoin),
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertNull("the swept transaction row is still gone", db.transactionDao().getByTxid(sweptTxid))
+
+        val reclaimed = db.txoDao().getByOutpoint(freedCoin)!!
+        assertTrue(
+            "the later spender keeps its claim",
+            reclaimerTxid.contentEquals(reclaimed.spendingTxid),
+        )
+        assertTrue("so the coin stays spent", reclaimed.isSpent)
+        assertTrue(
+            "and never returns to the restore set",
+            handler.onLoadWalletList().single().utxos.isEmpty(),
+        )
+    }
+
+    @Test
     fun sweptTransactionRollsBackWithItsRound() = runTest {
         // The deletion is staged in the same buffered transaction as every
         // other write in the round, so a round that fails must not take the
