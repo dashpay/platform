@@ -5495,14 +5495,25 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     }
 
     /// The 36-byte outpoints spent by this wallet's unresolved asset locks
-    /// (`statusRaw < 2`), decoded from their persisted funding transactions.
-    /// Deduplicated, since two locks built from the same UTXO name the same
-    /// outpoint and the caller does one fetch per element.
+    /// (`statusRaw < 2`), decoded from the funding transaction each lock row
+    /// carries. Deduplicated, since two locks built from the same UTXO name
+    /// the same outpoint and the caller does one fetch per element.
     ///
-    /// The relationship cannot answer this: `PersistentTransaction.inputs` is
-    /// the inverse of `PersistentTxo.spendingTransaction`, so for exactly the
-    /// case that matters — the outpoint taken by a *different* transaction —
-    /// it points at the winner and the lock's own edge is absent.
+    /// The bytes come from `PersistentAssetLock.transactionBytes`, not from a
+    /// `PersistentTransaction` row: a Built / Broadcast lock whose own
+    /// transaction never reached the transaction table is precisely the state
+    /// this path exists for, and its input can still have been taken by a
+    /// confirmed spender. Requiring the row would skip that lock and leave
+    /// the restored conflict map blind — the startup proof-wait this branch
+    /// is fixing. The lock row is also the authoritative copy: it is what
+    /// `buildAssetLockRestoreBuffer` hands Rust, and a row without those
+    /// bytes is dropped there as broken.
+    ///
+    /// The relationship cannot answer this either: `PersistentTransaction.
+    /// inputs` is the inverse of `PersistentTxo.spendingTransaction`, so for
+    /// exactly the case that matters — the outpoint taken by a *different*
+    /// transaction — it points at the winner and the lock's own edge is
+    /// absent.
     private func unresolvedAssetLockInputs(walletId: Data) -> [Data] {
         let descriptor = FetchDescriptor<PersistentAssetLock>(
             predicate: #Predicate { entry in
@@ -5517,15 +5528,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         var outpoints: [Data] = []
         var seen = Set<Data>()
         for lock in locks {
-            guard let outpoint = decodeOutPointHex(lock.outPointHex) else { continue }
-            let txidData = Data(outpoint.prefix(32))
-            var txDescriptor = FetchDescriptor<PersistentTransaction>(
-                predicate: #Predicate { $0.txid == txidData }
-            )
-            txDescriptor.fetchLimit = 1
-            guard let txRow = try? backgroundContext.fetch(txDescriptor).first,
-                  !txRow.transactionData.isEmpty,
-                  let decoded = try? TransactionDecoder.decode(txRow.transactionData, network: network)
+            guard !lock.transactionBytes.isEmpty,
+                  let decoded = try? TransactionDecoder.decode(
+                      lock.transactionBytes,
+                      network: network
+                  )
             else { continue }
 
             for input in decoded.inputs {

@@ -270,7 +270,16 @@ fn first_confirmed_input_conflict(
             .get_key_value(input)
             .filter(|(_, spend)| spend.spender != lock_txid && spend.in_block)
     }) {
-        return Some((*input, spend.spender, spend.height, spend.chain_locked));
+        // Same boundary fallback as the history scan below: a restored row
+        // stays at its persisted context, so a spender mined below a
+        // chainlock the wallet applied later reads as merely `InBlock`.
+        // Reporting that as not-chain-locked understates the finality the
+        // host is asked to act on.
+        let spender_chain_locked = spend.chain_locked
+            || chain_locked_height
+                .zip(spend.height)
+                .is_some_and(|(boundary, spender_height)| spender_height <= boundary);
+        return Some((*input, spend.spender, spend.height, spender_chain_locked));
     }
 
     info.core_wallet
@@ -672,7 +681,10 @@ mod tests {
     use std::time::Duration;
 
     use async_trait::async_trait;
+    use dashcore::bls_sig_utils::BLSSignature;
+    use dashcore::ephemerealdata::chain_lock::ChainLock;
     use dashcore::hashes::Hash;
+    use dashcore::prelude::CoreBlockHeight;
     use dashcore::{BlockHash, Network, OutPoint, Transaction, TxIn, Txid};
     use key_wallet::account::account_collection::AccountCollection;
     use key_wallet::account::account_type::StandardAccountType;
@@ -1227,6 +1239,15 @@ mod tests {
         /// the way the FFI load path does — the only source available at
         /// app-launch catch-up, when `transaction_history()` is empty.
         async fn restore_spend(&self, spender: Txid, in_block: bool) {
+            self.restore_spend_with(spender, in_block, in_block).await
+        }
+
+        /// As [`Self::restore_spend`], but with the persisted row's
+        /// chainlock flag chosen independently of `in_block` — the state a
+        /// spender mined before a chainlock the wallet applied later is
+        /// restored in, since the promotion that would have set the flag
+        /// never ran against the stored row.
+        async fn restore_spend_with(&self, spender: Txid, in_block: bool, chain_locked: bool) {
             let mut wm = self.wallet_manager.write().await;
             let info = wm
                 .get_wallet_info_mut(&self.wallet_id)
@@ -1237,9 +1258,24 @@ mod tests {
                     spender,
                     height: in_block.then_some(1_532_949),
                     in_block,
-                    chain_locked: in_block,
+                    chain_locked,
                 },
             );
+        }
+
+        /// Park the wallet's applied-chainlock watermark at `height`
+        /// without running the promotion pass, so restored rows keep the
+        /// pre-chainlock context they were persisted with.
+        async fn set_chain_lock_boundary(&self, height: CoreBlockHeight) {
+            let mut wm = self.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&self.wallet_id)
+                .expect("wallet must remain registered");
+            info.core_wallet.metadata.last_applied_chain_lock = Some(ChainLock {
+                block_height: height,
+                block_hash: BlockHash::all_zeros(),
+                signature: BLSSignature::from([0u8; 96]),
+            });
         }
 
         /// File `record` in the wallet's BIP44 account by direct map
@@ -1362,6 +1398,38 @@ mod tests {
             0,
             "the screen must fire before the re-broadcast"
         );
+    }
+
+    /// A restored spender mined below a chainlock the wallet applied later
+    /// is final, even though its persisted row still says `InBlock`: the
+    /// promotion that would have flipped the row is exactly what the
+    /// restore path never ran. Reporting `spender_chain_locked: false`
+    /// there understates the finality the host acts on — the history scan
+    /// already consults the boundary, and the restored branch must match.
+    #[tokio::test]
+    async fn restored_spend_below_the_chainlock_boundary_reports_final() {
+        let fixture = ConflictFixture::new().await;
+        fixture.track(AssetLockStatus::Broadcast, None).await;
+
+        let spender_txid = transaction_spending(fixture.funded_input()).txid();
+        fixture.restore_spend_with(spender_txid, true, false).await;
+        fixture.set_chain_lock_boundary(1_532_950).await;
+
+        let error = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect_err("a double-spent asset lock must fail, not wait");
+        match error {
+            PlatformWalletError::AssetLockInputConflict {
+                spender_chain_locked,
+                ..
+            } => assert!(
+                spender_chain_locked,
+                "a spender at or below the applied chainlock is final"
+            ),
+            other => panic!("expected AssetLockInputConflict, got {other:?}"),
+        }
     }
 
     /// A restored spender that never reached a block proves nothing — a
