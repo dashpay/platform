@@ -82,7 +82,7 @@ derive_more = { version = "1.0", features = ["from", "deref", "deref_mut"] }
 async-trait = "0.1.77"
 console-subscriber = { version = "0.4", optional = true }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f", optional = true }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "0100cb833075621659a68ddd3696baecc98e55b8" }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "63df14c27c4b9ad47881141a213af6d92ef8d10f" }
 nonempty = "0.11"
 # Shielded-pool snapshot needs raw RocksDB SstFileWriter + ingest_external_file_cf
 # bindings, and blake3 for the snapshot-file checksum.
@@ -107,7 +107,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
 drive = { path = "../rs-drive", features = ["fixtures-and-mocks"] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 strategy-tests = { path = "../strategy-tests" }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "0100cb833075621659a68ddd3696baecc98e55b8", features = ["client"] }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "63df14c27c4b9ad47881141a213af6d92ef8d10f", features = ["client"] }
 assert_matches = "1.5.0"
 drive-abci = { path = ".", features = ["testing-config", "mocks", "shielded_test_data"] }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f" }
@@ -121,8 +121,8 @@ integer-encoding = { version = "4.0.0" }
 
 # For dump_only_default_and_aux_cfs_under_shielded_subtree_prefix — same
 # subtree-prefix algorithm grovedb uses internally.
-grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "0100cb833075621659a68ddd3696baecc98e55b8" }
-grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "0100cb833075621659a68ddd3696baecc98e55b8" }
+grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "63df14c27c4b9ad47881141a213af6d92ef8d10f" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "63df14c27c4b9ad47881141a213af6d92ef8d10f" }
 
 [features]
 default = ["bls-signatures"]
