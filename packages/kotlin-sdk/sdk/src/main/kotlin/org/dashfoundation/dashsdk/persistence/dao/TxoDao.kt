@@ -60,6 +60,24 @@ interface TxoDao {
     @Query("UPDATE txos SET isSpent = 0, spendingTxid = NULL, spendingInputIndex = NULL WHERE spendingTxid = :spendingTxid")
     suspend fun releaseSpendClaim(spendingTxid: ByteArray)
 
+    /**
+     * Hold the coins [spendingTxid] named out of the restore set, without
+     * naming a spender for them.
+     *
+     * The sweep counterpart to [releaseSpendClaim], for the case where the
+     * transaction that actually settled these inputs is not in this store —
+     * a winner paying only to outside addresses is never recorded here. A
+     * swept loser is always unconfirmed, so its inputs sit at
+     * `isSpent = 0`; deleting it would otherwise return every one of them,
+     * including the one the winner consumed, as spendable.
+     *
+     * The coins that really are free come back the authoritative way: the
+     * wallet re-delivers them as UTXOs after a rescan, and the utxo-added
+     * path clears a mark with no spender behind it.
+     */
+    @Query("UPDATE txos SET isSpent = 1, spendingTxid = NULL, spendingInputIndex = NULL WHERE spendingTxid = :spendingTxid")
+    suspend fun holdSpentWithoutSpender(spendingTxid: ByteArray)
+
     @Upsert
     suspend fun upsert(txo: TxoEntity)
 

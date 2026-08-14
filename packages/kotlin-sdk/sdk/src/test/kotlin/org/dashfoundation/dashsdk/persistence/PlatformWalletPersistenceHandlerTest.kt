@@ -2040,9 +2040,9 @@ class PlatformWalletPersistenceHandlerTest {
         // to drop it too — otherwise the row comes back on the next load and
         // re-creates a balance the wallet already corrected.
         //
-        // The loser spends A and B; the winner (wallet-relevant, so its
-        // record rides in the same round) takes only A. A must stay spent —
-        // the winner has it — while B goes back to spendable.
+        // Shape: the loser (unconfirmed, as every swept loser is) spends A
+        // and B; the winner is wallet-relevant, in-block, and takes only A.
+        // A must stay out of the restore set, B must return to it.
         handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
         val xpub = ByteArray(78) { 30 }
         handler.onPersistAccountRegistration(
@@ -2066,7 +2066,7 @@ class PlatformWalletPersistenceHandlerTest {
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransaction(
             walletId, fundingTxid, ByteArray(10) { 4 }, 2, 100, ByteArray(32) { 7 },
-            1_700_000_000, 0, "Standard", 0, 100_000, 0, false, "", 1_699_999_000,
+            1_700_000_000, 0, "Standard", 0, 140_000, 0, false, "", 1_699_999_000,
             ByteArray(0), 0,
         )
         // A (vout 0) and B (vout 1).
@@ -2080,25 +2080,29 @@ class PlatformWalletPersistenceHandlerTest {
         )
         handler.onChangesetEnd(walletId, success = true)
 
-        // The doomed transaction: spends both coins, creates change of its
-        // own, in-block so `isSpent` flips.
+        // The doomed transaction: mempool context — upstream only ever
+        // sweeps unconfirmed records, so its inputs are linked to it without
+        // `isSpent` ever flipping.
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransaction(
-            walletId, sweptTxid, ByteArray(10) { 5 }, 2, 101, ByteArray(32) { 8 },
-            1_700_000_100, 1, "Standard", 0, -140_000, 0, false, "", 1_700_000_050,
+            walletId, sweptTxid, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -140_000, 0, false, "", 1_700_000_050,
             makeOutpoint(fundingTxid, 0) + makeOutpoint(fundingTxid, 1), 2,
         )
         handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 0, sweptTxid)
         handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 1, sweptTxid)
         handler.onWalletChangesetUtxoAdded(
             walletId, sweptTxid, 0, 60_000, "yUtxoAddr", ByteArray(25) { 6 },
-            101, false, true, false, false,
+            0, false, false, false, false,
         )
         handler.onChangesetEnd(walletId, success = true)
-        assertTrue(db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))!!.isSpent)
+        assertFalse(
+            "a pre-block spender links but must not flip isSpent",
+            db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))!!.isSpent,
+        )
 
-        // The winner arrives and re-points A at itself, then the sweep runs
-        // — the ordering the persist path guarantees inside one round.
+        // The winner confirms, taking A, then the sweep runs — the ordering
+        // the persist path guarantees inside one round.
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransaction(
             walletId, winnerTxid, ByteArray(10) { 6 }, 2, 102, ByteArray(32) { 9 },
@@ -2126,16 +2130,18 @@ class PlatformWalletPersistenceHandlerTest {
         val released = db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 1))!!
         assertFalse("the loser's own input is free again", released.isSpent)
         assertNull(released.spendingTxid)
-        assertEquals(1, handler.onLoadWalletList().single().utxos.size)
+        val restored = handler.onLoadWalletList().single().utxos.single()
+        assertEquals(1, restored.vout)
     }
 
     @Test
-    fun sweepByAnIrrelevantWinnerKeepsTheSpendClaim() = runTest {
+    fun sweepByAnIrrelevantWinnerHoldsTheInputsOutOfTheRestoreSet() = runTest {
         // The winner can spend our coin and pay only outside addresses. It
         // sweeps the loser all the same, but no record for it ever reaches
-        // the persister — so nothing here can tell the input the winner took
-        // from one only the loser named. Releasing would hand a coin that is
-        // provably gone back to the wallet as spendable, so the claim stands.
+        // the persister. A swept loser is unconfirmed, so its input is
+        // linked at `isSpent = 0` — deleting the loser and stopping there
+        // would return a coin the chain has already spent to the restore set
+        // as spendable.
         handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
         val xpub = ByteArray(78) { 30 }
         handler.onPersistAccountRegistration(
@@ -2170,12 +2176,13 @@ class PlatformWalletPersistenceHandlerTest {
 
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransaction(
-            walletId, sweptTxid, ByteArray(10) { 5 }, 2, 101, ByteArray(32) { 8 },
-            1_700_000_100, 1, "Standard", 0, -100_000, 0, false, "", 1_700_000_050,
+            walletId, sweptTxid, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -100_000, 0, false, "", 1_700_000_050,
             makeOutpoint(fundingTxid, 0), 1,
         )
         handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 0, sweptTxid)
         handler.onChangesetEnd(walletId, success = true)
+        assertFalse(db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))!!.isSpent)
 
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransactionsSwept(
@@ -2184,12 +2191,26 @@ class PlatformWalletPersistenceHandlerTest {
         handler.onChangesetEnd(walletId, success = true)
 
         assertNull(db.transactionDao().getByTxid(sweptTxid))
-        val stillSpent = db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))!!
-        assertTrue("the coin the winner consumed must not come back", stillSpent.isSpent)
+        val held = db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))!!
+        assertTrue("the coin the unrecorded winner may have taken is held", held.isSpent)
+        assertNull("with no spender invented for it", held.spendingTxid)
         assertTrue(
             "and it stays out of the restore set",
             handler.onLoadWalletList().single().utxos.isEmpty(),
         )
+
+        // The wallet is the authority on which of those coins are actually
+        // free: re-delivering one as a UTXO (what a rescan does) lifts the
+        // hold.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 100_000, "yUtxoAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertFalse(db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))!!.isSpent)
+        assertEquals(1, handler.onLoadWalletList().single().utxos.size)
     }
 
     @Test

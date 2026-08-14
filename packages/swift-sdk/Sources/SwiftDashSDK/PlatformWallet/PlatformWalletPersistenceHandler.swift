@@ -876,19 +876,33 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// cascades), as do its pending inputs. The coins it claimed to *spend*
     /// are the delicate part, because the two kinds are not alike:
     ///
-    /// - inputs the winner also took are still spent, by the winner;
-    /// - inputs only the loser named are free again.
+    /// - inputs the winner also took are gone, spent by the winner;
+    /// - inputs only the loser named are untouched on chain.
     ///
-    /// Upstream keeps exactly that split. A winner that is wallet-relevant
-    /// has already re-pointed the shared inputs at itself earlier in this
-    /// same round, so releasing whatever still points at the loser releases
-    /// precisely the loser's extra inputs. A winner that is *not*
-    /// wallet-relevant — it can spend our coin and pay only outside
-    /// addresses — sends no record at all, and then nothing distinguishes
-    /// the two kinds here: releasing would hand a coin the winner consumed
-    /// back to the wallet as spendable, so the claims are left standing.
-    /// The wallet's own state agrees; it holds no UTXO for either kind, and
-    /// upstream documents a rescan as the recovery path for the freed ones.
+    /// Note what a swept loser actually looks like here. Upstream only ever
+    /// sweeps *unconfirmed* records, and this store flips `isSpent` only for
+    /// a spender that reached a block — so the loser's inputs are linked to
+    /// it with `isSpent == false`. Deleting the row nils the link, and doing
+    /// nothing else would put every one of those coins straight back into
+    /// the restore set, including the one the winner consumed.
+    ///
+    /// So the two cases are handled by what the store can actually prove:
+    ///
+    /// - the winner is known here — it is wallet-relevant and its record
+    ///   re-pointed the inputs it took at itself earlier in this same round,
+    ///   so whatever still points at the loser is the loser's own, and stays
+    ///   spendable;
+    /// - the winner is absent — it pays only outside addresses and no record
+    ///   for it ever arrives. Nothing distinguishes the two kinds then, so
+    ///   every one of the loser's inputs is held out of the restore set. The
+    ///   wallet's own state agrees: it holds no UTXO for either kind. The
+    ///   coins that really are free come back the authoritative way, when
+    ///   the wallet re-delivers them as UTXOs after a rescan (see
+    ///   `upsertUtxo`, which clears a mark left with no spender).
+    ///
+    /// Handing back a coin the chain has already spent is the one outcome
+    /// that cannot be undone from here, so that is the direction the
+    /// uncertainty is resolved in.
     ///
     /// Transaction rows are shared across wallets by design (see
     /// `PersistentTransaction`), and a sweep is a statement about the
@@ -914,12 +928,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         winnerDescriptor.fetchLimit = 1
         let winnerIsKnown = try backgroundContext.fetch(winnerDescriptor).first != nil
 
-        if winnerIsKnown {
-            for txo in row.inputs {
-                txo.spendingTransaction = nil
-                txo.isSpent = false
-                txo.lastUpdated = Date()
-            }
+        for txo in row.inputs {
+            txo.isSpent = !winnerIsKnown
+            txo.spendingTransaction = nil
+            txo.lastUpdated = Date()
         }
         backgroundContext.delete(row)
     }
@@ -1406,6 +1418,17 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         record.isInstantLocked = utxo.is_instantlocked
         record.isLocked = utxo.is_locked
         record.lastUpdated = Date()
+
+        // The wallet is handing this outpoint over as a UTXO, so it holds it
+        // unspent — authoritative, and the only thing that can lift a mark
+        // left with no spender on record. `applySweptTransaction` parks the
+        // inputs of a sweep it cannot resolve in exactly that state; a
+        // rescan re-delivering the coin lands here and frees it. A row whose
+        // spend is still on record is left alone: the pending-input resolve
+        // below owns that transition.
+        if record.isSpent, record.spendingTransaction == nil {
+            record.isSpent = false
+        }
 
         // Attach the `PersistentCoreAddress` row, if we have one. The
         // address-emit pass typically runs ahead of the SPV-utxo pass

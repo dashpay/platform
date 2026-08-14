@@ -13,8 +13,11 @@ import DashSDKFFI
 /// next load, and re-creates a balance the wallet has already corrected —
 /// the bug the upstream sweep exists to fix, one layer up.
 ///
-/// The fixtures model the shape that makes the coins tricky: the loser
-/// spends A and B, the winner takes only A.
+/// The fixtures model the shape that makes the coins tricky: an unconfirmed
+/// loser — upstream sweeps nothing else — spends A and B, and the winner
+/// takes only A. Because the loser never reached a block, this store never
+/// flipped `isSpent` on either coin, so both are one deleted row away from
+/// re-entering the restore set.
 @MainActor
 final class SweptTransactionPersistTests: XCTestCase {
 
@@ -47,11 +50,12 @@ final class SweptTransactionPersistTests: XCTestCase {
             blockHeight: 100,
             netAmount: 140_000
         )
+        // Mempool context: the only kind of record upstream sweeps.
         let swept = PersistentTransaction(
             txid: sweptTxid,
             transactionData: Data(repeating: 0x05, count: 10),
-            context: 2,
-            blockHeight: 101,
+            context: 0,
+            blockHeight: 0,
             netAmount: -140_000
         )
         context.insert(funding)
@@ -72,7 +76,10 @@ final class SweptTransactionPersistTests: XCTestCase {
             winner = nil
         }
 
-        // A — the coin the winner also takes.
+        // A — the coin the winner also takes. When the winner is
+        // wallet-relevant its confirmed record owns the link and the flag;
+        // otherwise A is left where the unconfirmed loser put it, linked and
+        // unspent, which is what makes it indistinguishable from B.
         let coinA = PersistentTxo(
             transaction: funding,
             vout: 0,
@@ -81,11 +88,11 @@ final class SweptTransactionPersistTests: XCTestCase {
             height: 100
         )
         coinA.walletId = walletId
-        coinA.isSpent = true
+        coinA.isSpent = winner != nil
         coinA.spendingTransaction = winner ?? swept
         context.insert(coinA)
 
-        // B — named only by the loser.
+        // B — named only by the loser, and so still unspent.
         let coinB = PersistentTxo(
             transaction: funding,
             vout: 1,
@@ -94,7 +101,6 @@ final class SweptTransactionPersistTests: XCTestCase {
             height: 100
         )
         coinB.walletId = walletId
-        coinB.isSpent = true
         coinB.spendingTransaction = swept
         context.insert(coinB)
 
@@ -103,7 +109,7 @@ final class SweptTransactionPersistTests: XCTestCase {
             vout: 0,
             amount: 60_000,
             address: "yChangeAddr",
-            height: 101
+            height: 0
         )
         change.walletId = walletId
         context.insert(change)
@@ -194,11 +200,11 @@ final class SweptTransactionPersistTests: XCTestCase {
     }
 
     /// A winner that pays only to outside addresses sweeps the loser without
-    /// ever being recorded here. Nothing then distinguishes the coin it
-    /// consumed from the loser's extras, and releasing would hand a coin
-    /// that is provably gone back to the wallet as spendable — so every
-    /// claim stands.
-    func testSweepByAnIrrelevantWinnerKeepsTheSpendClaims() throws {
+    /// ever being recorded here. The loser was unconfirmed, so both coins it
+    /// named are linked to it and unspent — deleting it and stopping there
+    /// would return the one the chain already spent to the restore set. With
+    /// nothing to tell the two apart, both are held instead.
+    func testSweepByAnIrrelevantWinnerHoldsTheInputsOutOfTheRestoreSet() throws {
         let (handler, container) = try makeHandler()
         try seedSpend(in: container, winnerTakesA: false)
 
@@ -212,7 +218,63 @@ final class SweptTransactionPersistTests: XCTestCase {
                 coin!.isSpent,
                 "a coin the unrecorded winner may have consumed must not come back"
             )
+            XCTAssertNil(coin!.spendingTransaction, "and no spender is invented for it")
         }
+    }
+
+    /// The wallet decides which of the held coins are actually free: it
+    /// re-delivers them as UTXOs after a rescan, and that lifts the hold.
+    /// Without this the conservative branch above would be permanent.
+    func testWalletReDeliveringAHeldCoinFreesIt() throws {
+        let (handler, container) = try makeHandler()
+        try seedSpend(in: container, winnerTakesA: false)
+        sweep(handler, [(loser: sweptTxid, winner: winnerTxid)])
+        XCTAssertTrue(txo(container, txid: fundingTxid, vout: 1)!.isSpent)
+
+        redeliverCoinB(handler)
+
+        let freed = txo(container, txid: fundingTxid, vout: 1)
+        XCTAssertNotNil(freed)
+        XCTAssertFalse(freed!.isSpent, "the wallet holds it as a UTXO, so the hold is lifted")
+        XCTAssertNil(freed!.spendingTransaction)
+    }
+
+    /// Hand coin B back through the ordinary account changeset, the way a
+    /// rescan that re-finds the funding transaction does.
+    private func redeliverCoinB(_ handler: PlatformWalletPersistenceHandler) {
+        let name = strdup("Standard { index: 0 }")
+        let address = strdup("yFundAddr")
+        defer {
+            free(name)
+            free(address)
+        }
+
+        var utxo = UtxoEntryFFI()
+        Swift.withUnsafeMutableBytes(of: &utxo.outpoint.txid) { dst in
+            fundingTxid.withUnsafeBytes { src in dst.copyMemory(from: src) }
+        }
+        utxo.outpoint.vout = 1
+        utxo.amount = 40_000
+        utxo.address = address
+        utxo.height = 100
+        utxo.is_confirmed = true
+
+        handler.beginChangeset(walletId: walletId)
+        withUnsafeMutablePointer(to: &utxo) { utxoPtr in
+            var account = AccountChangeSetFFI()
+            account.account_type_name = name
+            account.utxos_added = utxoPtr
+            account.utxos_added_count = 1
+            withUnsafeMutablePointer(to: &account) { accountPtr in
+                var cs = WalletChangeSetFFI()
+                cs.accounts = accountPtr
+                cs.accounts_count = 1
+                withUnsafePointer(to: &cs) { csPtr in
+                    handler.persistWalletChangeset(walletId: walletId, changeset: csPtr)
+                }
+            }
+        }
+        _ = handler.endChangeset(walletId: walletId, success: true)
     }
 
     /// A txid the store has never seen is not an error: sweeps are
