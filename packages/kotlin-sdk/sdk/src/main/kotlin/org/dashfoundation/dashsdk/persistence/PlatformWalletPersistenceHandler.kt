@@ -988,17 +988,27 @@ class PlatformWalletPersistenceHandler(
     /**
      * Delete the mirror of transactions the wallet swept.
      *
-     * Each was a recorded spend that a later, final transaction beat to one
-     * of its inputs, so it can never confirm and Rust has already dropped
-     * it. Keeping the rows would hand them back at the next load and
-     * re-create a balance the wallet has already corrected.
+     * Each was a recorded spend that its winner beat to one of its inputs,
+     * so it can never confirm and Rust has already dropped it. Keeping the
+     * rows would hand them back at the next load and re-create a balance the
+     * wallet has already corrected.
      *
      * The TXOs the transaction created go with it (`txos.txid` cascades).
-     * The ones it *spent* need the explicit release below first: the
-     * foreign key nulls `spendingTxid` on delete but leaves `isSpent` set,
-     * which would strand the coin as spent by a transaction that no longer
-     * exists — and once the link is nulled there is nothing left to find
-     * those rows by.
+     * The ones it *spent* split in two, and the winner is what tells them
+     * apart: inputs the winner also took are still spent, inputs only the
+     * loser named are free again.
+     *
+     * A wallet-relevant winner has already re-pointed the shared inputs at
+     * itself earlier in this round, so releasing whatever still points at
+     * the loser releases exactly the loser's extras. A winner that pays only
+     * to outside addresses sends no record at all — nothing here can tell
+     * the two kinds apart then, and releasing would hand a coin the winner
+     * consumed back to the wallet as spendable, so the claims stand. The
+     * wallet holds no UTXO for either kind either; upstream documents a
+     * rescan as the recovery path for the freed ones.
+     *
+     * The release has to run before the delete: the foreign key nulls
+     * `spendingTxid` on delete, and after that nothing finds those rows.
      *
      * Transaction rows are keyed by txid alone, shared across wallets by
      * design, and a sweep is a statement about the transaction rather than
@@ -1008,11 +1018,15 @@ class PlatformWalletPersistenceHandler(
     override fun onWalletChangesetTransactionsSwept(
         walletId: ByteArray,
         txids: Array<ByteArray>,
+        supersededBy: Array<ByteArray>,
     ): Int = guarded {
         stage(walletId) { db ->
             if (db.walletDao().getByWalletId(walletId) == null) return@stage
-            for (txid in txids) {
-                db.txoDao().releaseSpendClaim(txid)
+            for ((index, txid) in txids.withIndex()) {
+                val winner = supersededBy.getOrNull(index)
+                if (winner != null && db.transactionDao().getByTxid(winner) != null) {
+                    db.txoDao().releaseSpendClaim(txid)
+                }
                 db.transactionDao().deleteByTxid(txid)
             }
         }

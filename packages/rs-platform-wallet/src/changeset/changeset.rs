@@ -63,7 +63,7 @@ use crate::wallet::identity::{
 ///
 /// Built by the platform-wallet event adapter from `WalletEvent` variants
 /// emitted by `WalletManager`. Every field is additive except
-/// [`Self::swept_txids`] — the merge implementation uses last-write-wins for
+/// [`Self::swept_transactions`] — the merge implementation uses last-write-wins for
 /// the height watermarks (monotonic-max), `extend` for the records / utxos
 /// vecs, and last-write-wins for the IS-lock map.
 ///
@@ -205,15 +205,39 @@ pub struct CoreChangeSet {
     /// The one subtractive field on this type. Every other field is additive,
     /// which is exactly why this one has to exist: a persister that only ever
     /// appends keeps the dead rows and replays them on the next load,
-    /// re-creating a balance the wallet has already corrected. The persister
-    /// deletes the transaction rows named here along with any UTXO they
-    /// created, and drops its spend attribution to them — the transaction that
-    /// actually took those inputs re-asserts its own claim through `records` /
-    /// `spent_utxos`.
+    /// re-creating a balance the wallet has already corrected.
     ///
-    /// Deduplicated on merge: a sweep is idempotent, and a flush can fold
-    /// several sweeps together.
-    pub swept_txids: Vec<Txid>,
+    /// Deduplicated on merge by the removed txid: a sweep is idempotent, and a
+    /// flush can fold several sweeps together.
+    pub swept_transactions: Vec<SweptTransaction>,
+}
+
+/// One transaction the wallet removed, paired with the transaction whose
+/// arrival settled its inputs.
+///
+/// The pairing is the point. A persister deleting the removed row also has to
+/// decide what to do with the coins that row claimed to spend, and the answer
+/// depends entirely on the winner: the inputs it took are still spent, while
+/// any *extra* inputs the loser named are not. Upstream keeps exactly that
+/// split (`release_spent_marks`: "a loser spending A+B against a winner
+/// spending only A must leave A marked and free B"), and a persister that
+/// released everything would hand a coin the winner already consumed back to
+/// the wallet as spendable.
+///
+/// A winner that is itself wallet-relevant re-asserts its claim through
+/// `records` in the same round, which is what lets a persister tell the two
+/// apart without carrying the winner's input list: see the persistence
+/// handlers' sweep paths.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct SweptTransaction {
+    /// The removed transaction. Its row and every UTXO it created go.
+    pub txid: Txid,
+    /// The transaction whose arrival settled the inputs — final, and
+    /// therefore the reason the removed one can never confirm. Not
+    /// necessarily wallet-relevant: it can pay entirely to outside
+    /// addresses and still sweep.
+    pub superseded_by: Txid,
 }
 
 /// Highest-used derivation index per pool slot for one account, as
@@ -350,16 +374,21 @@ impl Merge for CoreChangeSet {
                 .merge_max(indexes);
         }
 
-        // Sweeps: append, first-seen order, deduplicated. Deleting the
-        // same txid twice is harmless at the persister, so the dedup is
-        // only there to keep a coalesced round's payload honest about how
-        // many distinct transactions died.
-        if !other.swept_txids.is_empty() {
-            let mut seen: std::collections::HashSet<Txid> =
-                self.swept_txids.iter().copied().collect();
-            for txid in other.swept_txids {
-                if seen.insert(txid) {
-                    self.swept_txids.push(txid);
+        // Sweeps: append, first-seen order, deduplicated by the removed
+        // txid. Deleting the same transaction twice is harmless at the
+        // persister, so the dedup is only there to keep a coalesced round's
+        // payload honest about how many distinct transactions died — and
+        // first-seen wins, so the earliest winner recorded for a txid is
+        // the one the persister sees.
+        if !other.swept_transactions.is_empty() {
+            let mut seen: std::collections::HashSet<Txid> = self
+                .swept_transactions
+                .iter()
+                .map(|swept| swept.txid)
+                .collect();
+            for swept in other.swept_transactions {
+                if seen.insert(swept.txid) {
+                    self.swept_transactions.push(swept);
                 }
             }
         }
@@ -367,7 +396,7 @@ impl Merge for CoreChangeSet {
 
     fn is_empty(&self) -> bool {
         self.records.is_empty()
-            && self.swept_txids.is_empty()
+            && self.swept_transactions.is_empty()
             && self.spent_utxos.is_empty()
             && self.new_utxos.is_empty()
             && self.instant_locks_for_non_final_records.is_empty()

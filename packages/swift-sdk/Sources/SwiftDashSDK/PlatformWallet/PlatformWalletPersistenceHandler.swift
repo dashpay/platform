@@ -771,9 +771,21 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// Called from the Rust persister when an SPV round produces core-
     /// wallet state changes. Upserts PersistentAccount / Transaction /
     /// Utxo records so views observing via `@Query` update automatically.
-    func persistWalletChangeset(walletId: Data, changeset: UnsafePointer<WalletChangeSetFFI>) {
+    ///
+    /// Returns `false` when the round could not be applied, which the C shim
+    /// forwards to Rust so `store()` rolls the round back instead of treating
+    /// it as durable. Only the subtractive part can report this today: a
+    /// deletion that silently didn't happen would have Rust clear the sweep
+    /// while the dead row survives to be replayed at the next load.
+    @discardableResult
+    func persistWalletChangeset(
+        walletId: Data,
+        changeset: UnsafePointer<WalletChangeSetFFI>
+    ) -> Bool {
         onQueue {
-            guard let wallet = findWalletRecord(walletId: walletId) else { return }
+            // A stale post-deletion callback is not a failure — there is
+            // simply nothing left to write to.
+            guard let wallet = findWalletRecord(walletId: walletId) else { return true }
             let cs = changeset.pointee
 
             // Chain update.
@@ -821,54 +833,93 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
             }
 
-            // Swept transactions, applied last: the transaction that beat
-            // them to their inputs usually rides in the same round, and
-            // running the additive part first means its claim on those
-            // inputs is already recorded when the removal below decides
-            // whether a spend link still points at a dead transaction.
-            if cs.swept_txids_count > 0, let sweptPtr = cs.swept_txids {
-                for i in 0..<Int(cs.swept_txids_count) {
-                    let txid = Swift.withUnsafeBytes(of: sweptPtr[i]) { Data($0) }
-                    applySweptTransaction(txid: txid)
+            // Swept transactions, applied last: a wallet-relevant winner
+            // rides in the same round, and running the additive part first
+            // means its claim on the shared inputs is already recorded when
+            // the removal below decides which links are left pointing at a
+            // dead transaction.
+            if cs.swept_count > 0, let sweptPtr = cs.swept {
+                for i in 0..<Int(cs.swept_count) {
+                    let entry = sweptPtr[i]
+                    let txid = Swift.withUnsafeBytes(of: entry.txid) { Data($0) }
+                    let supersededBy = Swift.withUnsafeBytes(of: entry.superseded_by) { Data($0) }
+                    do {
+                        try applySweptTransaction(txid: txid, supersededBy: supersededBy)
+                    } catch {
+                        // Fail the round rather than report a deletion that
+                        // did not happen: Rust would clear the sweep and the
+                        // dead row would be replayed at the next load.
+                        print(
+                            "⚠️ persistWalletChangeset: sweep of "
+                                + "\(txid.prefix(8).toHexString())… failed: "
+                                + "\(error.localizedDescription); failing the round"
+                        )
+                        return false
+                    }
                 }
             }
 
             // No save() — bracketed by changesetBegin/End.
+            return true
         }
     }
 
     /// Delete the mirror of a transaction the wallet swept.
     ///
-    /// A swept transaction was a recorded spend that a later, final
-    /// transaction provably beat to one of its inputs, so it can never
-    /// confirm; Rust has already dropped it. Keeping the row would hand it
-    /// back at the next load and re-create a balance the wallet has already
-    /// corrected — this is the only removal the changeset path performs.
+    /// A swept transaction was a recorded spend that `supersededBy` provably
+    /// beat to one of its inputs, so it can never confirm; Rust has already
+    /// dropped it. Keeping the row would hand it back at the next load and
+    /// re-create a balance the wallet has already corrected — this is the
+    /// only removal the changeset path performs.
     ///
     /// The outputs it created go with it (`PersistentTransaction.outputs`
-    /// cascades), as do its pending inputs. What needs doing by hand is the
-    /// other direction: TXOs this transaction claimed to spend. The
-    /// relationship would merely nil the link and leave `isSpent` set, i.e.
-    /// a coin marked spent by a transaction that no longer exists — so the
-    /// claim is released here, and the transaction that actually took those
-    /// inputs re-asserts its own through the additive part of the changeset.
+    /// cascades), as do its pending inputs. The coins it claimed to *spend*
+    /// are the delicate part, because the two kinds are not alike:
+    ///
+    /// - inputs the winner also took are still spent, by the winner;
+    /// - inputs only the loser named are free again.
+    ///
+    /// Upstream keeps exactly that split. A winner that is wallet-relevant
+    /// has already re-pointed the shared inputs at itself earlier in this
+    /// same round, so releasing whatever still points at the loser releases
+    /// precisely the loser's extra inputs. A winner that is *not*
+    /// wallet-relevant — it can spend our coin and pay only outside
+    /// addresses — sends no record at all, and then nothing distinguishes
+    /// the two kinds here: releasing would hand a coin the winner consumed
+    /// back to the wallet as spendable, so the claims are left standing.
+    /// The wallet's own state agrees; it holds no UTXO for either kind, and
+    /// upstream documents a rescan as the recovery path for the freed ones.
     ///
     /// Transaction rows are shared across wallets by design (see
     /// `PersistentTransaction`), and a sweep is a statement about the
     /// transaction itself rather than about one wallet's view of it, so the
     /// row is removed without narrowing to the emitting wallet.
-    private func applySweptTransaction(txid: Data) {
+    ///
+    /// Throws if SwiftData cannot answer the lookups. The caller fails the
+    /// round on that: a deletion silently skipped would let Rust clear the
+    /// sweep while the dead row survives.
+    private func applySweptTransaction(txid: Data, supersededBy: Data) throws {
         var descriptor = FetchDescriptor<PersistentTransaction>(
             predicate: #Predicate { $0.txid == txid }
         )
         descriptor.fetchLimit = 1
         descriptor.relationshipKeyPathsForPrefetching = [\.inputs]
-        guard let row = try? backgroundContext.fetch(descriptor).first else { return }
+        // A successful fetch that finds nothing is an ordinary no-op: sweeps
+        // are idempotent and can name a transaction this store never had.
+        guard let row = try backgroundContext.fetch(descriptor).first else { return }
 
-        for txo in row.inputs {
-            txo.spendingTransaction = nil
-            txo.isSpent = false
-            txo.lastUpdated = Date()
+        var winnerDescriptor = FetchDescriptor<PersistentTransaction>(
+            predicate: #Predicate { $0.txid == supersededBy }
+        )
+        winnerDescriptor.fetchLimit = 1
+        let winnerIsKnown = try backgroundContext.fetch(winnerDescriptor).first != nil
+
+        if winnerIsKnown {
+            for txo in row.inputs {
+                txo.spendingTransaction = nil
+                txo.isSpent = false
+                txo.lastUpdated = Date()
+            }
         }
         backgroundContext.delete(row)
     }
@@ -6729,8 +6780,10 @@ private func persistWalletChangesetCallback(
         .takeUnretainedValue()
 
     let walletId = Data(bytes: walletIdPtr, count: 32)
-    handler.persistWalletChangeset(walletId: walletId, changeset: changesetPtr)
-    return 0
+    // Non-zero fails the round: `endChangeset(success: false)` rolls the
+    // staged writes back and Rust keeps its in-memory state instead of
+    // treating a partly-applied changeset as durable.
+    return handler.persistWalletChangeset(walletId: walletId, changeset: changesetPtr) ? 0 : 1
 }
 
 /// C shim for `on_changeset_begin_fn`. Forwards to

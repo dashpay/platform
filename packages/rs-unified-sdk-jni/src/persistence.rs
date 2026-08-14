@@ -642,23 +642,30 @@ unsafe extern "C" fn tramp_persist_wallet_changeset(
         // beat these to their inputs rides in the additive part above, so
         // by the time the removal runs its claim on those inputs is
         // already recorded.
-        let swept = slice_or_empty(cs.swept_txids, cs.swept_txids_count);
+        let swept = slice_or_empty(cs.swept, cs.swept_count);
         if !swept.is_empty() {
+            // Parallel arrays, index-aligned: the removed txid and the
+            // transaction that settled its inputs. The pairing is what lets
+            // the handler decide which of the loser's inputs are actually
+            // free — see `onWalletChangesetTransactionsSwept`.
             let byte_array_cls = env.find_class("[B")?;
             let empty = env.byte_array_from_slice(&[])?;
-            let arr = env.new_object_array(swept.len() as i32, &byte_array_cls, &empty)?;
-            for (i, txid) in swept.iter().enumerate() {
-                env.with_local_frame(4, |env| {
-                    let t = env.byte_array_from_slice(txid)?;
-                    env.set_object_array_element(&arr, i as i32, &t)
+            let txids = env.new_object_array(swept.len() as i32, &byte_array_cls, &empty)?;
+            let winners = env.new_object_array(swept.len() as i32, &byte_array_cls, &empty)?;
+            for (i, entry) in swept.iter().enumerate() {
+                env.with_local_frame(8, |env| {
+                    let txid = env.byte_array_from_slice(&entry.txid)?;
+                    env.set_object_array_element(&txids, i as i32, &txid)?;
+                    let winner = env.byte_array_from_slice(&entry.superseded_by)?;
+                    env.set_object_array_element(&winners, i as i32, &winner)
                 })?;
             }
             let code = env
                 .call_method(
                     bridge,
                     "onWalletChangesetTransactionsSwept",
-                    "([B[[B)I",
-                    &[(&wid).into(), (&arr).into()],
+                    "([B[[B[[B)I",
+                    &[(&wid).into(), (&txids).into(), (&winners).into()],
                 )?
                 .i()?;
             if code != 0 {

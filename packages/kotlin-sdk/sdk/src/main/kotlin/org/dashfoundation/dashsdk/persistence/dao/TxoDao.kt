@@ -44,16 +44,18 @@ interface TxoDao {
     suspend fun getUnspentBySpendingTxid(spendingTxid: ByteArray): List<TxoEntity>
 
     /**
-     * Release the spend claim a swept transaction held on the TXOs it
-     * named as inputs.
+     * Release the spend claim [spendingTxid] still holds — used when that
+     * transaction was swept and the coins it named are genuinely free.
      *
-     * The `spendingTxid` foreign key already nulls itself when the
-     * spending row is deleted, but `isSpent` is a plain column and would
-     * survive — leaving a coin marked spent by a transaction that no
-     * longer exists. Run this *before* deleting the transaction, while the
-     * link that identifies those rows is still there; the transaction that
-     * actually took the inputs re-asserts its own claim through the
-     * additive part of the changeset.
+     * The `spendingTxid` foreign key already nulls itself when the spending
+     * row is deleted, but `isSpent` is a plain column and would survive,
+     * leaving a coin marked spent by a transaction that no longer exists.
+     * Run this *before* deleting the transaction, while the link that
+     * identifies those rows is still there.
+     *
+     * Only rows still pointing at [spendingTxid] are touched, which is what
+     * makes this safe for a sweep: the winner has already re-pointed the
+     * inputs it took at itself, so what remains is the loser's own.
      */
     @Query("UPDATE txos SET isSpent = 0, spendingTxid = NULL, spendingInputIndex = NULL WHERE spendingTxid = :spendingTxid")
     suspend fun releaseSpendClaim(spendingTxid: ByteArray)

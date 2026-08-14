@@ -53,6 +53,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::changeset::changeset::{
     AssetLockChangeSet, CoreChangeSet, HighestUsedIndexes, PlatformWalletChangeSet,
+    SweptTransaction,
 };
 use crate::changeset::merge::Merge;
 use crate::changeset::traits::PlatformWalletPersistence;
@@ -725,16 +726,24 @@ async fn build_core_changeset(
             // back on the next load, and re-create the balance the wallet
             // just corrected — the exact bug the upstream sweep fixes.
             //
-            // No `spent_utxos` entry for the inputs: the winner's own record
-            // flows through `TransactionDetected` / `BlockProcessed` and
-            // claims them. This arm only names the dead.
+            // No `spent_utxos` entry for the inputs: a wallet-relevant winner
+            // claims them through its own record. This arm only names the
+            // dead — and the winner alongside each, because the persister
+            // cannot decide what to do with the loser's inputs without it
+            // (upstream keeps the winner's share marked and frees the rest).
             tracing::debug!(
                 swept = txids.len(),
                 superseded_by = %superseded_by,
                 "Mirroring swept transactions to the persister"
             );
             CoreChangeSet {
-                swept_txids: txids.clone(),
+                swept_transactions: txids
+                    .iter()
+                    .map(|txid| SweptTransaction {
+                        txid: *txid,
+                        superseded_by: *superseded_by,
+                    })
+                    .collect(),
                 ..CoreChangeSet::default()
             }
         }
@@ -1142,7 +1151,7 @@ impl CoreChangeSet {
     /// circuits on the common case.
     fn is_empty_no_records(&self) -> bool {
         self.records.is_empty()
-            && self.swept_txids.is_empty()
+            && self.swept_transactions.is_empty()
             && self.spent_utxos.is_empty()
             && self.new_utxos.is_empty()
             && self.instant_locks_for_non_final_records.is_empty()
@@ -1196,8 +1205,21 @@ mod swept_transaction_projection_tests {
     async fn sweep_names_the_dead_transactions_and_nothing_else() {
         let cs = build_core_changeset(&test_manager(), &swept(vec![txid(1), txid(2)])).await;
 
-        assert_eq!(cs.swept_txids, vec![txid(1), txid(2)]);
-        // The winner's own claim on the inputs arrives through its own
+        assert_eq!(
+            cs.swept_transactions,
+            vec![
+                SweptTransaction {
+                    txid: txid(1),
+                    superseded_by: txid(0xff),
+                },
+                SweptTransaction {
+                    txid: txid(2),
+                    superseded_by: txid(0xff),
+                },
+            ],
+            "each dead transaction is paired with the winner that settled its inputs"
+        );
+        // A wallet-relevant winner claims the inputs through its own
         // record; this arm must not invent UTXO deltas of its own.
         assert!(cs.records.is_empty(), "a sweep carries no records");
         assert!(cs.spent_utxos.is_empty(), "a sweep spends nothing");
@@ -1223,7 +1245,13 @@ mod swept_transaction_projection_tests {
 
         cs.merge(second);
 
-        assert_eq!(cs.swept_txids, vec![txid(1), txid(2), txid(3)]);
+        assert_eq!(
+            cs.swept_transactions
+                .iter()
+                .map(|swept| swept.txid)
+                .collect::<Vec<_>>(),
+            vec![txid(1), txid(2), txid(3)]
+        );
     }
 }
 
