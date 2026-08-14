@@ -272,7 +272,9 @@ impl WalletGeneration {
             generation: Arc::clone(self),
             outpoints,
             dispatch_height,
-            retain_pending_spend: false,
+            // Fenced by default; only a definitive pre-send rejection releases
+            // it. See the `InBroadcastPin` type docs (`dashpay/platform#4309`).
+            retain_pending_spend: true,
         }
     }
 
@@ -348,32 +350,42 @@ impl WalletGeneration {
 /// unwind, or the dispatching future being cancelled mid-await) ends exactly
 /// the dispatching hold that call took, count-wise, never another dispatch's.
 ///
-/// By default the drop frees the outpoints outright: a guard dropped without
-/// [`retain_pending_spend`](Self::retain_pending_spend) means the transaction
-/// never reached the network (a definitive pre-send rejection, or a cancelled
-/// dispatch), so there is nothing on the wire to fence against.
+/// The drop fences the outpoints by DEFAULT, as a pending spend. Only
+/// [`release_pending_spend`](Self::release_pending_spend) — called on a
+/// definitive pre-send rejection, the one outcome that PROVES the transaction
+/// is not on the wire — frees them outright.
+///
+/// The default is deliberately the conservative one (`dashpay/platform#4309`).
+/// This guard's drop runs on paths that carry no information about whether the
+/// transaction was sent: the dispatching future cancelled mid-await, an unwind,
+/// or a suspension inside the broadcaster before submission. Treating those
+/// like a rejection — the previous behaviour — frees inputs that may already be
+/// spent on the network, so an immediate reselection double-spends them. Absence
+/// of evidence that a send happened is not evidence that it did not, so the
+/// fence must survive every exit except the one that proves otherwise.
 pub(crate) struct InBroadcastPin {
     generation: Arc<WalletGeneration>,
     outpoints: Vec<OutPoint>,
     /// `last_processed_height` sampled in the guarded section that took this
     /// pin — the anchor for the pending-spend bound.
     dispatch_height: u32,
-    /// Set by [`retain_pending_spend`](Self::retain_pending_spend).
+    /// Starts `true`; cleared only by
+    /// [`release_pending_spend`](Self::release_pending_spend).
     retain_pending_spend: bool,
 }
 
 impl InBroadcastPin {
-    /// Convert this pin, on drop, into a pending-spend fence lasting
-    /// [`IN_BROADCAST_FENCE_BLOCKS`](crate::wallet::reservations::IN_BROADCAST_FENCE_BLOCKS)
-    /// blocks past the height the dispatch was authorized at.
+    /// Free the outpoints outright on drop, instead of leaving the pending-spend
+    /// fence this pin installs by default.
     ///
-    /// Called once the broadcaster has returned anything other than a
-    /// definitive pre-send rejection — i.e. once the transaction may be on the
-    /// network but this wallet has not necessarily observed the spend yet. See
-    /// the `WalletGeneration::in_broadcast` field docs for why dispatch return
-    /// is not, by itself, safe.
-    pub(crate) fn retain_pending_spend(&mut self) {
-        self.retain_pending_spend = true;
+    /// Call ONLY on a definitive pre-send rejection — the single outcome that
+    /// proves the transaction never reached the network, so there is nothing on
+    /// the wire to fence against and an immediate retry may reselect the inputs.
+    /// An ambiguous outcome, a cancellation, or an unwind must NOT call this:
+    /// see the type docs and the `WalletGeneration::in_broadcast` field docs for
+    /// why dispatch return is not, by itself, safe.
+    pub(crate) fn release_pending_spend(&mut self) {
+        self.retain_pending_spend = false;
     }
 }
 
@@ -432,11 +444,10 @@ mod tests {
     }
 
     /// A held pin flags every input of the pinned transaction — and only
-    /// those — and dropping a pin that was NOT retained clears the conflict.
-    /// This is the RAII contract the dispatch relies on for
-    /// cancellation-safety: a dispatching future dropped mid-await never
-    /// reaches `retain_pending_spend`, so it unpins outright, exactly as a
-    /// definitive pre-send rejection does.
+    /// those — and dropping a pin whose fence was explicitly RELEASED clears
+    /// the conflict. Release models the one outcome that proves nothing was
+    /// sent: a definitive pre-send rejection. Every other exit keeps the fence
+    /// (see [`dropping_an_unreleased_pin_keeps_the_fence`]).
     #[test]
     fn pin_flags_inputs_until_dropped() {
         let generation = Arc::new(WalletGeneration::new());
@@ -444,7 +455,7 @@ mod tests {
         let b = outpoint(0x02, 1);
         let unrelated = outpoint(0x03, 0);
 
-        let pin = generation.pin_in_broadcast(&spending(&[a, b]), DISPATCH_HEIGHT);
+        let mut pin = generation.pin_in_broadcast(&spending(&[a, b]), DISPATCH_HEIGHT);
 
         // Both pinned inputs conflict; an unrelated selection does not.
         assert_eq!(
@@ -465,11 +476,54 @@ mod tests {
             None
         );
 
+        // A definitive pre-send rejection: nothing is on the wire, so the
+        // inputs are free again the moment the guard drops.
+        pin.release_pending_spend();
         drop(pin);
         assert_eq!(
             generation.in_broadcast_conflict(&spending(&[a, b]), DISPATCH_HEIGHT),
             None,
-            "dropping an unretained pin must clear the conflict"
+            "dropping a released pin must clear the conflict"
+        );
+    }
+
+    /// `dashpay/platform#4309`: the paths this guard's drop actually runs on —
+    /// the dispatching future cancelled mid-await, or an unwind — carry NO
+    /// information about whether the transaction reached the network. The
+    /// previous default freed the inputs there, so an immediate reselection
+    /// could double-spend a transaction already on the wire. Dropping without
+    /// an explicit release must therefore leave the pending-spend fence
+    /// standing, exactly as an ambiguous `MaybeSent` does.
+    #[test]
+    fn dropping_an_unreleased_pin_keeps_the_fence() {
+        let generation = Arc::new(WalletGeneration::new());
+        let a = outpoint(0x07, 0);
+        let tx = spending(&[a]);
+
+        // No `release_pending_spend()` — models a cancelled dispatch.
+        drop(generation.pin_in_broadcast(&tx, DISPATCH_HEIGHT));
+
+        assert_eq!(
+            generation.in_broadcast_conflict(&tx, DISPATCH_HEIGHT),
+            Some(a),
+            "a cancelled dispatch must NOT free inputs that may be on the wire"
+        );
+        assert_eq!(
+            generation.in_broadcast_conflict(
+                &tx,
+                DISPATCH_HEIGHT + crate::wallet::reservations::IN_BROADCAST_FENCE_BLOCKS - 1
+            ),
+            Some(a),
+            "the fence must hold for the full pending-spend bound"
+        );
+        // Negative control: the fence is bounded, not permanent.
+        assert_eq!(
+            generation.in_broadcast_conflict(
+                &tx,
+                DISPATCH_HEIGHT + crate::wallet::reservations::IN_BROADCAST_FENCE_BLOCKS
+            ),
+            None,
+            "the fence must lapse once the bound is reached"
         );
     }
 
@@ -502,9 +556,8 @@ mod tests {
         let a = outpoint(0x30, 0);
         let tx = spending(&[a]);
 
-        let mut pin = generation.pin_in_broadcast(&tx, DISPATCH_HEIGHT);
-        pin.retain_pending_spend();
-        drop(pin);
+        // Fenced by default now — no explicit retain needed.
+        drop(generation.pin_in_broadcast(&tx, DISPATCH_HEIGHT));
 
         assert_eq!(
             generation.in_broadcast_conflict(&tx, DISPATCH_HEIGHT),
@@ -532,9 +585,7 @@ mod tests {
         let a = outpoint(0x31, 0);
         let unrelated = outpoint(0x32, 0);
 
-        let mut pin = generation.pin_in_broadcast(&spending(&[a]), DISPATCH_HEIGHT);
-        pin.retain_pending_spend();
-        drop(pin);
+        drop(generation.pin_in_broadcast(&spending(&[a]), DISPATCH_HEIGHT));
         assert_eq!(generation.in_broadcast_lock().len(), 1);
 
         // A read past the bound — about an unrelated selection — still reaps.
@@ -560,8 +611,11 @@ mod tests {
         let a = outpoint(0x33, 0);
         let tx = spending(&[a]);
 
-        // No `retain_pending_spend` — this models `BroadcastError::Rejected`.
-        drop(generation.pin_in_broadcast(&tx, DISPATCH_HEIGHT));
+        // An explicit release — this models `BroadcastError::Rejected`, the one
+        // outcome that proves the transaction never reached the network.
+        let mut pin = generation.pin_in_broadcast(&tx, DISPATCH_HEIGHT);
+        pin.release_pending_spend();
+        drop(pin);
 
         assert_eq!(
             generation.in_broadcast_conflict(&tx, DISPATCH_HEIGHT),
@@ -582,8 +636,12 @@ mod tests {
         let a = outpoint(0x10, 0);
         let tx = spending(&[a]);
 
-        let first = generation.pin_in_broadcast(&tx, DISPATCH_HEIGHT);
-        let second = generation.pin_in_broadcast(&tx, DISPATCH_HEIGHT);
+        // Both model a definitive rejection, so the count — not a leftover
+        // pending-spend fence — is what keeps the outpoint held.
+        let mut first = generation.pin_in_broadcast(&tx, DISPATCH_HEIGHT);
+        let mut second = generation.pin_in_broadcast(&tx, DISPATCH_HEIGHT);
+        first.release_pending_spend();
+        second.release_pending_spend();
 
         drop(first);
         assert_eq!(
@@ -605,11 +663,9 @@ mod tests {
         let a = outpoint(0x11, 0);
         let tx = spending(&[a]);
 
-        let mut early = generation.pin_in_broadcast(&tx, DISPATCH_HEIGHT);
-        let mut late = generation.pin_in_broadcast(&tx, DISPATCH_HEIGHT + 5);
-        late.retain_pending_spend();
+        let early = generation.pin_in_broadcast(&tx, DISPATCH_HEIGHT);
+        let late = generation.pin_in_broadcast(&tx, DISPATCH_HEIGHT + 5);
         drop(late);
-        early.retain_pending_spend();
         drop(early);
 
         assert_eq!(

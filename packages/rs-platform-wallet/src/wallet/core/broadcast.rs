@@ -122,16 +122,21 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // guard, covers check-to-wire.
         };
         let outcome = self.broadcaster.broadcast(transaction).await;
-        // Retain the fence for everything except a definitive pre-send
-        // rejection: only `Rejected` proves the transaction is not on the
-        // network, so only `Rejected` may free the inputs at dispatch return.
-        // An ambiguous `MaybeSent` is precisely the case that must stay fenced.
-        if !matches!(
+        // The pin already fences by default, so the inputs stay held on EVERY
+        // exit from the await above — including one this code never observes:
+        // the dispatching future being cancelled, or an unwind, mid-`broadcast`.
+        // Neither says anything about whether the transaction reached the
+        // network, and freeing the inputs there lets an immediate reselection
+        // double-spend a transaction already on the wire (`dashpay/platform#4309`).
+        //
+        // Only a definitive pre-send rejection proves nothing was sent, so it is
+        // the one outcome that releases. An ambiguous `MaybeSent` stays fenced.
+        if matches!(
             outcome,
             Err(crate::broadcaster::BroadcastError::Rejected { .. })
         ) {
             if let Some(pin) = in_broadcast_pin.as_mut() {
-                pin.retain_pending_spend();
+                pin.release_pending_spend();
             }
         }
         drop(in_broadcast_pin);
