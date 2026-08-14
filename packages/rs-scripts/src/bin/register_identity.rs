@@ -633,3 +633,93 @@ fn find_critical_auth_key(
         .find(|(pk, _)| pk.id() == public_key.id())
         .map(|(pk, secret)| (pk.clone(), *secret))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_network_accepts_known_and_rejects_unknown() {
+        assert!(matches!(parse_network("devnet"), Ok(Network::Devnet)));
+        assert!(matches!(parse_network("DevNet"), Ok(Network::Devnet)));
+        assert!(matches!(parse_network("testnet"), Ok(Network::Testnet)));
+        assert!(matches!(parse_network("mainnet"), Ok(Network::Mainnet)));
+        assert!(matches!(parse_network("regtest"), Ok(Network::Regtest)));
+        assert!(parse_network("bogus").is_err());
+    }
+
+    #[test]
+    fn creds_roundtrip_returns_last_value_and_file_is_mode_600() {
+        // A resume run appends fresh identity keys after an earlier attempt's,
+        // so read_creds_value MUST return the LAST value — otherwise the caller
+        // would sign with a stale key that does not match the live identity.
+        use std::os::unix::fs::PermissionsExt;
+        let path =
+            std::env::temp_dir().join(format!("register_identity_test_{}.env", std::process::id()));
+        let p = path.to_str().unwrap();
+        let _ = std::fs::remove_file(p);
+
+        append_creds(p, &[("K".to_string(), "first".to_string())]).unwrap();
+        append_creds(
+            p,
+            &[
+                ("OTHER".to_string(), "x".to_string()),
+                ("K".to_string(), "second".to_string()),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(read_creds_value(p, "K").unwrap().as_deref(), Some("second"));
+        assert_eq!(read_creds_value(p, "OTHER").unwrap().as_deref(), Some("x"));
+        assert_eq!(read_creds_value(p, "MISSING").unwrap(), None);
+
+        let mode = std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "credentials file must be created mode 600");
+        let _ = std::fs::remove_file(p);
+    }
+
+    #[test]
+    fn strand_message_is_non_stranding_and_actionable() {
+        let txid =
+            Txid::from_str("c913da3655688c10c79e0d8b8e059c94625b939cfa99e848f0f24dc48ec4f685")
+                .unwrap();
+        let msg = strand_safe_timeout(&txid, "/tmp/creds.env", "the tx to be ChainLocked");
+        // Must name the txid, the creds path, and the exact resume flag, and must
+        // reassure the funds are not lost — that is the whole point of the change.
+        assert!(msg.contains("c913da3655688c10c79e0d8b8e059c94625b939cfa99e848f0f24dc48ec4f685"));
+        assert!(msg.contains("/tmp/creds.env"));
+        assert!(msg.contains("--resume-txid"));
+        assert!(msg.to_lowercase().contains("not lost"));
+    }
+
+    #[test]
+    fn finds_the_critical_authentication_signing_key_and_its_secret() {
+        // The whole tool is useless if it cannot hand back a CRITICAL-level
+        // authentication key (the one that can sign both contracts and
+        // documents) together with the private key that matches it.
+        let platform_version = PlatformVersion::latest();
+        let mut rng = StdRng::seed_from_u64(1);
+        let (identity, key_material): (Identity, Vec<(IdentityPublicKey, [u8; 32])>) =
+            Identity::random_identity_with_main_keys_with_private_key(
+                3,
+                &mut rng,
+                platform_version,
+            )
+            .expect("generate identity");
+
+        let (pk, secret) = find_critical_auth_key(&identity, &key_material)
+            .expect("a 3-key identity must expose a CRITICAL AUTHENTICATION ECDSA key");
+
+        assert_eq!(pk.purpose(), Purpose::AUTHENTICATION);
+        assert_eq!(pk.security_level(), SecurityLevel::CRITICAL);
+        assert_eq!(pk.key_type(), KeyType::ECDSA_SECP256K1);
+
+        // The returned secret is really THIS key's material, not some other key's.
+        let expected = key_material
+            .iter()
+            .find(|(k, _)| k.id() == pk.id())
+            .map(|(_, s)| *s)
+            .unwrap();
+        assert_eq!(secret, expected);
+    }
+}
