@@ -637,6 +637,34 @@ unsafe extern "C" fn tramp_persist_wallet_changeset(
                 return Ok(code);
             }
         }
+
+        // Sweeps last, and only when there are any: the transaction that
+        // beat these to their inputs rides in the additive part above, so
+        // by the time the removal runs its claim on those inputs is
+        // already recorded.
+        let swept = slice_or_empty(cs.swept_txids, cs.swept_txids_count);
+        if !swept.is_empty() {
+            let byte_array_cls = env.find_class("[B")?;
+            let empty = env.byte_array_from_slice(&[])?;
+            let arr = env.new_object_array(swept.len() as i32, &byte_array_cls, &empty)?;
+            for (i, txid) in swept.iter().enumerate() {
+                env.with_local_frame(4, |env| {
+                    let t = env.byte_array_from_slice(txid)?;
+                    env.set_object_array_element(&arr, i as i32, &t)
+                })?;
+            }
+            let code = env
+                .call_method(
+                    bridge,
+                    "onWalletChangesetTransactionsSwept",
+                    "([B[[B)I",
+                    &[(&wid).into(), (&arr).into()],
+                )?
+                .i()?;
+            if code != 0 {
+                return Ok(code);
+            }
+        }
         Ok(0)
     })
 }

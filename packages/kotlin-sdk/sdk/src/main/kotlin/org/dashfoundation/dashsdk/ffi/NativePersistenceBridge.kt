@@ -294,6 +294,23 @@ abstract class NativePersistenceBridge {
     /** Close the current account bucket. Descriptor `([BI)I`. */
     open fun onWalletChangesetAccountEnd(walletId: ByteArray, accountIndex: Int): Int = 0
 
+    /**
+     * Transactions the wallet removed this round, as raw 32-byte txids.
+     * Fired once after the per-account decomposition, and only when the
+     * round swept something. Descriptor `([B[[B)I`.
+     *
+     * Each named transaction was a recorded spend that a later, final
+     * transaction beat to one of its inputs, so it can never confirm.
+     * Every other slot on this bus is additive; this is the only removal,
+     * and an implementation that ignores it keeps dead rows that are
+     * handed back at the next load and re-create a balance the wallet has
+     * already corrected.
+     */
+    open fun onWalletChangesetTransactionsSwept(
+        walletId: ByteArray,
+        txids: Array<ByteArray>,
+    ): Int = 0
+
     // ── Identities ────────────────────────────────────────────────────
 
     /**

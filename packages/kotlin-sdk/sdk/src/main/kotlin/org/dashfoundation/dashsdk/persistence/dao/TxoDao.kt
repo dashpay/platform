@@ -43,6 +43,21 @@ interface TxoDao {
     @Query("SELECT * FROM txos WHERE spendingTxid = :spendingTxid AND isSpent = 0")
     suspend fun getUnspentBySpendingTxid(spendingTxid: ByteArray): List<TxoEntity>
 
+    /**
+     * Release the spend claim a swept transaction held on the TXOs it
+     * named as inputs.
+     *
+     * The `spendingTxid` foreign key already nulls itself when the
+     * spending row is deleted, but `isSpent` is a plain column and would
+     * survive — leaving a coin marked spent by a transaction that no
+     * longer exists. Run this *before* deleting the transaction, while the
+     * link that identifies those rows is still there; the transaction that
+     * actually took the inputs re-asserts its own claim through the
+     * additive part of the changeset.
+     */
+    @Query("UPDATE txos SET isSpent = 0, spendingTxid = NULL, spendingInputIndex = NULL WHERE spendingTxid = :spendingTxid")
+    suspend fun releaseSpendClaim(spendingTxid: ByteArray)
+
     @Upsert
     suspend fun upsert(txo: TxoEntity)
 

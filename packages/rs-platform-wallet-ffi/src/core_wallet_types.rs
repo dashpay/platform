@@ -236,6 +236,22 @@ pub struct WalletChangeSetFFI {
     /// `proof.rs` can't fire until SPV re-applies a fresh CL).
     pub last_applied_chain_lock_bytes: *mut u8,
     pub last_applied_chain_lock_bytes_len: usize,
+    /// Transactions the wallet removed this round, as raw 32-byte txids
+    /// (internal byte order, same as every other txid on this surface).
+    ///
+    /// The only subtractive field in this struct. Each named transaction
+    /// was a recorded spend that a later, final transaction beat to one of
+    /// its inputs, so it can never confirm; the wallet has already dropped
+    /// it. **A persister must act on this**: delete the transaction row and
+    /// any UTXO row it created, and drop its spend attribution. Every other
+    /// field here is additive, so ignoring this one leaves dead rows that
+    /// are handed back at the next load and re-create a balance the wallet
+    /// has already corrected.
+    ///
+    /// `null` / `0` when nothing was swept, which is the overwhelmingly
+    /// common case.
+    pub swept_txids: *mut [u8; 32],
+    pub swept_txids_count: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -450,6 +466,20 @@ impl WalletChangeSetFFI {
                 None => (std::ptr::null_mut(), 0),
             };
 
+        // Swept transactions travel at the top level, not per account:
+        // the upstream event is wallet-scoped, and the persister deletes
+        // by txid — the row it deletes carries its own account link.
+        let swept: Vec<[u8; 32]> = cs
+            .swept_txids
+            .iter()
+            .map(|txid| {
+                let mut raw = [0u8; 32];
+                raw.copy_from_slice(txid.as_ref());
+                raw
+            })
+            .collect();
+        let swept_txids_count = swept.len();
+
         WalletChangeSetFFI {
             has_chain,
             chain,
@@ -459,6 +489,8 @@ impl WalletChangeSetFFI {
             accounts_count,
             last_applied_chain_lock_bytes,
             last_applied_chain_lock_bytes_len,
+            swept_txids: vec_to_ptr(swept),
+            swept_txids_count,
         }
     }
 }
@@ -1705,6 +1737,16 @@ pub unsafe fn free_wallet_changeset_ffi(cs: &WalletChangeSetFFI) {
             cs.last_applied_chain_lock_bytes,
             cs.last_applied_chain_lock_bytes_len,
             cs.last_applied_chain_lock_bytes_len,
+        ));
+    }
+
+    // Before the accounts early-return below: a sweep-only round carries
+    // no accounts at all, and its txid buffer still has to be released.
+    if !cs.swept_txids.is_null() && cs.swept_txids_count > 0 {
+        drop(Vec::from_raw_parts(
+            cs.swept_txids,
+            cs.swept_txids_count,
+            cs.swept_txids_count,
         ));
     }
 

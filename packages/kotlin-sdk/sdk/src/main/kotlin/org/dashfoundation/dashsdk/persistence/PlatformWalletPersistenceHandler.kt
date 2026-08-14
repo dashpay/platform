@@ -985,6 +985,40 @@ class PlatformWalletPersistenceHandler(
 
     override fun onWalletChangesetAccountEnd(walletId: ByteArray, accountIndex: Int): Int = 0
 
+    /**
+     * Delete the mirror of transactions the wallet swept.
+     *
+     * Each was a recorded spend that a later, final transaction beat to one
+     * of its inputs, so it can never confirm and Rust has already dropped
+     * it. Keeping the rows would hand them back at the next load and
+     * re-create a balance the wallet has already corrected.
+     *
+     * The TXOs the transaction created go with it (`txos.txid` cascades).
+     * The ones it *spent* need the explicit release below first: the
+     * foreign key nulls `spendingTxid` on delete but leaves `isSpent` set,
+     * which would strand the coin as spent by a transaction that no longer
+     * exists — and once the link is nulled there is nothing left to find
+     * those rows by.
+     *
+     * Transaction rows are keyed by txid alone, shared across wallets by
+     * design, and a sweep is a statement about the transaction rather than
+     * about one wallet's view of it — so the row goes without narrowing to
+     * the emitting wallet.
+     */
+    override fun onWalletChangesetTransactionsSwept(
+        walletId: ByteArray,
+        txids: Array<ByteArray>,
+    ): Int = guarded {
+        stage(walletId) { db ->
+            if (db.walletDao().getByWalletId(walletId) == null) return@stage
+            for (txid in txids) {
+                db.txoDao().releaseSpendClaim(txid)
+                db.transactionDao().deleteByTxid(txid)
+            }
+        }
+        0
+    }
+
     // ── Identities ────────────────────────────────────────────────────
 
     override fun onPersistIdentityUpsert(

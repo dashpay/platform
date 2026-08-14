@@ -2034,6 +2034,103 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun sweptTransactionIsDeletedAndReleasesItsSpendClaim() = runTest {
+        // A recorded spend that a later, final transaction beat to its
+        // input can never confirm; Rust drops it and names it here. The
+        // mirror has to drop it too — otherwise the row comes back on the
+        // next load and re-creates a balance the wallet already corrected.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yUtxoAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 41 }
+        val sweptTxid = ByteArray(32) { 42 }
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, fundingTxid, ByteArray(10) { 4 }, 2, 100, ByteArray(32) { 7 },
+            1_700_000_000, 0, "Standard", 0, 100_000, 0, false, "", 1_699_999_000,
+            ByteArray(0), 0,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 100_000, "yUtxoAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // The doomed transaction: spends the funding TXO and creates change
+        // of its own, in-block so `isSpent` flips.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, sweptTxid, ByteArray(10) { 5 }, 2, 101, ByteArray(32) { 8 },
+            1_700_000_100, 1, "Standard", 0, -40_000, 0, false, "", 1_700_000_050,
+            makeOutpoint(fundingTxid, 0), 1,
+        )
+        handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 0, sweptTxid)
+        handler.onWalletChangesetUtxoAdded(
+            walletId, sweptTxid, 0, 60_000, "yUtxoAddr", ByteArray(25) { 6 },
+            101, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        assertTrue(db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))!!.isSpent)
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(walletId, arrayOf(sweptTxid))
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertNull("the swept transaction row is gone", db.transactionDao().getByTxid(sweptTxid))
+        assertNull(
+            "the change it created is gone with it",
+            db.txoDao().getByOutpoint(makeOutpoint(sweptTxid, 0)),
+        )
+        assertNotNull("the funding transaction is untouched", db.transactionDao().getByTxid(fundingTxid))
+
+        // The coin it claimed is spendable again: a coin left marked spent
+        // by a transaction that no longer exists is invisible to the
+        // wallet and to the restore set.
+        val released = db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))
+        assertNotNull(released)
+        assertFalse(released!!.isSpent)
+        assertNull(released.spendingTxid)
+        assertEquals(1, handler.onLoadWalletList().single().utxos.size)
+    }
+
+    @Test
+    fun sweptTransactionRollsBackWithItsRound() = runTest {
+        // The deletion is staged in the same buffered transaction as every
+        // other write in the round, so a round that fails must not take the
+        // rows with it.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val txid = ByteArray(32) { 43 }
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, txid, ByteArray(10) { 4 }, 2, 100, ByteArray(32) { 7 },
+            1_700_000_000, 0, "Standard", 0, 100_000, 0, false, "", 1_699_999_000,
+            ByteArray(0), 0,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(walletId, arrayOf(txid))
+        handler.onChangesetEnd(walletId, success = false)
+
+        assertNotNull(db.transactionDao().getByTxid(txid))
+    }
+
+    @Test
     fun spendBeforeFundingReconcilesViaPendingInputAndExcludesFromRestore() = runTest {
         // CORE-06, out-of-order arrival: an in-block spending tx is persisted
         // BEFORE its funding TXO is known (Rust's utxos_spent slice is empty

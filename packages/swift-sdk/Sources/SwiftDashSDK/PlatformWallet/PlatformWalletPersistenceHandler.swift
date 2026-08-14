@@ -821,8 +821,56 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
             }
 
+            // Swept transactions, applied last: the transaction that beat
+            // them to their inputs usually rides in the same round, and
+            // running the additive part first means its claim on those
+            // inputs is already recorded when the removal below decides
+            // whether a spend link still points at a dead transaction.
+            if cs.swept_txids_count > 0, let sweptPtr = cs.swept_txids {
+                for i in 0..<Int(cs.swept_txids_count) {
+                    let txid = Swift.withUnsafeBytes(of: sweptPtr[i]) { Data($0) }
+                    applySweptTransaction(txid: txid)
+                }
+            }
+
             // No save() — bracketed by changesetBegin/End.
         }
+    }
+
+    /// Delete the mirror of a transaction the wallet swept.
+    ///
+    /// A swept transaction was a recorded spend that a later, final
+    /// transaction provably beat to one of its inputs, so it can never
+    /// confirm; Rust has already dropped it. Keeping the row would hand it
+    /// back at the next load and re-create a balance the wallet has already
+    /// corrected — this is the only removal the changeset path performs.
+    ///
+    /// The outputs it created go with it (`PersistentTransaction.outputs`
+    /// cascades), as do its pending inputs. What needs doing by hand is the
+    /// other direction: TXOs this transaction claimed to spend. The
+    /// relationship would merely nil the link and leave `isSpent` set, i.e.
+    /// a coin marked spent by a transaction that no longer exists — so the
+    /// claim is released here, and the transaction that actually took those
+    /// inputs re-asserts its own through the additive part of the changeset.
+    ///
+    /// Transaction rows are shared across wallets by design (see
+    /// `PersistentTransaction`), and a sweep is a statement about the
+    /// transaction itself rather than about one wallet's view of it, so the
+    /// row is removed without narrowing to the emitting wallet.
+    private func applySweptTransaction(txid: Data) {
+        var descriptor = FetchDescriptor<PersistentTransaction>(
+            predicate: #Predicate { $0.txid == txid }
+        )
+        descriptor.fetchLimit = 1
+        descriptor.relationshipKeyPathsForPrefetching = [\.inputs]
+        guard let row = try? backgroundContext.fetch(descriptor).first else { return }
+
+        for txo in row.inputs {
+            txo.spendingTransaction = nil
+            txo.isSpent = false
+            txo.lastUpdated = Date()
+        }
+        backgroundContext.delete(row)
     }
 
     /// Find or create the `PersistentWallet` row for `walletId`.
