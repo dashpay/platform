@@ -839,12 +839,26 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // the removal below decides which links are left pointing at a
             // dead transaction.
             if cs.swept_count > 0, let sweptPtr = cs.swept {
+                // The coins the sweep freed, as the 36-byte keys the TXO rows
+                // are stored under. Wallet-scoped across the round's
+                // removals, matching the upstream event.
+                var released = Set<Data>()
+                if cs.swept_released_outpoints_count > 0,
+                   let releasedPtr = cs.swept_released_outpoints {
+                    for i in 0..<Int(cs.swept_released_outpoints_count) {
+                        let outpoint = releasedPtr[i]
+                        let txid = Swift.withUnsafeBytes(of: outpoint.txid) { Data($0) }
+                        released.insert(
+                            PersistentTxo.makeOutpoint(txid: txid, vout: outpoint.vout)
+                        )
+                    }
+                }
+
                 for i in 0..<Int(cs.swept_count) {
                     let entry = sweptPtr[i]
                     let txid = Swift.withUnsafeBytes(of: entry.txid) { Data($0) }
-                    let supersededBy = Swift.withUnsafeBytes(of: entry.superseded_by) { Data($0) }
                     do {
-                        try applySweptTransaction(txid: txid, supersededBy: supersededBy)
+                        try applySweptTransaction(txid: txid, released: released)
                     } catch {
                         // Fail the round rather than report a deletion that
                         // did not happen: Rust would clear the sweep and the
@@ -874,45 +888,33 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     ///
     /// The outputs it created go with it (`PersistentTransaction.outputs`
     /// cascades), as do its pending inputs. The coins it claimed to *spend*
-    /// are the delicate part, because the two kinds are not alike:
+    /// split in two, and `released` is the authority on which is which:
     ///
-    /// - inputs the winner also took are gone, spent by the winner;
-    /// - inputs only the loser named are untouched on chain.
+    /// - an input named there came free — no surviving transaction spends it;
+    /// - every other input it claimed was taken by the transaction that beat
+    ///   it, and is gone.
     ///
-    /// Note what a swept loser actually looks like here. Upstream only ever
-    /// sweeps *unconfirmed* records, and this store flips `isSpent` only for
-    /// a spender that reached a block — so the loser's inputs are linked to
-    /// it with `isSpent == false`. Deleting the row nils the link, and doing
-    /// nothing else would put every one of those coins straight back into
-    /// the restore set, including the one the winner consumed.
-    ///
-    /// So the two cases are handled by what the store can actually prove:
-    ///
-    /// - the winner is known here — it is wallet-relevant and its record
-    ///   re-pointed the inputs it took at itself earlier in this same round,
-    ///   so whatever still points at the loser is the loser's own, and stays
-    ///   spendable;
-    /// - the winner is absent — it pays only outside addresses and no record
-    ///   for it ever arrives. Nothing distinguishes the two kinds then, so
-    ///   every one of the loser's inputs is held out of the restore set. The
-    ///   wallet's own state agrees: it holds no UTXO for either kind. The
-    ///   coins that really are free come back the authoritative way, when
-    ///   the wallet re-delivers them as UTXOs after a rescan (see
-    ///   `upsertUtxo`, which clears a mark left with no spender).
-    ///
-    /// Handing back a coin the chain has already spent is the one outcome
-    /// that cannot be undone from here, so that is the direction the
-    /// uncertainty is resolved in.
+    /// That distinction cannot be made here. Upstream only ever sweeps
+    /// *unconfirmed* records, and this store flips `isSpent` only for a
+    /// spender that reached a block, so a swept loser holds its inputs by
+    /// link alone with `isSpent == false`; deleting the row nils the link and
+    /// every one of those coins would fall back into the restore set,
+    /// including the consumed one. Nor can the winner's own row be consulted:
+    /// it need not be wallet-relevant at all, and even when it is, the sweep
+    /// can be committed in a round that arrives before the winner's record.
+    /// So upstream computes the split and names the freed coins, and this
+    /// applies it verbatim — the rest are held spent with no spender named,
+    /// which keeps them out of the restore set.
     ///
     /// Transaction rows are shared across wallets by design (see
     /// `PersistentTransaction`), and a sweep is a statement about the
     /// transaction itself rather than about one wallet's view of it, so the
     /// row is removed without narrowing to the emitting wallet.
     ///
-    /// Throws if SwiftData cannot answer the lookups. The caller fails the
+    /// Throws if SwiftData cannot answer the lookup. The caller fails the
     /// round on that: a deletion silently skipped would let Rust clear the
     /// sweep while the dead row survives.
-    private func applySweptTransaction(txid: Data, supersededBy: Data) throws {
+    private func applySweptTransaction(txid: Data, released: Set<Data>) throws {
         var descriptor = FetchDescriptor<PersistentTransaction>(
             predicate: #Predicate { $0.txid == txid }
         )
@@ -922,14 +924,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         // are idempotent and can name a transaction this store never had.
         guard let row = try backgroundContext.fetch(descriptor).first else { return }
 
-        var winnerDescriptor = FetchDescriptor<PersistentTransaction>(
-            predicate: #Predicate { $0.txid == supersededBy }
-        )
-        winnerDescriptor.fetchLimit = 1
-        let winnerIsKnown = try backgroundContext.fetch(winnerDescriptor).first != nil
-
         for txo in row.inputs {
-            txo.isSpent = !winnerIsKnown
+            txo.isSpent = !released.contains(txo.outpoint)
             txo.spendingTransaction = nil
             txo.lastUpdated = Date()
         }

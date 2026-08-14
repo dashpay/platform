@@ -2112,6 +2112,7 @@ class PlatformWalletPersistenceHandlerTest {
         handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 0, winnerTxid)
         handler.onWalletChangesetTransactionsSwept(
             walletId, arrayOf(sweptTxid), arrayOf(winnerTxid),
+            arrayOf(makeOutpoint(fundingTxid, 1)),
         )
         handler.onChangesetEnd(walletId, success = true)
 
@@ -2135,13 +2136,14 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun sweepByAnIrrelevantWinnerHoldsTheInputsOutOfTheRestoreSet() = runTest {
+    fun anAbsentWinnerStillKeepsItsOwnInputSpent() = runTest {
         // The winner can spend our coin and pay only outside addresses. It
         // sweeps the loser all the same, but no record for it ever reaches
-        // the persister. A swept loser is unconfirmed, so its input is
-        // linked at `isSpent = 0` — deleting the loser and stopping there
-        // would return a coin the chain has already spent to the restore set
-        // as spendable.
+        // the persister — so nothing in this store could work out that the
+        // coin is gone. Upstream can, and reports it by leaving the coin out
+        // of the released set. A swept loser is unconfirmed, so its input is
+        // linked at `isSpent = 0`; deleting the loser and stopping there
+        // would return a coin the chain has already spent as spendable.
         handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
         val xpub = ByteArray(78) { 30 }
         handler.onPersistAccountRegistration(
@@ -2187,6 +2189,9 @@ class PlatformWalletPersistenceHandlerTest {
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransactionsSwept(
             walletId, arrayOf(sweptTxid), arrayOf(irrelevantWinner),
+            // Upstream knows the winner took this coin even though it never
+            // reports the winner itself, so nothing is released.
+            emptyArray(),
         )
         handler.onChangesetEnd(walletId, success = true)
 
@@ -2199,9 +2204,8 @@ class PlatformWalletPersistenceHandlerTest {
             handler.onLoadWalletList().single().utxos.isEmpty(),
         )
 
-        // The wallet is the authority on which of those coins are actually
-        // free: re-delivering one as a UTXO (what a rescan does) lifts the
-        // hold.
+        // The hold is not a dead end either: the wallet re-delivering the
+        // coin as a UTXO, which a rescan does, still lifts it.
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetUtxoAdded(
             walletId, fundingTxid, 0, 100_000, "yUtxoAddr", ByteArray(25) { 6 },
@@ -2231,7 +2235,7 @@ class PlatformWalletPersistenceHandlerTest {
 
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetTransactionsSwept(
-            walletId, arrayOf(txid), arrayOf(ByteArray(32) { 44 }),
+            walletId, arrayOf(txid), arrayOf(ByteArray(32) { 44 }), emptyArray(),
         )
         handler.onChangesetEnd(walletId, success = false)
 

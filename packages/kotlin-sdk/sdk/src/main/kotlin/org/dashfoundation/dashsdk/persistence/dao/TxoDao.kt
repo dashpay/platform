@@ -44,39 +44,34 @@ interface TxoDao {
     suspend fun getUnspentBySpendingTxid(spendingTxid: ByteArray): List<TxoEntity>
 
     /**
-     * Release the spend claim [spendingTxid] still holds — used when that
-     * transaction was swept and the coins it named are genuinely free.
-     *
-     * The `spendingTxid` foreign key already nulls itself when the spending
-     * row is deleted, but `isSpent` is a plain column and would survive,
-     * leaving a coin marked spent by a transaction that no longer exists.
-     * Run this *before* deleting the transaction, while the link that
-     * identifies those rows is still there.
-     *
-     * Only rows still pointing at [spendingTxid] are touched, which is what
-     * makes this safe for a sweep: the winner has already re-pointed the
-     * inputs it took at itself, so what remains is the loser's own.
-     */
-    @Query("UPDATE txos SET isSpent = 0, spendingTxid = NULL, spendingInputIndex = NULL WHERE spendingTxid = :spendingTxid")
-    suspend fun releaseSpendClaim(spendingTxid: ByteArray)
-
-    /**
-     * Hold the coins [spendingTxid] named out of the restore set, without
+     * Hold every coin [spendingTxid] claimed out of the restore set, without
      * naming a spender for them.
      *
-     * The sweep counterpart to [releaseSpendClaim], for the case where the
-     * transaction that actually settled these inputs is not in this store —
-     * a winner paying only to outside addresses is never recorded here. A
-     * swept loser is always unconfirmed, so its inputs sit at
-     * `isSpent = 0`; deleting it would otherwise return every one of them,
-     * including the one the winner consumed, as spendable.
+     * Used when [spendingTxid] was swept: it can never confirm, so its claim
+     * is not a spend, but most of the coins it named really were taken — by
+     * the transaction that beat it. A swept transaction is always
+     * unconfirmed, so its inputs sit at `isSpent = 0`, and deleting it would
+     * otherwise return all of them, the consumed one included.
      *
-     * The coins that really are free come back the authoritative way: the
-     * wallet re-delivers them as UTXOs after a rescan, and the utxo-added
-     * path clears a mark with no spender behind it.
+     * Run this *before* deleting the transaction, while the link that
+     * identifies those rows is still there — the foreign key nulls
+     * `spendingTxid` on delete, and afterwards nothing finds them. Then
+     * clear the genuinely free ones with [releaseByOutpoint].
      */
     @Query("UPDATE txos SET isSpent = 1, spendingTxid = NULL, spendingInputIndex = NULL WHERE spendingTxid = :spendingTxid")
     suspend fun holdSpentWithoutSpender(spendingTxid: ByteArray)
+
+    /**
+     * Mark one outpoint unspent again — a coin a sweep released, meaning no
+     * surviving transaction spends it.
+     *
+     * Keyed by outpoint rather than by spender because that is how upstream
+     * reports it: the transaction that took the *other* inputs may never be
+     * recorded here at all, so the released set is the only authority on
+     * which coins came free.
+     */
+    @Query("UPDATE txos SET isSpent = 0, spendingTxid = NULL, spendingInputIndex = NULL WHERE outpoint = :outpoint")
+    suspend fun releaseByOutpoint(outpoint: ByteArray)
 
     @Upsert
     suspend fun upsert(txo: TxoEntity)

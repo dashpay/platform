@@ -17,7 +17,8 @@ import DashSDKFFI
 /// loser — upstream sweeps nothing else — spends A and B, and the winner
 /// takes only A. Because the loser never reached a block, this store never
 /// flipped `isSpent` on either coin, so both are one deleted row away from
-/// re-entering the restore set.
+/// re-entering the restore set, and only the released set upstream carries
+/// says which of them belongs there.
 @MainActor
 final class SweptTransactionPersistTests: XCTestCase {
 
@@ -122,7 +123,8 @@ final class SweptTransactionPersistTests: XCTestCase {
     @discardableResult
     private func sweep(
         _ handler: PlatformWalletPersistenceHandler,
-        _ pairs: [(loser: Data, winner: Data)]
+        _ pairs: [(loser: Data, winner: Data)],
+        released: [(txid: Data, vout: UInt32)] = []
     ) -> Bool {
         var entries: [SweptTransactionFFI] = []
         for pair in pairs {
@@ -136,13 +138,27 @@ final class SweptTransactionPersistTests: XCTestCase {
             entries.append(entry)
         }
 
+        var freed: [OutPointFFI] = []
+        for outpoint in released {
+            var entry = OutPointFFI()
+            Swift.withUnsafeMutableBytes(of: &entry.txid) { dst in
+                outpoint.txid.withUnsafeBytes { src in dst.copyMemory(from: src) }
+            }
+            entry.vout = outpoint.vout
+            freed.append(entry)
+        }
+
         handler.beginChangeset(walletId: walletId)
         let applied = entries.withUnsafeMutableBufferPointer { buf -> Bool in
-            var cs = WalletChangeSetFFI()
-            cs.swept = buf.baseAddress
-            cs.swept_count = UInt(buf.count)
-            return withUnsafePointer(to: &cs) { csPtr in
-                handler.persistWalletChangeset(walletId: walletId, changeset: csPtr)
+            freed.withUnsafeMutableBufferPointer { freedBuf -> Bool in
+                var cs = WalletChangeSetFFI()
+                cs.swept = buf.baseAddress
+                cs.swept_count = UInt(buf.count)
+                cs.swept_released_outpoints = freedBuf.baseAddress
+                cs.swept_released_outpoints_count = UInt(freedBuf.count)
+                return withUnsafePointer(to: &cs) { csPtr in
+                    handler.persistWalletChangeset(walletId: walletId, changeset: csPtr)
+                }
             }
         }
         _ = handler.endChangeset(walletId: walletId, success: applied)
@@ -172,21 +188,28 @@ final class SweptTransactionPersistTests: XCTestCase {
         let (handler, container) = try makeHandler()
         try seedSpend(in: container, winnerTakesA: true)
 
-        sweep(handler, [(loser: sweptTxid, winner: winnerTxid)])
+        sweep(
+            handler,
+            [(loser: sweptTxid, winner: winnerTxid)],
+            released: [(txid: fundingTxid, vout: 1)]
+        )
 
         XCTAssertNil(transaction(container, txid: sweptTxid), "the swept row is gone")
         XCTAssertNil(txo(container, txid: sweptTxid, vout: 0), "the change it created is gone with it")
         XCTAssertNotNil(transaction(container, txid: fundingTxid), "the funding transaction is untouched")
     }
 
-    /// With the winner in the store, releasing what still points at the
-    /// loser frees exactly the loser's own input: the winner re-pointed the
-    /// shared one at itself earlier in the round.
+    /// The released set is applied verbatim: the coin it names comes back,
+    /// and the one it does not stays out — the winner took that one.
     func testSweepFreesOnlyTheInputsTheWinnerDidNotTake() throws {
         let (handler, container) = try makeHandler()
         try seedSpend(in: container, winnerTakesA: true)
 
-        sweep(handler, [(loser: sweptTxid, winner: winnerTxid)])
+        sweep(
+            handler,
+            [(loser: sweptTxid, winner: winnerTxid)],
+            released: [(txid: fundingTxid, vout: 1)]
+        )
 
         let takenByWinner = txo(container, txid: fundingTxid, vout: 0)
         XCTAssertNotNil(takenByWinner)
@@ -199,32 +222,43 @@ final class SweptTransactionPersistTests: XCTestCase {
         XCTAssertNil(losersOwn!.spendingTransaction)
     }
 
-    /// A winner that pays only to outside addresses sweeps the loser without
-    /// ever being recorded here. The loser was unconfirmed, so both coins it
-    /// named are linked to it and unspent — deleting it and stopping there
-    /// would return the one the chain already spent to the restore set. With
-    /// nothing to tell the two apart, both are held instead.
-    func testSweepByAnIrrelevantWinnerHoldsTheInputsOutOfTheRestoreSet() throws {
+    /// The winner does not have to reach this store at all: it can spend our
+    /// coin while paying only to outside addresses, and then no record for it
+    /// is ever written here. Nothing on hand could separate the coin it took
+    /// from the loser's own — upstream can, and says so through the released
+    /// set, which is the entire reason that set is carried.
+    func testAnAbsentWinnerStillKeepsItsOwnInputSpent() throws {
         let (handler, container) = try makeHandler()
         try seedSpend(in: container, winnerTakesA: false)
 
-        sweep(handler, [(loser: sweptTxid, winner: winnerTxid)])
+        sweep(
+            handler,
+            [(loser: sweptTxid, winner: winnerTxid)],
+            released: [(txid: fundingTxid, vout: 1)]
+        )
 
         XCTAssertNil(transaction(container, txid: sweptTxid), "the swept row still goes")
-        for vout: UInt32 in [0, 1] {
-            let coin = txo(container, txid: fundingTxid, vout: vout)
-            XCTAssertNotNil(coin)
-            XCTAssertTrue(
-                coin!.isSpent,
-                "a coin the unrecorded winner may have consumed must not come back"
-            )
-            XCTAssertNil(coin!.spendingTransaction, "and no spender is invented for it")
-        }
+
+        let takenByWinner = txo(container, txid: fundingTxid, vout: 0)
+        XCTAssertNotNil(takenByWinner)
+        XCTAssertTrue(
+            takenByWinner!.isSpent,
+            "a coin the chain has already spent must not come back"
+        )
+        XCTAssertNil(takenByWinner!.spendingTransaction, "and no spender is invented for it")
+
+        let losersOwn = txo(container, txid: fundingTxid, vout: 1)
+        XCTAssertNotNil(losersOwn)
+        XCTAssertFalse(
+            losersOwn!.isSpent,
+            "the loser's own input is free, winner record or not"
+        )
     }
 
-    /// The wallet decides which of the held coins are actually free: it
-    /// re-delivers them as UTXOs after a rescan, and that lifts the hold.
-    /// Without this the conservative branch above would be permanent.
+    /// A coin held spent with no spender is not a dead end: the wallet is
+    /// the authority on what it holds, so re-delivering the coin as a UTXO —
+    /// what a rescan does — lifts the mark. This is the backstop for a sweep
+    /// that released nothing, and for any older row left in that state.
     func testWalletReDeliveringAHeldCoinFreesIt() throws {
         let (handler, container) = try makeHandler()
         try seedSpend(in: container, winnerTakesA: false)

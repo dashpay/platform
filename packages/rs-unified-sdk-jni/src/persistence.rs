@@ -660,12 +660,37 @@ unsafe extern "C" fn tramp_persist_wallet_changeset(
                     env.set_object_array_element(&winners, i as i32, &winner)
                 })?;
             }
+            // The released outpoints ride along as 36-byte keys (raw txid +
+            // little-endian vout), the same shape the handler stores them
+            // in. They are wallet-scoped, not per removal: the handler holds
+            // every input of every row it deletes, so it only needs to know
+            // which of them came free.
+            let released = slice_or_empty(
+                cs.swept_released_outpoints,
+                cs.swept_released_outpoints_count,
+            );
+            let released_arr =
+                env.new_object_array(released.len() as i32, &byte_array_cls, &empty)?;
+            for (i, outpoint) in released.iter().enumerate() {
+                let mut key = [0u8; 36];
+                key[..32].copy_from_slice(&outpoint.txid);
+                key[32..].copy_from_slice(&outpoint.vout.to_le_bytes());
+                env.with_local_frame(4, |env| {
+                    let k = env.byte_array_from_slice(&key)?;
+                    env.set_object_array_element(&released_arr, i as i32, &k)
+                })?;
+            }
             let code = env
                 .call_method(
                     bridge,
                     "onWalletChangesetTransactionsSwept",
-                    "([B[[B[[B)I",
-                    &[(&wid).into(), (&txids).into(), (&winners).into()],
+                    "([B[[B[[B[[B)I",
+                    &[
+                        (&wid).into(),
+                        (&txids).into(),
+                        (&winners).into(),
+                        (&released_arr).into(),
+                    ],
                 )?
                 .i()?;
             if code != 0 {

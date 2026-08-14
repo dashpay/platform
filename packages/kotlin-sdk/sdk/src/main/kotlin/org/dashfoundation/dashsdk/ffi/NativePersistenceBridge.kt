@@ -296,26 +296,31 @@ abstract class NativePersistenceBridge {
 
     /**
      * Transactions the wallet removed this round, as raw 32-byte txids,
-     * each paired by index with the transaction that settled its inputs.
-     * Fired once after the per-account decomposition, and only when the
-     * round swept something. Descriptor `([B[[B[[B)I`.
+     * each paired by index with the transaction that settled its inputs,
+     * plus the outpoints the removals actually freed. Fired once after the
+     * per-account decomposition, and only when the round swept something.
+     * Descriptor `([B[[B[[B[[B)I`.
      *
-     * Each named transaction was a recorded spend that its winner beat to
+     * Each removed transaction was a recorded spend that its winner beat to
      * one of its inputs, so it can never confirm. Every other slot on this
      * bus is additive; this is the only removal, and an implementation that
      * ignores it keeps dead rows that are handed back at the next load and
      * re-create a balance the wallet has already corrected.
      *
-     * The winner decides what happens to the coins the removed transaction
-     * claimed: the ones it took are still spent, only the loser's extra
-     * inputs are free. A winner paying entirely to outside addresses is
-     * never reported as a record, so `supersededBy` is the only signal an
-     * implementation gets about it.
+     * [releasedOutpoints] holds 36-byte keys (raw txid followed by a
+     * little-endian vout) and is wallet-scoped, not attributed per removal:
+     * an implementation holds every input of every row it deletes, so it
+     * only needs to know which of them came free. Everything else it holds
+     * was taken by the transaction that won those inputs and must stay
+     * spent. The set cannot be inferred from [supersededBy] — that
+     * transaction may pay entirely to outside addresses and never be
+     * reported here at all.
      */
     open fun onWalletChangesetTransactionsSwept(
         walletId: ByteArray,
         txids: Array<ByteArray>,
         supersededBy: Array<ByteArray>,
+        releasedOutpoints: Array<ByteArray>,
     ): Int = 0
 
     // ── Identities ────────────────────────────────────────────────────

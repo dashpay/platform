@@ -1002,28 +1002,21 @@ class PlatformWalletPersistenceHandler(
      * wallet has already corrected.
      *
      * The TXOs the transaction created go with it (`txos.txid` cascades).
-     * The ones it *spent* split in two, and the winner is what tells them
-     * apart: inputs the winner also took are gone, inputs only the loser
-     * named are untouched on chain.
+     * The ones it *spent* split in two, and [releasedOutpoints] is the
+     * authority on which is which: an outpoint named there came free, and
+     * every other input the loser claimed was taken by the transaction that
+     * beat it and is gone for good.
      *
-     * A swept loser is always unconfirmed upstream, and this store flips
-     * `isSpent` only for a spender that reached a block — so its inputs are
-     * linked to it at `isSpent = 0`. Deleting the row nils the link, so
-     * doing nothing else would return every one of those coins to the
-     * restore set, the winner's included.
+     * That split cannot be worked out here. A swept loser is always
+     * unconfirmed upstream, and this store flips `isSpent` only for a
+     * spender that reached a block, so the loser holds its inputs by link
+     * alone at `isSpent = 0`; deleting the row nils the link and every one
+     * of those coins would return to the restore set, the winner's
+     * included. Nor can the winner's own row settle it — it may pay only to
+     * outside addresses and never be recorded here, and even a relevant one
+     * is not guaranteed to land in the same round as the sweep.
      *
-     * So each case is handled by what the store can prove:
-     * - the winner is here, meaning it is wallet-relevant and its record has
-     *   re-pointed the inputs it took at itself earlier in this round —
-     *   whatever still points at the loser is the loser's own and stays
-     *   spendable;
-     * - the winner is absent, meaning it pays only to outside addresses and
-     *   is never recorded — nothing tells the two kinds apart, so all of
-     *   them are held out of the restore set. The wallet holds no UTXO for
-     *   either kind either, and the free ones come back when it re-delivers
-     *   them as UTXOs after a rescan.
-     *
-     * Both updates have to run before the delete: the foreign key nulls
+     * Both updates run before the delete: the foreign key nulls
      * `spendingTxid` on delete, and after that nothing finds those rows.
      *
      * Transaction rows are keyed by txid alone, shared across wallets by
@@ -1035,16 +1028,20 @@ class PlatformWalletPersistenceHandler(
         walletId: ByteArray,
         txids: Array<ByteArray>,
         supersededBy: Array<ByteArray>,
+        releasedOutpoints: Array<ByteArray>,
     ): Int = guarded {
         stage(walletId) { db ->
             if (db.walletDao().getByWalletId(walletId) == null) return@stage
-            for ((index, txid) in txids.withIndex()) {
-                val winner = supersededBy.getOrNull(index)
-                if (winner != null && db.transactionDao().getByTxid(winner) != null) {
-                    db.txoDao().releaseSpendClaim(txid)
-                } else {
-                    db.txoDao().holdSpentWithoutSpender(txid)
-                }
+            // Hold every input first, then free the ones upstream named: the
+            // released set is wallet-scoped across the round's removals, so
+            // it is applied once rather than per transaction.
+            for (txid in txids) {
+                db.txoDao().holdSpentWithoutSpender(txid)
+            }
+            for (outpoint in releasedOutpoints) {
+                db.txoDao().releaseByOutpoint(outpoint)
+            }
+            for (txid in txids) {
                 db.transactionDao().deleteByTxid(txid)
             }
         }

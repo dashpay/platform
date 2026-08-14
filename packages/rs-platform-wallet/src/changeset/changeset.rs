@@ -210,24 +210,38 @@ pub struct CoreChangeSet {
     /// Deduplicated on merge by the removed txid: a sweep is idempotent, and a
     /// flush can fold several sweeps together.
     pub swept_transactions: Vec<SweptTransaction>,
+
+    /// Of the inputs those removed transactions claimed, the ones that came
+    /// free — no surviving record spends them too. From
+    /// `WalletEvent::TransactionsSwept.released_outpoints`.
+    ///
+    /// The other half of the sweep, and the half a persister cannot work out
+    /// for itself. Deleting a removed transaction leaves its inputs in two
+    /// kinds: those a surviving transaction also took, which are gone, and
+    /// those only the dead one named, which are spendable again. Upstream
+    /// draws that line (`release_spent_marks`: "a loser spending A+B against
+    /// a winner spending only A must leave A marked and free B") and reports
+    /// the result here, because the survivor may be invisible to this wallet
+    /// — it can spend our coin while paying only external addresses, and
+    /// then it never appears in the event stream at all.
+    ///
+    /// Wallet-scoped rather than attributed per removal, matching upstream: a
+    /// persister holds every input of every transaction it deletes, so it
+    /// only needs to know which of them came free. Everything else it holds
+    /// stays spent.
+    ///
+    /// Deduplicated on merge, same reasoning as the removals themselves.
+    pub swept_released_outpoints: Vec<OutPoint>,
 }
 
 /// One transaction the wallet removed, paired with the transaction whose
 /// arrival settled its inputs.
 ///
-/// The pairing is the point. A persister deleting the removed row also has to
-/// decide what to do with the coins that row claimed to spend, and the answer
-/// depends entirely on the winner: the inputs it took are still spent, while
-/// any *extra* inputs the loser named are not. Upstream keeps exactly that
-/// split (`release_spent_marks`: "a loser spending A+B against a winner
-/// spending only A must leave A marked and free B"), and a persister that
-/// released everything would hand a coin the winner already consumed back to
-/// the wallet as spendable.
-///
-/// A winner that is itself wallet-relevant re-asserts its claim through
-/// `records` in the same round, which is what lets a persister tell the two
-/// apart without carrying the winner's input list: see the persistence
-/// handlers' sweep paths.
+/// The pairing is provenance, not policy: which of the removed transaction's
+/// inputs actually came free is answered by
+/// [`CoreChangeSet::swept_released_outpoints`], never by looking the winner up
+/// — it need not be wallet-relevant, and even when it is, nothing guarantees
+/// its record reaches a persister in the same round as the sweep.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SweptTransaction {
@@ -389,6 +403,18 @@ impl Merge for CoreChangeSet {
             for swept in other.swept_transactions {
                 if seen.insert(swept.txid) {
                     self.swept_transactions.push(swept);
+                }
+            }
+        }
+
+        // The released set folds the same way: a coalesced round frees a coin
+        // once however many sweeps named it.
+        if !other.swept_released_outpoints.is_empty() {
+            let mut seen: std::collections::HashSet<OutPoint> =
+                self.swept_released_outpoints.iter().copied().collect();
+            for outpoint in other.swept_released_outpoints {
+                if seen.insert(outpoint) {
+                    self.swept_released_outpoints.push(outpoint);
                 }
             }
         }

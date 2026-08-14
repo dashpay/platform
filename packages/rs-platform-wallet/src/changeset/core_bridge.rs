@@ -716,6 +716,7 @@ async fn build_core_changeset(
         WalletEvent::TransactionsSwept {
             txids,
             superseded_by,
+            released_outpoints,
             ..
         } => {
             // The only subtractive event upstream emits. Each txid was a
@@ -727,12 +728,15 @@ async fn build_core_changeset(
             // just corrected — the exact bug the upstream sweep fixes.
             //
             // No `spent_utxos` entry for the inputs: a wallet-relevant winner
-            // claims them through its own record. This arm only names the
-            // dead — and the winner alongside each, because the persister
-            // cannot decide what to do with the loser's inputs without it
-            // (upstream keeps the winner's share marked and frees the rest).
+            // claims them through its own record. This arm names the dead and
+            // the coins their removal freed — the persister holds every input
+            // of what it deletes, so `released_outpoints` is the only thing
+            // that tells it which of those to hand back. It cannot work that
+            // out from the txids: the transaction that took the rest may
+            // never appear in this wallet's stream at all.
             tracing::debug!(
                 swept = txids.len(),
+                released = released_outpoints.len(),
                 superseded_by = %superseded_by,
                 "Mirroring swept transactions to the persister"
             );
@@ -744,6 +748,7 @@ async fn build_core_changeset(
                         superseded_by: *superseded_by,
                     })
                     .collect(),
+                swept_released_outpoints: released_outpoints.clone(),
                 ..CoreChangeSet::default()
             }
         }
@@ -1191,11 +1196,23 @@ mod swept_transaction_projection_tests {
         Txid::from_byte_array([byte; 32])
     }
 
+    fn outpoint(byte: u8, vout: u32) -> OutPoint {
+        OutPoint {
+            txid: txid(byte),
+            vout,
+        }
+    }
+
     fn swept(txids: Vec<Txid>) -> WalletEvent {
+        swept_releasing(txids, vec![])
+    }
+
+    fn swept_releasing(txids: Vec<Txid>, released_outpoints: Vec<OutPoint>) -> WalletEvent {
         WalletEvent::TransactionsSwept {
             wallet_id: WALLET_ID,
             txids,
             superseded_by: txid(0xff),
+            released_outpoints,
             balance: WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),
         }
@@ -1238,6 +1255,29 @@ mod swept_transaction_projection_tests {
         assert!(!Merge::is_empty(&cs));
     }
 
+    /// The released set is what a persister acts on, so it has to survive
+    /// the projection intact — it cannot be recovered from the txids, since
+    /// the transaction that took the remaining inputs may never appear here.
+    #[tokio::test]
+    async fn sweep_carries_the_outpoints_it_released() {
+        let cs = build_core_changeset(
+            &test_manager(),
+            &swept_releasing(vec![txid(1)], vec![outpoint(9, 1)]),
+        )
+        .await;
+
+        assert_eq!(cs.swept_released_outpoints, vec![outpoint(9, 1)]);
+    }
+
+    /// An ordinary resend frees nothing: the winner took every input the
+    /// removed transaction named.
+    #[tokio::test]
+    async fn a_sweep_that_freed_nothing_releases_nothing() {
+        let cs = build_core_changeset(&test_manager(), &swept(vec![txid(1)])).await;
+
+        assert!(cs.swept_released_outpoints.is_empty());
+    }
+
     #[tokio::test]
     async fn merged_sweeps_name_each_transaction_once() {
         let mut cs = build_core_changeset(&test_manager(), &swept(vec![txid(1), txid(2)])).await;
@@ -1251,6 +1291,27 @@ mod swept_transaction_projection_tests {
                 .map(|swept| swept.txid)
                 .collect::<Vec<_>>(),
             vec![txid(1), txid(2), txid(3)]
+        );
+    }
+
+    #[tokio::test]
+    async fn merged_sweeps_free_each_coin_once() {
+        let mut cs = build_core_changeset(
+            &test_manager(),
+            &swept_releasing(vec![txid(1)], vec![outpoint(9, 0), outpoint(9, 1)]),
+        )
+        .await;
+        let second = build_core_changeset(
+            &test_manager(),
+            &swept_releasing(vec![txid(2)], vec![outpoint(9, 1), outpoint(9, 2)]),
+        )
+        .await;
+
+        cs.merge(second);
+
+        assert_eq!(
+            cs.swept_released_outpoints,
+            vec![outpoint(9, 0), outpoint(9, 1), outpoint(9, 2)]
         );
     }
 }
