@@ -121,6 +121,24 @@ const DUST_DUFFS: u64 = 10_000;
 /// become usable. On timeout the tool still prints a resume recipe rather
 /// than stranding the funds (see the timeout handling in `run`).
 const PROOF_TIMEOUT: Duration = Duration::from_secs(600);
+/// Safety bound on the key-generation retry loop (see `key_type_is_signable`).
+/// Each draw has a high chance of being all-signable, so this is only a
+/// runaway backstop, never reached in practice.
+const MAX_KEY_GEN_ATTEMPTS: usize = 1000;
+
+/// Key types that `SimpleSigner` can actually sign identity transitions with —
+/// a strict subset of what identity-create will *accept*. In particular it
+/// EXCLUDES `BIP13_SCRIPT_HASH`, which identity-create accepts (no creation
+/// witness) but the signer rejects, and `EDDSA_25519_HASH160`, which the signer
+/// can technically sign but which we do not generate. Restricting generation to
+/// this set guarantees every key on the identity can authorize later
+/// transitions.
+fn key_type_is_signable(kt: KeyType) -> bool {
+    matches!(
+        kt,
+        KeyType::ECDSA_SECP256K1 | KeyType::BLS12_381 | KeyType::ECDSA_HASH160
+    )
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -414,14 +432,42 @@ async fn run() -> Result<(), String> {
     // The identity id derives from the asset-lock outpoint, not from these
     // keys, so the key set is generated the same way in both the fresh and
     // resume paths.
+    //
+    // Constrain the key TYPES at the call site (the shared fixture generator is
+    // used by other callers, so we do not change its behaviour): for
+    // --key-count > 3 it labels the extra authentication keys with a random
+    // type, which can be BIP13_SCRIPT_HASH. Identity-create SUCCEEDS with such a
+    // key (BIP13 needs no creation witness), but SimpleSigner::sign REJECTS it —
+    // the identity would silently carry an authentication key that can never
+    // authorize a later transition. Regenerate any draw that includes a key
+    // type the signer cannot use, so the identity we register is fully usable.
     let mut rng = StdRng::from_entropy();
-    let (identity, key_material): (Identity, Vec<(IdentityPublicKey, [u8; 32])>) =
-        Identity::random_identity_with_main_keys_with_private_key(
-            args.key_count,
-            &mut rng,
-            platform_version,
-        )
-        .map_err(|e| format!("failed to generate identity: {e}"))?;
+    let mut attempts = 0usize;
+    let (identity, key_material): (Identity, Vec<(IdentityPublicKey, [u8; 32])>) = loop {
+        attempts += 1;
+        let generated: (Identity, Vec<(IdentityPublicKey, [u8; 32])>) =
+            Identity::random_identity_with_main_keys_with_private_key(
+                args.key_count,
+                &mut rng,
+                platform_version,
+            )
+            .map_err(|e| format!("failed to generate identity: {e}"))?;
+        if generated
+            .0
+            .public_keys()
+            .values()
+            .all(|pk| key_type_is_signable(pk.key_type()))
+        {
+            break generated;
+        }
+        if attempts >= MAX_KEY_GEN_ATTEMPTS {
+            return Err(format!(
+                "could not generate an identity whose {} keys are all signer-usable after {} \
+                 attempts (unexpected — check the key-type constraint)",
+                args.key_count, attempts
+            ));
+        }
+    };
 
     // Encode the identity key material for the credentials file.
     let mut identity_creds: Vec<(String, String)> = Vec::new();
@@ -850,6 +896,46 @@ mod tests {
         assert!(parse_dapi_addresses("  , ,  ").is_err());
         let ok = parse_dapi_addresses("https://1.2.3.4:1443,https://5.6.7.8:1443").unwrap();
         assert_eq!(ok.len(), 2);
+    }
+
+    #[test]
+    fn only_signer_usable_key_types_are_accepted() {
+        // BIP13_SCRIPT_HASH is the trap — identity-create accepts it but
+        // SimpleSigner::sign rejects it. It (and EDDSA, which we do not
+        // generate) must be excluded from the constraint.
+        assert!(key_type_is_signable(KeyType::ECDSA_SECP256K1));
+        assert!(key_type_is_signable(KeyType::BLS12_381));
+        assert!(key_type_is_signable(KeyType::ECDSA_HASH160));
+        assert!(!key_type_is_signable(KeyType::BIP13_SCRIPT_HASH));
+        assert!(!key_type_is_signable(KeyType::EDDSA_25519_HASH160));
+    }
+
+    #[test]
+    fn max_key_count_identity_ends_up_all_signable() {
+        // Mirror the call-site regenerate loop at the max key count (where the
+        // fixture adds random-typed extra keys) and confirm the accepted
+        // identity holds only signer-usable keys.
+        let pv = PlatformVersion::latest();
+        let mut rng = StdRng::seed_from_u64(7);
+        let mut attempts = 0;
+        let identity = loop {
+            attempts += 1;
+            let (id, _km): (Identity, Vec<(IdentityPublicKey, [u8; 32])>) =
+                Identity::random_identity_with_main_keys_with_private_key(6, &mut rng, pv).unwrap();
+            if id
+                .public_keys()
+                .values()
+                .all(|pk| key_type_is_signable(pk.key_type()))
+            {
+                break id;
+            }
+            assert!(attempts < MAX_KEY_GEN_ATTEMPTS, "loop should converge");
+        };
+        assert!(identity.public_keys().len() >= 6);
+        assert!(identity
+            .public_keys()
+            .values()
+            .all(|pk| key_type_is_signable(pk.key_type())));
     }
 
     #[test]
