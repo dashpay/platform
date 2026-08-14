@@ -55,11 +55,12 @@
 //! 2. **`limit` is mandatory, `offset` is free, `start_at` is refused.**
 //!    `limit` is the `k` of the walk and the ranked surface has no
 //!    server default for it, so it must be supplied. `offset` is the
-//!    rank the page starts at and is unbounded above: grovedb's
-//!    paginated prover is `O(log n + k)` *regardless of offset* (the
-//!    skipped region is attested by counted subtree commitments, never
-//!    walked entry by entry), so a large offset is not a cost lever and
-//!    needs no ceiling. `start_at` / `start_after` name a document id,
+//!    rank the page starts at and is unbounded above: grovedb counts
+//!    the skipped region from the subtree aggregates rather than
+//!    walking it entry by entry, so both executors are `O(log n + k)`
+//!    *regardless of offset* and a large offset is not a cost lever on
+//!    either. Only the proved result additionally attests the count.
+//!    So the offset needs no ceiling. `start_at` / `start_after` name a document id,
 //!    which does not appear anywhere in an aggregate-ordered keyspace.
 //! 3. **Entry order IS the ranking order.** The executor returns entries
 //!    in the order grovedb walked the secondary; callers must not

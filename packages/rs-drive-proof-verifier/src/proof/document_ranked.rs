@@ -7,9 +7,9 @@
 //! the per-axis *secondary* Merk of an indexed tree (grovedb PR #657),
 //! so it costs `O(log n + k)` and comes with a proof that commits to
 //! exactly the `k` returned `(aggregate, group key)` pairs — plus the
-//! `OFFSET`, which grovedb attests from counted subtree commitments
-//! rather than by walking the skipped region, so deep pages cost the
-//! same as the first one.
+//! `OFFSET`, which grovedb counts from the subtree aggregates rather
+//! than by walking the skipped region — and additionally attests, on
+//! this proved path — so deep pages cost the same as the first one.
 //!
 //! This module holds the client-facing result type
 //! ([`DocumentRankedEntries`]), the tenderdash-composition wrapper
