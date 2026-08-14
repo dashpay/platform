@@ -9,7 +9,8 @@
 //! exactly the `k` returned `(aggregate, group key)` pairs — plus the
 //! `OFFSET`, which grovedb counts from the subtree aggregates rather
 //! than by walking the skipped region — and additionally attests, on
-//! this proved path — so deep pages cost the same as the first one.
+//! this proved path — so a deep page costs `O(log n + k)` like any
+//! other rather than growing with the offset.
 //!
 //! This module holds the client-facing result type
 //! ([`DocumentRankedEntries`]), the tenderdash-composition wrapper

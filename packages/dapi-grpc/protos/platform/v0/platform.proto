@@ -1133,8 +1133,9 @@ message GetDocumentsRequest {
     // proved request that count is additionally *attested* — committed
     // to by the proof and re-derived by the verifier; on an unproved
     // one it is the node's own report. See `RankedEntries.skipped`. There is deliberately no ceiling — an
-    // offset of 4 and an offset of four billion cost the same, so
-    // there is no denial-of-service lever a cap would close. An offset
+    // offset of 4 and an offset of four billion cost the same *order*
+    // of work — neither walks the region it skips — so there is no
+    // denial-of-service lever a cap would close. An offset
     // past the end of the ranking is a provable answer rather than an
     // error: `entries` comes back empty and `skipped` is the ranking's
     // whole population.
