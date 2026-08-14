@@ -192,6 +192,32 @@ fn parse_network(s: &str) -> Result<Network, String> {
     }
 }
 
+/// Parse the comma-separated `--address` list into DAPI endpoints, rejecting
+/// an EMPTY result (e.g. `""` or `",,"`). An empty endpoint list otherwise
+/// flows through `AddressList::from_iter` and `SdkBuilder::build` unchecked and
+/// fails only on the first Platform request — AFTER the asset-lock funding tx
+/// is signed and broadcast, stranding the funds. This validation guards a
+/// spend, so it must run before any funding work.
+fn parse_dapi_addresses(arg: &str) -> Result<Vec<DapiAddress>, String> {
+    let addresses = arg
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            s.parse::<DapiAddress>()
+                .map_err(|e| format!("failed to parse address '{s}': {e}"))
+        })
+        .collect::<Result<Vec<DapiAddress>, String>>()?;
+    if addresses.is_empty() {
+        return Err(
+            "--address resolved to an empty endpoint list; provide at least one DAPI address \
+             such as https://1.2.3.4:1443. Refusing before any funding work."
+                .to_string(),
+        );
+    }
+    Ok(addresses)
+}
+
 /// Append `KEY=value` lines to the mode-600 credentials file. Creates
 /// the file if absent; never truncates.
 fn append_creds(path: &str, lines: &[(String, String)]) -> Result<(), String> {
@@ -355,17 +381,10 @@ async fn run() -> Result<(), String> {
     }
 
     // --- Platform SDK (DAPI + Core for quorum public keys) ---
-    let addresses = args
-        .address
-        .split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(|s| {
-            s.parse::<DapiAddress>()
-                .map_err(|e| format!("failed to parse address '{s}': {e}"))
-        })
-        .collect::<Result<Vec<DapiAddress>, String>>()?;
-    let address_list = AddressList::from_iter(addresses);
+    // Reject an empty endpoint list BEFORE building the SDK or doing any
+    // funding work (an empty list otherwise reaches the fresh path and the
+    // asset lock is broadcast before the first Platform request fails).
+    let address_list = AddressList::from_iter(parse_dapi_addresses(&args.address)?);
 
     // No HTTP quorum endpoint exists for this devnet, so the SDK fetches
     // quorum public keys (for proof verification) from Core RPC.
@@ -820,6 +839,17 @@ mod tests {
         assert!(matches!(parse_network("mainnet"), Ok(Network::Mainnet)));
         assert!(matches!(parse_network("regtest"), Ok(Network::Regtest)));
         assert!(parse_network("bogus").is_err());
+    }
+
+    #[test]
+    fn dapi_addresses_reject_empty_before_any_spend() {
+        // An empty endpoint list must be a hard error — otherwise it reaches the
+        // funding path and the asset lock is broadcast before the SDK fails.
+        assert!(parse_dapi_addresses("").is_err());
+        assert!(parse_dapi_addresses(",,").is_err());
+        assert!(parse_dapi_addresses("  , ,  ").is_err());
+        let ok = parse_dapi_addresses("https://1.2.3.4:1443,https://5.6.7.8:1443").unwrap();
+        assert_eq!(ok.len(), 2);
     }
 
     #[test]
