@@ -5412,6 +5412,133 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         return (buf, written)
     }
 
+    /// Report which transaction the mirror recorded as spending the inputs of
+    /// this wallet's unresolved asset locks, whether or not that spender ever
+    /// reached a block.
+    ///
+    /// Rust knows which outpoints its locks spend but not who took them: the
+    /// in-memory transaction history it would normally consult is empty at
+    /// load. The spender's context is passed through verbatim; which contexts
+    /// count as final is Rust's decision.
+    private func buildAssetLockInputSpendBuffer(
+        walletId: Data,
+        allocation: LoadAllocation
+    ) -> (UnsafeMutablePointer<AssetLockInputSpendFFI>?, Int) {
+        // Resolve the outpoints of interest first — the inputs of the
+        // unresolved asset locks — and query only those. Fetching the
+        // wallet's spent TXOs and capping the result would be wrong: nothing
+        // orders that set, so a wallet with more history than the cap could
+        // return a page that excludes the very outpoint the screen needs, and
+        // startup would be back to no evidence and a full proof wait.
+        let lockInputs = unresolvedAssetLockInputs(walletId: walletId)
+        guard !lockInputs.isEmpty else { return (nil, 0) }
+
+        // One point lookup per outpoint, rather than one query with the whole
+        // set inlined: `outpoint` is the unique key, so each fetch is an index
+        // hit, and equality is the one predicate shape this file already
+        // relies on everywhere. A captured-collection `contains` would have to
+        // survive SwiftData's own translation, and this query runs on the load
+        // path where a translation failure is not something `try?` can catch.
+        //
+        // Everything else is decided in Swift, on the fetched row — never in
+        // the predicate. In particular `spendingTransaction` is read here and
+        // not chased in a predicate: that drops SwiftData onto a
+        // nested-optional codepath that crashes the process (see
+        // `PersistentTxo.isSpent`, which exists for exactly this reason).
+        // `isSpent` is likewise checked in Swift; it flips under the same
+        // in-block condition the conflict screen requires of a spender, so it
+        // stays as the guard, just on this side of the fetch.
+        //
+        // Rows are collected into an array first: a row with no spender or a
+        // malformed txid is skipped, so the count is not known until the loop
+        // ends — and registering the buffer for a count larger than the
+        // initialized prefix would have `release()` deinitialize uninitialized
+        // memory, which is UB.
+        var rows: [AssetLockInputSpendFFI] = []
+        rows.reserveCapacity(lockInputs.count)
+        for key in lockInputs {
+            var descriptor = FetchDescriptor<PersistentTxo>(
+                predicate: #Predicate { $0.outpoint == key }
+            )
+            descriptor.fetchLimit = 1
+            descriptor.relationshipKeyPathsForPrefetching = [\.spendingTransaction]
+            guard let txo = try? backgroundContext.fetch(descriptor).first,
+                  txo.walletId == walletId,
+                  txo.isSpent,
+                  let spender = txo.spendingTransaction,
+                  txo.txid.count == 32,
+                  spender.txid.count == 32
+            else { continue }
+
+            var row = AssetLockInputSpendFFI()
+            txo.txid.withUnsafeBytes { src in
+                Swift.withUnsafeMutableBytes(of: &row.prev_txid) { dst in
+                    dst.copyMemory(from: src)
+                }
+            }
+            row.vout = txo.vout
+            spender.txid.withUnsafeBytes { src in
+                Swift.withUnsafeMutableBytes(of: &row.spender_txid) { dst in
+                    dst.copyMemory(from: src)
+                }
+            }
+            row.spender_height = spender.blockHeight
+            row.spender_context = spender.context
+            rows.append(row)
+        }
+        guard !rows.isEmpty else { return (nil, 0) }
+
+        let buf = UnsafeMutablePointer<AssetLockInputSpendFFI>.allocate(capacity: rows.count)
+        buf.initialize(from: rows, count: rows.count)
+        allocation.assetLockInputSpendBuffers.append((buf, rows.count))
+        return (buf, rows.count)
+    }
+
+    /// The 36-byte outpoints spent by this wallet's unresolved asset locks
+    /// (`statusRaw < 2`), decoded from their persisted funding transactions.
+    /// Deduplicated, since two locks built from the same UTXO name the same
+    /// outpoint and the caller does one fetch per element.
+    ///
+    /// The relationship cannot answer this: `PersistentTransaction.inputs` is
+    /// the inverse of `PersistentTxo.spendingTransaction`, so for exactly the
+    /// case that matters — the outpoint taken by a *different* transaction —
+    /// it points at the winner and the lock's own edge is absent.
+    private func unresolvedAssetLockInputs(walletId: Data) -> [Data] {
+        let descriptor = FetchDescriptor<PersistentAssetLock>(
+            predicate: #Predicate { entry in
+                entry.walletId == walletId && entry.statusRaw < 2
+            }
+        )
+        guard let locks = try? backgroundContext.fetch(descriptor), !locks.isEmpty else {
+            return []
+        }
+        guard let network = walletNetwork(walletId: walletId) else { return [] }
+
+        var outpoints: [Data] = []
+        var seen = Set<Data>()
+        for lock in locks {
+            guard let outpoint = decodeOutPointHex(lock.outPointHex) else { continue }
+            let txidData = Data(outpoint.prefix(32))
+            var txDescriptor = FetchDescriptor<PersistentTransaction>(
+                predicate: #Predicate { $0.txid == txidData }
+            )
+            txDescriptor.fetchLimit = 1
+            guard let txRow = try? backgroundContext.fetch(txDescriptor).first,
+                  !txRow.transactionData.isEmpty,
+                  let decoded = try? TransactionDecoder.decode(txRow.transactionData, network: network)
+            else { continue }
+
+            for input in decoded.inputs {
+                guard input.prevTxid.count == 32 else { continue }
+                let key = PersistentTxo.makeOutpoint(txid: input.prevTxid, vout: input.prevVout)
+                if seen.insert(key).inserted {
+                    outpoints.append(key)
+                }
+            }
+        }
+        return outpoints
+    }
+
     /// Build the per-wallet `UnresolvedAssetLockTxRecordFFI` array
     /// for the load callback. One entry per `PersistentAssetLock` row
     /// at `statusRaw < 2` (Built / Broadcast) whose funding tx has a
@@ -5430,69 +5557,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// transaction table) are skipped — the Rust side has no way to
     /// reconstruct the funding tx without its consensus bytes, so
     /// projecting an empty row would just bloat the FFI surface.
-    /// Cap on spend-linkage rows handed to Rust. The set is a wallet's
-    /// spent TXOs, which stays small for the wallets this screen matters
-    /// for; the cap only exists so a pathological history cannot balloon
-    /// the load callback.
-    private static let assetLockInputSpendCap = 4096
-
-    /// Report which transaction the mirror recorded as spending each output
-    /// of this wallet, whether or not that spender ever reached a block.
-    ///
-    /// Rust knows the outpoints its locks spend and filters this set down to
-    /// them; it cannot know the spender, because the in-memory transaction
-    /// history it would normally consult is empty at load. The spender's
-    /// context is passed through verbatim; which contexts count as final is
-    /// Rust's decision.
-    private func buildAssetLockInputSpendBuffer(
-        walletId: Data,
-        allocation: LoadAllocation
-    ) -> (UnsafeMutablePointer<AssetLockInputSpendFFI>?, Int) {
-        // Filter on the scalar column, never on `spendingTransaction`:
-        // chasing that optional relationship in a predicate drops SwiftData
-        // onto a nested-optional codepath that crashes the process, which
-        // `try?` cannot recover from — see `PersistentTxo.isSpent`, which
-        // exists for exactly this reason. No rows are lost here: `isSpent`
-        // flips under the same in-block condition the conflict screen
-        // requires of a spender, so every row it can act on is included.
-        var descriptor = FetchDescriptor<PersistentTxo>(
-            predicate: #Predicate { txo in
-                txo.walletId == walletId && txo.isSpent == true
-            }
-        )
-        descriptor.relationshipKeyPathsForPrefetching = [\.spendingTransaction]
-        descriptor.fetchLimit = Self.assetLockInputSpendCap
-        guard let spent = try? backgroundContext.fetch(descriptor), !spent.isEmpty else {
-            return (nil, 0)
-        }
-
-        let buf = UnsafeMutablePointer<AssetLockInputSpendFFI>.allocate(capacity: spent.count)
-        allocation.assetLockInputSpendBuffers.append((buf, spent.count))
-        var written = 0
-        for txo in spent {
-            guard let spender = txo.spendingTransaction else { continue }
-
-            guard txo.txid.count == 32, spender.txid.count == 32 else { continue }
-            var row = AssetLockInputSpendFFI()
-            txo.txid.withUnsafeBytes { src in
-                Swift.withUnsafeMutableBytes(of: &row.prev_txid) { dst in
-                    dst.copyMemory(from: src)
-                }
-            }
-            row.vout = txo.vout
-            spender.txid.withUnsafeBytes { src in
-                Swift.withUnsafeMutableBytes(of: &row.spender_txid) { dst in
-                    dst.copyMemory(from: src)
-                }
-            }
-            row.spender_height = spender.blockHeight
-            row.spender_context = spender.context
-            buf[written] = row
-            written += 1
-        }
-        return written == 0 ? (nil, 0) : (buf, written)
-    }
-
     private func buildUnresolvedAssetLockTxRecordBuffer(
         walletId: Data,
         allocation: LoadAllocation
