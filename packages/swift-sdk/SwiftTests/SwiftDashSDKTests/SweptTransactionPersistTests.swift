@@ -130,73 +130,90 @@ final class SweptTransactionPersistTests: XCTestCase {
 
     /// Drive a changeset of sweep batches through the same entry point the
     /// Rust persister calls, preserving their order.
+    ///
+    /// The nested buffers are allocated explicitly and freed after the call.
+    /// `withUnsafeMutableBufferPointer` only guarantees its pointer for the
+    /// duration of its own closure, so storing `baseAddress` in a struct the
+    /// FFI reads later would hand the consumer a dangling pointer.
     @discardableResult
     private func sweep(
         _ handler: PlatformWalletPersistenceHandler,
         _ batches: [Batch]
     ) -> Bool {
-        // Every nested buffer has to stay alive for the whole call, so they
-        // are held here and only pointed at from the FFI structs.
-        var txidStorage: [[(UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8)]] = []
-        var releasedStorage: [[OutPointFFI]] = []
+        typealias RawTxid = (
+            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+        )
+
+        var txidBuffers: [UnsafeMutablePointer<RawTxid>] = []
+        var releasedBuffers: [UnsafeMutablePointer<OutPointFFI>] = []
+        var ffiBatches: [SweepBatchFFI] = []
+        defer {
+            for (i, buf) in txidBuffers.enumerated() {
+                buf.deinitialize(count: batches[i].losers.count)
+                buf.deallocate()
+            }
+            for (i, buf) in releasedBuffers.enumerated() {
+                buf.deinitialize(count: batches[i].released.count)
+                buf.deallocate()
+            }
+        }
 
         for batch in batches {
-            var raw: [(UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                       UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                       UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                       UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8)] = []
-            for loser in batch.losers {
-                var tuple = (UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
-                             UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
-                             UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
-                             UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0))
+            let txids = UnsafeMutablePointer<RawTxid>.allocate(capacity: max(batch.losers.count, 1))
+            for (i, loser) in batch.losers.enumerated() {
+                var tuple: RawTxid = (0, 0, 0, 0, 0, 0, 0, 0,
+                                      0, 0, 0, 0, 0, 0, 0, 0,
+                                      0, 0, 0, 0, 0, 0, 0, 0,
+                                      0, 0, 0, 0, 0, 0, 0, 0)
                 Swift.withUnsafeMutableBytes(of: &tuple) { dst in
                     loser.withUnsafeBytes { src in dst.copyMemory(from: src) }
                 }
-                raw.append(tuple)
+                txids.advanced(by: i).initialize(to: tuple)
             }
-            txidStorage.append(raw)
+            txidBuffers.append(txids)
 
-            var freed: [OutPointFFI] = []
-            for outpoint in batch.released {
+            let freed = UnsafeMutablePointer<OutPointFFI>.allocate(
+                capacity: max(batch.released.count, 1)
+            )
+            for (i, outpoint) in batch.released.enumerated() {
                 var entry = OutPointFFI()
                 Swift.withUnsafeMutableBytes(of: &entry.txid) { dst in
                     outpoint.txid.withUnsafeBytes { src in dst.copyMemory(from: src) }
                 }
                 entry.vout = outpoint.vout
-                freed.append(entry)
+                freed.advanced(by: i).initialize(to: entry)
             }
-            releasedStorage.append(freed)
-        }
+            releasedBuffers.append(freed)
 
-        var ffiBatches: [SweepBatchFFI] = []
-        for (i, batch) in batches.enumerated() {
             var entry = SweepBatchFFI()
-            txidStorage[i].withUnsafeMutableBufferPointer { buf in
-                entry.txids = buf.baseAddress
-                entry.txids_count = UInt(buf.count)
-            }
-            releasedStorage[i].withUnsafeMutableBufferPointer { buf in
-                entry.released_outpoints = buf.baseAddress
-                entry.released_outpoints_count = UInt(buf.count)
-            }
+            entry.txids = txids
+            entry.txids_count = UInt(batch.losers.count)
+            entry.released_outpoints = freed
+            entry.released_outpoints_count = UInt(batch.released.count)
             Swift.withUnsafeMutableBytes(of: &entry.superseded_by) { dst in
                 batch.winner.withUnsafeBytes { src in dst.copyMemory(from: src) }
             }
             ffiBatches.append(entry)
         }
 
+        let sweeps = UnsafeMutablePointer<SweepBatchFFI>.allocate(
+            capacity: max(ffiBatches.count, 1)
+        )
+        sweeps.initialize(from: ffiBatches, count: ffiBatches.count)
+        defer {
+            sweeps.deinitialize(count: ffiBatches.count)
+            sweeps.deallocate()
+        }
+
         handler.beginChangeset(walletId: walletId)
-        let applied = ffiBatches.withUnsafeMutableBufferPointer { buf -> Bool in
-            var cs = WalletChangeSetFFI()
-            cs.sweeps = buf.baseAddress
-            cs.sweeps_count = UInt(buf.count)
-            return withUnsafePointer(to: &cs) { csPtr in
-                handler.persistWalletChangeset(walletId: walletId, changeset: csPtr)
-            }
+        var cs = WalletChangeSetFFI()
+        cs.sweeps = sweeps
+        cs.sweeps_count = UInt(ffiBatches.count)
+        let applied = withUnsafePointer(to: &cs) { csPtr in
+            handler.persistWalletChangeset(walletId: walletId, changeset: csPtr)
         }
         _ = handler.endChangeset(walletId: walletId, success: applied)
         return applied

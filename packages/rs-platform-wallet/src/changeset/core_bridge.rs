@@ -1199,6 +1199,33 @@ mod swept_transaction_projection_tests {
         }
     }
 
+    /// A minimal record for `txid` — only its identity matters here, since
+    /// the merge keys reinstatement on the txid alone.
+    fn record_for(txid: Txid) -> TransactionRecord {
+        let tx = dashcore::Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: None,
+        };
+        let mut record = TransactionRecord::new(
+            tx,
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
+            },
+            TransactionContext::Mempool,
+            key_wallet::transaction_checking::transaction_router::TransactionType::Standard,
+            key_wallet::managed_account::transaction_record::TransactionDirection::Outgoing,
+            Vec::new(),
+            Vec::new(),
+            0,
+        );
+        record.txid = txid;
+        record
+    }
+
     fn swept(txids: Vec<Txid>) -> WalletEvent {
         swept_releasing(txids, vec![])
     }
@@ -1283,6 +1310,59 @@ mod swept_transaction_projection_tests {
         assert_eq!(cs.sweeps.len(), 2);
         assert_eq!(cs.sweeps[0].txids, vec![txid(1), txid(2)]);
         assert_eq!(cs.sweeps[1].txids, vec![txid(3)]);
+    }
+
+    /// A record arriving after a sweep of the same transaction reinstates
+    /// it. Every persister writes records before replaying sweeps, so a
+    /// buffered sweep would otherwise delete a row the wallet has since
+    /// brought back.
+    ///
+    /// Reachable through IS-lock precedence: an unconfirmed transaction is
+    /// swept when an IS-locked conflict arrives, then returns chainlocked
+    /// and sweeps that conflict in turn — leaving one round holding both
+    /// removals plus the reinstating record.
+    #[tokio::test]
+    async fn a_record_arriving_after_its_sweep_survives_the_round() {
+        let reinstated = txid(1);
+
+        let mut cs = build_core_changeset(
+            &test_manager(),
+            &swept_releasing(vec![reinstated], vec![outpoint(9, 1)]),
+        )
+        .await;
+        assert_eq!(
+            cs.sweeps.len(),
+            1,
+            "sanity: the sweep is there to begin with"
+        );
+
+        // The wallet records it again, which is the newer fact.
+        let mut later = CoreChangeSet::default();
+        later.records.push(record_for(reinstated));
+        cs.merge(later);
+
+        assert!(
+            cs.sweeps.is_empty(),
+            "the sweep must not delete a transaction the wallet brought back"
+        );
+        assert_eq!(cs.records.len(), 1);
+    }
+
+    /// Only the reinstated transaction leaves the batch; anything else it
+    /// removed still goes.
+    #[tokio::test]
+    async fn a_reinstated_record_only_rescues_its_own_transaction() {
+        let reinstated = txid(1);
+        let still_dead = txid(2);
+
+        let mut cs =
+            build_core_changeset(&test_manager(), &swept(vec![reinstated, still_dead])).await;
+        let mut later = CoreChangeSet::default();
+        later.records.push(record_for(reinstated));
+        cs.merge(later);
+
+        assert_eq!(cs.sweeps.len(), 1);
+        assert_eq!(cs.sweeps[0].txids, vec![still_dead]);
     }
 
     /// A release is only true of the wallet the sweep that made it saw. A
