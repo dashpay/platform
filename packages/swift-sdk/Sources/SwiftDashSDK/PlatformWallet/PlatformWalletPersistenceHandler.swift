@@ -5462,8 +5462,16 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             )
             descriptor.fetchLimit = 1
             descriptor.relationshipKeyPathsForPrefetching = [\.spendingTransaction]
+            // Ownership goes through `resolvedWalletId`, not the raw column:
+            // `PersistentTxo.walletId` is empty on rows written before it
+            // existed, and the spend-reconciliation path sets `isSpent` and
+            // the spender link without backfilling it. Comparing the column
+            // directly discards exactly the legacy rows a confirmed
+            // conflicting spender is recorded on, leaving the restored map
+            // empty and startup back in the full proof wait. This is the same
+            // fallback `loadWalletList` already uses.
             guard let txo = try? backgroundContext.fetch(descriptor).first,
-                  txo.walletId == walletId,
+                  Self.resolvedWalletId(of: txo) == walletId,
                   txo.isSpent,
                   let spender = txo.spendingTransaction,
                   txo.txid.count == 32,
