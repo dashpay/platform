@@ -18,7 +18,7 @@ use key_wallet::account::{AccountType, StandardAccountType};
 use key_wallet::managed_account::transaction_record::{TransactionDirection, TransactionRecord};
 use key_wallet::transaction_checking::{TransactionContext, TransactionType};
 use key_wallet::Utxo;
-use platform_wallet::changeset::changeset::SweptTransaction;
+use platform_wallet::changeset::changeset::SweepBatch;
 use platform_wallet::changeset::CoreChangeSet;
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet_storage::sqlite::schema::core_state;
@@ -159,9 +159,10 @@ fn sweep_only_changeset_deletes_loser_row_and_its_outputs() {
         let mut conn = persister.lock_conn_for_test();
         let tx = conn.transaction().unwrap();
         let cs = CoreChangeSet {
-            swept_transactions: vec![SweptTransaction {
-                txid: loser_txid,
+            sweeps: vec![SweepBatch {
+                txids: vec![loser_txid],
                 superseded_by: Txid::from_byte_array([0x11; 32]),
+                released_outpoints: vec![],
             }],
             ..Default::default()
         };
@@ -197,9 +198,10 @@ fn sweeping_an_unknown_txid_is_a_no_op() {
     let mut conn = persister.lock_conn_for_test();
     let tx = conn.transaction().unwrap();
     let cs = CoreChangeSet {
-        swept_transactions: vec![SweptTransaction {
-            txid: Txid::from_byte_array([0x20; 32]),
+        sweeps: vec![SweepBatch {
+            txids: vec![Txid::from_byte_array([0x20; 32])],
             superseded_by: Txid::from_byte_array([0x21; 32]),
+            released_outpoints: vec![],
         }],
         ..Default::default()
     };
@@ -291,11 +293,11 @@ fn the_released_set_frees_exactly_the_inputs_it_names() {
     {
         let tx = conn.transaction().unwrap();
         let cs = CoreChangeSet {
-            swept_transactions: vec![SweptTransaction {
-                txid: loser_txid,
+            sweeps: vec![SweepBatch {
+                txids: vec![loser_txid],
                 superseded_by: winner_txid,
+                released_outpoints: vec![exclusive_input],
             }],
-            swept_released_outpoints: vec![exclusive_input],
             ..Default::default()
         };
         core_state::apply(&tx, &w, &cs).unwrap();
@@ -374,11 +376,11 @@ fn an_absent_winner_still_keeps_its_own_input_spent() {
         let cs = CoreChangeSet {
             // `superseded_by` never arrives in this store; upstream still
             // knows which of the loser's inputs it did not take.
-            swept_transactions: vec![SweptTransaction {
-                txid: loser_txid,
+            sweeps: vec![SweepBatch {
+                txids: vec![loser_txid],
                 superseded_by: unrecorded_winner_txid,
+                released_outpoints: vec![loser_exclusive],
             }],
-            swept_released_outpoints: vec![loser_exclusive],
             ..Default::default()
         };
         core_state::apply(&tx, &w, &cs).unwrap();
@@ -471,11 +473,11 @@ fn a_released_coin_a_surviving_record_reclaims_stays_spent() {
         let cs = CoreChangeSet {
             records: vec![reclaimer],
             spent_utxos: vec![make_utxo(&addr, funding_txid, 1, 500)],
-            swept_transactions: vec![SweptTransaction {
-                txid: loser_txid,
+            sweeps: vec![SweepBatch {
+                txids: vec![loser_txid],
                 superseded_by: winner_txid,
+                released_outpoints: vec![freed_coin],
             }],
-            swept_released_outpoints: vec![freed_coin],
             ..Default::default()
         };
         core_state::apply(&tx, &w, &cs).unwrap();
@@ -539,9 +541,10 @@ fn sweeping_a_transaction_deletes_its_instant_lock() {
     {
         let tx = conn.transaction().unwrap();
         let cs = CoreChangeSet {
-            swept_transactions: vec![SweptTransaction {
-                txid: loser_txid,
+            sweeps: vec![SweepBatch {
+                txids: vec![loser_txid],
                 superseded_by: Txid::from_byte_array([0x61; 32]),
+                released_outpoints: vec![],
             }],
             ..Default::default()
         };
@@ -563,4 +566,94 @@ fn instant_lock_count(conn: &rusqlite::Connection, w: &WalletId, txid: &Txid) ->
         |row| row.get(0),
     )
     .unwrap()
+}
+
+/// Two sweeps in one round, and the later one disagrees with the earlier.
+///
+/// The first frees a coin; a transaction then spends it; the second sweep
+/// removes that spender but keeps the coin spent, because its own winner
+/// took it. The later answer is the true one, and only replaying the batches
+/// in order makes it stick — folding the release sets together leaves the
+/// first "free" outliving the last "spent".
+#[test]
+fn a_later_sweep_keeping_a_coin_spent_overrides_an_earlier_release() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xE6);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = p2pkh(0x06);
+    let funding_txid = Txid::from_byte_array([0x70; 32]);
+    let contested = OutPoint::new(funding_txid, 0);
+
+    let first_loser = Txid::from_byte_array([0x71; 32]);
+    let second_loser = Txid::from_byte_array([0x72; 32]);
+
+    let first = tx_record(
+        first_loser,
+        vec![contested],
+        vec![TxOut {
+            value: 400,
+            script_pubkey: addr.script_pubkey(),
+        }],
+    );
+    // The transaction that took the freed coin, and that the second sweep
+    // removes. It is a loser too, so it is not a surviving claim.
+    let second = tx_record(
+        second_loser,
+        vec![contested],
+        vec![TxOut {
+            value: 300,
+            script_pubkey: addr.script_pubkey(),
+        }],
+    );
+
+    let mut conn = persister.lock_conn_for_test();
+    derive_address(&conn, &w, 0, &addr);
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            new_utxos: vec![make_utxo(&addr, funding_txid, 0, 500)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![first, second],
+            spent_utxos: vec![make_utxo(&addr, funding_txid, 0, 500)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![
+                SweepBatch {
+                    txids: vec![first_loser],
+                    superseded_by: Txid::from_byte_array([0x7a; 32]),
+                    released_outpoints: vec![contested],
+                },
+                // The second winner consumed the coin, so this sweep frees
+                // nothing — and that has to override the release above.
+                SweepBatch {
+                    txids: vec![second_loser],
+                    superseded_by: Txid::from_byte_array([0x7b; 32]),
+                    released_outpoints: vec![],
+                },
+            ],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    assert!(
+        !unspent(&conn, &w).contains(&contested),
+        "the later sweep kept the coin spent, so it must not be spendable"
+    );
 }

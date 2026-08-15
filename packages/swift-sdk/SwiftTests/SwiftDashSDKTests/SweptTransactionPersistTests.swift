@@ -120,45 +120,82 @@ final class SweptTransactionPersistTests: XCTestCase {
 
     /// Drive one changeset round of sweeps through the same entry point the
     /// Rust persister calls.
+    /// One sweep batch: the transactions it removed, the winner it is
+    /// attributed to, and the coins it freed.
+    private struct Batch {
+        var losers: [Data]
+        var winner: Data
+        var released: [(txid: Data, vout: UInt32)] = []
+    }
+
+    /// Drive a changeset of sweep batches through the same entry point the
+    /// Rust persister calls, preserving their order.
     @discardableResult
     private func sweep(
         _ handler: PlatformWalletPersistenceHandler,
-        _ pairs: [(loser: Data, winner: Data)],
-        released: [(txid: Data, vout: UInt32)] = []
+        _ batches: [Batch]
     ) -> Bool {
-        var entries: [SweptTransactionFFI] = []
-        for pair in pairs {
-            var entry = SweptTransactionFFI()
-            Swift.withUnsafeMutableBytes(of: &entry.txid) { dst in
-                pair.loser.withUnsafeBytes { src in dst.copyMemory(from: src) }
+        // Every nested buffer has to stay alive for the whole call, so they
+        // are held here and only pointed at from the FFI structs.
+        var txidStorage: [[(UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8)]] = []
+        var releasedStorage: [[OutPointFFI]] = []
+
+        for batch in batches {
+            var raw: [(UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                       UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                       UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                       UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8)] = []
+            for loser in batch.losers {
+                var tuple = (UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
+                             UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
+                             UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0),
+                             UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0))
+                Swift.withUnsafeMutableBytes(of: &tuple) { dst in
+                    loser.withUnsafeBytes { src in dst.copyMemory(from: src) }
+                }
+                raw.append(tuple)
             }
-            Swift.withUnsafeMutableBytes(of: &entry.superseded_by) { dst in
-                pair.winner.withUnsafeBytes { src in dst.copyMemory(from: src) }
+            txidStorage.append(raw)
+
+            var freed: [OutPointFFI] = []
+            for outpoint in batch.released {
+                var entry = OutPointFFI()
+                Swift.withUnsafeMutableBytes(of: &entry.txid) { dst in
+                    outpoint.txid.withUnsafeBytes { src in dst.copyMemory(from: src) }
+                }
+                entry.vout = outpoint.vout
+                freed.append(entry)
             }
-            entries.append(entry)
+            releasedStorage.append(freed)
         }
 
-        var freed: [OutPointFFI] = []
-        for outpoint in released {
-            var entry = OutPointFFI()
-            Swift.withUnsafeMutableBytes(of: &entry.txid) { dst in
-                outpoint.txid.withUnsafeBytes { src in dst.copyMemory(from: src) }
+        var ffiBatches: [SweepBatchFFI] = []
+        for (i, batch) in batches.enumerated() {
+            var entry = SweepBatchFFI()
+            txidStorage[i].withUnsafeMutableBufferPointer { buf in
+                entry.txids = buf.baseAddress
+                entry.txids_count = UInt(buf.count)
             }
-            entry.vout = outpoint.vout
-            freed.append(entry)
+            releasedStorage[i].withUnsafeMutableBufferPointer { buf in
+                entry.released_outpoints = buf.baseAddress
+                entry.released_outpoints_count = UInt(buf.count)
+            }
+            Swift.withUnsafeMutableBytes(of: &entry.superseded_by) { dst in
+                batch.winner.withUnsafeBytes { src in dst.copyMemory(from: src) }
+            }
+            ffiBatches.append(entry)
         }
 
         handler.beginChangeset(walletId: walletId)
-        let applied = entries.withUnsafeMutableBufferPointer { buf -> Bool in
-            freed.withUnsafeMutableBufferPointer { freedBuf -> Bool in
-                var cs = WalletChangeSetFFI()
-                cs.swept = buf.baseAddress
-                cs.swept_count = UInt(buf.count)
-                cs.swept_released_outpoints = freedBuf.baseAddress
-                cs.swept_released_outpoints_count = UInt(freedBuf.count)
-                return withUnsafePointer(to: &cs) { csPtr in
-                    handler.persistWalletChangeset(walletId: walletId, changeset: csPtr)
-                }
+        let applied = ffiBatches.withUnsafeMutableBufferPointer { buf -> Bool in
+            var cs = WalletChangeSetFFI()
+            cs.sweeps = buf.baseAddress
+            cs.sweeps_count = UInt(buf.count)
+            return withUnsafePointer(to: &cs) { csPtr in
+                handler.persistWalletChangeset(walletId: walletId, changeset: csPtr)
             }
         }
         _ = handler.endChangeset(walletId: walletId, success: applied)
@@ -188,11 +225,9 @@ final class SweptTransactionPersistTests: XCTestCase {
         let (handler, container) = try makeHandler()
         try seedSpend(in: container, winnerTakesA: true)
 
-        sweep(
-            handler,
-            [(loser: sweptTxid, winner: winnerTxid)],
-            released: [(txid: fundingTxid, vout: 1)]
-        )
+        sweep(handler, [
+            Batch(losers: [sweptTxid], winner: winnerTxid, released: [(txid: fundingTxid, vout: 1)])
+        ])
 
         XCTAssertNil(transaction(container, txid: sweptTxid), "the swept row is gone")
         XCTAssertNil(txo(container, txid: sweptTxid, vout: 0), "the change it created is gone with it")
@@ -205,11 +240,9 @@ final class SweptTransactionPersistTests: XCTestCase {
         let (handler, container) = try makeHandler()
         try seedSpend(in: container, winnerTakesA: true)
 
-        sweep(
-            handler,
-            [(loser: sweptTxid, winner: winnerTxid)],
-            released: [(txid: fundingTxid, vout: 1)]
-        )
+        sweep(handler, [
+            Batch(losers: [sweptTxid], winner: winnerTxid, released: [(txid: fundingTxid, vout: 1)])
+        ])
 
         let takenByWinner = txo(container, txid: fundingTxid, vout: 0)
         XCTAssertNotNil(takenByWinner)
@@ -231,11 +264,9 @@ final class SweptTransactionPersistTests: XCTestCase {
         let (handler, container) = try makeHandler()
         try seedSpend(in: container, winnerTakesA: false)
 
-        sweep(
-            handler,
-            [(loser: sweptTxid, winner: winnerTxid)],
-            released: [(txid: fundingTxid, vout: 1)]
-        )
+        sweep(handler, [
+            Batch(losers: [sweptTxid], winner: winnerTxid, released: [(txid: fundingTxid, vout: 1)])
+        ])
 
         XCTAssertNil(transaction(container, txid: sweptTxid), "the swept row still goes")
 
@@ -262,7 +293,7 @@ final class SweptTransactionPersistTests: XCTestCase {
     func testWalletReDeliveringAHeldCoinFreesIt() throws {
         let (handler, container) = try makeHandler()
         try seedSpend(in: container, winnerTakesA: false)
-        sweep(handler, [(loser: sweptTxid, winner: winnerTxid)])
+        sweep(handler, [Batch(losers: [sweptTxid], winner: winnerTxid)])
         XCTAssertTrue(txo(container, txid: fundingTxid, vout: 1)!.isSpent)
 
         redeliverCoinB(handler)
@@ -311,6 +342,50 @@ final class SweptTransactionPersistTests: XCTestCase {
         _ = handler.endChangeset(walletId: walletId, success: true)
     }
 
+    /// Two sweeps in one round, the later disagreeing with the earlier.
+    ///
+    /// The first frees coin B; a second transaction spends it; the second
+    /// sweep removes that spender and frees nothing, because its own winner
+    /// took B. The later answer is the true one — and it only sticks because
+    /// the batches are applied in sequence. Folding their release sets would
+    /// leave the first "B is free" outliving the last "B is spent".
+    func testALaterSweepKeepingACoinSpentOverridesAnEarlierRelease() throws {
+        let (handler, container) = try makeHandler()
+        try seedSpend(in: container, winnerTakesA: true)
+
+        // A second transaction takes coin B after the first sweep freed it.
+        let secondLoser = Data(repeating: 0x55, count: 32)
+        let context = ModelContext(container)
+        let reclaimer = PersistentTransaction(
+            txid: secondLoser,
+            transactionData: Data(repeating: 0x07, count: 10),
+            context: 0,
+            blockHeight: 0,
+            netAmount: -40_000
+        )
+        context.insert(reclaimer)
+        let coinB = PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 1)
+        let descriptor = FetchDescriptor<PersistentTxo>(
+            predicate: #Predicate { $0.outpoint == coinB }
+        )
+        let row = try XCTUnwrap(try context.fetch(descriptor).first)
+        row.spendingTransaction = reclaimer
+        try context.save()
+
+        sweep(handler, [
+            Batch(losers: [sweptTxid], winner: winnerTxid, released: [(txid: fundingTxid, vout: 1)]),
+            // Its winner consumed B, so this batch frees nothing.
+            Batch(losers: [secondLoser], winner: Data(repeating: 0x56, count: 32)),
+        ])
+
+        let contested = txo(container, txid: fundingTxid, vout: 1)
+        XCTAssertNotNil(contested)
+        XCTAssertTrue(
+            contested!.isSpent,
+            "the later sweep kept the coin spent, so it must not come back"
+        )
+    }
+
     /// A txid the store has never seen is not an error: sweeps are
     /// idempotent, and a round can name a transaction this mirror never
     /// recorded in the first place.
@@ -318,10 +393,9 @@ final class SweptTransactionPersistTests: XCTestCase {
         let (handler, container) = try makeHandler()
         try seedSpend(in: container, winnerTakesA: true)
 
-        let applied = sweep(
-            handler,
-            [(loser: Data(repeating: 0x99, count: 32), winner: winnerTxid)]
-        )
+        let applied = sweep(handler, [
+            Batch(losers: [Data(repeating: 0x99, count: 32)], winner: winnerTxid)
+        ])
 
         XCTAssertTrue(applied, "an absent row is a successful no-op, not a failed round")
         XCTAssertNotNil(transaction(container, txid: sweptTxid))

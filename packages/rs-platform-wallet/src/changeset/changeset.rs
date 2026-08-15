@@ -63,7 +63,7 @@ use crate::wallet::identity::{
 ///
 /// Built by the platform-wallet event adapter from `WalletEvent` variants
 /// emitted by `WalletManager`. Every field is additive except
-/// [`Self::swept_transactions`] — the merge implementation uses last-write-wins for
+/// [`Self::sweeps`] — the merge implementation uses last-write-wins for
 /// the height watermarks (monotonic-max), `extend` for the records / utxos
 /// vecs, and last-write-wins for the IS-lock map.
 ///
@@ -198,60 +198,46 @@ pub struct CoreChangeSet {
     /// strictly forward-advancing per upstream's contract).
     pub last_applied_chain_lock: Option<ChainLock>,
 
-    /// Transactions the wallet **removed**: each was a recorded spend that a
-    /// later, final transaction provably beat to one of its inputs, so it can
-    /// never confirm. From `WalletEvent::TransactionsSwept`.
+    /// Sweeps this batch carries, in the order the wallet emitted them.
     ///
-    /// The one subtractive field on this type. Every other field is additive,
+    /// The one subtractive part of this type. Every other field is additive,
     /// which is exactly why this one has to exist: a persister that only ever
     /// appends keeps the dead rows and replays them on the next load,
     /// re-creating a balance the wallet has already corrected.
     ///
-    /// Deduplicated on merge by the removed txid: a sweep is idempotent, and a
-    /// flush can fold several sweeps together.
-    pub swept_transactions: Vec<SweptTransaction>,
-
-    /// Of the inputs those removed transactions claimed, the ones that came
-    /// free — no surviving record spends them too. From
-    /// `WalletEvent::TransactionsSwept.released_outpoints`.
-    ///
-    /// The other half of the sweep, and the half a persister cannot work out
-    /// for itself. Deleting a removed transaction leaves its inputs in two
-    /// kinds: those a surviving transaction also took, which are gone, and
-    /// those only the dead one named, which are spendable again. Upstream
-    /// draws that line (`release_spent_marks`: "a loser spending A+B against
-    /// a winner spending only A must leave A marked and free B") and reports
-    /// the result here, because the survivor may be invisible to this wallet
-    /// — it can spend our coin while paying only external addresses, and
-    /// then it never appears in the event stream at all.
-    ///
-    /// Wallet-scoped rather than attributed per removal, matching upstream: a
-    /// persister holds every input of every transaction it deletes, so it
-    /// only needs to know which of them came free. Everything else it holds
-    /// stays spent.
-    ///
-    /// Deduplicated on merge, same reasoning as the removals themselves.
-    pub swept_released_outpoints: Vec<OutPoint>,
+    /// Kept as ordered batches rather than folded into one removal list plus
+    /// one release set. Each sweep describes the wallet at the moment it
+    /// fired, and those descriptions can disagree: an early sweep frees a
+    /// coin, something later spends it, and a later sweep removes that
+    /// spender while keeping the coin spent because its own winner took it.
+    /// Union the release sets and the first answer outlives the last one that
+    /// is actually true. Applied in order, each batch corrects the one before
+    /// it, which is what the wallet itself did.
+    pub sweeps: Vec<SweepBatch>,
 }
 
-/// One transaction the wallet removed, paired with the transaction whose
-/// arrival settled its inputs.
+/// One `TransactionsSwept` event: the transactions it removed, the
+/// transaction that beat them, and the coins its removal actually freed.
 ///
-/// The pairing is provenance, not policy: which of the removed transaction's
-/// inputs actually came free is answered by
-/// [`CoreChangeSet::swept_released_outpoints`], never by looking the winner up
-/// — it need not be wallet-relevant, and even when it is, nothing guarantees
-/// its record reaches a persister in the same round as the sweep.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The grouping is what makes ordering expressible. `released_outpoints` is
+/// only true relative to the wallet as this event saw it, so it belongs with
+/// the removals it came from rather than in a set shared with every other
+/// sweep in the batch.
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct SweptTransaction {
-    /// The removed transaction. Its row and every UTXO it created go.
-    pub txid: Txid,
+pub struct SweepBatch {
+    /// The removed transactions. Their rows and every UTXO they created go.
+    pub txids: Vec<Txid>,
     /// The transaction whose arrival settled the inputs — final, and
-    /// therefore the reason the removed one can never confirm. Not
-    /// necessarily wallet-relevant: it can pay entirely to outside
-    /// addresses and still sweep.
+    /// therefore the reason the removed ones can never confirm. Not
+    /// necessarily wallet-relevant: it can pay entirely to outside addresses
+    /// and still sweep, which is why it cannot be looked up to work out what
+    /// it took.
     pub superseded_by: Txid,
+    /// Of the inputs those removed transactions claimed, the ones that came
+    /// free — no surviving transaction spends them too. Everything else they
+    /// claimed was taken by `superseded_by` and stays spent.
+    pub released_outpoints: Vec<OutPoint>,
 }
 
 /// Highest-used derivation index per pool slot for one account, as
@@ -388,41 +374,16 @@ impl Merge for CoreChangeSet {
                 .merge_max(indexes);
         }
 
-        // Sweeps: append, first-seen order, deduplicated by the removed
-        // txid. Deleting the same transaction twice is harmless at the
-        // persister, so the dedup is only there to keep a coalesced round's
-        // payload honest about how many distinct transactions died — and
-        // first-seen wins, so the earliest winner recorded for a txid is
-        // the one the persister sees.
-        if !other.swept_transactions.is_empty() {
-            let mut seen: std::collections::HashSet<Txid> = self
-                .swept_transactions
-                .iter()
-                .map(|swept| swept.txid)
-                .collect();
-            for swept in other.swept_transactions {
-                if seen.insert(swept.txid) {
-                    self.swept_transactions.push(swept);
-                }
-            }
-        }
-
-        // The released set folds the same way: a coalesced round frees a coin
-        // once however many sweeps named it.
-        if !other.swept_released_outpoints.is_empty() {
-            let mut seen: std::collections::HashSet<OutPoint> =
-                self.swept_released_outpoints.iter().copied().collect();
-            for outpoint in other.swept_released_outpoints {
-                if seen.insert(outpoint) {
-                    self.swept_released_outpoints.push(outpoint);
-                }
-            }
-        }
+        // Sweeps: appended, never folded. Order is the whole point — a later
+        // batch's decision to keep a coin spent has to survive an earlier
+        // batch's decision to free it, and only replaying them in sequence
+        // preserves that.
+        self.sweeps.extend(other.sweeps);
     }
 
     fn is_empty(&self) -> bool {
         self.records.is_empty()
-            && self.swept_transactions.is_empty()
+            && self.sweeps.is_empty()
             && self.spent_utxos.is_empty()
             && self.new_utxos.is_empty()
             && self.instant_locks_for_non_final_records.is_empty()

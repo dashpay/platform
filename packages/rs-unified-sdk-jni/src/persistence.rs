@@ -638,37 +638,29 @@ unsafe extern "C" fn tramp_persist_wallet_changeset(
             }
         }
 
-        // Sweeps last, and only when there are any: the transaction that
-        // beat these to their inputs rides in the additive part above, so
-        // by the time the removal runs its claim on those inputs is
-        // already recorded.
-        let swept = slice_or_empty(cs.swept, cs.swept_count);
-        if !swept.is_empty() {
-            // Parallel arrays, index-aligned: the removed txid and the
-            // transaction that settled its inputs. The pairing is what lets
-            // the handler decide which of the loser's inputs are actually
-            // free — see `onWalletChangesetTransactionsSwept`.
+        // Sweeps last, and one bridge call per batch, in order: a later
+        // sweep can keep a coin spent that an earlier one freed, and only
+        // replaying them in sequence preserves that. Each call does its own
+        // hold-then-release, so the ordering holds on the Kotlin side too.
+        for batch in slice_or_empty(cs.sweeps, cs.sweeps_count) {
             let byte_array_cls = env.find_class("[B")?;
             let empty = env.byte_array_from_slice(&[])?;
-            let txids = env.new_object_array(swept.len() as i32, &byte_array_cls, &empty)?;
-            let winners = env.new_object_array(swept.len() as i32, &byte_array_cls, &empty)?;
-            for (i, entry) in swept.iter().enumerate() {
+
+            let txids = slice_or_empty(batch.txids, batch.txids_count);
+            let txids_arr = env.new_object_array(txids.len() as i32, &byte_array_cls, &empty)?;
+            let winners = env.new_object_array(txids.len() as i32, &byte_array_cls, &empty)?;
+            for (i, txid) in txids.iter().enumerate() {
                 env.with_local_frame(8, |env| {
-                    let txid = env.byte_array_from_slice(&entry.txid)?;
-                    env.set_object_array_element(&txids, i as i32, &txid)?;
-                    let winner = env.byte_array_from_slice(&entry.superseded_by)?;
-                    env.set_object_array_element(&winners, i as i32, &winner)
+                    let t = env.byte_array_from_slice(txid)?;
+                    env.set_object_array_element(&txids_arr, i as i32, &t)?;
+                    let w = env.byte_array_from_slice(&batch.superseded_by)?;
+                    env.set_object_array_element(&winners, i as i32, &w)
                 })?;
             }
-            // The released outpoints ride along as 36-byte keys (raw txid +
-            // little-endian vout), the same shape the handler stores them
-            // in. They are wallet-scoped, not per removal: the handler holds
-            // every input of every row it deletes, so it only needs to know
-            // which of them came free.
-            let released = slice_or_empty(
-                cs.swept_released_outpoints,
-                cs.swept_released_outpoints_count,
-            );
+
+            // Released outpoints ride as 36-byte keys (raw txid + a
+            // little-endian vout), the shape the handler stores them in.
+            let released = slice_or_empty(batch.released_outpoints, batch.released_outpoints_count);
             let released_arr =
                 env.new_object_array(released.len() as i32, &byte_array_cls, &empty)?;
             for (i, outpoint) in released.iter().enumerate() {
@@ -680,6 +672,7 @@ unsafe extern "C" fn tramp_persist_wallet_changeset(
                     env.set_object_array_element(&released_arr, i as i32, &k)
                 })?;
             }
+
             let code = env
                 .call_method(
                     bridge,
@@ -687,7 +680,7 @@ unsafe extern "C" fn tramp_persist_wallet_changeset(
                     "([B[[B[[B[[B)I",
                     &[
                         (&wid).into(),
-                        (&txids).into(),
+                        (&txids_arr).into(),
                         (&winners).into(),
                         (&released_arr).into(),
                     ],

@@ -131,20 +131,24 @@ pub fn apply(
         upsert_sync_state(tx, wallet_id, cs.last_processed_height, cs.synced_height)?;
     }
     // Sweeps run last so a winner arriving in this very changeset has its
-    // own rows committed before the removal below touches the coins it took.
-    if !cs.swept_transactions.is_empty() {
-        // The released set describes the wallet when each sweep was emitted,
+    // own rows committed before the removal below touches the coins it took,
+    // and batch by batch in order: each sweep is only true of the wallet it
+    // saw, so a later one keeping a coin spent has to be able to correct an
+    // earlier one that freed it.
+    for batch in &cs.sweeps {
+        // The released set describes the wallet when this sweep was emitted,
         // and a round can fold in a later transaction that legitimately spent
         // one of the freed coins. `core_utxos` never records *who* spent a
         // row (`spent_in_txid` stays null on every write path), so unlike the
         // mobile mirrors this cannot tell a live claim from the dead one by
         // looking at the table — but the changeset carries the answer: any
-        // record in this round that is not itself being swept and spends a
+        // record in this round that is not swept by *any* batch and spends a
         // released outpoint is that live claim, and the coin stays spent.
         let swept_txids: HashSet<dashcore::Txid> = cs
-            .swept_transactions
+            .sweeps
             .iter()
-            .map(|swept| swept.txid)
+            .flat_map(|b| b.txids.iter())
+            .copied()
             .collect();
         let claimed_by_survivors: HashSet<dashcore::OutPoint> = cs
             .records
@@ -153,14 +157,14 @@ pub fn apply(
             .flat_map(|record| record.transaction.input.iter())
             .map(|input| input.previous_output)
             .collect();
-        let released: HashSet<dashcore::OutPoint> = cs
-            .swept_released_outpoints
+        let released: HashSet<dashcore::OutPoint> = batch
+            .released_outpoints
             .iter()
             .filter(|outpoint| !claimed_by_survivors.contains(outpoint))
             .copied()
             .collect();
-        for swept in &cs.swept_transactions {
-            apply_sweep(tx, wallet_id, &swept.txid, &released)?;
+        for loser_txid in &batch.txids {
+            apply_sweep(tx, wallet_id, loser_txid, &released)?;
         }
     }
     Ok(())

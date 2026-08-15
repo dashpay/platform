@@ -2310,6 +2310,83 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun aLaterSweepKeepingACoinSpentOverridesAnEarlierRelease() = runTest {
+        // JNI delivers one call per sweep batch, in order. The first frees a
+        // coin, a second transaction spends it, and the second sweep removes
+        // that spender while freeing nothing — its own winner took the coin.
+        // The later answer has to win, which is what applying the calls in
+        // sequence gives: each one holds its losers' inputs before releasing.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yUtxoAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 70 }
+        val firstLoser = ByteArray(32) { 71 }
+        val secondLoser = ByteArray(32) { 72 }
+        val contested = makeOutpoint(fundingTxid, 0)
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, fundingTxid, ByteArray(10) { 4 }, 2, 100, ByteArray(32) { 7 },
+            1_700_000_000, 0, "Standard", 0, 100_000, 0, false, "", 1_699_999_000,
+            ByteArray(0), 0,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 100_000, "yUtxoAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // Both losers claim the coin; each is unconfirmed, as swept losers are.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, firstLoser, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -100_000, 0, false, "", 1_700_000_050,
+            contested, 1,
+        )
+        handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 0, firstLoser)
+        handler.onChangesetEnd(walletId, success = true)
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, secondLoser, ByteArray(10) { 6 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -100_000, 0, false, "", 1_700_000_100,
+            contested, 1,
+        )
+        handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 0, secondLoser)
+        handler.onChangesetEnd(walletId, success = true)
+
+        // One round, two batches, in order.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(firstLoser), arrayOf(ByteArray(32) { 73 }), arrayOf(contested),
+        )
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(secondLoser), arrayOf(ByteArray(32) { 74 }), emptyArray(),
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val row = db.txoDao().getByOutpoint(contested)!!
+        assertTrue("the later sweep kept the coin spent", row.isSpent)
+        assertTrue(
+            "so it stays out of the restore set",
+            handler.onLoadWalletList().single().utxos.isEmpty(),
+        )
+    }
+
+    @Test
     fun sweptTransactionRollsBackWithItsRound() = runTest {
         // The deletion is staged in the same buffered transaction as every
         // other write in the round, so a round that fails must not take the

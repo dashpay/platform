@@ -236,56 +236,43 @@ pub struct WalletChangeSetFFI {
     /// `proof.rs` can't fire until SPV re-applies a fresh CL).
     pub last_applied_chain_lock_bytes: *mut u8,
     pub last_applied_chain_lock_bytes_len: usize,
-    /// Transactions the wallet removed this round.
+    /// Sweeps this round carries, in the order the wallet emitted them.
     ///
-    /// The only subtractive field in this struct. Each named transaction was
-    /// a recorded spend that a later, final transaction beat to one of its
-    /// inputs, so it can never confirm; the wallet has already dropped it.
-    /// **A persister must act on this**: delete the transaction row and any
-    /// UTXO row it created. Every other field here is additive, so ignoring
-    /// this one leaves dead rows that are handed back at the next load and
-    /// re-create a balance the wallet has already corrected.
+    /// The only subtractive field in this struct, and the only one whose
+    /// order matters: each entry describes the wallet as that sweep saw it,
+    /// and a later entry can keep a coin spent that an earlier one freed.
+    /// **A persister must apply them in sequence** — folding them together
+    /// lets the first answer outlive the last one that is actually true.
     ///
-    /// `null` / `0` when nothing was swept, which is the overwhelmingly
-    /// common case.
-    pub swept: *mut SweptTransactionFFI,
-    pub swept_count: usize,
-    /// Of the inputs those removed transactions claimed, the ones that came
-    /// free — no surviving transaction spends them too.
+    /// Every other field here is additive, so ignoring this one leaves dead
+    /// rows that are handed back at the next load and re-create a balance
+    /// the wallet has already corrected.
     ///
-    /// A persister holds every input of every row it deletes, so this is the
-    /// only thing that tells it which of them to hand back as spendable;
-    /// everything else it holds stays spent. It cannot be derived from
-    /// `swept`: the transaction that took the rest may never reach this store
-    /// at all, since a winner paying entirely to outside addresses is never
-    /// wallet-relevant, and even a relevant one is not guaranteed to arrive
-    /// in the same round as the sweep.
-    ///
-    /// `null` / `0` when a sweep freed nothing — the ordinary resend, where
-    /// the winner took every input the removed transaction named.
-    pub swept_released_outpoints: *mut OutPointFFI,
-    pub swept_released_outpoints_count: usize,
+    /// `null` / `0` when the round swept nothing, the overwhelmingly common
+    /// case.
+    pub sweeps: *mut SweepBatchFFI,
+    pub sweeps_count: usize,
 }
 
-/// One removed transaction and the transaction that settled its inputs.
-///
-/// Both raw 32-byte txids, internal byte order, same as every other txid on
-/// this surface.
+/// One sweep: the transactions it removed, the transaction that beat them,
+/// and the coins its removal actually freed.
 #[repr(C)]
-pub struct SweptTransactionFFI {
-    /// The removed transaction: delete this row and the UTXOs it created.
-    pub txid: [u8; 32],
+pub struct SweepBatchFFI {
+    /// Removed transactions, raw 32-byte txids. Delete these rows and every
+    /// UTXO they created.
+    pub txids: *mut [u8; 32],
+    pub txids_count: usize,
     /// The transaction whose arrival settled the inputs. Final, and not
     /// necessarily wallet-relevant — it can pay entirely to outside
-    /// addresses and still sweep, in which case no record for it reaches
-    /// the persister at all.
-    ///
-    /// It decides what happens to the coins the removed transaction claimed
-    /// to spend: the ones this transaction took are still spent, and only
-    /// the loser's *extra* inputs are free. A persister that released every
-    /// input would hand a coin the winner already consumed back to the
-    /// wallet as spendable.
+    /// addresses and never reach this store at all, which is why what it
+    /// took cannot be worked out by looking it up.
     pub superseded_by: [u8; 32],
+    /// Of the inputs the removed transactions claimed, the ones that came
+    /// free. Everything else they claimed was taken by `superseded_by` and
+    /// stays spent — a persister holds every input of what it deletes, so
+    /// this is the only thing telling it which to hand back.
+    pub released_outpoints: *mut OutPointFFI,
+    pub released_outpoints_count: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -500,40 +487,51 @@ impl WalletChangeSetFFI {
                 None => (std::ptr::null_mut(), 0),
             };
 
-        // Swept transactions travel at the top level, not per account:
-        // the upstream event is wallet-scoped, and the persister deletes
-        // by txid — the row it deletes carries its own account link.
-        let swept: Vec<SweptTransactionFFI> = cs
-            .swept_transactions
+        // Sweeps travel at the top level, not per account: the upstream
+        // events are wallet-scoped, and the persister deletes by txid — the
+        // row it deletes carries its own account link. Order is preserved.
+        let sweeps: Vec<SweepBatchFFI> = cs
+            .sweeps
             .iter()
-            .map(|swept| {
-                let mut txid = [0u8; 32];
-                txid.copy_from_slice(swept.txid.as_ref());
-                let mut superseded_by = [0u8; 32];
-                superseded_by.copy_from_slice(swept.superseded_by.as_ref());
-                SweptTransactionFFI {
-                    txid,
-                    superseded_by,
-                }
-            })
-            .collect();
-        let swept_count = swept.len();
+            .map(|batch| {
+                let txids: Vec<[u8; 32]> = batch
+                    .txids
+                    .iter()
+                    .map(|txid| {
+                        let mut raw = [0u8; 32];
+                        raw.copy_from_slice(txid.as_ref());
+                        raw
+                    })
+                    .collect();
+                let txids_count = txids.len();
 
-        // Wallet-scoped like the removals themselves: which removal freed
-        // which coin does not matter to a persister that holds all of them.
-        let released: Vec<OutPointFFI> = cs
-            .swept_released_outpoints
-            .iter()
-            .map(|outpoint| {
-                let mut txid = [0u8; 32];
-                txid.copy_from_slice(outpoint.txid.as_ref());
-                OutPointFFI {
-                    txid,
-                    vout: outpoint.vout,
+                let released: Vec<OutPointFFI> = batch
+                    .released_outpoints
+                    .iter()
+                    .map(|outpoint| {
+                        let mut txid = [0u8; 32];
+                        txid.copy_from_slice(outpoint.txid.as_ref());
+                        OutPointFFI {
+                            txid,
+                            vout: outpoint.vout,
+                        }
+                    })
+                    .collect();
+                let released_outpoints_count = released.len();
+
+                let mut superseded_by = [0u8; 32];
+                superseded_by.copy_from_slice(batch.superseded_by.as_ref());
+
+                SweepBatchFFI {
+                    txids: vec_to_ptr(txids),
+                    txids_count,
+                    superseded_by,
+                    released_outpoints: vec_to_ptr(released),
+                    released_outpoints_count,
                 }
             })
             .collect();
-        let swept_released_outpoints_count = released.len();
+        let sweeps_count = sweeps.len();
 
         WalletChangeSetFFI {
             has_chain,
@@ -544,10 +542,8 @@ impl WalletChangeSetFFI {
             accounts_count,
             last_applied_chain_lock_bytes,
             last_applied_chain_lock_bytes_len,
-            swept: vec_to_ptr(swept),
-            swept_count,
-            swept_released_outpoints: vec_to_ptr(released),
-            swept_released_outpoints_count,
+            sweeps: vec_to_ptr(sweeps),
+            sweeps_count,
         }
     }
 }
@@ -1799,18 +1795,28 @@ pub unsafe fn free_wallet_changeset_ffi(cs: &WalletChangeSetFFI) {
 
     // Before the accounts early-return below: a sweep-only round carries
     // no accounts at all, and its buffers still have to be released.
-    if !cs.swept.is_null() && cs.swept_count > 0 {
+    if !cs.sweeps.is_null() && cs.sweeps_count > 0 {
+        let batches = std::slice::from_raw_parts(cs.sweeps, cs.sweeps_count);
+        for batch in batches {
+            if !batch.txids.is_null() && batch.txids_count > 0 {
+                drop(Vec::from_raw_parts(
+                    batch.txids,
+                    batch.txids_count,
+                    batch.txids_count,
+                ));
+            }
+            if !batch.released_outpoints.is_null() && batch.released_outpoints_count > 0 {
+                drop(Vec::from_raw_parts(
+                    batch.released_outpoints,
+                    batch.released_outpoints_count,
+                    batch.released_outpoints_count,
+                ));
+            }
+        }
         drop(Vec::from_raw_parts(
-            cs.swept,
-            cs.swept_count,
-            cs.swept_count,
-        ));
-    }
-    if !cs.swept_released_outpoints.is_null() && cs.swept_released_outpoints_count > 0 {
-        drop(Vec::from_raw_parts(
-            cs.swept_released_outpoints,
-            cs.swept_released_outpoints_count,
-            cs.swept_released_outpoints_count,
+            cs.sweeps,
+            cs.sweeps_count,
+            cs.sweeps_count,
         ));
     }
 

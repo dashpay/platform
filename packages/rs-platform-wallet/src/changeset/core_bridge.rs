@@ -52,8 +52,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::changeset::changeset::{
-    AssetLockChangeSet, CoreChangeSet, HighestUsedIndexes, PlatformWalletChangeSet,
-    SweptTransaction,
+    AssetLockChangeSet, CoreChangeSet, HighestUsedIndexes, PlatformWalletChangeSet, SweepBatch,
 };
 use crate::changeset::merge::Merge;
 use crate::changeset::traits::PlatformWalletPersistence;
@@ -741,14 +740,11 @@ async fn build_core_changeset(
                 "Mirroring swept transactions to the persister"
             );
             CoreChangeSet {
-                swept_transactions: txids
-                    .iter()
-                    .map(|txid| SweptTransaction {
-                        txid: *txid,
-                        superseded_by: *superseded_by,
-                    })
-                    .collect(),
-                swept_released_outpoints: released_outpoints.clone(),
+                sweeps: vec![SweepBatch {
+                    txids: txids.clone(),
+                    superseded_by: *superseded_by,
+                    released_outpoints: released_outpoints.clone(),
+                }],
                 ..CoreChangeSet::default()
             }
         }
@@ -1156,7 +1152,7 @@ impl CoreChangeSet {
     /// circuits on the common case.
     fn is_empty_no_records(&self) -> bool {
         self.records.is_empty()
-            && self.swept_transactions.is_empty()
+            && self.sweeps.is_empty()
             && self.spent_utxos.is_empty()
             && self.new_utxos.is_empty()
             && self.instant_locks_for_non_final_records.is_empty()
@@ -1223,18 +1219,12 @@ mod swept_transaction_projection_tests {
         let cs = build_core_changeset(&test_manager(), &swept(vec![txid(1), txid(2)])).await;
 
         assert_eq!(
-            cs.swept_transactions,
-            vec![
-                SweptTransaction {
-                    txid: txid(1),
-                    superseded_by: txid(0xff),
-                },
-                SweptTransaction {
-                    txid: txid(2),
-                    superseded_by: txid(0xff),
-                },
-            ],
-            "each dead transaction is paired with the winner that settled its inputs"
+            cs.sweeps,
+            vec![SweepBatch {
+                txids: vec![txid(1), txid(2)],
+                superseded_by: txid(0xff),
+                released_outpoints: vec![],
+            }]
         );
         // A wallet-relevant winner claims the inputs through its own
         // record; this arm must not invent UTXO deltas of its own.
@@ -1266,7 +1256,7 @@ mod swept_transaction_projection_tests {
         )
         .await;
 
-        assert_eq!(cs.swept_released_outpoints, vec![outpoint(9, 1)]);
+        assert_eq!(cs.sweeps[0].released_outpoints, vec![outpoint(9, 1)]);
     }
 
     /// An ordinary resend frees nothing: the winner took every input the
@@ -1275,43 +1265,60 @@ mod swept_transaction_projection_tests {
     async fn a_sweep_that_freed_nothing_releases_nothing() {
         let cs = build_core_changeset(&test_manager(), &swept(vec![txid(1)])).await;
 
-        assert!(cs.swept_released_outpoints.is_empty());
+        assert!(cs.sweeps[0].released_outpoints.is_empty());
     }
 
+    /// Merging keeps every sweep as its own batch, in arrival order.
+    ///
+    /// Folding them would lose the only thing that makes a later sweep able
+    /// to correct an earlier one — see the ordering test below, which is the
+    /// case that actually breaks.
     #[tokio::test]
-    async fn merged_sweeps_name_each_transaction_once() {
+    async fn merged_sweeps_stay_separate_and_ordered() {
         let mut cs = build_core_changeset(&test_manager(), &swept(vec![txid(1), txid(2)])).await;
-        let second = build_core_changeset(&test_manager(), &swept(vec![txid(2), txid(3)])).await;
+        let second = build_core_changeset(&test_manager(), &swept(vec![txid(3)])).await;
 
         cs.merge(second);
 
-        assert_eq!(
-            cs.swept_transactions
-                .iter()
-                .map(|swept| swept.txid)
-                .collect::<Vec<_>>(),
-            vec![txid(1), txid(2), txid(3)]
-        );
+        assert_eq!(cs.sweeps.len(), 2);
+        assert_eq!(cs.sweeps[0].txids, vec![txid(1), txid(2)]);
+        assert_eq!(cs.sweeps[1].txids, vec![txid(3)]);
     }
 
+    /// A release is only true of the wallet the sweep that made it saw. A
+    /// later sweep can remove the transaction that re-spent the freed coin
+    /// while keeping the coin spent, because its own winner took it — and
+    /// that answer has to win, since it is the later one.
+    ///
+    /// Unioning the release sets loses exactly this: the earlier "B is free"
+    /// outlives the later "B is spent", and every backend then persists a
+    /// coin the chain consumed as spendable.
     #[tokio::test]
-    async fn merged_sweeps_free_each_coin_once() {
+    async fn a_later_sweep_that_keeps_a_coin_spent_outlives_an_earlier_release() {
+        let freed = outpoint(9, 1);
+
         let mut cs = build_core_changeset(
             &test_manager(),
-            &swept_releasing(vec![txid(1)], vec![outpoint(9, 0), outpoint(9, 1)]),
+            &swept_releasing(vec![txid(1)], vec![freed]),
         )
         .await;
-        let second = build_core_changeset(
-            &test_manager(),
-            &swept_releasing(vec![txid(2)], vec![outpoint(9, 1), outpoint(9, 2)]),
-        )
-        .await;
+        // The second sweep removes the transaction that took `freed` and
+        // releases nothing: its own winner consumed that coin.
+        let second =
+            build_core_changeset(&test_manager(), &swept_releasing(vec![txid(2)], vec![])).await;
 
         cs.merge(second);
 
         assert_eq!(
-            cs.swept_released_outpoints,
-            vec![outpoint(9, 0), outpoint(9, 1), outpoint(9, 2)]
+            cs.sweeps.len(),
+            2,
+            "the two answers must stay distinguishable"
+        );
+        assert_eq!(cs.sweeps[0].released_outpoints, vec![freed]);
+        assert!(
+            cs.sweeps[1].released_outpoints.is_empty(),
+            "the later sweep kept the coin spent, and applying it after the \
+             first is what makes that stick"
         );
     }
 }

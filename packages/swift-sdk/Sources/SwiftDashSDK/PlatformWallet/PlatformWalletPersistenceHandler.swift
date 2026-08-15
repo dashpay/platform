@@ -838,37 +838,45 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // means its claim on the shared inputs is already recorded when
             // the removal below decides which links are left pointing at a
             // dead transaction.
-            if cs.swept_count > 0, let sweptPtr = cs.swept {
-                // The coins the sweep freed, as the 36-byte keys the TXO rows
-                // are stored under. Wallet-scoped across the round's
-                // removals, matching the upstream event.
-                var released = Set<Data>()
-                if cs.swept_released_outpoints_count > 0,
-                   let releasedPtr = cs.swept_released_outpoints {
-                    for i in 0..<Int(cs.swept_released_outpoints_count) {
-                        let outpoint = releasedPtr[i]
-                        let txid = Swift.withUnsafeBytes(of: outpoint.txid) { Data($0) }
-                        released.insert(
-                            PersistentTxo.makeOutpoint(txid: txid, vout: outpoint.vout)
-                        )
-                    }
-                }
+            if cs.sweeps_count > 0, let sweepsPtr = cs.sweeps {
+                // One batch at a time, in order. A later sweep can keep a
+                // coin spent that an earlier one freed — each batch is only
+                // true of the wallet it saw — so folding them together lets
+                // the first answer outlive the last one that still holds.
+                for batchIndex in 0..<Int(cs.sweeps_count) {
+                    let batch = sweepsPtr[batchIndex]
 
-                for i in 0..<Int(cs.swept_count) {
-                    let entry = sweptPtr[i]
-                    let txid = Swift.withUnsafeBytes(of: entry.txid) { Data($0) }
-                    do {
-                        try applySweptTransaction(txid: txid, released: released)
-                    } catch {
-                        // Fail the round rather than report a deletion that
-                        // did not happen: Rust would clear the sweep and the
-                        // dead row would be replayed at the next load.
-                        print(
-                            "⚠️ persistWalletChangeset: sweep of "
-                                + "\(txid.prefix(8).toHexString())… failed: "
-                                + "\(error.localizedDescription); failing the round"
-                        )
-                        return false
+                    // The coins this batch freed, as the 36-byte keys the
+                    // TXO rows are stored under.
+                    var released = Set<Data>()
+                    if batch.released_outpoints_count > 0,
+                       let releasedPtr = batch.released_outpoints {
+                        for i in 0..<Int(batch.released_outpoints_count) {
+                            let outpoint = releasedPtr[i]
+                            let txid = Swift.withUnsafeBytes(of: outpoint.txid) { Data($0) }
+                            released.insert(
+                                PersistentTxo.makeOutpoint(txid: txid, vout: outpoint.vout)
+                            )
+                        }
+                    }
+
+                    guard batch.txids_count > 0, let txidsPtr = batch.txids else { continue }
+                    for i in 0..<Int(batch.txids_count) {
+                        let txid = Swift.withUnsafeBytes(of: txidsPtr[i]) { Data($0) }
+                        do {
+                            try applySweptTransaction(txid: txid, released: released)
+                        } catch {
+                            // Fail the round rather than report a deletion
+                            // that did not happen: Rust would clear the sweep
+                            // and the dead row would be replayed at the next
+                            // load.
+                            print(
+                                "⚠️ persistWalletChangeset: sweep of "
+                                    + "\(txid.prefix(8).toHexString())… failed: "
+                                    + "\(error.localizedDescription); failing the round"
+                            )
+                            return false
+                        }
                     }
                 }
             }
