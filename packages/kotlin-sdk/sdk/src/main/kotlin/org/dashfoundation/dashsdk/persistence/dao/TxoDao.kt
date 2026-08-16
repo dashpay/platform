@@ -117,6 +117,27 @@ interface TxoDao {
     @Query("SELECT EXISTS(SELECT 1 FROM txos WHERE spendingTxid = :spendingTxid AND walletId != :walletId)")
     suspend fun hasOtherWalletSpender(spendingTxid: ByteArray, walletId: ByteArray): Boolean
 
+    /**
+     * Delete every TXO [txid] itself created — its own outputs — independent
+     * of whether the `transactions` row for [txid] is deleted in the same
+     * call.
+     *
+     * Ordinarily the FK from `txos.txid` to `transactions.txid` (CASCADE)
+     * would do this for free, but only once the parent row is deleted, and
+     * [TransactionDao.deleteByTxid] deliberately withholds that delete for
+     * as long as another wallet still has a claim on the row — which can be
+     * indefinite if that wallet's own callback is rejected or never arrives.
+     * These outputs are nobody's coin, ever, regardless: a transaction that
+     * can never confirm funded nothing, for every wallet, not just the one
+     * whose callback happens to run. [onWalletChangesetTransactionsSwept]
+     * calls this in EVERY wallet's callback that observes the sweep, so the
+     * deletion is durable from the first one rather than waiting on
+     * whichever happens to be last. Idempotent — a row with no outputs left
+     * is a no-op.
+     */
+    @Query("DELETE FROM txos WHERE txid = :txid")
+    suspend fun deleteOwnOutputs(txid: ByteArray)
+
     @Upsert
     suspend fun upsert(txo: TxoEntity)
 

@@ -69,6 +69,11 @@ interface TransactionDao {
     /**
      * Provider kinds 2…5 scoped through explicit account membership. The
      * ordering preserves Core's same-block transaction order when present.
+     *
+     * `isGloballySwept = 0` excludes a provider transaction that itself lost
+     * a double-spend on one of its own inputs — an edge case (most losers
+     * are ordinary spends), but a swept row is never restorable regardless
+     * of kind. See [TransactionEntity.isGloballySwept].
      */
     @Query(
         "SELECT DISTINCT transactions.* FROM transactions " +
@@ -78,6 +83,7 @@ interface TransactionDao {
             "WHERE accounts.walletId = :walletId " +
             "AND accounts.accountType BETWEEN 8 AND 11 " +
             "AND transactions.transactionTypeKind BETWEEN 2 AND 5 " +
+            "AND transactions.isGloballySwept = 0 " +
             "ORDER BY transactions.blockHeight ASC, " +
             "transactions.hasBlockPosition DESC, transactions.blockPosition ASC, " +
             "transactions.firstSeen ASC"
@@ -89,6 +95,16 @@ interface TransactionDao {
 
     @Delete
     suspend fun delete(transaction: TransactionEntity)
+
+    /**
+     * Durable global exclusion for a swept loser — set in EVERY wallet's
+     * `onWalletChangesetTransactionsSwept` callback that observes the sweep,
+     * not only the one whose [deleteByTxid] happens to remove the shared
+     * row. Idempotent: re-flagging an already-flagged row is a no-op. See
+     * [TransactionEntity.isGloballySwept].
+     */
+    @Query("UPDATE transactions SET isGloballySwept = 1 WHERE txid = :txid")
+    suspend fun markGloballySwept(txid: ByteArray)
 
     @Query("DELETE FROM transactions WHERE txid = :txid")
     suspend fun deleteByTxid(txid: ByteArray)

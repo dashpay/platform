@@ -785,6 +785,16 @@ class PlatformWalletPersistenceHandler(
     ): Int = guarded {
         stage(walletId) { db ->
             val existing = db.transactionDao().getByTxid(txid)
+            // A sweep is upstream's final word on this txid — it never
+            // re-emits a live record for a transaction it has already
+            // proven can never confirm. A re-upsert reaching here for an
+            // `isGloballySwept` row would therefore be a stale/out-of-order
+            // signal at best, and applying it would resurrect exactly what
+            // `onWalletChangesetTransactionsSwept` excluded (live context/
+            // blockHeight, a fresh involvement link, input reconciliation
+            // that re-links its inputs). Bail rather than let any of that
+            // happen. See TransactionEntity.isGloballySwept.
+            if (existing?.isGloballySwept == true) return@stage
             // firstSeen: adopt non-zero from FFI; else keep existing;
             // else stamp now (never leave a placeholder zero).
             val resolvedFirstSeen = when {
@@ -902,9 +912,21 @@ class PlatformWalletPersistenceHandler(
     ): Int = guarded {
         stage(walletId) { db ->
             val outpoint = makeOutpoint(txid, vout)
+            val parentTx = db.transactionDao().getByTxid(txid)
+            // A globally-swept parent is a transaction Rust has already
+            // proven can never confirm — a fresh UTXO entry naming its txid
+            // would (re-)create exactly the phantom output
+            // `onWalletChangesetTransactionsSwept` deletes on every callback
+            // that observes the sweep. Bail rather than attach a new row to
+            // a transaction already excluded from restoration; ordinary
+            // operation should never reach this (Rust does not re-emit a
+            // swept loser's own outputs), so this is defense-in-depth
+            // against a stale/out-of-order signal, not a path expected to
+            // fire. See TransactionEntity.isGloballySwept.
+            if (parentTx?.isGloballySwept == true) return@stage
             // Ensure a parent transaction row exists (stub if missing, so
             // the TXO FK holds; the real tx upsert overwrites it later).
-            if (db.transactionDao().getByTxid(txid) == null) {
+            if (parentTx == null) {
                 db.transactionDao().upsert(
                     TransactionEntity(txid = txid, transactionData = ByteArray(0)),
                 )
@@ -1032,8 +1054,28 @@ class PlatformWalletPersistenceHandler(
      * rows would hand them back at the next load and re-create a balance the
      * wallet has already corrected.
      *
-     * The TXOs the transaction created go with it (`txos.txid` cascades).
-     * The ones it *spent* split in two, and [releasedOutpoints] is the
+     * `commit_batch` calls `store()` once per wallet, and each of those
+     * commits independently — there is no single transaction spanning every
+     * wallet a sweep touches. That splits what has to be durable in THIS
+     * callback from what may wait for a later one. The TXOs a loser created
+     * are phantom money for every wallet, not just whichever one's callback
+     * happens to run, and once Rust has proven a row dead no restore/
+     * enumeration query may serve it to anyone again — waiting for the last
+     * wallet's callback to confirm that would leave it acknowledged-but-
+     * resurrectable for however long the others take, or forever if one of
+     * them is rejected or never arrives. So [TxoDao.deleteOwnOutputs] and
+     * [TransactionDao.markGloballySwept] run in EVERY callback that reaches
+     * this function, idempotently, before anything wallet-scoped below.
+     * Physically removing the `transactions` row itself is different: that
+     * is safe to defer, because `isGloballySwept` already makes the row
+     * inert the moment the first callback sets it — see [hasOtherWalletClaim]
+     * for why the row is still worth reclaiming once nothing points at it,
+     * now purely as housekeeping.
+     *
+     * The TXOs the transaction created go with it (`txos.txid` cascades,
+     * once the row itself is deleted — [TxoDao.deleteOwnOutputs] above does
+     * not wait for that). The ones it *spent* split in two, and
+     * [releasedOutpoints] is the
      * authority on which is which: an outpoint named there came free, and
      * every other input the loser claimed was taken by the transaction that
      * beat it and is gone for good.
@@ -1083,13 +1125,17 @@ class PlatformWalletPersistenceHandler(
      * row. Every DAO call above therefore carries [walletId] and only
      * touches that wallet's own rows (own `TxoEntity`s via `TxoDao`'s
      * `walletId` column, own `PendingInputEntity`s via the same column on
-     * that table). The row itself stays a statement about the transaction
-     * as a whole, so it is deleted only once [hasOtherWalletClaim] finds
-     * nothing left pointing at it — whichever wallet's callback is the last
-     * one to run performs the delete, so processing order stops mattering.
-     * A wallet whose callback never arrives just leaves the row behind with
-     * every other wallet's inputs already correctly decided: a leaked dead
-     * row, not a wrongly-spent coin, and a re-emitted sweep cleans it up.
+     * that table). Deleting the row itself is different: nothing below
+     * depends on it for correctness anymore, since the global writes above
+     * already made the row inert in every callback that reaches them. It is
+     * deleted once [hasOtherWalletClaim] finds nothing left pointing at it —
+     * whichever wallet's callback is the last one to run performs the
+     * delete, so processing order stops mattering — but this is reclaiming
+     * the now-inert row's storage, not finishing the sweep. A wallet whose
+     * callback never arrives just leaves the row behind with every other
+     * wallet's inputs already correctly decided: a leaked dead row, not a
+     * wrongly-spent coin or a resurrectable one, and a re-emitted sweep
+     * cleans it up.
      */
     override fun onWalletChangesetTransactionsSwept(
         walletId: ByteArray,
@@ -1110,6 +1156,15 @@ class PlatformWalletPersistenceHandler(
             // freed out from under it.
             val released = releasedOutpoints.toList()
             for (i in txids.indices) {
+                // Global first, unconditionally, in every callback that
+                // reaches this loop — not gated on walletId and not waiting
+                // for whichever wallet ends up performing the row delete
+                // below. Both writes are idempotent, so a wallet reprocessing
+                // an already-flagged sweep (a retry after a crash) just
+                // re-applies the same state.
+                db.txoDao().deleteOwnOutputs(txids[i])
+                db.transactionDao().markGloballySwept(txids[i])
+
                 db.txoDao().holdSpentWithoutSpender(txids[i], walletId)
                 db.documentDao().tombstoneUnreleasedPendingInputs(
                     txids[i], supersededBy[i], released, walletId,
@@ -1127,6 +1182,11 @@ class PlatformWalletPersistenceHandler(
                 db.txoDao().releaseByOutpoint(outpoint, walletId)
             }
             for (txid in txids) {
+                // Housekeeping only from here down: the row's ability to
+                // contribute funds was already durably cut off above, in
+                // every callback that reaches this point, independent of
+                // whether this delete ever fires. Deleting it when nothing
+                // else claims it just reclaims the now-inert row's storage.
                 if (!hasOtherWalletClaim(db, txid, walletId)) {
                     db.transactionDao().deleteByTxid(txid)
                 }
@@ -1141,7 +1201,8 @@ class PlatformWalletPersistenceHandler(
      * hold/release/tombstone updates above have already cleared or detached
      * everything [walletId] itself owns. See the class doc on
      * [onWalletChangesetTransactionsSwept] for why this is what decides
-     * whether the shared `transactions` row is safe to delete yet.
+     * whether the shared `transactions` row is safe to physically reclaim
+     * yet — a housekeeping decision now, not a correctness one.
      */
     private suspend fun hasOtherWalletClaim(
         db: DashDatabase,
@@ -2231,6 +2292,13 @@ class PlatformWalletPersistenceHandler(
             runBlockingResult {
                 // walletId unused — txid is globally unique.
                 val tx = database.transactionDao().getByTxid(txid) ?: return@runBlockingResult null
+                // A globally-swept row can still physically exist (another
+                // wallet's claim may not have cleared yet), but Rust has
+                // already proven it dead — treat it the same as "no such
+                // transaction" rather than handing back a body sent-payment
+                // reconciliation or the asset-lock proof flow would read as
+                // live.
+                if (tx.isGloballySwept) return@runBlockingResult null
                 if (tx.transactionData.isEmpty()) return@runBlockingResult null
                 if (tx.context >= CONTEXT_IN_BLOCK &&
                     (tx.blockHash == null || tx.blockHash.size != 32)
@@ -2724,6 +2792,11 @@ class PlatformWalletPersistenceHandler(
             val outPoint = decodeOutPointHex(lock.outPointHex) ?: continue
             val txid = outPoint.copyOfRange(0, 32)
             val tx = database.transactionDao().getByTxid(txid) ?: continue
+            // A globally-swept funding tx lost a double-spend on one of its
+            // own inputs — it never confirms, so there is no unresolved
+            // asset lock left to restore it into. Skip rather than hand
+            // Rust a dead transaction to re-track.
+            if (tx.isGloballySwept) continue
             if (tx.transactionData.isEmpty()) continue
             out.add(
                 UnresolvedAssetLockTxRecordData(

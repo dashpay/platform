@@ -128,9 +128,22 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * arrival free to re-insert the outpoint as an ordinary unspent UTXO. Both
  * columns are additive with defaults, so every pre-migration row reads back
  * as an ordinary (non-tombstone, non-superseded) entry.
+ *
+ * Version 12 (sweep deletion durability): adds `transactions.isGloballySwept`.
+ * `commit_batch` calls `store()` once per wallet and each commits
+ * independently, so a shared loser row could be held back for as long as a
+ * second wallet's own claim on it was outstanding — which, before this
+ * column existed, meant the row AND the outputs it created stayed fully live
+ * (enumerable, funds-bearing) for however long that second wallet's callback
+ * took to arrive, or forever if it never did. This flag is set in every
+ * wallet's callback that observes the sweep, not only the one whose delete
+ * happens to remove the row, so the exclusion from restore/enumeration is
+ * durable from the first committed callback regardless of what the others
+ * do. Additive with a default, so every pre-migration row reads back as not
+ * swept.
  */
 @Database(
-    version = 11,
+    version = 12,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -581,6 +594,19 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v11 → v12: adds `transactions.isGloballySwept` (additive,
+         * defaulted `false`) — see the version-12 class doc above.
+         */
+        val MIGRATION_11_12: Migration = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `transactions` ADD COLUMN `isGloballySwept` " +
+                        "INTEGER NOT NULL DEFAULT 0",
+                )
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -599,6 +625,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_8_9,
                     MIGRATION_9_10,
                     MIGRATION_10_11,
+                    MIGRATION_11_12,
                 )
                 .build()
 

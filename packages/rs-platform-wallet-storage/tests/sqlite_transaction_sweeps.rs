@@ -1151,3 +1151,109 @@ fn sweep_of_a_shared_loser_txid_is_independent_per_wallet() {
          wallet 1's earlier release of the SAME txid's other coin never touched this row"
     );
 }
+
+/// Confirmation, not a fix, of this round's BLOCKING finding (a shared row
+/// acknowledged as durably swept by one wallet's commit while a second
+/// wallet's own callback is still outstanding — see the Swift/Kotlin
+/// `PersistentTransaction.isGloballySwept` / `TransactionEntity.
+/// isGloballySwept` flag those backends needed to add). The finding does not
+/// apply here for the same structural reason as the independence test
+/// above: there is no shared row for a second wallet's callback to hold
+/// back in the first place, so wallet 1's own deletion has no cross-wallet
+/// dependency to be durable *despite*.
+///
+/// This confirms the corollary directly: wallet 1 sweeps and commits, wallet
+/// 2's own callback for the same loser txid is never called again in this
+/// test at all (a crash, a rejection, or it simply never coming), and the
+/// persister is restarted from disk. Wallet 1's phantom output and row must
+/// already be gone — nothing about their absence was waiting on wallet 2.
+#[test]
+fn sweep_deletion_is_durable_even_when_the_other_wallets_callback_never_arrives() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w1: WalletId = wid(0xEA);
+    let w2: WalletId = wid(0xEB);
+    ensure_wallet_meta(&persister, &w1);
+    ensure_wallet_meta(&persister, &w2);
+
+    let addr1 = p2pkh(0x41);
+    let addr2 = p2pkh(0x42);
+    // Same loser txid recorded independently by both wallets, each with an
+    // output of its own — the "phantom money" the blocking finding is about.
+    let loser_txid = Txid::from_byte_array([0x43; 32]);
+    let winner_txid = Txid::from_byte_array([0x44; 32]);
+
+    for (w, addr) in [(&w1, &addr1), (&w2, &addr2)] {
+        let mut conn = persister.lock_conn_for_test();
+        derive_address(&conn, w, 0, addr);
+        let tx = conn.transaction().unwrap();
+        let loser = tx_record(
+            loser_txid,
+            vec![],
+            vec![TxOut {
+                value: 60_000,
+                script_pubkey: addr.script_pubkey(),
+            }],
+        );
+        let cs = CoreChangeSet {
+            records: vec![loser],
+            ..Default::default()
+        };
+        core_state::apply(&tx, w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    // Only wallet 1 ever sweeps. Wallet 2's own callback for this sweep
+    // never arrives — this test never calls `apply` for w2 again.
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![loser_txid],
+                superseded_by: winner_txid,
+                released_outpoints: vec![],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w1, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    drop(persister);
+    let persister = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+    let conn = persister.lock_conn_for_test();
+
+    let w1_loser: Option<Vec<u8>> = conn
+        .query_row(
+            "SELECT record_blob FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+            params![w1.as_slice(), AsRef::<[u8]>::as_ref(&loser_txid)],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap();
+    assert!(
+        w1_loser.is_none(),
+        "wallet 1's own sweep commit is durable across a restart on its own — \
+         nothing about it was waiting on wallet 2's callback"
+    );
+    assert!(
+        !row_exists(&conn, &w1, &OutPoint::new(loser_txid, 0)),
+        "wallet 1's phantom output must not survive — its deletion never depended \
+         on wallet 2's callback, which never arrives in this test"
+    );
+
+    // Wallet 2 never swept, so its own independent copy legitimately still
+    // stands — that is correct per-wallet state, not the bug under test.
+    let w2_loser: Option<Vec<u8>> = conn
+        .query_row(
+            "SELECT record_blob FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+            params![w2.as_slice(), AsRef::<[u8]>::as_ref(&loser_txid)],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap();
+    assert!(
+        w2_loser.is_some(),
+        "wallet 2's own row is untouched — it never ran its own sweep"
+    );
+}

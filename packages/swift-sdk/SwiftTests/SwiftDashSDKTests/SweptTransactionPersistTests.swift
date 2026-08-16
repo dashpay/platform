@@ -486,6 +486,51 @@ final class SweptTransactionPersistTests: XCTestCase {
         try context.save()
     }
 
+    /// The BLOCKING finding's exact shape, built on top of
+    /// `seedSharedLoserAcrossTwoWallets`: the shared loser also created an
+    /// output of its own — phantom money, since a transaction that never
+    /// confirms funded nothing — and was `involvedAccounts`-linked to an
+    /// account under `walletA` from back when it was still a live candidate
+    /// (the ordinary `upsertTransaction` path does this before a later round
+    /// ever learns the tx lost a double-spend). That link is what makes this
+    /// fixture actually exercise the fix: without the `isGloballySwept`
+    /// guard, `walletOwnsTransaction` finds `walletA` through
+    /// `involvedAccounts` alone, regardless of what happens to P.
+    private func seedSharedLoserWithOutputAndInvolvedAccount(
+        in container: ModelContainer,
+        walletA: Data,
+        walletB: Data,
+        loserTxid: Data
+    ) throws {
+        try seedSharedLoserAcrossTwoWallets(
+            in: container, walletA: walletA, walletB: walletB, loserTxid: loserTxid
+        )
+        let context = ModelContext(container)
+        let walletRecord = try XCTUnwrap(
+            try context.fetch(
+                FetchDescriptor<PersistentWallet>(predicate: #Predicate { $0.walletId == walletA })
+            ).first
+        )
+        let account = PersistentAccount(
+            wallet: walletRecord, accountType: 0, accountIndex: 0, accountTypeName: "Standard"
+        )
+        context.insert(account)
+
+        let loserDescriptor = FetchDescriptor<PersistentTransaction>(
+            predicate: #Predicate { $0.txid == loserTxid }
+        )
+        let loser = try XCTUnwrap(try context.fetch(loserDescriptor).first)
+        loser.involvedAccounts.append(account)
+
+        let phantomChange = PersistentTxo(
+            transaction: loser, vout: 2, amount: 60_000, address: "yLoserChange", height: 0
+        )
+        phantomChange.walletId = walletA
+        context.insert(phantomChange)
+
+        try context.save()
+    }
+
     /// The review finding, order 1: wallet B's callback — the one that
     /// releases nothing — runs first. Before the fix this alone deleted the
     /// shared loser row (nothing in the old code held it back), so wallet
@@ -571,6 +616,80 @@ final class SweptTransactionPersistTests: XCTestCase {
         let q = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 1))
         XCTAssertTrue(q.isSpent, "wallet B's own decision to hold its coin must stick")
         XCTAssertNil(q.spendingTransaction)
+    }
+
+    /// The BLOCKING review finding: a shared loser's own output, and its
+    /// reachability through `walletCoreTxids`, must not survive across a
+    /// restart when only ONE wallet's callback ever commits and the other's
+    /// never arrives at all — a crash, a rejection, or simply never coming.
+    ///
+    /// `commit_batch` calls `store()` once per wallet and each commits
+    /// independently, so before the fix wallet B alone could not delete a
+    /// row wallet A still had an outstanding claim on (see the
+    /// `_BThenA`/`_AThenB` tests above) — and the OUTPUT went with the row,
+    /// because deletion was the only thing that excluded either. If wallet
+    /// A's own callback then never runs, that hold is permanent: the row,
+    /// its phantom output, and its `involvedAccounts` link to wallet A all
+    /// stay fully live forever, so `walletCoreTxids` hands the dead
+    /// transaction back to wallet A as its own after every future restart.
+    ///
+    /// Only wallet B's callback ever runs here, and it releases nothing —
+    /// the worst case, since it gives the row no reason to be physically
+    /// deleted at all. The fix's global half must still make the output and
+    /// the enumeration exclusion durable from that single callback alone.
+    func testSharedLoserOutputAndEnumerationAreExcludedAfterOnlyOneWalletsCallbackCommits() throws {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swept-shared-durability-\(UUID().uuidString).store")
+        defer { try? FileManager.default.removeItem(at: storeURL) }
+        let loserTxid = Data(repeating: 0xA1, count: 32)
+        let winner = Data(repeating: 0xA2, count: 32)
+        let walletB = Data(repeating: 0x02, count: 32)
+
+        do {
+            let (handler, container) = try makeHandler(url: storeURL)
+            try seedSharedLoserWithOutputAndInvolvedAccount(
+                in: container, walletA: walletId, walletB: walletB, loserTxid: loserTxid
+            )
+
+            // Only wallet B's callback ever runs, and it releases nothing —
+            // wallet A's own callback (which would release P) never arrives
+            // in this test at all.
+            sweep(handler, [Batch(losers: [loserTxid], winner: winner)], walletId: walletB)
+
+            XCTAssertNotNil(
+                transaction(container, txid: loserTxid),
+                "wallet A's own claim on P is still outstanding, so the row itself survives"
+            )
+            XCTAssertNil(
+                txo(container, txid: loserTxid, vout: 2),
+                "the loser's own output must not survive even a single committed callback, "
+                    + "regardless of which wallet's callback that was"
+            )
+            let row = try XCTUnwrap(transaction(container, txid: loserTxid))
+            XCTAssertTrue(
+                row.isGloballySwept,
+                "any callback that reaches the sweep must flag the row, not just wallet A's own"
+            )
+        }
+
+        // Restart: a fresh handler/container over the same file. Wallet A's
+        // callback never happens in this test, simulating a crash or a
+        // rejection that stops it from ever arriving — the exact scenario
+        // the finding describes.
+        let (handler, container) = try makeHandler(url: storeURL)
+
+        XCTAssertNil(
+            txo(container, txid: loserTxid, vout: 2),
+            "the phantom output must not resurrect across a restart"
+        )
+        let (txidsA, erroredA) = handler.walletCoreTxids(walletId: walletId)
+        XCTAssertFalse(erroredA)
+        XCTAssertFalse(
+            txidsA.contains { $0.txid == loserTxid },
+            "wallet A must not be able to enumerate the swept loser as its own transaction "
+                + "after a restart, even though it is still linked via involvedAccounts and "
+                + "its own callback never ran"
+        )
     }
 
     /// A failed wallet lookup must fail the round, not read as "no such

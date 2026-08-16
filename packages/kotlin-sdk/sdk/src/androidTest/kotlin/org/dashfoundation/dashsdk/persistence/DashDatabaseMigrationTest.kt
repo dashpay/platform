@@ -439,13 +439,51 @@ class DashDatabaseMigrationTest {
         db.close()
     }
 
+    /**
+     * v10 → v11 adds `transactions.isGloballySwept` (defaulted `false`) —
+     * additive. Pre-existing rows must survive and read back not swept, and
+     * the flag must accept an explicit `true` on write, mirroring
+     * `migrate10To11AddsSweepClaimDurabilityColumns` above for the sibling
+     * v11 columns.
+     */
+    @Test
+    fun migrate11To12AddsGlobalSweptFlag() {
+        val legacy = helper.createDatabase(dbName, 11)
+        legacy.execSQL(
+            "INSERT INTO transactions (txid, transactionData, context, blockHeight, " +
+                "blockTimestamp, blockPosition, hasBlockPosition, direction, " +
+                "transactionType, transactionTypeKind, netAmount, label, firstSeen, " +
+                "createdAt, lastUpdated) " +
+                "VALUES (x'02', x'00', 0, 0, 0, 0, 0, 0, 'Standard', 0, 0, '', 0, 0, 0)",
+        )
+        legacy.close()
+
+        val db = helper.runMigrationsAndValidate(dbName, 12, true, DashDatabase.MIGRATION_11_12)
+        db.query("SELECT isGloballySwept FROM transactions WHERE txid = x'02'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(0, c.getInt(0))
+        }
+        db.execSQL(
+            "INSERT INTO transactions (txid, transactionData, context, blockHeight, " +
+                "blockTimestamp, blockPosition, hasBlockPosition, direction, " +
+                "transactionType, transactionTypeKind, netAmount, label, firstSeen, " +
+                "createdAt, lastUpdated, isGloballySwept) " +
+                "VALUES (x'03', x'00', 0, 0, 0, 0, 0, 0, 'Standard', 0, 0, '', 0, 0, 0, 1)",
+        )
+        db.query("SELECT isGloballySwept FROM transactions WHERE txid = x'03'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(1, c.getInt(0))
+        }
+        db.close()
+    }
+
     /** The requested contiguous path from the pre-u64 v4 schema to latest. */
     @Test
     fun migrate4ToLatest() {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            11,
+            12,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
@@ -454,16 +492,17 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_8_9,
             DashDatabase.MIGRATION_9_10,
             DashDatabase.MIGRATION_10_11,
+            DashDatabase.MIGRATION_11_12,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v11 schema. */
+    /** The full chain from v1 must also land on a valid v12 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            11,
+            12,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -475,6 +514,7 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_8_9,
             DashDatabase.MIGRATION_9_10,
             DashDatabase.MIGRATION_10_11,
+            DashDatabase.MIGRATION_11_12,
         ).close()
     }
 }

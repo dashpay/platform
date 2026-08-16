@@ -54,6 +54,15 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         walletId: Data,
         transaction: PersistentTransaction
     ) -> Bool {
+        // A globally-swept row is never "owned" for restore purposes, even
+        // though `involvedAccounts` below can still name this wallet — that
+        // membership was recorded before the transaction lost the sweep and
+        // `applySweptTransaction` does not (and should not) rewrite history
+        // by removing it. Excluding here, at the single call site every
+        // restore-to-Rust enumeration goes through (`walletCoreTxids`), is
+        // what keeps a row `isGloballySwept` has already proven dead from
+        // being handed back as this wallet's transaction after a restart.
+        guard !transaction.isGloballySwept else { return false }
         if transaction.involvedAccounts.contains(where: {
             let wallet: PersistentWallet? = $0.wallet
             return wallet?.walletId == walletId
@@ -914,8 +923,25 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// re-create a balance the wallet has already corrected — this is the
     /// only removal the changeset path performs.
     ///
-    /// The outputs it created go with it (`PersistentTransaction.outputs`
-    /// cascades). The coins it claimed to *spend* split in two, and
+    /// `commit_batch` calls `store()` once per wallet, and each of those
+    /// commits independently — there is no single transaction spanning every
+    /// wallet this sweep touches. That splits what has to be durable in
+    /// *this* callback from what can wait for a later one: the outputs this
+    /// row created are phantom money for every wallet, not just the one
+    /// running right now, and once Rust has proven the row dead no
+    /// restore/enumeration path may serve it to anyone — waiting for the
+    /// last wallet's callback to confirm that would leave it acknowledged-but-
+    /// resurrectable for however long the other wallets take to run, or
+    /// forever if one of them crashes first or never arrives. So the outputs
+    /// are deleted and `isGloballySwept` is set in EVERY callback that
+    /// reaches this function, idempotently, before anything wallet-scoped is
+    /// touched below. Physically removing `row` itself is different: that is
+    /// safe to defer, because `isGloballySwept` already makes the row inert
+    /// the moment the first callback sets it — see the ownership check near
+    /// the bottom for why the row is still worth reclaiming once nothing
+    /// points at it, now purely as housekeeping.
+    ///
+    /// The coins it claimed to *spend* split in two, and
     /// `released` is the authority on which is which:
     ///
     /// - an input named there came free — no surviving transaction spends it;
@@ -965,12 +991,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// `released` is not: upstream computes it per wallet
     /// (`per_wallet_released_outpoints`), so this wallet's set says nothing
     /// about an input a *different* wallet's coin claims on the same row.
-    /// Only the deletion is a statement about the transaction as a whole —
-    /// the input decisions above are scoped to the inputs this wallet
-    /// actually owns, and the row itself is removed only once no other
-    /// wallet's claim is still attached to it. See the ownership check
-    /// below for how "no other wallet" is decided without an explicit
-    /// cross-wallet coordination point.
+    /// The input decisions below are scoped to the inputs this wallet
+    /// actually owns; the physical row delete at the bottom is housekeeping
+    /// only now (see above) and runs once no other wallet's claim is still
+    /// attached to it. See the ownership check below for how "no other
+    /// wallet" is decided without an explicit cross-wallet coordination
+    /// point.
     ///
     /// Throws if SwiftData cannot answer the lookup. The caller fails the
     /// round on that: a deletion silently skipped would let Rust clear the
@@ -985,10 +1011,22 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             predicate: #Predicate { $0.txid == txid }
         )
         descriptor.fetchLimit = 1
-        descriptor.relationshipKeyPathsForPrefetching = [\.inputs, \.pendingInputs]
+        descriptor.relationshipKeyPathsForPrefetching = [\.outputs, \.inputs, \.pendingInputs]
         // A successful fetch that finds nothing is an ordinary no-op: sweeps
         // are idempotent and can name a transaction this store never had.
         guard let row = try backgroundContext.fetch(descriptor).first else { return }
+
+        // The global half, done every time this function runs regardless of
+        // which wallet's callback it is or whether this row has been seen
+        // by a sweep before: delete the outputs this row created (they are
+        // nobody's coin, ever — a swept transaction cannot have funded
+        // anything) and mark the row excluded from restoration. Both are
+        // idempotent, so re-processing an already-flagged row (a second
+        // wallet's callback, or a re-emitted sweep) is a harmless no-op.
+        for output in row.outputs {
+            backgroundContext.delete(output)
+        }
+        row.isGloballySwept = true
 
         // `released` is only ever true of the wallet that computed it, so an
         // input this wallet does not own must be left exactly as it is —
@@ -1023,6 +1061,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         // behind with every other wallet's inputs already correctly
         // decided — a leaked dead row, not a wrongly-spent coin, and a
         // re-emitted sweep cleans it up.
+        //
+        // Nothing below is load-bearing for correctness anymore: `row` has
+        // no outputs and reads as `isGloballySwept` as of the block above,
+        // in every callback that reaches this point, regardless of whether
+        // this delete ever fires. This is reclaiming the now-inert row's
+        // storage, not finishing the sweep.
         let otherWalletStillClaims = row.inputs.contains { txo in
             txo.spendingTransaction != nil && Self.resolvedWalletId(of: txo) != walletId
         } || row.pendingInputs.contains { pending in
@@ -1266,8 +1310,19 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         let firstSeen: UInt64 =
             tx.first_seen != 0 ? tx.first_seen : UInt64(Date().timeIntervalSince1970)
 
+        let existing = try? backgroundContext.fetch(descriptor).first
+        // A sweep is upstream's final word on this txid — it never
+        // re-emits a live record for a transaction it has already proven
+        // can never confirm. A re-upsert reaching here for an
+        // `isGloballySwept` row would therefore be a stale/out-of-order
+        // signal at best, and applying it would resurrect exactly what
+        // `applySweptTransaction` excluded: live `context`/`blockHeight`,
+        // a fresh `involvedAccounts` membership, input reconciliation that
+        // re-links its inputs. Bail rather than let any of that happen.
+        if existing?.isGloballySwept == true { return }
+
         let record: PersistentTransaction
-        if let existing = try? backgroundContext.fetch(descriptor).first {
+        if let existing {
             record = existing
         } else {
             record = PersistentTransaction(
@@ -1508,6 +1563,17 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             )
             let parentTx: PersistentTransaction
             if let existingTx = try? backgroundContext.fetch(txDescriptor).first {
+                // A globally-swept parent is a transaction Rust has already
+                // proven can never confirm — a fresh UTXO entry naming its
+                // txid would (re-)create exactly the phantom output
+                // `applySweptTransaction` deletes on every callback that
+                // observes the sweep. Bail rather than attach a new
+                // `PersistentTxo` to a row already excluded from
+                // restoration; ordinary operation should never reach this
+                // (Rust does not re-emit a swept loser's own outputs), so
+                // this is defense-in-depth against a stale/out-of-order
+                // signal, not a path expected to fire.
+                guard !existingTx.isGloballySwept else { return }
                 parentTx = existingTx
             } else {
                 // Stub row — `transactionData` is left as empty
@@ -5787,6 +5853,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 // funding body without its consensus bytes. Skip.
                 continue
             }
+            // A globally-swept funding tx lost a double-spend on one of its
+            // own inputs — it never confirms, so there is no unresolved
+            // asset lock left to restore it into. Skip rather than hand
+            // Rust a dead transaction to re-track.
+            guard !txRow.isGloballySwept else { continue }
             let txBytes = txRow.transactionData
             guard !txBytes.isEmpty else {
                 // A stub row whose real upsert never arrived;
@@ -5850,9 +5921,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     ) -> (UnsafeMutablePointer<ProviderSpecialTxRestoreEntryFFI>?, Int) {
         // Provider special-tx kinds are the contiguous discriminant range
         // 2...5 (ProviderRegistration=2 … ProviderUpdateRevocation=5).
+        // `!isGloballySwept` excludes a provider tx that itself lost a
+        // double-spend on one of its inputs — an edge case (most losers are
+        // ordinary spends), but a swept row is never restorable regardless
+        // of kind.
         let descriptor = FetchDescriptor<PersistentTransaction>(
             predicate: #Predicate { tx in
                 tx.transactionTypeKind >= 2 && tx.transactionTypeKind <= 5
+                    && tx.isGloballySwept == false
             }
         )
         guard let providerTxs = try? backgroundContext.fetch(descriptor),
@@ -6452,6 +6528,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 predicate: #Predicate { $0.txid == txid }
             )
             guard let row = try? backgroundContext.fetch(descriptor).first else {
+                return nil
+            }
+            // A globally-swept row can still physically exist (another
+            // wallet's claim may not have cleared yet), but Rust has already
+            // proven it dead — treat it the same as "no such transaction"
+            // rather than handing back a body sent-payment reconciliation or
+            // the asset-lock proof flow would read as live.
+            guard !row.isGloballySwept else {
                 return nil
             }
             // The Rust side decodes `transactionData` into a

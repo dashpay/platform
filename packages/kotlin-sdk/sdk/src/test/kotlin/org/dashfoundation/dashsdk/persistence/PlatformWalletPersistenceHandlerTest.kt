@@ -2569,6 +2569,100 @@ class PlatformWalletPersistenceHandlerTest {
         assertNull(heldQ.spendingTxid)
     }
 
+    /**
+     * [seedSharedLoserAcrossTwoWallets] plus an output of the loser's own —
+     * phantom money, since a transaction that never confirms funded
+     * nothing. Driven through the ordinary [onWalletChangesetUtxoAdded]
+     * write path, the same as every other row in this fixture, rather than
+     * reaching into the DB directly.
+     */
+    private suspend fun seedSharedLoserWithOwnOutputAcrossTwoWallets(
+        walletA: ByteArray,
+        walletB: ByteArray,
+    ): Pair<ByteArray, ByteArray> {
+        val (fundingTxid, loserTxid) = seedSharedLoserAcrossTwoWallets(walletA, walletB)
+        handler.onChangesetBegin(walletA)
+        handler.onWalletChangesetUtxoAdded(
+            walletA, loserTxid, 2, 60_000, "yLoserChange", ByteArray(25) { 6 },
+            0, false, false, false, false,
+        )
+        handler.onChangesetEnd(walletA, success = true)
+        return fundingTxid to loserTxid
+    }
+
+    @Test
+    fun sharedLoserOutputAndCoreTxRecordAreExcludedAfterOnlyOneWalletsCallbackCommits() = runTest {
+        // The BLOCKING review finding: a shared loser's own output, and its
+        // reachability through onGetCoreTxRecord, must not survive when
+        // only ONE wallet's callback ever commits and the other's never
+        // arrives at all — a crash, a rejection, or simply never coming.
+        //
+        // commit_batch calls store() once per wallet and each commits
+        // independently, so before the fix wallet B alone could not delete
+        // a row wallet A still had an outstanding claim on (see the
+        // sharedLoserAppliesEachWalletsOwnReleaseSet* tests above) — and
+        // the OUTPUT went with the row, because deletion was the only thing
+        // that excluded either. If wallet A's own callback then never runs,
+        // that hold is permanent: the row and its phantom output stay fully
+        // live forever, so `onGetCoreTxRecord` keeps handing the dead
+        // transaction back as though it were still a candidate.
+        //
+        // Only wallet B's callback ever runs here, and it releases nothing
+        // — the worst case, since it gives the row no reason to be
+        // physically deleted at all.
+        val walletB = ByteArray(32) { 9 }
+        val (_, loserTxid) = seedSharedLoserWithOwnOutputAcrossTwoWallets(walletId, walletB)
+        val winnerTxid = ByteArray(32) { 82 }
+        val phantomOutput = makeOutpoint(loserTxid, 2)
+
+        // Only wallet B's callback ever runs, and it releases nothing —
+        // wallet A's own callback (which would release P) never arrives in
+        // this test at all.
+        handler.onChangesetBegin(walletB)
+        handler.onWalletChangesetTransactionsSwept(
+            walletB, arrayOf(loserTxid), arrayOf(winnerTxid), emptyArray(),
+        )
+        handler.onChangesetEnd(walletB, success = true)
+
+        assertNotNull(
+            "wallet A's own claim on P is still outstanding, so the row itself survives",
+            db.transactionDao().getByTxid(loserTxid),
+        )
+        assertNull(
+            "the loser's own output must not survive even a single committed callback, " +
+                "regardless of which wallet's callback that was",
+            db.txoDao().getByOutpoint(phantomOutput),
+        )
+        val row = db.transactionDao().getByTxid(loserTxid)!!
+        assertTrue(
+            "any callback that reaches the sweep must flag the row, not just wallet A's own",
+            row.isGloballySwept,
+        )
+
+        // "Restart": a fresh handler bound to the same underlying store —
+        // the same pattern `addressBalanceConflictPreservesDerivationIndicesAcrossRestart`
+        // and the pending-key restart tests below use. Wallet A's own
+        // callback never happens in this test, simulating a crash or a
+        // rejection that stops it from ever arriving — the exact scenario
+        // the finding describes.
+        val restarted = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)
+
+        assertNull(
+            "the phantom output must not resurrect across a restart",
+            db.txoDao().getByOutpoint(phantomOutput),
+        )
+        assertNull(
+            "wallet A must not be able to read the swept loser back as a live transaction " +
+                "after a restart, even though its own callback never ran",
+            restarted.onGetCoreTxRecord(walletId, loserTxid),
+        )
+        val utxosA = restarted.onLoadWalletList().first { it.walletId.contentEquals(walletId) }.utxos
+        assertFalse(
+            "the phantom output must not be handed back as a restorable UTXO",
+            utxosA.any { it.prevTxid.contentEquals(loserTxid) && it.vout == 2 },
+        )
+    }
+
     @Test
     fun sweptTransactionRollsBackWithItsRound() = runTest {
         // The deletion is staged in the same buffered transaction as every
