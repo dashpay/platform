@@ -784,8 +784,21 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     ) -> Bool {
         onQueue {
             // A stale post-deletion callback is not a failure — there is
-            // simply nothing left to write to.
-            guard let wallet = findWalletRecord(walletId: walletId) else { return true }
+            // simply nothing left to write to. A fetch that *throws* is a
+            // different matter: reporting success would let Rust discard the
+            // round's sweep, and a later callback could then persist a height
+            // beyond a removal that never landed.
+            let wallet: PersistentWallet?
+            do {
+                wallet = try fetchWalletRecord(walletId: walletId)
+            } catch {
+                print(
+                    "⚠️ persistWalletChangeset: wallet lookup failed: "
+                        + "\(error.localizedDescription); failing the round"
+                )
+                return false
+            }
+            guard let wallet else { return true }
             let cs = changeset.pointee
 
             // Chain update.
@@ -1019,10 +1032,18 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// Find the `PersistentWallet` row for `walletId`. Returns `nil`
     /// when no row exists.
     private func findWalletRecord(walletId: Data) -> PersistentWallet? {
+        try? fetchWalletRecord(walletId: walletId)
+    }
+
+    /// Throwing form of `findWalletRecord`, for callers that must tell a
+    /// successful "no such wallet" apart from a failed lookup — anything
+    /// carrying a subtractive change, where swallowing the failure would
+    /// report a removal durable that never happened.
+    private func fetchWalletRecord(walletId: Data) throws -> PersistentWallet? {
         let descriptor = FetchDescriptor<PersistentWallet>(
             predicate: walletRecordPredicate(walletId: walletId)
         )
-        return try? backgroundContext.fetch(descriptor).first
+        return try backgroundContext.fetch(descriptor).first
     }
 
     /// Predicate matching the `PersistentWallet` row owned by THIS

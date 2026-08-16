@@ -418,6 +418,40 @@ final class SweptTransactionPersistTests: XCTestCase {
         )
     }
 
+    /// A failed wallet lookup must fail the round, not read as "no such
+    /// wallet".
+    ///
+    /// `try?` collapsed the two: a thrown SwiftData fetch returned success
+    /// without applying the sweep, Rust discarded the subtractive event, and
+    /// a later round could then persist a height beyond a removal that never
+    /// landed. Driving the real failure is awkward, so this pins the
+    /// distinction that makes it impossible — a wallet that genuinely is not
+    /// there is still a successful no-op.
+    func testAMissingWalletIsASuccessfulNoOp() throws {
+        let (handler, container) = try makeHandler()
+        try seedSpend(in: container, winnerTakesA: true)
+
+        // Delete the wallet row, leaving the fetch to succeed and find
+        // nothing — the branch that must stay a success.
+        let context = ModelContext(container)
+        let walletId = self.walletId
+        let descriptor = FetchDescriptor<PersistentWallet>(
+            predicate: #Predicate { $0.walletId == walletId }
+        )
+        for row in try context.fetch(descriptor) {
+            context.delete(row)
+        }
+        try context.save()
+
+        let applied = sweep(handler, [Batch(losers: [sweptTxid], winner: winnerTxid)])
+
+        XCTAssertTrue(applied, "a stale post-deletion callback is not a failure")
+        XCTAssertNotNil(
+            transaction(container, txid: sweptTxid),
+            "and it must not have applied anything either"
+        )
+    }
+
     /// A txid the store has never seen is not an error: sweeps are
     /// idempotent, and a round can name a transaction this mirror never
     /// recorded in the first place.
