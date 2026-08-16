@@ -829,6 +829,14 @@ impl PlatformWalletPersistence for SqlitePersister {
         // Do NOT attest WALLET_RESTORE (and therefore not provider restore):
         // `load()` still reports `ClientStartState::wallets` in
         // `LOAD_UNIMPLEMENTED`. Shielded state lives in a separate store.
+        // `core_state::apply_sweep` deletes the loser row and resolves every
+        // input it claimed via `released` — including the held-but-unfunded
+        // case, where it leaves a `core_utxos` placeholder keyed by outpoint
+        // rather than by any relationship to the loser. That is what makes a
+        // later sweep of the winner that replaces it chain-safe with no
+        // extra bookkeeping: the next `apply_sweep` call matches the same
+        // outpoint directly, so it repoints or releases the placeholder
+        // regardless of how many sweeps deep it is.
         PersistenceCapabilities::ATOMIC_CHANGESETS
             .union(PersistenceCapabilities::INVITATIONS)
             .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
@@ -836,6 +844,7 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::PENDING_CONTACT_CRYPTO)
             .union(PersistenceCapabilities::DPNS_NAME_STATES)
             .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
+            .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
     }
 
     /// Merge `changeset` into the per-wallet buffer.

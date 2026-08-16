@@ -65,6 +65,11 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// Tracked asset-lock rows, including status and proof updates, can be
     /// persisted. Restart hydration is separately attested by `walletRestore`.
     public static let trackedAssetLocks: UInt64 = 1 << 9
+    /// A stored core changeset's `sweeps` are durably applied: the swept
+    /// loser's row (and any tombstoned pending-input claim standing in for
+    /// a not-yet-materialized UTXO) actually leaves the store. Mirrors
+    /// `PersistenceCapabilities::CORE_SWEEP_REMOVAL`.
+    public static let coreSweepRemoval: UInt64 = 1 << 10
 
     public let version: UInt32
     public let bits: UInt64

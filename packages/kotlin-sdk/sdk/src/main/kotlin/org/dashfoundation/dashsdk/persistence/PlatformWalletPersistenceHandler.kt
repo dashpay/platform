@@ -135,7 +135,8 @@ class PlatformWalletPersistenceHandler(
             CAPABILITY_UNSIGNED_TOKEN_STORAGE or
             CAPABILITY_WALLET_RESTORE or
             CAPABILITY_DPNS_NAME_STATES or
-            CAPABILITY_TRACKED_ASSET_LOCKS
+            CAPABILITY_TRACKED_ASSET_LOCKS or
+            CAPABILITY_CORE_SWEEP_REMOVAL
 
     /**
      * The single-thread executor created when no [dispatcher] is injected.
@@ -3312,6 +3313,7 @@ class PlatformWalletPersistenceHandler(
         internal const val CAPABILITY_WALLET_RESTORE: Long = 0x80
         internal const val CAPABILITY_DPNS_NAME_STATES: Long = 0x100
         internal const val CAPABILITY_TRACKED_ASSET_LOCKS: Long = 0x200
+        internal const val CAPABILITY_CORE_SWEEP_REMOVAL: Long = 0x400
 
         private const val TAG = "DashPersistence"
 

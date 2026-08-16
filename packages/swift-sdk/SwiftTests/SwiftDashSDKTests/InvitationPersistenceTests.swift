@@ -57,6 +57,7 @@ final class InvitationPersistenceTests: XCTestCase {
             // `PersistentDPNSName`, so this bit is genuinely attested.
             | PlatformWalletPersistenceCapabilities.dpnsNameStates
             | PlatformWalletPersistenceCapabilities.trackedAssetLocks
+            | PlatformWalletPersistenceCapabilities.coreSweepRemoval
 
         XCTAssertEqual(
             capabilities.version,
@@ -78,6 +79,9 @@ final class InvitationPersistenceTests: XCTestCase {
         ))
         XCTAssertFalse(diagnostic.contains(
             PlatformWalletPersistenceCapabilities.pendingContactCrypto
+        ))
+        XCTAssertTrue(diagnostic.contains(
+            PlatformWalletPersistenceCapabilities.coreSweepRemoval
         ))
     }
 

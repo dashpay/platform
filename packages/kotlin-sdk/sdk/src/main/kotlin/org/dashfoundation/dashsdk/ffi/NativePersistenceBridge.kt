@@ -315,6 +315,14 @@ abstract class NativePersistenceBridge {
      * spent. The set cannot be inferred from [supersededBy] — that
      * transaction may pay entirely to outside addresses and never be
      * reported here at all.
+     *
+     * The default body below returns success without deleting anything —
+     * exactly the "reads the unchanged prefix and reports success" failure
+     * mode `PersistenceCapabilities::CORE_SWEEP_REMOVAL` exists to catch. A
+     * subclass overriding this must also add that bit to
+     * [PlatformWalletPersistenceHandler.persistenceCapabilitiesBits]'s
+     * result; the Rust side will not trust a bare `Int` return of `0` here
+     * as proof the removal happened.
      */
     open fun onWalletChangesetTransactionsSwept(
         walletId: ByteArray,

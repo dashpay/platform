@@ -55,6 +55,7 @@ use crate::changeset::changeset::{
     AssetLockChangeSet, CoreChangeSet, HighestUsedIndexes, PlatformWalletChangeSet, SweepBatch,
 };
 use crate::changeset::merge::Merge;
+use crate::changeset::persistence_capabilities::PersistenceCapabilities;
 use crate::changeset::traits::PlatformWalletPersistence;
 use crate::wallet::asset_lock::sync::reconstruction;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
@@ -450,6 +451,20 @@ where
         // The height this changeset OFFERS to the store. It is counted as
         // persisted only in the `Ok` arm below.
         let offered_height = core.synced_height;
+
+        // `WalletChangeSetFFI` has no size/version header, so a persister
+        // compiled against a pre-sweep struct layout — an old C callback, or
+        // a Kotlin subclass that never overrode
+        // `onWalletChangesetTransactionsSwept` — reads the unchanged prefix
+        // and returns success without ever seeing `core.sweeps` at all.
+        // `store()` coming back `Ok` in that case proves nothing about
+        // whether the removal actually happened, so it is checked
+        // separately from the result below rather than folded into it.
+        let sweep_removal_unsupported = !core.sweeps.is_empty()
+            && !persister
+                .persistence_capabilities()
+                .contains(PersistenceCapabilities::CORE_SWEEP_REMOVAL);
+
         let cs = PlatformWalletChangeSet {
             core: Some(core),
             // Tracked-asset-lock rows reconstructed from this drain's
@@ -460,6 +475,38 @@ where
             ..PlatformWalletChangeSet::default()
         };
         match persister.store(wallet_id, cs) {
+            Ok(()) if sweep_removal_unsupported => {
+                // The write nominally succeeded, but a backend that never
+                // attested `CORE_SWEEP_REMOVAL` is not known to have applied
+                // the one subtractive part of this round — reporting it
+                // durable would let the swept loser return at the next
+                // `load()`. Fault exactly like a rejection: the next scan
+                // re-emits the sweep and the idempotent removal is retried
+                // against (hopefully, by then) a capable backend.
+                if let Some(h) = offered_height {
+                    diag.record_rejected(h);
+                }
+                fault.fault_wallet(wallet_id, sync_fault);
+                if !is_faulted {
+                    diag.faulted += 1;
+                }
+                if !*freeze_logged {
+                    *freeze_logged = true;
+                    log::error!(
+                        "SYNC WATERMARK FROZEN: persister for wallet {} does not advertise \
+                         CORE_SWEEP_REMOVAL but this round swept one or more transactions; a \
+                         removal must never be reported durable to a backend that cannot apply \
+                         it, so the sync watermark is held back (dashpay/platform#4406).",
+                        hex::encode(wallet_id)
+                    );
+                }
+                tracing::error!(
+                    wallet_id = %hex::encode(wallet_id),
+                    "Persister lacks CORE_SWEEP_REMOVAL for a changeset carrying sweeps; \
+                     freezing this wallet's sync watermark rather than trusting an unversioned \
+                     store() success"
+                );
+            }
             Ok(()) => {
                 if let Some(h) = offered_height {
                     diag.record_persisted(h);
@@ -2171,6 +2218,7 @@ mod tests {
     struct ProbePersister {
         obs: UnboundedSender<StoreObserved>,
         fail_once: Mutex<HashSet<WalletId>>,
+        capabilities: crate::changeset::PersistenceCapabilities,
     }
 
     impl ProbePersister {
@@ -2178,6 +2226,19 @@ mod tests {
             Self {
                 obs,
                 fail_once: Mutex::new(HashSet::new()),
+                capabilities: crate::changeset::PersistenceCapabilities::NONE,
+            }
+        }
+        /// A probe that additionally attests `capabilities` — used by the
+        /// `CORE_SWEEP_REMOVAL` gate tests, which need a persister on record
+        /// as (not) supporting the sweep contract.
+        fn with_capabilities(
+            obs: UnboundedSender<StoreObserved>,
+            capabilities: crate::changeset::PersistenceCapabilities,
+        ) -> Self {
+            Self {
+                capabilities,
+                ..Self::new(obs)
             }
         }
         fn fail_next(&self, wallet_id: WalletId) {
@@ -2186,6 +2247,10 @@ mod tests {
     }
 
     impl PlatformWalletPersistence for ProbePersister {
+        fn persistence_capabilities(&self) -> crate::changeset::PersistenceCapabilities {
+            self.capabilities
+        }
+
         fn store(
             &self,
             wallet_id: WalletId,
@@ -2614,6 +2679,143 @@ mod tests {
                 "no store may carry a synced_height once the wallet is faulted"
             );
         }
+    }
+
+    /// A `TransactionsSwept` event for a helper below.
+    fn swept_event(wallet_id: WalletId, txid_byte: u8, superseded_by_byte: u8) -> WalletEvent {
+        use dashcore::hashes::Hash as _;
+        WalletEvent::TransactionsSwept {
+            wallet_id,
+            txids: vec![dashcore::Txid::from_byte_array([txid_byte; 32])],
+            superseded_by: dashcore::Txid::from_byte_array([superseded_by_byte; 32]),
+            released_outpoints: vec![],
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        }
+    }
+
+    /// dashpay/platform#4406 (finding 2): `WalletChangeSetFFI` has no size or
+    /// version header, so an older callback compiled against the pre-sweep
+    /// struct layout reads the unchanged prefix, returns success, and never
+    /// sees `core.sweeps` at all. A `store()` that comes back `Ok` therefore
+    /// proves nothing about whether a swept loser's row was actually
+    /// removed unless the persister has separately attested
+    /// `CORE_SWEEP_REMOVAL`. A persister that never declares it (the
+    /// probe's default) must be treated exactly like a rejection when a
+    /// round carries a sweep — even though, unlike the rejection tests
+    /// above, the probe's own `store()` call reports success.
+    #[tokio::test]
+    async fn sweep_without_declared_capability_freezes_the_wallet_despite_a_successful_store() {
+        let wallet_id = [21u8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        // No capabilities declared — the pre-`CORE_SWEEP_REMOVAL` shape.
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            test_manager(),
+            Arc::clone(&persister),
+            rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
+        ));
+
+        tx.send(swept_event(wallet_id, 0x51, 0x52)).unwrap();
+        let first = obs_rx
+            .recv()
+            .await
+            .expect("the round is still handed to store()");
+        assert!(
+            !first.rejected,
+            "the probe's own store() must succeed — the gate lives in the \
+             adapter, not in a persister that has no idea sweeps exist"
+        );
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while !sync_fault.load(Ordering::Relaxed) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect(
+            "the fail-closed guard must trip for an undeclared sweep even \
+             though store() itself reported success",
+        );
+
+        // A later watermark-only event must be stripped just like it would
+        // be after a real store() rejection.
+        tx.send(sync_height_event(wallet_id, 500)).unwrap();
+        tx.send(block_processed_event(wallet_id, 40)).unwrap();
+        let sentinel = obs_rx.recv().await.expect("sentinel store must arrive");
+        assert_eq!(sentinel.last_processed_height, Some(40));
+        assert_eq!(
+            sentinel.synced_height, None,
+            "the watermark must stay frozen: a removal must never be \
+             reported durable to a backend that never attested it can apply it"
+        );
+
+        cancel.cancel();
+        drop(tx);
+        handle.await.unwrap();
+    }
+
+    /// The positive case for the same gate: a persister that attests
+    /// `CORE_SWEEP_REMOVAL` is trusted normally, and the watermark keeps
+    /// advancing through a sweep-bearing round exactly as it would through
+    /// any other.
+    #[tokio::test]
+    async fn sweep_with_declared_capability_does_not_freeze() {
+        let wallet_id = [22u8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::with_capabilities(
+            obs_tx,
+            crate::changeset::PersistenceCapabilities::CORE_SWEEP_REMOVAL,
+        ));
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            test_manager(),
+            Arc::clone(&persister),
+            rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
+        ));
+
+        tx.send(swept_event(wallet_id, 0x61, 0x62)).unwrap();
+        // A watermark-bearing event right behind it, folded or not — either
+        // way it must reach the store untouched while the capability holds.
+        tx.send(sync_height_event(wallet_id, 700)).unwrap();
+
+        let mut last_synced = None;
+        // Drain until the loop has produced at least one store carrying the
+        // watermark, or the channel goes quiet.
+        for _ in 0..10 {
+            match obs_rx.recv().await {
+                Some(observed) => {
+                    assert!(!observed.rejected);
+                    if let Some(h) = observed.synced_height {
+                        last_synced = Some(h);
+                        break;
+                    }
+                }
+                None => break,
+            }
+        }
+        assert_eq!(
+            last_synced,
+            Some(700),
+            "the watermark must advance normally once the backend attests \
+             CORE_SWEEP_REMOVAL"
+        );
+        assert!(
+            !sync_fault.load(Ordering::Relaxed),
+            "an attested backend must never trip the fail-closed guard"
+        );
+
+        cancel.cancel();
+        drop(tx);
+        handle.await.unwrap();
     }
 
     /// End-to-end restore-scan shape through the real adapter loop: a

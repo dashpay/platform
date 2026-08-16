@@ -51,6 +51,16 @@ impl PersistenceCapabilities {
     /// Tracked asset-lock rows, including status and proof updates, can be
     /// persisted. Restart hydration is the separate `WALLET_RESTORE` contract.
     pub const TRACKED_ASSET_LOCKS: Self = Self(1 << 9);
+    /// A stored `CoreChangeSet` whose `sweeps` are non-empty is durably
+    /// applied: the swept loser's row (and any tombstoned pending-input
+    /// claim standing in for a not-yet-materialized UTXO) actually leaves
+    /// the backing store, not merely accepted-and-ignored. `WalletChangeSetFFI`
+    /// has no size/version header, so an older callback compiled against a
+    /// pre-sweep struct layout reads the unchanged prefix, returns success,
+    /// and never sees the appended fields at all — this bit is what tells the
+    /// wallet the round-trip was actually implemented rather than silently
+    /// truncated.
+    pub const CORE_SWEEP_REMOVAL: Self = Self(1 << 10);
 
     /// Capabilities required before exporting and funding an invitation voucher.
     pub const INVITATION_CREATION: Self = Self(
@@ -131,6 +141,10 @@ impl PersistenceCapabilities {
                 PersistenceCapabilities::TRACKED_ASSET_LOCKS,
                 "tracked_asset_locks",
             ),
+            (
+                PersistenceCapabilities::CORE_SWEEP_REMOVAL,
+                "core_sweep_removal",
+            ),
         ];
 
         KNOWN
@@ -160,6 +174,7 @@ mod tests {
         assert_eq!(PersistenceCapabilities::WALLET_RESTORE.bits(), 0x80);
         assert_eq!(PersistenceCapabilities::DPNS_NAME_STATES.bits(), 0x100);
         assert_eq!(PersistenceCapabilities::TRACKED_ASSET_LOCKS.bits(), 0x200);
+        assert_eq!(PersistenceCapabilities::CORE_SWEEP_REMOVAL.bits(), 0x400);
         assert_eq!(
             PersistenceCapabilities::ASSET_LOCK_RECONCILIATION.bits(),
             0x281

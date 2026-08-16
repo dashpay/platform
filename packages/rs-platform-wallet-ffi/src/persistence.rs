@@ -115,6 +115,7 @@ pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DEFERRED_CONTACT_CRYPTO: u64 =
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_WALLET_RESTORE: u64 = 1 << 7;
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DPNS_NAME_STATES: u64 = 1 << 8;
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_TRACKED_ASSET_LOCKS: u64 = 1 << 9;
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_CORE_SWEEP_REMOVAL: u64 = 1 << 10;
 
 /// Version of [`PersistenceCallbacksExtension`]. The extension is deliberately
 /// separate from [`PersistenceCallbacks`]: existing hosts pass the latter by
@@ -1061,6 +1062,21 @@ impl FFIPersister {
         }
         if self.callbacks.on_persist_token_balances_fn.is_some() {
             capabilities = capabilities.union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE);
+        }
+        // `on_persist_wallet_changeset_fn` is the one callback that ever
+        // carries `WalletChangeSetFFI.sweeps` — it is also the callback
+        // `PROVIDER_TRANSACTIONS` above gates on, and its C signature did not
+        // change when the sweep fields were appended to the struct it
+        // receives a pointer to. So its presence alone proves nothing about
+        // whether the host actually reads those fields: an out-of-tree
+        // caller built against the pre-sweep struct layout still has this
+        // pointer wired, reads the unchanged prefix, and returns success.
+        // That gap is exactly why this bit is also gated by
+        // `declared_capabilities` in `persistence_capabilities()` below —
+        // the intersection requires the host to explicitly attest the
+        // semantic contract, not just have the vtable slot filled in.
+        if self.callbacks.on_persist_wallet_changeset_fn.is_some() {
+            capabilities = capabilities.union(PersistenceCapabilities::CORE_SWEEP_REMOVAL);
         }
         #[cfg(feature = "shielded")]
         if self.callbacks.on_persist_shielded_viewing_keys_fn.is_some()
@@ -6187,6 +6203,48 @@ mod tests {
         assert!(!capabilities.contains(PersistenceCapabilities::WALLET_RESTORE));
     }
 
+    /// `CORE_SWEEP_REMOVAL` rides the same callback pointer as
+    /// `PROVIDER_TRANSACTIONS` (`on_persist_wallet_changeset_fn`), and that
+    /// pointer's C signature is unchanged by the sweep fields appended to
+    /// `WalletChangeSetFFI` — an out-of-tree host built before this bit
+    /// existed still has it wired. The bit must therefore come from the
+    /// host's explicit declaration, not from the callback's mere presence:
+    /// wired-but-undeclared and declared-but-unwired must each attest
+    /// nothing, and only both together attest the bit.
+    #[test]
+    fn core_sweep_removal_requires_both_the_callback_and_the_declaration() {
+        fn wired_callbacks() -> PersistenceCallbacks {
+            PersistenceCallbacks {
+                on_persist_wallet_changeset_fn: Some(noop_wallet_changeset),
+                ..Default::default()
+            }
+        }
+
+        // Structurally complete, but the host never declared it (the
+        // pre-sweep-aware binary case): absent.
+        assert!(
+            !declared_persister(wired_callbacks(), PersistenceCapabilities::NONE)
+                .persistence_capabilities()
+                .contains(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
+        );
+
+        // Declared, but the callback pointer isn't even wired: absent.
+        assert!(!declared_persister(
+            PersistenceCallbacks::default(),
+            PersistenceCapabilities::CORE_SWEEP_REMOVAL
+        )
+        .persistence_capabilities()
+        .contains(PersistenceCapabilities::CORE_SWEEP_REMOVAL));
+
+        // Both: attested.
+        assert!(declared_persister(
+            wired_callbacks(),
+            PersistenceCapabilities::CORE_SWEEP_REMOVAL
+        )
+        .persistence_capabilities()
+        .contains(PersistenceCapabilities::CORE_SWEEP_REMOVAL));
+    }
+
     #[test]
     fn asset_lock_reconciliation_requires_every_callback_leg() {
         fn complete_callbacks() -> PersistenceCallbacks {
@@ -6241,7 +6299,8 @@ mod tests {
             .union(PersistenceCapabilities::PROVIDER_TRANSACTIONS)
             .union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE)
             .union(PersistenceCapabilities::WALLET_RESTORE)
-            .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS);
+            .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
+            .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL);
         cb.on_changeset_begin_fn = Some(noop_begin);
         cb.on_changeset_end_fn = Some(noop_end);
         cb.on_persist_account_registrations_fn = Some(noop_registrations);
@@ -6371,6 +6430,10 @@ mod tests {
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_TRACKED_ASSET_LOCKS,
             PersistenceCapabilities::TRACKED_ASSET_LOCKS.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_CORE_SWEEP_REMOVAL,
+            PersistenceCapabilities::CORE_SWEEP_REMOVAL.bits()
         );
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ACCOUNT_ADDRESS_POOLS,
