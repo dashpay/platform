@@ -1059,6 +1059,17 @@ class PlatformWalletPersistenceHandler(
      * `onWalletChangesetUtxoAdded` knows to keep the coin spent — durably,
      * via `TxoEntity.supersededByTxid` — once the funding TXO materializes.
      *
+     * A tombstoned row can itself need to move again: [supersededBy] is a
+     * winner in this round, but nothing stops it from losing a later round
+     * to a further winner while [supersededBy]'s own funding TXO is still
+     * unresolved. [DocumentDao.tombstoneUnreleasedPendingInputs] can't see
+     * that earlier tombstone — it already detached from the relationship
+     * that query matches on — so [DocumentDao.deleteReleasedSweptTombstones]
+     * and [DocumentDao.retargetSweptTombstones] look it up the only other
+     * way it is still findable, by the scalar `spendingTxid` it was
+     * repointed to, and carry it the rest of the chain: deleted if this
+     * round finally frees its outpoint, repointed at the new winner if not.
+     *
      * All updates run before the delete: the foreign key nulls `spendingTxid`
      * (or, for a pending row already detached above, does nothing) on delete,
      * and after that nothing finds those rows.
@@ -1089,6 +1100,14 @@ class PlatformWalletPersistenceHandler(
             for (i in txids.indices) {
                 db.txoDao().holdSpentWithoutSpender(txids[i])
                 db.documentDao().tombstoneUnreleasedPendingInputs(txids[i], supersededBy[i], released)
+                // A pending input an EARLIER sweep already tombstoned to
+                // txids[i] (that txid was itself a sweep's winner, and is
+                // now being swept in turn) detached from the relationship
+                // `tombstoneUnreleasedPendingInputs` above matches on, so it
+                // has to be found and carried forward separately — see
+                // [DocumentDao.deleteReleasedSweptTombstones].
+                db.documentDao().deleteReleasedSweptTombstones(txids[i], released)
+                db.documentDao().retargetSweptTombstones(txids[i], supersededBy[i], released)
             }
             for (outpoint in releasedOutpoints) {
                 db.txoDao().releaseByOutpoint(outpoint)

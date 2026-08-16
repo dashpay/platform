@@ -21,7 +21,7 @@ use key_wallet::Utxo;
 use platform_wallet::changeset::changeset::SweepBatch;
 use platform_wallet::changeset::CoreChangeSet;
 use platform_wallet::wallet::platform_wallet::WalletId;
-use platform_wallet_storage::sqlite::schema::core_state;
+use platform_wallet_storage::sqlite::schema::{blob, core_state};
 use rusqlite::params;
 
 fn p2pkh(byte: u8) -> Address {
@@ -749,5 +749,254 @@ fn a_held_input_with_no_utxo_row_survives_restart_and_stays_spent_when_funded() 
         !unspent(&conn, &w).contains(&unfunded_input),
         "the winner's claim on this input must survive the loser's deletion, \
          a restart, and the funding UTXO's own arrival"
+    );
+}
+
+/// A held-but-unfunded input's placeholder (see the test above) can itself
+/// need to move again: its first winner can go on to lose a later sweep
+/// while the outpoint is still unfunded. Unlike the mobile backends' pending-
+/// input table, this schema has no separate relationship the placeholder
+/// detaches from — `apply_sweep` always looks up the loser's inputs fresh
+/// from its own `core_transactions` blob and touches `core_utxos` by
+/// outpoint alone, so the second sweep finds the same placeholder row the
+/// first one wrote without any chain-specific bookkeeping. This is the
+/// released half: L spends P; W spends P and Q and sweeps L holding P (P is
+/// still unfunded); X spends Q and sweeps W, this time releasing P.
+#[test]
+fn a_chained_sweep_before_funding_still_frees_an_earlier_tombstone_on_release() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xE8);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = p2pkh(0x08);
+    let funding_txid = Txid::from_byte_array([0x90; 32]);
+    let unfunded_input = OutPoint::new(funding_txid, 0);
+    let funded_input = OutPoint::new(funding_txid, 1);
+
+    let first_loser = Txid::from_byte_array([0x91; 32]); // L
+    let second_loser = Txid::from_byte_array([0x92; 32]); // W
+    let final_winner = Txid::from_byte_array([0x93; 32]); // X
+
+    let l = tx_record(
+        first_loser,
+        vec![unfunded_input],
+        vec![TxOut {
+            value: 1_000,
+            script_pubkey: addr.script_pubkey(),
+        }],
+    );
+    let w_record = tx_record(
+        second_loser,
+        vec![unfunded_input, funded_input],
+        vec![TxOut {
+            value: 900,
+            script_pubkey: addr.script_pubkey(),
+        }],
+    );
+
+    let mut conn = persister.lock_conn_for_test();
+    derive_address(&conn, &w, 0, &addr);
+
+    // `funded_input` is an ordinary UTXO from the start; `unfunded_input`'s
+    // funding side is never observed until the very end.
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            new_utxos: vec![make_utxo(&addr, funding_txid, 1, 500)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    // L's spend of the unfunded input arrives with no core_utxos row for it.
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![l],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    // First sweep: W beats L, holding the still-unfunded input. This is what
+    // writes the placeholder row this test is about.
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![first_loser],
+                superseded_by: second_loser,
+                released_outpoints: vec![],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    assert!(
+        row_exists(&conn, &w, &unfunded_input),
+        "sanity: the first sweep must have left a placeholder row"
+    );
+    // W's own record has to be on hand for the second sweep to look its
+    // inputs up — the same requirement any ordinary (non-chained) sweep has.
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![w_record],
+            spent_utxos: vec![make_utxo(&addr, funding_txid, 1, 500)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    // Second sweep: X beats W, and this time releases the input that has
+    // been sitting unfunded since the first sweep.
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![second_loser],
+                superseded_by: final_winner,
+                released_outpoints: vec![unfunded_input],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    assert!(
+        unspent(&conn, &w).contains(&unfunded_input),
+        "the chained sweep released this input, and its own funding TXO is \
+         still unobserved — it must read as an ordinary spendable UTXO, not \
+         stay stuck under the first sweep's placeholder"
+    );
+    assert!(
+        !unspent(&conn, &w).contains(&funded_input),
+        "the second sweep's winner took the other input"
+    );
+}
+
+/// The held (not released) half of the chained-before-funding scenario
+/// above: the second sweep keeps the still-unfunded input spent instead of
+/// releasing it, and the placeholder must end up attributed to the NEW
+/// winner rather than the one the second sweep just removed. Verified
+/// across a full restart, then confirmed by finally funding the input — it
+/// must still read as spent, and the persisted placeholder must name the
+/// final winner rather than the intermediate one that no longer has a row.
+#[test]
+fn a_chained_sweep_before_funding_repoints_an_earlier_tombstone_to_the_new_winner() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w: WalletId = wid(0xE9);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = p2pkh(0x09);
+    let funding_txid = Txid::from_byte_array([0xA0; 32]);
+    let unfunded_input = OutPoint::new(funding_txid, 0);
+
+    let first_loser = Txid::from_byte_array([0xA1; 32]); // L
+    let second_loser = Txid::from_byte_array([0xA2; 32]); // W
+    let final_winner = Txid::from_byte_array([0xA3; 32]); // X
+
+    let l = tx_record(
+        first_loser,
+        vec![unfunded_input],
+        vec![TxOut {
+            value: 1_000,
+            script_pubkey: addr.script_pubkey(),
+        }],
+    );
+    let w_record = tx_record(
+        second_loser,
+        vec![unfunded_input],
+        vec![TxOut {
+            value: 900,
+            script_pubkey: addr.script_pubkey(),
+        }],
+    );
+
+    {
+        let mut conn = persister.lock_conn_for_test();
+        derive_address(&conn, &w, 0, &addr);
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![l],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+
+        // First sweep: W beats L, holding the unfunded input.
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![first_loser],
+                superseded_by: second_loser,
+                released_outpoints: vec![],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+
+        // W's own record, needed by the second sweep below.
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![w_record],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+
+        // Second sweep: X beats W, still holding the same unfunded input.
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![second_loser],
+                superseded_by: final_winner,
+                released_outpoints: vec![],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    drop(persister);
+    let persister = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+
+    // The funding transaction finally arrives.
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            new_utxos: vec![make_utxo(&addr, funding_txid, 0, 1_000)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    let conn = persister.lock_conn_for_test();
+    assert!(
+        !unspent(&conn, &w).contains(&unfunded_input),
+        "the final winner's claim must survive both sweeps, the restart, \
+         and the funding UTXO's own arrival"
+    );
+    let spent_in_txid: Vec<u8> = conn
+        .query_row(
+            "SELECT spent_in_txid FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+            params![
+                w.as_slice(),
+                &blob::encode_outpoint(&unfunded_input).unwrap()[..]
+            ],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        spent_in_txid,
+        AsRef::<[u8]>::as_ref(&final_winner).to_vec(),
+        "the placeholder must be attributed to the final winner, not the \
+         intermediate one the second sweep already removed"
     );
 }

@@ -936,6 +936,17 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// left for the cascade, the same as a released materialized input needs
     /// no special handling beyond the loop above.
     ///
+    /// A tombstoned row can itself need to move again: `supersededBy` is
+    /// only this round's winner, and nothing stops it from losing a later
+    /// round to a further winner while its own funding TXO is still
+    /// unresolved. `row.pendingInputs` above cannot see that earlier
+    /// tombstone — it already detached from `spendingTransaction` (and
+    /// therefore from `row`) the moment it was first written — so it is
+    /// looked up the only other way it is still findable, by the scalar
+    /// `spendingTxid` it was repointed to, and carried the rest of the
+    /// chain below: deleted if this round finally frees its outpoint,
+    /// repointed at the new winner if not.
+    ///
     /// Transaction rows are shared across wallets by design (see
     /// `PersistentTransaction`), and a sweep is a statement about the
     /// transaction itself rather than about one wallet's view of it, so the
@@ -969,6 +980,24 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             pending.isSweptTombstone = true
         }
         backgroundContext.delete(row)
+
+        // Chained-sweep continuation: a pending row an EARLIER sweep already
+        // tombstoned to `txid` (this transaction, itself a sweep's winner
+        // until now) is no longer reachable through `row.pendingInputs` —
+        // see the doc comment above. Find it by the scalar `spendingTxid`
+        // it carries instead.
+        var tombstoneDescriptor = FetchDescriptor<PersistentPendingInput>(
+            predicate: #Predicate { $0.spendingTxid == txid && $0.isSweptTombstone == true }
+        )
+        tombstoneDescriptor.includePendingChanges = true
+        let priorTombstones = try backgroundContext.fetch(tombstoneDescriptor)
+        for pending in priorTombstones {
+            if released.contains(pending.outpoint) {
+                backgroundContext.delete(pending)
+            } else {
+                pending.spendingTxid = supersededBy
+            }
+        }
     }
 
     /// Find or create the `PersistentWallet` row for `walletId`.

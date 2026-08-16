@@ -197,6 +197,40 @@ interface DocumentDao {
         releasedOutpoints: List<ByteArray>,
     )
 
+    /**
+     * Chained-sweep continuation of [tombstoneUnreleasedPendingInputs]: a
+     * pending row that an earlier sweep already tombstoned to [txid]
+     * detached itself from the `spendingTransactionTxid` relationship at
+     * that point, so a sweep of [txid] itself cannot find it there — only
+     * the scalar `spendingTxid` this row was repointed to still names it.
+     * Delete the ones this round frees. Nothing else owns them once
+     * detached — unlike a live pending row, there is no cascade-delete of
+     * [txid]'s `transactions` row left to do that job for them.
+     */
+    @Query(
+        "DELETE FROM pending_inputs WHERE spendingTxid = :txid AND isSweptTombstone = 1 " +
+            "AND outpoint IN (:releasedOutpoints)",
+    )
+    suspend fun deleteReleasedSweptTombstones(txid: ByteArray, releasedOutpoints: List<ByteArray>)
+
+    /**
+     * The held half of [deleteReleasedSweptTombstones]: repoint every
+     * surviving tombstone of [txid] at the new [supersededBy] instead, so a
+     * third sweep down the chain can still find it by scalar `spendingTxid`.
+     * [isSweptTombstone] is already set from the first tombstoning and
+     * stays set.
+     */
+    @Query(
+        "UPDATE pending_inputs SET spendingTxid = :supersededBy " +
+            "WHERE spendingTxid = :txid AND isSweptTombstone = 1 " +
+            "AND outpoint NOT IN (:releasedOutpoints)",
+    )
+    suspend fun retargetSweptTombstones(
+        txid: ByteArray,
+        supersededBy: ByteArray,
+        releasedOutpoints: List<ByteArray>,
+    )
+
     @Upsert
     suspend fun upsertPendingInput(pendingInput: PendingInputEntity)
 

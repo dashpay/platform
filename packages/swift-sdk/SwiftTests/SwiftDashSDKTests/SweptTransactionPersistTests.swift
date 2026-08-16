@@ -497,6 +497,184 @@ final class SweptTransactionPersistTests: XCTestCase {
         XCTAssertEqual(coin.supersededByTxid, winnerTxid)
     }
 
+    /// Chained-sweep continuation of `testSpendBeforeFundingSweptThenRestartedThenFundedStaysSpent`
+    /// above: L spends P; W spends P and Q and sweeps L, holding P (still
+    /// unfunded); X spends Q and sweeps W, this time releasing P. The
+    /// tombstone `applySweptTransaction` wrote for P when L was swept
+    /// already detached from `spendingTransaction`, so the second sweep of
+    /// W cannot find it through `row.pendingInputs` the way the first sweep
+    /// did — it can only be found by the scalar `spendingTxid` it now
+    /// carries. This is the review finding: without that second lookup, the
+    /// second sweep's release of P is silently dropped, and P's funding TXO
+    /// resurrects the coin attributed to the wrong (already deleted)
+    /// transaction instead of coming back spendable.
+    func testChainedSweepBeforeFundingReleasesAnEarlierTombstoneOnASecondSweep() throws {
+        let (handler, container) = try makeHandler()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+
+        let firstLoser = Data(repeating: 0x61, count: 32) // L
+        let secondLoser = Data(repeating: 0x62, count: 32) // W
+        let finalWinner = Data(repeating: 0x63, count: 32) // X
+
+        let l = PersistentTransaction(
+            txid: firstLoser,
+            transactionData: Data(repeating: 0x05, count: 10),
+            context: 0,
+            blockHeight: 0,
+            netAmount: -100_000
+        )
+        context.insert(l)
+        // P (fundingTxid:0) has never been observed as a TXO — parked as a
+        // pending input, the same as `testSpendBeforeFundingSweptThenRestartedThenFundedStaysSpent`.
+        context.insert(PersistentPendingInput(
+            outpoint: PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0),
+            inputIndex: 0,
+            spendingTxid: firstLoser,
+            spendingTransaction: l,
+            walletId: walletId
+        ))
+        try context.save()
+
+        // First sweep: W beats L, holding P (still unfunded).
+        sweep(handler, [Batch(losers: [firstLoser], winner: secondLoser)])
+
+        let pOutpoint = PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0)
+        let tombstoneDescriptor = FetchDescriptor<PersistentPendingInput>(
+            predicate: #Predicate { $0.outpoint == pOutpoint }
+        )
+        let tombstone = try XCTUnwrap(try context.fetch(tombstoneDescriptor).first)
+        XCTAssertTrue(tombstone.isSweptTombstone, "the first sweep must tombstone the pending row")
+        XCTAssertEqual(tombstone.spendingTxid, secondLoser)
+        XCTAssertNil(tombstone.spendingTransaction, "must have detached from the doomed loser's FK")
+
+        // W's own row, plus a materialized claim on Q, needed for the
+        // second sweep to find W at all — the same requirement any sweep of
+        // a wallet-relevant loser has.
+        let w = PersistentTransaction(
+            txid: secondLoser,
+            transactionData: Data(repeating: 0x06, count: 10),
+            context: 0,
+            blockHeight: 0,
+            netAmount: -90_000
+        )
+        context.insert(w)
+        let qFunding = PersistentTransaction(
+            txid: Data(repeating: 0x65, count: 32),
+            transactionData: Data(repeating: 0x09, count: 10),
+            context: 2,
+            blockHeight: 100,
+            netAmount: 40_000
+        )
+        context.insert(qFunding)
+        let coinQ = PersistentTxo(
+            transaction: qFunding,
+            vout: 0,
+            amount: 40_000,
+            address: "yFundAddr",
+            height: 100
+        )
+        coinQ.walletId = walletId
+        coinQ.spendingTransaction = w
+        context.insert(coinQ)
+        try context.save()
+
+        // Second sweep: X beats W, this time releasing P.
+        sweep(handler, [
+            Batch(losers: [secondLoser], winner: finalWinner, released: [(txid: fundingTxid, vout: 0)])
+        ])
+
+        let survivingTombstones = try context.fetch(tombstoneDescriptor)
+        XCTAssertTrue(
+            survivingTombstones.isEmpty,
+            "a released outpoint's tombstone must not survive a chained sweep"
+        )
+
+        deliverFundingUtxo(handler, vout: 0, amount: 50_000)
+
+        let coin = try XCTUnwrap(
+            txo(container, txid: fundingTxid, vout: 0),
+            "the funding UTXO's own upsert must still create the row"
+        )
+        XCTAssertFalse(
+            coin.isSpent,
+            "the final sweep released this coin, so it must come back spendable even "
+                + "though an earlier sweep in the chain had tombstoned it"
+        )
+        XCTAssertNil(coin.supersededByTxid)
+    }
+
+    /// The held (not released) half of the chained scenario above: the
+    /// second sweep keeps P spent instead of releasing it, and the
+    /// tombstone must end up attributed to the NEW winner rather than the
+    /// intermediate one that no longer has a row.
+    func testChainedSweepBeforeFundingRepointsAnEarlierTombstoneToTheNewWinner() throws {
+        let (handler, container) = try makeHandler()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+
+        let firstLoser = Data(repeating: 0x71, count: 32) // L
+        let secondLoser = Data(repeating: 0x72, count: 32) // W
+        let finalWinner = Data(repeating: 0x73, count: 32) // X
+
+        let l = PersistentTransaction(
+            txid: firstLoser,
+            transactionData: Data(repeating: 0x05, count: 10),
+            context: 0,
+            blockHeight: 0,
+            netAmount: -100_000
+        )
+        context.insert(l)
+        context.insert(PersistentPendingInput(
+            outpoint: PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0),
+            inputIndex: 0,
+            spendingTxid: firstLoser,
+            spendingTransaction: l,
+            walletId: walletId
+        ))
+        try context.save()
+
+        // First sweep: W beats L, holding P.
+        sweep(handler, [Batch(losers: [firstLoser], winner: secondLoser)])
+
+        // W's own row — this time claiming ONLY P, so the second sweep has
+        // no other input to reason about.
+        let w = PersistentTransaction(
+            txid: secondLoser,
+            transactionData: Data(repeating: 0x06, count: 10),
+            context: 0,
+            blockHeight: 0,
+            netAmount: -100_000
+        )
+        context.insert(w)
+        try context.save()
+
+        // Second sweep: X beats W, still holding the same input.
+        sweep(handler, [Batch(losers: [secondLoser], winner: finalWinner)])
+
+        let pOutpoint = PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0)
+        let tombstoneDescriptor = FetchDescriptor<PersistentPendingInput>(
+            predicate: #Predicate { $0.outpoint == pOutpoint }
+        )
+        let tombstone = try XCTUnwrap(try context.fetch(tombstoneDescriptor).first)
+        XCTAssertTrue(tombstone.isSweptTombstone)
+        XCTAssertEqual(
+            tombstone.spendingTxid,
+            finalWinner,
+            "the tombstone must be repointed at the FINAL winner, not the intermediate "
+                + "one the second sweep already removed"
+        )
+
+        deliverFundingUtxo(handler, vout: 0, amount: 50_000)
+
+        let coin = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertTrue(
+            coin.isSpent,
+            "the final winner's claim must survive both sweeps and the funding UTXO's own arrival"
+        )
+        XCTAssertEqual(coin.supersededByTxid, finalWinner)
+    }
+
     /// Hand a UTXO for `(fundingTxid, vout)` back through the ordinary
     /// account changeset — the same entry point `redeliverCoinB` drives, but
     /// generalized so a fresh outpoint can be delivered rather than the one
