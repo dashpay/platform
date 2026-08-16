@@ -174,6 +174,29 @@ interface DocumentDao {
     @Query("SELECT * FROM pending_inputs WHERE walletId = :walletId")
     fun observePendingInputsByWallet(walletId: ByteArray): Flow<List<PendingInputEntity>>
 
+    /**
+     * Repoint every pending input still recorded against loser [txid] at
+     * [supersededBy] instead, except the outpoints named in
+     * [releasedOutpoints] — those came free and are left for
+     * `onWalletChangesetTransactionsSwept`'s own cascade-delete of [txid]
+     * to remove. [spendingTransactionTxid] is cleared first so the FK no
+     * longer targets the row about to be deleted (a live `transactions`
+     * row cascades its `pending_inputs` children), and `isSweptTombstone`
+     * marks the row so `onWalletChangesetUtxoAdded` knows this is a durable
+     * claim rather than an ordinary in-flight spend once the funding TXO
+     * finally lands.
+     */
+    @Query(
+        "UPDATE pending_inputs SET spendingTransactionTxid = NULL, " +
+            "spendingTxid = :supersededBy, isSweptTombstone = 1 " +
+            "WHERE spendingTransactionTxid = :txid AND outpoint NOT IN (:releasedOutpoints)",
+    )
+    suspend fun tombstoneUnreleasedPendingInputs(
+        txid: ByteArray,
+        supersededBy: ByteArray,
+        releasedOutpoints: List<ByteArray>,
+    )
+
     @Upsert
     suspend fun upsertPendingInput(pendingInput: PendingInputEntity)
 

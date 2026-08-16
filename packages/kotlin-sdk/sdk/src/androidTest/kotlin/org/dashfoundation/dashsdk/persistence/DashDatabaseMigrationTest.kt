@@ -394,13 +394,58 @@ class DashDatabaseMigrationTest {
         db.close()
     }
 
+    /**
+     * v10 → v11 adds `txos.supersededByTxid` (nullable) and
+     * `pending_inputs.isSweptTombstone` (defaulted `false`) — both
+     * additive. Pre-existing rows in each table must survive and read back
+     * with the new columns at their defaults.
+     */
+    @Test
+    fun migrate10To11AddsSweepClaimDurabilityColumns() {
+        val legacy = helper.createDatabase(dbName, 10)
+        legacy.execSQL(
+            "INSERT INTO wallets (walletId, walletGroupId, networkRaw, name, birthHeight, " +
+                "syncedHeight, lastSynced, isImported, createdAt, lastUpdated) " +
+                "VALUES (x'01', x'02', 1, 'w', 0, 0, 0, 0, 0, 0)",
+        )
+        legacy.execSQL(
+            "INSERT INTO transactions (txid, transactionData, context, blockHeight, " +
+                "blockTimestamp, blockPosition, hasBlockPosition, direction, " +
+                "transactionType, transactionTypeKind, netAmount, label, firstSeen, " +
+                "createdAt, lastUpdated) " +
+                "VALUES (x'02', x'00', 0, 0, 0, 0, 0, 0, 'Standard', 0, 0, '', 0, 0, 0)",
+        )
+        legacy.execSQL(
+            "INSERT INTO txos (outpoint, vout, amount, address, scriptPubKey, height, " +
+                "isCoinbase, isConfirmed, isInstantLocked, isLocked, isSpent, createdAt, " +
+                "lastUpdated, walletId, txid) " +
+                "VALUES (x'0201', 1, 1000, 'y', x'00', 0, 0, 0, 0, 0, 0, 0, 0, x'01', x'02')",
+        )
+        legacy.execSQL(
+            "INSERT INTO pending_inputs (outpoint, inputIndex, spendingTxid, walletId, " +
+                "createdAt) VALUES (x'0301', 0, x'02', x'01', 0)",
+        )
+        legacy.close()
+
+        val db = helper.runMigrationsAndValidate(dbName, 11, true, DashDatabase.MIGRATION_10_11)
+        db.query("SELECT supersededByTxid FROM txos WHERE outpoint = x'0201'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue(c.isNull(0))
+        }
+        db.query("SELECT isSweptTombstone FROM pending_inputs WHERE outpoint = x'0301'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(0, c.getInt(0))
+        }
+        db.close()
+    }
+
     /** The requested contiguous path from the pre-u64 v4 schema to latest. */
     @Test
     fun migrate4ToLatest() {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            10,
+            11,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
@@ -408,16 +453,17 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_7_8,
             DashDatabase.MIGRATION_8_9,
             DashDatabase.MIGRATION_9_10,
+            DashDatabase.MIGRATION_10_11,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v10 schema. */
+    /** The full chain from v1 must also land on a valid v11 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            10,
+            11,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -428,6 +474,7 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_7_8,
             DashDatabase.MIGRATION_8_9,
             DashDatabase.MIGRATION_9_10,
+            DashDatabase.MIGRATION_10_11,
         ).close()
     }
 }

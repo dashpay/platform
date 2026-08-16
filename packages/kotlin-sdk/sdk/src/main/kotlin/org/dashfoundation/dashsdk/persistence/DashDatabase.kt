@@ -119,9 +119,18 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * document id, ownership/sale state, counterparty, document timestamps and
  * marketplace reconciliation watermark. Defaults keep every legacy label an
  * owned, unlisted row until the first native marketplace sync refreshes it.
+ *
+ * Version 11 (sweep claim durability): adds `txos.supersededByTxid` and
+ * `pending_inputs.isSweptTombstone`. A sweep's winner can beat a loser to an
+ * input whose funding TXO hasn't landed here yet, and until now the only
+ * record of that claim was the loser's own `pending_inputs` row, which
+ * cascades away with the loser it names — leaving the funding TXO's later
+ * arrival free to re-insert the outpoint as an ordinary unspent UTXO. Both
+ * columns are additive with defaults, so every pre-migration row reads back
+ * as an ordinary (non-tombstone, non-superseded) entry.
  */
 @Database(
-    version = 10,
+    version = 11,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -557,6 +566,21 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v10 → v11: additive sweep-claim-durability columns, both
+         * defaulted so every existing row reads as "not a tombstone, not
+         * superseded" (column order = entity field order).
+         */
+        val MIGRATION_10_11: Migration = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `txos` ADD COLUMN `supersededByTxid` BLOB")
+                db.execSQL(
+                    "ALTER TABLE `pending_inputs` ADD COLUMN `isSweptTombstone` " +
+                        "INTEGER NOT NULL DEFAULT 0",
+                )
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -574,6 +598,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_7_8,
                     MIGRATION_8_9,
                     MIGRATION_9_10,
+                    MIGRATION_10_11,
                 )
                 .build()
 

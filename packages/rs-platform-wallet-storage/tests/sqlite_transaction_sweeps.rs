@@ -10,7 +10,7 @@
 
 mod common;
 
-use common::{ensure_wallet_meta, fresh_persister, wid};
+use common::{ensure_wallet_meta, fresh_persister, wid, SqlitePersister, SqlitePersisterConfig};
 
 use dashcore::hashes::Hash;
 use dashcore::{Address, Network, OutPoint, Transaction, TxIn, TxOut, Txid};
@@ -655,5 +655,99 @@ fn a_later_sweep_keeping_a_coin_spent_overrides_an_earlier_release() {
     assert!(
         !unspent(&conn, &w).contains(&contested),
         "the later sweep kept the coin spent, so it must not be spendable"
+    );
+}
+
+/// A loser can be persisted before its own funding output is: this store
+/// only learns about a TXO through `new_utxos`/`spent_utxos`, so a spend can
+/// name an outpoint `core_utxos` has never heard of. When such an input is
+/// held (not released) by the sweep, `apply_sweep` has no row to update and
+/// must leave a claim of its own — otherwise deleting the loser's
+/// `core_transactions` row (the only place that input was ever recorded)
+/// erases the claim entirely, and the funding output arriving later — even
+/// after a full restart — would insert it back as a plain unspent UTXO.
+#[test]
+fn a_held_input_with_no_utxo_row_survives_restart_and_stays_spent_when_funded() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w: WalletId = wid(0xE7);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = p2pkh(0x07);
+    let funding_txid = Txid::from_byte_array([0x80; 32]);
+    let unfunded_input = OutPoint::new(funding_txid, 0);
+
+    let loser_txid = Txid::from_byte_array([0x81; 32]);
+    let winner_txid = Txid::from_byte_array([0x82; 32]);
+
+    let loser = tx_record(
+        loser_txid,
+        vec![unfunded_input],
+        vec![TxOut {
+            value: 1_000,
+            script_pubkey: addr.script_pubkey(),
+        }],
+    );
+
+    {
+        let mut conn = persister.lock_conn_for_test();
+        derive_address(&conn, &w, 0, &addr);
+        // The loser's spend arrives with no prior `new_utxos`/`spent_utxos`
+        // for `unfunded_input` — the funding side of that outpoint has not
+        // been observed yet.
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![loser],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+
+        assert!(
+            !row_exists(&conn, &w, &unfunded_input),
+            "sanity: no core_utxos row exists for the unfunded input yet"
+        );
+    }
+
+    // The sweep holds the input (it is not in `released_outpoints`), with
+    // nothing on hand to update.
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![loser_txid],
+                superseded_by: winner_txid,
+                released_outpoints: vec![],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    drop(persister);
+
+    // Restart: a fresh persister loading the same on-disk store, exactly as
+    // a relaunch would see it.
+    let persister = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+
+    // The funding transaction finally arrives and hands the outpoint back
+    // as a UTXO — the ordinary path a rescan or late block takes.
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            new_utxos: vec![make_utxo(&addr, funding_txid, 0, 1_000)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    let conn = persister.lock_conn_for_test();
+    assert!(
+        !unspent(&conn, &w).contains(&unfunded_input),
+        "the winner's claim on this input must survive the loser's deletion, \
+         a restart, and the funding UTXO's own arrival"
     );
 }

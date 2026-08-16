@@ -86,6 +86,21 @@ public final class PersistentTxo {
     /// the spending tx must not cascade-delete this row.
     public var spendingTransaction: PersistentTransaction?
 
+    /// 32-byte txid of the transaction a sweep's winner is known to have
+    /// beaten this coin to, set only by `upsertUtxo` resolving a
+    /// `PersistentPendingInput` tombstone (`isSweptTombstone`) — i.e. this
+    /// TXO's funding output arrived after its loser was already swept and
+    /// deleted, so there was never a `spendingTransaction` row to link.
+    /// `nil` in every other case, including the ordinary "sweep held this
+    /// coin with no spender on record" state that `applySweptTransaction`
+    /// writes directly onto an already-materialized row (`spendingTransaction
+    /// = nil`, no tombstone involved). That distinction is what
+    /// `upsertUtxo`'s recovery clear keys on: a coin the wallet re-delivers
+    /// as unspent lifts `isSpent` only when both `spendingTransaction` and
+    /// this are nil, so a tombstoned coin isn't waved back into the restore
+    /// set just because nobody ever linked the winner's own row.
+    public var supersededByTxid: Data?
+
     /// Position of this output within `spendingTransaction.input`
     /// (i.e. the canonical "vin index"). Captured at the moment the
     /// spend is reconciled — sourced from

@@ -138,10 +138,11 @@ pub fn apply(
     for batch in &cs.sweeps {
         // The released set describes the wallet when this sweep was emitted,
         // and a round can fold in a later transaction that legitimately spent
-        // one of the freed coins. `core_utxos` never records *who* spent a
-        // row (`spent_in_txid` stays null on every write path), so unlike the
-        // mobile mirrors this cannot tell a live claim from the dead one by
-        // looking at the table — but the changeset carries the answer: any
+        // one of the freed coins. `apply_sweep` below is what attributes a
+        // held input to `superseded_by` via `spent_in_txid`, and that only
+        // happens once it runs — so at this point in the round the table
+        // cannot yet tell a live claim in *this* round from the one the sweep
+        // is about to displace. The changeset carries the answer instead: any
         // record in this round that is not swept by *any* batch and spends a
         // released outpoint is that live claim, and the coin stays spent.
         let swept_txids: HashSet<dashcore::Txid> = cs
@@ -164,7 +165,7 @@ pub fn apply(
             .copied()
             .collect();
         for loser_txid in &batch.txids {
-            apply_sweep(tx, wallet_id, loser_txid, &released)?;
+            apply_sweep(tx, wallet_id, loser_txid, &batch.superseded_by, &released)?;
         }
     }
     Ok(())
@@ -194,6 +195,18 @@ pub fn apply(
 /// addresses, and then it is never recorded anywhere in this store — and even
 /// a relevant one is not guaranteed to arrive in the same round as the sweep.
 ///
+/// A held input can also have no `core_utxos` row at all: this wallet can
+/// persist the loser before its own funding output was ever classified as
+/// ours, so the outpoint the loser claims to spend has nothing to update.
+/// Losing that claim would matter — the funding transaction has not shown up
+/// yet, and when it eventually does, the ordinary UTXO upsert would treat the
+/// outpoint as freshly unspent — so a held-but-absent input gets a row of its
+/// own here: `spent = 1`, `spent_in_txid = superseded_by`, everything else a
+/// placeholder the real funding data overwrites on arrival.
+/// `execute_upsert_utxo`'s conflict clause is what makes that placeholder
+/// durable — it refuses to clear `spent` while `spent_in_txid` is set, so the
+/// claim survives the funding upsert instead of being upserted away by it.
+///
 /// Idempotent: a txid this store never recorded is a successful no-op, not an
 /// error. A sweep can legitimately name a transaction this wallet dropped, or
 /// never derived an address for in the first place.
@@ -201,6 +214,7 @@ fn apply_sweep(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     loser_txid: &dashcore::Txid,
+    superseded_by: &dashcore::Txid,
     released: &HashSet<dashcore::OutPoint>,
 ) -> Result<(), WalletStorageError> {
     let loser_blob: Option<Vec<u8>> = tx
@@ -243,17 +257,45 @@ fn apply_sweep(
     // wallet, and a coin the sweep did not free stays out of the unspent
     // query even if nothing had marked it spent yet (upstream sweeps only
     // unconfirmed records, whose spends this schema does not mark).
+    // `spent_in_txid` moves with `spent`: a released input clears back to
+    // NULL (nobody's claim), a held one is attributed to `superseded_by` so
+    // the claim outlives this row's own deletion below.
     let mut spend_stmt = tx.prepare_cached(
-        "UPDATE core_utxos SET spent = ?3 WHERE wallet_id = ?1 AND outpoint = ?2",
+        "UPDATE core_utxos SET spent = ?3, spent_in_txid = ?4 \
+         WHERE wallet_id = ?1 AND outpoint = ?2",
+    )?;
+    // Only reached for a held input with no existing row — see the
+    // doc comment above. `value`/`script`/`height`/`account_index` are
+    // placeholders; the funding UTXO's own upsert overwrites them (and,
+    // thanks to the `spent_in_txid` guard in `execute_upsert_utxo`, does
+    // not clear `spent` while doing it).
+    let mut tombstone_stmt = tx.prepare_cached(
+        "INSERT INTO core_utxos \
+            (wallet_id, outpoint, value, script, height, account_index, spent, spent_in_txid) \
+         VALUES (?1, ?2, 0, X'', NULL, 0, 1, ?3)",
     )?;
     for input in &loser.transaction.input {
         let outpoint = input.previous_output;
         let key = blob::encode_outpoint(&outpoint)?;
-        spend_stmt.execute(params![
+        let freed = released.contains(&outpoint);
+        let spent_in_txid: Option<&[u8]> = if freed {
+            None
+        } else {
+            Some(AsRef::<[u8]>::as_ref(superseded_by))
+        };
+        let affected = spend_stmt.execute(params![
             wallet_id.as_slice(),
             &key[..],
-            !released.contains(&outpoint)
+            !freed,
+            spent_in_txid
         ])?;
+        if affected == 0 && !freed {
+            tombstone_stmt.execute(params![
+                wallet_id.as_slice(),
+                &key[..],
+                AsRef::<[u8]>::as_ref(superseded_by)
+            ])?;
+        }
     }
 
     Ok(())
@@ -265,6 +307,15 @@ fn apply_sweep(
 const ACCOUNT_INDEX_BY_ADDRESS_SQL: &str =
     "SELECT account_index FROM core_derived_addresses WHERE wallet_id = ?1 AND address = ?2";
 
+// `spent` only takes the incoming value when the existing row has no
+// `spent_in_txid`. A coin held spent with no spender on record is the
+// documented recovery state — the wallet handing it back as a UTXO is
+// what clears it. A coin held spent *with* `spent_in_txid` set is
+// `apply_sweep`'s tombstone for an input the loser claimed but the funding
+// row hadn't arrived for yet; the funding upsert (this statement) is
+// exactly the arrival that tombstone exists to survive, so it must not
+// double as the thing that erases it. `spent_in_txid` itself is left out of
+// the SET list entirely — untouched, it carries the claim forward.
 const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
         (wallet_id, outpoint, value, script, height, account_index, spent, spent_in_txid) \
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL) \
@@ -273,7 +324,8 @@ const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
         script = excluded.script, \
         height = excluded.height, \
         account_index = excluded.account_index, \
-        spent = excluded.spent";
+        spent = CASE WHEN core_utxos.spent_in_txid IS NOT NULL \
+            THEN core_utxos.spent ELSE excluded.spent END";
 
 fn execute_upsert_utxo(
     stmt: &mut rusqlite::CachedStatement<'_>,

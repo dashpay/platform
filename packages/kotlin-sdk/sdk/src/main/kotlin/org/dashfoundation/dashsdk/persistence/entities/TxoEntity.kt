@@ -77,7 +77,10 @@ data class TxoEntity(
     val isConfirmed: Boolean = false,
     val isInstantLocked: Boolean = false,
     val isLocked: Boolean = false,
-    /** Denormalized `spendingTxid != null`; kept explicit (hot filter path). */
+    /**
+     * Denormalized `spendingTxid != null || supersededByTxid != null`; kept
+     * explicit (hot filter path).
+     */
     val isSpent: Boolean = false,
     val createdAt: Date = Date(),
     val lastUpdated: Date = Date(),
@@ -100,6 +103,27 @@ data class TxoEntity(
      * navigation pointer.
      */
     val coreAddressId: String? = null,
+    /**
+     * Port of Swift `PersistentTxo.supersededByTxid`. Set only by
+     * `onWalletChangesetUtxoAdded` resolving a `pending_inputs` row with
+     * `isSweptTombstone` — i.e. this TXO's funding output arrived after the
+     * loser that spent it was already swept and deleted, so there was never
+     * a live `spendingTxid` to carry forward. Deliberately NOT an FK: the
+     * winner named here need not have its own `transactions` row (it can be
+     * wallet-irrelevant), so this column has to hold a bare txid that
+     * `transactions(txid)` may never contain.
+     *
+     * `null` in every other case, including the plain "sweep held this coin
+     * with no spender on record" state that `holdSpentWithoutSpender` writes
+     * directly onto an already-materialized row (`spendingTxid = NULL`, no
+     * tombstone involved). That distinction is what the `isSpent` carry-over
+     * above and `onWalletChangesetUtxoAdded`'s recovery clear key on: a coin
+     * the wallet re-delivers as unspent only lifts `isSpent` when both
+     * `spendingTxid` and this are null, so a tombstoned coin isn't waved
+     * back into the restore set just because the winner's own row was never
+     * linked.
+     */
+    val supersededByTxid: ByteArray? = null,
 ) {
     override fun equals(other: Any?): Boolean =
         other is TxoEntity && outpoint.contentEquals(other.outpoint)

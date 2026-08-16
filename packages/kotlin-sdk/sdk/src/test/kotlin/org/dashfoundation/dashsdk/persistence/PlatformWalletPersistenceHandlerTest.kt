@@ -2476,6 +2476,95 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun sweptSpendBeforeFundingSurvivesRestartAndStaysSpentWhenFunded() = runTest {
+        // The loser can be persisted before its own funding output ever is
+        // (see spendBeforeFundingReconcilesViaPendingInputAndExcludesFromRestore
+        // above) — the spend arrives as a `pending_inputs` row rather than a
+        // `TxoEntity` update. When the sweep holds that input (it's not in
+        // `releasedOutpoints`), there is no TXO row to mark — the only record
+        // of the claim is the pending row, which cascades away with the loser
+        // it names (`spendingTransactionTxid`'s FK) unless
+        // `onWalletChangesetTransactionsSwept` rescues it first. This is the
+        // regression the review finding described: seed the pending spend,
+        // sweep it, restart the store, and only then let the funding UTXO
+        // arrive. The coin must come back spent, attributed to the winner,
+        // not as a fresh unspent row.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yFundAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 61 }
+        val sweptTxid = ByteArray(32) { 62 }
+        val winnerTxid = ByteArray(32) { 64 }
+
+        // Changeset 1: the doomed spend arrives with no prior
+        // `onWalletChangesetUtxoAdded` for `fundingTxid:0` — the funding side
+        // of that outpoint has not been observed yet.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, sweptTxid, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -50_000, 0, false, "", 1_700_000_050,
+            makeOutpoint(fundingTxid, 0), 1,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertNull(
+            "sanity: the funding TXO has not arrived yet",
+            db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0)),
+        )
+        assertEquals(
+            1,
+            db.documentDao().getPendingInputsByOutpoint(makeOutpoint(fundingTxid, 0)).size,
+        )
+
+        // Changeset 2: the sweep holds the input (not in `releasedOutpoints`),
+        // with nothing on hand to update.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(sweptTxid), arrayOf(winnerTxid), emptyArray(),
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertNull("the loser is gone", db.transactionDao().getByTxid(sweptTxid))
+
+        // Restart: a fresh persister loading the same on-disk store — same
+        // Room database, new handler, matching this suite's own restart
+        // idiom (e.g. addressBalanceConflictPreservesDerivationIndicesAcrossRestart above).
+        val restarted = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)
+
+        // The funding transaction finally arrives and hands the outpoint
+        // back as a UTXO — the ordinary path a rescan or late block takes.
+        restarted.onChangesetBegin(walletId)
+        restarted.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 50_000, "yFundAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        restarted.onChangesetEnd(walletId, success = true)
+
+        val coin = db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))
+        assertNotNull("the funding UTXO's own upsert must still create the row", coin)
+        assertTrue(
+            "the winner's claim must survive the loser's deletion, a restart, " +
+                "and the funding UTXO's own arrival",
+            coin!!.isSpent,
+        )
+        assertTrue(winnerTxid.contentEquals(coin.supersededByTxid))
+        assertEquals(0, restarted.onLoadWalletList().single().utxos.size)
+    }
+
+    @Test
     fun loadWalletListRestoresCoreAddressPoolsBeyondGapWindow() = runTest {
         // prior-2 regression: the persisted Core address pools must come
         // back on the restore row so every restored address maps to its

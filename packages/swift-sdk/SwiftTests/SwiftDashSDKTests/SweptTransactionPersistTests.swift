@@ -33,6 +33,21 @@ final class SweptTransactionPersistTests: XCTestCase {
         return (handler, container)
     }
 
+    /// File-backed variant of `makeHandler()` — an in-memory store can't
+    /// outlive its own `ModelContainer`, so simulating a restart (a fresh
+    /// load/persister over the same on-disk store) needs a real file two
+    /// separate containers can both point at.
+    private func makeHandler(url: URL) throws -> (PlatformWalletPersistenceHandler, ModelContainer) {
+        let configuration = ModelConfiguration(schema: DashModelContainer.schema, url: url)
+        let container = try ModelContainer(
+            for: DashModelContainer.schema,
+            migrationPlan: DashMigrationPlan.self,
+            configurations: [configuration]
+        )
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+        return (handler, container)
+    }
+
     /// Seed the shape a confirmed spend leaves behind: a funding transaction
     /// with two outputs, a spending transaction that claimed both (linked
     /// and flagged spent), and the change that spend created.
@@ -417,5 +432,112 @@ final class SweptTransactionPersistTests: XCTestCase {
         XCTAssertTrue(applied, "an absent row is a successful no-op, not a failed round")
         XCTAssertNotNil(transaction(container, txid: sweptTxid))
         XCTAssertNotNil(transaction(container, txid: fundingTxid))
+    }
+
+    /// The loser can be persisted before its own funding output ever is —
+    /// `upsertTransaction` parks a spend like that as a `PersistentPendingInput`
+    /// rather than a `PersistentTxo` update (see `resolveInputOutpoint`).
+    /// When the sweep holds that input (it's not in `released`), there is no
+    /// `PersistentTxo` row to mark — the only record of the claim is the
+    /// pending row, which cascades away with the loser it names unless
+    /// `applySweptTransaction` rescues it first. This is the regression the
+    /// review finding described: seed the pending spend, sweep it, restart
+    /// the store, and only then let the funding UTXO arrive. The coin must
+    /// come back spent, attributed to the winner, not as a fresh unspent row.
+    func testSpendBeforeFundingSweptThenRestartedThenFundedStaysSpent() throws {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swept-pending-input-\(UUID().uuidString).store")
+        defer { try? FileManager.default.removeItem(at: storeURL) }
+
+        do {
+            let (handler, container) = try makeHandler(url: storeURL)
+            let context = ModelContext(container)
+            context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+            let swept = PersistentTransaction(
+                txid: sweptTxid,
+                transactionData: Data(repeating: 0x05, count: 10),
+                context: 0,
+                blockHeight: 0,
+                netAmount: -100_000
+            )
+            context.insert(swept)
+            // What `resolveInputOutpoint` would have written: the funding
+            // TXO for (fundingTxid, 0) has never been seen here.
+            context.insert(PersistentPendingInput(
+                outpoint: PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0),
+                inputIndex: 0,
+                spendingTxid: sweptTxid,
+                spendingTransaction: swept,
+                walletId: walletId
+            ))
+            try context.save()
+            XCTAssertNil(
+                txo(container, txid: fundingTxid, vout: 0),
+                "sanity: the funding TXO has not arrived yet"
+            )
+
+            sweep(handler, [Batch(losers: [sweptTxid], winner: winnerTxid)])
+
+            XCTAssertNil(transaction(container, txid: sweptTxid), "the loser is gone")
+        }
+
+        // Restart: a fresh persister loading the same on-disk store.
+        let (handler, container) = try makeHandler(url: storeURL)
+        deliverFundingUtxo(handler, vout: 0, amount: 100_000)
+
+        let coin = try XCTUnwrap(
+            txo(container, txid: fundingTxid, vout: 0),
+            "the funding UTXO's own upsert must still create the row"
+        )
+        XCTAssertTrue(
+            coin.isSpent,
+            "the winner's claim must survive the loser's deletion, a restart, "
+                + "and the funding UTXO's own arrival"
+        )
+        XCTAssertEqual(coin.supersededByTxid, winnerTxid)
+    }
+
+    /// Hand a UTXO for `(fundingTxid, vout)` back through the ordinary
+    /// account changeset — the same entry point `redeliverCoinB` drives, but
+    /// generalized so a fresh outpoint can be delivered rather than the one
+    /// baked into `seedSpend`.
+    private func deliverFundingUtxo(
+        _ handler: PlatformWalletPersistenceHandler,
+        vout: UInt32,
+        amount: UInt64
+    ) {
+        let name = strdup("Standard { index: 0 }")
+        let address = strdup("yFundAddr")
+        defer {
+            free(name)
+            free(address)
+        }
+
+        var utxo = UtxoEntryFFI()
+        Swift.withUnsafeMutableBytes(of: &utxo.outpoint.txid) { dst in
+            fundingTxid.withUnsafeBytes { src in dst.copyMemory(from: src) }
+        }
+        utxo.outpoint.vout = vout
+        utxo.amount = amount
+        utxo.address = address
+        utxo.height = 100
+        utxo.is_confirmed = true
+
+        handler.beginChangeset(walletId: walletId)
+        withUnsafeMutablePointer(to: &utxo) { utxoPtr in
+            var account = AccountChangeSetFFI()
+            account.account_type_name = name
+            account.utxos_added = utxoPtr
+            account.utxos_added_count = 1
+            withUnsafeMutablePointer(to: &account) { accountPtr in
+                var cs = WalletChangeSetFFI()
+                cs.accounts = accountPtr
+                cs.accounts_count = 1
+                withUnsafePointer(to: &cs) { csPtr in
+                    handler.persistWalletChangeset(walletId: walletId, changeset: csPtr)
+                }
+            }
+        }
+        _ = handler.endChangeset(walletId: walletId, success: true)
     }
 }

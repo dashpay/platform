@@ -860,11 +860,17 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                         }
                     }
 
+                    let supersededBy = Swift.withUnsafeBytes(of: batch.superseded_by) { Data($0) }
+
                     guard batch.txids_count > 0, let txidsPtr = batch.txids else { continue }
                     for i in 0..<Int(batch.txids_count) {
                         let txid = Swift.withUnsafeBytes(of: txidsPtr[i]) { Data($0) }
                         do {
-                            try applySweptTransaction(txid: txid, released: released)
+                            try applySweptTransaction(
+                                txid: txid,
+                                supersededBy: supersededBy,
+                                released: released
+                            )
                         } catch {
                             // Fail the round rather than report a deletion
                             // that did not happen: Rust would clear the sweep
@@ -895,8 +901,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// only removal the changeset path performs.
     ///
     /// The outputs it created go with it (`PersistentTransaction.outputs`
-    /// cascades), as do its pending inputs. The coins it claimed to *spend*
-    /// split in two, and `released` is the authority on which is which:
+    /// cascades). The coins it claimed to *spend* split in two, and
+    /// `released` is the authority on which is which:
     ///
     /// - an input named there came free — no surviving transaction spends it;
     /// - every other input it claimed was taken by the transaction that beat
@@ -914,6 +920,22 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// applies it verbatim — the rest are held spent with no spender named,
     /// which keeps them out of the restore set.
     ///
+    /// A held input can also have no `PersistentTxo` at all yet — the loser
+    /// was persisted before its own funding TXO was, so
+    /// `resolveInputOutpoint` parked the claim as a `PersistentPendingInput`
+    /// instead. `PersistentTransaction.pendingInputs` cascades on delete just
+    /// like `outputs`, so left alone that claim would vanish with `row`
+    /// below, and the funding TXO's own later `upsertUtxo` — even after a
+    /// restart — would have nothing to tell it the coin isn't really free.
+    /// A held pending input is therefore detached from `row` (so the cascade
+    /// no longer reaches it) and repointed at `supersededBy` before the
+    /// delete, flagged `isSweptTombstone` so `upsertUtxo` knows to keep the
+    /// coin spent — durably, via `PersistentTxo.supersededByTxid` — once the
+    /// funding TXO materializes rather than treating it as an ordinary
+    /// in-flight spend. A released pending input needs none of this: it is
+    /// left for the cascade, the same as a released materialized input needs
+    /// no special handling beyond the loop above.
+    ///
     /// Transaction rows are shared across wallets by design (see
     /// `PersistentTransaction`), and a sweep is a statement about the
     /// transaction itself rather than about one wallet's view of it, so the
@@ -922,12 +944,16 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// Throws if SwiftData cannot answer the lookup. The caller fails the
     /// round on that: a deletion silently skipped would let Rust clear the
     /// sweep while the dead row survives.
-    private func applySweptTransaction(txid: Data, released: Set<Data>) throws {
+    private func applySweptTransaction(
+        txid: Data,
+        supersededBy: Data,
+        released: Set<Data>
+    ) throws {
         var descriptor = FetchDescriptor<PersistentTransaction>(
             predicate: #Predicate { $0.txid == txid }
         )
         descriptor.fetchLimit = 1
-        descriptor.relationshipKeyPathsForPrefetching = [\.inputs]
+        descriptor.relationshipKeyPathsForPrefetching = [\.inputs, \.pendingInputs]
         // A successful fetch that finds nothing is an ordinary no-op: sweeps
         // are idempotent and can name a transaction this store never had.
         guard let row = try backgroundContext.fetch(descriptor).first else { return }
@@ -936,6 +962,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             txo.isSpent = !released.contains(txo.outpoint)
             txo.spendingTransaction = nil
             txo.lastUpdated = Date()
+        }
+        for pending in row.pendingInputs where !released.contains(pending.outpoint) {
+            pending.spendingTransaction = nil
+            pending.spendingTxid = supersededBy
+            pending.isSweptTombstone = true
         }
         backgroundContext.delete(row)
     }
@@ -1429,8 +1460,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         // inputs of a sweep it cannot resolve in exactly that state; a
         // rescan re-delivering the coin lands here and frees it. A row whose
         // spend is still on record is left alone: the pending-input resolve
-        // below owns that transition.
-        if record.isSpent, record.spendingTransaction == nil {
+        // below owns that transition. `supersededByTxid` is a different
+        // kind of "no spender" — a sweep's winner is known but its row
+        // never materialized here — and must not be lifted the same way,
+        // or a tombstone the pending-resolve below just wrote would be
+        // undone by the very next sync round that re-delivers this outpoint.
+        if record.isSpent, record.spendingTransaction == nil, record.supersededByTxid == nil {
             record.isSpent = false
         }
 
@@ -1500,7 +1535,20 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                record.spendingTransaction?.txid != spending.txid {
                 record.spendingTransaction = spending
             }
-            if let spending = resolvedSpending {
+            if chosen.isSweptTombstone {
+                // `applySweptTransaction` repointed this row at the sweep's
+                // winner because the loser it originally recorded is gone.
+                // A sweep's winner is already final — there is no mempool
+                // state to wait out — so `isSpent` does not gate on
+                // `resolvedSpending` the way an ordinary pending spend does;
+                // that lookup only succeeds when the winner happens to have
+                // its own materialized row, which is not guaranteed.
+                // `supersededByTxid` is what makes the mark durable either
+                // way — it is what the recovery clear above checks so this
+                // coin isn't handed back as spendable on a later sync.
+                record.isSpent = true
+                record.supersededByTxid = chosen.spendingTxid
+            } else if let spending = resolvedSpending {
                 record.isSpent = Self.spendIsInBlock(spending)
             }
             record.lastUpdated = Date()

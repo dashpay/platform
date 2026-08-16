@@ -53,4 +53,20 @@ data class PendingInputEntity(
     /** Wallet id denorm for cleanup / per-wallet diagnostics. */
     val walletId: ByteArray,
     val createdAt: Date = Date(),
+    /**
+     * Port of Swift `PersistentPendingInput.isSweptTombstone`. Set by
+     * `onWalletChangesetTransactionsSwept` when this row's spend turns out
+     * to belong to a swept loser and the input wasn't in `released`:
+     * [spendingTransactionTxid] is cleared (detaching the FK so the row
+     * survives the loser's cascade-delete) and [spendingTxid] is
+     * overwritten with the winner's txid. `onWalletChangesetUtxoAdded`
+     * checks this flag when it later drains the row — a tombstone forces
+     * `TxoEntity.isSpent = true` unconditionally (a sweep's winner is
+     * already final, unlike an ordinary pending spend whose confirmation is
+     * still pending) and stamps `TxoEntity.supersededByTxid` so the mark
+     * survives even when the winner's own `transactions` row never
+     * materializes. Defaulted `false` so pre-migration rows read as
+     * ordinary pending entries.
+     */
+    val isSweptTombstone: Boolean = false,
 )

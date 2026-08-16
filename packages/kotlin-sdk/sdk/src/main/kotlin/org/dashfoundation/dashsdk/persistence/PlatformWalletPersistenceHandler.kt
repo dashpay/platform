@@ -928,8 +928,13 @@ class PlatformWalletPersistenceHandler(
                 // (`holdSpentWithoutSpender`); a rescan re-delivering the
                 // coin lands here and frees it. A row whose spend is still
                 // on record keeps its flag — the pending drain below owns
-                // that transition.
-                isSpent = existing?.isSpent == true && existing.spendingTxid != null,
+                // that transition. `supersededByTxid` is a different kind of
+                // "no spender" — a sweep's winner is known but its row never
+                // materialized here — and must not be lifted the same way,
+                // or a tombstone the drain below just wrote would be undone
+                // by the very next sync round that re-delivers this outpoint.
+                isSpent = existing?.isSpent == true &&
+                    (existing.spendingTxid != null || existing.supersededByTxid != null),
                 walletId = walletId,
                 txid = txid,
                 spendingTxid = existing?.spendingTxid,
@@ -938,6 +943,7 @@ class PlatformWalletPersistenceHandler(
                 coreAddressId = existing?.coreAddressId ?: coreAddressIdIfPresent(db, coreAddressId),
                 createdAt = existing?.createdAt ?: java.util.Date(),
                 lastUpdated = now(),
+                supersededByTxid = existing?.supersededByTxid,
             )
             db.txoDao().upsert(row)
             // Drain any pending-input rows staged before this funding TXO
@@ -952,15 +958,39 @@ class PlatformWalletPersistenceHandler(
             if (pending.isNotEmpty()) {
                 val chosen = pending.maxByOrNull { it.createdAt }!!
                 val spending = db.transactionDao().getByTxid(chosen.spendingTxid)
-                val spentInBlock = spending != null && spending.context >= CONTEXT_IN_BLOCK
-                db.txoDao().upsert(
-                    row.copy(
-                        isSpent = row.isSpent || spentInBlock,
-                        spendingTxid = chosen.spendingTxid,
-                        spendingInputIndex = chosen.inputIndex,
-                        lastUpdated = now(),
-                    ),
-                )
+                if (chosen.isSweptTombstone) {
+                    // `onWalletChangesetTransactionsSwept` repointed this row
+                    // at the sweep's winner because the loser it originally
+                    // recorded is gone. A sweep's winner is already final —
+                    // there is no mempool state to wait out — so `isSpent`
+                    // does not gate on `spending` the way an ordinary pending
+                    // spend does; that lookup only succeeds when the winner
+                    // happens to have its own materialized row, which isn't
+                    // guaranteed (and `spendingTxid`'s FK forbids forcing the
+                    // reference otherwise). `supersededByTxid` is what makes
+                    // the mark durable either way — it is what the recovery
+                    // clear above checks so this coin isn't handed back as
+                    // spendable on a later sync.
+                    db.txoDao().upsert(
+                        row.copy(
+                            isSpent = true,
+                            spendingTxid = spending?.txid ?: row.spendingTxid,
+                            spendingInputIndex = chosen.inputIndex,
+                            supersededByTxid = chosen.spendingTxid,
+                            lastUpdated = now(),
+                        ),
+                    )
+                } else {
+                    val spentInBlock = spending != null && spending.context >= CONTEXT_IN_BLOCK
+                    db.txoDao().upsert(
+                        row.copy(
+                            isSpent = row.isSpent || spentInBlock,
+                            spendingTxid = chosen.spendingTxid,
+                            spendingInputIndex = chosen.inputIndex,
+                            lastUpdated = now(),
+                        ),
+                    )
+                }
                 for (p in pending) db.documentDao().deletePendingInput(p)
             }
         }
@@ -1016,8 +1046,22 @@ class PlatformWalletPersistenceHandler(
      * outside addresses and never be recorded here, and even a relevant one
      * is not guaranteed to land in the same round as the sweep.
      *
-     * Both updates run before the delete: the foreign key nulls
-     * `spendingTxid` on delete, and after that nothing finds those rows.
+     * A held input can also have no `TxoEntity` at all yet — the loser was
+     * persisted before its own funding TXO was, so `onWalletChangesetTransaction`
+     * parked the claim as a `pending_inputs` row instead (see
+     * `PendingInputEntity`). That row's FK cascades on [txids]' own delete
+     * below just like the TXOs do, so left alone the claim would vanish with
+     * the loser, and the funding TXO's own later `onWalletChangesetUtxoAdded`
+     * — even after a restart — would have nothing to tell it the coin isn't
+     * really free. [DocumentDao.tombstoneUnreleasedPendingInputs] detaches a
+     * held pending input from its doomed loser and repoints it at the
+     * corresponding [supersededBy] entry instead, flagged so the drain in
+     * `onWalletChangesetUtxoAdded` knows to keep the coin spent — durably,
+     * via `TxoEntity.supersededByTxid` — once the funding TXO materializes.
+     *
+     * All updates run before the delete: the foreign key nulls `spendingTxid`
+     * (or, for a pending row already detached above, does nothing) on delete,
+     * and after that nothing finds those rows.
      *
      * Transaction rows are keyed by txid alone, shared across wallets by
      * design, and a sweep is a statement about the transaction rather than
@@ -1041,8 +1085,10 @@ class PlatformWalletPersistenceHandler(
             // touches detached rows — so a coin some later transaction in the
             // same round already re-claimed keeps that claim instead of being
             // freed out from under it.
-            for (txid in txids) {
-                db.txoDao().holdSpentWithoutSpender(txid)
+            val released = releasedOutpoints.toList()
+            for (i in txids.indices) {
+                db.txoDao().holdSpentWithoutSpender(txids[i])
+                db.documentDao().tombstoneUnreleasedPendingInputs(txids[i], supersededBy[i], released)
             }
             for (outpoint in releasedOutpoints) {
                 db.txoDao().releaseByOutpoint(outpoint)

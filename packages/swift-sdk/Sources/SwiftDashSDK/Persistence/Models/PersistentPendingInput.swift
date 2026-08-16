@@ -78,6 +78,21 @@ public final class PersistentPendingInput {
     /// never resolved (orphans whose previous output isn't ours).
     public var createdAt: Date
 
+    /// Set when `applySweptTransaction` repurposes this row as a durable
+    /// claim rather than an ordinary in-flight spend: the original
+    /// spending transaction turned out to be a loser, this input wasn't in
+    /// `released`, and the funding `PersistentTxo` still hasn't arrived to
+    /// hold the claim itself. `spendingTxid` is overwritten to the winner
+    /// (`superseded_by`) and `spendingTransaction` is detached so the row
+    /// survives the loser's cascade-delete. `upsertUtxo` checks this flag
+    /// on resolve: a tombstone forces `PersistentTxo.isSpent = true`
+    /// unconditionally (a sweep's winner is already final, unlike an
+    /// ordinary pending spend whose confirmation is still pending) and
+    /// stamps `PersistentTxo.supersededByTxid` so the mark survives even
+    /// when the winner's own row never materializes. Defaulted `false` so
+    /// existing rows migrate as ordinary pending entries.
+    public var isSweptTombstone: Bool = false
+
     public init(
         outpoint: Data,
         inputIndex: UInt32,
