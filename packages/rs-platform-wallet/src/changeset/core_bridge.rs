@@ -1349,20 +1349,36 @@ mod swept_transaction_projection_tests {
     }
 
     /// Only the reinstated transaction leaves the batch; anything else it
-    /// removed still goes.
+    /// removed still goes — and so does everything that batch freed.
+    ///
+    /// `released_outpoints` is the aggregate for every loser in the batch, so
+    /// dropping it would discard coins freed by the losers still going. The
+    /// entries belonging to the reinstated transaction do no harm: every
+    /// backend either scopes its release to the remaining losers' own inputs
+    /// or withholds an outpoint a surviving record claims, and the
+    /// reinstating record is exactly such a claim.
     #[tokio::test]
     async fn a_reinstated_record_only_rescues_its_own_transaction() {
         let reinstated = txid(1);
         let still_dead = txid(2);
+        let freed_by_the_survivor = outpoint(9, 2);
 
-        let mut cs =
-            build_core_changeset(&test_manager(), &swept(vec![reinstated, still_dead])).await;
+        let mut cs = build_core_changeset(
+            &test_manager(),
+            &swept_releasing(vec![reinstated, still_dead], vec![freed_by_the_survivor]),
+        )
+        .await;
         let mut later = CoreChangeSet::default();
         later.records.push(record_for(reinstated));
         cs.merge(later);
 
         assert_eq!(cs.sweeps.len(), 1);
         assert_eq!(cs.sweeps[0].txids, vec![still_dead]);
+        assert_eq!(
+            cs.sweeps[0].released_outpoints,
+            vec![freed_by_the_survivor],
+            "a coin the still-swept loser freed must survive the reinstatement"
+        );
     }
 
     /// A release is only true of the wallet the sweep that made it saw. A

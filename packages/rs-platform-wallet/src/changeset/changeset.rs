@@ -280,20 +280,18 @@ impl Merge for CoreChangeSet {
         // unconfirmed transaction is swept when an IS-locked conflict lands,
         // then returns chainlocked and sweeps that conflict in turn.
         //
-        // The batch's release set goes with the reinstated txid. It described
-        // a wallet in which that transaction was gone, which is no longer
-        // the case, and the safe direction is to leave those coins spent:
-        // the wallet re-delivers a genuinely free one as a UTXO, while a coin
-        // handed back that the chain consumed cannot be taken away again.
+        // The release set stays as it is. It is the aggregate for every loser
+        // in the batch, so dropping it when one of them is reinstated would
+        // discard coins freed by the losers that are still going. Entries
+        // belonging to the reinstated transaction are inert on every backend:
+        // each scopes its release to the remaining losers' own inputs, or
+        // withholds any outpoint a surviving record claims — and the
+        // reinstating record is exactly such a claim.
         if !other.records.is_empty() && !self.sweeps.is_empty() {
             let reinstated: std::collections::HashSet<Txid> =
                 other.records.iter().map(|record| record.txid).collect();
             for batch in &mut self.sweeps {
-                let before = batch.txids.len();
                 batch.txids.retain(|txid| !reinstated.contains(txid));
-                if batch.txids.len() != before {
-                    batch.released_outpoints.clear();
-                }
             }
             self.sweeps.retain(|batch| !batch.txids.is_empty());
         }
