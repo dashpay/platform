@@ -464,6 +464,19 @@ where
             && !persister
                 .persistence_capabilities()
                 .contains(PersistenceCapabilities::CORE_SWEEP_REMOVAL);
+        if sweep_removal_unsupported {
+            // Strip the watermark from THIS round, not just later ones. The
+            // adapter folds whatever is buffered, so a `TransactionsSwept`
+            // and a following `SyncHeightAdvanced` land in one changeset —
+            // and `synced_height` lives in the unchanged prefix such a
+            // persister does read. Letting it through would commit a height
+            // that claims blocks are scanned while the removal those blocks
+            // implied never landed, and the fault below cannot retract a
+            // watermark the backend has already made durable. `offered_height`
+            // keeps the original so the rejection is still diagnosed as a
+            // withheld advance rather than as a round that carried none.
+            core.synced_height = None;
+        }
 
         let cs = PlatformWalletChangeSet {
             core: Some(core),
@@ -2753,6 +2766,61 @@ mod tests {
             "the watermark must stay frozen: a removal must never be \
              reported durable to a backend that never attested it can apply it"
         );
+
+        cancel.cancel();
+        drop(tx);
+        handle.await.unwrap();
+    }
+
+    /// The coalesced shape of the same gap, which is the one that actually
+    /// loses data. The adapter folds whatever is buffered, so a sweep and a
+    /// following watermark advance arrive in ONE changeset — and
+    /// `synced_height` sits in the unchanged prefix a pre-sweep persister
+    /// does read and commit.
+    ///
+    /// Faulting after `store()` returns cannot retract a watermark the
+    /// backend has already made durable: on the next launch the wallet
+    /// believes those blocks are scanned, never re-matches them, and the
+    /// removal that round carried is lost for good. So the height has to be
+    /// stripped before the changeset is handed over, not after.
+    #[tokio::test]
+    async fn a_coalesced_sweep_and_watermark_never_commits_the_height() {
+        let wallet_id = [23u8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+        // Buffered before the adapter starts, so both events are guaranteed
+        // to land in the same drain rather than racing it.
+        tx.send(swept_event(wallet_id, 0x61, 0x62)).unwrap();
+        tx.send(sync_height_event(wallet_id, 900)).unwrap();
+
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        // No capabilities declared — the pre-`CORE_SWEEP_REMOVAL` shape.
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            test_manager(),
+            Arc::clone(&persister),
+            rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
+        ));
+
+        let observed = obs_rx
+            .recv()
+            .await
+            .expect("the folded round reaches store()");
+        assert_eq!(
+            observed.synced_height, None,
+            "an unattested persister must never be handed the watermark of a \
+             round whose removal it cannot apply"
+        );
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while !sync_fault.load(Ordering::Relaxed) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the fail-closed guard must still trip for the folded round");
 
         cancel.cancel();
         drop(tx);
