@@ -135,6 +135,13 @@ pub fn apply(
     // and batch by batch in order: each sweep is only true of the wallet it
     // saw, so a later one keeping a coin spent has to be able to correct an
     // earlier one that freed it.
+    if cs.sweeps.is_empty() {
+        // The ordinary round. Everything below serves the sweep loop, and
+        // building the survivor set would hash every input of every record
+        // for a loop that never runs — with the write transaction open.
+        return Ok(());
+    }
+
     // The surviving claims are a property of the whole changeset, not of any
     // one batch, so they are built once: the adapter folds up to a full drain
     // into a single store, and rebuilding them per batch would re-hash every

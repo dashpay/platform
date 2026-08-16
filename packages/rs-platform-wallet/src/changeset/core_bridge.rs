@@ -2420,7 +2420,10 @@ mod tests {
         // 3) Sentinel proving the loop moved past the watermark.
         tx.send(block_processed_event(wallet_id, 20)).unwrap();
 
-        let sentinel = obs_rx.recv().await.expect("sentinel store must arrive");
+        let sentinel = tokio::time::timeout(std::time::Duration::from_secs(5), obs_rx.recv())
+            .await
+            .expect("the sentinel store must arrive rather than hanging the suite")
+            .expect("sentinel store must arrive");
         assert_eq!(
             sentinel.last_processed_height,
             Some(20),
@@ -2759,7 +2762,10 @@ mod tests {
         // be after a real store() rejection.
         tx.send(sync_height_event(wallet_id, 500)).unwrap();
         tx.send(block_processed_event(wallet_id, 40)).unwrap();
-        let sentinel = obs_rx.recv().await.expect("sentinel store must arrive");
+        let sentinel = tokio::time::timeout(std::time::Duration::from_secs(5), obs_rx.recv())
+            .await
+            .expect("the sentinel store must arrive rather than hanging the suite")
+            .expect("sentinel store must arrive");
         assert_eq!(sentinel.last_processed_height, Some(40));
         assert_eq!(
             sentinel.synced_height, None,
@@ -2856,18 +2862,21 @@ mod tests {
         tx.send(sync_height_event(wallet_id, 700)).unwrap();
 
         let mut last_synced = None;
-        // Drain until the loop has produced at least one store carrying the
-        // watermark, or the channel goes quiet.
+        // Drain until a store carries the watermark. Each receive is bounded:
+        // the adapter and the probe both hold the sender alive, so a plain
+        // `recv()` would never report the channel quiet — a regression that
+        // stops the watermark would hang here until the suite's own timeout
+        // instead of failing on the assertion below.
         for _ in 0..10 {
-            match obs_rx.recv().await {
-                Some(observed) => {
+            match tokio::time::timeout(std::time::Duration::from_secs(5), obs_rx.recv()).await {
+                Ok(Some(observed)) => {
                     assert!(!observed.rejected);
                     if let Some(h) = observed.synced_height {
                         last_synced = Some(h);
                         break;
                     }
                 }
-                None => break,
+                Ok(None) | Err(_) => break,
             }
         }
         assert_eq!(
