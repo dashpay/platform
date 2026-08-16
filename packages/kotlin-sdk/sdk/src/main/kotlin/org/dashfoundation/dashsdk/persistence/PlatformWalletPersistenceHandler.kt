@@ -1076,9 +1076,20 @@ class PlatformWalletPersistenceHandler(
      * and after that nothing finds those rows.
      *
      * Transaction rows are keyed by txid alone, shared across wallets by
-     * design, and a sweep is a statement about the transaction rather than
-     * about one wallet's view of it — so the row goes without narrowing to
-     * the emitting wallet.
+     * design — the same loser can spend coins from more than one wallet at
+     * once — but [releasedOutpoints] is not shared: upstream computes it per
+     * wallet (`per_wallet_released_outpoints`), so this call's set says
+     * nothing about an input a *different* wallet's coin claims on the same
+     * row. Every DAO call above therefore carries [walletId] and only
+     * touches that wallet's own rows (own `TxoEntity`s via `TxoDao`'s
+     * `walletId` column, own `PendingInputEntity`s via the same column on
+     * that table). The row itself stays a statement about the transaction
+     * as a whole, so it is deleted only once [hasOtherWalletClaim] finds
+     * nothing left pointing at it — whichever wallet's callback is the last
+     * one to run performs the delete, so processing order stops mattering.
+     * A wallet whose callback never arrives just leaves the row behind with
+     * every other wallet's inputs already correctly decided: a leaked dead
+     * row, not a wrongly-spent coin, and a re-emitted sweep cleans it up.
      */
     override fun onWalletChangesetTransactionsSwept(
         walletId: ByteArray,
@@ -1089,8 +1100,8 @@ class PlatformWalletPersistenceHandler(
         stage(walletId) { db ->
             if (db.walletDao().getByWalletId(walletId) == null) return@stage
             // Hold every input first, then free the ones upstream named: the
-            // released set is wallet-scoped across the round's removals, so
-            // it is applied once rather than per transaction.
+            // released set spans the whole round's removals, so it is
+            // applied once rather than per transaction.
             //
             // The order is load-bearing, not cosmetic. Holding detaches the
             // rows this round's removals still claim, and the release only
@@ -1099,26 +1110,46 @@ class PlatformWalletPersistenceHandler(
             // freed out from under it.
             val released = releasedOutpoints.toList()
             for (i in txids.indices) {
-                db.txoDao().holdSpentWithoutSpender(txids[i])
-                db.documentDao().tombstoneUnreleasedPendingInputs(txids[i], supersededBy[i], released)
+                db.txoDao().holdSpentWithoutSpender(txids[i], walletId)
+                db.documentDao().tombstoneUnreleasedPendingInputs(
+                    txids[i], supersededBy[i], released, walletId,
+                )
                 // A pending input an EARLIER sweep already tombstoned to
                 // txids[i] (that txid was itself a sweep's winner, and is
                 // now being swept in turn) detached from the relationship
                 // `tombstoneUnreleasedPendingInputs` above matches on, so it
                 // has to be found and carried forward separately — see
                 // [DocumentDao.deleteReleasedSweptTombstones].
-                db.documentDao().deleteReleasedSweptTombstones(txids[i], released)
-                db.documentDao().retargetSweptTombstones(txids[i], supersededBy[i], released)
+                db.documentDao().deleteReleasedSweptTombstones(txids[i], released, walletId)
+                db.documentDao().retargetSweptTombstones(txids[i], supersededBy[i], released, walletId)
             }
             for (outpoint in releasedOutpoints) {
-                db.txoDao().releaseByOutpoint(outpoint)
+                db.txoDao().releaseByOutpoint(outpoint, walletId)
             }
             for (txid in txids) {
-                db.transactionDao().deleteByTxid(txid)
+                if (!hasOtherWalletClaim(db, txid, walletId)) {
+                    db.transactionDao().deleteByTxid(txid)
+                }
             }
         }
         0
     }
+
+    /**
+     * Whether some wallet other than [walletId] still has a TXO or pending
+     * input pointing at [txid] as its spender, after this call's own
+     * hold/release/tombstone updates above have already cleared or detached
+     * everything [walletId] itself owns. See the class doc on
+     * [onWalletChangesetTransactionsSwept] for why this is what decides
+     * whether the shared `transactions` row is safe to delete yet.
+     */
+    private suspend fun hasOtherWalletClaim(
+        db: DashDatabase,
+        txid: ByteArray,
+        walletId: ByteArray,
+    ): Boolean =
+        db.txoDao().hasOtherWalletSpender(txid, walletId) ||
+            db.documentDao().hasOtherWalletPendingInput(txid, walletId)
 
     // ── Identities ────────────────────────────────────────────────────
 

@@ -880,6 +880,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                         let txid = Swift.withUnsafeBytes(of: txidsPtr[i]) { Data($0) }
                         do {
                             try applySweptTransaction(
+                                walletId: walletId,
                                 txid: txid,
                                 supersededBy: supersededBy,
                                 released: released
@@ -960,15 +961,22 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// chain below: deleted if this round finally frees its outpoint,
     /// repointed at the new winner if not.
     ///
-    /// Transaction rows are shared across wallets by design (see
-    /// `PersistentTransaction`), and a sweep is a statement about the
-    /// transaction itself rather than about one wallet's view of it, so the
-    /// row is removed without narrowing to the emitting wallet.
+    /// `PersistentTransaction` is shared across wallets by design, but
+    /// `released` is not: upstream computes it per wallet
+    /// (`per_wallet_released_outpoints`), so this wallet's set says nothing
+    /// about an input a *different* wallet's coin claims on the same row.
+    /// Only the deletion is a statement about the transaction as a whole —
+    /// the input decisions above are scoped to the inputs this wallet
+    /// actually owns, and the row itself is removed only once no other
+    /// wallet's claim is still attached to it. See the ownership check
+    /// below for how "no other wallet" is decided without an explicit
+    /// cross-wallet coordination point.
     ///
     /// Throws if SwiftData cannot answer the lookup. The caller fails the
     /// round on that: a deletion silently skipped would let Rust clear the
     /// sweep while the dead row survives.
     private func applySweptTransaction(
+        walletId: Data,
         txid: Data,
         supersededBy: Data,
         released: Set<Data>
@@ -982,25 +990,60 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         // are idempotent and can name a transaction this store never had.
         guard let row = try backgroundContext.fetch(descriptor).first else { return }
 
-        for txo in row.inputs {
+        // `released` is only ever true of the wallet that computed it, so an
+        // input this wallet does not own must be left exactly as it is —
+        // that wallet's own callback (delivered earlier, arriving later, or
+        // never coming at all) is the only thing allowed to decide it.
+        // Resolved through `resolvedWalletId(of:)` rather than a raw
+        // `walletId` compare, same reasoning as `loadWalletList`: the
+        // denormalized column reads empty on a row migrated before it
+        // existed, and comparing it raw would make every such coin look
+        // unowned and leave it untouched forever.
+        for txo in row.inputs where Self.resolvedWalletId(of: txo) == walletId {
             txo.isSpent = !released.contains(txo.outpoint)
             txo.spendingTransaction = nil
             txo.lastUpdated = Date()
         }
-        for pending in row.pendingInputs where !released.contains(pending.outpoint) {
+        for pending in row.pendingInputs where pending.walletId == walletId {
+            guard !released.contains(pending.outpoint) else { continue }
             pending.spendingTransaction = nil
             pending.spendingTxid = supersededBy
             pending.isSweptTombstone = true
         }
-        backgroundContext.delete(row)
+
+        // Whatever is still attached to `row` after the scoping above is
+        // either this wallet's own released pending input — deliberately
+        // left in place two paragraphs up so the cascade below removes it —
+        // or an input/pending row a different wallet has not yet weighed in
+        // on. Only the second case has to hold the delete back; the first
+        // would otherwise make a wallet wait on its own already-finished
+        // decision. Whichever callback finds nothing left over is the last
+        // one to run and performs the delete, so order stops mattering. A
+        // wallet whose callback never arrives at all just leaves the row
+        // behind with every other wallet's inputs already correctly
+        // decided — a leaked dead row, not a wrongly-spent coin, and a
+        // re-emitted sweep cleans it up.
+        let otherWalletStillClaims = row.inputs.contains { txo in
+            txo.spendingTransaction != nil && Self.resolvedWalletId(of: txo) != walletId
+        } || row.pendingInputs.contains { pending in
+            pending.spendingTransaction != nil && pending.walletId != walletId
+        }
+        if !otherWalletStillClaims {
+            backgroundContext.delete(row)
+        }
 
         // Chained-sweep continuation: a pending row an EARLIER sweep already
         // tombstoned to `txid` (this transaction, itself a sweep's winner
         // until now) is no longer reachable through `row.pendingInputs` —
         // see the doc comment above. Find it by the scalar `spendingTxid`
-        // it carries instead.
+        // it carries instead, scoped to this wallet for the same reason the
+        // live pending inputs above were: the tombstone names one specific
+        // wallet's coin, and only that wallet's own released set is the
+        // right authority to re-decide it.
         var tombstoneDescriptor = FetchDescriptor<PersistentPendingInput>(
-            predicate: #Predicate { $0.spendingTxid == txid && $0.isSweptTombstone == true }
+            predicate: #Predicate {
+                $0.spendingTxid == txid && $0.isSweptTombstone == true && $0.walletId == walletId
+            }
         )
         tombstoneDescriptor.includePendingChanges = true
         let priorTombstones = try backgroundContext.fetch(tombstoneDescriptor)

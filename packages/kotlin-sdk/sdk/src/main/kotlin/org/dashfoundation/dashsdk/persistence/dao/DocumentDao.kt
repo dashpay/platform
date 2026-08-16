@@ -175,9 +175,9 @@ interface DocumentDao {
     fun observePendingInputsByWallet(walletId: ByteArray): Flow<List<PendingInputEntity>>
 
     /**
-     * Repoint every pending input still recorded against loser [txid] at
-     * [supersededBy] instead, except the outpoints named in
-     * [releasedOutpoints] — those came free and are left for
+     * Repoint every pending input of [walletId]'s own still recorded
+     * against loser [txid] at [supersededBy] instead, except the outpoints
+     * named in [releasedOutpoints] — those came free and are left for
      * `onWalletChangesetTransactionsSwept`'s own cascade-delete of [txid]
      * to remove. [spendingTransactionTxid] is cleared first so the FK no
      * longer targets the row about to be deleted (a live `transactions`
@@ -185,16 +185,25 @@ interface DocumentDao {
      * marks the row so `onWalletChangesetUtxoAdded` knows this is a durable
      * claim rather than an ordinary in-flight spend once the funding TXO
      * finally lands.
+     *
+     * [txid] can be shared across wallets — the same loser can spend coins
+     * from more than one of them — and upstream hands each wallet its own
+     * [releasedOutpoints], computed only from that wallet's point of view.
+     * The `walletId` filter is what keeps this call from repointing or
+     * tombstoning a row a different wallet owns using a release decision
+     * that was never made about it.
      */
     @Query(
         "UPDATE pending_inputs SET spendingTransactionTxid = NULL, " +
             "spendingTxid = :supersededBy, isSweptTombstone = 1 " +
-            "WHERE spendingTransactionTxid = :txid AND outpoint NOT IN (:releasedOutpoints)",
+            "WHERE spendingTransactionTxid = :txid AND walletId = :walletId " +
+            "AND outpoint NOT IN (:releasedOutpoints)",
     )
     suspend fun tombstoneUnreleasedPendingInputs(
         txid: ByteArray,
         supersededBy: ByteArray,
         releasedOutpoints: List<ByteArray>,
+        walletId: ByteArray,
     )
 
     /**
@@ -206,30 +215,56 @@ interface DocumentDao {
      * Delete the ones this round frees. Nothing else owns them once
      * detached — unlike a live pending row, there is no cascade-delete of
      * [txid]'s `transactions` row left to do that job for them.
+     *
+     * A tombstone names one specific wallet's coin — the `walletId` it was
+     * written with — so [walletId] here has to be the same wallet whose
+     * [releasedOutpoints] produced it; otherwise this would apply one
+     * wallet's release decision to a claim it was never entitled to make.
      */
     @Query(
         "DELETE FROM pending_inputs WHERE spendingTxid = :txid AND isSweptTombstone = 1 " +
-            "AND outpoint IN (:releasedOutpoints)",
+            "AND walletId = :walletId AND outpoint IN (:releasedOutpoints)",
     )
-    suspend fun deleteReleasedSweptTombstones(txid: ByteArray, releasedOutpoints: List<ByteArray>)
+    suspend fun deleteReleasedSweptTombstones(
+        txid: ByteArray,
+        releasedOutpoints: List<ByteArray>,
+        walletId: ByteArray,
+    )
 
     /**
      * The held half of [deleteReleasedSweptTombstones]: repoint every
-     * surviving tombstone of [txid] at the new [supersededBy] instead, so a
-     * third sweep down the chain can still find it by scalar `spendingTxid`.
-     * [isSweptTombstone] is already set from the first tombstoning and
-     * stays set.
+     * surviving tombstone of [txid] owned by [walletId] at the new
+     * [supersededBy] instead, so a third sweep down the chain can still
+     * find it by scalar `spendingTxid`. [isSweptTombstone] is already set
+     * from the first tombstoning and stays set.
      */
     @Query(
         "UPDATE pending_inputs SET spendingTxid = :supersededBy " +
-            "WHERE spendingTxid = :txid AND isSweptTombstone = 1 " +
+            "WHERE spendingTxid = :txid AND isSweptTombstone = 1 AND walletId = :walletId " +
             "AND outpoint NOT IN (:releasedOutpoints)",
     )
     suspend fun retargetSweptTombstones(
         txid: ByteArray,
         supersededBy: ByteArray,
         releasedOutpoints: List<ByteArray>,
+        walletId: ByteArray,
     )
+
+    /**
+     * Whether some wallet other than [walletId] still has a live pending
+     * input pointing at [txid] as its spending transaction.
+     *
+     * Mirrors [TxoDao.hasOtherWalletSpender] for the pending-input side of
+     * the same shared-row problem: [txid]'s `transactions` row is a
+     * statement about the transaction as a whole, so only the callback that
+     * finds no other wallet's claim left on it — TXO or pending input — is
+     * allowed to delete it.
+     */
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM pending_inputs " +
+            "WHERE spendingTransactionTxid = :txid AND walletId != :walletId)",
+    )
+    suspend fun hasOtherWalletPendingInput(txid: ByteArray, walletId: ByteArray): Boolean
 
     @Upsert
     suspend fun upsertPendingInput(pendingInput: PendingInputEntity)

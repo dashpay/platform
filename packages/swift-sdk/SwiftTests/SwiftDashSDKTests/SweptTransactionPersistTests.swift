@@ -155,6 +155,19 @@ final class SweptTransactionPersistTests: XCTestCase {
         _ handler: PlatformWalletPersistenceHandler,
         _ batches: [Batch]
     ) -> Bool {
+        sweep(handler, batches, walletId: walletId)
+    }
+
+    /// `walletId`-parameterized form for the multi-wallet tests below,
+    /// where the same shared loser row needs a separate callback per wallet
+    /// — each carrying that wallet's own `released` set, the way two real
+    /// `persistWalletChangeset` calls would.
+    @discardableResult
+    private func sweep(
+        _ handler: PlatformWalletPersistenceHandler,
+        _ batches: [Batch],
+        walletId: Data
+    ) -> Bool {
         typealias RawTxid = (
             UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
             UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -416,6 +429,148 @@ final class SweptTransactionPersistTests: XCTestCase {
             contested!.isSpent,
             "the later sweep kept the coin spent, so it must not come back"
         )
+    }
+
+    /// Seed the review finding's exact shape: one loser transaction shared
+    /// by two wallets, spending a coin from each. `walletA` owns P, `walletB`
+    /// owns Q; neither wallet's `PersistentTransaction` row for the winner is
+    /// ever created here, matching the "winner can pay only outside
+    /// addresses" case the released set exists to handle. The two coins live
+    /// in the same funding transaction only for setup convenience — nothing
+    /// about the fix depends on that; what makes `loser` shared is that its
+    /// `row.inputs` spans two different owning wallets.
+    private func seedSharedLoserAcrossTwoWallets(
+        in container: ModelContainer,
+        walletA: Data,
+        walletB: Data,
+        loserTxid: Data
+    ) throws {
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletA, network: .testnet))
+        context.insert(PersistentWallet(walletId: walletB, network: .testnet))
+
+        let funding = PersistentTransaction(
+            txid: fundingTxid,
+            transactionData: Data(repeating: 0x04, count: 10),
+            context: 2,
+            blockHeight: 100,
+            netAmount: 140_000
+        )
+        context.insert(funding)
+
+        let loser = PersistentTransaction(
+            txid: loserTxid,
+            transactionData: Data(repeating: 0x05, count: 10),
+            context: 0,
+            blockHeight: 0,
+            netAmount: -140_000
+        )
+        context.insert(loser)
+
+        // P — wallet A's coin, claimed only by the shared loser.
+        let coinP = PersistentTxo(
+            transaction: funding, vout: 0, amount: 100_000, address: "yWalletA", height: 100
+        )
+        coinP.walletId = walletA
+        coinP.spendingTransaction = loser
+        context.insert(coinP)
+
+        // Q — wallet B's coin, also claimed only by the shared loser.
+        let coinQ = PersistentTxo(
+            transaction: funding, vout: 1, amount: 40_000, address: "yWalletB", height: 100
+        )
+        coinQ.walletId = walletB
+        coinQ.spendingTransaction = loser
+        context.insert(coinQ)
+
+        try context.save()
+    }
+
+    /// The review finding, order 1: wallet B's callback — the one that
+    /// releases nothing — runs first. Before the fix this alone deleted the
+    /// shared loser row (nothing in the old code held it back), so wallet
+    /// A's later release of P landed on the missing-row no-op and P stayed
+    /// wrongly spent forever.
+    func testSharedLoserAppliesBothWalletsReleaseSetsRegardlessOfOrder_BThenA() throws {
+        let (handler, container) = try makeHandler()
+        let loserTxid = Data(repeating: 0x81, count: 32)
+        let winner = Data(repeating: 0x82, count: 32)
+        let walletB = Data(repeating: 0x02, count: 32)
+        try seedSharedLoserAcrossTwoWallets(
+            in: container, walletA: walletId, walletB: walletB, loserTxid: loserTxid
+        )
+
+        // Wallet B first: its own released set names nothing, so its coin
+        // (Q) is held rather than freed.
+        sweep(handler, [Batch(losers: [loserTxid], winner: winner)], walletId: walletB)
+
+        XCTAssertNotNil(
+            transaction(container, txid: loserTxid),
+            "wallet B alone must not delete a row wallet A still has a claim on"
+        )
+        let untouchedP = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertFalse(untouchedP.isSpent, "wallet B's callback must not touch wallet A's coin")
+        XCTAssertNotNil(untouchedP.spendingTransaction, "P is still linked to the loser, untouched")
+
+        // Wallet A second: its own released set names P.
+        sweep(handler, [
+            Batch(losers: [loserTxid], winner: winner, released: [(txid: fundingTxid, vout: 0)])
+        ], walletId: walletId)
+
+        XCTAssertNil(
+            transaction(container, txid: loserTxid),
+            "the last wallet to run performs the delete"
+        )
+
+        let p = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertFalse(p.isSpent, "wallet A's own release must free its own coin")
+        XCTAssertNil(p.spendingTransaction)
+
+        let q = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 1))
+        XCTAssertTrue(q.isSpent, "wallet B's earlier decision to hold Q must survive wallet A's callback")
+        XCTAssertNil(q.spendingTransaction)
+    }
+
+    /// The review finding, order 2: wallet A — the one that releases P —
+    /// runs first. The fix is meant to be order-independent, so this must
+    /// land on the exact same end state as the B-then-A ordering above.
+    func testSharedLoserAppliesBothWalletsReleaseSetsRegardlessOfOrder_AThenB() throws {
+        let (handler, container) = try makeHandler()
+        let loserTxid = Data(repeating: 0x91, count: 32)
+        let winner = Data(repeating: 0x92, count: 32)
+        let walletB = Data(repeating: 0x02, count: 32)
+        try seedSharedLoserAcrossTwoWallets(
+            in: container, walletA: walletId, walletB: walletB, loserTxid: loserTxid
+        )
+
+        // Wallet A first: releases P.
+        sweep(handler, [
+            Batch(losers: [loserTxid], winner: winner, released: [(txid: fundingTxid, vout: 0)])
+        ], walletId: walletId)
+
+        XCTAssertNotNil(
+            transaction(container, txid: loserTxid),
+            "wallet A alone must not delete a row wallet B still has a claim on"
+        )
+        let untouchedQ = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 1))
+        XCTAssertFalse(untouchedQ.isSpent, "wallet A's callback must not touch wallet B's coin")
+        XCTAssertNotNil(untouchedQ.spendingTransaction, "Q is still linked to the loser, untouched")
+
+        // Wallet B second: releases nothing.
+        sweep(handler, [Batch(losers: [loserTxid], winner: winner)], walletId: walletB)
+
+        XCTAssertNil(
+            transaction(container, txid: loserTxid),
+            "the last wallet to run performs the delete"
+        )
+
+        let p = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertFalse(p.isSpent, "wallet A's earlier release must survive wallet B's callback")
+        XCTAssertNil(p.spendingTransaction)
+
+        let q = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 1))
+        XCTAssertTrue(q.isSpent, "wallet B's own decision to hold its coin must stick")
+        XCTAssertNil(q.spendingTransaction)
     }
 
     /// A failed wallet lookup must fail the round, not read as "no such

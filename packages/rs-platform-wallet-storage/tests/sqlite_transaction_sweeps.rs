@@ -1000,3 +1000,154 @@ fn a_chained_sweep_before_funding_repoints_an_earlier_tombstone_to_the_new_winne
          intermediate one the second sweep already removed"
     );
 }
+
+/// Confirmation, not a fix: the review finding that motivated the Swift/
+/// Kotlin backend changes (a shared `PersistentTransaction` row updated with
+/// one wallet's `released_outpoints` before another wallet's own callback
+/// gets a turn) has no analog here. `core_transactions` and `core_utxos` are
+/// keyed by `(wallet_id, txid)` / `(wallet_id, outpoint)` — there is no row
+/// for a "loser shared across wallets" to BE, only two wallets each holding
+/// their own copy of a transaction that happens to carry the same txid.
+/// `apply_sweep` re-derives every input from the loser's own stored blob and
+/// matches `core_utxos` strictly within the calling wallet's rows, so one
+/// wallet's sweep call cannot see, let alone touch, another wallet's copy.
+///
+/// This seeds the reviewer's exact shape — the same loser txid persisted
+/// independently by two wallets, each holding a different coin of its own —
+/// and sweeps them in opposite decisions (wallet 1 releases its coin,
+/// wallet 2 holds its own) to show neither call perturbs the other wallet's
+/// row at all, regardless of which runs first.
+#[test]
+fn sweep_of_a_shared_loser_txid_is_independent_per_wallet() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w1: WalletId = wid(0xE8);
+    let w2: WalletId = wid(0xE9);
+    ensure_wallet_meta(&persister, &w1);
+    ensure_wallet_meta(&persister, &w2);
+
+    let addr1 = p2pkh(0x31);
+    let addr2 = p2pkh(0x32);
+    let funding_txid = Txid::from_byte_array([0x30; 32]);
+    // Same txid recorded independently in both wallets' storage — as two
+    // wallets sharing one on-chain transaction each would.
+    let loser_txid = Txid::from_byte_array([0x33; 32]);
+    let winner_txid = Txid::from_byte_array([0x34; 32]);
+    let coin = OutPoint::new(funding_txid, 0);
+
+    for (w, addr) in [(&w1, &addr1), (&w2, &addr2)] {
+        let mut conn = persister.lock_conn_for_test();
+        derive_address(&conn, w, 0, addr);
+        let tx = conn.transaction().unwrap();
+        let funding = tx_record(
+            funding_txid,
+            vec![],
+            vec![TxOut {
+                value: 100_000,
+                script_pubkey: addr.script_pubkey(),
+            }],
+        );
+        let loser = tx_record(loser_txid, vec![coin], vec![]);
+        let cs = CoreChangeSet {
+            records: vec![funding, loser],
+            new_utxos: vec![make_utxo(addr, funding_txid, 0, 100_000)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    // Wallet 1 sweeps its copy of the loser and releases its own coin.
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![loser_txid],
+                superseded_by: winner_txid,
+                released_outpoints: vec![coin],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w1, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    {
+        let conn = persister.lock_conn_for_test();
+        let (spent, spent_in_txid): (i64, Option<Vec<u8>>) = conn
+            .query_row(
+                "SELECT spent, spent_in_txid FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+                params![w1.as_slice(), &blob::encode_outpoint(&coin).unwrap()[..]],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(spent, 0, "wallet 1's release frees its own coin");
+        assert!(spent_in_txid.is_none());
+        let w2_loser: Option<Vec<u8>> = conn
+            .query_row(
+                "SELECT record_blob FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+                params![w2.as_slice(), AsRef::<[u8]>::as_ref(&loser_txid)],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap();
+        assert!(
+            w2_loser.is_some(),
+            "wallet 2's own copy of the same-txid loser is a separate row, \
+             untouched by wallet 1's sweep"
+        );
+        assert!(
+            row_exists(&conn, &w2, &coin),
+            "wallet 2's coin is unaffected — it has not swept yet"
+        );
+    }
+
+    // Wallet 2 now sweeps its own copy of the same txid, releasing nothing.
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![loser_txid],
+                superseded_by: winner_txid,
+                released_outpoints: vec![],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w2, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    let conn = persister.lock_conn_for_test();
+    let w2_loser: Option<Vec<u8>> = conn
+        .query_row(
+            "SELECT record_blob FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+            params![w2.as_slice(), AsRef::<[u8]>::as_ref(&loser_txid)],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap();
+    assert!(
+        w2_loser.is_none(),
+        "wallet 2's own sweep removes its own row"
+    );
+
+    assert!(
+        row_exists(&conn, &w2, &coin),
+        "wallet 2 released nothing, so its coin stays held with a row of its own"
+    );
+    let (spent, spent_in_txid): (i64, Option<Vec<u8>>) = conn
+        .query_row(
+            "SELECT spent, spent_in_txid FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+            params![w2.as_slice(), &blob::encode_outpoint(&coin).unwrap()[..]],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(spent, 1, "wallet 2's coin is held spent");
+    assert_eq!(
+        spent_in_txid,
+        Some(AsRef::<[u8]>::as_ref(&winner_txid).to_vec()),
+        "held and attributed to wallet 2's own winner, per apply_sweep's hold contract — \
+         wallet 1's earlier release of the SAME txid's other coin never touched this row"
+    );
+}

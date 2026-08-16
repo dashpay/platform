@@ -2387,6 +2387,188 @@ class PlatformWalletPersistenceHandlerTest {
         )
     }
 
+    /**
+     * Seed the review finding's exact shape: one loser transaction shared by
+     * two wallets, spending one coin from each. Upstream computes each
+     * wallet's released set independently
+     * (`per_wallet_released_outpoints`), and neither wallet's own winner row
+     * is ever created here — matching the "the winner can pay only outside
+     * addresses" case the released set exists to handle. Both coins live in
+     * the same funding transaction purely for setup convenience; what makes
+     * the loser shared is that it spends a TXO owned by each wallet.
+     *
+     * Returns the funding txid and the loser txid so callers can build the
+     * outpoints and drive the sweep.
+     */
+    private suspend fun seedSharedLoserAcrossTwoWallets(walletA: ByteArray, walletB: ByteArray): Pair<ByteArray, ByteArray> {
+        handler.onPersistWalletMetadata(walletA, testnet, groupId, 0)
+        handler.onPersistWalletMetadata(walletB, testnet, groupId, 0)
+        // Distinct xpubs — `accountExtendedPubKeyBytes` carries a unique
+        // index, so two accounts sharing one would silently fail the second
+        // registration (`guarded` swallows the constraint violation).
+        handler.onPersistAccountRegistration(
+            walletA, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), ByteArray(78) { 30 },
+        )
+        handler.onPersistAccountRegistration(
+            walletB, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), ByteArray(78) { 31 },
+        )
+        val accountA = db.accountDao().observeByWallet(walletA).first().single()
+        val accountB = db.accountDao().observeByWallet(walletB).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yWalletA", poolTypeTag = 0, addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0", accountId = accountA.id,
+            ),
+        )
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yWalletB", poolTypeTag = 0, addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0", accountId = accountB.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 80 }
+        val loserTxid = ByteArray(32) { 81 }
+
+        // P (vout 0) — wallet A's coin.
+        handler.onChangesetBegin(walletA)
+        handler.onWalletChangesetTransaction(
+            walletA, fundingTxid, ByteArray(10) { 4 }, 2, 100, ByteArray(32) { 7 },
+            1_700_000_000, 0, "Standard", 0, 140_000, 0, false, "", 1_699_999_000,
+            ByteArray(0), 0,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletA, fundingTxid, 0, 100_000, "yWalletA", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletA, success = true)
+
+        // Q (vout 1) — wallet B's coin, same funding transaction.
+        handler.onChangesetBegin(walletB)
+        handler.onWalletChangesetUtxoAdded(
+            walletB, fundingTxid, 1, 40_000, "yWalletB", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletB, success = true)
+
+        // The shared loser: unconfirmed, spends both P and Q.
+        handler.onChangesetBegin(walletA)
+        handler.onWalletChangesetTransaction(
+            walletA, loserTxid, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -140_000, 0, false, "", 1_700_000_050,
+            makeOutpoint(fundingTxid, 0) + makeOutpoint(fundingTxid, 1), 2,
+        )
+        handler.onWalletChangesetUtxoSpent(walletA, fundingTxid, 0, loserTxid)
+        handler.onWalletChangesetUtxoSpent(walletA, fundingTxid, 1, loserTxid)
+        handler.onChangesetEnd(walletA, success = true)
+
+        return fundingTxid to loserTxid
+    }
+
+    @Test
+    fun sharedLoserAppliesEachWalletsOwnReleaseSetRegardlessOfOrder_walletBThenWalletA() = runTest {
+        // Before the fix, whichever wallet's callback ran FIRST deleted the
+        // shared loser row outright, using only its own released set to
+        // decide every input on the row — including the other wallet's
+        // coin. Running wallet B (which releases nothing) first used to
+        // delete the row before wallet A's release of P ever landed, so
+        // A's later call found nothing to update and P stayed wrongly
+        // spent forever. This pins the fix: the row must survive until
+        // both wallets have weighed in, and each wallet's coin must reflect
+        // only that wallet's own decision.
+        val walletB = ByteArray(32) { 9 }
+        val (fundingTxid, loserTxid) = seedSharedLoserAcrossTwoWallets(walletId, walletB)
+        val winnerTxid = ByteArray(32) { 82 }
+        val p = makeOutpoint(fundingTxid, 0)
+        val q = makeOutpoint(fundingTxid, 1)
+
+        // Wallet B first: its own released set names nothing, so its coin
+        // (Q) is held rather than freed.
+        handler.onChangesetBegin(walletB)
+        handler.onWalletChangesetTransactionsSwept(
+            walletB, arrayOf(loserTxid), arrayOf(winnerTxid), emptyArray(),
+        )
+        handler.onChangesetEnd(walletB, success = true)
+
+        assertNotNull(
+            "wallet B alone must not delete a row wallet A still has a claim on",
+            db.transactionDao().getByTxid(loserTxid),
+        )
+        val untouchedP = db.txoDao().getByOutpoint(p)!!
+        assertFalse("wallet B's callback must not touch wallet A's coin", untouchedP.isSpent)
+        assertTrue(
+            "P is still linked to the loser, untouched",
+            loserTxid.contentEquals(untouchedP.spendingTxid),
+        )
+
+        // Wallet A second: releases P.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(loserTxid), arrayOf(winnerTxid), arrayOf(p),
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertNull("the last wallet to run performs the delete", db.transactionDao().getByTxid(loserTxid))
+
+        val freedP = db.txoDao().getByOutpoint(p)!!
+        assertFalse("wallet A's own release must free its own coin", freedP.isSpent)
+        assertNull(freedP.spendingTxid)
+
+        val heldQ = db.txoDao().getByOutpoint(q)!!
+        assertTrue(
+            "wallet B's earlier decision to hold Q must survive wallet A's callback",
+            heldQ.isSpent,
+        )
+        assertNull(heldQ.spendingTxid)
+    }
+
+    @Test
+    fun sharedLoserAppliesEachWalletsOwnReleaseSetRegardlessOfOrder_walletAThenWalletB() = runTest {
+        // Mirror of the ordering above: wallet A (which releases P) runs
+        // first this time. The fix is meant to be order-independent, so
+        // this must land on the exact same end state.
+        val walletB = ByteArray(32) { 9 }
+        val (fundingTxid, loserTxid) = seedSharedLoserAcrossTwoWallets(walletId, walletB)
+        val winnerTxid = ByteArray(32) { 92 }
+        val p = makeOutpoint(fundingTxid, 0)
+        val q = makeOutpoint(fundingTxid, 1)
+
+        // Wallet A first: releases P.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(loserTxid), arrayOf(winnerTxid), arrayOf(p),
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertNotNull(
+            "wallet A alone must not delete a row wallet B still has a claim on",
+            db.transactionDao().getByTxid(loserTxid),
+        )
+        val untouchedQ = db.txoDao().getByOutpoint(q)!!
+        assertFalse("wallet A's callback must not touch wallet B's coin", untouchedQ.isSpent)
+        assertTrue(
+            "Q is still linked to the loser, untouched",
+            loserTxid.contentEquals(untouchedQ.spendingTxid),
+        )
+
+        // Wallet B second: releases nothing.
+        handler.onChangesetBegin(walletB)
+        handler.onWalletChangesetTransactionsSwept(
+            walletB, arrayOf(loserTxid), arrayOf(winnerTxid), emptyArray(),
+        )
+        handler.onChangesetEnd(walletB, success = true)
+
+        assertNull("the last wallet to run performs the delete", db.transactionDao().getByTxid(loserTxid))
+
+        val freedP = db.txoDao().getByOutpoint(p)!!
+        assertFalse("wallet A's earlier release must survive wallet B's callback", freedP.isSpent)
+        assertNull(freedP.spendingTxid)
+
+        val heldQ = db.txoDao().getByOutpoint(q)!!
+        assertTrue("wallet B's own decision to hold its coin must stick", heldQ.isSpent)
+        assertNull(heldQ.spendingTxid)
+    }
+
     @Test
     fun sweptTransactionRollsBackWithItsRound() = runTest {
         // The deletion is staged in the same buffered transaction as every
