@@ -1,5 +1,6 @@
 package org.dashfoundation.dashsdk.persistence.entities
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -67,6 +68,12 @@ data class PendingInputEntity(
      * survives even when the winner's own `transactions` row never
      * materializes. Defaulted `false` so pre-migration rows read as
      * ordinary pending entries.
+     *
+     * Declares its default so the exported schema agrees with what
+     * `MIGRATION_10_11` writes: SQLite requires one on a NOT NULL
+     * `ADD COLUMN`, and Room compares defaults when validating a migrated
+     * database against the entity — a mismatch fails the upgrade outright.
      */
+    @ColumnInfo(defaultValue = "0")
     val isSweptTombstone: Boolean = false,
 )

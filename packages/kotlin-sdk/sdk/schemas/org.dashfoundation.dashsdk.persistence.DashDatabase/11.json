@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 11,
-    "identityHash": "df41ac2f487f62b80cc6ac2f65a9bfef",
+    "identityHash": "1cad63f34d38c2a9c8b5bb328235ac55",
     "entities": [
       {
         "tableName": "wallets",
@@ -2792,7 +2792,7 @@
       },
       {
         "tableName": "pending_inputs",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `outpoint` BLOB NOT NULL, `inputIndex` INTEGER NOT NULL, `spendingTxid` BLOB NOT NULL, `spendingTransactionTxid` BLOB, `walletId` BLOB NOT NULL, `createdAt` INTEGER NOT NULL, `isSweptTombstone` INTEGER NOT NULL, FOREIGN KEY(`spendingTransactionTxid`) REFERENCES `transactions`(`txid`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `outpoint` BLOB NOT NULL, `inputIndex` INTEGER NOT NULL, `spendingTxid` BLOB NOT NULL, `spendingTransactionTxid` BLOB, `walletId` BLOB NOT NULL, `createdAt` INTEGER NOT NULL, `isSweptTombstone` INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(`spendingTransactionTxid`) REFERENCES `transactions`(`txid`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "id",
@@ -2839,7 +2839,8 @@
             "fieldPath": "isSweptTombstone",
             "columnName": "isSweptTombstone",
             "affinity": "INTEGER",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "0"
           }
         ],
         "primaryKey": {
@@ -4125,7 +4126,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'df41ac2f487f62b80cc6ac2f65a9bfef')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '1cad63f34d38c2a9c8b5bb328235ac55')"
     ]
   }
 }
