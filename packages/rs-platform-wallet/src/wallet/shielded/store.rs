@@ -522,6 +522,26 @@ pub trait ShieldedStore: Send + Sync {
         lease_ms: u64,
     ) -> Result<bool, Self::Error>;
 
+    /// Re-stamp a live claim lease to `now_ms + lease_ms`, WITHOUT touching the
+    /// pending record.
+    ///
+    /// [`Self::arm_redrive_under_claim`] stamps the lease once, so the window
+    /// protecting a claim ran for a fixed [`CLAIM_LEASE_MS`] from the arm — not
+    /// for as long as the claim actually took. A broadcast plus confirmation
+    /// that outran it (a slow or retrying DAPI node is enough) let the row be
+    /// reaped, at which point a purge counted zero live claims and destroyed
+    /// state the in-flight claim still needed (#4313 review finding 161a517fce36).
+    ///
+    /// Returns `false` when the lease is gone — already lapsed and reaped, or
+    /// displaced by a destructive barrier. The caller cannot un-send a
+    /// transition, so a `false` is a loud diagnostic, not an abort.
+    fn renew_claim_admission(
+        &mut self,
+        token: AdmissionToken,
+        now_ms: u64,
+        lease_ms: u64,
+    ) -> Result<bool, Self::Error>;
+
     /// Release the claim lease `token`. Idempotent; unknown tokens are a
     /// no-op (a lease that already expired was reaped).
     fn end_claim_admission(&mut self, token: AdmissionToken) -> Result<(), Self::Error>;
@@ -567,6 +587,17 @@ pub trait ShieldedStore: Send + Sync {
 /// protects the durable record runs from the arm — not from the start of the
 /// claim — and covers the broadcast and confirmation wait that follow it.
 pub(crate) const CLAIM_LEASE_MS: u64 = 5 * 60 * 1_000;
+
+/// How often an in-flight claim re-stamps its lease
+/// ([`ShieldedStore::renew_claim_admission`]).
+///
+/// A third of [`CLAIM_LEASE_MS`]: two consecutive renewals may be missed — a
+/// stalled executor, a long blocking store write — before the lease can lapse,
+/// while the tick stays far cheaper than the network phases it runs alongside.
+/// Renewing is a single indexed UPDATE, so the cost is noise next to a
+/// broadcast.
+pub(crate) const CLAIM_LEASE_RENEW_INTERVAL: std::time::Duration =
+    std::time::Duration::from_millis(CLAIM_LEASE_MS / 3);
 
 /// How long a destructive barrier survives without being refreshed.
 ///
@@ -1335,6 +1366,27 @@ impl ShieldedStore for InMemoryShieldedStore {
         Ok(true)
     }
 
+    fn renew_claim_admission(
+        &mut self,
+        token: AdmissionToken,
+        now_ms: u64,
+        lease_ms: u64,
+    ) -> Result<bool, Self::Error> {
+        // Same predicate arm_redrive_under_claim uses: a live, non-destructive
+        // lease under this exact token. Deliberately does NOT resurrect an
+        // expired one — a lapsed lease may already have been counted as absent
+        // by a purge, and silently reviving it would hide that.
+        let Some(lease) = self
+            .admissions
+            .iter_mut()
+            .find(|a| a.token == token && !a.destructive && a.expires_at > now_ms)
+        else {
+            return Ok(false);
+        };
+        lease.expires_at = now_ms.saturating_add(lease_ms);
+        Ok(true)
+    }
+
     fn end_claim_admission(&mut self, token: AdmissionToken) -> Result<(), Self::Error> {
         self.admissions
             .retain(|a| a.destructive || a.token != token);
@@ -1743,5 +1795,107 @@ mod tests {
             store.stale_pending_spends(id).unwrap().is_empty(),
             "a reservation with no recorded anchor must not surface as stale"
         );
+    }
+
+    // ---- claim-lease renewal (#4313 review finding 161a517fce36) ----
+
+    fn claim_token(b: u8) -> AdmissionToken {
+        AdmissionToken([b; 16])
+    }
+
+    /// THE BUG: without renewal a claim that outruns CLAIM_LEASE_MS is reaped,
+    /// so a purge sees zero live claims and proceeds to destroy state the
+    /// in-flight claim still needs. This is the negative control — it pins the
+    /// behaviour the renewal exists to prevent.
+    #[test]
+    fn an_unrenewed_lease_lapses_and_stops_holding_off_a_purge() {
+        let mut store = InMemoryShieldedStore::new();
+        let wallet = [0xAA; 32];
+        let token = claim_token(0x01);
+        let t0 = 1_000_000u64;
+
+        assert!(store
+            .begin_claim_admission(wallet, token, t0, CLAIM_LEASE_MS)
+            .unwrap());
+        // Still inside the lease: a purge must WAIT.
+        let live = store
+            .begin_destructive_admission(None, claim_token(0x99), t0 + 1, DESTRUCTIVE_BARRIER_MS)
+            .unwrap();
+        assert_eq!(live, 1, "a live claim must hold off a purge");
+        store.end_destructive_admission(claim_token(0x99)).unwrap();
+
+        // One millisecond past the lease, with no renewal, the claim is invisible.
+        let live_after = store
+            .begin_destructive_admission(
+                None,
+                claim_token(0x98),
+                t0 + CLAIM_LEASE_MS + 1,
+                DESTRUCTIVE_BARRIER_MS,
+            )
+            .unwrap();
+        assert_eq!(
+            live_after, 0,
+            "an unrenewed lease lapses — this is exactly what the heartbeat prevents"
+        );
+    }
+
+    /// THE FIX: renewing keeps the claim counted well past the original lease.
+    #[test]
+    fn a_renewed_lease_keeps_holding_off_a_purge_past_the_original_window() {
+        let mut store = InMemoryShieldedStore::new();
+        let wallet = [0xAA; 32];
+        let token = claim_token(0x02);
+        let t0 = 1_000_000u64;
+
+        assert!(store
+            .begin_claim_admission(wallet, token, t0, CLAIM_LEASE_MS)
+            .unwrap());
+
+        // Three ticks at the heartbeat interval, as the claim path does.
+        let tick = CLAIM_LEASE_MS / 3;
+        let mut now = t0;
+        for _ in 0..3 {
+            now += tick;
+            assert!(
+                store
+                    .renew_claim_admission(token, now, CLAIM_LEASE_MS)
+                    .unwrap(),
+                "renewal must succeed while the lease is live"
+            );
+        }
+
+        // Past the ORIGINAL expiry, the claim is still counted.
+        assert!(now > t0 + CLAIM_LEASE_MS - tick);
+        let live = store
+            .begin_destructive_admission(None, claim_token(0x97), now + 1, DESTRUCTIVE_BARRIER_MS)
+            .unwrap();
+        assert_eq!(live, 1, "a renewed claim must still hold off a purge");
+    }
+
+    /// Renewal must not RESURRECT a lease that already lapsed — a purge may
+    /// already have counted it absent and acted on that.
+    #[test]
+    fn renewal_refuses_to_resurrect_a_lapsed_lease() {
+        let mut store = InMemoryShieldedStore::new();
+        let token = claim_token(0x03);
+        let t0 = 1_000_000u64;
+        assert!(store
+            .begin_claim_admission([0xAA; 32], token, t0, CLAIM_LEASE_MS)
+            .unwrap());
+        assert!(
+            !store
+                .renew_claim_admission(token, t0 + CLAIM_LEASE_MS + 1, CLAIM_LEASE_MS)
+                .unwrap(),
+            "a lapsed lease must not come back"
+        );
+    }
+
+    /// An unknown token renews nothing, rather than minting a lease.
+    #[test]
+    fn renewing_an_unknown_token_is_false_not_a_new_lease() {
+        let mut store = InMemoryShieldedStore::new();
+        assert!(!store
+            .renew_claim_admission(claim_token(0x04), 1_000_000, CLAIM_LEASE_MS)
+            .unwrap());
     }
 }

@@ -845,6 +845,37 @@ impl ShieldedStore for FileBackedShieldedStore {
         Ok(true)
     }
 
+    fn renew_claim_admission(
+        &mut self,
+        token: AdmissionToken,
+        now_ms: u64,
+        lease_ms: u64,
+    ) -> Result<bool, Self::Error> {
+        // IMMEDIATE, like every other lease write: SQLite's one-writer rule is
+        // what totally orders this against a purge taking its barrier, so the
+        // renewal either lands before the barrier or loses to it — never
+        // half-applies. UPDATE ... WHERE expires_at > now deliberately refuses
+        // to resurrect a lapsed lease; see the trait docs.
+        let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|e| FileShieldedStoreError(format!("begin claim lease renewal: {e}")))?;
+        let updated = tx
+            .execute(
+                "UPDATE shielded_lifecycle_admission SET expires_at = ?1 \
+                 WHERE token = ?2 AND destructive = 0 AND expires_at > ?3",
+                rusqlite::params![
+                    Self::as_sqlite_millis(now_ms.saturating_add(lease_ms)),
+                    token.0.as_slice(),
+                    Self::as_sqlite_millis(now_ms)
+                ],
+            )
+            .map_err(|e| FileShieldedStoreError(format!("renew claim lease: {e}")))?;
+        tx.commit()
+            .map_err(|e| FileShieldedStoreError(format!("commit claim lease renewal: {e}")))?;
+        Ok(updated > 0)
+    }
+
     fn arm_redrive_under_claim(
         &mut self,
         id: SubwalletId,

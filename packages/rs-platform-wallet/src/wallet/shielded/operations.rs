@@ -2018,17 +2018,58 @@ where
     )
     .await?;
 
-    let result = broadcast_and_confirm_one_time_claim(
-        sdk,
-        st,
-        identity_id,
-        expected_identity_id,
-        master_key_hash,
-        &selected_nullifiers,
-        submitted_public_keys,
-        denomination,
-    )
-    .await;
+    // Hold the lease OPEN for as long as the claim actually runs, rather than
+    // for a fixed CLAIM_LEASE_MS from the arm above (#4313 review finding
+    // 161a517fce36). Broadcast plus confirmation can outrun five minutes — one
+    // slow or retrying DAPI node is enough — and a lapsed lease is reaped, so a
+    // concurrent purge counts zero live claims and destroys the very record
+    // this claim needs to recover. Renewing on a timer keeps the protected
+    // window tied to the work instead of to a guess about its duration.
+    let result = {
+        let broadcast = broadcast_and_confirm_one_time_claim(
+            sdk,
+            st,
+            identity_id,
+            expected_identity_id,
+            master_key_hash,
+            &selected_nullifiers,
+            submitted_public_keys,
+            denomination,
+        );
+        tokio::pin!(broadcast);
+        loop {
+            tokio::select! {
+                // Bias the broadcast so a renewal tick can never starve the
+                // outcome we are actually waiting for.
+                biased;
+                outcome = &mut broadcast => break outcome,
+                _ = tokio::time::sleep(super::store::CLAIM_LEASE_RENEW_INTERVAL) => {
+                    let renewed = store
+                        .write()
+                        .await
+                        .renew_claim_admission(
+                            admission,
+                            super::store::admission_now_ms(),
+                            super::store::CLAIM_LEASE_MS,
+                        );
+                    match renewed {
+                        Ok(true) => {}
+                        // The transition may already be on the wire; aborting
+                        // cannot un-send it and would only lose the outcome
+                        // classification. Carry on, loudly.
+                        Ok(false) => tracing::warn!(
+                            "one-time claim lease lapsed or was displaced mid-broadcast; \
+                             a concurrent wallet removal may purge this claim's recovery record"
+                        ),
+                        Err(e) => tracing::warn!(
+                            error = %e,
+                            "could not renew the one-time claim lease mid-broadcast"
+                        ),
+                    }
+                }
+            }
+        }
+    };
     finalize_one_time_claim_record(store, claim_records_id, claim_record_key, &result).await;
     result
 }
