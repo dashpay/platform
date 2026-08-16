@@ -726,6 +726,42 @@ final class SweptTransactionPersistTests: XCTestCase {
         )
     }
 
+    /// Companion to `testAMissingWalletIsASuccessfulNoOp` above, which its
+    /// own doc admits does not distinguish the fix from the old `try?`
+    /// behavior — a successful empty fetch reads identically either way.
+    /// This drives a genuinely THROWING fetch instead, using a real seam
+    /// rather than a mock: a file-backed store (so the container's SQLite
+    /// connection is live and long-lived, unlike the in-memory variant) is
+    /// truncated on disk, out from under that open connection, between
+    /// seeding and the sweep. `fetchWalletRecord`'s `context.fetch` then has
+    /// to perform real I/O against a file that is no longer a valid SQLite
+    /// database, which is the only way found to make it throw without
+    /// adding a test-only injection point to production code.
+    func testAThrowingWalletLookupFailsTheRound() throws {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swept-throwing-lookup-\(UUID().uuidString).store")
+        defer { try? FileManager.default.removeItem(at: storeURL) }
+
+        let (handler, _) = try makeHandler(url: storeURL)
+
+        // Corrupt the on-disk store out from under the still-open container
+        // BEFORE any context — including a seed helper's — reads or writes
+        // through it: SwiftData's row cache is scoped to the persistent
+        // store coordinator, not to any one `ModelContext`, so a row
+        // touched by a throwaway seeding context would still be served from
+        // that shared cache here and never reach disk at all. With nothing
+        // cached yet, `fetchWalletRecord`'s fetch is the first real read
+        // this store ever performs, and it hits the truncated file — well
+        // short of a valid SQLite header — directly.
+        let handle = try FileHandle(forWritingTo: storeURL)
+        handle.truncateFile(atOffset: 16)
+        try handle.close()
+
+        let applied = sweep(handler, [Batch(losers: [sweptTxid], winner: winnerTxid)])
+
+        XCTAssertFalse(applied, "a genuinely failed wallet lookup must fail the round")
+    }
+
     /// A txid the store has never seen is not an error: sweeps are
     /// idempotent, and a round can name a transaction this mirror never
     /// recorded in the first place.
