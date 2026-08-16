@@ -135,29 +135,35 @@ pub fn apply(
     // and batch by batch in order: each sweep is only true of the wallet it
     // saw, so a later one keeping a coin spent has to be able to correct an
     // earlier one that freed it.
+    // The surviving claims are a property of the whole changeset, not of any
+    // one batch, so they are built once: the adapter folds up to a full drain
+    // into a single store, and rebuilding them per batch would re-hash every
+    // swept txid and every surviving record input once per sweep, with the
+    // write transaction open the whole time.
+    //
+    // `apply_sweep` below is what attributes a held input to `superseded_by`
+    // via `spent_in_txid`, and that only happens once it runs — so at this
+    // point in the round the table cannot yet tell a live claim in *this*
+    // round from the one a sweep is about to displace. The changeset carries
+    // the answer instead: any record in this round that is not swept by *any*
+    // batch and spends a released outpoint is that live claim, and the coin
+    // stays spent.
+    let swept_txids: HashSet<dashcore::Txid> = cs
+        .sweeps
+        .iter()
+        .flat_map(|b| b.txids.iter())
+        .copied()
+        .collect();
+    let claimed_by_survivors: HashSet<dashcore::OutPoint> = cs
+        .records
+        .iter()
+        .filter(|record| !swept_txids.contains(&record.txid))
+        .flat_map(|record| record.transaction.input.iter())
+        .map(|input| input.previous_output)
+        .collect();
     for batch in &cs.sweeps {
-        // The released set describes the wallet when this sweep was emitted,
-        // and a round can fold in a later transaction that legitimately spent
-        // one of the freed coins. `apply_sweep` below is what attributes a
-        // held input to `superseded_by` via `spent_in_txid`, and that only
-        // happens once it runs — so at this point in the round the table
-        // cannot yet tell a live claim in *this* round from the one the sweep
-        // is about to displace. The changeset carries the answer instead: any
-        // record in this round that is not swept by *any* batch and spends a
-        // released outpoint is that live claim, and the coin stays spent.
-        let swept_txids: HashSet<dashcore::Txid> = cs
-            .sweeps
-            .iter()
-            .flat_map(|b| b.txids.iter())
-            .copied()
-            .collect();
-        let claimed_by_survivors: HashSet<dashcore::OutPoint> = cs
-            .records
-            .iter()
-            .filter(|record| !swept_txids.contains(&record.txid))
-            .flat_map(|record| record.transaction.input.iter())
-            .map(|input| input.previous_output)
-            .collect();
+        // Only this stays per batch: a release is true of the wallet its own
+        // sweep saw, which is what lets a later batch correct an earlier one.
         let released: HashSet<dashcore::OutPoint> = batch
             .released_outpoints
             .iter()
