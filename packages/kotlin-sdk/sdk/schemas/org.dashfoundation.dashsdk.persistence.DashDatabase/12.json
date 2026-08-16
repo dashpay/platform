@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 12,
-    "identityHash": "e77bbe3415070700cfe79d4d6f74a877",
+    "identityHash": "d12a03ec9c3527a1a1a6120cdcd31e47",
     "entities": [
       {
         "tableName": "wallets",
@@ -268,7 +268,7 @@
       },
       {
         "tableName": "transactions",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`txid` BLOB NOT NULL, `transactionData` BLOB NOT NULL, `context` INTEGER NOT NULL, `blockHeight` INTEGER NOT NULL, `blockHash` BLOB, `blockTimestamp` INTEGER NOT NULL, `blockPosition` INTEGER NOT NULL, `hasBlockPosition` INTEGER NOT NULL, `direction` INTEGER NOT NULL, `transactionType` TEXT NOT NULL, `transactionTypeKind` INTEGER NOT NULL, `netAmount` INTEGER NOT NULL, `fee` INTEGER, `label` TEXT NOT NULL, `firstSeen` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, `isGloballySwept` INTEGER NOT NULL, PRIMARY KEY(`txid`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`txid` BLOB NOT NULL, `transactionData` BLOB NOT NULL, `context` INTEGER NOT NULL, `blockHeight` INTEGER NOT NULL, `blockHash` BLOB, `blockTimestamp` INTEGER NOT NULL, `blockPosition` INTEGER NOT NULL, `hasBlockPosition` INTEGER NOT NULL, `direction` INTEGER NOT NULL, `transactionType` TEXT NOT NULL, `transactionTypeKind` INTEGER NOT NULL, `netAmount` INTEGER NOT NULL, `fee` INTEGER, `label` TEXT NOT NULL, `firstSeen` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, `isGloballySwept` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`txid`))",
         "fields": [
           {
             "fieldPath": "txid",
@@ -374,7 +374,8 @@
             "fieldPath": "isGloballySwept",
             "columnName": "isGloballySwept",
             "affinity": "INTEGER",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "0"
           }
         ],
         "primaryKey": {
@@ -4132,7 +4133,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'e77bbe3415070700cfe79d4d6f74a877')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'd12a03ec9c3527a1a1a6120cdcd31e47')"
     ]
   }
 }
