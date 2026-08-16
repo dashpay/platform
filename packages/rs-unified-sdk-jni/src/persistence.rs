@@ -58,9 +58,9 @@ use platform_wallet_ffi::{
     IdentityKeyEntryFFI, IdentityKeyRemovalFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI,
     InvitationEntryFFI, PaymentRestoreEntryFFI, PersistenceCallbacks,
     PersistenceCallbacksExtension, PlatformAddressFFI, ProviderSpecialTxRestoreEntryFFI,
-    SpentOutPointFFI, TokenBalanceRemovalFFI, TokenBalanceUpsertFFI, TransactionRecordFFI,
-    UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI, UtxoRestoreEntryFFI, WalletChangeSetFFI,
-    WalletRestoreEntryFFI,
+    SpentOutPointFFI, SweepBatchFFI, TokenBalanceRemovalFFI, TokenBalanceUpsertFFI,
+    TransactionRecordFFI, UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI, UtxoRestoreEntryFFI,
+    WalletChangeSetFFI, WalletRestoreEntryFFI,
 };
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
@@ -642,56 +642,72 @@ unsafe extern "C" fn tramp_persist_wallet_changeset(
         // sweep can keep a coin spent that an earlier one freed, and only
         // replaying them in sequence preserves that. Each call does its own
         // hold-then-release, so the ordering holds on the Kotlin side too.
+        // The batch count is not bounded by this ABI, so — as with the
+        // account loop above — the whole per-batch construction and call
+        // runs inside its own local frame; without it, `byte_array_cls`,
+        // `empty`, and the three per-batch arrays would all pile up in the
+        // trampoline's own frame across every batch in the changeset, and a
+        // large enough one can exhaust ART's local-reference table before
+        // the callback ever returns.
         for batch in slice_or_empty(cs.sweeps, cs.sweeps_count) {
-            let byte_array_cls = env.find_class("[B")?;
-            let empty = env.byte_array_from_slice(&[])?;
-
-            let txids = slice_or_empty(batch.txids, batch.txids_count);
-            let txids_arr = env.new_object_array(txids.len() as i32, &byte_array_cls, &empty)?;
-            let winners = env.new_object_array(txids.len() as i32, &byte_array_cls, &empty)?;
-            for (i, txid) in txids.iter().enumerate() {
-                env.with_local_frame(8, |env| {
-                    let t = env.byte_array_from_slice(txid)?;
-                    env.set_object_array_element(&txids_arr, i as i32, &t)?;
-                    let w = env.byte_array_from_slice(&batch.superseded_by)?;
-                    env.set_object_array_element(&winners, i as i32, &w)
-                })?;
-            }
-
-            // Released outpoints ride as 36-byte keys (raw txid + a
-            // little-endian vout), the shape the handler stores them in.
-            let released = slice_or_empty(batch.released_outpoints, batch.released_outpoints_count);
-            let released_arr =
-                env.new_object_array(released.len() as i32, &byte_array_cls, &empty)?;
-            for (i, outpoint) in released.iter().enumerate() {
-                let mut key = [0u8; 36];
-                key[..32].copy_from_slice(&outpoint.txid);
-                key[32..].copy_from_slice(&outpoint.vout.to_le_bytes());
-                env.with_local_frame(4, |env| {
-                    let k = env.byte_array_from_slice(&key)?;
-                    env.set_object_array_element(&released_arr, i as i32, &k)
-                })?;
-            }
-
-            let code = env
-                .call_method(
-                    bridge,
-                    "onWalletChangesetTransactionsSwept",
-                    "([B[[B[[B[[B)I",
-                    &[
-                        (&wid).into(),
-                        (&txids_arr).into(),
-                        (&winners).into(),
-                        (&released_arr).into(),
-                    ],
-                )?
-                .i()?;
+            let code = env.with_local_frame(16, |env| {
+                persist_changeset_sweep_batch(env, bridge, &wid, batch)
+            })?;
             if code != 0 {
                 return Ok(code);
             }
         }
         Ok(0)
     })
+}
+
+unsafe fn persist_changeset_sweep_batch(
+    env: &mut JNIEnv,
+    bridge: &JObject,
+    wid: &JByteArray,
+    batch: &SweepBatchFFI,
+) -> Result<i32, jni::errors::Error> {
+    let byte_array_cls = env.find_class("[B")?;
+    let empty = env.byte_array_from_slice(&[])?;
+
+    let txids = slice_or_empty(batch.txids, batch.txids_count);
+    let txids_arr = env.new_object_array(txids.len() as i32, &byte_array_cls, &empty)?;
+    let winners = env.new_object_array(txids.len() as i32, &byte_array_cls, &empty)?;
+    for (i, txid) in txids.iter().enumerate() {
+        env.with_local_frame(8, |env| {
+            let t = env.byte_array_from_slice(txid)?;
+            env.set_object_array_element(&txids_arr, i as i32, &t)?;
+            let w = env.byte_array_from_slice(&batch.superseded_by)?;
+            env.set_object_array_element(&winners, i as i32, &w)
+        })?;
+    }
+
+    // Released outpoints ride as 36-byte keys (raw txid + a
+    // little-endian vout), the shape the handler stores them in.
+    let released = slice_or_empty(batch.released_outpoints, batch.released_outpoints_count);
+    let released_arr = env.new_object_array(released.len() as i32, &byte_array_cls, &empty)?;
+    for (i, outpoint) in released.iter().enumerate() {
+        let mut key = [0u8; 36];
+        key[..32].copy_from_slice(&outpoint.txid);
+        key[32..].copy_from_slice(&outpoint.vout.to_le_bytes());
+        env.with_local_frame(4, |env| {
+            let k = env.byte_array_from_slice(&key)?;
+            env.set_object_array_element(&released_arr, i as i32, &k)
+        })?;
+    }
+
+    env.call_method(
+        bridge,
+        "onWalletChangesetTransactionsSwept",
+        "([B[[B[[B[[B)I",
+        &[
+            wid.into(),
+            (&txids_arr).into(),
+            (&winners).into(),
+            (&released_arr).into(),
+        ],
+    )?
+    .i()
 }
 
 unsafe fn persist_changeset_account(
