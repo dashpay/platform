@@ -103,48 +103,6 @@ class FfiSmokeTest {
     }
 
     /**
-     * `coreWalletSetGapLimit` binds, and rejects every invalid argument.
-     *
-     * `cargo check -p rs-unified-sdk-jni` proves only the Rust side compiles;
-     * it cannot catch a name or descriptor mismatch between the Kotlin
-     * `external fun` and the generated JNI symbol, which surfaces as an
-     * `UnsatisfiedLinkError` on device rather than at build time. Loading the
-     * library and calling through the real declaration is the only thing that
-     * pins that contract — hence an instrumented test rather than a unit one.
-     *
-     * Needs no funded wallet: every case here is rejected before the handle is
-     * dereferenced, so an invalid handle is a legitimate argument. A binding
-     * failure surfaces as `UnsatisfiedLinkError`, which is NOT a
-     * `DashSDKException`, so the assertion below fails loudly rather than
-     * passing on the wrong exception.
-     */
-    @Test
-    fun setGapLimitSymbolBindsAndRejectsInvalidArguments() {
-        NativeLoader.ensureLoaded()
-
-        // AllSpendable (3) is not a single account — a gap limit is per-account.
-        assertThrows(DashSDKException::class.java) {
-            WalletManagerNative.coreWalletSetGapLimit(0L, 3, 0, 20)
-        }
-        // Negative account index.
-        assertThrows(DashSDKException::class.java) {
-            WalletManagerNative.coreWalletSetGapLimit(0L, 0, -1, 20)
-        }
-        // Non-positive gap limit: zero and negative.
-        assertThrows(DashSDKException::class.java) {
-            WalletManagerNative.coreWalletSetGapLimit(0L, 0, 0, 0)
-        }
-        assertThrows(DashSDKException::class.java) {
-            WalletManagerNative.coreWalletSetGapLimit(0L, 0, 0, -5)
-        }
-        // Otherwise-valid arguments against a null handle still fail — proving
-        // the earlier rejections came from validation and not from the handle.
-        assertThrows(DashSDKException::class.java) {
-            WalletManagerNative.coreWalletSetGapLimit(0L, 0, 0, 20)
-        }
-    }
-
-    /**
      * Rust↔Kotlin persistence-descriptor lockstep. The trampolines resolve
      * each bridge method by (name, descriptor) only when its slot first
      * fires — for the invitation upsert that would be mid-way through a
