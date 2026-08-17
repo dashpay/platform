@@ -1638,6 +1638,46 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '4.1.1': (configFile) => {
+        // The drive and rs-dapi tags are derived from the package version, and
+        // the migration that re-pins them no longer fires for a config already
+        // stamped at the release that set it. This release is the next one above
+        // that stamp, so it carries the re-pin forward for a config that never
+        // crossed it.
+        //
+        // Only tags a release published are moved, so a tag the operator chose
+        // in this namespace (dashpay/drive:4-local) is left alone.
+        const stockDriveImage = stockImagePattern('dashpay/drive', 4);
+        const stockRsDapiImage = stockImagePattern('dashpay/rs-dapi', 4);
+
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            // Move the Tenderdash image onto the floating minor tag the base
+            // config now pins, so a patch release published on that line is
+            // picked up without a Dashmate release. Configs written while the
+            // base config pinned an exact version hold that version, and only a
+            // migration moves them off it. Pulled from the base config so it
+            // tracks whatever is pinned there.
+            // Keyed at the next release, not the released 4.1.0: the runner
+            // skips fromVersion===toVersion, so a key equal to an operator's
+            // current version never fires.
+            if (options.platform?.drive?.tenderdash?.docker) {
+              options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            }
+
+            const driveDocker = options.platform?.drive?.abci?.docker;
+            if (driveDocker && stockDriveImage.test(driveDocker.image)) {
+              driveDocker.image = base.get('platform.drive.abci.docker.image');
+            }
+
+            const rsDapiDocker = options.platform?.dapi?.rsDapi?.docker;
+            if (rsDapiDocker && stockRsDapiImage.test(rsDapiDocker.image)) {
+              rsDapiDocker.image = base.get('platform.dapi.rsDapi.docker.image');
+            }
+          });
+
+        return configFile;
+      },
     };
   }
 
