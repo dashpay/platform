@@ -560,8 +560,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // into the atomic here (as `manager::load` does for restored
         // wallets); any later block events are applied normally now that
         // the wallet is mapped.
-        {
+        let wallet_has_resident_keys = {
             let wm = self.wallet_manager.read().await;
+            let mut resident = false;
             if let Some(info) = wm.get_wallet_info(&wallet_id) {
                 let b = &info.core_wallet.balance;
                 platform_wallet.balance().set(
@@ -571,7 +572,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     b.locked(),
                 );
             }
-        }
+            // Same capability probe the FFI discovery entry points use
+            // (`identity_discovery.rs`): only a wallet holding a private key
+            // IN PROCESS can run the resident-wallet derivation below.
+            if let Some(key_wallet) = wm.get_wallet(&wallet_id) {
+                resident = !key_wallet.is_external_signable() && !key_wallet.is_watch_only();
+            }
+            resident
+        };
 
         // Best-effort identity discovery. For a recovery flow (existing
         // mnemonic re-typed by the user) this hydrates every identity
@@ -582,7 +590,27 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // skipping. Failures here are logged but never block wallet
         // registration: a sync hiccup or offline DAPI shouldn't lose
         // the user the wallet they just imported.
-        if let Err(e) = platform_wallet.identity().sync().await {
+        //
+        // ONLY attempted when the wallet holds resident key material. An
+        // `ExternalSignable` (or watch-only) wallet CANNOT run this sync at
+        // registration time — registration happens before the host's
+        // signer/resolver can exist (on Android the mnemonic sits behind the
+        // device PIN and registration runs at pre-unlock service start), so
+        // the attempt always failed with "External signable wallet has no
+        // private key" and burned DAPI queries to produce a misleading warn
+        // (field: the Android restore incident; QA Mo-972/973 on 11.10.87).
+        // The host owns discovery for these wallets: it runs the master-key
+        // variants (`discover()` / `load_identity_by_index_from_master`) the
+        // moment its resolver is attached at bind.
+        if !wallet_has_resident_keys {
+            tracing::info!(
+                wallet_id = %hex::encode(wallet_id),
+                "Registration-time identity discovery deferred: wallet is \
+                 external-signable/watch-only, so the resident-wallet derivation \
+                 cannot run; the host drives discovery once its signer/resolver \
+                 is attached"
+            );
+        } else if let Err(e) = platform_wallet.identity().sync().await {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
                 error = %e,
