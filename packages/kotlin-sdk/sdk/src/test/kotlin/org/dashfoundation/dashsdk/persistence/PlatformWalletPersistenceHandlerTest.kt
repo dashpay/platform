@@ -2664,6 +2664,110 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun aReinstatingRecordInALaterRoundRevivesASweptTransactionAndItsOutputs() = runTest {
+        // Cross-round reinstatement — the BLOCKING finding this round
+        // fixes. The sweep and its reinstating record land in two
+        // SEPARATE callback rounds, with wallet B's still-outstanding
+        // claim keeping the shared row physically present in between,
+        // exactly as
+        // sharedLoserOutputAndCoreTxRecordAreExcludedAfterOnlyOneWalletsCallbackCommits
+        // above establishes on its own. Before the fix,
+        // onWalletChangesetTransaction bailed unconditionally on
+        // isGloballySwept == true, so round 2's record — upstream's newer
+        // word, per CoreChangeSet::merge's documented IS-lock-precedence
+        // sequence (swept by an IS-locked conflict, then returns
+        // chainlocked and sweeps that conflict in turn) — would be
+        // silently discarded forever, and onWalletChangesetUtxoAdded would
+        // keep rejecting its output on the strength of a tombstone nothing
+        // could ever clear.
+        val walletB = ByteArray(32) { 9 }
+        val (fundingTxid, loserTxid) = seedSharedLoserWithOwnOutputAcrossTwoWallets(walletId, walletB)
+        val winnerTxid = ByteArray(32) { 82 }
+        val p = makeOutpoint(fundingTxid, 0)
+        val phantomOutput = makeOutpoint(loserTxid, 2)
+
+        // Round 1: only wallet B's own sweep callback runs, releasing
+        // nothing. Wallet A's own claim on P is still outstanding, so the
+        // shared row survives physically even though the global half of
+        // the sweep already tombstoned it and deleted its phantom output.
+        handler.onChangesetBegin(walletB)
+        handler.onWalletChangesetTransactionsSwept(
+            walletB, arrayOf(loserTxid), arrayOf(winnerTxid), emptyArray(),
+        )
+        handler.onChangesetEnd(walletB, success = true)
+
+        val tombstoned = db.transactionDao().getByTxid(loserTxid)!!
+        assertTrue("sanity: the row is tombstoned after round 1", tombstoned.isGloballySwept)
+        assertNull(
+            "sanity: the loser's own output is gone after round 1",
+            db.txoDao().getByOutpoint(phantomOutput),
+        )
+
+        // Round 2, a SEPARATE callback (not coalesced with round 1's
+        // sweep — the cross-round shape the merge-level fix in
+        // CoreChangeSet::merge cannot reach): the wallet returns
+        // chainlocked and sweeps the erstwhile winner in turn. Arrives
+        // here exactly like any freshly-detected transaction would —
+        // nothing marks it as "the reinstating one" — with its own output
+        // riding along in the same round, transaction before utxo per the
+        // JNI bridge's account ordering.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, loserTxid, ByteArray(10) { 5 }, 3, 200, ByteArray(32) { 8 },
+            1_700_000_200, 1, "Standard", 0, -140_000, 0, false, "", 1_700_000_050,
+            makeOutpoint(fundingTxid, 0), 1,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletId, loserTxid, 2, 60_000, "yLoserChange", ByteArray(25) { 6 },
+            200, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val reinstated = db.transactionDao().getByTxid(loserTxid)!!
+        assertFalse(
+            "a later record naming a tombstoned txid must clear the tombstone",
+            reinstated.isGloballySwept,
+        )
+        assertEquals(200, reinstated.blockHeight)
+
+        val revivedOutput = db.txoDao().getByOutpoint(phantomOutput)
+        assertNotNull("the reinstated transaction's own output must come back", revivedOutput)
+        assertEquals(60_000L, revivedOutput!!.amount)
+
+        val reclaimedP = db.txoDao().getByOutpoint(p)!!
+        assertTrue(
+            "wallet A reclaims its input once its own record is live again",
+            reclaimedP.isSpent,
+        )
+        assertTrue(loserTxid.contentEquals(reclaimedP.spendingTxid))
+
+        assertNotNull(
+            "wallet A must be able to read the reinstated transaction as live again",
+            handler.onGetCoreTxRecord(walletId, loserTxid),
+        )
+
+        // "Restart": a fresh handler bound to the same underlying store —
+        // the same pattern
+        // sharedLoserOutputAndCoreTxRecordAreExcludedAfterOnlyOneWalletsCallbackCommits
+        // above uses. The reinstatement has to be durable, not just
+        // visible to the handler instance that just applied it.
+        val restarted = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)
+
+        val survived = db.transactionDao().getByTxid(loserTxid)!!
+        assertFalse("the reinstatement must survive a restart", survived.isGloballySwept)
+        assertNotNull(
+            "the revived output must survive a restart",
+            db.txoDao().getByOutpoint(phantomOutput),
+        )
+        val survivedP = db.txoDao().getByOutpoint(p)!!
+        assertTrue("the reclaimed input must survive a restart", survivedP.isSpent)
+        assertNotNull(
+            "the reinstated transaction must still be readable as live after a restart",
+            restarted.onGetCoreTxRecord(walletId, loserTxid),
+        )
+    }
+
+    @Test
     fun sweptTransactionRollsBackWithItsRound() = runTest {
         // The deletion is staged in the same buffered transaction as every
         // other write in the round, so a round that fails must not take the

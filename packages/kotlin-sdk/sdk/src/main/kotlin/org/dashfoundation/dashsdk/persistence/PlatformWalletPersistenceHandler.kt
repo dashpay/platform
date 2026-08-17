@@ -785,16 +785,45 @@ class PlatformWalletPersistenceHandler(
     ): Int = guarded {
         stage(walletId) { db ->
             val existing = db.transactionDao().getByTxid(txid)
-            // A sweep is upstream's final word on this txid — it never
-            // re-emits a live record for a transaction it has already
-            // proven can never confirm. A re-upsert reaching here for an
-            // `isGloballySwept` row would therefore be a stale/out-of-order
-            // signal at best, and applying it would resurrect exactly what
-            // `onWalletChangesetTransactionsSwept` excluded (live context/
-            // blockHeight, a fresh involvement link, input reconciliation
-            // that re-links its inputs). Bail rather than let any of that
-            // happen. See TransactionEntity.isGloballySwept.
-            if (existing?.isGloballySwept == true) return@stage
+            // A sweep is upstream's word at the moment it fired, but the
+            // wallet's sweep state is not monotonic: `CoreChangeSet::merge`
+            // (rs-platform-wallet) documents the exact reachable sequence —
+            // an unconfirmed transaction swept by an IS-locked conflict can
+            // return chainlocked and sweep that conflict in turn, per
+            // key-wallet's own IS-lock precedence rules. When both events
+            // land in the same changeset the merge already strips the sweep
+            // before it gets here. Across separate rounds it can't: the
+            // earlier sweep is already durable (row tombstoned, possibly
+            // still physically present because another wallet's claim held
+            // the delete back — see [onWalletChangesetTransactionsSwept]),
+            // and this later record is the only signal this callback ever
+            // sees that the wallet reversed itself. Upstream never re-emits
+            // a live record for a txid it still considers dead, so a record
+            // naming an `isGloballySwept` txid is authoritative
+            // reinstatement, not a stale replay — treat it as upstream's
+            // newer word and let it win.
+            //
+            // No explicit clear is written here: the `@Upsert` below always
+            // constructs a fresh [TransactionEntity] without naming
+            // `isGloballySwept`, so it defaults to `false` and Room's
+            // upsert (a full-row replace on the `txid` primary key)
+            // overwrites the stored `true` unconditionally. What this does
+            // and does not restore: `context`/`blockHeight`, involvement,
+            // and this record's own input reconciliation all rebuild
+            // normally below since they're driven straight off the FFI
+            // params. The outputs `onWalletChangesetTransactionsSwept`
+            // physically deleted are a different story — they come back
+            // only if this round also carries a fresh
+            // `onWalletChangesetUtxoAdded` for them, the same way any
+            // transaction's outputs ordinarily arrive alongside its record.
+            // The JNI bridge (`persist_changeset_account` in
+            // rs-unified-sdk-jni) calls this method before any
+            // `onWalletChangesetUtxoAdded` for the same account,
+            // specifically so that method's own `isGloballySwept` guard
+            // already sees this upsert's clear by the time it runs; see the
+            // comment there. If Rust doesn't re-emit the outputs, they
+            // cannot be reconstructed here from nothing.
+            // See TransactionEntity.isGloballySwept.
             // firstSeen: adopt non-zero from FFI; else keep existing;
             // else stamp now (never leave a placeholder zero).
             val resolvedFirstSeen = when {
@@ -918,11 +947,22 @@ class PlatformWalletPersistenceHandler(
             // would (re-)create exactly the phantom output
             // `onWalletChangesetTransactionsSwept` deletes on every callback
             // that observes the sweep. Bail rather than attach a new row to
-            // a transaction already excluded from restoration; ordinary
-            // operation should never reach this (Rust does not re-emit a
-            // swept loser's own outputs), so this is defense-in-depth
-            // against a stale/out-of-order signal, not a path expected to
-            // fire. See TransactionEntity.isGloballySwept.
+            // a transaction still excluded from restoration.
+            //
+            // This does not fight [onWalletChangesetTransaction]'s
+            // reinstatement path — it relies on that method running first.
+            // The JNI bridge (`persist_changeset_account` in
+            // rs-unified-sdk-jni) calls `onWalletChangesetTransaction` for
+            // an account's `transactions` before this method for that same
+            // account's `utxos_added`, so a reinstating record for this
+            // txid in this same round has already cleared the tombstone by
+            // the time this guard reads it; only a UTXO entry with no
+            // accompanying record this round still finds the flag set. That
+            // is genuinely a stale/out-of-order signal — Rust does not
+            // otherwise re-emit a swept loser's own outputs — and staying
+            // defensive here is correct: there is no record in flight to
+            // attribute a resurrected output to. See
+            // TransactionEntity.isGloballySwept.
             if (parentTx?.isGloballySwept == true) return@stage
             // Ensure a parent transaction row exists (stub if missing, so
             // the TXO FK holds; the real tx upsert overwrites it later).
@@ -1053,6 +1093,13 @@ class PlatformWalletPersistenceHandler(
      * so it can never confirm and Rust has already dropped it. Keeping the
      * rows would hand them back at the next load and re-create a balance the
      * wallet has already corrected.
+     *
+     * `isGloballySwept` is upstream's word as of this callback, not a
+     * permanent verdict — the wallet's sweep state can itself be swept in
+     * turn (IS-lock precedence: a chainlocked return beats the IS-locked
+     * conflict that swept it originally), and [onWalletChangesetTransaction]
+     * clears this flag when a later record reinstates the txid. See that
+     * method's doc comment for what reinstatement can and cannot undo.
      *
      * `commit_batch` calls `store()` once per wallet, and each of those
      * commits independently — there is no single transaction spanning every
