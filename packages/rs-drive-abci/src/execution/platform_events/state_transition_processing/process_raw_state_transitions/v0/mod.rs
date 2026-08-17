@@ -17,9 +17,24 @@ use crate::platform_types::state_transitions_processing_result::{
 use dpp::util::hash::hash_single;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
+use drive::grovedb_storage::Error::RocksDBError;
 use std::time::Instant;
 
 use super::super::StateTransitionAwareError;
+
+/// Test-only fault injection: force the next successfully executed state transition to be
+/// reported as an `InternalError` AFTER its drive operations were applied. This models the
+/// only way an `InternalError` can carry state (an `Err` surfacing after
+/// `apply_drive_operations(apply = true)`, e.g. the address-input fee coverage guard failing
+/// on an under-estimated `Shield`) without depending on any particular estimation bug.
+#[cfg(test)]
+pub(crate) mod test_fault_injection {
+    use std::cell::Cell;
+
+    thread_local! {
+        pub static FAIL_NEXT_SUCCESSFUL_EXECUTION: Cell<bool> = const { Cell::new(false) };
+    }
+}
 
 impl<C> Platform<C>
 where
@@ -108,6 +123,29 @@ where
                             );
                         }
 
+                        // PROPOSER-SIDE ONLY (consensus-invisible, hence no protocol-version
+                        // gate): when building a proposal, mark the state before this
+                        // transition. Execution can write into the shared block transaction
+                        // before failing (the address-input fee flow is apply-then-check), and
+                        // a transition whose result strips it from the block
+                        // (`TxAction::Removed`) must leave no trace in the state the proposal's
+                        // app hash is computed over — otherwise the gossiped block omits the
+                        // transition while the advertised app hash includes its writes, no
+                        // validator can reproduce the hash, and every proposer carrying the
+                        // transition burns its round (mainnet evo1 stalls of 2026-08-14/15,
+                        // after heights 415652 and 415661).
+                        //
+                        // The validation path (`proposing_state_transitions == false`) is
+                        // deliberately untouched: rolling back there would change what state a
+                        // received block evaluates to, which is a consensus change that must
+                        // ride a protocol-version gate (it does, from v14). This proposer-side
+                        // rollback only changes which blocks this node BUILDS — the published
+                        // block and app hash are exactly what any un-upgraded validator
+                        // computes from that block, so mixed networks cannot diverge.
+                        if proposing_state_transitions {
+                            transaction.set_savepoint();
+                        }
+
                         // Validate state transition and produce an execution event
                         let execution_result = process_state_transition(
                             &platform_ref,
@@ -136,6 +174,47 @@ where
                             state_transition_name: Some(state_transition_name.to_string()),
                         })
                         .unwrap_or_else(error_to_internal_error_execution_result);
+
+                        #[cfg(test)]
+                        let execution_result = if matches!(
+                            execution_result,
+                            StateTransitionExecutionResult::SuccessfulExecution { .. }
+                        )
+                            && test_fault_injection::FAIL_NEXT_SUCCESSFUL_EXECUTION
+                                .with(|flag| flag.replace(false))
+                        {
+                            StateTransitionExecutionResult::InternalError(
+                                "injected post-apply failure (test_fault_injection)".to_string(),
+                            )
+                        } else {
+                            execution_result
+                        };
+
+                        if proposing_state_transitions {
+                            match &execution_result {
+                                StateTransitionExecutionResult::InternalError(_)
+                                | StateTransitionExecutionResult::UnpaidConsensusError(_) => {
+                                    // This transition will be stripped from the proposal
+                                    // (`TxAction::Removed`), so none of its writes may remain
+                                    // in the state the app hash is computed over. A rollback
+                                    // failure means the proposal can no longer match the
+                                    // block — fail it rather than continue on leaked state.
+                                    transaction.rollback_to_savepoint().map_err(|e| {
+                                        drive::grovedb::error::Error::StorageError(RocksDBError(e))
+                                    })?;
+                                }
+                                _ => {
+                                    // The transition stays in the block, so its writes stay.
+                                    // Its savepoint is intentionally left on the stack:
+                                    // RocksDB exposes no pop-without-rollback, leftover
+                                    // savepoints are inert for commit, and the per-round
+                                    // proposal transaction they live in is dropped when the
+                                    // round ends. The genesis re-proposal path — the one other
+                                    // consumer of this stack — drains the whole stack rather
+                                    // than popping once, so this residue cannot redirect it.
+                                }
+                            }
+                        }
 
                         // Store metrics
                         let elapsed_time = start_time.elapsed() + decoding_elapsed_time;

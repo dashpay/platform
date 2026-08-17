@@ -143,6 +143,13 @@ where
         if let Some(tx) = transaction_guard.as_ref() {
             tx.rollback_to_savepoint()
                 .map_err(|e| drive::grovedb::error::Error::StorageError(RocksDBError(e)))?;
+            // Drain the rest of the savepoint stack: the state-transition loop leaves one
+            // savepoint per transition executed while proposing (see the proposer-side
+            // rollback in process_raw_state_transitions_v0), so a single rollback may only
+            // rewind to the last transition of the previous round. Every savepoint on this
+            // stack records the post-init-chain state or later, and the bottom one records
+            // exactly it, so draining until empty always lands on the post-init-chain state.
+            while tx.rollback_to_savepoint().is_ok() {}
             tx.set_savepoint();
         }
         transaction_guard
