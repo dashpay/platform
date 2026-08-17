@@ -1135,8 +1135,23 @@ impl FFIPersister {
         // still additionally gated by `declared_capabilities` in
         // `persistence_capabilities()` below, like every other bit: the
         // host must attest the semantic contract, not just wire pointers.
+        //
+        // The begin/end pair and `ATOMIC_CHANGESETS` are required on top,
+        // and only for this bit, because moving sweeps onto their own slot
+        // split one logical `CoreChangeSet` across two calls. Without a
+        // round that commits or rolls back as a unit, the changeset call
+        // can make the watermark and the additive rows durable and the
+        // process can stop before the sweep call applies the removal —
+        // leaving a host that restarts past a deletion it never performed
+        // and reloads the dead transaction. Nothing before sweeps could
+        // fail this way: every core field arrived through one callback.
         if self.wallet_changeset_sweeps_callback.is_some()
             && self.callbacks.on_persist_wallet_changeset_fn.is_some()
+            && self.callbacks.on_changeset_begin_fn.is_some()
+            && self.callbacks.on_changeset_end_fn.is_some()
+            && self
+                .declared_capabilities
+                .contains(PersistenceCapabilities::ATOMIC_CHANGESETS)
         {
             capabilities = capabilities.union(PersistenceCapabilities::CORE_SWEEP_REMOVAL);
         }
@@ -6327,26 +6342,29 @@ mod tests {
         fn wired_callbacks() -> PersistenceCallbacks {
             PersistenceCallbacks {
                 on_persist_wallet_changeset_fn: Some(noop_wallet_changeset),
+                on_changeset_begin_fn: Some(noop_begin),
+                on_changeset_end_fn: Some(noop_end),
                 ..Default::default()
             }
+        }
+        /// Everything the bit needs except the atomic round.
+        fn declared() -> PersistenceCapabilities {
+            PersistenceCapabilities::CORE_SWEEP_REMOVAL
+                .union(PersistenceCapabilities::ATOMIC_CHANGESETS)
         }
 
         // The pre-sweep-aware binary shape: legacy changeset callback
         // wired, declaration present (a host blindly OR-ing bits), but no
         // extension slot — absent.
-        assert!(!persister_with(
-            wired_callbacks(),
-            PersistenceCapabilities::CORE_SWEEP_REMOVAL,
-            None
-        )
-        .persistence_capabilities()
-        .contains(PersistenceCapabilities::CORE_SWEEP_REMOVAL));
+        assert!(!persister_with(wired_callbacks(), declared(), None)
+            .persistence_capabilities()
+            .contains(PersistenceCapabilities::CORE_SWEEP_REMOVAL));
 
         // Extension slot wired and declared, but no changeset callback to
         // persist the rows a sweep would correct: absent.
         assert!(!persister_with(
             PersistenceCallbacks::default(),
-            PersistenceCapabilities::CORE_SWEEP_REMOVAL,
+            declared(),
             Some(noop_wallet_changeset_sweeps)
         )
         .persistence_capabilities()
@@ -6361,10 +6379,35 @@ mod tests {
         .persistence_capabilities()
         .contains(PersistenceCapabilities::CORE_SWEEP_REMOVAL));
 
-        // All three: attested.
-        assert!(persister_with(
+        // Structurally complete and declared, but without the atomic round
+        // the split transport needs: absent. Sweeps arrive on their own
+        // call, so a host with no begin/end boundary can make the changeset
+        // durable and stop before the removal lands.
+        assert!(!persister_with(
             wired_callbacks(),
             PersistenceCapabilities::CORE_SWEEP_REMOVAL,
+            Some(noop_wallet_changeset_sweeps)
+        )
+        .persistence_capabilities()
+        .contains(PersistenceCapabilities::CORE_SWEEP_REMOVAL));
+
+        // Declared atomic, but the begin/end pair is not actually wired:
+        // absent. The declaration alone cannot bracket the two calls.
+        assert!(!persister_with(
+            PersistenceCallbacks {
+                on_persist_wallet_changeset_fn: Some(noop_wallet_changeset),
+                ..Default::default()
+            },
+            declared(),
+            Some(noop_wallet_changeset_sweeps)
+        )
+        .persistence_capabilities()
+        .contains(PersistenceCapabilities::CORE_SWEEP_REMOVAL));
+
+        // Everything present: attested.
+        assert!(persister_with(
+            wired_callbacks(),
+            declared(),
             Some(noop_wallet_changeset_sweeps)
         )
         .persistence_capabilities()
