@@ -632,18 +632,43 @@ pub struct AdmissionToken(pub [u8; 16]);
 
 impl AdmissionToken {
     /// A fresh token from the OS CSPRNG.
-    pub fn new() -> Self {
+    ///
+    /// Uses [`RngCore::try_fill_bytes`](rand::RngCore::try_fill_bytes) rather
+    /// than `fill_bytes`: the latter *panics* when the OS entropy source
+    /// fails. Both production callers are reached from `#[no_mangle] extern
+    /// "C"` exports (the claim path through
+    /// `platform_wallet_manager_shielded_identity_create_from_one_time_key`,
+    /// the barrier path through the destructive lifecycle exports), and a
+    /// panic inside those futures is re-raised by `block_on_worker`'s
+    /// `expect("tokio worker panicked")` where it cannot unwind across the C
+    /// ABI — aborting the host process before the JNI panic guard can run.
+    /// Same reasoning, and same remedy, as
+    /// [`generate_one_time_orchard_key`](super::keys::generate_one_time_orchard_key).
+    ///
+    /// Reported as [`PlatformWalletError::Persistence`] because an admission
+    /// token is only ever minted to enter the store's admission protocol: the
+    /// caller is already mapping that step's failures to `Persistence`, so the
+    /// host sees one error class for "the admission could not be taken"
+    /// regardless of which half failed. There is deliberately no infallible
+    /// `Default`/`new` on this type outside tests — an infallible path would
+    /// reintroduce exactly the panic this returns instead.
+    pub fn generate() -> Result<Self, crate::error::PlatformWalletError> {
         use rand::{rngs::OsRng, RngCore};
 
         let mut bytes = [0u8; 16];
-        OsRng.fill_bytes(&mut bytes);
-        Self(bytes)
+        OsRng.try_fill_bytes(&mut bytes).map_err(|e| {
+            crate::error::PlatformWalletError::Persistence(format!(
+                "OS RNG entropy source failed while minting a lifecycle admission token: {e}"
+            ))
+        })?;
+        Ok(Self(bytes))
     }
-}
 
-impl Default for AdmissionToken {
-    fn default() -> Self {
-        Self::new()
+    /// Infallible token for tests only — panics on entropy failure, which is
+    /// why it is not available to production code (see [`generate`](Self::generate)).
+    #[cfg(test)]
+    pub(crate) fn new() -> Self {
+        Self::generate().expect("OS RNG entropy source failed in a test")
     }
 }
 

@@ -1741,7 +1741,7 @@ where
     // mid-flight (a dropped JNI call) cannot run an async release from `Drop`,
     // so its lease is reclaimed by expiry instead — which errs toward "the
     // purge waits", never toward "the record is deleted".
-    let admission = super::store::AdmissionToken::new();
+    let admission = super::store::AdmissionToken::generate()?;
     let admitted = store
         .write()
         .await

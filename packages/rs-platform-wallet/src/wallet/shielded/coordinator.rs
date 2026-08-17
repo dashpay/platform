@@ -849,7 +849,7 @@ impl NetworkShieldedCoordinator {
             DESTRUCTIVE_DRAIN_TIMEOUT,
         };
 
-        let token = AdmissionToken::new();
+        let token = AdmissionToken::generate()?;
         // `tokio::time::Instant`, not `std::time::Instant`: the drain wait and
         // the sleep below must run on the same clock, which also lets tests
         // drive the whole wait deterministically under a paused runtime.
