@@ -6,8 +6,21 @@ This crate carries the pieces of `dash-sdk` that build queries, encode them
 onto the wire format, and decode/verify proved responses — with **no
 transport implementation**: no `rs-dapi-client` and no tonic native
 channel/TLS stack. Shared generated types and context-provider utilities
-remain dependencies. `dash-sdk` depends on it and re-exports everything at
-the historical paths, so SDK users need no changes.
+remain dependencies. `dash-sdk` depends on it and re-exports every moved
+item at its historical path, so most imports keep compiling unchanged — but
+the extraction is not fully source-compatible. Depending on what it uses,
+downstream code may need to:
+
+- import the `dash_sdk::platform::DocumentQuerySdk` extension trait to keep
+  calling `DocumentQuery::new_with_data_contract_id`, which fetches the
+  contract and therefore needs `&Sdk`;
+- handle `dash_platform_queries::Error` — `DocumentQuery`'s fallible
+  methods now return it instead of `dash_sdk::Error`. `?` call sites keep
+  compiling via `From`; explicit return types and direct variant matches
+  need a conversion;
+- implement the `dash_sdk::platform::WireQuery` marker trait
+  (`impl WireQuery for MyCustomRequest {}`) for custom `TransportRequest`
+  types used with the blanket `Query` impl.
 
 ## Who this is for
 
