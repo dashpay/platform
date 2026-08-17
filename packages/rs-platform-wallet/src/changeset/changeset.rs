@@ -230,14 +230,122 @@ impl HighestUsedIndexes {
     }
 }
 
+/// Fold same-txid [`TransactionRecord`]s into ONE wallet-level record —
+/// the dashpay/platform#4387 fix at the batch seam.
+///
+/// Upstream `check_core_transaction` emits one record PER MATCHED ACCOUNT
+/// for a single transaction, each carrying only its account's slice
+/// (`net_amount` is documented "Net amount for this account"). The
+/// persisted `transactions` row is keyed by txid alone, so without this
+/// fold whichever record drained last defined the row — a multi-account
+/// sweep persisted one slice as the whole wallet's net (S22 field case:
+/// −0.005 stored for a −2.61920199 spend).
+///
+/// The fold, per txid group of 2+ records:
+/// - `net_amount` — the SUM of the slices: each account's
+///   `received − spent` over disjoint detail sets, so the sum is the
+///   wallet's `Σreceived − Σspent` by construction.
+/// - `input_details` / `output_details` — the union (deduped by input
+///   index / output index): the slices are disjoint per account, and the
+///   union is exactly the wallet-relevant view downstream consumers
+///   (`derive_new_utxos`, usage sweeps) expect of a single record.
+/// - `fee` — the first `Some` (only the funding account's record carries
+///   one, and disjoint accounts cannot disagree); left `None` when no
+///   record knew it.
+/// - `direction` — recomputed from the merged net: negative → `Outgoing`,
+///   positive → `Incoming`, zero → the funding record's own direction
+///   (a zero-net multi-account event is a wallet-internal move).
+/// - identity fields (`transaction`, `txid`, `context`,
+///   `transaction_type`, `label`, `account_type`) — from the FUNDING
+///   record (the one with input details) so the row's account attribution
+///   names the spender, else the first record.
+///
+/// Order-preserving for untouched records; a fold keeps the group's first
+/// position. Contact-watch-only records never reach here (filtered at
+/// projection — see `core_bridge::is_contact_watch_only`).
+pub(crate) fn fold_same_txid_records(records: &mut Vec<TransactionRecord>) {
+    use key_wallet::managed_account::transaction_record::TransactionDirection;
+
+    if records.len() < 2 {
+        return;
+    }
+    let mut by_txid: BTreeMap<Txid, Vec<usize>> = BTreeMap::new();
+    for (i, r) in records.iter().enumerate() {
+        by_txid.entry(r.txid).or_default().push(i);
+    }
+    if by_txid.values().all(|g| g.len() < 2) {
+        return;
+    }
+
+    let mut drop_idx: BTreeSet<usize> = BTreeSet::new();
+    let mut folded: BTreeMap<usize, TransactionRecord> = BTreeMap::new();
+    for group in by_txid.values().filter(|g| g.len() >= 2) {
+        // Base: the funding record (has input details), else the first.
+        let base_pos = group
+            .iter()
+            .copied()
+            .find(|&i| !records[i].input_details.is_empty())
+            .unwrap_or(group[0]);
+        let mut merged = records[base_pos].clone();
+        let mut net: i64 = 0;
+        let mut seen_inputs: BTreeSet<u32> = merged.input_details.iter().map(|d| d.index).collect();
+        let mut seen_outputs: BTreeSet<u32> =
+            merged.output_details.iter().map(|d| d.index).collect();
+        for &i in group {
+            let r = &records[i];
+            net = net.saturating_add(r.net_amount);
+            if merged.fee.is_none() {
+                merged.fee = r.fee;
+            }
+            if i != base_pos {
+                for d in &r.input_details {
+                    if seen_inputs.insert(d.index) {
+                        merged.input_details.push(d.clone());
+                    }
+                }
+                for d in &r.output_details {
+                    if seen_outputs.insert(d.index) {
+                        merged.output_details.push(d.clone());
+                    }
+                }
+                drop_idx.insert(i);
+            }
+        }
+        merged.net_amount = net;
+        merged.direction = match net.cmp(&0) {
+            std::cmp::Ordering::Less => TransactionDirection::Outgoing,
+            std::cmp::Ordering::Greater => TransactionDirection::Incoming,
+            std::cmp::Ordering::Equal => records[base_pos].direction,
+        };
+        folded.insert(base_pos, merged);
+    }
+
+    let old = std::mem::take(records);
+    for (i, r) in old.into_iter().enumerate() {
+        if drop_idx.contains(&i) {
+            continue;
+        }
+        records.push(folded.remove(&i).unwrap_or(r));
+    }
+}
+
 impl Merge for CoreChangeSet {
     fn merge(&mut self, other: Self) {
-        // Records / utxo deltas: append-only. The event adapter never
-        // produces duplicates within a single batch (each event covers
-        // a distinct moment); cross-batch dedup is the persister's
-        // responsibility (txid uniqueness for records, outpoint
-        // uniqueness for utxos).
+        // Records: append, then FOLD same-txid records into one
+        // wallet-level record (dashpay/platform#4387). The old comment here
+        // claimed the adapter "never produces duplicates within a single
+        // batch" — false for a multi-account spend: upstream
+        // `check_core_transaction` emits ONE record PER MATCHED ACCOUNT,
+        // each carrying only its account's `net_amount` slice, and the
+        // txid-keyed persisted row was whichever record landed last
+        // (field case: a 15-input full-balance sweep stored as −0.005
+        // instead of −2.61920199 — the S22 reconciliation). Folding at the
+        // batch seam makes the persisted row describe the WALLET whenever
+        // the per-account events drain together, which is how detection
+        // emits them. Cross-batch stragglers remain the persister's
+        // txid-uniqueness concern, unchanged.
         self.records.extend(other.records);
+        fold_same_txid_records(&mut self.records);
         self.spent_utxos.extend(other.spent_utxos);
         self.new_utxos.extend(other.new_utxos);
 
