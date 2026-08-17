@@ -542,6 +542,23 @@ pub enum PlatformWalletError {
     #[error("Shielded sync failed: {0}")]
     ShieldedSyncFailed(String),
 
+    /// The foreign-key (one-time-invitation) note scan consumed its
+    /// per-attempt work budget before covering the requested value
+    /// (dashpay/platform#4306). RETRYABLE, and the retry is CHEAP: progress
+    /// was checkpointed at tree position `scanned_through`, so the next
+    /// attempt resumes there instead of restarting — attempts compound until
+    /// the note is found or the tree is genuinely exhausted.
+    ///
+    /// Hosts MUST render this as "still searching — retry", never as an
+    /// invalid, already-claimed, or unfunded invitation: the scan has simply
+    /// not looked far enough yet, and treating it as terminal would strand a
+    /// genuinely funded claim whose note sits deep in the tree.
+    #[error(
+        "shielded foreign-key scan paused at tree position {scanned_through} after \
+         exhausting its per-attempt budget; progress is checkpointed — retry to continue"
+    )]
+    ShieldedForeignScanBudgetExhausted { scanned_through: u64 },
+
     /// A background sync pass did not drain within its quiesce budget, so
     /// the operation that required a "no more persister stores" barrier
     /// (manager shutdown, `clear_shielded`, a sync-state reset) aborted

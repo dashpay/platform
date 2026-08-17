@@ -105,6 +105,18 @@ class DashSdkErrorTest {
             inviteClaimed.isRetryable,
         )
 
+        // Code 44 (ErrorShieldedScanBudgetExhausted, dashpay/platform#4306):
+        // the claim scan paused at its per-attempt budget. The retryability
+        // polarity is the entire contract — a host that saw this as terminal
+        // would strand a funded claim whose note sits deep in the tree.
+        val scanBudget =
+            DashSdkError.fromNative(DashSDKException(offset + 44, "scan paused at 262144"))
+        assertTrue(scanBudget is DashSdkError.PlatformWallet.ShieldedScanBudgetExhausted)
+        assertTrue(
+            "ShieldedScanBudgetExhausted is RETRYABLE — progress is checkpointed",
+            scanBudget.isRetryable,
+        )
+
         val broadcastUnconfirmed =
             DashSdkError.fromNative(DashSDKException(offset + 20, "ambiguous broadcast"))
         assertTrue(

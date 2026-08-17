@@ -53,6 +53,26 @@ use crate::error::PlatformWalletError;
 /// here and there together if the chunk power ever changes.
 const CHUNK_SIZE: u64 = 2048;
 
+/// Stream batches one foreign-key scan ATTEMPT may consume before pausing
+/// with the retryable
+/// [`PlatformWalletError::ShieldedForeignScanBudgetExhausted`].
+///
+/// The bound that closes dashpay/platform#4306: a syntactically valid but
+/// never-funded invitation key can otherwise drive a genesis-to-tip scan —
+/// "no note yet" and "note further ahead" are indistinguishable mid-stream —
+/// so a hostile link costs an unbounded trial-decryption walk per attempt.
+/// With the budget, each attempt costs at most `FOREIGN_SCAN_BATCH_BUDGET`
+/// batches (a batch is at least one 2048-note MMR chunk, so ≥ ~260k trial
+/// decryptions — generously past any realistic honest claim) and progress is
+/// checkpointed, so attempts COMPOUND instead of restarting: a genuinely
+/// deep note is still reached across retries, while the hostile case pays
+/// bounded work per attempt no matter what the link claims.
+///
+/// The invite's birth-height hint cannot replace this: heights don't map to
+/// tree positions here (see [`scan_notes_for_foreign_key`]) — and the hint
+/// arrives in the attacker-controlled link anyway.
+pub(crate) const FOREIGN_SCAN_BATCH_BUDGET: u64 = 128;
+
 /// Result of one note-sync pass.
 #[derive(Debug, Clone, Default)]
 pub struct SyncNotesResult {
@@ -965,12 +985,19 @@ fn foreign_scan_checkpoint_below(
 /// cancellation-safety contract): the first scan for a key covers the
 /// full history from position 0 (never risking a missed note), and every later
 /// scan for the SAME key resumes past the immutable chunks it already covered —
-/// so a valid-but-unfunded invitation key costs one full-history scan per
-/// coordinator, not one per attempt (#4313 review finding d19c5cf84a9f).
+/// so a valid-but-unfunded invitation key costs bounded work per attempt,
+/// never a restart (#4313 review finding d19c5cf84a9f).
 /// Progress is checkpointed even when the stream errors mid-scan, so an
 /// interrupted retry resumes rather than restarting. Same-key calls are
 /// serialized by the caller's per-FVK claim guard, so two scans never
 /// interleave on one key.
+///
+/// Each ATTEMPT is additionally budgeted at [`FOREIGN_SCAN_BATCH_BUDGET`]
+/// stream batches (#4306): exhausting the budget before the value is covered
+/// checkpoints the position reached and returns the retryable
+/// [`PlatformWalletError::ShieldedForeignScanBudgetExhausted`] instead of
+/// scanning on — hosts render it as "still searching, retry", never as an
+/// invalid or unfunded invitation.
 ///
 /// [`ShieldedChunkBatch`]: dash_sdk::platform::shielded::notes_sync::types::ShieldedChunkBatch
 pub(crate) async fn scan_notes_for_foreign_key(
@@ -995,7 +1022,7 @@ pub(crate) async fn scan_notes_for_foreign_key(
     // chunk-aligned and their notes strictly below).
     let aligned_start = (resume_position / CHUNK_SIZE) * CHUNK_SIZE;
     found.retain(|n| n.position < aligned_start);
-    let mut total: u64 = found
+    let total: u64 = found
         .iter()
         .fold(0u64, |acc, n| acc.saturating_add(n.value));
 
@@ -1023,12 +1050,58 @@ pub(crate) async fn scan_notes_for_foreign_key(
 
     let prepared = PreparedIncomingViewingKey::new(ivk);
     let stream = sync_shielded_notes_stream(sdk, &prepared, aligned_start, None);
+    scan_foreign_stream_with_budget(
+        stream,
+        checkpoints,
+        checkpoint_key,
+        fvk,
+        stop_at_value,
+        aligned_start,
+        found,
+        total,
+        FOREIGN_SCAN_BATCH_BUDGET,
+    )
+    .await
+}
+
+/// The budgeted consumption loop of [`scan_notes_for_foreign_key`], generic
+/// over the batch stream so the budget/checkpoint behavior is unit-testable
+/// without a network (`sync_shielded_notes_stream` is the sole production
+/// stream).
+///
+/// Consumes at most `batch_budget` batches per call. Exhausting the budget
+/// before the value is covered checkpoints `scanned_through` and returns the
+/// RETRYABLE [`PlatformWalletError::ShieldedForeignScanBudgetExhausted`] — the
+/// next attempt resumes from the checkpoint, so attempts compound (see
+/// [`FOREIGN_SCAN_BATCH_BUDGET`] for the #4306 threat model). A partial
+/// (buffer) batch is end-of-stream, so it never trips the budget — an
+/// exhausted-tree scan returns `Ok` with whatever was found, exactly as
+/// before.
+#[allow(clippy::too_many_arguments)]
+async fn scan_foreign_stream_with_budget<St, E>(
+    stream: St,
+    checkpoints: &ForeignScanCheckpointCache,
+    checkpoint_key: [u8; 32],
+    fvk: &grovedb_commitment_tree::FullViewingKey,
+    stop_at_value: u64,
+    aligned_start: u64,
+    mut found: Vec<ShieldedNote>,
+    mut total: u64,
+    batch_budget: u64,
+) -> Result<Vec<ShieldedNote>, PlatformWalletError>
+where
+    St: futures::Stream<
+        Item = Result<dash_sdk::platform::shielded::notes_sync::types::ShieldedChunkBatch, E>,
+    >,
+    E: std::fmt::Display,
+{
     futures::pin_mut!(stream);
 
     // How far this pass has FULLY covered the tree: advanced past the end of
     // every immutable full chunk consumed, held AT a partial (buffer) chunk's
     // `start_index` because that chunk may still receive notes.
     let mut scanned_through = aligned_start;
+    let mut batches_consumed: u64 = 0;
     while let Some(batch) = stream.next().await {
         let batch = match batch {
             Ok(batch) => batch,
@@ -1042,7 +1115,8 @@ pub(crate) async fn scan_notes_for_foreign_key(
                 return Err(PlatformWalletError::ShieldedSyncFailed(e.to_string()));
             }
         };
-        scanned_through = if batch.is_partial {
+        let batch_is_partial = batch.is_partial;
+        scanned_through = if batch_is_partial {
             batch.start_index
         } else {
             batch.start_index + batch.notes.len() as u64
@@ -1064,6 +1138,20 @@ pub(crate) async fn scan_notes_for_foreign_key(
         // A one-time key holds exactly its funding — stop once it's covered.
         if total >= stop_at_value {
             break;
+        }
+        // Per-attempt work bound (#4306). Checked AFTER the value test so a
+        // budget's final batch covering the value still completes normally,
+        // and never on a partial batch — that is end-of-stream, where the
+        // ordinary exhausted-tree return below is the right outcome.
+        batches_consumed += 1;
+        if !batch_is_partial && batches_consumed >= batch_budget {
+            checkpoints.save(
+                checkpoint_key,
+                foreign_scan_checkpoint_below(scanned_through, &found),
+            );
+            return Err(PlatformWalletError::ShieldedForeignScanBudgetExhausted {
+                scanned_through,
+            });
         }
     }
 
@@ -1414,6 +1502,11 @@ mod tests {
 /// `sync_notes_across`).
 #[cfg(test)]
 mod ovk_recovery_tests;
+
+/// Budget/checkpoint behavior of the foreign-key claim scan (#4306):
+/// per-attempt bound, retryable pause, resume-not-restart.
+#[cfg(test)]
+mod foreign_scan_budget_tests;
 
 /// Round-trip guard for the Type 15 client pair: the shield builder's
 /// serialized actions must trial-decrypt under the same keyset's IVK

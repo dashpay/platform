@@ -385,6 +385,25 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorShieldedScanBudgetExhausted` (native code 44,
+         * dashpay/platform#4306). The one-time-key claim's transient note
+         * scan paused at its per-attempt work budget before finding the
+         * invitation's funding note. Progress is checkpointed in the SDK, so
+         * retrying RESUMES the scan where it stopped — attempts compound
+         * until the note is found or the tree is genuinely exhausted.
+         *
+         * RETRYABLE ([isRetryable] `true`) and cheap to retry: nothing was
+         * spent, built, or broadcast. The opposite pole from
+         * [ShieldedInviteAlreadyClaimed] — hosts MUST render this as "still
+         * searching — try again", never as an invalid, unfunded, or
+         * already-claimed invitation.
+         */
+        class ShieldedScanBudgetExhausted(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -561,6 +580,10 @@ sealed class DashSdkError(
             // briefly held 32, which belongs to ErrorTransactionBuild —
             // dashpay/platform#4247/#4256.)
             43 -> PlatformWallet.ShieldedInviteAlreadyClaimed(message, cause)
+            // ErrorShieldedScanBudgetExhausted (#4306) — retryable-and-cheap:
+            // the claim scan paused at its per-attempt budget with progress
+            // checkpointed; a retry resumes, it never restarts.
+            44 -> PlatformWallet.ShieldedScanBudgetExhausted(message, cause)
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

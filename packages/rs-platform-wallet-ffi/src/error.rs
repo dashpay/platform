@@ -272,6 +272,25 @@ pub enum PlatformWalletFFIResultCode {
     /// built against those artifacts.
     ErrorShieldedInviteAlreadyClaimed = 43,
 
+    /// Maps `PlatformWalletError::ShieldedForeignScanBudgetExhausted`
+    /// (dashpay/platform#4306). The one-time-key claim's transient note scan
+    /// consumed its per-attempt work budget before finding the invitation's
+    /// funding note; progress is checkpointed, so a retry RESUMES rather than
+    /// restarts.
+    ///
+    /// RETRYABLE, and cheap to retry — the opposite pole from
+    /// [`Self::ErrorShieldedInviteAlreadyClaimed`] (43): nothing was spent,
+    /// built, or broadcast, the scan simply has not looked far enough yet.
+    /// Hosts MUST render this as "still searching — try again", never as an
+    /// invalid, unfunded, or already-claimed invitation: treating it as
+    /// terminal strands a genuinely funded claim whose note sits deep in the
+    /// tree.
+    ///
+    /// Code 44 — the next frontier past the frozen 43 above; add it to
+    /// ERROR_CODE_REGISTRY.md (dashpay/platform#4318) when that registry
+    /// lands.
+    ErrorShieldedScanBudgetExhausted = 44,
+
     // Codes 27-33 are claimed outside this PR and MUST NOT be reused here.
     // The deferred-token trio below therefore occupies the contiguous block
     // 34-36. Current owners (see ERROR_CODE_REGISTRY.md, dashpay/platform#4261):
@@ -616,6 +635,13 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // false-ownership signal this variant exists to replace.
             PlatformWalletError::ShieldedInviteAlreadyClaimed { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedInviteAlreadyClaimed
+            }
+            // Retryable-and-cheap: the claim's transient scan paused at its
+            // per-attempt budget with progress checkpointed (#4306). Kept
+            // typed so hosts render "still searching — retry" instead of
+            // collapsing it into an unknown/terminal failure.
+            PlatformWalletError::ShieldedForeignScanBudgetExhausted { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedScanBudgetExhausted
             }
             PlatformWalletError::ShieldedNoRecordedAnchor(..) => {
                 PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor
