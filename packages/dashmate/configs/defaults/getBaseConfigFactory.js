@@ -416,10 +416,6 @@ export default function getBaseConfigFactory() {
                   timeout: null,
                   delta: null,
                 },
-                commit: {
-                  timeout: null,
-                  bypass: null,
-                },
               },
             },
             log: {
