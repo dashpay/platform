@@ -692,6 +692,119 @@ final class SweptTransactionPersistTests: XCTestCase {
         )
     }
 
+    /// Cross-round reinstatement — the BLOCKING finding this round fixes.
+    /// The sweep and its reinstating record land in two SEPARATE
+    /// `persistWalletChangeset` rounds, with wallet B's still-outstanding
+    /// claim keeping the shared row physically present in between, exactly
+    /// as `testSharedLoserOutputAndEnumerationAreExcludedAfterOnlyOneWalletsCallbackCommits`
+    /// establishes on its own. Before the fix, `upsertTransaction` bailed
+    /// unconditionally on `isGloballySwept == true`, so round 2's record —
+    /// upstream's newer word, per `CoreChangeSet::merge`'s documented
+    /// IS-lock-precedence sequence (swept by an IS-locked conflict, then
+    /// returns chainlocked and sweeps that conflict in turn) — would be
+    /// silently discarded forever, and `upsertUtxo` would keep rejecting
+    /// its output on the strength of a tombstone nothing could ever clear.
+    /// Verified across a restart: the reinstatement has to be durable, not
+    /// merely visible in the context that just applied it.
+    func testAReinstatingRecordInALaterRoundRevivesASweptTransactionAndItsOutputs() throws {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swept-reinstatement-\(UUID().uuidString).store")
+        defer { try? FileManager.default.removeItem(at: storeURL) }
+        let loserTxid = Data(repeating: 0xB1, count: 32)
+        let winner = Data(repeating: 0xB2, count: 32)
+        let walletB = Data(repeating: 0x02, count: 32)
+
+        do {
+            let (handler, container) = try makeHandler(url: storeURL)
+            try seedSharedLoserWithOutputAndInvolvedAccount(
+                in: container, walletA: walletId, walletB: walletB, loserTxid: loserTxid
+            )
+
+            // Round 1: only wallet B's own sweep callback runs, releasing
+            // nothing. Wallet A's own claim on P (its funding coin) is still
+            // outstanding, so the shared row survives physically even
+            // though the global half of the sweep already tombstoned it and
+            // deleted its phantom output.
+            sweep(handler, [Batch(losers: [loserTxid], winner: winner)], walletId: walletB)
+
+            let tombstoned = try XCTUnwrap(transaction(container, txid: loserTxid))
+            XCTAssertTrue(tombstoned.isGloballySwept, "sanity: the row is tombstoned after round 1")
+            XCTAssertNil(
+                txo(container, txid: loserTxid, vout: 2),
+                "sanity: the loser's own output is gone after round 1"
+            )
+
+            // Round 2, a SEPARATE callback (not coalesced with round 1's
+            // sweep — the cross-round shape the merge-level fix in
+            // `CoreChangeSet::merge` cannot reach): the wallet returns
+            // chainlocked and sweeps the erstwhile winner in turn. Arrives
+            // here exactly like any freshly-detected transaction would —
+            // nothing marks it as "the reinstating one" — with its own
+            // output riding along in the same round the way a transaction's
+            // outputs ordinarily do.
+            deliverReinstatingRecord(
+                handler,
+                walletId: walletId,
+                txid: loserTxid,
+                context: 3, // inChainLockedBlock
+                blockHeight: 200,
+                inputOutpoints: [(txid: fundingTxid, vout: 0)],
+                outputVout: 2,
+                outputAmount: 60_000,
+                outputAddress: "yLoserChange"
+            )
+
+            let reinstated = try XCTUnwrap(
+                transaction(container, txid: loserTxid),
+                "the reinstating record must not be discarded"
+            )
+            XCTAssertFalse(
+                reinstated.isGloballySwept,
+                "a later record naming a tombstoned txid must clear the tombstone"
+            )
+            XCTAssertEqual(reinstated.blockHeight, 200)
+
+            let revivedOutput = try XCTUnwrap(
+                txo(container, txid: loserTxid, vout: 2),
+                "the reinstated transaction's own output must come back"
+            )
+            XCTAssertEqual(revivedOutput.amount, 60_000)
+
+            let p = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+            XCTAssertTrue(p.isSpent, "wallet A reclaims its input once its own record is live again")
+            XCTAssertEqual(p.spendingTransaction?.txid, loserTxid)
+
+            let (txidsA, erroredA) = handler.walletCoreTxids(walletId: walletId)
+            XCTAssertFalse(erroredA)
+            XCTAssertTrue(
+                txidsA.contains { $0.txid == loserTxid },
+                "wallet A must be able to enumerate the reinstated transaction as its own again"
+            )
+        }
+
+        // Restart: a fresh handler/container over the same file. The
+        // reinstatement has to be durable, not just visible to the context
+        // that applied it.
+        let (handler, container) = try makeHandler(url: storeURL)
+
+        let survived = try XCTUnwrap(transaction(container, txid: loserTxid))
+        XCTAssertFalse(survived.isGloballySwept, "the reinstatement must survive a restart")
+        XCTAssertNotNil(
+            txo(container, txid: loserTxid, vout: 2),
+            "the revived output must survive a restart"
+        )
+        let p = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertTrue(p.isSpent, "the reclaimed input must survive a restart")
+        XCTAssertEqual(p.spendingTransaction?.txid, loserTxid)
+
+        let (txidsA, erroredA) = handler.walletCoreTxids(walletId: walletId)
+        XCTAssertFalse(erroredA)
+        XCTAssertTrue(
+            txidsA.contains { $0.txid == loserTxid },
+            "the reinstated transaction must still enumerate as wallet A's own after a restart"
+        )
+    }
+
     /// A failed wallet lookup must fail the round, not read as "no such
     /// wallet".
     ///
@@ -1057,6 +1170,89 @@ final class SweptTransactionPersistTests: XCTestCase {
                 cs.accounts_count = 1
                 withUnsafePointer(to: &cs) { csPtr in
                     handler.persistWalletChangeset(walletId: walletId, changeset: csPtr)
+                }
+            }
+        }
+        _ = handler.endChangeset(walletId: walletId, success: true)
+    }
+
+    /// Deliver a plain transaction record — with a fresh output of its own
+    /// riding along in the same round — through the ordinary account
+    /// changeset entry point. Models the reinstating event the BLOCKING
+    /// finding describes: upstream reports a previously-swept txid to
+    /// `records` exactly the way it reports any freshly-detected
+    /// transaction, with nothing on the wire flagging it as "the one that
+    /// used to be swept" — `upsertTransaction` has to infer that entirely
+    /// from the row it finds already sitting in the store.
+    private func deliverReinstatingRecord(
+        _ handler: PlatformWalletPersistenceHandler,
+        walletId: Data,
+        txid: Data,
+        context: UInt32,
+        blockHeight: UInt32,
+        inputOutpoints: [(txid: Data, vout: UInt32)],
+        outputVout: UInt32,
+        outputAmount: UInt64,
+        outputAddress: String
+    ) {
+        let name = strdup("Standard { index: 0 }")
+        let address = strdup(outputAddress)
+        defer {
+            free(name)
+            free(address)
+        }
+
+        let inputs = UnsafeMutablePointer<OutPointFFI>.allocate(
+            capacity: max(inputOutpoints.count, 1)
+        )
+        for (i, input) in inputOutpoints.enumerated() {
+            var entry = OutPointFFI()
+            Swift.withUnsafeMutableBytes(of: &entry.txid) { dst in
+                input.txid.withUnsafeBytes { src in dst.copyMemory(from: src) }
+            }
+            entry.vout = input.vout
+            inputs.advanced(by: i).initialize(to: entry)
+        }
+        defer {
+            inputs.deinitialize(count: inputOutpoints.count)
+            inputs.deallocate()
+        }
+
+        var record = TransactionRecordFFI()
+        Swift.withUnsafeMutableBytes(of: &record.txid) { dst in
+            txid.withUnsafeBytes { src in dst.copyMemory(from: src) }
+        }
+        record.context = context
+        record.block_height = blockHeight
+        record.input_outpoints = inputs
+        record.input_outpoints_count = UInt(inputOutpoints.count)
+
+        var utxo = UtxoEntryFFI()
+        Swift.withUnsafeMutableBytes(of: &utxo.outpoint.txid) { dst in
+            txid.withUnsafeBytes { src in dst.copyMemory(from: src) }
+        }
+        utxo.outpoint.vout = outputVout
+        utxo.amount = outputAmount
+        utxo.address = address
+        utxo.height = blockHeight
+        utxo.is_confirmed = true
+
+        handler.beginChangeset(walletId: walletId)
+        withUnsafeMutablePointer(to: &record) { recordPtr in
+            withUnsafeMutablePointer(to: &utxo) { utxoPtr in
+                var account = AccountChangeSetFFI()
+                account.account_type_name = name
+                account.transactions = recordPtr
+                account.transactions_count = 1
+                account.utxos_added = utxoPtr
+                account.utxos_added_count = 1
+                withUnsafeMutablePointer(to: &account) { accountPtr in
+                    var cs = WalletChangeSetFFI()
+                    cs.accounts = accountPtr
+                    cs.accounts_count = 1
+                    withUnsafePointer(to: &cs) { csPtr in
+                        handler.persistWalletChangeset(walletId: walletId, changeset: csPtr)
+                    }
                 }
             }
         }
