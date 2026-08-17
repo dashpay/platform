@@ -4351,6 +4351,12 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
         "onWalletChangesetTransaction",
         WALLET_CHANGESET_TRANSACTION_DESCRIPTOR,
     ),
+    // Missing from this table let a sweep-round-only descriptor drift pass
+    // the smoke check and surface only when a live sweep first called it —
+    // right where a failed round freezes the wallet's watermark. Descriptor
+    // must track the literal at the `call_method` site in
+    // `persist_changeset_sweep_batch` above.
+    ("onWalletChangesetTransactionsSwept", "([B[[B[[B[[B)I"),
     (
         "onPersistIdentityUpsert",
         "([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;\
