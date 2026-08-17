@@ -213,6 +213,11 @@ pub struct CoreChangeSet {
     /// Union the release sets and the first answer outlives the last one that
     /// is actually true. Applied in order, each batch corrects the one before
     /// it, which is what the wallet itself did.
+    /// `serde(default)`: this field postdates the serialized representation,
+    /// so a payload written before it necessarily omits it. An empty vec is
+    /// the exact backward-compatible reading — a changeset from then could
+    /// not have carried a sweep.
+    #[cfg_attr(feature = "serde", serde(default))]
     pub sweeps: Vec<SweepBatch>,
 }
 
@@ -1863,6 +1868,36 @@ impl Merge for PlatformWalletChangeSet {
         {
             core_empty
         }
+    }
+}
+
+#[cfg(all(test, feature = "serde"))]
+mod serde_compat_tests {
+    use super::*;
+
+    /// A changeset serialized before `sweeps` existed must still load. The
+    /// field postdates the representation, so an older payload simply omits
+    /// it — and an empty vec is the exact reading, since nothing back then
+    /// could have carried a sweep. Without `serde(default)` the whole
+    /// deserialization fails and every pre-sweep payload becomes unreadable.
+    #[test]
+    fn a_pre_sweep_payload_deserializes_with_no_sweeps() {
+        let json = r#"{
+            "records": [],
+            "spent_utxos": [],
+            "new_utxos": [],
+            "instant_locks_for_non_final_records": {},
+            "last_processed_height": 1000,
+            "synced_height": 900,
+            "account_highest_used": {},
+            "last_applied_chain_lock": null
+        }"#;
+
+        let cs: CoreChangeSet =
+            serde_json::from_str(json).expect("a pre-sweep payload must still deserialize");
+        assert!(cs.sweeps.is_empty());
+        assert_eq!(cs.last_processed_height, Some(1000));
+        assert_eq!(cs.synced_height, Some(900));
     }
 }
 
