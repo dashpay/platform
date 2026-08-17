@@ -691,6 +691,11 @@ async fn build_core_changeset(
                     .filter(|r| !is_contact_watch_only(r))
                     .cloned(),
             );
+            // One block can insert SEVERAL per-account records for one
+            // transaction (a multi-account spend); fold them into the one
+            // wallet-level record the txid-keyed row needs
+            // (dashpay/platform#4387 — see fold_same_txid_records).
+            crate::changeset::changeset::fold_same_txid_records(&mut cs.records);
             cs.last_processed_height = Some(*height);
             // Pool extensions triggered by any record in this block.
             // Already deduped upstream by `project_derived_addresses`;
@@ -1338,6 +1343,99 @@ mod contact_watch_only_projection_tests {
             account_balances: BTreeMap::new(),
             addresses_derived: vec![],
         }
+    }
+
+    /// dashpay/platform#4387: a multi-account spend's per-account records
+    /// must fold into ONE wallet-level row. Models the S22 field sweep in
+    /// miniature: the BIP44 slice spends 2.0, the receival slice spends
+    /// 0.62 with 0.005 change — the persisted row must carry the summed
+    /// −2.615 net, the union of the details, and Outgoing.
+    #[tokio::test]
+    async fn multi_account_spend_folds_to_one_wallet_level_record() {
+        let tx = tx_with(&[(&our_change_address(), 500_000)]);
+        let bip44_slice = record(
+            &tx,
+            bip44_account_0(),
+            TransactionDirection::Outgoing,
+            vec![InputDetail {
+                index: 0,
+                value: 200_000_000,
+                address: our_change_address(),
+            }],
+            Vec::new(),
+            -200_000_000,
+        );
+        let receival_slice = record(
+            &tx,
+            AccountType::DashpayReceivingFunds {
+                index: 0,
+                user_identity_id: [1u8; 32],
+                friend_identity_id: [2u8; 32],
+            },
+            TransactionDirection::Outgoing,
+            vec![InputDetail {
+                index: 1,
+                value: 62_000_000,
+                address: our_change_address(),
+            }],
+            vec![output(
+                0,
+                OutputRole::Change,
+                &our_change_address(),
+                500_000,
+            )],
+            -61_500_000,
+        );
+        let cs = build_core_changeset(
+            &test_manager(),
+            &block_processed(vec![bip44_slice, receival_slice]),
+        )
+        .await;
+
+        assert_eq!(
+            cs.records.len(),
+            1,
+            "same-txid per-account records must fold into one wallet-level record"
+        );
+        let persisted = &cs.records[0];
+        assert_eq!(persisted.net_amount, -261_500_000);
+        assert_eq!(persisted.direction, TransactionDirection::Outgoing);
+        assert_eq!(persisted.input_details.len(), 2, "input details must union");
+        assert_eq!(persisted.output_details.len(), 1);
+    }
+
+    /// Records for DISTINCT transactions are never folded.
+    #[tokio::test]
+    async fn distinct_txids_stay_separate_records() {
+        let tx_a = tx_with(&[(&our_change_address(), 1_000)]);
+        let rec_a = record(
+            &tx_a,
+            bip44_account_0(),
+            TransactionDirection::Outgoing,
+            vec![InputDetail {
+                index: 0,
+                value: 1_000,
+                address: our_change_address(),
+            }],
+            Vec::new(),
+            -1_000,
+        );
+        let mut tx_b = tx_with(&[(&our_change_address(), 2_000)]);
+        tx_b.lock_time = 999; // distinct txid
+        let rec_b = record(
+            &tx_b,
+            bip44_account_0(),
+            TransactionDirection::Outgoing,
+            vec![InputDetail {
+                index: 0,
+                value: 2_000,
+                address: our_change_address(),
+            }],
+            Vec::new(),
+            -2_000,
+        );
+        let cs = build_core_changeset(&test_manager(), &block_processed(vec![rec_a, rec_b])).await;
+        assert_eq!(cs.records.len(), 2);
     }
 
     /// (1) A payment to a contact must persist as the outgoing,
