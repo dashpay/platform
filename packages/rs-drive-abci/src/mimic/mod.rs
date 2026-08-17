@@ -351,11 +351,6 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
                 transaction
                     .rollback_to_savepoint()
                     .expect("expected to rollback to savepoint");
-                // Drain per-transition savepoints left by the proposer-side rollback in
-                // process_raw_state_transitions_v0 so we land on the post-init-chain state,
-                // matching the genesis-path drain in prepare_proposal/process_proposal. The
-                // root-hash assertion below verifies the landing point.
-                while transaction.rollback_to_savepoint().is_ok() {}
                 transaction.set_savepoint();
 
                 let start_root_hash = self

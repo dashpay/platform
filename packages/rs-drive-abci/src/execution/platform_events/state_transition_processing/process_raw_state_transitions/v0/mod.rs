@@ -84,6 +84,33 @@ where
         let state_transition_container =
             self.decode_raw_state_transitions(raw_state_transitions, platform_version)?;
 
+        // PROPOSER-SIDE ONLY (consensus-invisible, hence no protocol-version gate): while
+        // building a proposal, wrap each executed state transition in a savepoint and roll
+        // back if its result strips it from the block (`TxAction::Removed`). Execution can
+        // write into the shared block transaction before failing (the address-input fee flow
+        // is apply-then-check), and without the rollback the gossiped block omits the
+        // transition while the advertised app hash includes its writes — no validator can
+        // reproduce the hash, and every proposer carrying the transition burns its round
+        // (mainnet evo1 stalls of 2026-08-14/15, after heights 415652 and 415661).
+        //
+        // The validation path (`proposing_state_transitions == false`) is deliberately
+        // untouched: rolling back there would change what state a received block evaluates
+        // to, which is a consensus change that must ride a protocol-version gate (it does,
+        // from v14). This proposer-side rollback only changes which blocks this node BUILDS —
+        // the published block and app hash are exactly what any un-upgraded validator
+        // computes from that block, so mixed networks cannot diverge.
+        //
+        // The genesis height is excluded because its re-proposal path relies on a
+        // single-savepoint discipline: init_chain sets one savepoint, and each genesis round
+        // rewinds to it with one `rollback_to_savepoint()` (see prepare_proposal /
+        // process_proposal). Savepoints of KEPT transitions stay on the stack — RocksDB
+        // exposes no pop-without-rollback — and extra savepoints on the genesis transaction
+        // would redirect that rewind. At every other height each proposal round runs in a
+        // freshly started transaction that is either committed (leftover savepoints are inert
+        // markers) or dropped when the round ends, so the residue can affect nothing.
+        let rollback_dropped_transitions =
+            proposing_state_transitions && block_info.height != self.config.abci.genesis_height;
+
         let mut processing_result = StateTransitionsProcessingResult::default();
 
         for decoded_state_transition in state_transition_container.into_iter() {
@@ -123,26 +150,9 @@ where
                             );
                         }
 
-                        // PROPOSER-SIDE ONLY (consensus-invisible, hence no protocol-version
-                        // gate): when building a proposal, mark the state before this
-                        // transition. Execution can write into the shared block transaction
-                        // before failing (the address-input fee flow is apply-then-check), and
-                        // a transition whose result strips it from the block
-                        // (`TxAction::Removed`) must leave no trace in the state the proposal's
-                        // app hash is computed over — otherwise the gossiped block omits the
-                        // transition while the advertised app hash includes its writes, no
-                        // validator can reproduce the hash, and every proposer carrying the
-                        // transition burns its round (mainnet evo1 stalls of 2026-08-14/15,
-                        // after heights 415652 and 415661).
-                        //
-                        // The validation path (`proposing_state_transitions == false`) is
-                        // deliberately untouched: rolling back there would change what state a
-                        // received block evaluates to, which is a consensus change that must
-                        // ride a protocol-version gate (it does, from v14). This proposer-side
-                        // rollback only changes which blocks this node BUILDS — the published
-                        // block and app hash are exactly what any un-upgraded validator
-                        // computes from that block, so mixed networks cannot diverge.
-                        if proposing_state_transitions {
+                        // Mark the state we can return to if this transition's result strips
+                        // it from the block (see `rollback_dropped_transitions` above).
+                        if rollback_dropped_transitions {
                             transaction.set_savepoint();
                         }
 
@@ -190,7 +200,7 @@ where
                             execution_result
                         };
 
-                        if proposing_state_transitions {
+                        if rollback_dropped_transitions {
                             match &execution_result {
                                 StateTransitionExecutionResult::InternalError(_)
                                 | StateTransitionExecutionResult::UnpaidConsensusError(_) => {
@@ -205,13 +215,10 @@ where
                                 }
                                 _ => {
                                     // The transition stays in the block, so its writes stay.
-                                    // Its savepoint is intentionally left on the stack:
-                                    // RocksDB exposes no pop-without-rollback, leftover
-                                    // savepoints are inert for commit, and the per-round
-                                    // proposal transaction they live in is dropped when the
-                                    // round ends. The genesis re-proposal path — the one other
-                                    // consumer of this stack — drains the whole stack rather
-                                    // than popping once, so this residue cannot redirect it.
+                                    // Its savepoint is intentionally left on the stack (see
+                                    // `rollback_dropped_transitions` above: no
+                                    // pop-without-rollback exists, and at non-genesis heights
+                                    // the residue is inert).
                                 }
                             }
                         }
