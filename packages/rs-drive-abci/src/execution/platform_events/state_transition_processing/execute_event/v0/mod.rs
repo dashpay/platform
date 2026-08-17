@@ -179,11 +179,16 @@ where
             // Defense in depth: the deduction min-caps each step, so an under-funded input set would
             // remove < `total_fee` from the inputs while the full `total_fee` is still booked to the
             // fee pools — minting the difference (`CorruptedCreditsNotBalanced` -> chain halt).
-            // `validate_fees_of_event` is re-run on this exact state immediately before execution and
-            // already rejects an under-funded transition, so this cannot trigger today. Guard anyway:
-            // if those two paths ever diverged, fail closed at the source with an actionable error
-            // rather than committing a mint that only surfaces as an opaque end-of-block sum-tree
-            // imbalance.
+            // `validate_fees_of_event` runs on the same state immediately before execution, but it
+            // prices the batch with the ESTIMATED cost model (`apply_drive_operations` with
+            // `apply = false`) while `total_fee` here is the ACTUAL metered cost — so this guard
+            // triggers whenever `estimated < actual` for a transition funded in between (the
+            // mainnet evo1 stalls of 2026-08-14/15; the keyless commitment-tree append is skipped
+            // in estimation, dashpay/grovedb#812). The invariant this guard actually enforces is
+            // `estimated >= actual`. Note the ops were already applied above: an Err here leaves
+            // this transition's writes in the block transaction, which is only safe because the
+            // v14+ processing loop rolls dropped transitions back (process_raw_state_transitions
+            // v1); under v0 those writes leak into the proposer's app hash.
             if !fee_deduction_result.fee_fully_covered {
                 return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "address-input fee not fully covered at execution; validate_fees_of_event should have rejected the under-funded transition",
