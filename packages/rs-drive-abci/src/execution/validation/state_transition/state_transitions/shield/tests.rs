@@ -2005,5 +2005,95 @@ mod tests {
                 "the validating path must keep v4.1.0 behavior bit-for-bit (leak preserved)"
             );
         }
+
+        /// The real mainnet scenario, no fault hook: a shield funded at the edge of the
+        /// estimated-vs-actual fee band measured on v4.2-dev (actual metered fee
+        /// 177,215,760 credits at 494 notes; headroom one credit below). The grovedb pin
+        /// differs on the v4.1 line so the exact constants may shift; whatever this funding
+        /// level produces here, the proposing path must leave state consistent with it:
+        /// a dropped or rejected transition leaves NO trace (this was the halt), and only a
+        /// genuinely successful one changes state.
+        #[tokio::test]
+        async fn proposing_real_underfunded_shield_leaves_no_trace() {
+            let pv = PlatformVersion::latest();
+            let b = build_bundle();
+            let headroom = 177_215_759u64;
+
+            let mut platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, MAINNET_NOTES);
+            let mut signer = TestAddressSigner::new();
+            let addr = signer.add_p2pkh([1u8; 32]);
+            let declared_input = b.shield_amount + headroom;
+            setup_address_with_balance_and_system_credits(&mut platform, addr, 0, declared_input);
+
+            let st = build_signed(&b, &signer, addr, declared_input).await;
+            let bytes = st.serialize_to_bytes().expect("serialize");
+            let state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let hash_before = platform
+                .drive
+                .grove
+                .root_hash(Some(&transaction), &pv.drive.grove_version)
+                .unwrap()
+                .expect("root hash");
+
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![bytes],
+                    &state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    pv,
+                    true, // proposing, exactly as prepare_proposal does
+                    None,
+                )
+                .expect("processing must not be a block-level error");
+
+            let hash_after = platform
+                .drive
+                .grove
+                .root_hash(Some(&transaction), &pv.drive.grove_version)
+                .unwrap()
+                .expect("root hash");
+
+            println!(
+                "outcome at band-edge headroom: {:?}",
+                result.execution_results().first()
+            );
+            match result.execution_results().first() {
+                Some(StateTransitionExecutionResult::InternalError(msg)) => {
+                    // The mainnet halt case: accepted by estimated-fee validation, failed by
+                    // actual-fee execution, dropped from the proposal. Must leave no trace.
+                    assert!(
+                        msg.contains("not fully covered"),
+                        "expected the fee coverage guard, got: {msg}"
+                    );
+                    assert_eq!(
+                        hash_before, hash_after,
+                        "APP HASH POISONED: the exact mainnet halt scenario leaked state on \
+                         the proposing path"
+                    );
+                }
+                Some(StateTransitionExecutionResult::UnpaidConsensusError(_)) => {
+                    // Fee constants on this line put the estimate above this funding level:
+                    // rejected before execution. Fine — but still must leave no trace.
+                    assert_eq!(
+                        hash_before, hash_after,
+                        "a validation-rejected shield must not touch state"
+                    );
+                }
+                Some(StateTransitionExecutionResult::SuccessfulExecution { .. }) => {
+                    // Fee constants on this line put the actual fee at or below this funding
+                    // level: the shield legitimately landed, so state MUST have changed.
+                    assert_ne!(
+                        hash_before, hash_after,
+                        "a successful shield must change state"
+                    );
+                }
+                other => panic!("unexpected execution result: {other:?}"),
+            }
+        }
     }
 }
