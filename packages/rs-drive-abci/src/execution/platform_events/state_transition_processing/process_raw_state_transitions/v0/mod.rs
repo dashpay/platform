@@ -213,12 +213,25 @@ where
                                         drive::grovedb::error::Error::StorageError(RocksDBError(e))
                                     })?;
                                 }
-                                _ => {
-                                    // The transition stays in the block, so its writes stay.
-                                    // Its savepoint is intentionally left on the stack (see
+                                StateTransitionExecutionResult::SuccessfulExecution { .. }
+                                | StateTransitionExecutionResult::PaidConsensusError { .. } => {
+                                    // The transition stays in the block
+                                    // (`TxAction::Unmodified`), so its writes stay. Its
+                                    // savepoint is intentionally left on the stack (see
                                     // `rollback_dropped_transitions` above: no
                                     // pop-without-rollback exists, and at non-genesis heights
                                     // the residue is inert).
+                                }
+                                StateTransitionExecutionResult::NotExecuted(_) => {
+                                    // Delayed to a later block (`TxAction::Delayed`) without
+                                    // having been executed: nothing was written since the
+                                    // savepoint, so rolling back and leaving it are
+                                    // equivalent. Leave it, like the kept outcomes above.
+                                    //
+                                    // Deliberately exhaustive: a new execution result variant
+                                    // must make an explicit savepoint decision here — the
+                                    // rollback classification must match the `TxAction`
+                                    // classification in `prepare_proposal`.
                                 }
                             }
                         }
