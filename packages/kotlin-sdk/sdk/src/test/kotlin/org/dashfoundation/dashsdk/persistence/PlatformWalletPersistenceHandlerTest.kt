@@ -10,6 +10,7 @@ import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.wallet.PlatformWalletPersistenceCapabilities
 import org.dashfoundation.dashsdk.persistence.entities.CoreAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
+import org.dashfoundation.dashsdk.persistence.entities.PendingInputEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
 import org.junit.After
@@ -3129,6 +3130,171 @@ class PlatformWalletPersistenceHandlerTest {
             coin!!.isSpent,
         )
         assertTrue(finalWinnerTxid.contentEquals(coin.supersededByTxid))
+    }
+
+    @Test
+    fun sharedWinnerDeletedByAnotherWalletsCallbackStillReconcilesThisWalletsTombstones() = runTest {
+        // Multi-wallet continuation of the chained-before-funding scenarios
+        // above, confirming this handler is NOT exposed to the Swift-side
+        // review finding on the missing-row early return: every query that
+        // carries a detached tombstone forward keys on the scalar
+        // `spendingTxid` (no FK — see [PendingInputEntity]) and runs
+        // unconditionally in `onWalletChangesetTransactionsSwept`, so the
+        // shared winner row having already been deleted by another wallet's
+        // independently committed callback must change nothing about this
+        // wallet's own release decision reaching its tombstones.
+        val walletB = ByteArray(32) { 9 }
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        handler.onPersistWalletMetadata(walletB, testnet, groupId, 0)
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), ByteArray(78) { 30 },
+        )
+        handler.onPersistAccountRegistration(
+            walletB, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), ByteArray(78) { 31 },
+        )
+        val accountA = db.accountDao().observeByWallet(walletId).first().single()
+        val accountB = db.accountDao().observeByWallet(walletB).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yWalletA", poolTypeTag = 0, addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0", accountId = accountA.id,
+            ),
+        )
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yWalletB", poolTypeTag = 0, addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0", accountId = accountB.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 101 }
+        val pA = makeOutpoint(fundingTxid, 0)
+        val pB = makeOutpoint(fundingTxid, 1)
+        val rB = makeOutpoint(fundingTxid, 2)
+        val sharedLoser = ByteArray(32) { 103 } // L
+        val sharedWinner = ByteArray(32) { 104 } // W
+        val finalWinner = ByteArray(32) { 105 } // X
+
+        // The shared loser L claims one still-unfunded coin of wallet A's
+        // and two of wallet B's. Its record arrives through wallet A's
+        // round; a pending row carries the wallet of the round that wrote
+        // it, so wallet B's two claims are seeded directly in the exact
+        // shape B's own round would have written them.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, sharedLoser, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -50_000, 0, false, "", 1_700_000_090,
+            pA, 1,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        db.documentDao().upsertPendingInput(
+            PendingInputEntity(
+                outpoint = pB, inputIndex = 1, spendingTxid = sharedLoser,
+                spendingTransactionTxid = sharedLoser, walletId = walletB,
+            ),
+        )
+        db.documentDao().upsertPendingInput(
+            PendingInputEntity(
+                outpoint = rB, inputIndex = 2, spendingTxid = sharedLoser,
+                spendingTransactionTxid = sharedLoser, walletId = walletB,
+            ),
+        )
+
+        // First sweep, one independently committed callback per wallet: W
+        // beats L, holding everything (nothing funded, nothing released).
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(sharedLoser), arrayOf(sharedWinner), emptyArray(),
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        handler.onChangesetBegin(walletB)
+        handler.onWalletChangesetTransactionsSwept(
+            walletB, arrayOf(sharedLoser), arrayOf(sharedWinner), emptyArray(),
+        )
+        handler.onChangesetEnd(walletB, success = true)
+        assertNull("L is gone once both wallets ran", db.transactionDao().getByTxid(sharedLoser))
+
+        // W's own record arrives claiming all three outpoints. Each
+        // `(outpoint, W)` tombstone occupies the duplicate-guard key, so no
+        // new pending relationship attaches to W's row — the premise that
+        // lets wallet A's callback below delete it.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, sharedWinner, ByteArray(10) { 6 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -40_000, 0, false, "", 1_700_000_091,
+            pA + pB + rB, 3,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // Second sweep: X beats W. Wallet A's callback runs first, releases
+        // its own coin, and — finding no attached claim of any other
+        // wallet's — deletes the shared row.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(sharedWinner), arrayOf(finalWinner), arrayOf(pA),
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        assertNull(
+            "sanity: wallet A's callback deleted the shared winner row — the premise " +
+                "wallet B's callback below has to survive",
+            db.transactionDao().getByTxid(sharedWinner),
+        )
+
+        // Wallet B's callback arrives after the row is gone, releasing one
+        // of its two coins and holding the other.
+        handler.onChangesetBegin(walletB)
+        handler.onWalletChangesetTransactionsSwept(
+            walletB, arrayOf(sharedWinner), arrayOf(finalWinner), arrayOf(rB),
+        )
+        handler.onChangesetEnd(walletB, success = true)
+
+        val heldTombstone = db.documentDao().getPendingInputsByOutpoint(pB).single()
+        assertTrue(heldTombstone.isSweptTombstone)
+        assertTrue(
+            "the held tombstone must follow the chain to X even though W's row was " +
+                "already deleted by wallet A's callback",
+            finalWinner.contentEquals(heldTombstone.spendingTxid),
+        )
+        assertTrue(
+            "wallet B's release decision must reach its tombstone even though W's " +
+                "row was already deleted by wallet A's callback",
+            db.documentDao().getPendingInputsByOutpoint(rB).isEmpty(),
+        )
+
+        // The funding TXOs finally arrive, one round per owning wallet.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 50_000, "yWalletA", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        handler.onChangesetBegin(walletB)
+        handler.onWalletChangesetUtxoAdded(
+            walletB, fundingTxid, 1, 40_000, "yWalletB", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletB, fundingTxid, 2, 20_000, "yWalletB", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletB, success = true)
+
+        assertFalse(
+            "wallet A's released coin comes back spendable",
+            db.txoDao().getByOutpoint(pA)!!.isSpent,
+        )
+        val heldCoin = db.txoDao().getByOutpoint(pB)!!
+        assertTrue("wallet B's held coin stays spent", heldCoin.isSpent)
+        assertTrue(
+            "the held coin must be attributed to the final winner, not the deleted W",
+            finalWinner.contentEquals(heldCoin.supersededByTxid),
+        )
+        val releasedCoin = db.txoDao().getByOutpoint(rB)!!
+        assertFalse(
+            "wallet B's released coin must not resurrect spent under the obsolete winner",
+            releasedCoin.isSpent,
+        )
+        assertNull(releasedCoin.supersededByTxid)
     }
 
     @Test

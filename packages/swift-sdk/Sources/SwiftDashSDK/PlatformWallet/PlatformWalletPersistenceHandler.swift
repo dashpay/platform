@@ -1019,68 +1019,85 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         )
         descriptor.fetchLimit = 1
         descriptor.relationshipKeyPathsForPrefetching = [\.outputs, \.inputs, \.pendingInputs]
-        // A successful fetch that finds nothing is an ordinary no-op: sweeps
-        // are idempotent and can name a transaction this store never had.
-        guard let row = try backgroundContext.fetch(descriptor).first else { return }
+        // A successful fetch that finds nothing skips only the row-scoped
+        // work below, NOT the whole function. Sweeps are idempotent and can
+        // name a transaction this store never had — but they can also name
+        // one this store DID have and another wallet's callback already
+        // deleted. The row is shared; the detached tombstones this wallet
+        // wrote against it are not, and they are exactly the state that is
+        // still findable — by scalar `spendingTxid` — after the row is gone.
+        // Returning here would strand them: this wallet's release decision
+        // would never reach a tombstone that then marks its coin spent by a
+        // transaction that no longer exists, and a held one could never
+        // follow the chain to a further winner. So the wallet-scoped
+        // tombstone reconciliation at the bottom runs either way.
+        let row = try backgroundContext.fetch(descriptor).first
 
-        // The global half, done every time this function runs regardless of
-        // which wallet's callback it is or whether this row has been seen
-        // by a sweep before: delete the outputs this row created (they are
-        // nobody's coin, ever — a swept transaction cannot have funded
-        // anything) and mark the row excluded from restoration. Both are
-        // idempotent, so re-processing an already-flagged row (a second
-        // wallet's callback, or a re-emitted sweep) is a harmless no-op.
-        for output in row.outputs {
-            backgroundContext.delete(output)
-        }
-        row.isGloballySwept = true
+        if let row {
+            // The global half, done every time this function runs regardless
+            // of which wallet's callback it is or whether this row has been
+            // seen by a sweep before: delete the outputs this row created
+            // (they are nobody's coin, ever — a swept transaction cannot have
+            // funded anything) and mark the row excluded from restoration.
+            // Both are idempotent, so re-processing an already-flagged row (a
+            // second wallet's callback, or a re-emitted sweep) is a harmless
+            // no-op.
+            for output in row.outputs {
+                backgroundContext.delete(output)
+            }
+            row.isGloballySwept = true
 
-        // `released` is only ever true of the wallet that computed it, so an
-        // input this wallet does not own must be left exactly as it is —
-        // that wallet's own callback (delivered earlier, arriving later, or
-        // never coming at all) is the only thing allowed to decide it.
-        // Resolved through `resolvedWalletId(of:)` rather than a raw
-        // `walletId` compare, same reasoning as `loadWalletList`: the
-        // denormalized column reads empty on a row migrated before it
-        // existed, and comparing it raw would make every such coin look
-        // unowned and leave it untouched forever.
-        for txo in row.inputs where Self.resolvedWalletId(of: txo) == walletId {
-            txo.isSpent = !released.contains(txo.outpoint)
-            txo.spendingTransaction = nil
-            txo.lastUpdated = Date()
-        }
-        for pending in row.pendingInputs where pending.walletId == walletId {
-            guard !released.contains(pending.outpoint) else { continue }
-            pending.spendingTransaction = nil
-            pending.spendingTxid = supersededBy
-            pending.isSweptTombstone = true
-        }
+            // `released` is only ever true of the wallet that computed it, so
+            // an input this wallet does not own must be left exactly as it is
+            // — that wallet's own callback (delivered earlier, arriving
+            // later, or never coming at all) is the only thing allowed to
+            // decide it. Resolved through `resolvedWalletId(of:)` rather than
+            // a raw `walletId` compare, same reasoning as `loadWalletList`:
+            // the denormalized column reads empty on a row migrated before it
+            // existed, and comparing it raw would make every such coin look
+            // unowned and leave it untouched forever.
+            for txo in row.inputs where Self.resolvedWalletId(of: txo) == walletId {
+                txo.isSpent = !released.contains(txo.outpoint)
+                txo.spendingTransaction = nil
+                txo.lastUpdated = Date()
+            }
+            for pending in row.pendingInputs where pending.walletId == walletId {
+                guard !released.contains(pending.outpoint) else { continue }
+                pending.spendingTransaction = nil
+                pending.spendingTxid = supersededBy
+                pending.isSweptTombstone = true
+            }
 
-        // Whatever is still attached to `row` after the scoping above is
-        // either this wallet's own released pending input — deliberately
-        // left in place two paragraphs up so the cascade below removes it —
-        // or an input/pending row a different wallet has not yet weighed in
-        // on. Only the second case has to hold the delete back; the first
-        // would otherwise make a wallet wait on its own already-finished
-        // decision. Whichever callback finds nothing left over is the last
-        // one to run and performs the delete, so order stops mattering. A
-        // wallet whose callback never arrives at all just leaves the row
-        // behind with every other wallet's inputs already correctly
-        // decided — a leaked dead row, not a wrongly-spent coin, and a
-        // re-emitted sweep cleans it up.
-        //
-        // Nothing below is load-bearing for correctness anymore: `row` has
-        // no outputs and reads as `isGloballySwept` as of the block above,
-        // in every callback that reaches this point, regardless of whether
-        // this delete ever fires. This is reclaiming the now-inert row's
-        // storage, not finishing the sweep.
-        let otherWalletStillClaims = row.inputs.contains { txo in
-            txo.spendingTransaction != nil && Self.resolvedWalletId(of: txo) != walletId
-        } || row.pendingInputs.contains { pending in
-            pending.spendingTransaction != nil && pending.walletId != walletId
-        }
-        if !otherWalletStillClaims {
-            backgroundContext.delete(row)
+            // Whatever is still attached to `row` after the scoping above is
+            // either this wallet's own released pending input — deliberately
+            // left in place two paragraphs up so the cascade below removes it
+            // — or an input/pending row a different wallet has not yet
+            // weighed in on. Only the second case has to hold the delete
+            // back; the first would otherwise make a wallet wait on its own
+            // already-finished decision. Whichever callback finds nothing
+            // left over is the last one to run and performs the delete, so
+            // order stops mattering. A wallet whose callback never arrives at
+            // all just leaves the row behind with every other wallet's inputs
+            // already correctly decided — a leaked dead row, not a
+            // wrongly-spent coin, and a re-emitted sweep cleans it up.
+            //
+            // Nothing below is load-bearing for correctness anymore: `row`
+            // has no outputs and reads as `isGloballySwept` as of the block
+            // above, in every callback that reaches this point, regardless of
+            // whether this delete ever fires. This is reclaiming the
+            // now-inert row's storage, not finishing the sweep. Detached
+            // tombstones deliberately do not count as claims here — they no
+            // longer need the row (the scalar reconciliation below never
+            // touches it), so holding the delete for them would leak the row
+            // for nothing.
+            let otherWalletStillClaims = row.inputs.contains { txo in
+                txo.spendingTransaction != nil && Self.resolvedWalletId(of: txo) != walletId
+            } || row.pendingInputs.contains { pending in
+                pending.spendingTransaction != nil && pending.walletId != walletId
+            }
+            if !otherWalletStillClaims {
+                backgroundContext.delete(row)
+            }
         }
 
         // Chained-sweep continuation: a pending row an EARLIER sweep already
@@ -1091,6 +1108,18 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         // live pending inputs above were: the tombstone names one specific
         // wallet's coin, and only that wallet's own released set is the
         // right authority to re-decide it.
+        //
+        // Deliberately outside the `if let row` above. A tombstone's very
+        // existence means `resolveInputOutpoint` declined to re-attach a
+        // pending row when the winner's own record arrived (the duplicate
+        // guard matches on `(outpoint, spendingTxid)` and a tombstone
+        // occupies that key), so a wallet-relevant winner can carry no
+        // attached claim of this wallet's at all — and another wallet's
+        // callback, seeing nothing attached, legitimately deletes the shared
+        // row before this wallet's callback ever runs. The tombstones are
+        // this wallet's private state; the row's fate says nothing about
+        // whether they still need their release applied or their chain
+        // continued.
         var tombstoneDescriptor = FetchDescriptor<PersistentPendingInput>(
             predicate: #Predicate {
                 $0.spendingTxid == txid && $0.isSweptTombstone == true && $0.walletId == walletId

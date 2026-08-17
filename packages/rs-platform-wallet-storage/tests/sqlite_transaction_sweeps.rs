@@ -1001,6 +1001,188 @@ fn a_chained_sweep_before_funding_repoints_an_earlier_tombstone_to_the_new_winne
     );
 }
 
+/// Confirmation, not a fix, of this round's BLOCKING finding on the mobile
+/// backends' missing-row early return: there, one wallet's callback can
+/// delete the shared winner row while a second wallet's detached tombstones
+/// still name it, and the second wallet's own sweep of that winner then has
+/// to reconcile them against a row that no longer exists. No such moment
+/// exists here. `core_transactions` is keyed `(wallet_id, txid)`, so each
+/// wallet sweeps its own copy of the winner and no other wallet's call can
+/// have removed it first; and the tombstone is not a detached side-table row
+/// but the wallet's own `core_utxos` placeholder, matched by `apply_sweep`
+/// through the winner's own stored inputs — `(wallet_id, outpoint)`-scoped,
+/// so the chain continues per wallet with nothing shared to lose.
+///
+/// This is the reviewer's multi-wallet chained-sweep-before-funding shape
+/// end to end: the same loser txid in two wallets, each claiming a
+/// still-unfunded coin of its own; W beats L (both coins held as
+/// placeholders); W's own record lands; X beats W, with wallet 1 releasing
+/// its coin and wallet 2 holding — in that order, so wallet 1's whole chain
+/// including its deletion of (its copy of) W commits before wallet 2's
+/// callback runs. Each wallet's decision must land on its own coin only, and
+/// each coin's eventual funding must respect it.
+#[test]
+fn a_multi_wallet_chained_sweep_before_funding_reconciles_each_wallets_own_tombstones() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w1: WalletId = wid(0xF1);
+    let w2: WalletId = wid(0xF2);
+    ensure_wallet_meta(&persister, &w1);
+    ensure_wallet_meta(&persister, &w2);
+
+    let addr1 = p2pkh(0x51);
+    let addr2 = p2pkh(0x52);
+    let funding_txid = Txid::from_byte_array([0x50; 32]);
+    // Wallet 1's coin and wallet 2's coin. Neither funding side has been
+    // observed in either wallet until the very end.
+    let p1 = OutPoint::new(funding_txid, 0);
+    let p2 = OutPoint::new(funding_txid, 1);
+    let shared_loser = Txid::from_byte_array([0x53; 32]); // L
+    let shared_winner = Txid::from_byte_array([0x54; 32]); // W
+    let final_winner = Txid::from_byte_array([0x55; 32]); // X
+
+    // The raw transactions are the same for both wallets — a record is the
+    // whole on-chain transaction, inputs included — so each wallet's copy
+    // claims both outpoints even though only one is its own coin.
+    for w in [&w1, &w2] {
+        let mut conn = persister.lock_conn_for_test();
+        derive_address(&conn, w, 0, if w == &w1 { &addr1 } else { &addr2 });
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![tx_record(shared_loser, vec![p1, p2], vec![])],
+            ..Default::default()
+        };
+        core_state::apply(&tx, w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    // First sweep in both wallets: W beats L, holding everything. Leaves
+    // each wallet a placeholder row per claimed outpoint, attributed to W.
+    for w in [&w1, &w2] {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![shared_loser],
+                superseded_by: shared_winner,
+                released_outpoints: vec![],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    // W's own record lands in both wallets, as any wallet-relevant winner's
+    // eventually does.
+    for w in [&w1, &w2] {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![tx_record(shared_winner, vec![p1, p2], vec![])],
+            ..Default::default()
+        };
+        core_state::apply(&tx, w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    // Second sweep, wallet 1 first: X beats W and wallet 1 releases its own
+    // coin. Its copy of W's row is deleted in the same call.
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![shared_winner],
+                superseded_by: final_winner,
+                released_outpoints: vec![p1],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w1, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    {
+        let conn = persister.lock_conn_for_test();
+        let gone: Option<Vec<u8>> = conn
+            .query_row(
+                "SELECT record_blob FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+                params![w1.as_slice(), AsRef::<[u8]>::as_ref(&shared_winner)],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap();
+        assert!(gone.is_none(), "wallet 1's own copy of W is deleted");
+        let w2_placeholder: Option<Vec<u8>> = conn
+            .query_row(
+                "SELECT spent_in_txid FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+                params![w2.as_slice(), &blob::encode_outpoint(&p2).unwrap()[..]],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            w2_placeholder,
+            Some(AsRef::<[u8]>::as_ref(&shared_winner).to_vec()),
+            "wallet 1's whole chained sweep, deletion included, must leave wallet 2's \
+             placeholder exactly where wallet 2's own first sweep put it"
+        );
+    }
+
+    // Wallet 2's callback runs only now, holding its coin. Its own copy of
+    // W is still on hand — nothing wallet 1 committed could have removed a
+    // `(wallet_id, txid)`-keyed row of wallet 2's.
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![shared_winner],
+                superseded_by: final_winner,
+                released_outpoints: vec![],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w2, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    // The funding transaction finally arrives, each coin through its own
+    // wallet's round.
+    for (w, addr, vout) in [(&w1, &addr1, 0u32), (&w2, &addr2, 1u32)] {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            new_utxos: vec![make_utxo(addr, funding_txid, vout, 1_000)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    let conn = persister.lock_conn_for_test();
+    assert!(
+        unspent(&conn, &w1).contains(&p1),
+        "wallet 1's released coin comes back spendable once funded"
+    );
+    assert!(
+        !unspent(&conn, &w2).contains(&p2),
+        "wallet 2's held coin stays spent"
+    );
+    let (spent, spent_in_txid): (i64, Option<Vec<u8>>) = conn
+        .query_row(
+            "SELECT spent, spent_in_txid FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+            params![w2.as_slice(), &blob::encode_outpoint(&p2).unwrap()[..]],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(spent, 1);
+    assert_eq!(
+        spent_in_txid,
+        Some(AsRef::<[u8]>::as_ref(&final_winner).to_vec()),
+        "wallet 2's placeholder followed its own chain to the final winner, \
+         driven entirely by wallet 2's own calls"
+    );
+}
+
 /// Confirmation, not a fix: the review finding that motivated the Swift/
 /// Kotlin backend changes (a shared `PersistentTransaction` row updated with
 /// one wallet's `released_outpoints` before another wallet's own callback
