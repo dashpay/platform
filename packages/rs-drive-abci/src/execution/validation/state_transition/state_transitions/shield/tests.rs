@@ -2192,6 +2192,51 @@ mod tests {
                  state survives a RocksDB-level rollback, so a per-transition savepoint is NOT a \
                  sound implementation of the leak fix (use proposal re-execution instead)"
             );
+
+            // Rollback restoring READS is necessary but not sufficient: in the fix, the next
+            // transition in the block applies onto the rolled-back transaction. If any in-memory
+            // Merk state survived the rollback, that second apply would build on phantom nodes and
+            // diverge. Re-applying the identical shield onto the restored state is deterministic,
+            // so it must reproduce the first apply's root hash exactly.
+            let bytes_again = st.serialize_to_bytes().expect("serialize");
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![bytes_again],
+                    &state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    pv,
+                    true,
+                    None,
+                )
+                .expect("processing must not be a block-level error");
+            assert!(
+                matches!(
+                    result.execution_results().first(),
+                    Some(StateTransitionExecutionResult::SuccessfulExecution { .. })
+                ),
+                "the shield must execute again on the rolled-back state (its nonce and balance \
+                 were restored), got {:?}",
+                result.execution_results()
+            );
+            let hash_reapplied = platform
+                .drive
+                .grove
+                .root_hash(Some(&transaction), &pv.drive.grove_version)
+                .unwrap()
+                .expect("root hash");
+            println!(
+                "root hash     : re-applied {} (want {})",
+                hex::encode(hash_reapplied),
+                hex::encode(hash_applied)
+            );
+            assert_eq!(
+                hash_applied, hash_reapplied,
+                "applying onto a rolled-back transaction diverged from applying onto the \
+                 original state: stale in-memory Merk state survived the rollback, so a \
+                 per-transition savepoint is NOT a sound implementation of the leak fix"
+            );
         }
     }
 }
