@@ -316,9 +316,13 @@ abstract class NativePersistenceBridge {
      * transaction may pay entirely to outside addresses and never be
      * reported here at all.
      *
-     * The default body below returns success without deleting anything —
-     * exactly the "reads the unchanged prefix and reports success" failure
-     * mode `PersistenceCapabilities::CORE_SWEEP_REMOVAL` exists to catch. A
+     * Native delivers these through the persistence extension's
+     * size-negotiated sweep callback (not the wallet-changeset struct, whose
+     * bare-pointer ABI cannot version itself), immediately after the
+     * changeset's own slots in the same round. The default body below still
+     * returns success without deleting anything — the
+     * accepted-but-never-applied failure mode
+     * `PersistenceCapabilities::CORE_SWEEP_REMOVAL` exists to catch. A
      * subclass overriding this must also add that bit to
      * [PlatformWalletPersistenceHandler.persistenceCapabilitiesBits]'s
      * result; the Rust side will not trust a bare `Int` return of `0` here

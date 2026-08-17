@@ -198,6 +198,7 @@ pub(crate) fn build_vtable(context: *mut c_void) -> PersistenceCallbacks {
 pub(crate) fn build_extension() -> PersistenceCallbacksExtension {
     PersistenceCallbacksExtension {
         on_persist_dpns_name_states_fn: Some(tramp_persist_dpns_name_states),
+        on_persist_wallet_changeset_sweeps_fn: Some(tramp_persist_wallet_changeset_sweeps),
         ..Default::default()
     }
 }
@@ -638,18 +639,37 @@ unsafe extern "C" fn tramp_persist_wallet_changeset(
             }
         }
 
-        // Sweeps last, and one bridge call per batch, in order: a later
-        // sweep can keep a coin spent that an earlier one freed, and only
-        // replaying them in sequence preserves that. Each call does its own
-        // hold-then-release, so the ordering holds on the Kotlin side too.
-        // The batch count is not bounded by this ABI, so — as with the
-        // account loop above — the whole per-batch construction and call
-        // runs inside its own local frame; without it, `byte_array_cls`,
-        // `empty`, and the three per-batch arrays would all pile up in the
-        // trampoline's own frame across every batch in the changeset, and a
-        // large enough one can exhaust ART's local-reference table before
-        // the callback ever returns.
-        for batch in slice_or_empty(cs.sweeps, cs.sweeps_count) {
+        Ok(0)
+    })
+}
+
+/// Extension-callback trampoline for the round's sweep batches. These used
+/// to ride at the tail of [`WalletChangeSetFFI`]; they now arrive through
+/// `PersistenceCallbacksExtension`'s size-negotiated sweep slot (the bare
+/// changeset pointer cannot prove to a consumer that its producer allocated
+/// a tail field — see the layout note on that struct). Native fires this
+/// right after `tramp_persist_wallet_changeset` in the same round, so the
+/// Kotlin bridge still sees records before removals.
+///
+/// One bridge call per batch, in order: a later sweep can keep a coin spent
+/// that an earlier one freed, and only replaying them in sequence preserves
+/// that. Each call does its own hold-then-release, so the ordering holds on
+/// the Kotlin side too. The batch count is not bounded by this ABI, so —
+/// as with the account loop in the changeset trampoline — the whole
+/// per-batch construction and call runs inside its own local frame;
+/// without it, `byte_array_cls`, `empty`, and the three per-batch arrays
+/// would all pile up in the trampoline's own frame across every batch, and
+/// a large enough round can exhaust ART's local-reference table before the
+/// callback ever returns.
+unsafe extern "C" fn tramp_persist_wallet_changeset_sweeps(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    sweeps: *const SweepBatchFFI,
+    sweeps_count: usize,
+) -> i32 {
+    with_bridge(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        for batch in slice_or_empty(sweeps, sweeps_count) {
             let code = env.with_local_frame(16, |env| {
                 persist_changeset_sweep_batch(env, bridge, &wid, batch)
             })?;

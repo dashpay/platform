@@ -8,8 +8,9 @@ use crate::event_handler::{
 };
 use crate::handle::*;
 use crate::persistence::{
-    FFIPersister, PersistDpnsNameStatesFn, PersistenceCallbacks, PersistenceCallbacksExtension,
-    PersistenceCapabilitiesFFI, PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
+    FFIPersister, PersistDpnsNameStatesFn, PersistWalletChangesetSweepsFn, PersistenceCallbacks,
+    PersistenceCallbacksExtension, PersistenceCapabilitiesFFI,
+    PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
@@ -76,6 +77,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create(
         PersistenceCapabilities::NONE,
         None,
         None,
+        None,
         out_handle,
     )
 }
@@ -100,6 +102,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_persistence_capabil
         persistence,
         event_handler,
         declaration,
+        None,
         None,
         None,
         out_handle,
@@ -128,12 +131,14 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_persistence_extensi
     check_ptr!(persistence_extension);
     let declaration = persistence_capabilities_declaration(&*persistence_capabilities);
     let dpns_callback = persistence_extension_dpns_callback(persistence_extension);
+    let sweeps_callback = persistence_extension_sweeps_callback(persistence_extension);
     platform_wallet_manager_create_impl(
         sdk_ptr,
         persistence,
         event_handler,
         declaration,
         dpns_callback,
+        sweeps_callback,
         None,
         out_handle,
     )
@@ -158,6 +163,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_extensions(
     check_ptr!(event_extension);
     let declaration = persistence_capabilities_declaration(&*persistence_capabilities);
     let dpns_persistence_callback = persistence_extension_dpns_callback(persistence_extension);
+    let sweeps_persistence_callback = persistence_extension_sweeps_callback(persistence_extension);
     let dpns_event_callback = event_extension_dpns_callback(event_extension);
     platform_wallet_manager_create_impl(
         sdk_ptr,
@@ -165,6 +171,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_extensions(
         event_handler,
         declaration,
         dpns_persistence_callback,
+        sweeps_persistence_callback,
         dpns_event_callback,
         out_handle,
     )
@@ -191,6 +198,36 @@ unsafe fn persistence_extension_dpns_callback(
         return None;
     }
     std::ptr::addr_of!((*extension).on_persist_dpns_name_states_fn).read()
+}
+
+/// Same gate, later field: the sweeps slot is read only when the host's
+/// declared `struct_size` proves it was allocated, so an extension built
+/// before the slot existed keeps its DPNS callback and simply never has
+/// sweeps read — the fail-closed half of the negotiation the changeset
+/// struct itself cannot perform (dashpay/platform#4406, finding 2). The
+/// version check stays an exact match on purpose: the version names the
+/// field ordering, and appending under it is what `struct_size` exists for.
+unsafe fn persistence_extension_sweeps_callback(
+    extension: *const PersistenceCallbacksExtension,
+) -> Option<PersistWalletChangesetSweepsFn> {
+    let supplied_size = std::ptr::addr_of!((*extension).struct_size).read();
+    let version_end =
+        std::mem::offset_of!(PersistenceCallbacksExtension, version) + std::mem::size_of::<u32>();
+    if supplied_size < version_end {
+        return None;
+    }
+    let version = std::ptr::addr_of!((*extension).version).read();
+    if version != PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION {
+        return None;
+    }
+    let callback_end = std::mem::offset_of!(
+        PersistenceCallbacksExtension,
+        on_persist_wallet_changeset_sweeps_fn
+    ) + std::mem::size_of::<Option<PersistWalletChangesetSweepsFn>>();
+    if supplied_size < callback_end {
+        return None;
+    }
+    std::ptr::addr_of!((*extension).on_persist_wallet_changeset_sweeps_fn).read()
 }
 
 unsafe fn event_extension_dpns_callback(
@@ -222,6 +259,7 @@ unsafe fn platform_wallet_manager_create_impl(
     event_handler: *const EventHandlerCallbacks,
     declared_capabilities: PersistenceCapabilities,
     dpns_name_states_callback: Option<PersistDpnsNameStatesFn>,
+    wallet_changeset_sweeps_callback: Option<PersistWalletChangesetSweepsFn>,
     dpns_event_callback: Option<DpnsMarketplaceSyncCompletedFn>,
     out_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
@@ -259,10 +297,11 @@ unsafe fn platform_wallet_manager_create_impl(
 
     let sdk = Arc::new((*(sdk_ptr as *const Sdk)).clone());
     let persister = Arc::new(
-        FFIPersister::new_with_persistence_capabilities_and_dpns_callback(
+        FFIPersister::new_with_persistence_capabilities_and_extension_callbacks(
             std::ptr::read(persistence),
             declared_capabilities,
             dpns_name_states_callback,
+            wallet_changeset_sweeps_callback,
         ),
     );
     let handler: Arc<dyn platform_wallet::PlatformEventHandler> = Arc::new(FFIEventHandler::new(
@@ -775,6 +814,15 @@ mod tests {
         0
     }
 
+    unsafe extern "C" fn persist_wallet_changeset_sweeps(
+        _context: *mut c_void,
+        _wallet_id: *const u8,
+        _sweeps: *const crate::core_wallet_types::SweepBatchFFI,
+        _sweeps_count: usize,
+    ) -> i32 {
+        0
+    }
+
     fn persistence_callbacks() -> PersistenceCallbacks {
         PersistenceCallbacks {
             on_changeset_begin_fn: Some(begin_changeset),
@@ -1087,15 +1135,53 @@ mod tests {
                 on_persist_dpns_name_states_fn
             ),
             on_persist_dpns_name_states_fn: Some(persist_dpns_name_states),
+            on_persist_wallet_changeset_sweeps_fn: Some(persist_wallet_changeset_sweeps),
             ..Default::default()
         };
         let unknown = PersistenceCallbacksExtension {
             version: PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION + 1,
             on_persist_dpns_name_states_fn: Some(persist_dpns_name_states),
+            on_persist_wallet_changeset_sweeps_fn: Some(persist_wallet_changeset_sweeps),
             ..Default::default()
         };
         assert!(unsafe { persistence_extension_dpns_callback(&short) }.is_none());
         assert!(unsafe { persistence_extension_dpns_callback(&unknown) }.is_none());
+        assert!(unsafe { persistence_extension_sweeps_callback(&short) }.is_none());
+        assert!(unsafe { persistence_extension_sweeps_callback(&unknown) }.is_none());
+    }
+
+    /// The exact cross-version pairing the sweep transport exists for: a
+    /// host built when the extension ended at the DPNS slot declares that
+    /// smaller `struct_size` — bytes it filled with a live callback are
+    /// still bytes, so nothing but the declared size distinguishes this
+    /// from a current struct. The sweeps slot must be refused, never read
+    /// (reading it here would be exactly the past-the-allocation
+    /// dereference the changeset struct could not prevent), while the
+    /// DPNS slot the size does prove keeps working.
+    #[test]
+    fn a_legacy_sized_extension_refuses_the_sweeps_slot_but_keeps_dpns() {
+        let legacy_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_persist_wallet_changeset_sweeps_fn
+        );
+        let legacy = PersistenceCallbacksExtension {
+            struct_size: legacy_size,
+            on_persist_dpns_name_states_fn: Some(persist_dpns_name_states),
+            // Set in the fixture to prove the gate never LOOKS: were the
+            // size check wrong, the read would find a live pointer and the
+            // assertion below would catch it.
+            on_persist_wallet_changeset_sweeps_fn: Some(persist_wallet_changeset_sweeps),
+            ..Default::default()
+        };
+        assert!(unsafe { persistence_extension_dpns_callback(&legacy) }.is_some());
+        assert!(unsafe { persistence_extension_sweeps_callback(&legacy) }.is_none());
+
+        let current = PersistenceCallbacksExtension {
+            on_persist_dpns_name_states_fn: Some(persist_dpns_name_states),
+            on_persist_wallet_changeset_sweeps_fn: Some(persist_wallet_changeset_sweeps),
+            ..Default::default()
+        };
+        assert!(unsafe { persistence_extension_sweeps_callback(&current) }.is_some());
     }
 }
 

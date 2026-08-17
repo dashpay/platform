@@ -452,14 +452,16 @@ where
         // persisted only in the `Ok` arm below.
         let offered_height = core.synced_height;
 
-        // `WalletChangeSetFFI` has no size/version header, so a persister
-        // compiled against a pre-sweep struct layout — an old C callback, or
-        // a Kotlin subclass that never overrode
-        // `onWalletChangesetTransactionsSwept` — reads the unchanged prefix
-        // and returns success without ever seeing `core.sweeps` at all.
-        // `store()` coming back `Ok` in that case proves nothing about
-        // whether the removal actually happened, so it is checked
-        // separately from the result below rather than folded into it.
+        // Sweeps reach an FFI host only through the persistence extension's
+        // size-negotiated sweep callback, and Rust never calls a slot the
+        // host's declared `struct_size` did not prove — so a persister
+        // predating that slot (an old C host, or a Kotlin subclass that
+        // never overrode `onWalletChangesetTransactionsSwept`) processes the
+        // rest of the round normally and returns success without ever
+        // seeing `core.sweeps` at all. `store()` coming back `Ok` in that
+        // case proves nothing about whether the removal actually happened,
+        // so it is checked separately from the result below rather than
+        // folded into it.
         let sweep_removal_unsupported = !core.sweeps.is_empty()
             && !persister
                 .persistence_capabilities()
@@ -2710,15 +2712,15 @@ mod tests {
         }
     }
 
-    /// dashpay/platform#4406 (finding 2): `WalletChangeSetFFI` has no size or
-    /// version header, so an older callback compiled against the pre-sweep
-    /// struct layout reads the unchanged prefix, returns success, and never
-    /// sees `core.sweeps` at all. A `store()` that comes back `Ok` therefore
-    /// proves nothing about whether a swept loser's row was actually
-    /// removed unless the persister has separately attested
-    /// `CORE_SWEEP_REMOVAL`. A persister that never declares it (the
-    /// probe's default) must be treated exactly like a rejection when a
-    /// round carries a sweep — even though, unlike the rejection tests
+    /// dashpay/platform#4406 (finding 2): sweeps reach an FFI host only
+    /// through the persistence extension's size-negotiated sweep slot, so a
+    /// persister predating it processes the rest of the round and returns
+    /// success without ever seeing `core.sweeps`. A `store()` that comes
+    /// back `Ok` therefore proves nothing about whether a swept loser's
+    /// row was actually removed unless the persister has separately
+    /// attested `CORE_SWEEP_REMOVAL`. A persister that never declares it
+    /// (the probe's default) must be treated exactly like a rejection when
+    /// a round carries a sweep — even though, unlike the rejection tests
     /// above, the probe's own `store()` call reports success.
     #[tokio::test]
     async fn sweep_without_declared_capability_freezes_the_wallet_despite_a_successful_store() {

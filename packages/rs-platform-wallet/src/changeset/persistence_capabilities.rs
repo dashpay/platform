@@ -54,12 +54,13 @@ impl PersistenceCapabilities {
     /// A stored `CoreChangeSet` whose `sweeps` are non-empty is durably
     /// applied: the swept loser's row (and any tombstoned pending-input
     /// claim standing in for a not-yet-materialized UTXO) actually leaves
-    /// the backing store, not merely accepted-and-ignored. `WalletChangeSetFFI`
-    /// has no size/version header, so an older callback compiled against a
-    /// pre-sweep struct layout reads the unchanged prefix, returns success,
-    /// and never sees the appended fields at all — this bit is what tells the
-    /// wallet the round-trip was actually implemented rather than silently
-    /// truncated.
+    /// the backing store, not merely accepted-and-ignored. On the FFI
+    /// surface sweeps travel through the persistence extension's
+    /// size-negotiated sweep callback — a slot Rust never reads unless the
+    /// host's declared `struct_size` proved it exists — so an older host
+    /// processes the rest of the round, returns success, and never sees
+    /// the sweeps at all; this bit is what tells the wallet the round-trip
+    /// was actually implemented rather than silently truncated.
     pub const CORE_SWEEP_REMOVAL: Self = Self(1 << 10);
 
     /// Capabilities required before exporting and funding an invitation voucher.

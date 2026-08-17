@@ -3,13 +3,15 @@ import SwiftData
 import DashSDKFFI
 @testable import SwiftDashSDK
 
-/// Coverage for the one subtractive part of the changeset path:
-/// `WalletChangeSetFFI.swept`.
+/// Coverage for the one subtractive part of the changeset path: the sweep
+/// batches delivered through the persistence extension's
+/// `on_persist_wallet_changeset_sweeps_fn` alongside each round's
+/// `WalletChangeSetFFI`.
 ///
 /// A swept transaction was a recorded spend that a later, final transaction
 /// provably beat to one of its inputs, so it can never confirm and Rust has
-/// already dropped it. Every other field on that struct is additive, so a
-/// mirror that ignores this one keeps the dead row, hands it back at the
+/// already dropped it. Everything else the round carries is additive, so a
+/// mirror that ignores the sweeps keeps the dead row, hands it back at the
 /// next load, and re-creates a balance the wallet has already corrected —
 /// the bug the upstream sweep exists to fix, one layer up.
 ///
@@ -236,13 +238,17 @@ final class SweptTransactionPersistTests: XCTestCase {
             sweeps.deallocate()
         }
 
+        // The extension entry point, not a `WalletChangeSetFFI` field: the
+        // Rust persister delivers sweeps through the size-negotiated
+        // `on_persist_wallet_changeset_sweeps_fn` in the same round as the
+        // changeset callback, and this drives the Swift side of exactly
+        // that call.
         handler.beginChangeset(walletId: walletId)
-        var cs = WalletChangeSetFFI()
-        cs.sweeps = sweeps
-        cs.sweeps_count = UInt(ffiBatches.count)
-        let applied = withUnsafePointer(to: &cs) { csPtr in
-            handler.persistWalletChangeset(walletId: walletId, changeset: csPtr)
-        }
+        let applied = handler.persistWalletChangesetSweeps(
+            walletId: walletId,
+            sweeps: UnsafePointer(sweeps),
+            count: UInt(ffiBatches.count)
+        )
         _ = handler.endChangeset(walletId: walletId, success: applied)
         return applied
     }

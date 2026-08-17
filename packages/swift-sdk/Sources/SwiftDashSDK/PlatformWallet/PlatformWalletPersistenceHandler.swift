@@ -783,9 +783,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     ///
     /// Returns `false` when the round could not be applied, which the C shim
     /// forwards to Rust so `store()` rolls the round back instead of treating
-    /// it as durable. Only the subtractive part can report this today: a
-    /// deletion that silently didn't happen would have Rust clear the sweep
-    /// while the dead row survives to be replayed at the next load.
+    /// it as durable. Everything this method itself applies is additive, so
+    /// only a failed wallet lookup reports it here; the round's subtractive
+    /// part arrives through `persistWalletChangesetSweeps` below, with its
+    /// own failure path.
     @discardableResult
     func persistWalletChangeset(
         walletId: Data,
@@ -855,57 +856,100 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
             }
 
-            // Swept transactions, applied last: a wallet-relevant winner
-            // rides in the same round, and running the additive part first
-            // means its claim on the shared inputs is already recorded when
-            // the removal below decides which links are left pointing at a
-            // dead transaction.
-            if cs.sweeps_count > 0, let sweepsPtr = cs.sweeps {
-                // One batch at a time, in order. A later sweep can keep a
-                // coin spent that an earlier one freed — each batch is only
-                // true of the wallet it saw — so folding them together lets
-                // the first answer outlive the last one that still holds.
-                for batchIndex in 0..<Int(cs.sweeps_count) {
-                    let batch = sweepsPtr[batchIndex]
+            // Swept transactions no longer ride this struct: they arrive
+            // through `persistWalletChangesetSweeps(walletId:sweeps:count:)`
+            // below, fired by Rust immediately after this callback in the
+            // same round. The struct crosses the C ABI by bare pointer, so a
+            // field appended to it cannot be proven present to a consumer
+            // built after a producer — the extension callback's negotiated
+            // `struct_size` is what carries that proof instead.
 
-                    // The coins this batch freed, as the 36-byte keys the
-                    // TXO rows are stored under.
-                    var released = Set<Data>()
-                    if batch.released_outpoints_count > 0,
-                       let releasedPtr = batch.released_outpoints {
-                        for i in 0..<Int(batch.released_outpoints_count) {
-                            let outpoint = releasedPtr[i]
-                            let txid = Swift.withUnsafeBytes(of: outpoint.txid) { Data($0) }
-                            released.insert(
-                                PersistentTxo.makeOutpoint(txid: txid, vout: outpoint.vout)
-                            )
-                        }
+            // No save() — bracketed by changesetBegin/End.
+            return true
+        }
+    }
+
+    /// Apply a round's sweep batches — the one subtractive part of the
+    /// changeset path, delivered through the size-negotiated
+    /// `PersistenceCallbacksExtension` slot rather than as a field on
+    /// `WalletChangeSetFFI` (see `persistWalletChangeset` for why). Rust
+    /// fires this right after that callback within the same
+    /// begin/end round, so a wallet-relevant winner riding in the round has
+    /// its claim on the shared inputs already recorded when the removal here
+    /// decides which links are left pointing at a dead transaction.
+    ///
+    /// Returns `false` to fail the round, same contract as
+    /// `persistWalletChangeset`: a deletion that silently didn't happen
+    /// would have Rust clear the sweep while the dead row survives to be
+    /// replayed at the next load.
+    @discardableResult
+    func persistWalletChangesetSweeps(
+        walletId: Data,
+        sweeps: UnsafePointer<SweepBatchFFI>?,
+        count: UInt
+    ) -> Bool {
+        onQueue {
+            // Same wallet gate as `persistWalletChangeset`: a stale
+            // post-deletion callback has nothing left to write to, but a
+            // lookup that throws must fail the round rather than let Rust
+            // discard a sweep that never landed.
+            let wallet: PersistentWallet?
+            do {
+                wallet = try fetchWalletRecord(walletId: walletId)
+            } catch {
+                print(
+                    "⚠️ persistWalletChangesetSweeps: wallet lookup failed: "
+                        + "\(error.localizedDescription); failing the round"
+                )
+                return false
+            }
+            guard wallet != nil else { return true }
+            guard count > 0, let sweepsPtr = sweeps else { return true }
+
+            // One batch at a time, in order. A later sweep can keep a
+            // coin spent that an earlier one freed — each batch is only
+            // true of the wallet it saw — so folding them together lets
+            // the first answer outlive the last one that still holds.
+            for batchIndex in 0..<Int(count) {
+                let batch = sweepsPtr[batchIndex]
+
+                // The coins this batch freed, as the 36-byte keys the
+                // TXO rows are stored under.
+                var released = Set<Data>()
+                if batch.released_outpoints_count > 0,
+                   let releasedPtr = batch.released_outpoints {
+                    for i in 0..<Int(batch.released_outpoints_count) {
+                        let outpoint = releasedPtr[i]
+                        let txid = Swift.withUnsafeBytes(of: outpoint.txid) { Data($0) }
+                        released.insert(
+                            PersistentTxo.makeOutpoint(txid: txid, vout: outpoint.vout)
+                        )
                     }
+                }
 
-                    let supersededBy = Swift.withUnsafeBytes(of: batch.superseded_by) { Data($0) }
+                let supersededBy = Swift.withUnsafeBytes(of: batch.superseded_by) { Data($0) }
 
-                    guard batch.txids_count > 0, let txidsPtr = batch.txids else { continue }
-                    for i in 0..<Int(batch.txids_count) {
-                        let txid = Swift.withUnsafeBytes(of: txidsPtr[i]) { Data($0) }
-                        do {
-                            try applySweptTransaction(
-                                walletId: walletId,
-                                txid: txid,
-                                supersededBy: supersededBy,
-                                released: released
-                            )
-                        } catch {
-                            // Fail the round rather than report a deletion
-                            // that did not happen: Rust would clear the sweep
-                            // and the dead row would be replayed at the next
-                            // load.
-                            print(
-                                "⚠️ persistWalletChangeset: sweep of "
-                                    + "\(txid.prefix(8).toHexString())… failed: "
-                                    + "\(error.localizedDescription); failing the round"
-                            )
-                            return false
-                        }
+                guard batch.txids_count > 0, let txidsPtr = batch.txids else { continue }
+                for i in 0..<Int(batch.txids_count) {
+                    let txid = Swift.withUnsafeBytes(of: txidsPtr[i]) { Data($0) }
+                    do {
+                        try applySweptTransaction(
+                            walletId: walletId,
+                            txid: txid,
+                            supersededBy: supersededBy,
+                            released: released
+                        )
+                    } catch {
+                        // Fail the round rather than report a deletion
+                        // that did not happen: Rust would clear the sweep
+                        // and the dead row would be replayed at the next
+                        // load.
+                        print(
+                            "⚠️ persistWalletChangesetSweeps: sweep of "
+                                + "\(txid.prefix(8).toHexString())… failed: "
+                                + "\(error.localizedDescription); failing the round"
+                        )
+                        return false
                     }
                 }
             }
@@ -1892,6 +1936,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         extensionCallbacks.version = UInt32(PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION)
         extensionCallbacks.reserved = 0
         extensionCallbacks.on_persist_dpns_name_states_fn = persistDpnsNameStatesCallback
+        // Sweeps negotiate through this size-tagged structure rather than
+        // riding `WalletChangeSetFFI` because that struct crosses by bare
+        // pointer: `struct_size` above is what proves to an older native
+        // library that this slot exists, and proves to this build that an
+        // older library will simply never call it — rather than either side
+        // reading memory the other never allocated.
+        extensionCallbacks.on_persist_wallet_changeset_sweeps_fn =
+            persistWalletChangesetSweepsCallback
         return extensionCallbacks
     }
 
@@ -7106,6 +7158,34 @@ private func persistWalletChangesetCallback(
     // staged writes back and Rust keeps its in-memory state instead of
     // treating a partly-applied changeset as durable.
     return handler.persistWalletChangeset(walletId: walletId, changeset: changesetPtr) ? 0 : 1
+}
+
+/// C shim for the extension's `on_persist_wallet_changeset_sweeps_fn` —
+/// the round's sweep batches, fired right after the changeset callback
+/// above within the same begin/end bracket. Same non-zero-fails-the-round
+/// contract: a removal Rust believes durable but that never landed would
+/// replay the dead row at the next load.
+private func persistWalletChangesetSweepsCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    sweepsPtr: UnsafePointer<SweepBatchFFI>?,
+    sweepsCount: UInt
+) -> Int32 {
+    guard let context = context,
+          let walletIdPtr = walletIdPtr else {
+        return 0
+    }
+
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+    return handler.persistWalletChangesetSweeps(
+        walletId: walletId,
+        sweeps: sweepsPtr,
+        count: sweepsCount
+    ) ? 0 : 1
 }
 
 /// C shim for `on_changeset_begin_fn`. Forwards to

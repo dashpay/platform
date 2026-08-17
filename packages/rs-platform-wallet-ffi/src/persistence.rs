@@ -43,7 +43,9 @@ use crate::contact_persistence::{
     free_contact_requests_ffi, ContactIgnoredSenderFFI, ContactRequestFFI, ContactRequestRemovalFFI,
 };
 use crate::core_address_types::{AddressPoolTypeTagFFI, CoreAddressEntryFFI, KeyTypeTagFFI};
-use crate::core_wallet_types::{free_wallet_changeset_ffi, WalletChangeSetFFI};
+use crate::core_wallet_types::{
+    build_sweep_batches_for_callback, free_wallet_changeset_ffi, SweepBatchFFI, WalletChangeSetFFI,
+};
 use crate::dashpay_payment::{build_payment_persist_entries, DashpayPaymentPersistEntryFFI};
 use crate::dpns_name_state_persistence::{
     build_dpns_name_state_entries, free_dpns_name_state_entries, DpnsNameStateFFI,
@@ -132,6 +134,23 @@ pub type PersistDpnsNameStatesFn = unsafe extern "C" fn(
     removed_count: usize,
 ) -> i32;
 
+/// Carries a round's sweep batches — the removals of transactions a later,
+/// final transaction provably beat to an input. Fired between the same
+/// begin/end pair as the round's other per-kind callbacks, immediately
+/// after `on_persist_wallet_changeset_fn`, so the additive half of the
+/// round (including a wallet-relevant winner's own record) is already
+/// staged when the removal decides which links point at a dead
+/// transaction. Batches arrive in emission order and must be applied in
+/// sequence; see [`SweepBatchFFI`]. A non-zero return fails the round like
+/// any other per-kind callback — a deletion silently skipped would let
+/// Rust clear the sweep while the dead row survives.
+pub type PersistWalletChangesetSweepsFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    sweeps: *const SweepBatchFFI,
+    sweeps_count: usize,
+) -> i32;
+
 /// Size- and version-tagged additive persistence callbacks.
 ///
 /// `context` is the context in the accompanying [`PersistenceCallbacks`]
@@ -163,6 +182,25 @@ pub struct PersistenceCallbacksExtension {
             removed_count: usize,
         ) -> i32,
     >,
+    /// The round's sweep batches (see [`PersistWalletChangesetSweepsFn`]).
+    /// Lives here rather than on [`WalletChangeSetFFI`] because that struct
+    /// crosses by bare pointer with no size field: appending the batches
+    /// there would let a newer callback dereference fields an older native
+    /// producer never allocated. Appended under the same version — the
+    /// version names the stable field ordering, and `struct_size` is what
+    /// proves how much of it a given host actually supplied: Rust reads
+    /// this slot only when the host's declared size covers it, so an older
+    /// extension simply never has its sweeps read rather than being
+    /// rejected outright (which a version bump would do, taking its DPNS
+    /// callback down with it).
+    pub on_persist_wallet_changeset_sweeps_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            sweeps: *const SweepBatchFFI,
+            sweeps_count: usize,
+        ) -> i32,
+    >,
 }
 
 impl Default for PersistenceCallbacksExtension {
@@ -172,6 +210,7 @@ impl Default for PersistenceCallbacksExtension {
             version: PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
             reserved: 0,
             on_persist_dpns_name_states_fn: None,
+            on_persist_wallet_changeset_sweeps_fn: None,
         }
     }
 }
@@ -951,6 +990,12 @@ pub struct FFIPersister {
     callbacks: PersistenceCallbacks,
     /// Additive callbacks negotiated outside the legacy unsized vtable.
     dpns_name_states_callback: Option<PersistDpnsNameStatesFn>,
+    /// `Some` only when the host's extension `struct_size` proved the slot
+    /// was allocated (see `persistence_extension_sweeps_callback` in
+    /// `manager.rs`) — which is also what makes it a real structural
+    /// attestation of `CORE_SWEEP_REMOVAL`, unlike the legacy changeset
+    /// callback whose unchanged signature proves nothing.
+    wallet_changeset_sweeps_callback: Option<PersistWalletChangesetSweepsFn>,
     /// Semantic capability declaration supplied separately from the callback
     /// vtable by the additive manager-create API. Keeping this out of
     /// `PersistenceCallbacks` preserves that established C struct's size.
@@ -1015,9 +1060,24 @@ impl FFIPersister {
         declared_capabilities: PersistenceCapabilities,
         dpns_name_states_callback: Option<PersistDpnsNameStatesFn>,
     ) -> Self {
+        Self::new_with_persistence_capabilities_and_extension_callbacks(
+            callbacks,
+            declared_capabilities,
+            dpns_name_states_callback,
+            None,
+        )
+    }
+
+    pub fn new_with_persistence_capabilities_and_extension_callbacks(
+        callbacks: PersistenceCallbacks,
+        declared_capabilities: PersistenceCapabilities,
+        dpns_name_states_callback: Option<PersistDpnsNameStatesFn>,
+        wallet_changeset_sweeps_callback: Option<PersistWalletChangesetSweepsFn>,
+    ) -> Self {
         Self {
             callbacks,
             dpns_name_states_callback,
+            wallet_changeset_sweeps_callback,
             declared_capabilities,
             pending: RwLock::new(BTreeMap::new()),
             round_lock: Mutex::new(RoundGuardState::default()),
@@ -1063,19 +1123,21 @@ impl FFIPersister {
         if self.callbacks.on_persist_token_balances_fn.is_some() {
             capabilities = capabilities.union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE);
         }
-        // `on_persist_wallet_changeset_fn` is the one callback that ever
-        // carries `WalletChangeSetFFI.sweeps` — it is also the callback
-        // `PROVIDER_TRANSACTIONS` above gates on, and its C signature did not
-        // change when the sweep fields were appended to the struct it
-        // receives a pointer to. So its presence alone proves nothing about
-        // whether the host actually reads those fields: an out-of-tree
-        // caller built against the pre-sweep struct layout still has this
-        // pointer wired, reads the unchanged prefix, and returns success.
-        // That gap is exactly why this bit is also gated by
-        // `declared_capabilities` in `persistence_capabilities()` below —
-        // the intersection requires the host to explicitly attest the
-        // semantic contract, not just have the vtable slot filled in.
-        if self.callbacks.on_persist_wallet_changeset_fn.is_some() {
+        // Sweeps travel through the size-tagged extension callback, so —
+        // unlike the legacy `on_persist_wallet_changeset_fn`, whose
+        // unchanged C signature proves nothing about what a host actually
+        // reads — this slot being `Some` is a genuine structural
+        // attestation: it exists only when the host's declared extension
+        // `struct_size` covered the field. The changeset callback is still
+        // required alongside it because a sweep only corrects state that
+        // callback persists; a sweeps slot with no changeset slot would
+        // attest removals against rows the host never writes. The bit is
+        // still additionally gated by `declared_capabilities` in
+        // `persistence_capabilities()` below, like every other bit: the
+        // host must attest the semantic contract, not just wire pointers.
+        if self.wallet_changeset_sweeps_callback.is_some()
+            && self.callbacks.on_persist_wallet_changeset_fn.is_some()
+        {
             capabilities = capabilities.union(PersistenceCapabilities::CORE_SWEEP_REMOVAL);
         }
         #[cfg(feature = "shielded")]
@@ -1401,6 +1463,38 @@ impl PlatformWalletPersistence for FFIPersister {
                         result
                     );
                     round_success = false;
+                }
+            }
+
+            // The round's sweeps ride their own size-negotiated extension
+            // callback rather than the changeset struct (see the layout note
+            // on `WalletChangeSetFFI`), fired immediately after it — still
+            // inside the same begin/end bracket — so the additive half of
+            // the round, a wallet-relevant winner's own record included, is
+            // already staged when the removal decides which links point at a
+            // dead transaction. A host without the slot simply never sees
+            // them; that is safe to leave silent here because such a host
+            // can never attest `CORE_SWEEP_REMOVAL`, and the core bridge
+            // already freezes the sync watermark for a sweep-carrying round
+            // against a persister without that capability.
+            if !core_cs.sweeps.is_empty() {
+                if let Some(cb) = self.wallet_changeset_sweeps_callback {
+                    let (batches, _batch_storage) = build_sweep_batches_for_callback(core_cs);
+                    let result = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            batches.as_ptr(),
+                            batches.len(),
+                        )
+                    };
+                    if result != 0 {
+                        eprintln!(
+                            "Wallet changeset sweeps persistence callback returned error code {}",
+                            result
+                        );
+                        round_success = false;
+                    }
                 }
             }
         }
@@ -6041,6 +6135,14 @@ mod tests {
     ) -> i32 {
         0
     }
+    unsafe extern "C" fn noop_wallet_changeset_sweeps(
+        _ctx: *mut c_void,
+        _wallet_id: *const u8,
+        _sweeps: *const SweepBatchFFI,
+        _sweeps_count: usize,
+    ) -> i32 {
+        0
+    }
     unsafe extern "C" fn noop_token_balances(
         _ctx: *mut c_void,
         _wallet_id: *const u8,
@@ -6203,16 +6305,25 @@ mod tests {
         assert!(!capabilities.contains(PersistenceCapabilities::WALLET_RESTORE));
     }
 
-    /// `CORE_SWEEP_REMOVAL` rides the same callback pointer as
-    /// `PROVIDER_TRANSACTIONS` (`on_persist_wallet_changeset_fn`), and that
-    /// pointer's C signature is unchanged by the sweep fields appended to
-    /// `WalletChangeSetFFI` — an out-of-tree host built before this bit
-    /// existed still has it wired. The bit must therefore come from the
-    /// host's explicit declaration, not from the callback's mere presence:
-    /// wired-but-undeclared and declared-but-unwired must each attest
-    /// nothing, and only both together attest the bit.
+    /// `CORE_SWEEP_REMOVAL` requires the extension's size-negotiated
+    /// sweeps slot, the legacy changeset callback it corrects, AND the
+    /// host's explicit declaration. The legacy callback alone must never
+    /// attest it: its C signature never changed, so an out-of-tree host
+    /// built before sweeps existed still has that pointer wired — the
+    /// extension slot is the only structural fact that distinguishes a
+    /// sweep-aware host, because it exists only when the host's declared
+    /// `struct_size` proved it.
     #[test]
-    fn core_sweep_removal_requires_both_the_callback_and_the_declaration() {
+    fn core_sweep_removal_requires_the_extension_slot_and_the_declaration() {
+        fn persister_with(
+            callbacks: PersistenceCallbacks,
+            declared: PersistenceCapabilities,
+            sweeps: Option<PersistWalletChangesetSweepsFn>,
+        ) -> FFIPersister {
+            FFIPersister::new_with_persistence_capabilities_and_extension_callbacks(
+                callbacks, declared, None, sweeps,
+            )
+        }
         fn wired_callbacks() -> PersistenceCallbacks {
             PersistenceCallbacks {
                 on_persist_wallet_changeset_fn: Some(noop_wallet_changeset),
@@ -6220,29 +6331,176 @@ mod tests {
             }
         }
 
-        // Structurally complete, but the host never declared it (the
-        // pre-sweep-aware binary case): absent.
-        assert!(
-            !declared_persister(wired_callbacks(), PersistenceCapabilities::NONE)
-                .persistence_capabilities()
-                .contains(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
-        );
-
-        // Declared, but the callback pointer isn't even wired: absent.
-        assert!(!declared_persister(
-            PersistenceCallbacks::default(),
-            PersistenceCapabilities::CORE_SWEEP_REMOVAL
-        )
-        .persistence_capabilities()
-        .contains(PersistenceCapabilities::CORE_SWEEP_REMOVAL));
-
-        // Both: attested.
-        assert!(declared_persister(
+        // The pre-sweep-aware binary shape: legacy changeset callback
+        // wired, declaration present (a host blindly OR-ing bits), but no
+        // extension slot — absent.
+        assert!(!persister_with(
             wired_callbacks(),
-            PersistenceCapabilities::CORE_SWEEP_REMOVAL
+            PersistenceCapabilities::CORE_SWEEP_REMOVAL,
+            None
         )
         .persistence_capabilities()
         .contains(PersistenceCapabilities::CORE_SWEEP_REMOVAL));
+
+        // Extension slot wired and declared, but no changeset callback to
+        // persist the rows a sweep would correct: absent.
+        assert!(!persister_with(
+            PersistenceCallbacks::default(),
+            PersistenceCapabilities::CORE_SWEEP_REMOVAL,
+            Some(noop_wallet_changeset_sweeps)
+        )
+        .persistence_capabilities()
+        .contains(PersistenceCapabilities::CORE_SWEEP_REMOVAL));
+
+        // Structurally complete but never declared: absent.
+        assert!(!persister_with(
+            wired_callbacks(),
+            PersistenceCapabilities::NONE,
+            Some(noop_wallet_changeset_sweeps)
+        )
+        .persistence_capabilities()
+        .contains(PersistenceCapabilities::CORE_SWEEP_REMOVAL));
+
+        // All three: attested.
+        assert!(persister_with(
+            wired_callbacks(),
+            PersistenceCapabilities::CORE_SWEEP_REMOVAL,
+            Some(noop_wallet_changeset_sweeps)
+        )
+        .persistence_capabilities()
+        .contains(PersistenceCapabilities::CORE_SWEEP_REMOVAL));
+    }
+
+    /// The delivery contract of the extension transport itself: a
+    /// sweep-carrying round hands its batches to the extension slot AFTER
+    /// the changeset callback, within the same round, in emission order and
+    /// with payloads intact — order is the one property a persister cannot
+    /// reconstruct, since a later batch can keep a coin spent that an
+    /// earlier one freed. The same round against a persister whose
+    /// extension never proved the slot must still succeed with the sweeps
+    /// simply undelivered: the adapter's `CORE_SWEEP_REMOVAL` gate is what
+    /// turns that into a withheld watermark rather than a false success.
+    #[test]
+    fn store_delivers_sweeps_through_the_extension_slot_after_the_changeset() {
+        use dashcore::hashes::Hash as _;
+        use platform_wallet::changeset::changeset::SweepBatch;
+        use platform_wallet::changeset::CoreChangeSet;
+
+        #[derive(Default)]
+        struct Sink {
+            events: std::sync::Mutex<Vec<String>>,
+        }
+        unsafe extern "C" fn record_changeset(
+            ctx: *mut c_void,
+            _wallet_id: *const u8,
+            _changeset: *const WalletChangeSetFFI,
+        ) -> i32 {
+            let sink = &*(ctx as *const Sink);
+            sink.events.lock().unwrap().push("changeset".into());
+            0
+        }
+        unsafe extern "C" fn record_sweeps(
+            ctx: *mut c_void,
+            _wallet_id: *const u8,
+            sweeps: *const SweepBatchFFI,
+            sweeps_count: usize,
+        ) -> i32 {
+            let sink = &*(ctx as *const Sink);
+            let mut events = sink.events.lock().unwrap();
+            for batch in slice::from_raw_parts(sweeps, sweeps_count) {
+                let txids = slice::from_raw_parts(batch.txids, batch.txids_count);
+                let released = if batch.released_outpoints.is_null() {
+                    &[][..]
+                } else {
+                    slice::from_raw_parts(batch.released_outpoints, batch.released_outpoints_count)
+                };
+                events.push(format!(
+                    "sweep txids={:?} winner={} released={:?}",
+                    txids.iter().map(|t| t[0]).collect::<Vec<_>>(),
+                    batch.superseded_by[0],
+                    released
+                        .iter()
+                        .map(|o| (o.txid[0], o.vout))
+                        .collect::<Vec<_>>(),
+                ));
+            }
+            0
+        }
+
+        fn sweep_changeset() -> PlatformWalletChangeSet {
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    sweeps: vec![
+                        SweepBatch {
+                            txids: vec![dashcore::Txid::from_byte_array([0x11; 32])],
+                            superseded_by: dashcore::Txid::from_byte_array([0x22; 32]),
+                            released_outpoints: vec![dashcore::OutPoint::new(
+                                dashcore::Txid::from_byte_array([0x33; 32]),
+                                7,
+                            )],
+                        },
+                        SweepBatch {
+                            txids: vec![
+                                dashcore::Txid::from_byte_array([0x44; 32]),
+                                dashcore::Txid::from_byte_array([0x55; 32]),
+                            ],
+                            superseded_by: dashcore::Txid::from_byte_array([0x66; 32]),
+                            released_outpoints: vec![],
+                        },
+                    ],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }
+        }
+
+        let sink = Sink::default();
+        let callbacks = PersistenceCallbacks {
+            context: &sink as *const Sink as *mut c_void,
+            on_persist_wallet_changeset_fn: Some(record_changeset),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new_with_persistence_capabilities_and_extension_callbacks(
+            callbacks,
+            PersistenceCapabilities::CORE_SWEEP_REMOVAL,
+            None,
+            Some(record_sweeps),
+        );
+        persister
+            .store([1u8; 32], sweep_changeset())
+            .expect("sweep round must succeed");
+        assert_eq!(
+            sink.events.lock().unwrap().clone(),
+            vec![
+                "changeset".to_string(),
+                "sweep txids=[17] winner=34 released=[(51, 7)]".to_string(),
+                "sweep txids=[68, 85] winner=102 released=[]".to_string(),
+            ],
+        );
+        drop(persister);
+
+        // No extension slot: the round still succeeds, the changeset
+        // callback still fires, and the sweeps are never delivered — the
+        // legacy-host shape, safe because such a persister can never attest
+        // CORE_SWEEP_REMOVAL (see the capability test above).
+        let sink = Sink::default();
+        let callbacks = PersistenceCallbacks {
+            context: &sink as *const Sink as *mut c_void,
+            on_persist_wallet_changeset_fn: Some(record_changeset),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new_with_persistence_capabilities(
+            callbacks,
+            PersistenceCapabilities::NONE,
+        );
+        persister
+            .store([1u8; 32], sweep_changeset())
+            .expect("sweepless-host round must still succeed");
+        assert_eq!(
+            sink.events.lock().unwrap().clone(),
+            vec!["changeset".to_string()]
+        );
+        drop(persister);
     }
 
     #[test]
@@ -6311,7 +6569,15 @@ mod tests {
         cb.on_load_wallet_list_free_fn = Some(noop_free_wallets);
         cb.on_persist_wallet_changeset_fn = Some(noop_wallet_changeset);
         cb.on_persist_token_balances_fn = Some(noop_token_balances);
-        let capabilities = declared_persister(cb, expected).persistence_capabilities();
+        // "Fully wired" includes the extension's sweeps slot — the legacy
+        // vtable alone can no longer attest CORE_SWEEP_REMOVAL.
+        let capabilities = FFIPersister::new_with_persistence_capabilities_and_extension_callbacks(
+            cb,
+            expected,
+            None,
+            Some(noop_wallet_changeset_sweeps),
+        )
+        .persistence_capabilities();
 
         assert_eq!(capabilities, expected);
         assert!(capabilities.contains(PersistenceCapabilities::INVITATION_CREATION));
@@ -6380,11 +6646,26 @@ mod tests {
             std::mem::size_of::<PersistenceCallbacks>()
         );
         assert_eq!(PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION, 1);
+        // The extension is append-only under version 1: the DPNS slot's end
+        // is exactly where the sweeps slot begins (a version-1 host that
+        // predates sweeps declared its struct_size at that boundary), and
+        // the sweeps slot is currently terminal. Reordering either would
+        // silently misread every extension already in the field.
         assert_eq!(
             std::mem::offset_of!(
                 PersistenceCallbacksExtension,
                 on_persist_dpns_name_states_fn
             ) + std::mem::size_of::<Option<PersistDpnsNameStatesFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_wallet_changeset_sweeps_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_wallet_changeset_sweeps_fn
+            ) + std::mem::size_of::<Option<PersistWalletChangesetSweepsFn>>(),
             std::mem::size_of::<PersistenceCallbacksExtension>()
         );
         assert_eq!(
