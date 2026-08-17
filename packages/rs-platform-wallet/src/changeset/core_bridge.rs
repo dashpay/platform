@@ -2811,9 +2811,13 @@ mod tests {
             cancel.clone(),
         ));
 
-        let observed = obs_rx
-            .recv()
+        // Bounded like the neighbouring capability tests below: both the
+        // adapter and `ProbePersister` hold their own sender, so a
+        // regression that stops the folded round from reaching `store()`
+        // would otherwise hang this test instead of failing its assertion.
+        let observed = tokio::time::timeout(std::time::Duration::from_secs(5), obs_rx.recv())
             .await
+            .expect("the folded round reaches store() within the timeout")
             .expect("the folded round reaches store()");
         assert_eq!(
             observed.synced_height, None,
