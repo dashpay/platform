@@ -1257,3 +1257,151 @@ fn sweep_deletion_is_durable_even_when_the_other_wallets_callback_never_arrives(
         "wallet 2's own row is untouched — it never ran its own sweep"
     );
 }
+
+/// Confirmation, not a fix, of this round's BLOCKING finding on the mobile
+/// backends (Swift `PersistentTransaction.isGloballySwept` / Kotlin
+/// `TransactionEntity.isGloballySwept`): once a sweep is reversed by a
+/// chainlocked return, a later-arriving record for the same txid must be
+/// accepted as reinstatement rather than permanently rejected.
+///
+/// That guard exists on the mobile backends only because their
+/// `PersistentTransaction` / `TransactionEntity` rows are shared across
+/// wallets and durably flagged the moment *any* wallet's callback observes
+/// the sweep, before every wallet's own claim is known to be gone — a
+/// second wallet's still-outstanding claim can keep the row physically
+/// present after the first wallet's commit, which is exactly what forces a
+/// flag instead of relying on row-absence. `apply_sweep` here has no such
+/// row to hold onto: it is keyed `(wallet_id, txid)`, so the delete is
+/// unconditional and wallet-local (`sweep_of_a_shared_loser_txid_is_
+/// independent_per_wallet` above), and a second wallet's own claim on the
+/// same on-chain txid lives in an entirely separate row this wallet's sweep
+/// never touches. There is therefore nothing left standing after `apply`
+/// runs a sweep for the row's txid — no tombstone to clear, because there
+/// is no row to protect from resurrection in the first place. A later round
+/// carrying a plain record for the same `(wallet_id, txid)` is just an
+/// ordinary `INSERT … ON CONFLICT DO UPDATE` into empty space, so this test
+/// exercises that "reinstatement" is unconditionally already correct here,
+/// across a separate `apply` call *and* a restart — the same cross-round
+/// shape the mobile fix had to add tombstone-clearing for.
+#[test]
+fn a_record_reinstating_a_swept_txid_in_a_later_round_is_accepted_and_durable() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w: WalletId = wid(0xEC);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = p2pkh(0x51);
+    let txid = Txid::from_byte_array([0x53; 32]);
+    let winner_txid = Txid::from_byte_array([0x54; 32]);
+    let output = OutPoint::new(txid, 0);
+
+    // Round 1: the transaction is recorded normally, with its own output.
+    {
+        let mut conn = persister.lock_conn_for_test();
+        derive_address(&conn, &w, 0, &addr);
+        let tx = conn.transaction().unwrap();
+        let record = tx_record(
+            txid,
+            vec![],
+            vec![TxOut {
+                value: 45_000,
+                script_pubkey: addr.script_pubkey(),
+            }],
+        );
+        let cs = CoreChangeSet {
+            records: vec![record],
+            new_utxos: vec![make_utxo(&addr, txid, 0, 45_000)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    // Round 2, a separate `apply` call: an IS-locked conflict sweeps it —
+    // the row and its output are gone, same as `sweep_only_changeset_
+    // deletes_loser_row_and_its_outputs` above.
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![txid],
+                superseded_by: winner_txid,
+                released_outpoints: vec![],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    {
+        let conn = persister.lock_conn_for_test();
+        let swept: Option<Vec<u8>> = conn
+            .query_row(
+                "SELECT record_blob FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+                params![w.as_slice(), AsRef::<[u8]>::as_ref(&txid)],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap();
+        assert!(swept.is_none(), "sanity: the sweep removed the row");
+        assert!(
+            !row_exists(&conn, &w, &output),
+            "sanity: its output is gone too"
+        );
+    }
+
+    // Round 3, yet another separate `apply` call: the wallet returns
+    // chainlocked and sweeps the conflict in turn — upstream's newer word,
+    // carried here as a plain record the same way any fresh transaction
+    // would arrive. Nothing on this backend needs to know it is a
+    // "reinstatement" rather than a first sighting.
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        let record = tx_record(
+            txid,
+            vec![],
+            vec![TxOut {
+                value: 45_000,
+                script_pubkey: addr.script_pubkey(),
+            }],
+        );
+        let cs = CoreChangeSet {
+            records: vec![record],
+            new_utxos: vec![make_utxo(&addr, txid, 0, 45_000)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    // Durable across a restart — not merely visible within the open
+    // connection that just wrote it.
+    drop(persister);
+    let persister = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+    let conn = persister.lock_conn_for_test();
+
+    let reinstated: Option<Vec<u8>> = conn
+        .query_row(
+            "SELECT record_blob FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+            params![w.as_slice(), AsRef::<[u8]>::as_ref(&txid)],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap();
+    assert!(
+        reinstated.is_some(),
+        "the reinstating record must be live and durable — a later round is \
+         upstream's newer word, and this backend has no tombstone standing \
+         in its way"
+    );
+    assert!(
+        row_exists(&conn, &w, &output),
+        "the reinstated transaction's own output must be live and durable too"
+    );
+    assert!(
+        unspent(&conn, &w).contains(&output),
+        "and spendable — not left behind in some half-restored state"
+    );
+}

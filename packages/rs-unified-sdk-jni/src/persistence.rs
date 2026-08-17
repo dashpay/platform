@@ -743,6 +743,26 @@ unsafe fn persist_changeset_account(
         return Ok(code);
     }
 
+    // Transactions before their UTXOs — matches the Swift bridge's
+    // `applyAccountChangeset` order (transactions, then utxos_added, then
+    // utxos_spent) and, since the sweep-reinstatement fix, is load-bearing
+    // here too: `onWalletChangesetUtxoAdded` bails when its parent row is
+    // still `isGloballySwept`, and `onWalletChangesetTransaction` is what
+    // clears that flag on a reinstating record. Emitting a reinstated
+    // transaction's own fresh outputs before its record would have them
+    // walk straight into that guard and be silently dropped, one round
+    // before the record that was supposed to unlock them. Ordinary
+    // first-sighting transactions are unaffected either way — the stub
+    // row `onWalletChangesetUtxoAdded` creates when no parent exists yet
+    // still covers any residual cross-account race.
+    for t in slice_or_empty(acc.transactions, acc.transactions_count) {
+        let code = env.with_local_frame(40, |env| {
+            persist_changeset_transaction(env, bridge, wid, acc, t)
+        })?;
+        if code != 0 {
+            return Ok(code);
+        }
+    }
     for u in slice_or_empty(acc.utxos_added, acc.utxos_added_count) {
         let code =
             env.with_local_frame(24, |env| persist_changeset_utxo_added(env, bridge, wid, u))?;
@@ -753,14 +773,6 @@ unsafe fn persist_changeset_account(
     for s in slice_or_empty(acc.utxos_spent, acc.utxos_spent_count) {
         let code =
             env.with_local_frame(16, |env| persist_changeset_utxo_spent(env, bridge, wid, s))?;
-        if code != 0 {
-            return Ok(code);
-        }
-    }
-    for t in slice_or_empty(acc.transactions, acc.transactions_count) {
-        let code = env.with_local_frame(40, |env| {
-            persist_changeset_transaction(env, bridge, wid, acc, t)
-        })?;
         if code != 0 {
             return Ok(code);
         }
