@@ -1688,3 +1688,99 @@ fn a_release_applies_even_when_the_swept_txid_has_no_row() {
         "the funded coin stays spendable — the valve has no stale claim to defend"
     );
 }
+
+/// One batch can sweep a parent and the child that spends its output —
+/// upstream's descendant closure always removes them together, and its
+/// release computation filters out outpoints whose txid is itself a loser.
+/// With the parent ordered first, its pass deletes the output row; the
+/// child's pass must not re-create it as a held placeholder. The
+/// placeholder's `spent_in_txid` is exactly what the funding upsert's
+/// valve defends, so a chainlocked reinstatement of the parent — the one
+/// event that can bring the coin back — would find its genuinely unspent
+/// output locked out of the restore set forever.
+#[test]
+fn a_batch_sweeping_parent_and_child_leaves_no_placeholder_for_the_parents_output() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xE8);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = p2pkh(0x41);
+    let parent_txid = Txid::from_byte_array([0x40; 32]); // L
+    let child_txid = Txid::from_byte_array([0x41; 32]); // C
+    let winner_txid = Txid::from_byte_array([0x42; 32]); // W
+    let parent_output = OutPoint::new(parent_txid, 0);
+
+    // L pays us and is funded; C spends L's output.
+    {
+        let mut conn = persister.lock_conn_for_test();
+        derive_address(&conn, &w, 0, &addr);
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![
+                tx_record(
+                    parent_txid,
+                    vec![],
+                    vec![TxOut {
+                        value: 5_000,
+                        script_pubkey: addr.script_pubkey(),
+                    }],
+                ),
+                tx_record(child_txid, vec![parent_output], vec![]),
+            ],
+            new_utxos: vec![make_utxo(&addr, parent_txid, 0, 5_000)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    // The batch removes both, parent first — the ordering that deletes the
+    // output row before the child's pass walks its inputs.
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![parent_txid, child_txid],
+                superseded_by: winner_txid,
+                released_outpoints: vec![],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    {
+        let conn = persister.lock_conn_for_test();
+        assert!(
+            !row_exists(&conn, &w, &parent_output),
+            "a dead parent's output is nobody's coin — no placeholder may re-create it"
+        );
+    }
+
+    // The chainlocked return: L is reinstated with its output re-emitted.
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![tx_record(
+                parent_txid,
+                vec![],
+                vec![TxOut {
+                    value: 5_000,
+                    script_pubkey: addr.script_pubkey(),
+                }],
+            )],
+            new_utxos: vec![make_utxo(&addr, parent_txid, 0, 5_000)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    let conn = persister.lock_conn_for_test();
+    assert!(
+        unspent(&conn, &w).contains(&parent_output),
+        "the reinstated parent's genuinely unspent output must restore — no stale \
+         spent_in_txid claim may stand in its way"
+    );
+}

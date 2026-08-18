@@ -178,7 +178,14 @@ pub fn apply(
             .copied()
             .collect();
         for loser_txid in &batch.txids {
-            apply_sweep(tx, wallet_id, loser_txid, &batch.superseded_by, &released)?;
+            apply_sweep(
+                tx,
+                wallet_id,
+                loser_txid,
+                &batch.superseded_by,
+                &released,
+                &swept_txids,
+            )?;
         }
         // Releases are outpoint-keyed facts, so they are applied by outpoint
         // once the batch's losers are done — not only through each loser's
@@ -257,6 +264,7 @@ fn apply_sweep(
     loser_txid: &dashcore::Txid,
     superseded_by: &dashcore::Txid,
     released: &HashSet<dashcore::OutPoint>,
+    swept_txids: &HashSet<dashcore::Txid>,
 ) -> Result<(), WalletStorageError> {
     let loser_blob: Option<Vec<u8>> = tx
         .query_row(
@@ -317,6 +325,20 @@ fn apply_sweep(
     )?;
     for input in &loser.transaction.input {
         let outpoint = input.previous_output;
+        // An input funded by a transaction this same changeset also sweeps
+        // is a dead parent's output, not a coin the winner took: upstream's
+        // descendant closure always sweeps parent and child together, its
+        // release computation excludes exactly these outpoints (so `freed`
+        // below can never be true for one), and the parent's own pass
+        // deletes the row. When the parent sorts before the child, holding
+        // the claim here would re-create the just-deleted row as a
+        // placeholder whose `spent_in_txid` the funding upsert's valve then
+        // defends — against the chainlocked reinstatement that is the one
+        // event that could bring the coin back — excluding a genuinely
+        // unspent coin from restore forever.
+        if swept_txids.contains(&outpoint.txid) {
+            continue;
+        }
         let key = blob::encode_outpoint(&outpoint)?;
         let freed = released.contains(&outpoint);
         let spent_in_txid: Option<&[u8]> = if freed {
