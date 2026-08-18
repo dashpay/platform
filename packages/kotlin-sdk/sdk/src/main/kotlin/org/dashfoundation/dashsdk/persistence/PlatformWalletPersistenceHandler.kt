@@ -1202,6 +1202,13 @@ class PlatformWalletPersistenceHandler(
             // same round already re-claimed keeps that claim instead of being
             // freed out from under it.
             val released = releasedOutpoints.toList()
+            // Hoisted: the set is invariant across the losers, and a sweep
+            // can carry many of them — the mempool alone tracks up to a
+            // thousand conflicts. Rebuilding it per loser would hex-encode
+            // and hash the whole set L times inside the open Room
+            // transaction, turning a linear payload into L×R work on the
+            // single persistence executor.
+            val releasedKeys = released.mapTo(HashSet()) { it.toHex() }
             for (i in txids.indices) {
                 // Global first, unconditionally, in every callback that
                 // reaches this loop — not gated on walletId and not waiting
@@ -1221,9 +1228,21 @@ class PlatformWalletPersistenceHandler(
                 // which would throw, fail the atomic round, and freeze the
                 // watermark on a loser that re-swept into the same failure
                 // on every restart.
-                val releasedKeys = released.mapTo(HashSet()) { it.toHex() }
                 val staged = db.documentDao().pendingInputsStagedBy(txids[i], walletId)
-                val heldStaged = staged.filterNot { releasedKeys.contains(it.outpoint.toHex()) }
+                val (freedStaged, heldStaged) =
+                    staged.partition { releasedKeys.contains(it.outpoint.toHex()) }
+                // Released staged rows go now rather than riding the
+                // eventual cascade. Left attached they count as this
+                // wallet's claim in `hasOtherWalletClaim` below, so two
+                // wallets each holding one released input for a shared
+                // loser deadlock: each sees the other's row and declines the
+                // delete, and replaying either callback reaches the same
+                // stalemate. The global marker keeps the dead transaction
+                // from contributing funds either way, but the row and both
+                // pending entries would otherwise be stored forever.
+                if (freedStaged.isNotEmpty()) {
+                    db.documentDao().deletePendingInputs(freedStaged)
+                }
                 if (heldStaged.isNotEmpty()) {
                     db.documentDao().updatePendingInputs(
                         heldStaged.map {
