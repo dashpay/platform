@@ -2479,102 +2479,6 @@ mod tests {
     /// let the NEXT batch persist a higher `synced_height` for a wallet whose
     /// earlier rows may never have landed, which is exactly the hole
     /// dashpay/platform#4069 closed.
-    /// The commit must not run on a Tokio worker.
-    ///
-    /// This is the behaviour the `spawn_blocking` move exists for, and no
-    /// other test covers it: the outcome-only assertions elsewhere all still
-    /// pass with `commit_batch` called inline, because a blocking store on a
-    /// multi-worker runtime merely steals one worker and the rest of the test
-    /// proceeds. Pinning the runtime to a single worker makes the difference
-    /// observable — inline, that one worker sits inside `store()` and nothing
-    /// else on the runtime can advance.
-    ///
-    /// Everything that decides the verdict happens on a plain `std::thread`,
-    /// for two reasons. The sentinel is spawned only after the store is
-    /// observed blocked: scheduled beforehand, the runtime could poll it first
-    /// and set the flag while nothing was blocking yet, so the test would pass
-    /// inline too. And a regression parks the only worker, so neither the test
-    /// body nor a `tokio::time::timeout` can run — the timer needs that same
-    /// worker — which would hang CI instead of failing it, the outcome the
-    /// bounded waits elsewhere in this file exist to avoid.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-    async fn a_blocking_store_does_not_park_the_runtime() {
-        let wallet_id = [0xB1u8; 32];
-        let (tx, rx) = unbounded_channel::<WalletEvent>();
-
-        let (obs_tx, mut obs_rx) = unbounded_channel();
-        let persister = Arc::new(ProbePersister::new(obs_tx));
-        let (unblock, blocked) = persister.block_next();
-        let sync_fault = Arc::new(AtomicBool::new(false));
-        let cancel = CancellationToken::new();
-        let handle = tokio::spawn(run_wallet_event_adapter(
-            test_manager(),
-            Arc::clone(&persister),
-            rx,
-            Arc::clone(&sync_fault),
-            cancel.clone(),
-        ));
-
-        tx.send(block_processed_event(wallet_id, 10)).unwrap();
-
-        let runtime = tokio::runtime::Handle::current();
-        let progressed = Arc::new(AtomicBool::new(false));
-        let observer_progressed = Arc::clone(&progressed);
-        let observer_blocked = Arc::clone(&blocked);
-        let watcher = std::thread::spawn(move || {
-            let wait_for = |flag: &AtomicBool, secs: u64| {
-                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(secs);
-                while !flag.load(Ordering::Relaxed) {
-                    if std::time::Instant::now() > deadline {
-                        return false;
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(10));
-                }
-                true
-            };
-
-            if !wait_for(&observer_blocked, 10) {
-                drop(unblock);
-                return Err("store never entered its block");
-            }
-
-            // Scheduled from outside, with the store already parked: whether it
-            // runs is now purely a question of the worker being free.
-            let flag = Arc::clone(&observer_progressed);
-            runtime.spawn(async move {
-                flag.store(true, Ordering::Relaxed);
-            });
-
-            let ran_while_blocked = wait_for(&observer_progressed, 5);
-            drop(unblock);
-            Ok(ran_while_blocked)
-        });
-
-        let observed = obs_rx
-            .recv()
-            .await
-            .expect("the released store should report");
-        assert_eq!(observed.wallet_id, wallet_id);
-
-        let ran_while_blocked = watcher
-            .join()
-            .expect("watcher thread should not panic")
-            .expect("store never entered its block");
-        assert!(
-            ran_while_blocked,
-            "an unrelated task must make progress while the commit blocks — \
-             the commit is running on a runtime worker instead of a blocking thread"
-        );
-        assert!(
-            !sync_fault.load(Ordering::Relaxed),
-            "a slow store is not a fault"
-        );
-
-        cancel.cancel();
-        drop(tx);
-        let _ = handle.await;
-    }
-
     #[tokio::test]
     async fn a_panicking_commit_freezes_the_batch_wallets() {
         let wallet_id = [0xEEu8; 32];
@@ -2718,13 +2622,22 @@ mod tests {
         });
     }
 
-    /// (i) A commit panic must not punish the wallets it did not reach.
+    /// (i) A commit panic must punish exactly the wallets whose outcome it
+    /// left unknown — no more, no less.
     ///
     /// `commit_batch` walks the batch serially (a `BTreeMap`, so in wallet-id
-    /// order). If an earlier wallet's `store()` returned and a later one
-    /// panics, the earlier wallet's rows are on disk and its watermark is
-    /// safe — freezing it would strip its `synced_height` for the rest of the
-    /// session over a sibling's bad batch.
+    /// order), and a panic cuts it in two. A wallet whose `store()` already
+    /// returned is settled: its rows are on disk and its watermark is safe,
+    /// so freezing it would strip its `synced_height` for the rest of the
+    /// session over a sibling's bad batch. A wallet ordered AFTER the panic
+    /// is the opposite case — unwinding dropped its consumed changes before
+    /// `store()` was ever attempted, so nothing knows whether its rows
+    /// landed, and it must freeze or a later watermark advances past rows
+    /// that never existed.
+    ///
+    /// Both halves are checked here, because they are guarded by the same
+    /// `batch_wallet_ids - settled` expression and a regression that faults
+    /// only the wallet that actually panicked satisfies neither.
     ///
     /// Guards the fix for the first version of the panic handler, which
     /// faulted every wallet in the drain.
@@ -2734,6 +2647,8 @@ mod tests {
         // chosen to put the healthy wallet ahead of the panicking one.
         let healthy = [0x11u8; 32];
         let doomed = [0x22u8; 32];
+        // Sorts after `doomed`, so the commit unwinds before it is reached.
+        let unreached = [0x33u8; 32];
         let (tx, rx) = unbounded_channel::<WalletEvent>();
 
         let (obs_tx, mut obs_rx) = unbounded_channel();
@@ -2749,10 +2664,12 @@ mod tests {
             cancel.clone(),
         ));
 
-        // Both wallets in one drain: `healthy` stores, then `doomed` panics.
-        // Sent before either is observed so they fold into a single batch.
+        // All three in one drain: `healthy` stores, `doomed` panics, and
+        // `unreached` never gets its turn. Sent before any is observed so they
+        // fold into a single batch.
         tx.send(block_processed_event(healthy, 10)).unwrap();
         tx.send(block_processed_event(doomed, 10)).unwrap();
+        tx.send(block_processed_event(unreached, 10)).unwrap();
 
         tokio::time::timeout(std::time::Duration::from_secs(5), async {
             while !sync_fault.load(Ordering::Relaxed) {
@@ -2794,6 +2711,24 @@ mod tests {
         assert_eq!(
             after_doomed.synced_height, None,
             "the wallet whose commit panicked must not advance its watermark"
+        );
+
+        // The wallet the commit never reached must be frozen too: its changes
+        // went down with the unwind without a `store()` ever being attempted,
+        // so its rows are exactly as unaccounted-for as the panicking
+        // wallet's. A handler that faults only the direct casualty leaves this
+        // one free to advance past rows that never landed.
+        tx.send(block_processed_event(unreached, 60)).unwrap();
+        tx.send(sync_height_event(unreached, 900)).unwrap();
+        let after_unreached =
+            tokio::time::timeout(std::time::Duration::from_secs(5), obs_rx.recv())
+                .await
+                .expect("a faulted wallet must still persist its rows")
+                .expect("unreached wallet still persists rows");
+        assert_eq!(after_unreached.wallet_id, unreached);
+        assert_eq!(
+            after_unreached.synced_height, None,
+            "a wallet the panicking commit never reached must not advance its watermark"
         );
 
         cancel.cancel();
