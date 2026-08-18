@@ -21,9 +21,8 @@ use dpp::version::TryFromPlatformVersioned;
 /// scope to keep calling `DocumentQuery::new_with_data_contract_id(...)`.
 #[allow(async_fn_in_trait)]
 pub trait DocumentQuerySdk: Sized {
-    /// Create new document query for provided document type name and data contract ID.
-    ///
-    /// Note that this method will fetch data contract first.
+    /// Create a new document query for the given document type name and
+    /// data contract ID, fetching the data contract from Platform first.
     async fn new_with_data_contract_id(
         api: &Sdk,
         data_contract_id: Identifier,

@@ -39,7 +39,7 @@ If you want networking, retries, and a managed connection pool, use
 
 ## What's here
 
-- [`documents::DocumentQuery`] — rich document query builder with wire
+- `DocumentQuery` — rich document query builder with wire
   encoding for both request versions.
 - Aggregate proof helpers (count/sum/average/ranked) shared with `dash-sdk`.
 - DPNS username helpers — label normalization/validation and the
