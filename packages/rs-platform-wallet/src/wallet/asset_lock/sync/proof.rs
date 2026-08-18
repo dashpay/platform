@@ -11,6 +11,22 @@ use crate::error::PlatformWalletError;
 
 use super::super::manager::AssetLockManager;
 
+/// Upper bound on how long either lock-waiter sleeps before RE-READING the
+/// transaction record, notify or no notify.
+///
+/// The waiters were originally pure notify-driven: state was assumed to be
+/// readable the moment the wake fired, and no wake meant no change. Field
+/// evidence (2026-08-18, S21 testnet, bisected to rust-dashcore
+/// b056d07c..1f5dd24f) broke that assumption: a self-broadcast asset lock's
+/// InstantSend context upgrade demonstrably ran within ~2s of broadcast, yet
+/// the waiter never observed it across its whole 300s InstantSend-preference
+/// window — every shield/invite/identity funding degraded to ChainLock
+/// finality (~2.5-3 min on testnet; 5m50s worst observed). Root-cause
+/// localization of the visibility divergence is tracked separately; this
+/// bounded re-poll makes the waiters correct under EVERY wake/visibility
+/// ordering — the worst possible miss now costs one second, not a chainlock.
+const LOCK_STATE_RE_POLL: std::time::Duration = std::time::Duration::from_secs(1);
+
 /// Fall back to the persister if the in-memory `transactions()` map
 /// didn't have the record.
 ///
@@ -348,16 +364,25 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     if remaining.is_zero() {
                         return Err(PlatformWalletError::FinalityTimeout(*out_point));
                     }
+                    // Sleep at most LOCK_STATE_RE_POLL per iteration so the
+                    // record is re-read every second even when its state
+                    // changed without (or before) a wake — see the constant's
+                    // doc for the field evidence. Timing out a SLICE is not a
+                    // deadline expiry: only a zero `remaining` above ends the
+                    // wait.
+                    let slice = remaining.min(LOCK_STATE_RE_POLL);
                     tokio::select! {
                         _ = &mut notified => continue,
-                        _ = tokio::time::sleep(remaining) => {
-                            return Err(PlatformWalletError::FinalityTimeout(*out_point));
-                        }
+                        _ = tokio::time::sleep(slice) => continue,
                     }
                 }
-                // No deadline: wait indefinitely for the next lock event.
+                // No deadline: still cap the sleep so state changes that
+                // arrive without a wake are observed within a second.
                 None => {
-                    notified.as_mut().await;
+                    tokio::select! {
+                        _ = &mut notified => {}
+                        _ = tokio::time::sleep(LOCK_STATE_RE_POLL) => {}
+                    }
                     continue;
                 }
             }
@@ -570,16 +595,25 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     if remaining.is_zero() {
                         return Err(PlatformWalletError::FinalityTimeout(*out_point));
                     }
+                    // Sleep at most LOCK_STATE_RE_POLL per iteration so the
+                    // record is re-read every second even when its state
+                    // changed without (or before) a wake — see the constant's
+                    // doc for the field evidence. Timing out a SLICE is not a
+                    // deadline expiry: only a zero `remaining` above ends the
+                    // wait.
+                    let slice = remaining.min(LOCK_STATE_RE_POLL);
                     tokio::select! {
                         _ = &mut notified => continue,
-                        _ = tokio::time::sleep(remaining) => {
-                            return Err(PlatformWalletError::FinalityTimeout(*out_point));
-                        }
+                        _ = tokio::time::sleep(slice) => continue,
                     }
                 }
-                // No deadline: wait indefinitely for the next lock event.
+                // No deadline: still cap the sleep so state changes that
+                // arrive without a wake are observed within a second.
                 None => {
-                    notified.as_mut().await;
+                    tokio::select! {
+                        _ = &mut notified => {}
+                        _ = tokio::time::sleep(LOCK_STATE_RE_POLL) => {}
+                    }
                     continue;
                 }
             }
