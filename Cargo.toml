@@ -49,6 +49,7 @@ members = [
     "packages/wasm-sdk",
     "packages/rs-unified-sdk-ffi",
     "packages/rs-unified-sdk-jni",
+    "packages/rs-platform-cxx",
     "packages/rs-scripts",
 ]
 

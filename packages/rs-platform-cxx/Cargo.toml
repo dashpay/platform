@@ -1,0 +1,47 @@
+[package]
+name = "dash-platform-cxx"
+version.workspace = true
+authors = ["Dash Core Group <dev@dash.org>"]
+edition = "2021"
+rust-version.workspace = true
+license = "MIT"
+description = "Transport-free CXX bindings for embedding Dash Platform"
+
+[lib]
+name = "dash_platform_cxx"
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+cxx = "=1.0.198"
+dapi-grpc = { path = "../dapi-grpc", default-features = false, features = [
+    "platform",
+    "client",
+] }
+dash-context-provider = { path = "../rs-context-provider", default-features = false }
+dash-platform-queries = { path = "../dash-platform-queries", default-features = false }
+drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false }
+dpp = { path = "../rs-dpp", default-features = false, features = [
+    "state-transitions",
+    "state-transition-signing",
+    "identity-serialization",
+    "identity-hashing",
+    "bls-signatures",
+    "dpns-contract",
+    "dashpay-contract",
+] }
+platform-version = { path = "../rs-platform-version" }
+prost = "0.14"
+hex = "0.4"
+futures = "0.3"
+async-trait = "0.1"
+
+[build-dependencies]
+cxx-build = "=1.0.198"
+
+[features]
+default = []
+
+[dev-dependencies]
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+ciborium = "0.2"

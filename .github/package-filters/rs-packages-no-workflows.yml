@@ -130,6 +130,15 @@ platform-encryption: &platform_encryption
 dash-platform-queries: &platform_queries
   - packages/dash-platform-queries/**
 
+dash-platform-cxx: &platform_cxx
+  - packages/rs-platform-cxx/**
+  - *platform_queries
+  - *context_provider
+  - packages/rs-drive-proof-verifier/**
+  - *dpp
+  - *drive
+  - *dapi_grpc
+
 dash-sdk: &sdk
   - packages/rs-drive-proof-verifier/**
   - packages/rs-sdk/**

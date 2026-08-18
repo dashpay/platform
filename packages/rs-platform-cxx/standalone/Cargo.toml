@@ -1,0 +1,17 @@
+[package]
+name = "dash-platform-cxx-standalone"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[lib]
+name = "dash_platform_cxx_bundle"
+crate-type = ["staticlib"]
+
+[dependencies]
+dash-platform-cxx = { path = ".." }
+
+[patch."https://github.com/dashpay/versioned-feature-core"]
+versioned-feature-core = "1.0.0"
