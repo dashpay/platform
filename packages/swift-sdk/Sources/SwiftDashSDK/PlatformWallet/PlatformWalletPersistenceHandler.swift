@@ -3550,7 +3550,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // No save here even outside a round: the Rust store() round
             // that invoked this callback brackets it with begin/end, so
             // `inChangeset` is set in practice; if a host ever fires it
-            // without a bracket, autosave/next round flushes the stage.
+            // without a bracket, the next round's own save flushes the
+            // stage (autosave is disabled on this context — see init).
         }
     }
 
