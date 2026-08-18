@@ -1493,6 +1493,70 @@ final class SweptTransactionPersistTests: XCTestCase {
         XCTAssertEqual(coin.supersededByTxid, finalWinner)
     }
 
+    /// The multi-loser batch shape upstream's descendant closure always
+    /// produces — parent P and child C removed together — which no fixture
+    /// here ever exercised: C spends P:0, still unfunded, so the claim
+    /// lives as a pending row. Upstream never releases a loser-funded
+    /// outpoint, so without a co-swept check the sweep tombstones the
+    /// claim to the winner — and P's chainlocked reinstatement then
+    /// re-delivers P:0 straight into the tombstone-outranks drain:
+    /// `isSpent = true`, `supersededByTxid = winner`, recovery clear
+    /// refusing stamped holds. Permanently unspendable. A dead parent's
+    /// output is nobody's coin; the claim must be deleted with the batch.
+    func testABatchSweepingParentAndChildDeletesTheChildsClaimOnTheParentsOutput() throws {
+        let (handler, container) = try makeHandler()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+
+        // P is `fundingTxid` (so the redelivery helper reaches it) and its
+        // record was never persisted — the weaker-preconditions shape. C's
+        // claim on P:0 is parked as a pending row, exactly what
+        // `resolveInputOutpoint` writes.
+        let childTxid = Data(repeating: 0xB5, count: 32) // C
+        let winner = Data(repeating: 0xB6, count: 32) // W
+        let pOutpoint = PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0)
+
+        let c = PersistentTransaction(
+            txid: childTxid,
+            transactionData: Data(repeating: 0x05, count: 10),
+            context: 0,
+            blockHeight: 0,
+            netAmount: -50_000
+        )
+        context.insert(c)
+        context.insert(PersistentPendingInput(
+            outpoint: pOutpoint,
+            inputIndex: 0,
+            spendingTxid: childTxid,
+            spendingTransaction: c,
+            walletId: walletId
+        ))
+        try context.save()
+
+        // One batch removes both; upstream excludes P:0 from the released
+        // set because its funder is itself a loser.
+        sweep(handler, [Batch(losers: [fundingTxid, childTxid], winner: winner)])
+
+        let pendingDescriptor = FetchDescriptor<PersistentPendingInput>(
+            predicate: #Predicate { $0.outpoint == pOutpoint }
+        )
+        XCTAssertTrue(
+            try context.fetch(pendingDescriptor).isEmpty,
+            "a claim on a co-swept parent's output must be deleted, not tombstoned"
+        )
+
+        // The chainlocked return: P reinstated with its output re-delivered
+        // must land spendable — nothing the batch left behind may hold it.
+        deliverFundingUtxo(handler, vout: 0, amount: 50_000)
+
+        let coin = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertFalse(
+            coin.isSpent,
+            "the reinstated parent's output must not be wedged by its dead child's claim"
+        )
+        XCTAssertNil(coin.supersededByTxid)
+    }
+
     /// The whole chain inside ONE round: a single sweeps callback can carry
     /// two batches where the second sweeps the first's winner, so the
     /// tombstone the first batch just wrote — staged, unsaved, retargeted by

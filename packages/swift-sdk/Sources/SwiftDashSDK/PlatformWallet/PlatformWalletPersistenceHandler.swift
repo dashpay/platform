@@ -992,6 +992,27 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             guard wallet != nil else { return true }
             guard count > 0, let sweepsPtr = sweeps else { return true }
 
+            // The funding txids this round removes, across every batch —
+            // the same changeset-wide set the SQLite co-swept rule keys
+            // on. A pending claim whose outpoint is funded by a co-swept
+            // loser is a claim on a dead parent's output — nobody's coin,
+            // not something the winner took: upstream's descendant closure
+            // always sweeps parent and child together, and its release
+            // computation excludes exactly these outpoints, so the claim
+            // is neither released nor legitimate to hold. Tombstoning it
+            // would wedge the parent's chainlocked reinstatement forever
+            // (the re-delivered funding output drains into the
+            // tombstone-outranks pick, `supersededByTxid` pins the hold,
+            // and the recovery clear refuses stamped rows).
+            var coSwept = Set<Data>()
+            for batchIndex in 0..<Int(count) {
+                let batch = sweepsPtr[batchIndex]
+                guard batch.txids_count > 0, let txidsPtr = batch.txids else { continue }
+                for i in 0..<Int(batch.txids_count) {
+                    coSwept.insert(Swift.withUnsafeBytes(of: txidsPtr[i]) { Data($0) })
+                }
+            }
+
             // One batch at a time, in order. A later sweep can keep a
             // coin spent that an earlier one freed — each batch is only
             // true of the wallet it saw — so folding them together lets
@@ -1076,6 +1097,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                             walletId: walletId,
                             supersededBy: supersededBy,
                             released: released,
+                            coSwept: coSwept,
                             row: row,
                             priorTombstones: tombstonesBySpender[txid] ?? []
                         )
@@ -1259,6 +1281,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         walletId: Data,
         supersededBy: Data,
         released: Set<Data>,
+        coSwept: Set<Data>,
         row: PersistentTransaction?,
         priorTombstones: [PersistentPendingInput]
     ) {
@@ -1305,6 +1328,15 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 txo.lastUpdated = Date()
             }
             for pending in row.pendingInputs where pending.walletId == walletId {
+                if coSwept.contains(pending.outpoint.prefix(32)) {
+                    // A claim on a co-swept loser's own output: nobody's
+                    // coin, never in `released`, and a tombstone here
+                    // would outlive the parent's reinstatement — see the
+                    // `coSwept` doc in the caller. Deleted with the batch,
+                    // the mobile mirror of the SQLite co-swept DELETE.
+                    backgroundContext.delete(pending)
+                    continue
+                }
                 guard !released.contains(pending.outpoint) else {
                     // Deleted now rather than left for the row's cascade.
                     // Still attached it reads as this wallet's claim in the
@@ -1375,7 +1407,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         // whether they still need their release applied or their chain
         // continued.
         for pending in priorTombstones where !pending.isDeleted {
-            if released.contains(pending.outpoint) {
+            if released.contains(pending.outpoint) || coSwept.contains(pending.outpoint.prefix(32))
+            {
                 backgroundContext.delete(pending)
             } else {
                 pending.spendingTxid = supersededBy
