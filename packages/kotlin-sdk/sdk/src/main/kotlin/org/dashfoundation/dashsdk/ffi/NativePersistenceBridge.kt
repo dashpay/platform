@@ -60,6 +60,19 @@ abstract class NativePersistenceBridge {
 
     open fun persistenceCapabilitiesBits(): Long = 0L
 
+    companion object {
+        /**
+         * `PersistenceCapabilities::CORE_SWEEP_REMOVAL` (bit 10, `0x400`).
+         * Declared here — on the class whose
+         * [onWalletChangesetTransactionsSwept] default consults it — so the
+         * fail-closed guard and the declaration a subclass makes through
+         * [persistenceCapabilitiesBits] can never drift apart.
+         * `PlatformWalletPersistenceHandler`'s capability constants alias
+         * this value.
+         */
+        const val CAPABILITY_CORE_SWEEP_REMOVAL: Long = 0x400
+    }
+
     // ── Transactional bracketing ──────────────────────────────────────
 
     /** `on_changeset_begin_fn` — descriptor `([B)I`. */
@@ -319,21 +332,30 @@ abstract class NativePersistenceBridge {
      * Native delivers these through the persistence extension's
      * size-negotiated sweep callback (not the wallet-changeset struct, whose
      * bare-pointer ABI cannot version itself), immediately after the
-     * changeset's own slots in the same round. The default body below still
-     * returns success without deleting anything — the
-     * accepted-but-never-applied failure mode
-     * `PersistenceCapabilities::CORE_SWEEP_REMOVAL` exists to catch. A
-     * subclass overriding this must also add that bit to
-     * [PlatformWalletPersistenceHandler.persistenceCapabilitiesBits]'s
-     * result; the Rust side will not trust a bare `Int` return of `0` here
-     * as proof the removal happened.
+     * changeset's own slots in the same round — and unconditionally: the
+     * trampoline is wired for every subclass, so "slot present" proves
+     * nothing about whether removals are actually applied. What Rust trusts
+     * is [persistenceCapabilitiesBits] carrying
+     * [CAPABILITY_CORE_SWEEP_REMOVAL]; a subclass overriding this must add
+     * that bit, and the default body below is what encodes the other half
+     * of that contract structurally. A subclass that declares the bit
+     * WITHOUT overriding has promised removals it silently swallows — and
+     * because the declaration also stops Rust stripping the watermark, the
+     * sync height would advance past a removal that never happened, the
+     * one permanent corruption the capability exists to prevent. The
+     * default therefore refuses the round in exactly that case (non-zero
+     * return, so `onChangesetEnd` rolls it back and the watermark cannot
+     * move). A subclass that declares nothing keeps the benign ignore:
+     * Rust already strips the watermark before its `store()`, so returning
+     * success costs nothing and preserves the round's additive slots.
      */
     open fun onWalletChangesetTransactionsSwept(
         walletId: ByteArray,
         txids: Array<ByteArray>,
         supersededBy: Array<ByteArray>,
         releasedOutpoints: Array<ByteArray>,
-    ): Int = 0
+    ): Int =
+        if (persistenceCapabilitiesBits() and CAPABILITY_CORE_SWEEP_REMOVAL != 0L) 1 else 0
 
     // ── Identities ────────────────────────────────────────────────────
 

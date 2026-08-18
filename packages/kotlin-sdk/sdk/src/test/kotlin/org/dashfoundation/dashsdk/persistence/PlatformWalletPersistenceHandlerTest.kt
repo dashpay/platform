@@ -84,6 +84,37 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.CORE_SWEEP_REMOVAL))
     }
 
+    @Test
+    fun sweepSlotDefaultRefusesARoundOnlyWhenTheCapabilityIsHandDeclared() {
+        // The trampoline is wired for every subclass, so "slot present"
+        // proves nothing — the contract lives in the capability bit. A
+        // subclass declaring CORE_SWEEP_REMOVAL without overriding the slot
+        // has promised removals it would silently swallow while the
+        // watermark advances; the inherited default must refuse the round
+        // instead. One that declares nothing keeps the benign ignore: Rust
+        // strips the watermark before its store(), and failing the round
+        // would throw away its additive slots for no protection gained.
+        val declaringButNotOverriding = object : NativePersistenceBridge() {
+            override fun persistenceCapabilitiesBits(): Long =
+                NativePersistenceBridge.CAPABILITY_CORE_SWEEP_REMOVAL
+        }
+        val walletId = ByteArray(32) { 1 }
+        assertTrue(
+            "a hand-declared capability with the inherited no-op body must fail the round",
+            declaringButNotOverriding.onWalletChangesetTransactionsSwept(
+                walletId, arrayOf(ByteArray(32) { 2 }), arrayOf(ByteArray(32) { 3 }), emptyArray(),
+            ) != 0,
+        )
+
+        val nonAttesting = object : NativePersistenceBridge() {}
+        assertEquals(
+            0,
+            nonAttesting.onWalletChangesetTransactionsSwept(
+                walletId, arrayOf(ByteArray(32) { 2 }), arrayOf(ByteArray(32) { 3 }), emptyArray(),
+            ),
+        )
+    }
+
     // ── Standalone (non-bracketed) writes ─────────────────────────────
 
     @Test
