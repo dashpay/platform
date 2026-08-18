@@ -253,6 +253,10 @@ unsafe fn event_extension_dpns_callback(
     std::ptr::addr_of!((*extension).on_dpns_marketplace_sync_completed_fn).read()
 }
 
+// The C entry point's own shape: every callback table and out-param the
+// hosts pass, threaded straight through. Splitting it would only move the
+// same arguments behind a struct the FFI cannot express.
+#[allow(clippy::too_many_arguments)]
 unsafe fn platform_wallet_manager_create_impl(
     sdk_ptr: *const c_void,
     persistence: *const PersistenceCallbacks,
