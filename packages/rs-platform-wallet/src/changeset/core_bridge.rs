@@ -3219,6 +3219,132 @@ mod tests {
         handle.await.expect("adapter task joins");
     }
 
+    /// The coalesced sweep-then-chainlocked-reinstatement fold, driven
+    /// through the REAL producers rather than hand-built changesets: the
+    /// sweep arm removes the tracked entry and emits its tombstone, the
+    /// reinstating chainlocked record re-inserts through reconstruction at
+    /// a non-Consumed status, and folding the two — exactly what the
+    /// adapter's batched drain does — must cancel the tombstone. Before
+    /// `AssetLockChangeSet::merge` learned that, the merged changeset
+    /// carried both, and SQLite (upserts before removals) deleted the row
+    /// it had just reinstated while the in-memory wallet kept it: the
+    /// durable tracked lock vanished across a restart even though its
+    /// funding transaction survived.
+    #[tokio::test]
+    async fn a_reinstating_reconstruction_folded_after_a_sweep_cancels_its_tombstone() {
+        use dashcore::hashes::Hash as _;
+        use key_wallet::account::account_type::StandardAccountType;
+        use key_wallet::account::AccountType;
+        use key_wallet::managed_account::transaction_record::{
+            TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::transaction_router::TransactionType;
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+        use tokio::sync::Notify;
+
+        use crate::changeset::merge::Merge as _;
+        use crate::test_support::{
+            funded_wallet_manager, AlwaysRejectedBroadcaster, NoopTestPersister,
+        };
+        use crate::wallet::asset_lock::manager::AssetLockManager;
+        use crate::wallet::asset_lock::sync::reconstruction;
+        use crate::wallet::asset_lock::tracked::AssetLockStatus;
+        use crate::wallet::persister::WalletPersister;
+
+        let (wallet_manager, wallet_id, _generation, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_network(dashcore::Network::Testnet)
+                .build()
+                .expect("mock sdk"),
+        );
+        let asset_lock_manager = AssetLockManager::new(
+            sdk,
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::new(AlwaysRejectedBroadcaster),
+            WalletPersister::new(
+                wallet_id,
+                Arc::new(NoopTestPersister) as Arc<dyn crate::changeset::PlatformWalletPersistence>,
+            ),
+        );
+        let (tx, _path) = asset_lock_manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await
+            .expect("build asset lock");
+        let record = TransactionRecord::new(
+            tx.clone(),
+            AccountType::IdentityRegistration,
+            TransactionContext::InChainLockedBlock(BlockInfo::new(
+                4321,
+                dashcore::BlockHash::all_zeros(),
+                1_650_000_000,
+            )),
+            TransactionType::AssetLock,
+            TransactionDirection::Internal,
+            vec![],
+            vec![],
+            0,
+        );
+        let out_point = dashcore::OutPoint::new(tx.txid(), 0);
+
+        // Track the lock the way a restore scan would.
+        let tracked = reconstruction::reconstruct_tracked_asset_locks(
+            &wallet_manager,
+            &wallet_id,
+            &[&record],
+        )
+        .await;
+        assert_eq!(tracked.asset_locks.len(), 1, "sanity: the entry is tracked");
+
+        // The sweep's own changeset, then the reinstating record's — the
+        // two events a single folded drain can carry back to back.
+        let mut folded = reconstruction::remove_tracked_asset_locks_for_swept(
+            &wallet_manager,
+            &wallet_id,
+            &[tx.txid()],
+        )
+        .await;
+        assert!(
+            folded.removed.contains(&out_point),
+            "sanity: the sweep produced the tombstone"
+        );
+        let reinstated = reconstruction::reconstruct_tracked_asset_locks(
+            &wallet_manager,
+            &wallet_id,
+            &[&record],
+        )
+        .await;
+        let reinstated_entry = reinstated
+            .asset_locks
+            .get(&out_point)
+            .expect("reconstruction must re-insert the entry the sweep removed");
+        assert_ne!(
+            reinstated_entry.status,
+            AssetLockStatus::Consumed,
+            "sanity: the load-bearing premise — a reinstating reconstruction is non-Consumed"
+        );
+        folded.merge(reinstated);
+
+        assert!(
+            folded.removed.is_empty(),
+            "the reinstating upsert must cancel the folded sweep tombstone"
+        );
+        assert!(
+            folded.asset_locks.contains_key(&out_point),
+            "and the reinstated entry rides the store round"
+        );
+    }
+
     /// The `ChainLockProcessed` arm end to end: a lock the scan
     /// reconstructed at a pre-finality status (its block wasn't
     /// chain-locked yet — the restore-scan norm) upgrades to

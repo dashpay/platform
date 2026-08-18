@@ -391,10 +391,17 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 if let existing = try? backgroundContext.fetch(descriptor).first {
                     // Same terminal rule as the upsert guard above: a
                     // Consumed (4) row is deliberately retained for
-                    // historical lookup and the only removal emitter
-                    // (`untrack_asset_lock`) targets rejected Built
-                    // rows — a removal reaching a consumed row is by
-                    // construction a stale write.
+                    // historical lookup, and neither removal producer can
+                    // legitimately name one — a Built row rejected at
+                    // broadcast (`untrack_asset_lock`) never got that far,
+                    // and a sweep of the funding transaction only
+                    // tombstones entries still tracked, which a consumed
+                    // lock no longer is. A removal reaching a consumed row
+                    // is by construction a stale write.
+                    // `AssetLockChangeSet::merge` guarantees one call never
+                    // carries an upsert and a removal for the same
+                    // outpoint, so the upserts-then-removals order above is
+                    // layout, not load-bearing sequencing.
                     if existing.statusRaw == 4 {
                         continue
                     }

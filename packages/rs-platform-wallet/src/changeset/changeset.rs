@@ -1044,32 +1044,47 @@ impl Merge for AssetLockChangeSet {
         // swift-sdk `persistAssetLocks`), making the store order of
         // racing snapshots immaterial.
         for (out_point, entry) in other.asset_locks {
-            if entry.status == AssetLockStatus::Consumed {
-                // A Consumed write supersedes any earlier-folded
-                // tombstone for the outpoint — Consumed rows are
-                // deliberately retained for historical lookup (see the
-                // variant doc), so the terminal write wins over a stale
-                // removal exactly as it wins over a stale status.
-                self.removed.remove(&out_point);
-            } else if let Some(existing) = self.asset_locks.get(&out_point) {
-                if existing.status == AssetLockStatus::Consumed {
-                    continue;
+            if entry.status != AssetLockStatus::Consumed {
+                if let Some(existing) = self.asset_locks.get(&out_point) {
+                    if existing.status == AssetLockStatus::Consumed {
+                        continue;
+                    }
                 }
             }
+            // Every ACCEPTED upsert supersedes an earlier-folded tombstone
+            // for its outpoint, not just a Consumed one. Sweeps are a
+            // removal producer now (`remove_tracked_asset_locks_for_swept`),
+            // and a swept funding transaction can return chainlocked in the
+            // same folded drain — the reinstating record re-inserts the
+            // entry through reconstruction at a non-Consumed status, and
+            // letting the sweep's tombstone ride along would have the store
+            // delete the row it just reinstated (SQLite applies upserts
+            // before removals) while the in-memory wallet keeps it. This is
+            // the asset-lock mirror of `CoreChangeSet::merge`'s
+            // reinstated-txid retraction. For Consumed the same line also
+            // covers the historical rule: the terminal write wins over a
+            // stale removal exactly as it wins over a stale status.
+            self.removed.remove(&out_point);
             self.asset_locks.insert(out_point, entry);
         }
-        // Tombstones folded after a Consumed upsert are dropped for the
-        // same reason. The only removal emitter (`untrack_asset_lock`)
-        // fires exclusively for Built rows whose broadcast was
-        // definitively rejected, so a Consumed/removed pair for one
-        // outpoint has no legitimate producer — this is defense in
-        // depth matching the upsert guard.
+        // Tombstones folded after a Consumed upsert are dropped — Consumed
+        // rows are deliberately retained for historical lookup (see the
+        // variant doc). Any other pending upsert is dropped WITH the
+        // tombstone landing: a removal is upstream's newer word for the
+        // outpoint (a lock tracked and then swept, or a Built row rejected
+        // at broadcast, inside one fold), and carrying the dead upsert
+        // alongside the tombstone would make every store's correctness
+        // depend on applying upserts before removals. Together with the
+        // retraction above this keeps the invariant every backend relies
+        // on: a merged changeset never carries both an upsert and a
+        // tombstone for the same outpoint.
         for out_point in other.removed {
             let consumed = self
                 .asset_locks
                 .get(&out_point)
                 .is_some_and(|entry| entry.status == AssetLockStatus::Consumed);
             if !consumed {
+                self.asset_locks.remove(&out_point);
                 self.removed.insert(out_point);
             }
         }
@@ -2020,10 +2035,38 @@ mod tests {
             folded.asset_locks[&outpoint].status,
             AssetLockStatus::Consumed
         );
-        // …and a legitimate removal (rejected Built row) still folds.
+        // …and a legitimate removal (rejected Built row, or a sweep of the
+        // funding tx) still folds — taking the now-dead upsert with it, so
+        // no store ever sees an upsert/tombstone pair whose outcome would
+        // hinge on which it applies first.
         let mut folded = cs_with(AssetLockStatus::Built);
         folded.merge(removal());
         assert!(folded.removed.contains(&outpoint));
+        assert!(
+            !folded.asset_locks.contains_key(&outpoint),
+            "a tombstone folding in must not leave the dead upsert beside it"
+        );
+
+        // The coalesced sweep-then-chainlocked-reinstatement fold: the
+        // sweep removes the tracked entry and contributes a tombstone, then
+        // the reinstating record re-inserts through reconstruction at a
+        // non-Consumed status — in the SAME drain. The accepted upsert must
+        // cancel the earlier tombstone (the asset-lock mirror of
+        // `CoreChangeSet::merge`'s reinstated-txid retraction); otherwise
+        // SQLite — upserts before removals — deletes the row it just
+        // reinstated while the in-memory wallet keeps it, and the durable
+        // tracked lock is gone after restart even though its funding
+        // transaction survived.
+        let mut folded = removal();
+        folded.merge(cs_with(AssetLockStatus::RecoveredFromChain));
+        assert!(
+            folded.removed.is_empty(),
+            "a reinstating reconstruction must cancel the folded sweep tombstone"
+        );
+        assert_eq!(
+            folded.asset_locks[&outpoint].status,
+            AssetLockStatus::RecoveredFromChain
+        );
     }
 
     #[test]
