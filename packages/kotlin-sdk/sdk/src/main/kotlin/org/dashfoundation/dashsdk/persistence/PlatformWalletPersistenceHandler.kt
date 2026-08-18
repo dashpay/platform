@@ -1213,17 +1213,44 @@ class PlatformWalletPersistenceHandler(
                 db.transactionDao().markGloballySwept(txids[i])
 
                 db.txoDao().holdSpentWithoutSpender(txids[i], walletId)
-                db.documentDao().tombstoneUnreleasedPendingInputs(
-                    txids[i], supersededBy[i], released, walletId,
-                )
+
+                // The released set is partitioned in memory rather than
+                // bound into SQL: its size follows the input count of a
+                // transaction a remote sender picks, and one bind variable
+                // per outpoint can cross API 29's 999-variable ceiling —
+                // which would throw, fail the atomic round, and freeze the
+                // watermark on a loser that re-swept into the same failure
+                // on every restart.
+                val releasedKeys = released.mapTo(HashSet()) { it.toHex() }
+                val staged = db.documentDao().pendingInputsStagedBy(txids[i], walletId)
+                val heldStaged = staged.filterNot { releasedKeys.contains(it.outpoint.toHex()) }
+                if (heldStaged.isNotEmpty()) {
+                    db.documentDao().updatePendingInputs(
+                        heldStaged.map {
+                            it.copy(
+                                spendingTransactionTxid = null,
+                                spendingTxid = supersededBy[i],
+                                isSweptTombstone = true,
+                            )
+                        },
+                    )
+                }
                 // A pending input an EARLIER sweep already tombstoned to
                 // txids[i] (that txid was itself a sweep's winner, and is
                 // now being swept in turn) detached from the relationship
                 // `tombstoneUnreleasedPendingInputs` above matches on, so it
                 // has to be found and carried forward separately — see
                 // [DocumentDao.deleteReleasedSweptTombstones].
-                db.documentDao().deleteReleasedSweptTombstones(txids[i], released, walletId)
-                db.documentDao().retargetSweptTombstones(txids[i], supersededBy[i], released, walletId)
+                val prior = db.documentDao().sweptTombstonesTargeting(txids[i], walletId)
+                val (freed, stillHeld) = prior.partition { releasedKeys.contains(it.outpoint.toHex()) }
+                if (freed.isNotEmpty()) {
+                    db.documentDao().deletePendingInputs(freed)
+                }
+                if (stillHeld.isNotEmpty()) {
+                    db.documentDao().updatePendingInputs(
+                        stillHeld.map { it.copy(spendingTxid = supersededBy[i]) },
+                    )
+                }
             }
             for (outpoint in releasedOutpoints) {
                 db.txoDao().releaseByOutpoint(outpoint, walletId)

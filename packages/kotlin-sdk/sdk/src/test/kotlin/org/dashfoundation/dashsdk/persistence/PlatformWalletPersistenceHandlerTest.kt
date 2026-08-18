@@ -2769,6 +2769,56 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun aSweepReleasingMoreOutpointsThanSqliteCanBindStillCommits() = runTest {
+        // The released set's size follows the input count of a transaction a
+        // remote sender chooses, so it is not bounded by anything this wallet
+        // controls. Binding it one variable per outpoint crosses the
+        // 999-variable ceiling API 29's framework SQLite still carries: the
+        // statement throws, the whole atomic round fails, and the watermark
+        // freezes on a loser that would be re-swept into the same failure
+        // after every restart.
+        //
+        // The count is far past 999 because this suite runs on the host's
+        // SQLite, whose own ceiling is much higher — at 1200 the pre-fix code
+        // passed here while still being broken on API 29. What this pins is
+        // therefore the property that matters, that the query arity does not
+        // grow with the set at all, rather than one platform's exact limit.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+
+        val loser = ByteArray(32) { 80 }
+        // Comfortably past the limit, and past the 1000-variable default of
+        // newer SQLite too.
+        val released = (0 until 40000).map { i ->
+            makeOutpoint(ByteArray(32) { 81 }, i)
+        }
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, loser, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -1_000, 0, false, "", 1_700_000_000,
+            ByteArray(0), 0,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        handler.onChangesetBegin(walletId)
+        val code = handler.onWalletChangesetTransactionsSwept(
+            walletId,
+            arrayOf(loser),
+            arrayOf(ByteArray(32) { 82 }),
+            released.toTypedArray(),
+        )
+        val committed = handler.onChangesetEnd(walletId, success = true)
+
+        assertEquals("the sweep callback must not fail on a large release set", 0, code)
+        assertEquals(0, committed)
+        assertNull("and the round must actually commit", db.transactionDao().getByTxid(loser))
+    }
+
+    @Test
     fun sweptTransactionRollsBackWithItsRound() = runTest {
         // The deletion is staged in the same buffered transaction as every
         // other write in the round, so a round that fails must not take the

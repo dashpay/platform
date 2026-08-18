@@ -3,6 +3,7 @@ package org.dashfoundation.dashsdk.persistence.dao
 import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Query
+import androidx.room.Update
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 import org.dashfoundation.dashsdk.persistence.entities.DocumentEntity
@@ -193,62 +194,51 @@ interface DocumentDao {
      * tombstoning a row a different wallet owns using a release decision
      * that was never made about it.
      */
-    @Query(
-        "UPDATE pending_inputs SET spendingTransactionTxid = NULL, " +
-            "spendingTxid = :supersededBy, isSweptTombstone = 1 " +
-            "WHERE spendingTransactionTxid = :txid AND walletId = :walletId " +
-            "AND outpoint NOT IN (:releasedOutpoints)",
-    )
-    suspend fun tombstoneUnreleasedPendingInputs(
-        txid: ByteArray,
-        supersededBy: ByteArray,
-        releasedOutpoints: List<ByteArray>,
-        walletId: ByteArray,
-    )
-
     /**
-     * Chained-sweep continuation of [tombstoneUnreleasedPendingInputs]: a
-     * pending row that an earlier sweep already tombstoned to [txid]
-     * detached itself from the `spendingTransactionTxid` relationship at
-     * that point, so a sweep of [txid] itself cannot find it there — only
-     * the scalar `spendingTxid` this row was repointed to still names it.
-     * Delete the ones this round frees. Nothing else owns them once
-     * detached — unlike a live pending row, there is no cascade-delete of
-     * [txid]'s `transactions` row left to do that job for them.
+     * This wallet's live pending inputs staged by [txid], for the sweep to
+     * partition in memory.
      *
-     * A tombstone names one specific wallet's coin — the `walletId` it was
-     * written with — so [walletId] here has to be the same wallet whose
-     * [releasedOutpoints] produced it; otherwise this would apply one
-     * wallet's release decision to a claim it was never entitled to make.
+     * The released set is not bound into SQL. It is bounded only by the
+     * input count of a transaction a remote sender can choose, so binding
+     * it one variable per outpoint can cross the 999-variable limit that
+     * API 29's framework SQLite still carries — the statement then throws,
+     * the whole atomic round fails, and the wallet's watermark freezes on a
+     * loser that will be re-swept into the same failure after every restart.
+     * Fetching by the two fixed keys and comparing outpoints against a
+     * `Set` keeps the arity constant no matter how large the sweep is.
      */
     @Query(
-        "DELETE FROM pending_inputs WHERE spendingTxid = :txid AND isSweptTombstone = 1 " +
-            "AND walletId = :walletId AND outpoint IN (:releasedOutpoints)",
+        "SELECT * FROM pending_inputs " +
+            "WHERE spendingTransactionTxid = :txid AND walletId = :walletId",
     )
-    suspend fun deleteReleasedSweptTombstones(
-        txid: ByteArray,
-        releasedOutpoints: List<ByteArray>,
-        walletId: ByteArray,
-    )
+    suspend fun pendingInputsStagedBy(txid: ByteArray, walletId: ByteArray): List<PendingInputEntity>
 
     /**
-     * The held half of [deleteReleasedSweptTombstones]: repoint every
-     * surviving tombstone of [txid] owned by [walletId] at the new
-     * [supersededBy] instead, so a third sweep down the chain can still
-     * find it by scalar `spendingTxid`. [isSweptTombstone] is already set
-     * from the first tombstoning and stays set.
+     * This wallet's tombstones already repointed at [txid] by an earlier
+     * sweep, found by the scalar `spendingTxid` — the only link left once
+     * the first tombstoning detached them from the relationship. Same
+     * fixed-arity discipline as [pendingInputsStagedBy].
+     *
+     * A tombstone names one specific wallet's coin, so [walletId] must be
+     * the same wallet whose release decision is about to be applied;
+     * otherwise this would hand one wallet's claim to another's verdict.
      */
     @Query(
-        "UPDATE pending_inputs SET spendingTxid = :supersededBy " +
-            "WHERE spendingTxid = :txid AND isSweptTombstone = 1 AND walletId = :walletId " +
-            "AND outpoint NOT IN (:releasedOutpoints)",
+        "SELECT * FROM pending_inputs " +
+            "WHERE spendingTxid = :txid AND isSweptTombstone = 1 AND walletId = :walletId",
     )
-    suspend fun retargetSweptTombstones(
+    suspend fun sweptTombstonesTargeting(
         txid: ByteArray,
-        supersededBy: ByteArray,
-        releasedOutpoints: List<ByteArray>,
         walletId: ByteArray,
-    )
+    ): List<PendingInputEntity>
+
+    /** Per-row update; Room binds one row at a time, so arity is fixed. */
+    @Update
+    suspend fun updatePendingInputs(rows: List<PendingInputEntity>)
+
+    /** Per-row delete, same fixed-arity reason as [updatePendingInputs]. */
+    @Delete
+    suspend fun deletePendingInputs(rows: List<PendingInputEntity>)
 
     /**
      * Whether some wallet other than [walletId] still has a live pending
