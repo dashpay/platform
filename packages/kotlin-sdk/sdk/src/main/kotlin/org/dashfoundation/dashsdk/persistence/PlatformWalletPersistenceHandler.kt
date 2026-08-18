@@ -1237,6 +1237,20 @@ class PlatformWalletPersistenceHandler(
             // transaction, turning a linear payload into L×R work on the
             // single persistence executor.
             val releasedKeys = released.mapTo(HashSet()) { it.toHex() }
+            // The funding txids this batch itself removes. A pending claim
+            // whose outpoint is funded by a co-swept loser is a claim on a
+            // dead parent's output — nobody's coin, not something the
+            // winner took: upstream's descendant closure always sweeps
+            // parent and child together, and its release computation
+            // excludes exactly these outpoints, so the claim is neither
+            // released nor legitimate to hold. Tombstoning it to the
+            // winner would wedge the parent's chainlocked reinstatement
+            // forever: the re-delivered funding output drains into the
+            // tombstone-outranks pick, `supersededByTxid` pins the hold,
+            // and the recovery clear refuses stamped rows. Deleted
+            // outright instead — the mobile mirror of the SQLite
+            // co-swept DELETE.
+            val sweptTxidKeys = txids.mapTo(HashSet()) { it.toHex() }
             for (i in txids.indices) {
                 // Global first, unconditionally, in every callback that
                 // reaches this loop — not gated on walletId and not waiting
@@ -1257,8 +1271,10 @@ class PlatformWalletPersistenceHandler(
                 // watermark on a loser that re-swept into the same failure
                 // on every restart.
                 val staged = db.documentDao().pendingInputsStagedBy(txids[i], walletId)
-                val (freedStaged, heldStaged) =
-                    staged.partition { releasedKeys.contains(it.outpoint.toHex()) }
+                val (goneStaged, heldStaged) = staged.partition {
+                    releasedKeys.contains(it.outpoint.toHex()) ||
+                        sweptTxidKeys.contains(it.outpoint.copyOfRange(0, 32).toHex())
+                }
                 // Released staged rows go now rather than riding the
                 // eventual cascade. Left attached they count as this
                 // wallet's claim in `hasOtherWalletClaim` below, so two
@@ -1268,8 +1284,10 @@ class PlatformWalletPersistenceHandler(
                 // stalemate. The global marker keeps the dead transaction
                 // from contributing funds either way, but the row and both
                 // pending entries would otherwise be stored forever.
-                if (freedStaged.isNotEmpty()) {
-                    db.documentDao().deletePendingInputs(freedStaged)
+                // Claims on a co-swept loser's own outputs go with them —
+                // see `sweptTxidKeys` above.
+                if (goneStaged.isNotEmpty()) {
+                    db.documentDao().deletePendingInputs(goneStaged)
                 }
                 if (heldStaged.isNotEmpty()) {
                     db.documentDao().updatePendingInputs(
@@ -1290,9 +1308,12 @@ class PlatformWalletPersistenceHandler(
                 // and carried forward separately — see
                 // [DocumentDao.sweptTombstonesTargeting].
                 val prior = db.documentDao().sweptTombstonesTargeting(txids[i], walletId)
-                val (freed, stillHeld) = prior.partition { releasedKeys.contains(it.outpoint.toHex()) }
-                if (freed.isNotEmpty()) {
-                    db.documentDao().deletePendingInputs(freed)
+                val (gonePrior, stillHeld) = prior.partition {
+                    releasedKeys.contains(it.outpoint.toHex()) ||
+                        sweptTxidKeys.contains(it.outpoint.copyOfRange(0, 32).toHex())
+                }
+                if (gonePrior.isNotEmpty()) {
+                    db.documentDao().deletePendingInputs(gonePrior)
                 }
                 if (stillHeld.isNotEmpty()) {
                     db.documentDao().updatePendingInputs(

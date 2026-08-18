@@ -3331,6 +3331,83 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun aBatchSweepingParentAndChildDeletesTheChildsClaimOnTheParentsOutput() = runTest {
+        // The multi-loser batch shape upstream's descendant closure always
+        // produces — parent P and child C removed together — which no
+        // fixture here ever exercised: C spends P:0, still unfunded, so the
+        // claim lives as a pending row. Upstream never releases a
+        // loser-funded outpoint, so without a co-swept check the sweep
+        // tombstones the claim to the winner — and P's chainlocked
+        // reinstatement then re-delivers P:0 straight into the
+        // tombstone-outranks drain: isSpent = true, supersededByTxid =
+        // winner, and the recovery clear refuses stamped holds. A dead
+        // parent's output is nobody's coin; the claim must be deleted with
+        // the batch.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yFundAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val parentTxid = ByteArray(32) { 101 } // P — record never persisted
+        val pOutpoint = makeOutpoint(parentTxid, 0)
+        val childTxid = ByteArray(32) { 102 } // C
+        val winnerTxid = ByteArray(32) { 103 } // W
+
+        // C arrives spending the still-unfunded P:0 — parked as a pending
+        // claim.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, childTxid, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -50_000, 0, false, "", 1_700_000_100,
+            pOutpoint, 1,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        assertEquals(1, db.documentDao().getPendingInputsByOutpoint(pOutpoint).size)
+
+        // One batch removes both; upstream excludes P:0 from the released
+        // set because its funder is itself a loser.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(parentTxid, childTxid),
+            arrayOf(winnerTxid, winnerTxid), emptyArray(),
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertTrue(
+            "a claim on a co-swept parent's output must be deleted, not tombstoned",
+            db.documentDao().getPendingInputsByOutpoint(pOutpoint).isEmpty(),
+        )
+
+        // The chainlocked return: P reinstated with its output re-delivered
+        // must land spendable — nothing the batch left behind may hold it.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetUtxoAdded(
+            walletId, parentTxid, 0, 50_000, "yFundAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val coin = db.txoDao().getByOutpoint(pOutpoint)!!
+        assertFalse(
+            "the reinstated parent's output must not be wedged by its dead child's claim",
+            coin.isSpent,
+        )
+        assertNull(coin.supersededByTxid)
+        assertEquals(1, handler.onLoadWalletList().single().utxos.size)
+    }
+
+    @Test
     fun chainedSweepBeforeFundingReleasesAnEarlierTombstoneOnASecondSweep() = runTest {
         // Regression for the review finding on
         // sweptSpendBeforeFundingSurvivesRestartAndStaysSpentWhenFunded above:
