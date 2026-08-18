@@ -423,15 +423,66 @@ final class SweptTransactionPersistTests: XCTestCase {
         )
     }
 
-    /// One changeset round carrying a transaction record and the
-    /// `utxos_spent` emit for the input it consumed — the shape a real
-    /// round takes when the wallet classifies the spend in the same flush
-    /// as the record.
+    /// The record-only half of the scenario above: a flush can deliver the
+    /// winner's record without a `utxos_spent` emit (the wallet had no live
+    /// UTXO to classify — the coin sits as a stamped hold), so
+    /// `resolveInputOutpoint`'s own monotonic guard must carry the hold by
+    /// itself. Pinned separately because the combined test's spent emit
+    /// re-applies the hold through `markUtxoSpent`'s guard, masking a
+    /// regression in the record pass alone.
+    func testAWinnersLateRecordAloneDoesNotDowngradeAStampedHold() throws {
+        let (handler, container) = try makeHandler()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+
+        let l = PersistentTransaction(
+            txid: sweptTxid,
+            transactionData: Data(repeating: 0x05, count: 10),
+            context: 0,
+            blockHeight: 0,
+            netAmount: -100_000
+        )
+        context.insert(l)
+        context.insert(PersistentPendingInput(
+            outpoint: PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0),
+            inputIndex: 0,
+            spendingTxid: sweptTxid,
+            spendingTransaction: l,
+            walletId: walletId
+        ))
+        try context.save()
+
+        sweep(handler, [Batch(losers: [sweptTxid], winner: winnerTxid)])
+        deliverFundingUtxo(handler, vout: 0, amount: 100_000)
+        XCTAssertTrue(try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0)).isSpent)
+
+        deliverRecordWithSpentEmit(
+            handler,
+            txid: winnerTxid,
+            context: 1,
+            inputOutpoint: (txid: fundingTxid, vout: 0),
+            includeSpentEmit: false
+        )
+
+        let held = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertTrue(
+            held.isSpent,
+            "the record pass alone must not downgrade the stamped hold"
+        )
+        XCTAssertEqual(held.supersededByTxid, winnerTxid)
+        XCTAssertEqual(held.spendingTransaction?.txid, winnerTxid)
+    }
+
+    /// One changeset round carrying a transaction record and — unless the
+    /// caller opts out to pin the record pass alone — the `utxos_spent`
+    /// emit for the input it consumed, the shape a real round takes when
+    /// the wallet classifies the spend in the same flush as the record.
     private func deliverRecordWithSpentEmit(
         _ handler: PlatformWalletPersistenceHandler,
         txid: Data,
         context: UInt32,
-        inputOutpoint: (txid: Data, vout: UInt32)
+        inputOutpoint: (txid: Data, vout: UInt32),
+        includeSpentEmit: Bool = true
     ) {
         let name = strdup("Standard { index: 0 }")
         defer { free(name) }
@@ -465,8 +516,10 @@ final class SweptTransactionPersistTests: XCTestCase {
                     account.account_type_name = name
                     account.transactions = recordPtr
                     account.transactions_count = 1
-                    account.utxos_spent = spentPtr
-                    account.utxos_spent_count = 1
+                    if includeSpentEmit {
+                        account.utxos_spent = spentPtr
+                        account.utxos_spent_count = 1
+                    }
                     withUnsafeMutablePointer(to: &account) { accountPtr in
                         var cs = WalletChangeSetFFI()
                         cs.accounts = accountPtr
