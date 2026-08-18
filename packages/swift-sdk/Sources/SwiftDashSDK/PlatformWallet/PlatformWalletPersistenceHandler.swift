@@ -2323,6 +2323,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 | PlatformWalletPersistenceCapabilities.dpnsNameStates
                 | PlatformWalletPersistenceCapabilities.trackedAssetLocks
                 | PlatformWalletPersistenceCapabilities.coreSweepRemoval
+                | PlatformWalletPersistenceCapabilities.dashpayPayments
         )
     }
 

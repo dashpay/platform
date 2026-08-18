@@ -847,6 +847,7 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::DPNS_NAME_STATES)
             .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
             .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
+            .union(PersistenceCapabilities::DASHPAY_PAYMENTS)
     }
 
     /// Merge `changeset` into the per-wallet buffer.

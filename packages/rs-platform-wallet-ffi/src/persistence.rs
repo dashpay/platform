@@ -118,6 +118,7 @@ pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_WALLET_RESTORE: u64 = 1 << 7;
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DPNS_NAME_STATES: u64 = 1 << 8;
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_TRACKED_ASSET_LOCKS: u64 = 1 << 9;
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_CORE_SWEEP_REMOVAL: u64 = 1 << 10;
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DASHPAY_PAYMENTS: u64 = 1 << 11;
 
 /// Version of [`PersistenceCallbacksExtension`]. The extension is deliberately
 /// separate from [`PersistenceCallbacks`]: existing hosts pass the latter by
@@ -1122,6 +1123,16 @@ impl FFIPersister {
         }
         if self.callbacks.on_persist_token_balances_fn.is_some() {
             capabilities = capabilities.union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE);
+        }
+        // The dashpay-payments slot is what the sweep's Failed flip rides
+        // (`dashpay_payments_overlay` on the store round). A host that
+        // never wired it — Android deliberately keeps payment recording
+        // in-memory-only — must not read as payment-durable, or the
+        // wallet-event adapter would couple the flip to a round that
+        // silently drops it: the accepted-and-ignored shape the sweep
+        // bit's own gating exists to prevent, reproduced one channel over.
+        if self.callbacks.on_persist_dashpay_payments_fn.is_some() {
+            capabilities = capabilities.union(PersistenceCapabilities::DASHPAY_PAYMENTS);
         }
         // Sweeps travel through the size-tagged extension callback, so —
         // unlike the legacy `on_persist_wallet_changeset_fn`, whose
@@ -6150,6 +6161,14 @@ mod tests {
     ) -> i32 {
         0
     }
+    unsafe extern "C" fn noop_dashpay_payments(
+        _ctx: *mut c_void,
+        _wallet_id: *const u8,
+        _entries: *const DashpayPaymentPersistEntryFFI,
+        _count: usize,
+    ) -> i32 {
+        0
+    }
     unsafe extern "C" fn noop_wallet_changeset_sweeps(
         _ctx: *mut c_void,
         _wallet_id: *const u8,
@@ -6328,6 +6347,52 @@ mod tests {
     /// extension slot is the only structural fact that distinguishes a
     /// sweep-aware host, because it exists only when the host's declared
     /// `struct_size` proved it.
+    /// `DASHPAY_PAYMENTS` requires the payments slot AND the declaration —
+    /// the flip channel's mirror of the sweep bit's gating. Android's
+    /// vtable leaves `on_persist_dashpay_payments_fn` unset, so even a
+    /// host blindly OR-ing the bit must read as payments-blind: the
+    /// wallet-event adapter keys the sweep's Failed-flip staging on this
+    /// bit, and an accepted-and-dropped overlay is exactly the shape the
+    /// gating exists to prevent.
+    #[test]
+    fn dashpay_payments_requires_the_slot_and_the_declaration() {
+        fn persister_with(
+            callbacks: PersistenceCallbacks,
+            declared: PersistenceCapabilities,
+        ) -> FFIPersister {
+            FFIPersister::new_with_persistence_capabilities(callbacks, declared)
+        }
+        // Declared but slot unwired (the Android shape): absent.
+        assert!(!persister_with(
+            PersistenceCallbacks::default(),
+            PersistenceCapabilities::DASHPAY_PAYMENTS
+        )
+        .persistence_capabilities()
+        .contains(PersistenceCapabilities::DASHPAY_PAYMENTS));
+
+        // Slot wired but never declared: absent.
+        assert!(!persister_with(
+            PersistenceCallbacks {
+                on_persist_dashpay_payments_fn: Some(noop_dashpay_payments),
+                ..Default::default()
+            },
+            PersistenceCapabilities::NONE
+        )
+        .persistence_capabilities()
+        .contains(PersistenceCapabilities::DASHPAY_PAYMENTS));
+
+        // Wired and declared: attested.
+        assert!(persister_with(
+            PersistenceCallbacks {
+                on_persist_dashpay_payments_fn: Some(noop_dashpay_payments),
+                ..Default::default()
+            },
+            PersistenceCapabilities::DASHPAY_PAYMENTS
+        )
+        .persistence_capabilities()
+        .contains(PersistenceCapabilities::DASHPAY_PAYMENTS));
+    }
+
     #[test]
     fn core_sweep_removal_requires_the_extension_slot_and_the_declaration() {
         fn persister_with(
@@ -6758,6 +6823,10 @@ mod tests {
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_CORE_SWEEP_REMOVAL,
             PersistenceCapabilities::CORE_SWEEP_REMOVAL.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DASHPAY_PAYMENTS,
+            PersistenceCapabilities::DASHPAY_PAYMENTS.bits()
         );
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ACCOUNT_ADDRESS_POOLS,

@@ -69,6 +69,22 @@ impl PersistenceCapabilities {
     /// complete sweep contract was implemented rather than silently
     /// truncated.
     pub const CORE_SWEEP_REMOVAL: Self = Self(1 << 10);
+    /// A stored changeset's `dashpay_payments_overlay` rows are durably
+    /// applied. This is what lets the wallet-event adapter couple a sweep's
+    /// payment consequence (`Pending → Failed` for the losers' sent
+    /// entries) to the sweep's own atomic store round: the flip is staged
+    /// onto the round ONLY for a backend attesting this bit, because a
+    /// sweep never re-emits once its round is durable — an
+    /// accepted-and-ignored overlay would leave the adapter believing a
+    /// flip persisted that a host without a payments store silently
+    /// dropped. A non-attesting backend keeps the in-memory flip (the
+    /// truthful session state; the transaction IS dead) with nothing
+    /// round-coupled — funds-safe, since payment entries are display
+    /// metadata; the funds-critical half of the sweep still gates on
+    /// `CORE_SWEEP_REMOVAL`. On the FFI surface Rust honours the
+    /// declaration only when `on_persist_dashpay_payments_fn` is actually
+    /// wired.
+    pub const DASHPAY_PAYMENTS: Self = Self(1 << 11);
 
     /// Capabilities required before exporting and funding an invitation voucher.
     pub const INVITATION_CREATION: Self = Self(

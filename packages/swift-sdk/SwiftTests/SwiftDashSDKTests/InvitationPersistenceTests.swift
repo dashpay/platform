@@ -58,6 +58,11 @@ final class InvitationPersistenceTests: XCTestCase {
             | PlatformWalletPersistenceCapabilities.dpnsNameStates
             | PlatformWalletPersistenceCapabilities.trackedAssetLocks
             | PlatformWalletPersistenceCapabilities.coreSweepRemoval
+            // DashPay payment rows: the handler wires
+            // `on_persist_dashpay_payments_fn` and lands the overlay on
+            // `PersistentDashpayPayment` rows, so the sweep's Failed flip
+            // may ride this store's rounds — genuinely attested.
+            | PlatformWalletPersistenceCapabilities.dashpayPayments
 
         XCTAssertEqual(
             capabilities.version,

@@ -66,13 +66,25 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// persisted. Restart hydration is separately attested by `walletRestore`.
     public static let trackedAssetLocks: UInt64 = 1 << 9
     /// A round's sweep batches — delivered through the persistence
-    /// extension's size-negotiated sweep callback — are durably applied:
-    /// the swept loser's row (and any tombstoned pending-input claim
-    /// standing in for a not-yet-materialized UTXO) actually leaves the
-    /// store. Mirrors `PersistenceCapabilities::CORE_SWEEP_REMOVAL`; Rust
-    /// only honours the declaration when the extension actually carries
-    /// the callback.
+    /// extension's size-negotiated sweep callback — are durably applied
+    /// batch by batch and in order: swept transactions and their outputs
+    /// are excluded from every restore and enumeration path (physical
+    /// deletion or a durable marker alike), released outpoints are freed
+    /// unless a surviving claim supersedes, and non-released spend claims
+    /// are retained durably. Mirrors
+    /// `PersistenceCapabilities::CORE_SWEEP_REMOVAL`; Rust only honours
+    /// the declaration when the extension actually carries the callback.
     public static let coreSweepRemoval: UInt64 = 1 << 10
+    /// DashPay payment rows delivered on a store round
+    /// (`dashpay_payments_overlay`) are durably applied. This is what the
+    /// wallet-event adapter keys on before coupling a sweep's
+    /// `Pending → Failed` payment flip to the sweep's own atomic round —
+    /// a non-attesting host (Android keeps payment recording
+    /// in-memory-only) gets the in-memory flip with nothing
+    /// round-coupled. Mirrors `PersistenceCapabilities::DASHPAY_PAYMENTS`;
+    /// Rust only honours the declaration when the payments callback is
+    /// actually wired.
+    public static let dashpayPayments: UInt64 = 1 << 11
 
     public let version: UInt32
     public let bits: UInt64

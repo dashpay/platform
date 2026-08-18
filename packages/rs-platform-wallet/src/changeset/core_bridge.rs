@@ -305,6 +305,22 @@ async fn run_wallet_event_adapter<P>(
     // once per session rather than once per faulted batch.
     let mut freeze_logged = false;
 
+    // Whether the backend durably applies `dashpay_payments_overlay`
+    // rows. The sweep's Failed flip is staged onto the sweep's own store
+    // round ONLY when it does: a sweep never re-emits once its round is
+    // durable, so handing the overlay to a host that silently drops it
+    // (Android deliberately keeps payment recording in-memory-only, its
+    // payments slot unwired) would leave this adapter believing a flip
+    // persisted — the accepted-and-ignored shape the sweep capability's
+    // own gating exists to prevent, one channel over. A non-attesting
+    // backend still gets the in-memory flip (the truthful session state;
+    // the transaction IS dead) with nothing round-coupled — funds-safe,
+    // since payment entries are display metadata, and consistent with
+    // every other payment write on such hosts.
+    let payments_attested = persister
+        .persistence_capabilities()
+        .contains(PersistenceCapabilities::DASHPAY_PAYMENTS);
+
     loop {
         // Block for the first event of a batch. Everything already sitting in
         // the channel behind it is folded in below without another await, so a
@@ -358,7 +374,9 @@ async fn run_wallet_event_adapter<P>(
             .await;
             entry.core.merge(core);
             entry.asset_locks.merge(asset_locks);
-            fold_payment_flips(entry, &mut payment_rollbacks, wallet_id, flips);
+            if payments_attested {
+                fold_payment_flips(entry, &mut payment_rollbacks, wallet_id, flips);
+            }
         }
 
         // Fold in whatever else is already buffered. `try_recv` never waits,
@@ -384,7 +402,9 @@ async fn run_wallet_event_adapter<P>(
                     .await;
                     entry.core.merge(core);
                     entry.asset_locks.merge(asset_locks);
-                    fold_payment_flips(entry, &mut payment_rollbacks, wallet_id, flips);
+                    if payments_attested {
+                        fold_payment_flips(entry, &mut payment_rollbacks, wallet_id, flips);
+                    }
                     folded += 1;
                 }
                 Err(TryRecvError::Empty) => break,
@@ -3382,11 +3402,13 @@ mod tests {
         );
 
         let (obs_tx, mut obs_rx) = unbounded_channel();
-        // Attested for sweeps: the removal must ride an ordinary round, not
-        // trip the fail-closed capability gate.
+        // Attested for sweeps AND payments: the removal must ride an
+        // ordinary round, and the flip's overlay is only staged for a
+        // payment-durable backend.
         let persister = Arc::new(ProbePersister::with_capabilities(
             obs_tx,
-            crate::changeset::PersistenceCapabilities::CORE_SWEEP_REMOVAL,
+            crate::changeset::PersistenceCapabilities::CORE_SWEEP_REMOVAL
+                .union(crate::changeset::PersistenceCapabilities::DASHPAY_PAYMENTS),
         ));
         let (event_tx, event_rx) = unbounded_channel();
         let cancel = CancellationToken::new();
@@ -3443,6 +3465,124 @@ mod tests {
                     .tracked_asset_locks
                     .contains_key(&out_point),
                 "the in-memory entry must not outlive its swept funding tx"
+            );
+        }
+
+        cancel.cancel();
+        handle.await.expect("adapter task joins");
+    }
+
+    /// A backend that never attested `DASHPAY_PAYMENTS` — Android, whose
+    /// payments slot is deliberately unwired — must not be handed the
+    /// sweep's Failed flip on the round at all: it would accept the round,
+    /// silently drop the overlay, and leave this adapter believing a flip
+    /// persisted that no store ever applied — the accepted-and-ignored
+    /// shape the sweep capability's own gating exists to prevent, one
+    /// channel over. The withhold keeps the in-memory flip (the truthful
+    /// session state) with nothing round-coupled.
+    #[tokio::test]
+    async fn a_payments_blind_backend_is_not_handed_the_sweeps_flip_on_the_round() {
+        use dpp::identity::v0::IdentityV0;
+        use dpp::identity::Identity;
+        use dpp::prelude::Identifier;
+        use key_wallet::account::account_type::StandardAccountType;
+
+        use super::spawn_wallet_event_adapter;
+        use crate::test_support::{funded_wallet_manager, NoopTestPersister};
+        use crate::wallet::identity::types::dashpay::payment::{PaymentEntry, PaymentStatus};
+        use crate::wallet::persister::WalletPersister;
+
+        let (wallet_manager, wallet_id, _generation, _signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let txid = dashcore::Txid::from([0xB9; 32]);
+        let txid_key = txid.to_string();
+
+        let noop = WalletPersister::new(
+            wallet_id,
+            Arc::new(NoopTestPersister) as Arc<dyn crate::changeset::PlatformWalletPersistence>,
+        );
+        {
+            let mut wm = wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+            info.identity_manager
+                .add_identity(
+                    Identity::V0(IdentityV0 {
+                        id: owner,
+                        public_keys: std::collections::BTreeMap::new(),
+                        balance: 0,
+                        revision: 0,
+                    }),
+                    0,
+                    wallet_id,
+                    &noop,
+                )
+                .expect("add owner");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .record_dashpay_payment(
+                    txid_key.clone(),
+                    PaymentEntry::new_sent(contact, 50_000, None),
+                    &noop,
+                )
+                .expect("record pending sent");
+        }
+
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        // Sweep-capable but payments-blind: the exact Android shape.
+        let persister = Arc::new(ProbePersister::with_capabilities(
+            obs_tx,
+            crate::changeset::PersistenceCapabilities::CORE_SWEEP_REMOVAL,
+        ));
+        let (event_tx, event_rx) = unbounded_channel();
+        let cancel = CancellationToken::new();
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let handle = spawn_wallet_event_adapter(
+            Arc::clone(&wallet_manager),
+            Arc::clone(&persister),
+            event_rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
+        );
+
+        event_tx
+            .send(WalletEvent::TransactionsSwept {
+                wallet_id,
+                txids: vec![txid],
+                superseded_by: dashcore::Txid::from([0xBA; 32]),
+                released_outpoints: vec![],
+                balance: WalletCoreBalance::default(),
+                account_balances: BTreeMap::new(),
+            })
+            .expect("send sweep");
+
+        let observed = obs_rx.recv().await.expect("sweep store");
+        assert!(!observed.rejected);
+        assert_eq!(
+            observed.n_payment_overlay_rows, 0,
+            "an overlay a payments-blind backend would silently drop must be withheld \
+             from its round"
+        );
+
+        {
+            let wm = wallet_manager.read().await;
+            let status = wm
+                .get_wallet_info(&wallet_id)
+                .expect("info")
+                .identity_manager
+                .managed_identity(&owner)
+                .expect("managed")
+                .dashpay()
+                .payments
+                .get(&txid_key)
+                .expect("entry")
+                .status;
+            assert_eq!(
+                status,
+                PaymentStatus::Failed,
+                "the in-memory flip still happens — the truthful session state"
             );
         }
 
@@ -3537,7 +3677,8 @@ mod tests {
         let (obs_tx, mut obs_rx) = unbounded_channel();
         let persister = Arc::new(ProbePersister::with_capabilities(
             obs_tx,
-            crate::changeset::PersistenceCapabilities::CORE_SWEEP_REMOVAL,
+            crate::changeset::PersistenceCapabilities::CORE_SWEEP_REMOVAL
+                .union(crate::changeset::PersistenceCapabilities::DASHPAY_PAYMENTS),
         ));
         let (event_tx, event_rx) = unbounded_channel();
         let cancel = CancellationToken::new();
@@ -3727,7 +3868,8 @@ mod tests {
         let (obs_tx, mut obs_rx) = unbounded_channel();
         let persister = Arc::new(ProbePersister::with_capabilities(
             obs_tx,
-            crate::changeset::PersistenceCapabilities::CORE_SWEEP_REMOVAL,
+            crate::changeset::PersistenceCapabilities::CORE_SWEEP_REMOVAL
+                .union(crate::changeset::PersistenceCapabilities::DASHPAY_PAYMENTS),
         ));
         let (event_tx, event_rx) = unbounded_channel();
 
