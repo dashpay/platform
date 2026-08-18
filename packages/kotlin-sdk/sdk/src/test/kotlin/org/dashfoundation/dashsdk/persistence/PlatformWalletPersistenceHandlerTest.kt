@@ -2997,6 +2997,95 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun aWinnersOwnPendingRowDoesNotEvaporateTheSweepTombstone() = runTest {
+        // Records precede sweeps within a round, so a wallet-relevant winner
+        // whose own funding side is ALSO unobserved stages an ordinary
+        // pending row for the same outpoint moments before the sweep
+        // repoints the loser's row into a tombstone. The tombstone keeps the
+        // loser's original, older `createdAt`, so the drain's newest-wins
+        // pick would select the winner's ordinary row, take the gated
+        // branch (`isSpent` stays false until the winner confirms — never,
+        // for an IS-locked unconfirmed winner), skip the `supersededByTxid`
+        // stamp, and delete every pending row including the tombstone: the
+        // durable hold evaporates and the consumed coin re-enters the
+        // restore set.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yFundAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 91 }
+        val pOutpoint = makeOutpoint(fundingTxid, 0)
+        val loserTxid = ByteArray(32) { 92 }
+        val winnerTxid = ByteArray(32) { 93 }
+
+        // Changeset 1: the doomed spend arrives before its funding output.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, loserTxid, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -50_000, 0, false, "", 1_700_000_050,
+            pOutpoint, 1,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // The loser's pending row must be strictly older than the winner's,
+        // as it always is in reality — `createdAt` has millisecond
+        // resolution and both rows land in the same test-run instant
+        // otherwise.
+        Thread.sleep(5)
+
+        // Changeset 2: the winner's record (IS-locked, still unconfirmed)
+        // and the sweep it caused, records first — the order the persist
+        // path guarantees inside one round.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, winnerTxid, ByteArray(10) { 6 }, 1, 0, ByteArray(32),
+            0, 1, "Standard", 0, -50_000, 0, false, "", 1_700_000_060,
+            pOutpoint, 1,
+        )
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(loserTxid), arrayOf(winnerTxid), emptyArray(),
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // Sanity: the coexisting pair this regression is about — the
+        // winner's ordinary row plus the repointed tombstone.
+        val rows = db.documentDao().getPendingInputsByOutpoint(pOutpoint)
+        assertEquals(2, rows.size)
+        assertEquals(1, rows.count { it.isSweptTombstone })
+
+        // The funding TXO finally arrives and drains both rows.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 50_000, "yFundAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val coin = db.txoDao().getByOutpoint(pOutpoint)!!
+        assertTrue(
+            "the sweep's hold must survive the winner's own coexisting pending row",
+            coin.isSpent,
+        )
+        assertTrue(winnerTxid.contentEquals(coin.supersededByTxid))
+        assertTrue(
+            "the consumed coin must stay out of the restore set",
+            handler.onLoadWalletList().single().utxos.isEmpty(),
+        )
+    }
+
+    @Test
     fun chainedSweepBeforeFundingReleasesAnEarlierTombstoneOnASecondSweep() = runTest {
         // Regression for the review finding on
         // sweptSpendBeforeFundingSurvivesRestartAndStaysSpentWhenFunded above:
