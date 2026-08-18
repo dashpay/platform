@@ -54,7 +54,8 @@ pub(crate) use payment_handler::run_dashpay_payment_hooks;
 mod payments;
 pub(crate) use payments::{
     confirm_sent_dashpay_payment, confirm_sent_dashpay_payment_by_txid,
-    fail_swept_sent_dashpay_payments, record_incoming_dashpay_payments,
+    flip_swept_sent_payments_for_store, record_incoming_dashpay_payments,
+    rollback_swept_payment_flips, SweptPaymentFlips,
 };
 mod profile;
 pub(crate) mod sdk_writer;

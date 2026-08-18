@@ -252,12 +252,14 @@ fn dashpay_payment_records(event: &WalletEvent) -> Vec<&TransactionRecord> {
             inserted, updated, ..
         } => inserted.iter().chain(updated.iter()).collect(),
         // `TransactionsSwept` carries txids, not records: the wallet has
-        // already dropped the records these name. Like
-        // `TransactionInstantLocked`, it is routed by txid instead — the
-        // sweep hook in `run_dashpay_payment_hooks` fails the matching
-        // `Pending` sent payments, since a swept transaction can never
-        // confirm and its record (the last thing reconciliation could
-        // have resolved the entry from) is gone.
+        // already dropped the records these name. Its payment consequence
+        // — failing the matching `Pending` sent payments, since a swept
+        // transaction can never confirm — is NOT this handler's to apply:
+        // a sweep never re-emits once its round is durable, so the flip
+        // must ride the sweep's own atomic store round, and the
+        // wallet-event adapter owns that (see
+        // `payments::SweptPaymentFlips`). Routing it here as well would
+        // race a second, separately persisted write against that round.
         WalletEvent::TransactionInstantLocked { .. }
         | WalletEvent::TransactionsSwept { .. }
         | WalletEvent::SyncHeightAdvanced { .. }
@@ -282,24 +284,25 @@ fn drives_payment_hooks(event: &WalletEvent) -> bool {
         WalletEvent::BlockProcessed {
             inserted, updated, ..
         } => !inserted.is_empty() || !updated.is_empty(),
-        // Routed by txid, like `TransactionInstantLocked` above: each
-        // swept txid can name a `Pending` sent payment that must fail
-        // (the transaction can never confirm). An empty sweep has no
-        // payment work.
-        WalletEvent::TransactionsSwept { txids, .. } => !txids.is_empty(),
         // No records to route (see `dashpay_payment_records`), so a task
         // here would take and release the wallet-manager write lock for
-        // nothing.
-        WalletEvent::SyncHeightAdvanced { .. } | WalletEvent::ChainLockProcessed { .. } => false,
+        // nothing. The sweep's payment consequence rides the wallet-event
+        // adapter's own store round instead — see `dashpay_payment_records`.
+        WalletEvent::TransactionsSwept { .. }
+        | WalletEvent::SyncHeightAdvanced { .. }
+        | WalletEvent::ChainLockProcessed { .. } => false,
     }
 }
 
 /// Run the DashPay payment hooks for `event`: record any incoming DashPay
-/// payment, then resolve a matching sent payment — `Pending` to
-/// `Confirmed` once its transaction reaches finality (mined or
-/// InstantSend-locked), `Pending` to `Failed` when a sweep proves it never
-/// can. All paths are idempotent per txid, so re-detections, re-emitted
-/// sweeps, and repeated block-processing rounds converge without
+/// payment, then advance a matching sent payment from `Pending` (or a
+/// sweep-written `Failed` — the reinstatement correction) to `Confirmed`
+/// once its transaction reaches finality (mined or InstantSend-locked).
+/// The opposite terminal — `Failed`, when a sweep proves the transaction
+/// never can confirm — is applied by the wallet-event adapter on the
+/// sweep's own atomic store round, not here (see
+/// `payments::SweptPaymentFlips`). All paths are idempotent per txid, so
+/// re-detections and repeated block-processing rounds converge without
 /// duplicating entries.
 pub(crate) async fn run_dashpay_payment_hooks(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
@@ -316,20 +319,6 @@ pub(crate) async fn run_dashpay_payment_hooks(
             wallet_id,
             persister,
             txid,
-        )
-        .await;
-        return;
-    }
-    // A sweep also carries txids rather than records, and drives the
-    // opposite terminal: each swept transaction can never confirm, so a
-    // matching `Pending` sent payment fails instead of sitting `Pending`
-    // forever.
-    if let WalletEvent::TransactionsSwept { txids, .. } = event {
-        crate::wallet::identity::network::fail_swept_sent_dashpay_payments(
-            wallet_manager,
-            wallet_id,
-            persister,
-            txids,
         )
         .await;
         return;
@@ -489,25 +478,25 @@ mod tests {
         assert!(drives_payment_hooks(&event));
     }
 
-    /// `TransactionsSwept` carries no record but DOES drive the payment
-    /// hooks — each swept txid can name a `Pending` sent payment that must
-    /// fail, since a swept transaction can never confirm. An empty sweep
-    /// has no payment work and must not spawn.
+    /// `TransactionsSwept` must NOT drive the payment hooks: its payment
+    /// consequence — failing the losers' `Pending` sent payments — rides
+    /// the wallet-event adapter's own atomic store round (see
+    /// `payments::SweptPaymentFlips`), because a sweep never re-emits once
+    /// its round is durable and a separately persisted flip that failed
+    /// its store would be lost for good. Spawning a hook task here would
+    /// race a second write against that round.
     #[test]
-    fn transactions_swept_drives_payment_hooks_without_a_record() {
-        let swept = |txids: Vec<dashcore::Txid>| WalletEvent::TransactionsSwept {
+    fn transactions_swept_does_not_drive_payment_hooks() {
+        let event = WalletEvent::TransactionsSwept {
             wallet_id: [0u8; 32],
-            txids,
+            txids: vec![dashcore::Txid::from([0x21; 32])],
             superseded_by: dashcore::Txid::from([0x22; 32]),
             released_outpoints: Vec::new(),
             balance: WalletCoreBalance::default(),
             account_balances: std::collections::BTreeMap::new(),
         };
-        let event = swept(vec![dashcore::Txid::from([0x21; 32])]);
-        // No record to route, but the event must still drive the hooks.
         assert!(dashpay_payment_records(&event).is_empty());
-        assert!(drives_payment_hooks(&event));
-        assert!(!drives_payment_hooks(&swept(Vec::new())));
+        assert!(!drives_payment_hooks(&event));
     }
 
     /// A `BlockProcessed` that changed no records (syncing past an empty

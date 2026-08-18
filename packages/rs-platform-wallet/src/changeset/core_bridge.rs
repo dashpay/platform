@@ -158,6 +158,11 @@ struct BatchDiagnostics {
     /// Wallets in this drain that are faulted — whether they entered faulted
     /// or were faulted by it. Each wallet counts at most once per drain.
     faulted: usize,
+    /// Wallets whose `store()` this drain REJECTED outright (the `Err`
+    /// arm) — not the nominal-success sweep-capability freeze, whose round
+    /// did store. The caller uses this to roll back the in-memory payment
+    /// flips whose durable half the rejection discarded.
+    rejected_wallets: std::collections::BTreeSet<WalletId>,
 }
 
 impl BatchDiagnostics {
@@ -320,6 +325,18 @@ async fn run_wallet_event_adapter<P>(
         };
 
         let mut batch: BTreeMap<WalletId, WalletBatch> = BTreeMap::new();
+        // The undo half of every sweep-failed payment flip staged into
+        // `batch` — kept OUTSIDE the batch because `commit_batch` consumes
+        // it, and the rollback only runs for wallets whose store was
+        // rejected (see below).
+        let mut payment_rollbacks: BTreeMap<
+            WalletId,
+            Vec<(
+                dpp::prelude::Identifier,
+                String,
+                crate::wallet::identity::PaymentEntry,
+            )>,
+        > = BTreeMap::new();
         let mut closed = false;
         {
             let wallet_id = event.wallet_id();
@@ -329,9 +346,11 @@ async fn run_wallet_event_adapter<P>(
             // read lock on the manager.
             let core = build_core_changeset(&wallet_manager, &event).await;
             let asset_locks = reconstruct_asset_locks_for_event(&wallet_manager, &event).await;
+            let flips = swept_payment_flips_for_event(&wallet_manager, &event).await;
             let entry = batch.entry(wallet_id).or_default();
             entry.core.merge(core);
             entry.asset_locks.merge(asset_locks);
+            fold_payment_flips(entry, &mut payment_rollbacks, wallet_id, flips);
         }
 
         // Fold in whatever else is already buffered. `try_recv` never waits,
@@ -345,9 +364,11 @@ async fn run_wallet_event_adapter<P>(
                     let core = build_core_changeset(&wallet_manager, &event).await;
                     let asset_locks =
                         reconstruct_asset_locks_for_event(&wallet_manager, &event).await;
+                    let flips = swept_payment_flips_for_event(&wallet_manager, &event).await;
                     let entry = batch.entry(wallet_id).or_default();
                     entry.core.merge(core);
                     entry.asset_locks.merge(asset_locks);
+                    fold_payment_flips(entry, &mut payment_rollbacks, wallet_id, flips);
                     folded += 1;
                 }
                 Err(TryRecvError::Empty) => break,
@@ -369,6 +390,25 @@ async fn run_wallet_event_adapter<P>(
             &sync_fault,
             &mut freeze_logged,
         );
+
+        // A rejected round leaves NOTHING durable — the loser's record and
+        // the payment flip alike — so memory must return to the durable
+        // state or the replayed sweep (re-emitted by the re-scan, since the
+        // rejection kept the loser's record) would find the entries already
+        // `Failed` in memory, skip them as ineligible, and the store would
+        // never learn. Only rejected wallets roll back: a stored round —
+        // including one that stored but froze the watermark for a
+        // non-attesting sweep backend — has the flip durably applied.
+        for wallet_id in &diag.rejected_wallets {
+            if let Some(rollback) = payment_rollbacks.remove(wallet_id) {
+                crate::wallet::identity::network::rollback_swept_payment_flips(
+                    &wallet_manager,
+                    wallet_id,
+                    rollback,
+                )
+                .await;
+            }
+        }
 
         // One structured line per drain via the `log` facade so a tester
         // logcat is unambiguous about whether the watermark is advancing.
@@ -422,6 +462,7 @@ where
         WalletBatch {
             mut core,
             asset_locks,
+            payments_overlay,
         },
     ) in batch
     {
@@ -442,7 +483,10 @@ where
                 diag.record_frozen(h);
             }
         }
-        if core.is_empty_no_records() && Merge::is_empty(&asset_locks) {
+        if core.is_empty_no_records()
+            && Merge::is_empty(&asset_locks)
+            && payments_overlay.is_empty()
+        {
             // SyncHeightAdvanced for an unknown wallet, empty BlockProcessed, a
             // watermark-only batch stripped by the fault guard above, etc. —
             // nothing to persist. Skip the round-trip.
@@ -487,6 +531,9 @@ where
             // same store round-trip so the row and the record that
             // implies it land atomically.
             asset_locks: (!Merge::is_empty(&asset_locks)).then_some(asset_locks),
+            // The sweep-failed payments ride the same atomic round as the
+            // sweep that proved them dead — see `WalletBatch::payments_overlay`.
+            dashpay_payments_overlay: (!payments_overlay.is_empty()).then_some(payments_overlay),
             ..PlatformWalletChangeSet::default()
         };
         match persister.store(wallet_id, cs) {
@@ -531,6 +578,9 @@ where
                 // A rejected changeset means these rows are not on disk. Fault
                 // THIS wallet's watermark so it can't outrun them; the next
                 // scan re-emits and the idempotent upserts recover the state.
+                // Reported to the caller so the in-memory payment flips whose
+                // durable half this rejection discarded are rolled back.
+                diag.rejected_wallets.insert(wallet_id);
                 if fault_and_freeze(
                     &mut diag,
                     offered_height,
@@ -612,6 +662,20 @@ fn freeze_synced_height_if_faulted(core: &mut CoreChangeSet, persistence_faulted
 struct WalletBatch {
     core: CoreChangeSet,
     asset_locks: AssetLockChangeSet,
+    /// Sent DashPay payments a folded sweep failed, riding the SAME
+    /// `store()` as the sweep that proved them dead. This is the flip's
+    /// only durability: a sweep never re-emits once its round is durable,
+    /// so a separately persisted flip whose store failed was lost for
+    /// good — while here a rejection keeps the loser's record with it,
+    /// the wallet faults, the re-scan re-detects the conflict, and the
+    /// re-emitted sweep recomputes the flip (after
+    /// [`run_wallet_event_adapter`] rolls the in-memory half back).
+    /// Folded last-write-wins per `(owner, txid)`, matching
+    /// `PlatformWalletChangeSet::merge`'s overlay rule.
+    payments_overlay: std::collections::BTreeMap<
+        dpp::prelude::Identifier,
+        std::collections::BTreeMap<String, crate::wallet::identity::PaymentEntry>,
+    >,
 }
 
 /// Rebuild missing tracked asset locks from the records an event
@@ -700,6 +764,62 @@ async fn reconstruct_asset_locks_for_event(
         return AssetLockChangeSet::default();
     }
     reconstruction::reconstruct_tracked_asset_locks(wallet_manager, &wallet_id, &candidates).await
+}
+
+/// The payment half of a sweep: flip the losers' `Pending` sent DashPay
+/// payments to `Failed` in memory and hand back the overlay + rollback the
+/// drain loop stages into the sweep's own store round. Every other event
+/// is a no-op. See [`WalletBatch::payments_overlay`] for why this rides
+/// the round instead of the payment hooks' own store.
+async fn swept_payment_flips_for_event(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    event: &WalletEvent,
+) -> crate::wallet::identity::network::SweptPaymentFlips {
+    match event {
+        WalletEvent::TransactionsSwept {
+            wallet_id, txids, ..
+        } => {
+            crate::wallet::identity::network::flip_swept_sent_payments_for_store(
+                wallet_manager,
+                wallet_id,
+                txids,
+            )
+            .await
+        }
+        _ => crate::wallet::identity::network::SweptPaymentFlips::default(),
+    }
+}
+
+/// Stage one event's sweep-payment flips: the overlay folds into the
+/// wallet's batch entry (last-write-wins per `(owner, txid)`, matching
+/// `PlatformWalletChangeSet::merge`), the rollback into the drain's ledger.
+fn fold_payment_flips(
+    entry: &mut WalletBatch,
+    payment_rollbacks: &mut BTreeMap<
+        WalletId,
+        Vec<(
+            dpp::prelude::Identifier,
+            String,
+            crate::wallet::identity::PaymentEntry,
+        )>,
+    >,
+    wallet_id: WalletId,
+    flips: crate::wallet::identity::network::SweptPaymentFlips,
+) {
+    if flips.is_empty() {
+        return;
+    }
+    for (owner, rows) in flips.overlay {
+        entry
+            .payments_overlay
+            .entry(owner)
+            .or_default()
+            .extend(rows);
+    }
+    payment_rollbacks
+        .entry(wallet_id)
+        .or_default()
+        .extend(flips.rollback);
 }
 
 /// Project an upstream [`WalletEvent`] into a [`CoreChangeSet`] suitable
@@ -2266,6 +2386,7 @@ mod tests {
         n_records: usize,
         n_asset_locks: usize,
         n_asset_locks_removed: usize,
+        n_payment_overlay_rows: usize,
         rejected: bool,
     }
 
@@ -2330,6 +2451,11 @@ mod tests {
                     .asset_locks
                     .as_ref()
                     .map(|a| a.removed.len())
+                    .unwrap_or(0),
+                n_payment_overlay_rows: changeset
+                    .dashpay_payments_overlay
+                    .as_ref()
+                    .map(|o| o.values().map(|rows| rows.len()).sum())
                     .unwrap_or(0),
                 rejected,
             });
@@ -3219,6 +3345,175 @@ mod tests {
         handle.await.expect("adapter task joins");
     }
 
+    /// The sweep's payment flip is durable BECAUSE it rides the sweep's own
+    /// atomic store round: a sweep never re-emits once its round is
+    /// durable, so a separately persisted flip whose store failed was lost
+    /// for good. End to end through the real adapter loop: the flip's
+    /// overlay lands in the SAME `store()` as the sweep; a rejected round
+    /// rolls the in-memory flip back to the durable state (`Pending`), so
+    /// the replayed sweep finds the entry eligible and recomputes it; and
+    /// the replay's round carries the overlay again.
+    #[tokio::test]
+    async fn swept_payment_flip_rides_the_sweeps_round_and_rolls_back_on_rejection() {
+        use dpp::identity::v0::IdentityV0;
+        use dpp::identity::Identity;
+        use dpp::prelude::Identifier;
+        use key_wallet::account::account_type::StandardAccountType;
+
+        use super::spawn_wallet_event_adapter;
+        use crate::test_support::{funded_wallet_manager, NoopTestPersister};
+        use crate::wallet::identity::types::dashpay::payment::{PaymentEntry, PaymentStatus};
+        use crate::wallet::persister::WalletPersister;
+
+        let (wallet_manager, wallet_id, _generation, _signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let tx1 = dashcore::Txid::from([0xB1; 32]);
+        let tx2 = dashcore::Txid::from([0xB2; 32]);
+
+        // Seed the identity and two Pending sent entries through a noop
+        // persister so the probe's observation stream carries ONLY the
+        // adapter's own stores.
+        let noop = WalletPersister::new(
+            wallet_id,
+            Arc::new(NoopTestPersister) as Arc<dyn crate::changeset::PlatformWalletPersistence>,
+        );
+        {
+            let mut wm = wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+            info.identity_manager
+                .add_identity(
+                    Identity::V0(IdentityV0 {
+                        id: owner,
+                        public_keys: std::collections::BTreeMap::new(),
+                        balance: 0,
+                        revision: 0,
+                    }),
+                    0,
+                    wallet_id,
+                    &noop,
+                )
+                .expect("add owner");
+            let managed = info
+                .identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed");
+            for (txid, amount) in [(tx1, 50_000u64), (tx2, 10_000u64)] {
+                managed
+                    .record_dashpay_payment(
+                        txid.to_string(),
+                        PaymentEntry::new_sent(contact, amount, None),
+                        &noop,
+                    )
+                    .expect("record pending sent");
+            }
+        }
+
+        async fn status(
+            wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+            wallet_id: &WalletId,
+            owner: &dpp::prelude::Identifier,
+            txid: &str,
+        ) -> crate::wallet::identity::types::dashpay::payment::PaymentStatus {
+            let wm = wallet_manager.read().await;
+            wm.get_wallet_info(wallet_id)
+                .expect("info")
+                .identity_manager
+                .managed_identity(owner)
+                .expect("managed")
+                .dashpay()
+                .payments
+                .get(txid)
+                .expect("entry")
+                .status
+        }
+
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::with_capabilities(
+            obs_tx,
+            crate::changeset::PersistenceCapabilities::CORE_SWEEP_REMOVAL,
+        ));
+        let (event_tx, event_rx) = unbounded_channel();
+        let cancel = CancellationToken::new();
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let handle = spawn_wallet_event_adapter(
+            Arc::clone(&wallet_manager),
+            Arc::clone(&persister),
+            event_rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
+        );
+
+        let swept = |txid: dashcore::Txid| WalletEvent::TransactionsSwept {
+            wallet_id,
+            txids: vec![txid],
+            superseded_by: dashcore::Txid::from([0xC1; 32]),
+            released_outpoints: vec![],
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        };
+
+        // Leg 1: the flip's overlay rides the sweep's own store.
+        event_tx.send(swept(tx1)).expect("send sweep 1");
+        let observed = obs_rx.recv().await.expect("sweep 1 store");
+        assert!(!observed.rejected);
+        assert_eq!(
+            observed.n_payment_overlay_rows, 1,
+            "the Failed flip must ride the same store() as the sweep that proved it"
+        );
+        assert_eq!(
+            status(&wallet_manager, &wallet_id, &owner, &tx1.to_string()).await,
+            PaymentStatus::Failed
+        );
+
+        // Leg 2: a rejected round rolls the in-memory flip back to the
+        // durable state, so the replayed sweep can recompute it.
+        persister.fail_next(wallet_id);
+        event_tx.send(swept(tx2)).expect("send sweep 2");
+        let observed = obs_rx.recv().await.expect("sweep 2 store attempt");
+        assert!(observed.rejected, "the probe rejects this round");
+        assert_eq!(
+            observed.n_payment_overlay_rows, 1,
+            "the attempt carried the flip"
+        );
+        // The rollback runs right after commit in the same drain iteration;
+        // bounded-poll memory rather than racing it.
+        let mut rolled_back = false;
+        for _ in 0..50 {
+            if status(&wallet_manager, &wallet_id, &owner, &tx2.to_string()).await
+                == PaymentStatus::Pending
+            {
+                rolled_back = true;
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert!(
+            rolled_back,
+            "a rejected round must roll the in-memory flip back to Pending — the \
+             durable state, and the replayed sweep's eligibility"
+        );
+
+        // Leg 3: the replayed sweep (the re-scan re-emits it, because the
+        // rejected round kept the loser's record too) recomputes the flip
+        // and its round carries the overlay again.
+        event_tx.send(swept(tx2)).expect("send sweep 2 replay");
+        let observed = obs_rx.recv().await.expect("replayed sweep store");
+        assert!(!observed.rejected);
+        assert_eq!(
+            observed.n_payment_overlay_rows, 1,
+            "the replayed sweep must recompute the flip the rollback undid"
+        );
+        assert_eq!(
+            status(&wallet_manager, &wallet_id, &owner, &tx2.to_string()).await,
+            PaymentStatus::Failed
+        );
+
+        cancel.cancel();
+        handle.await.expect("adapter task joins");
+    }
+
     /// The coalesced sweep-then-chainlocked-reinstatement fold, driven
     /// through the REAL producers rather than hand-built changesets: the
     /// sweep arm removes the tracked entry and emits its tombstone, the
@@ -3553,6 +3848,7 @@ mod tests {
             super::WalletBatch {
                 core: CoreChangeSet::default(),
                 asset_locks,
+                payments_overlay: BTreeMap::new(),
             },
         );
         commit_batch(
@@ -3611,6 +3907,7 @@ mod tests {
             WalletBatch {
                 core,
                 asset_locks: AssetLockChangeSet::default(),
+                payments_overlay: BTreeMap::new(),
             },
         );
         batch
