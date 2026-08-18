@@ -1063,11 +1063,10 @@ async fn resolve_sent_payment_by_txid(
         };
         let resolved = match managed.dashpay().payments.get(txid) {
             Some(entry) if entry.direction == PaymentDirection::Sent => {
-                let eligible = match (entry.status, to) {
-                    (PaymentStatus::Pending, _) => true,
-                    (PaymentStatus::Failed, PaymentStatus::Confirmed) => true,
-                    _ => false,
-                };
+                let eligible = matches!(
+                    (entry.status, to),
+                    (PaymentStatus::Pending, _) | (PaymentStatus::Failed, PaymentStatus::Confirmed)
+                );
                 if !eligible {
                     continue;
                 }
