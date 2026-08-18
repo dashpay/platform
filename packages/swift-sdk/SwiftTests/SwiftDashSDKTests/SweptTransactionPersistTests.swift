@@ -219,9 +219,9 @@ final class SweptTransactionPersistTests: XCTestCase {
             releasedBuffers.append(freed)
 
             var entry = SweepBatchFFI()
-            entry.txids = txids
+            entry.txids = UnsafePointer(txids)
             entry.txids_count = UInt(batch.losers.count)
-            entry.released_outpoints = freed
+            entry.released_outpoints = UnsafePointer(freed)
             entry.released_outpoints_count = UInt(batch.released.count)
             Swift.withUnsafeMutableBytes(of: &entry.superseded_by) { dst in
                 batch.winner.withUnsafeBytes { src in dst.copyMemory(from: src) }

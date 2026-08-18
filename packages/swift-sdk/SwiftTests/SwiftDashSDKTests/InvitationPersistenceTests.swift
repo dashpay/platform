@@ -95,7 +95,11 @@ final class InvitationPersistenceTests: XCTestCase {
 
         // 1. Create.
         handler.beginChangeset(walletId: walletId)
-        handler.persistInvitations(walletId: walletId, upserts: [snapshot(statusRaw: 0)], removed: [])
+        XCTAssertTrue(
+            handler.persistInvitations(
+                walletId: walletId, upserts: [snapshot(statusRaw: 0)], removed: []
+            )
+        )
         _ = handler.endChangeset(walletId: walletId, success: true)
 
         var rows = try fetchRows(container)
@@ -110,7 +114,11 @@ final class InvitationPersistenceTests: XCTestCase {
 
         // 2. Status change → upsert in place, no duplicate row.
         handler.beginChangeset(walletId: walletId)
-        handler.persistInvitations(walletId: walletId, upserts: [snapshot(statusRaw: 1)], removed: [])
+        XCTAssertTrue(
+            handler.persistInvitations(
+                walletId: walletId, upserts: [snapshot(statusRaw: 1)], removed: []
+            )
+        )
         _ = handler.endChangeset(walletId: walletId, success: true)
 
         rows = try fetchRows(container)
