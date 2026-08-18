@@ -4470,6 +4470,48 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun assetLockUpsertNeverRegressesAConsumedRow() = runTest {
+        // The upsert-side twin of the delete guard below, matching Swift's
+        // skip and SQLite's WHERE clause: Consumed is the terminal state,
+        // and a stale reconstruction/enrichment snapshot folded after the
+        // live consumption write must not regress it.
+        val outpoint = makeOutpoint(ByteArray(32) { 48 }, 0)
+        handler.onChangesetBegin(walletId)
+        handler.onPersistAssetLockUpsert(
+            walletId = walletId,
+            outPoint = outpoint,
+            transactionBytes = ByteArray(20) { 49 },
+            accountIndex = 0,
+            fundingType = 0,
+            identityIndex = 0,
+            amountDuffs = 70_000,
+            status = 4, // Consumed — terminal
+            proofBytes = ByteArray(8) { 50 },
+        )
+        // The stale snapshot arrives after the consumption write.
+        handler.onPersistAssetLockUpsert(
+            walletId = walletId,
+            outPoint = outpoint,
+            transactionBytes = ByteArray(20) { 49 },
+            accountIndex = 0,
+            fundingType = 0,
+            identityIndex = 0,
+            amountDuffs = 70_000,
+            status = 1, // Broadcast — a stale pre-consumption view
+            proofBytes = null,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val row = db.assetLockDao().getByOutPointHex(encodeOutPointHex(outpoint))
+        assertNotNull(row)
+        assertEquals(
+            "a stale non-Consumed snapshot must not regress the terminal",
+            4,
+            row!!.statusRaw,
+        )
+    }
+
+    @Test
     fun assetLockRemovalNeverDeletesAConsumedRow() = runTest {
         // Parity with SQLite (`status != 'consumed'`) and Swift
         // (`statusRaw == 4` skip): a Consumed row is deliberately retained

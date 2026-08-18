@@ -1970,6 +1970,18 @@ class PlatformWalletPersistenceHandler(
         stage(walletId) { db ->
             val outPointHex = encodeOutPointHex(outPoint)
             val existing = db.assetLockDao().getByOutPointHex(outPointHex)
+            // Consumed (4) is the terminal lifecycle state — never let a
+            // non-Consumed snapshot regress it. Writers race: the
+            // wallet-event adapter's batched drain can deliver a stale
+            // reconstruction/enrichment snapshot AFTER the live flow's
+            // synchronous consumption write, and this upsert is otherwise
+            // last-write-wins. Mirrors the same guard in Swift's
+            // `persistAssetLocks`, the sqlite upsert's WHERE clause, and
+            // `AssetLockChangeSet::merge`; all other transitions stay
+            // last-write-wins because non-terminal statuses legitimately
+            // move both ways.
+            val statusValue = status.toInt() and 0xFF
+            if (existing?.statusRaw == 4 && statusValue != 4) return@stage
             db.assetLockDao().upsert(
                 AssetLockEntity(
                     outPointHex = outPointHex,
@@ -1979,7 +1991,7 @@ class PlatformWalletPersistenceHandler(
                     identityIndexRaw = identityIndex,
                     accountIndexRaw = accountIndex,
                     amountDuffs = amountDuffs,
-                    statusRaw = status.toInt() and 0xFF,
+                    statusRaw = statusValue,
                     proofBytes = proofBytes,
                     createdAt = existing?.createdAt ?: java.util.Date(),
                     updatedAt = now(),
