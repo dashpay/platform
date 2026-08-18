@@ -12,6 +12,8 @@ import org.dashfoundation.dashsdk.persistence.entities.CoreAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.PendingInputEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
+import org.dashfoundation.dashsdk.persistence.entities.TransactionEntity
+import org.dashfoundation.dashsdk.persistence.entities.TxoEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -2202,12 +2204,22 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue("the coin the unrecorded winner may have taken is held", held.isSpent)
         assertNull("with no spender invented for it", held.spendingTxid)
         assertTrue(
+            "but with the winner stamped, the same attribution SQLite " +
+                "records as spent_in_txid",
+            irrelevantWinner.contentEquals(held.supersededByTxid),
+        )
+        assertTrue(
             "and it stays out of the restore set",
             handler.onLoadWalletList().single().utxos.isEmpty(),
         )
 
-        // The hold is not a dead end either: the wallet re-delivering the
-        // coin as a UTXO, which a rescan does, still lifts it.
+        // A re-delivery of the funding output — what a restore-rescan does,
+        // blind to the unconfirmed winner no block carries yet — must NOT
+        // outrank the sweep's verdict: the coin was provably consumed, and
+        // handing it back would resurrect it into the restore set on every
+        // restore-from-seed until the winner confirms. Only an explicit
+        // release frees a stamped hold — the same answer the SQLite store's
+        // upsert valve gives to the identical event stream.
         handler.onChangesetBegin(walletId)
         handler.onWalletChangesetUtxoAdded(
             walletId, fundingTxid, 0, 100_000, "yUtxoAddr", ByteArray(25) { 6 },
@@ -2215,7 +2227,64 @@ class PlatformWalletPersistenceHandlerTest {
         )
         handler.onChangesetEnd(walletId, success = true)
 
-        assertFalse(db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))!!.isSpent)
+        val redelivered = db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))!!
+        assertTrue("the stamped hold survives re-delivery", redelivered.isSpent)
+        assertTrue(irrelevantWinner.contentEquals(redelivered.supersededByTxid))
+        assertTrue(handler.onLoadWalletList().single().utxos.isEmpty())
+    }
+
+    @Test
+    fun aPreStampHoldStillFreesOnRedelivery() = runTest {
+        // The backstop for rows written before holds named their winner: a
+        // coin held spent with neither a spender nor a `supersededByTxid`
+        // stamp has nothing durable behind it, so the wallet re-delivering
+        // it as a UTXO — the authority on what it holds — still lifts the
+        // mark. Every hold written today is stamped; this pins the migration
+        // path for the ones already on disk.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yUtxoAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 55 }
+        val pOutpoint = makeOutpoint(fundingTxid, 0)
+        db.transactionDao().upsert(
+            TransactionEntity(txid = fundingTxid, transactionData = ByteArray(0)),
+        )
+        db.txoDao().upsert(
+            TxoEntity(
+                outpoint = pOutpoint,
+                vout = 0,
+                amount = 100_000,
+                address = "yUtxoAddr",
+                isSpent = true,
+                walletId = walletId,
+                txid = fundingTxid,
+            ),
+        )
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 100_000, "yUtxoAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertFalse(
+            "a hold with nothing durable behind it frees on re-delivery",
+            db.txoDao().getByOutpoint(pOutpoint)!!.isSpent,
+        )
         assertEquals(1, handler.onLoadWalletList().single().utxos.size)
     }
 

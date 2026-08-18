@@ -986,16 +986,18 @@ class PlatformWalletPersistenceHandler(
                 isLocked = isLocked,
                 // The wallet is handing this outpoint over as a UTXO, so it
                 // holds it unspent — authoritative, and the only thing that
-                // lifts a mark with no spender behind it. The sweep path
-                // parks the inputs it cannot resolve in exactly that state
-                // (`holdSpentWithoutSpender`); a rescan re-delivering the
-                // coin lands here and frees it. A row whose spend is still
-                // on record keeps its flag — the pending drain below owns
-                // that transition. `supersededByTxid` is a different kind of
-                // "no spender" — a sweep's winner is known but its row never
-                // materialized here — and must not be lifted the same way,
-                // or a tombstone the drain below just wrote would be undone
-                // by the very next sync round that re-delivers this outpoint.
+                // lifts a mark with neither a spender nor a winner behind
+                // it (a pre-stamp row from before `holdSpentWithoutSpender`
+                // named its winner; every hold written today is stamped). A
+                // row whose spend is still on record keeps its flag — the
+                // pending drain below owns that transition — and so does a
+                // `supersededByTxid` hold: the winner that consumed this
+                // coin is known even though its row never materialized
+                // here, and a re-delivery cannot outrank that verdict — a
+                // restore-rescan re-finds the funding output precisely
+                // because it is blind to an unconfirmed winner no block
+                // carries yet. Only an explicit release
+                // (`releaseByOutpoint`) frees a stamped coin.
                 isSpent = existing?.isSpent == true &&
                     (existing.spendingTxid != null || existing.supersededByTxid != null),
                 walletId = walletId,
@@ -1234,7 +1236,7 @@ class PlatformWalletPersistenceHandler(
                 db.txoDao().deleteOwnOutputs(txids[i])
                 db.transactionDao().markGloballySwept(txids[i])
 
-                db.txoDao().holdSpentWithoutSpender(txids[i], walletId)
+                db.txoDao().holdSpentWithoutSpender(txids[i], walletId, supersededBy[i])
 
                 // The released set is partitioned in memory rather than
                 // bound into SQL: its size follows the input count of a

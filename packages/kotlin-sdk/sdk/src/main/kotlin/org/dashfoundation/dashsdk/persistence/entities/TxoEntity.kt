@@ -104,24 +104,26 @@ data class TxoEntity(
      */
     val coreAddressId: String? = null,
     /**
-     * Port of Swift `PersistentTxo.supersededByTxid`. Set only by
+     * Port of Swift `PersistentTxo.supersededByTxid` — the winner a sweep
+     * attributed this coin's consumption to, mirroring the SQLite store's
+     * `spent_in_txid`. Two writers set it: `holdSpentWithoutSpender`, when
+     * a sweep holds an already-materialized input, and
      * `onWalletChangesetUtxoAdded` resolving a `pending_inputs` row with
-     * `isSweptTombstone` — i.e. this TXO's funding output arrived after the
-     * loser that spent it was already swept and deleted, so there was never
-     * a live `spendingTxid` to carry forward. Deliberately NOT an FK: the
+     * `isSweptTombstone` — the funding output arrived only after the loser
+     * that spent it was swept and deleted. Deliberately NOT an FK: the
      * winner named here need not have its own `transactions` row (it can be
      * wallet-irrelevant), so this column has to hold a bare txid that
      * `transactions(txid)` may never contain.
      *
-     * `null` in every other case, including the plain "sweep held this coin
-     * with no spender on record" state that `holdSpentWithoutSpender` writes
-     * directly onto an already-materialized row (`spendingTxid = NULL`, no
-     * tombstone involved). That distinction is what the `isSpent` carry-over
-     * above and `onWalletChangesetUtxoAdded`'s recovery clear key on: a coin
-     * the wallet re-delivers as unspent only lifts `isSpent` when both
-     * `spendingTxid` and this are null, so a tombstoned coin isn't waved
-     * back into the restore set just because the winner's own row was never
-     * linked.
+     * The stamp is what makes a hold durable. The `isSpent` carry-over
+     * above and `onWalletChangesetUtxoAdded`'s recovery clear both key on
+     * it: a coin the wallet re-delivers as unspent only lifts `isSpent`
+     * when both `spendingTxid` and this are null — a rescan re-finds the
+     * funding output precisely because it is blind to an unconfirmed
+     * winner no block carries yet, so re-delivery cannot outrank the
+     * sweep's verdict. Cleared only by `releaseByOutpoint`, when a later
+     * sweep proves the coin came free after all; a pre-stamp row (written
+     * before holds named their winner) still frees on re-delivery.
      */
     val supersededByTxid: ByteArray? = null,
 ) {

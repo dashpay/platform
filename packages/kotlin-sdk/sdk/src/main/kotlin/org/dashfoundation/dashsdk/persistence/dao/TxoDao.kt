@@ -45,13 +45,25 @@ interface TxoDao {
 
     /**
      * Hold every coin of [walletId]'s own that [spendingTxid] claimed out of
-     * the restore set, without naming a spender for them.
+     * the restore set, attributed to [supersededBy] rather than to a linked
+     * spender.
      *
      * Used when [spendingTxid] was swept: it can never confirm, so its claim
      * is not a spend, but most of the coins it named really were taken — by
      * the transaction that beat it. A swept transaction is always
      * unconfirmed, so its inputs sit at `isSpent = 0`, and deleting it would
      * otherwise return all of them, the consumed one included.
+     *
+     * `supersededByTxid` is what makes the hold durable — the same stamp the
+     * SQLite store writes as `spent_in_txid`, and the same one the pending-
+     * input drain writes when the claim had no TXO row yet. The winner need
+     * never be recorded here (it can pay only outside addresses), so the
+     * stamp cannot be a `spendingTxid` FK link; but leaving it off entirely
+     * would let the next re-delivery of the funding output — exactly what a
+     * restore-rescan does, blind to an unconfirmed winner it cannot see in
+     * any block — flip a provably-consumed coin back into the restore set.
+     * A stamped hold only ever comes free through an explicit release
+     * ([releaseByOutpoint], which clears the stamp with the hold).
      *
      * [spendingTxid] can be shared: the same `transactions` row spends coins
      * from more than one wallet at once, and upstream computes a separate
@@ -67,10 +79,15 @@ interface TxoDao {
      * clear the genuinely free ones with [releaseByOutpoint].
      */
     @Query(
-        "UPDATE txos SET isSpent = 1, spendingTxid = NULL, spendingInputIndex = NULL " +
+        "UPDATE txos SET isSpent = 1, spendingTxid = NULL, spendingInputIndex = NULL, " +
+            "supersededByTxid = :supersededBy " +
             "WHERE spendingTxid = :spendingTxid AND walletId = :walletId",
     )
-    suspend fun holdSpentWithoutSpender(spendingTxid: ByteArray, walletId: ByteArray)
+    suspend fun holdSpentWithoutSpender(
+        spendingTxid: ByteArray,
+        walletId: ByteArray,
+        supersededBy: ByteArray,
+    )
 
     /**
      * Mark one outpoint of [walletId]'s own unspent again — a coin a sweep
