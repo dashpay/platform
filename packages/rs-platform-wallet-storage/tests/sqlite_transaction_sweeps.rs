@@ -1784,3 +1784,69 @@ fn a_batch_sweeping_parent_and_child_leaves_no_placeholder_for_the_parents_outpu
          spent_in_txid claim may stand in its way"
     );
 }
+
+/// The presence guard on the co-swept skip. The skip exists because a
+/// parent that IS on hand has its output rows deleted by its own pass —
+/// but a parent whose record this store lost (the same record-loss threat
+/// the by-outpoint release pass exists for) deletes nothing, and skipping
+/// the child's claim there would leave the dead parent's surviving output
+/// row `spent = 0`: a phantom spendable coin `load()` hands back. The
+/// child's pass must still mark it.
+#[test]
+fn a_co_swept_parent_with_no_row_still_has_its_output_marked_spent() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xE9);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = p2pkh(0x51);
+    let parent_txid = Txid::from_byte_array([0x50; 32]); // P — record lost
+    let child_txid = Txid::from_byte_array([0x51; 32]); // C
+    let winner_txid = Txid::from_byte_array([0x52; 32]); // W
+    let parent_output = OutPoint::new(parent_txid, 0);
+
+    // P's record round was wiped, but its funded output row and C's record
+    // both persisted.
+    {
+        let mut conn = persister.lock_conn_for_test();
+        derive_address(&conn, &w, 0, &addr);
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![tx_record(child_txid, vec![parent_output], vec![])],
+            new_utxos: vec![make_utxo(&addr, parent_txid, 0, 5_000)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    {
+        let conn = persister.lock_conn_for_test();
+        assert!(
+            unspent(&conn, &w).contains(&parent_output),
+            "sanity: the parent's output starts live"
+        );
+    }
+
+    // The batch sweeps both. P's pass finds no row and deletes nothing; the
+    // child's claim on P:0 is the only thing that can take the dead coin
+    // out of the unspent set.
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![parent_txid, child_txid],
+                superseded_by: winner_txid,
+                released_outpoints: vec![],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    let conn = persister.lock_conn_for_test();
+    assert!(
+        !unspent(&conn, &w).contains(&parent_output),
+        "a dead parent's output must not survive as a phantom spendable coin \
+         just because the parent's own record was lost"
+    );
+}
