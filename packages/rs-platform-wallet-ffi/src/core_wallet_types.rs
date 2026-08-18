@@ -270,7 +270,7 @@ pub struct WalletChangeSetFFI {
 pub struct SweepBatchFFI {
     /// Removed transactions, raw 32-byte txids. Delete these rows and every
     /// UTXO they created.
-    pub txids: *mut [u8; 32],
+    pub txids: *const [u8; 32],
     pub txids_count: usize,
     /// The transaction whose arrival settled the inputs. Final, and not
     /// necessarily wallet-relevant — it can pay entirely to outside
@@ -281,7 +281,7 @@ pub struct SweepBatchFFI {
     /// free. Everything else they claimed was taken by `superseded_by` and
     /// stays spent — a persister holds every input of what it deletes, so
     /// this is the only thing telling it which to hand back.
-    pub released_outpoints: *mut OutPointFFI,
+    pub released_outpoints: *const OutPointFFI,
     pub released_outpoints_count: usize,
 }
 
@@ -566,17 +566,22 @@ pub(crate) fn build_sweep_batches_for_callback(
             let mut superseded_by = [0u8; 32];
             superseded_by.copy_from_slice(batch.superseded_by.as_ref());
             SweepBatchFFI {
+                // `*const`, built straight from `as_ptr()`: the storage is
+                // borrowed immutably here, and `Vec::as_ptr` does not permit
+                // writes through the pointer or anything derived from it.
+                // Casting to `*mut` would advertise a C ABI that a callback
+                // could take literally, breaking Rust's aliasing rules.
                 txids: if backing.txids.is_empty() {
-                    std::ptr::null_mut()
+                    std::ptr::null()
                 } else {
-                    backing.txids.as_ptr() as *mut [u8; 32]
+                    backing.txids.as_ptr()
                 },
                 txids_count: backing.txids.len(),
                 superseded_by,
                 released_outpoints: if backing.released.is_empty() {
-                    std::ptr::null_mut()
+                    std::ptr::null()
                 } else {
-                    backing.released.as_ptr() as *mut OutPointFFI
+                    backing.released.as_ptr()
                 },
                 released_outpoints_count: backing.released.len(),
             }
