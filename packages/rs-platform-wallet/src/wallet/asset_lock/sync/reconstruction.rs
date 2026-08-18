@@ -358,6 +358,58 @@ pub(crate) async fn reconstruct_tracked_asset_locks(
     cs
 }
 
+/// `TransactionsSwept` sibling of the hooks above: drop every tracked
+/// entry whose funding transaction the sweep just removed.
+///
+/// A swept funding tx was provably beaten to one of its inputs, so it can
+/// never confirm and its credit outputs will never be usable — but nothing
+/// else ever cascades the removal into this table. Left alone, the entry
+/// is a zombie the resume path re-broadcasts and then waits on without
+/// bound, and the persisted mirror carries it forever. The changeset's
+/// `removed` set is the same deletion channel a rejected-at-broadcast
+/// `Built` row uses, and every store already applies it.
+///
+/// Removal is safe against the one way the verdict can reverse: a
+/// chainlocked return re-emits the funding record through
+/// `TransactionDetected` / `BlockProcessed`, and reconstruction re-inserts
+/// the entry from it — the same path a restore scan uses.
+///
+/// The tracked map is inspected under the write lock (sweeps are rare and
+/// carry few txids, so there is no hot path to protect), and untouched
+/// wallets return an empty changeset without allocating.
+pub(crate) async fn remove_tracked_asset_locks_for_swept(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: &WalletId,
+    swept: &[dashcore::Txid],
+) -> AssetLockChangeSet {
+    let mut cs = AssetLockChangeSet::default();
+    if swept.is_empty() {
+        return cs;
+    }
+    let mut wm = wallet_manager.write().await;
+    let Some(info) = wm.get_wallet_info_mut(wallet_id) else {
+        return cs;
+    };
+    if info.tracked_asset_locks.is_empty() {
+        return cs;
+    }
+    let dead: Vec<OutPoint> = info
+        .tracked_asset_locks
+        .keys()
+        .filter(|out_point| swept.contains(&out_point.txid))
+        .copied()
+        .collect();
+    for out_point in dead {
+        info.tracked_asset_locks.remove(&out_point);
+        cs.removed.insert(out_point);
+        tracing::info!(
+            outpoint = %out_point,
+            "dropped tracked asset lock — its funding transaction was swept"
+        );
+    }
+    cs
+}
+
 /// One record's full reconstruction step: insert-if-absent, then let a
 /// finalized record upgrade what's already tracked but still unproven
 /// (the inserts carry their own proof already, so enrichment only ever

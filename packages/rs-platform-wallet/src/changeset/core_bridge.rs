@@ -652,6 +652,23 @@ async fn reconstruct_asset_locks_for_event(
             )
             .await;
         }
+        // The subtractive arm: a swept funding tx can never confirm, so
+        // every tracked lock it funds is dead. Nothing else cascades the
+        // sweep into this table — without this arm the entry is a zombie
+        // `resume_asset_lock` re-broadcasts and waits on without bound,
+        // mirrored forever by every store. A chainlocked return re-emits
+        // the funding record through the arms above, which re-insert the
+        // entry, so removal here is not a one-way door.
+        WalletEvent::TransactionsSwept {
+            wallet_id, txids, ..
+        } => {
+            return reconstruction::remove_tracked_asset_locks_for_swept(
+                wallet_manager,
+                wallet_id,
+                txids,
+            )
+            .await;
+        }
         _ => return AssetLockChangeSet::default(),
     };
     if candidates.is_empty() {
@@ -2223,6 +2240,7 @@ mod tests {
         last_processed_height: Option<u32>,
         n_records: usize,
         n_asset_locks: usize,
+        n_asset_locks_removed: usize,
         rejected: bool,
     }
 
@@ -2282,6 +2300,11 @@ mod tests {
                     .asset_locks
                     .as_ref()
                     .map(|a| a.asset_locks.len())
+                    .unwrap_or(0),
+                n_asset_locks_removed: changeset
+                    .asset_locks
+                    .as_ref()
+                    .map(|a| a.removed.len())
                     .unwrap_or(0),
                 rejected,
             });
@@ -3024,6 +3047,147 @@ mod tests {
                 .expect("reconstructed in-memory entry");
             assert_eq!(lock.status, AssetLockStatus::RecoveredFromChain);
             assert_eq!(lock.amount, 1_000_000);
+        }
+
+        cancel.cancel();
+        handle.await.expect("adapter task joins");
+    }
+
+    /// The `TransactionsSwept` arm end to end: a sweep naming a tracked
+    /// lock's funding tx must drop the in-memory entry and carry the
+    /// tombstone to the persister through the same `removed` channel a
+    /// rejected-at-broadcast `Built` row uses. A swept funding tx can
+    /// never confirm, so without this the entry is a zombie
+    /// `resume_asset_lock` re-broadcasts and waits on without bound, and
+    /// every store mirrors it forever.
+    #[tokio::test]
+    async fn transactions_swept_removes_the_tracked_asset_lock_it_funded() {
+        use dashcore::hashes::Hash as _;
+        use key_wallet::account::account_type::StandardAccountType;
+        use key_wallet::account::AccountType;
+        use key_wallet::managed_account::transaction_record::{
+            TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::transaction_router::TransactionType;
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+        use tokio::sync::Notify;
+
+        use super::spawn_wallet_event_adapter;
+        use crate::test_support::{
+            funded_wallet_manager, AlwaysRejectedBroadcaster, NoopTestPersister,
+        };
+        use crate::wallet::asset_lock::manager::AssetLockManager;
+        use crate::wallet::persister::WalletPersister;
+
+        let (wallet_manager, wallet_id, _generation, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_network(dashcore::Network::Testnet)
+                .build()
+                .expect("mock sdk"),
+        );
+        let asset_lock_manager = AssetLockManager::new(
+            sdk,
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::new(AlwaysRejectedBroadcaster),
+            WalletPersister::new(
+                wallet_id,
+                Arc::new(NoopTestPersister) as Arc<dyn crate::changeset::PlatformWalletPersistence>,
+            ),
+        );
+        let (tx, _path) = asset_lock_manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await
+            .expect("build asset lock");
+
+        let record = TransactionRecord::new(
+            tx.clone(),
+            AccountType::IdentityRegistration,
+            TransactionContext::InChainLockedBlock(BlockInfo::new(
+                4321,
+                dashcore::BlockHash::all_zeros(),
+                1_650_000_000,
+            )),
+            TransactionType::AssetLock,
+            TransactionDirection::Internal,
+            vec![],
+            vec![],
+            0,
+        );
+
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        // Attested for sweeps: the removal must ride an ordinary round, not
+        // trip the fail-closed capability gate.
+        let persister = Arc::new(ProbePersister::with_capabilities(
+            obs_tx,
+            crate::changeset::PersistenceCapabilities::CORE_SWEEP_REMOVAL,
+        ));
+        let (event_tx, event_rx) = unbounded_channel();
+        let cancel = CancellationToken::new();
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let handle = spawn_wallet_event_adapter(
+            Arc::clone(&wallet_manager),
+            Arc::clone(&persister),
+            event_rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
+        );
+
+        // Track the lock the same way a restore scan would.
+        event_tx
+            .send(WalletEvent::BlockProcessed {
+                wallet_id,
+                height: 4321,
+                chain_lock: None,
+                inserted: vec![record],
+                updated: vec![],
+                matured: vec![],
+                balance: WalletCoreBalance::default(),
+                account_balances: BTreeMap::new(),
+                addresses_derived: vec![],
+            })
+            .expect("send reconstruction event");
+        let observed = obs_rx.recv().await.expect("reconstruction store");
+        assert_eq!(observed.n_asset_locks, 1, "sanity: the entry is tracked");
+
+        // The funding tx is swept.
+        event_tx
+            .send(WalletEvent::TransactionsSwept {
+                wallet_id,
+                txids: vec![tx.txid()],
+                superseded_by: dashcore::Txid::from_byte_array([0x77; 32]),
+                released_outpoints: vec![],
+                balance: WalletCoreBalance::default(),
+                account_balances: BTreeMap::new(),
+            })
+            .expect("send sweep event");
+
+        let observed = obs_rx.recv().await.expect("sweep store");
+        assert_eq!(
+            observed.n_asset_locks_removed, 1,
+            "the dead lock's tombstone must ride the sweep's own store()"
+        );
+
+        let out_point = dashcore::OutPoint::new(tx.txid(), 0);
+        {
+            let wm = wallet_manager.read().await;
+            assert!(
+                !wm.get_wallet_info(&wallet_id)
+                    .expect("wallet")
+                    .tracked_asset_locks
+                    .contains_key(&out_point),
+                "the in-memory entry must not outlive its swept funding tx"
+            );
         }
 
         cancel.cancel();
