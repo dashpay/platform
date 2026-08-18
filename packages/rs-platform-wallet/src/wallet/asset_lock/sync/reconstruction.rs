@@ -377,6 +377,16 @@ pub(crate) async fn reconstruct_tracked_asset_locks(
 /// The tracked map is inspected under the write lock (sweeps are rare and
 /// carry few txids, so there is no hot path to protect), and untouched
 /// wallets return an empty changeset without allocating.
+///
+/// Deliberately NO rejection undo, unlike the sweep's payment flips: if
+/// the round this changeset rides is rejected, the in-memory entry is
+/// gone while the mirror row survives — a session-local divergence only.
+/// The rejection faults the wallet, the frozen watermark already forces
+/// the restart, and `load()` there re-syncs from the mirror while the
+/// re-scan re-emits the sweep (rejected rounds keep the loser's record)
+/// and re-drops the entry — or re-inserts it through reconstruction if
+/// the funding tx turned out to live. An undo ledger would buy nothing
+/// that restart does not already guarantee.
 pub(crate) async fn remove_tracked_asset_locks_for_swept(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     wallet_id: &WalletId,
