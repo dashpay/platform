@@ -1169,22 +1169,24 @@ class PlatformWalletPersistenceHandler(
      * below just like the TXOs do, so left alone the claim would vanish with
      * the loser, and the funding TXO's own later `onWalletChangesetUtxoAdded`
      * — even after a restart — would have nothing to tell it the coin isn't
-     * really free. [DocumentDao.tombstoneUnreleasedPendingInputs] detaches a
-     * held pending input from its doomed loser and repoints it at the
-     * corresponding [supersededBy] entry instead, flagged so the drain in
+     * really free. The staged rows are therefore fetched by their loser's
+     * FK ([DocumentDao.pendingInputsStagedBy]) and partitioned in memory:
+     * a released one is deleted outright, a held one is detached from its
+     * doomed loser and repointed at the corresponding [supersededBy] entry,
+     * flagged `isSweptTombstone` so the drain in
      * `onWalletChangesetUtxoAdded` knows to keep the coin spent — durably,
      * via `TxoEntity.supersededByTxid` — once the funding TXO materializes.
      *
      * A tombstoned row can itself need to move again: [supersededBy] is a
      * winner in this round, but nothing stops it from losing a later round
      * to a further winner while [supersededBy]'s own funding TXO is still
-     * unresolved. [DocumentDao.tombstoneUnreleasedPendingInputs] can't see
-     * that earlier tombstone — it already detached from the relationship
-     * that query matches on — so [DocumentDao.deleteReleasedSweptTombstones]
-     * and [DocumentDao.retargetSweptTombstones] look it up the only other
+     * unresolved. The staged-row fetch can't see that earlier tombstone —
+     * it already detached from the relationship that query matches on — so
+     * [DocumentDao.sweptTombstonesTargeting] looks it up the only other
      * way it is still findable, by the scalar `spendingTxid` it was
-     * repointed to, and carry it the rest of the chain: deleted if this
-     * round finally frees its outpoint, repointed at the new winner if not.
+     * repointed to, and the same in-memory partition carries it the rest
+     * of the chain: deleted if this round finally frees its outpoint,
+     * repointed at the new winner if not.
      *
      * All updates run before the delete: the foreign key nulls `spendingTxid`
      * (or, for a pending row already detached above, does nothing) on delete,
@@ -1283,9 +1285,10 @@ class PlatformWalletPersistenceHandler(
                 // A pending input an EARLIER sweep already tombstoned to
                 // txids[i] (that txid was itself a sweep's winner, and is
                 // now being swept in turn) detached from the relationship
-                // `tombstoneUnreleasedPendingInputs` above matches on, so it
-                // has to be found and carried forward separately — see
-                // [DocumentDao.deleteReleasedSweptTombstones].
+                // the staged-row fetch above matches on, so it has to be
+                // found by the scalar `spendingTxid` it was repointed to
+                // and carried forward separately — see
+                // [DocumentDao.sweptTombstonesTargeting].
                 val prior = db.documentDao().sweptTombstonesTargeting(txids[i], walletId)
                 val (freed, stillHeld) = prior.partition { releasedKeys.contains(it.outpoint.toHex()) }
                 if (freed.isNotEmpty()) {

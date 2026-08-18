@@ -176,25 +176,6 @@ interface DocumentDao {
     fun observePendingInputsByWallet(walletId: ByteArray): Flow<List<PendingInputEntity>>
 
     /**
-     * Repoint every pending input of [walletId]'s own still recorded
-     * against loser [txid] at [supersededBy] instead, except the outpoints
-     * named in [releasedOutpoints] — those came free and are left for
-     * `onWalletChangesetTransactionsSwept`'s own cascade-delete of [txid]
-     * to remove. [spendingTransactionTxid] is cleared first so the FK no
-     * longer targets the row about to be deleted (a live `transactions`
-     * row cascades its `pending_inputs` children), and `isSweptTombstone`
-     * marks the row so `onWalletChangesetUtxoAdded` knows this is a durable
-     * claim rather than an ordinary in-flight spend once the funding TXO
-     * finally lands.
-     *
-     * [txid] can be shared across wallets — the same loser can spend coins
-     * from more than one of them — and upstream hands each wallet its own
-     * [releasedOutpoints], computed only from that wallet's point of view.
-     * The `walletId` filter is what keeps this call from repointing or
-     * tombstoning a row a different wallet owns using a release decision
-     * that was never made about it.
-     */
-    /**
      * This wallet's live pending inputs staged by [txid], for the sweep to
      * partition in memory.
      *
