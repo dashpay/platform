@@ -986,14 +986,26 @@ async fn confirm_sent_payment_by_txid(
     txid: &str,
 ) {
     use crate::wallet::identity::types::dashpay::payment::PaymentStatus;
-    resolve_sent_payment_by_txid(
+    // Log-and-continue is sound for confirmations only: the flip rolled
+    // back in memory with the failed store, and every later signal for the
+    // same transaction — a confirmed re-detection, the block round, the
+    // IS-lock event — re-drives this path against the still-`Pending`
+    // entry. The sweep path below has no such second signal and handles
+    // its persistence failures itself.
+    if let Err(e) = resolve_sent_payment_by_txid(
         wallet_manager,
         wallet_id,
         persister,
         txid,
         PaymentStatus::Confirmed,
     )
-    .await;
+    .await
+    {
+        tracing::warn!(
+            error = %e,
+            "Failed to persist sent-payment confirmation; will retry on next detection"
+        );
+    }
 }
 
 /// Mark the `Pending` `Sent` [`PaymentEntry`]s of swept transactions
@@ -1018,15 +1030,55 @@ pub(crate) async fn fail_swept_sent_dashpay_payments(
     txids: &[dashcore::Txid],
 ) {
     use crate::wallet::identity::types::dashpay::payment::PaymentStatus;
+    // One store rejection must not strand the payment: a sweep is
+    // one-shot. Nothing re-emits it, and the same sweep deletes the
+    // loser's record — the last thing reconciliation could have resolved
+    // the entry from — so unlike a confirmation (re-driven by every later
+    // signal for its transaction) a failed flip here has no natural
+    // retry. Three brief in-place attempts ride out a transient backend
+    // error; `record_dashpay_payment` rolls the in-memory overwrite back
+    // with the failed store, so each attempt finds the entry `Pending`
+    // again and the flip stays idempotent.
+    const PERSIST_ATTEMPTS: u32 = 3;
     for txid in txids {
-        resolve_sent_payment_by_txid(
-            wallet_manager,
-            wallet_id,
-            persister,
-            &txid.to_string(),
-            PaymentStatus::Failed,
-        )
-        .await;
+        let txid_hex = txid.to_string();
+        for attempt in 1..=PERSIST_ATTEMPTS {
+            match resolve_sent_payment_by_txid(
+                wallet_manager,
+                wallet_id,
+                persister,
+                &txid_hex,
+                PaymentStatus::Failed,
+            )
+            .await
+            {
+                Ok(()) => break,
+                Err(e) if attempt < PERSIST_ATTEMPTS => {
+                    tracing::warn!(
+                        txid = %txid_hex,
+                        error = %e,
+                        attempt,
+                        "Sweep payment-failure persist rejected; retrying"
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(100 * u64::from(attempt)))
+                        .await;
+                }
+                Err(e) => {
+                    // The residual after the budget: the entry stays
+                    // `Pending` durably, and the only remaining exits are a
+                    // chainlocked reinstatement confirming it or a manual
+                    // resolution — named here so the log is the audit
+                    // trail, not the recovery.
+                    tracing::error!(
+                        txid = %txid_hex,
+                        error = %e,
+                        "Sweep payment-failure persist rejected on every attempt; \
+                         the sent payment stays Pending durably (no signal re-emits \
+                         a sweep)"
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -1041,18 +1093,26 @@ pub(crate) async fn fail_swept_sent_dashpay_payments(
 /// the persistence round. Separated from the event glue so the state
 /// machine is unit-testable without constructing a full
 /// `TransactionRecord`.
+///
+/// A no-op resolution (no entry, not `Sent`, not eligible) is `Ok(())`;
+/// `Err` means the flip was found, attempted, and its store rejected — the
+/// in-memory overwrite has already been rolled back
+/// (`record_dashpay_payment`'s contract), so the caller may retry or
+/// accept per its own signal model. Not swallowed here, because the two
+/// callers genuinely differ: a confirmation is re-driven by every later
+/// signal for its transaction, a sweep never re-emits.
 async fn resolve_sent_payment_by_txid(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     wallet_id: &WalletId,
     persister: &crate::wallet::persister::WalletPersister,
     txid: &str,
     to: crate::wallet::identity::types::dashpay::payment::PaymentStatus,
-) {
+) -> Result<(), crate::changeset::PersistenceError> {
     use crate::wallet::identity::types::dashpay::payment::{PaymentDirection, PaymentStatus};
 
     let mut wm = wallet_manager.write().await;
     let Some(info) = wm.get_wallet_info_mut(wallet_id) else {
-        return;
+        return Ok(());
     };
 
     // The sent transaction belongs to one managed identity; find the
@@ -1077,15 +1137,11 @@ async fn resolve_sent_payment_by_txid(
             _ => continue,
         };
         tracing::info!(owner = %owner, %txid, status = ?to, "Resolving sent DashPay payment");
-        if let Err(e) = managed.record_dashpay_payment(txid.to_string(), resolved, persister) {
-            tracing::warn!(
-                error = %e,
-                "Failed to persist sent-payment resolution; will retry on next detection"
-            );
-        }
-        // txid is unique — only one identity can hold this entry.
-        break;
+        // txid is unique — only one identity can hold this entry, so the
+        // first eligible hit decides the call's result either way.
+        return managed.record_dashpay_payment(txid.to_string(), resolved, persister);
     }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -1588,6 +1644,9 @@ mod tests {
     #[derive(Default)]
     struct RecordingPersister {
         stores: Mutex<Vec<(WalletId, PlatformWalletChangeSet)>>,
+        /// Fail the next N `store` calls with an injected backend error
+        /// before recording resumes — the shape of a transient rejection.
+        fail_next_stores: Mutex<usize>,
     }
 
     impl PlatformWalletPersistence for RecordingPersister {
@@ -1596,6 +1655,13 @@ mod tests {
             wallet_id: WalletId,
             changeset: PlatformWalletChangeSet,
         ) -> Result<(), PersistenceError> {
+            {
+                let mut budget = self.fail_next_stores.lock().unwrap();
+                if *budget > 0 {
+                    *budget -= 1;
+                    return Err(PersistenceError::backend("injected store failure"));
+                }
+            }
             self.stores.lock().unwrap().push((wallet_id, changeset));
             Ok(())
         }
@@ -3054,6 +3120,123 @@ mod tests {
             status(iw, &wallet_id, &owner, &txid_key).await,
             PaymentStatus::Confirmed,
             "Confirmed is terminal — a stale sweep must not demote it"
+        );
+    }
+
+    /// A payment-store rejection alongside a successful core sweep must not
+    /// strand the sent payment `Pending`. The core sweep persists through
+    /// its own store round and deletes the loser's record, so unlike a
+    /// confirmation — re-driven by every later signal for its transaction —
+    /// nothing ever re-emits the failure signal; the sweep hook's bounded
+    /// in-place retry is the only recovery. Also pins the honest residual:
+    /// a rejection outlasting the whole budget leaves the entry `Pending`
+    /// rather than lying about durability.
+    #[tokio::test]
+    async fn a_store_rejection_does_not_strand_a_swept_payment_pending() {
+        use crate::wallet::identity::types::dashpay::payment::{PaymentEntry, PaymentStatus};
+        use key_wallet::WalletCoreBalance;
+        use key_wallet_manager::WalletEvent;
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let txid = dashcore::Txid::from([0xAC; 32]);
+        let txid_key = txid.to_string();
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .record_dashpay_payment(
+                    txid_key.clone(),
+                    PaymentEntry::new_sent(contact, 50_000, Some("dinner".into())),
+                    &p,
+                )
+                .expect("record pending sent");
+        }
+
+        async fn status(
+            iw: &crate::wallet::identity::IdentityWallet<crate::broadcaster::SpvBroadcaster>,
+            wallet_id: &WalletId,
+            owner: &Identifier,
+            txid: &str,
+        ) -> PaymentStatus {
+            let wm = iw.wallet_manager.read().await;
+            let info = wm.get_wallet_info(wallet_id).expect("info");
+            info.identity_manager
+                .managed_identity(owner)
+                .unwrap()
+                .dashpay()
+                .payments
+                .get(txid)
+                .expect("entry")
+                .status
+        }
+
+        let swept_event = || WalletEvent::TransactionsSwept {
+            wallet_id,
+            txids: vec![txid],
+            superseded_by: dashcore::Txid::from([0xCE; 32]),
+            released_outpoints: vec![],
+            balance: WalletCoreBalance::default(),
+            account_balances: std::collections::BTreeMap::new(),
+        };
+
+        // One transient rejection: the retry must land the flip anyway. The
+        // in-memory status only reads Failed when a store SUCCEEDED
+        // (record_dashpay_payment rolls back on failure), so this assertion
+        // proves durability, not just the overlay.
+        *persister.fail_next_stores.lock().unwrap() = 1;
+        super::super::run_dashpay_payment_hooks(&iw.wallet_manager, &wallet_id, &p, &swept_event())
+            .await;
+        assert_eq!(
+            status(iw, &wallet_id, &owner, &txid_key).await,
+            PaymentStatus::Failed,
+            "one store rejection must not strand the swept payment Pending"
+        );
+
+        // The residual: a rejection outlasting the whole budget leaves the
+        // entry Pending — never an in-memory Failed the store did not
+        // accept.
+        let txid2 = dashcore::Txid::from([0xAD; 32]);
+        let txid2_key = txid2.to_string();
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .record_dashpay_payment(
+                    txid2_key.clone(),
+                    PaymentEntry::new_sent(contact, 10_000, None),
+                    &p,
+                )
+                .expect("record second pending sent");
+        }
+        *persister.fail_next_stores.lock().unwrap() = usize::MAX;
+        let swept_event2 = WalletEvent::TransactionsSwept {
+            wallet_id,
+            txids: vec![txid2],
+            superseded_by: dashcore::Txid::from([0xCF; 32]),
+            released_outpoints: vec![],
+            balance: WalletCoreBalance::default(),
+            account_balances: std::collections::BTreeMap::new(),
+        };
+        super::super::run_dashpay_payment_hooks(&iw.wallet_manager, &wallet_id, &p, &swept_event2)
+            .await;
+        *persister.fail_next_stores.lock().unwrap() = 0;
+        assert_eq!(
+            status(iw, &wallet_id, &owner, &txid2_key).await,
+            PaymentStatus::Pending,
+            "an exhausted budget leaves Pending in memory — never an unpersisted Failed"
         );
     }
 
