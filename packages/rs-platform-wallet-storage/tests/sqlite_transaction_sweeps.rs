@@ -1886,3 +1886,99 @@ fn a_co_swept_parent_with_no_row_still_has_its_output_removed() {
          its record was lost at sweep time"
     );
 }
+
+/// The second route into the co-swept-parent corner: P:0's row exists only
+/// as the synthetic spent-only row `derive_spent_utxos` wrote when C's
+/// record arrived IN ORDER (P's own record and funding never persisted —
+/// weaker preconditions than the record-loss shape, no lost round needed).
+/// The co-swept rule must treat it exactly like any other row for a dead
+/// parent's output: DELETE it, never attribute it to the winner — a
+/// `spent_in_txid` hold on it would survive into the upsert valve and lock
+/// out P's chainlocked reinstatement forever, since no release ever names
+/// a loser-funded outpoint.
+#[test]
+fn a_co_swept_parent_known_only_through_the_childs_spend_is_still_removed() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xEA);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = p2pkh(0x61);
+    let parent_txid = Txid::from_byte_array([0x60; 32]); // P — never recorded
+    let child_txid = Txid::from_byte_array([0x61; 32]); // C
+    let winner_txid = Txid::from_byte_array([0x62; 32]); // W
+    let parent_output = OutPoint::new(parent_txid, 0);
+
+    // C arrives in order, spending P:0 — the spent-utxos apply writes the
+    // synthetic spent-only row because no funded row exists.
+    {
+        let mut conn = persister.lock_conn_for_test();
+        derive_address(&conn, &w, 0, &addr);
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![tx_record(child_txid, vec![parent_output], vec![])],
+            spent_utxos: vec![make_utxo(&addr, parent_txid, 0, 5_000)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    {
+        let conn = persister.lock_conn_for_test();
+        assert!(
+            row_exists(&conn, &w, &parent_output),
+            "sanity: the synthetic spent-only row exists"
+        );
+        assert!(unspent(&conn, &w).is_empty());
+    }
+
+    // The batch sweeps both; P's pass has no record to walk, so only the
+    // co-swept rule in C's pass can decide the synthetic row's fate.
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![parent_txid, child_txid],
+                superseded_by: winner_txid,
+                released_outpoints: vec![],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    {
+        let conn = persister.lock_conn_for_test();
+        assert!(
+            !row_exists(&conn, &w, &parent_output),
+            "the dead parent's output must be deleted, not attributed to the winner"
+        );
+    }
+
+    // The chainlocked return: P reinstated with its output re-emitted must
+    // land spendable — nothing this sweep left behind may block the valve.
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![tx_record(
+                parent_txid,
+                vec![],
+                vec![TxOut {
+                    value: 5_000,
+                    script_pubkey: addr.script_pubkey(),
+                }],
+            )],
+            new_utxos: vec![make_utxo(&addr, parent_txid, 0, 5_000)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    let conn = persister.lock_conn_for_test();
+    assert!(
+        unspent(&conn, &w).contains(&parent_output),
+        "the reinstated parent's output must restore even when its pre-sweep row \
+         was only ever the synthetic spent-only one"
+    );
+}
