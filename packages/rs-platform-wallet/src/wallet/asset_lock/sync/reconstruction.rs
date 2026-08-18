@@ -386,6 +386,11 @@ pub(crate) async fn remove_tracked_asset_locks_for_swept(
     if swept.is_empty() {
         return cs;
     }
+    // Hashed once, before the write lock: the loser slice is sized by the
+    // network (the mempool alone tracks up to a thousand conflicts), and a
+    // linear `contains` per tracked entry would put O(entries × losers)
+    // work under the wallet-manager write lock.
+    let swept: std::collections::HashSet<dashcore::Txid> = swept.iter().copied().collect();
     let mut wm = wallet_manager.write().await;
     let Some(info) = wm.get_wallet_info_mut(wallet_id) else {
         return cs;
