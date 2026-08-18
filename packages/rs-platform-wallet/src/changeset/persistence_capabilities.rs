@@ -52,15 +52,22 @@ impl PersistenceCapabilities {
     /// persisted. Restart hydration is the separate `WALLET_RESTORE` contract.
     pub const TRACKED_ASSET_LOCKS: Self = Self(1 << 9);
     /// A stored `CoreChangeSet` whose `sweeps` are non-empty is durably
-    /// applied: the swept loser's row (and any tombstoned pending-input
-    /// claim standing in for a not-yet-materialized UTXO) actually leaves
-    /// the backing store, not merely accepted-and-ignored. On the FFI
-    /// surface sweeps travel through the persistence extension's
-    /// size-negotiated sweep callback — a slot Rust never reads unless the
-    /// host's declared `struct_size` proved it exists — so an older host
-    /// processes the rest of the round, returns success, and never sees
-    /// the sweeps at all; this bit is what tells the wallet the round-trip
-    /// was actually implemented rather than silently truncated.
+    /// applied batch by batch and in order: each swept transaction and its
+    /// outputs are excluded from every restore and enumeration path (whether
+    /// by physical deletion or a durable marker), each released outpoint is
+    /// freed unless a later surviving claim supersedes that release, and each
+    /// non-released input retains a durable spend claim even when its funding
+    /// TXO has not materialized yet. Physical row deletion is an
+    /// implementation detail, not the contract — the in-tree stores keep an
+    /// inert globally-swept row until every wallet's scoped cleanup lands,
+    /// and a detached tombstone MUST outlive its loser or the consumed coin
+    /// later reads unspent. On the FFI surface sweeps travel through the
+    /// persistence extension's size-negotiated sweep callback — a slot Rust
+    /// never reads unless the host's declared `struct_size` proved it exists
+    /// — so an older host processes the rest of the round, returns success,
+    /// and never sees the sweeps at all; this bit tells the wallet that the
+    /// complete sweep contract was implemented rather than silently
+    /// truncated.
     pub const CORE_SWEEP_REMOVAL: Self = Self(1 << 10);
 
     /// Capabilities required before exporting and funding an invitation voucher.

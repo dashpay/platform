@@ -252,6 +252,22 @@ pub fn apply(
 /// durable — it refuses to clear `spent` while `spent_in_txid` is set, so the
 /// claim survives the funding upsert instead of being upserted away by it.
 ///
+/// KNOWN EXPOSURE, deliberately not gated client-side: a swept INCOMING
+/// payment reaches this loop too, and every sender-owned input it named
+/// lands a placeholder that no funding upsert will ever overwrite and no
+/// release will ever name — permanent zero-value junk, one row per foreign
+/// input, growable by anyone willing to double-spend payments at this
+/// wallet. It stays because nothing on the record can prove an input
+/// foreign: `input_details` and `direction` are both computed from the
+/// wallet's UTXO snapshot AT RECORD TIME, and the held-but-unfunded claim
+/// this placeholder exists to preserve — our own coin, spent before its
+/// funding output was classified — produces exactly a record whose input is
+/// missing from `input_details` and whose direction reads `Incoming`,
+/// indistinguishable from an attacker's fan-in. Gating on either would
+/// trade bounded junk for lost holds. The clean fix is upstream-shaped:
+/// carry per-wallet HELD outpoints on `TransactionsSwept` symmetric to
+/// `released_outpoints`, so ownership is decided where it is known.
+///
 /// Idempotent: a txid this store never recorded is a successful no-op, not an
 /// error. A sweep can legitimately name a transaction this wallet dropped, or
 /// never derived an address for in the first place. Only the loser-scoped
