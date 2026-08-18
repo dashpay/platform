@@ -498,15 +498,15 @@ where
                 // `load()`. Fault exactly like a rejection: the next scan
                 // re-emits the sweep and the idempotent removal is retried
                 // against (hopefully, by then) a capable backend.
-                if let Some(h) = offered_height {
-                    diag.record_rejected(h);
-                }
-                fault.fault_wallet(wallet_id, sync_fault);
-                if !is_faulted {
-                    diag.faulted += 1;
-                }
-                if !*freeze_logged {
-                    *freeze_logged = true;
+                if fault_and_freeze(
+                    &mut diag,
+                    offered_height,
+                    fault,
+                    sync_fault,
+                    wallet_id,
+                    is_faulted,
+                    freeze_logged,
+                ) {
                     log::error!(
                         "SYNC WATERMARK FROZEN: persister for wallet {} does not advertise \
                          CORE_SWEEP_REMOVAL but this round swept one or more transactions; a \
@@ -531,20 +531,15 @@ where
                 // A rejected changeset means these rows are not on disk. Fault
                 // THIS wallet's watermark so it can't outrun them; the next
                 // scan re-emits and the idempotent upserts recover the state.
-                if let Some(h) = offered_height {
-                    diag.record_rejected(h);
-                }
-                fault.fault_wallet(wallet_id, sync_fault);
-                // Count each faulted wallet once per drain: a wallet that
-                // entered already faulted was counted at the top of the loop,
-                // and a repeat rejection must not count it again.
-                if !is_faulted {
-                    diag.faulted += 1;
-                }
-                // One-shot, unambiguous logcat marker via the `log` facade
-                // (android_logger forwards `log` to logcat; `tracing` may not).
-                if !*freeze_logged {
-                    *freeze_logged = true;
+                if fault_and_freeze(
+                    &mut diag,
+                    offered_height,
+                    fault,
+                    sync_fault,
+                    wallet_id,
+                    is_faulted,
+                    freeze_logged,
+                ) {
                     log::error!(
                         "SYNC WATERMARK FROZEN: persister rejected a changeset for wallet {} ({}); \
                          its durable sync height is now held so the next scan re-persists the \
@@ -562,6 +557,36 @@ where
         }
     }
     diag
+}
+
+/// The bookkeeping shared by the two ways a round fails to be durably
+/// applied — a rejected `store()`, and a nominal success from a backend
+/// that cannot have applied the round's sweeps. Records the withheld
+/// advance, faults the wallet (counting it once per drain: a wallet that
+/// entered already faulted was counted at the top of the loop, and a
+/// repeat failure must not count it again), and returns whether this is
+/// the drain's first freeze — the caller owns the one-shot `log`-facade
+/// line, whose wording differs per cause (android_logger forwards `log`
+/// to logcat; `tracing` may not).
+fn fault_and_freeze(
+    diag: &mut BatchDiagnostics,
+    offered_height: Option<u32>,
+    fault: &mut AdapterFaultState,
+    sync_fault: &AtomicBool,
+    wallet_id: WalletId,
+    entered_faulted: bool,
+    freeze_logged: &mut bool,
+) -> bool {
+    if let Some(h) = offered_height {
+        diag.record_rejected(h);
+    }
+    fault.fault_wallet(wallet_id, sync_fault);
+    if !entered_faulted {
+        diag.faulted += 1;
+    }
+    let first_freeze = !*freeze_logged;
+    *freeze_logged = true;
+    first_freeze
 }
 
 /// Durable-watermark guard for dashpay/platform#4069.
