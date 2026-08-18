@@ -119,6 +119,72 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// atomically.
     private var inChangeset = false
 
+    /// In-memory index over the rows the open changeset round has
+    /// inserted into `backgroundContext` but not yet saved, keyed by the
+    /// same columns the hot-path fetches filter on.
+    ///
+    /// Why it exists: a `FetchDescriptor` with the default
+    /// `includePendingChanges == true` evaluates its predicate IN MEMORY
+    /// against every unsaved insert of the target entity —
+    /// `Predicate.evaluate` walks the key path per row, with a dynamic
+    /// cast per step. The `#Index`/`.unique` declarations on the models
+    /// only accelerate the SQL half of the fetch; the pending-changes
+    /// half is always a linear scan. Because the whole round defers its
+    /// `save()` to `endChangeset` (the `inChangeset` contract above), a
+    /// large wallet's initial scan accumulates thousands of unsaved
+    /// inserts in one round, and every subsequent fetch paid O(inserts
+    /// so far) — quadratic over the round, and measured as ~99% of CPU
+    /// on `serialQueue` minutes after the SPV scan itself finished.
+    ///
+    /// How it is used: while the index is non-nil, the lookup helpers
+    /// (`fetchTransactionRow`, `fetchTxoRow`, `pendingInputRows`,
+    /// `coreAddressRow`) consult it first and run their store fetch with
+    /// `includePendingChanges = false`, so SQLite answers from its
+    /// indexes and never triggers the in-memory scan. The single-object
+    /// maps are READ-THROUGH: they hold both this round's unsaved
+    /// inserts (registered at the insert site) and every row a store
+    /// fetch has already resolved this round (registered by the helper).
+    /// Caching store hits is not an optimization — it is load-bearing
+    /// for correctness: a store-only fetch that matches an
+    /// already-registered object REFRESHES that object to its store
+    /// values, silently discarding the round's unsaved attribute
+    /// mutations (unlike the default pending-changes fetch, which
+    /// returns the object with its in-memory state; staged deletions do
+    /// survive the refresh). Registering every resolution means each
+    /// key touches the store at most once per round — at first touch,
+    /// before the round can have mutated the object — so the refresh
+    /// never has anything to discard. Both sources stay disjoint
+    /// because `beginChangeset` builds the index only over a clean
+    /// context. Rows deleted mid-round are filtered by `isDeleted` on
+    /// both sources (index entries are deliberately never
+    /// unregistered — `isDeleted` already answers the question, and it
+    /// also covers deletes on paths that don't know about the index,
+    /// e.g. wallet removal).
+    ///
+    /// Lifecycle: built by `beginChangeset`, discarded in
+    /// `endChangeset`'s `defer` on both the commit and rollback paths —
+    /// after a commit the cached rows are ordinary saved rows the store
+    /// fetch finds on its own, and on rollback the context un-inserts /
+    /// reverts every one of them, so the index dies with the round
+    /// either way and never leaks state across rounds. `nil` outside a
+    /// round (and inside a round that began on a dirty context — see
+    /// `beginChangeset`), in which case the lookup helpers run the
+    /// exact pre-index fetch, pending changes included.
+    private struct ChangesetRoundIndex {
+        var transactionsByTxid: [Data: PersistentTransaction] = [:]
+        var txosByOutpoint: [Data: PersistentTxo] = [:]
+        /// `PersistentPendingInput.outpoint` is deliberately not unique
+        /// (re-org / double-spend can stack rows on one outpoint — see
+        /// the model), so this holds only the round's staged inserts
+        /// per key; saved rows come from the store fetch each time.
+        /// Pending rows need no read-through registration because
+        /// nothing mutates their attributes before the sweep pass, and
+        /// sweeps run last in the round (see `pendingInputRows`).
+        var pendingInputsByOutpoint: [Data: [PersistentPendingInput]] = [:]
+        var coreAddressesByAddress: [String: PersistentCoreAddress] = [:]
+    }
+    private var roundIndex: ChangesetRoundIndex?
+
     /// Breadcrumb backfills that arrived on the serial queue while a
     /// changeset round was open. The backfill both mutates
     /// `backgroundContext` and saves it, so running it mid-round would
@@ -1358,6 +1424,115 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    // MARK: - Round-indexed lookups
+    //
+    // The helpers below are the only way the changeset hot path
+    // (`upsertTransaction`, `upsertUtxo`, `resolveInputOutpoint`,
+    // `markUtxoSpent`, `markUtxoInstantLocked`, `removePendingInputs`,
+    // `persistAccountAddresses`) resolves rows by key. Each one reads
+    // `roundIndex` first, and on a miss — only while the index is
+    // active — fetches with `includePendingChanges = false` so the store
+    // lookup stays on SQLite's indexes instead of scanning the round's
+    // pending inserts in memory (see `roundIndex`); a store hit is
+    // registered in the index so the same key never fetches twice in one
+    // round (the store-only refetch would refresh the object and discard
+    // the round's unsaved mutations — see `roundIndex`). A miss on both
+    // sources may re-fetch on a later call, which is safe: there is no
+    // registered object for the refresh to clobber. With no active index
+    // the helpers degrade to the plain default fetch. Predicates only
+    // name immutable key columns (`txid`, `outpoint`, `address` are
+    // fixed at insert), so matching on store values instead of in-memory
+    // values cannot miss an in-round mutation; mutable-column filters
+    // (`spendingTxid` on pending rows) stay in Swift at the call sites,
+    // on live values. `isDeleted` is filtered on both sources because a
+    // store-only fetch still returns rows whose delete is staged but
+    // unsaved.
+    //
+    // `applySweptTransaction` stays on plain pending-changes fetches: its
+    // row fetch needs relationship prefetching, and its tombstone fetch
+    // keys on columns that MUTATE mid-round (`spendingTxid`,
+    // `isSweptTombstone`), which neither the index nor a store-only
+    // fetch can answer. Sweeps only target unconfirmed conflicts, so
+    // that path stays off the initial-scan hot loop. It also mutates
+    // TXO / pending rows through `row.inputs` / `row.pendingInputs`
+    // without any keyed lookup the index could observe — which is safe
+    // only because sweeps are applied LAST in `persistWalletChangeset`,
+    // so no store-only first-touch fetch can follow those mutations
+    // within the round and refresh them away.
+
+    /// Resolve a `PersistentTransaction` by its unique `txid`.
+    private func fetchTransactionRow(txid: Data) -> PersistentTransaction? {
+        if let known = roundIndex?.transactionsByTxid[txid] {
+            return known.isDeleted ? nil : known
+        }
+        var descriptor = FetchDescriptor<PersistentTransaction>(
+            predicate: #Predicate { $0.txid == txid }
+        )
+        descriptor.fetchLimit = 1
+        if roundIndex != nil { descriptor.includePendingChanges = false }
+        guard let row = (try? backgroundContext.fetch(descriptor))?.first,
+              !row.isDeleted else { return nil }
+        roundIndex?.transactionsByTxid[txid] = row
+        return row
+    }
+
+    /// Resolve a `PersistentTxo` by its unique 36-byte `outpoint`.
+    private func fetchTxoRow(outpoint: Data) -> PersistentTxo? {
+        if let known = roundIndex?.txosByOutpoint[outpoint] {
+            return known.isDeleted ? nil : known
+        }
+        var descriptor = FetchDescriptor<PersistentTxo>(
+            predicate: #Predicate { $0.outpoint == outpoint }
+        )
+        descriptor.fetchLimit = 1
+        if roundIndex != nil { descriptor.includePendingChanges = false }
+        guard let row = (try? backgroundContext.fetch(descriptor))?.first,
+              !row.isDeleted else { return nil }
+        roundIndex?.txosByOutpoint[outpoint] = row
+        return row
+    }
+
+    /// Every live `PersistentPendingInput` row keyed on `outpoint` —
+    /// saved rows plus this round's staged inserts. Non-unique key, so
+    /// this returns the full set; callers filter further (by
+    /// `spendingTxid`, `createdAt`) on the live objects. Saved rows are
+    /// re-fetched store-only on every call rather than registered: no
+    /// path mutates a pending row's attributes before the sweep pass,
+    /// and sweeps run last (see the MARK comment), so the refetch
+    /// refresh never has unsaved changes to discard — deletions, the
+    /// one staged state these rows do accumulate mid-round, survive it.
+    /// De-duped by object identity as insurance against a save landing
+    /// mid-round (which would make a staged row visible to the store
+    /// fetch too).
+    private func pendingInputRows(outpoint: Data) -> [PersistentPendingInput] {
+        var descriptor = FetchDescriptor<PersistentPendingInput>(
+            predicate: #Predicate { $0.outpoint == outpoint }
+        )
+        if roundIndex != nil { descriptor.includePendingChanges = false }
+        var rows = (try? backgroundContext.fetch(descriptor)) ?? []
+        if let staged = roundIndex?.pendingInputsByOutpoint[outpoint] {
+            let seen = Set(rows.map { ObjectIdentifier($0) })
+            rows.append(contentsOf: staged.filter { !seen.contains(ObjectIdentifier($0)) })
+        }
+        return rows.filter { !$0.isDeleted }
+    }
+
+    /// Resolve a `PersistentCoreAddress` by its unique `address`.
+    private func coreAddressRow(address: String) -> PersistentCoreAddress? {
+        if let known = roundIndex?.coreAddressesByAddress[address] {
+            return known.isDeleted ? nil : known
+        }
+        var descriptor = FetchDescriptor<PersistentCoreAddress>(
+            predicate: #Predicate { $0.address == address }
+        )
+        descriptor.fetchLimit = 1
+        if roundIndex != nil { descriptor.includePendingChanges = false }
+        guard let row = (try? backgroundContext.fetch(descriptor))?.first,
+              !row.isDeleted else { return nil }
+        roundIndex?.coreAddressesByAddress[address] = row
+        return row
+    }
+
     private func upsertTransaction(account: PersistentAccount, tx: TransactionRecordFFI) {
         // The `account` parameter scopes the wallet-id used for the
         // input-reconciliation pass at the bottom of this method, and
@@ -1379,9 +1554,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         //
         let resolvedWalletId: Data = account.wallet.walletId
         let txidData = hashData(tx.txid)
-        let descriptor = FetchDescriptor<PersistentTransaction>(
-            predicate: #Predicate { $0.txid == txidData }
-        )
 
         // The FFI projection always serializes the transaction body
         // (`dashcore::consensus::encode::serialize` upstream), so
@@ -1403,7 +1575,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         let firstSeen: UInt64 =
             tx.first_seen != 0 ? tx.first_seen : UInt64(Date().timeIntervalSince1970)
 
-        let existing = try? backgroundContext.fetch(descriptor).first
+        let existing = fetchTransactionRow(txid: txidData)
         // A sweep is upstream's word at the moment it fired, but the
         // wallet's sweep state is not monotonic: `CoreChangeSet::merge`
         // documents the exact reachable sequence — an unconfirmed
@@ -1453,6 +1625,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 firstSeen: firstSeen
             )
             backgroundContext.insert(record)
+            roundIndex?.transactionsByTxid[txidData] = record
         }
 
         record.context = tx.context
@@ -1569,10 +1742,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         spendingTxid: Data,
         walletId: Data
     ) {
-        let txoDescriptor = FetchDescriptor<PersistentTxo>(
-            predicate: #Predicate { $0.outpoint == outpoint }
-        )
-        if let txo = try? backgroundContext.fetch(txoDescriptor).first {
+        if let txo = fetchTxoRow(outpoint: outpoint) {
             // `isSpent` only flips once the spending tx is in a block
             // (see `spendIsInBlock`'s doc) — a mempool sighting
             // alone links the spending relationship but keeps the
@@ -1610,11 +1780,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // (outpoint, spending-tx) pair already exists — re-upserts
             // of the same transaction would otherwise produce
             // duplicate pending rows that all resolve to the same
-            // TXO, wasting fetch work on the resolve side.
-            let pendingDescriptor = FetchDescriptor<PersistentPendingInput>(
-                predicate: #Predicate { $0.outpoint == outpoint && $0.spendingTxid == spendingTxid }
-            )
-            if (try? backgroundContext.fetch(pendingDescriptor).first) == nil {
+            // TXO, wasting fetch work on the resolve side. The
+            // `spendingTxid` half of the pair is compared in Swift on
+            // the live rows (it is mutable — `applySweptTransaction`
+            // rewrites it on tombstones — so it can't be a store-side
+            // predicate under the round index's store-only fetch).
+            let alreadyPending = pendingInputRows(outpoint: outpoint)
+                .contains { $0.spendingTxid == spendingTxid }
+            if !alreadyPending {
                 let pending = PersistentPendingInput(
                     outpoint: outpoint,
                     inputIndex: inputIndex,
@@ -1623,6 +1796,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     walletId: walletId
                 )
                 backgroundContext.insert(pending)
+                roundIndex?.pendingInputsByOutpoint[outpoint, default: []].append(pending)
             }
         }
     }
@@ -1633,13 +1807,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// `upsertUtxo`'s resolve path so a freshly-arrived TXO doesn't
     /// keep its corresponding pending row alive.
     private func removePendingInputs(for outpoint: Data) {
-        let descriptor = FetchDescriptor<PersistentPendingInput>(
-            predicate: #Predicate { $0.outpoint == outpoint }
-        )
-        guard let rows = try? backgroundContext.fetch(descriptor), !rows.isEmpty else {
-            return
-        }
-        for row in rows {
+        // Deletes are not unregistered from `roundIndex` — the stale
+        // entry answers `isDeleted == true` and every lookup filters on
+        // that (see the index's doc).
+        for row in pendingInputRows(outpoint: outpoint) {
             backgroundContext.delete(row)
         }
     }
@@ -1652,11 +1823,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
         let txidData = hashData(utxo.outpoint.txid)
         let outpoint = PersistentTxo.makeOutpoint(txid: txidData, vout: utxo.outpoint.vout)
-        let descriptor = FetchDescriptor<PersistentTxo>(
-            predicate: #Predicate { $0.outpoint == outpoint }
-        )
         let record: PersistentTxo
-        if let existing = try? backgroundContext.fetch(descriptor).first {
+        if let existing = fetchTxoRow(outpoint: outpoint) {
             record = existing
             // Backfill if the account or wallet linkage is missing —
             // the per-wallet query path filters on TXO.walletId, so
@@ -1675,11 +1843,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // arrives. Note we no longer set `parentTx.account` —
             // transactions don't carry account linkage anymore (they
             // can span multiple accounts).
-            let txDescriptor = FetchDescriptor<PersistentTransaction>(
-                predicate: #Predicate { $0.txid == txidData }
-            )
             let parentTx: PersistentTransaction
-            if let existingTx = try? backgroundContext.fetch(txDescriptor).first {
+            if let existingTx = fetchTransactionRow(txid: txidData) {
                 // A globally-swept parent is a transaction Rust has already
                 // proven can never confirm — a fresh UTXO entry naming its
                 // txid would (re-)create exactly the phantom output
@@ -1711,6 +1876,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 // treats as miss.
                 parentTx = PersistentTransaction(txid: txidData, transactionData: Data())
                 backgroundContext.insert(parentTx)
+                roundIndex?.transactionsByTxid[txidData] = parentTx
             }
 
             let script: Data = {
@@ -1729,6 +1895,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             record.account = account
             record.walletId = resolvedWalletId
             backgroundContext.insert(record)
+            roundIndex?.txosByOutpoint[outpoint] = record
         }
 
         record.amount = utxo.amount
@@ -1761,11 +1928,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         // leave the relationship nil — `record.address` stays as the
         // authoritative identifier.
         if record.coreAddress == nil, !record.address.isEmpty {
-            let addressLookup = record.address
-            let coreAddressDescriptor = FetchDescriptor<PersistentCoreAddress>(
-                predicate: #Predicate { $0.address == addressLookup }
-            )
-            if let coreAddr = try? backgroundContext.fetch(coreAddressDescriptor).first {
+            if let coreAddr = coreAddressRow(address: record.address) {
                 record.coreAddress = coreAddr
             }
         }
@@ -1779,12 +1942,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         // `upsertTransaction`, so the spend signal is order-
         // independent at this layer regardless of which side arrives
         // first.
-        let outpointKey = record.outpoint
-        let pendingDescriptor = FetchDescriptor<PersistentPendingInput>(
-            predicate: #Predicate { $0.outpoint == outpointKey }
-        )
-        if let pendingRows = try? backgroundContext.fetch(pendingDescriptor),
-           !pendingRows.isEmpty {
+        let pendingRows = pendingInputRows(outpoint: record.outpoint)
+        if !pendingRows.isEmpty {
             // Pick the freshest pending entry — under normal sync
             // there's only one, but a chain reorg or double-spend
             // observation could leave multiple. Newest wins so the
@@ -1801,12 +1960,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             let resolvedSpending: PersistentTransaction?
             if let spending = chosen.spendingTransaction {
                 resolvedSpending = spending
+                // Resolved through the relationship, not the index —
+                // register it so a later `fetchTransactionRow` for this
+                // txid returns this same object instead of running a
+                // first-touch store fetch that would refresh away any
+                // staged writes it carries (see `roundIndex`).
+                roundIndex?.transactionsByTxid[spending.txid] = spending
             } else {
-                let spendingTxid = chosen.spendingTxid
-                let txDescriptor = FetchDescriptor<PersistentTransaction>(
-                    predicate: #Predicate { $0.txid == spendingTxid }
-                )
-                resolvedSpending = try? backgroundContext.fetch(txDescriptor).first
+                resolvedSpending = fetchTransactionRow(txid: chosen.spendingTxid)
             }
 
             // Carry the vin index forward so the spending tx's
@@ -1848,10 +2009,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             txid: hashData(entry.outpoint.txid),
             vout: entry.outpoint.vout
         )
-        let descriptor = FetchDescriptor<PersistentTxo>(
-            predicate: #Predicate { $0.outpoint == outpoint }
-        )
-        guard let txo = try? backgroundContext.fetch(descriptor).first else {
+        guard let txo = fetchTxoRow(outpoint: outpoint) else {
             return
         }
         // Link the spending transaction. The FFI now carries
@@ -1869,10 +2027,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             if txo.spendingTransaction?.txid == spendingTxid {
                 spendingTx = txo.spendingTransaction
             } else {
-                let txDescriptor = FetchDescriptor<PersistentTransaction>(
-                    predicate: #Predicate { $0.txid == spendingTxid }
-                )
-                spendingTx = try? backgroundContext.fetch(txDescriptor).first
+                spendingTx = fetchTransactionRow(txid: spendingTxid)
                 if let spending = spendingTx {
                     txo.spendingTransaction = spending
                 }
@@ -1902,10 +2057,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
     private func markUtxoInstantLocked(_ op: OutPointFFI) {
         let outpoint = PersistentTxo.makeOutpoint(txid: hashData(op.txid), vout: op.vout)
-        let descriptor = FetchDescriptor<PersistentTxo>(
-            predicate: #Predicate { $0.outpoint == outpoint }
-        )
-        if let txo = try? backgroundContext.fetch(descriptor).first {
+        if let txo = fetchTxoRow(outpoint: outpoint) {
             txo.isInstantLocked = true
             txo.lastUpdated = Date()
         }
@@ -2032,14 +2184,23 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// `persistAccountChangeset`, …) fires between begin and end and
     /// only mutates `backgroundContext`; `save()` happens at the end.
     ///
-    /// Currently a no-op beyond the tag — `ModelContext`'s pending-
-    /// change buffer already gives us the batching we need. Kept as
-    /// a named hook so future work (explicit transaction scoping,
-    /// instrumented timing, etc.) has an obvious seam.
+    /// Beyond the tag, this builds the round's insert index (see
+    /// `roundIndex`) — `ModelContext`'s pending-change buffer already
+    /// gives us the batching we need.
     func beginChangeset(walletId: Data) {
         onQueue {
             _ = walletId
             self.inChangeset = true
+            // The index's O(1) lookups are only equivalent to the plain
+            // pending-changes fetch when the index and the store
+            // partition the rows between them: index = this round's
+            // inserts, store = everything saved. A context that is
+            // already dirty here (an out-of-round writer whose `save()`
+            // threw and left its staged rows behind) breaks that
+            // partition — such a row is in neither source — so the
+            // round runs unindexed and the lookup helpers fall back to
+            // the exact pre-index fetch, pending changes included.
+            self.roundIndex = backgroundContext.hasChanges ? nil : ChangesetRoundIndex()
         }
     }
 
@@ -2066,8 +2227,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // Clear the flag before draining deferred backfills so each one's
             // save() lands cleanly outside the round; `drainDeferredBackfills`
             // is guarded on `!inChangeset`, so the ordering inside this `defer`
-            // (clear, then drain) is load-bearing.
+            // (clear, then drain) is load-bearing. The round index dies here
+            // on both paths — after the commit its entries are ordinary saved
+            // rows the store fetch finds on its own, and after a rollback the
+            // context has un-inserted every one of them.
             defer {
+                self.roundIndex = nil
                 self.inChangeset = false
                 self.drainDeferredBackfills()
             }
@@ -3657,12 +3822,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
         for entry in entries {
             let address = entry.address
-            let existingDescriptor = FetchDescriptor<PersistentCoreAddress>(
-                predicate: #Predicate { $0.address == address }
-            )
-            let existing = try? backgroundContext.fetch(existingDescriptor).first
             let row: PersistentCoreAddress
-            if let existing = existing {
+            if let existing = coreAddressRow(address: address) {
                 row = existing
             } else {
                 row = PersistentCoreAddress(
@@ -3676,6 +3837,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     balance: entry.balance
                 )
                 backgroundContext.insert(row)
+                roundIndex?.coreAddressesByAddress[address] = row
             }
             // Mutation path for both insert + update.
             row.publicKey = entry.publicKey
@@ -3698,12 +3860,27 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // address row now exists. Avoid the SwiftData
             // optional-relationship-in-predicate gotcha by
             // filtering nil-coreAddress in Swift after the fetch.
+            //
+            // Deliberately NOT a round-indexed store-only lookup: this
+            // joins TXOs by `address`, and the rows it returns are the
+            // same objects the outpoint-keyed hot path mutates — a
+            // store-only fetch here would refresh those objects and
+            // discard the round's unsaved writes (see `roundIndex`).
+            // The pending-changes scan this keeps is bounded by the
+            // round's TXO inserts per emitted address entry; the
+            // outpoint-keyed quadratic hot path stays indexed.
             let txoBackfillDescriptor = FetchDescriptor<PersistentTxo>(
                 predicate: #Predicate { $0.address == address }
             )
             if let txosAtAddress = try? backgroundContext.fetch(txoBackfillDescriptor) {
                 for txo in txosAtAddress where txo.coreAddress == nil {
                     txo.coreAddress = row
+                    // This write happened outside any keyed lookup, so
+                    // register the row: a later first-touch
+                    // `fetchTxoRow` for this outpoint would otherwise
+                    // run a store-only fetch and refresh the link away
+                    // (see `roundIndex`).
+                    roundIndex?.txosByOutpoint[txo.outpoint] = txo
                 }
             }
         }
