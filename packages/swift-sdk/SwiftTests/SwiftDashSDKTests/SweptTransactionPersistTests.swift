@@ -1277,6 +1277,141 @@ final class SweptTransactionPersistTests: XCTestCase {
         XCTAssertEqual(coin.supersededByTxid, finalWinner)
     }
 
+    /// The funding-BEFORE-release ordering of the chained scenario above:
+    /// the funding TXO arrives between the sweep that held the coin and the
+    /// sweep that frees it, so the tombstone drains into
+    /// `PersistentTxo.supersededByTxid` and the pending row is gone by the
+    /// time the release runs. With the intermediate winner's own record on
+    /// hand the drain links `spendingTransaction` too, so the release DOES
+    /// reach the row through `row.inputs` — but nothing cleared the marker,
+    /// and a released coin keeping its dead winner's marker turns the next
+    /// hold on this outpoint permanent (`upsertUtxo`'s recovery clear reads
+    /// a present marker as a durable claim).
+    func testAReleasedCoinDropsItsDeadWinnersMarker() throws {
+        let (handler, container) = try makeHandler()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+
+        let firstLoser = Data(repeating: 0x91, count: 32) // L
+        let secondLoser = Data(repeating: 0x92, count: 32) // W
+        let finalWinner = Data(repeating: 0x93, count: 32) // X
+
+        let l = PersistentTransaction(
+            txid: firstLoser,
+            transactionData: Data(repeating: 0x05, count: 10),
+            context: 0,
+            blockHeight: 0,
+            netAmount: -50_000
+        )
+        context.insert(l)
+        context.insert(PersistentPendingInput(
+            outpoint: PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0),
+            inputIndex: 0,
+            spendingTxid: firstLoser,
+            spendingTransaction: l,
+            walletId: walletId
+        ))
+        try context.save()
+
+        // First sweep: W beats L, holding the still-unfunded coin.
+        sweep(handler, [Batch(losers: [firstLoser], winner: secondLoser)])
+
+        // W's own record lands before the funding TXO does, so the drain
+        // below links `spendingTransaction` as well as stamping the marker.
+        let w = PersistentTransaction(
+            txid: secondLoser,
+            transactionData: Data(repeating: 0x06, count: 10),
+            context: 0,
+            blockHeight: 0,
+            netAmount: -50_000
+        )
+        context.insert(w)
+        try context.save()
+
+        deliverFundingUtxo(handler, vout: 0, amount: 50_000)
+
+        let stamped = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertTrue(stamped.isSpent, "sanity: the drained claim holds the coin")
+        XCTAssertEqual(stamped.supersededByTxid, secondLoser)
+
+        // Second sweep: X beats W, and this time upstream frees the coin.
+        sweep(handler, [
+            Batch(losers: [secondLoser], winner: finalWinner, released: [(txid: fundingTxid, vout: 0)])
+        ])
+
+        let freed = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertFalse(freed.isSpent, "the released coin is spendable again")
+        XCTAssertNil(freed.spendingTransaction)
+        XCTAssertNil(
+            freed.supersededByTxid,
+            "the dead winner's marker goes with the hold it carried"
+        )
+    }
+
+    /// The unreachable-claim variant of the same ordering: the claim
+    /// drained into `PersistentTxo.supersededByTxid`, its pending row is
+    /// gone, and the winner it names was NEVER recorded here — so when that
+    /// winner is swept in turn there is no `row` to fetch, no `row.inputs`
+    /// to walk, and no tombstone left for the scalar reconciliation to
+    /// find. Only an outpoint-keyed release — the form Kotlin's
+    /// `releaseByOutpoint` and SQLite's outpoint-matched UPDATE both
+    /// implement — can reach the coin; without it the release is silently
+    /// dropped and the coin stays spent forever.
+    func testAReleaseReachesAClaimDrainedToTheTxoWhenTheWinnerWasNeverRecorded() throws {
+        let (handler, container) = try makeHandler()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+
+        let firstLoser = Data(repeating: 0x94, count: 32) // L
+        let unrecordedWinner = Data(repeating: 0x95, count: 32) // W — never a row here
+        let finalWinner = Data(repeating: 0x96, count: 32) // X
+
+        let l = PersistentTransaction(
+            txid: firstLoser,
+            transactionData: Data(repeating: 0x05, count: 10),
+            context: 0,
+            blockHeight: 0,
+            netAmount: -50_000
+        )
+        context.insert(l)
+        context.insert(PersistentPendingInput(
+            outpoint: PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0),
+            inputIndex: 0,
+            spendingTxid: firstLoser,
+            spendingTransaction: l,
+            walletId: walletId
+        ))
+        try context.save()
+
+        // First sweep: W beats L, holding the still-unfunded coin.
+        sweep(handler, [Batch(losers: [firstLoser], winner: unrecordedWinner)])
+
+        // The funding TXO arrives with W still unrecorded: the drain stamps
+        // the marker but has no row to link.
+        deliverFundingUtxo(handler, vout: 0, amount: 50_000)
+
+        let stamped = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertTrue(stamped.isSpent, "sanity: the drained claim holds the coin")
+        XCTAssertEqual(stamped.supersededByTxid, unrecordedWinner)
+        XCTAssertNil(stamped.spendingTransaction, "sanity: no relationship to reach it by")
+
+        // Second sweep: X beats the never-recorded W, freeing the coin.
+        sweep(handler, [
+            Batch(
+                losers: [unrecordedWinner],
+                winner: finalWinner,
+                released: [(txid: fundingTxid, vout: 0)]
+            )
+        ])
+
+        let freed = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertFalse(
+            freed.isSpent,
+            "the release must reach a drained claim even with no row and no tombstone left"
+        )
+        XCTAssertNil(freed.supersededByTxid)
+    }
+
     /// The multi-wallet continuation of the chained scenarios above — the
     /// review finding on the missing-row early return. A shared loser L
     /// spends one still-unfunded coin of wallet A's and two of wallet B's,

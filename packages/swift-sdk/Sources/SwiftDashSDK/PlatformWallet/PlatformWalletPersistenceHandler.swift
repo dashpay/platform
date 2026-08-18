@@ -1008,28 +1008,86 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
                 let supersededBy = Swift.withUnsafeBytes(of: batch.superseded_by) { Data($0) }
 
-                guard batch.txids_count > 0, let txidsPtr = batch.txids else { continue }
-                for i in 0..<Int(batch.txids_count) {
-                    let txid = Swift.withUnsafeBytes(of: txidsPtr[i]) { Data($0) }
+                if batch.txids_count > 0, let txidsPtr = batch.txids {
+                    for i in 0..<Int(batch.txids_count) {
+                        let txid = Swift.withUnsafeBytes(of: txidsPtr[i]) { Data($0) }
+                        do {
+                            try applySweptTransaction(
+                                walletId: walletId,
+                                txid: txid,
+                                supersededBy: supersededBy,
+                                released: released
+                            )
+                        } catch {
+                            // Fail the round rather than report a deletion
+                            // that did not happen: Rust would clear the sweep
+                            // and the dead row would be replayed at the next
+                            // load.
+                            print(
+                                "⚠️ persistWalletChangesetSweeps: sweep of "
+                                    + "\(txid.prefix(8).toHexString())… failed: "
+                                    + "\(error.localizedDescription); failing the round"
+                            )
+                            return false
+                        }
+                    }
+                }
+
+                // The released set applies by OUTPOINT, after every loser in
+                // the batch has been walked — `applySweptTransaction` only
+                // reaches the claims still attached to a loser's row, and a
+                // claim need not be. It can have drained into
+                // `PersistentTxo.supersededByTxid` already (the funding TXO
+                // arrived between the sweep that held the coin and this one
+                // freeing it), with the winner it names never recorded here
+                // — or its shared row already deleted by another wallet's
+                // callback — leaving no relationship for the loop above to
+                // follow. Kotlin's `releaseByOutpoint` and SQLite's
+                // outpoint-matched UPDATE both cover exactly this; without
+                // it the release is silently dropped and the coin stays
+                // spent forever.
+                //
+                // `spendingTransaction == nil` is the same guard as
+                // Kotlin's `spendingTxid IS NULL`: a coin some surviving
+                // transaction re-claimed in this round keeps that claim —
+                // only detached holds qualify. The wallet check mirrors the
+                // loop above: a released set is only ever true of the
+                // wallet that computed it. `supersededByTxid` clears with
+                // the hold it carried — a released coin keeping its dead
+                // winner's marker would turn the next hold on this outpoint
+                // permanent, because `upsertUtxo`'s recovery clear reads a
+                // present marker as a durable claim.
+                //
+                // Plain pending-changes fetch on purpose: this pass runs in
+                // the sweep phase, after relationship-driven mutations the
+                // round index cannot observe, and a store-only fetch here
+                // would refresh those away (see the fetch-helpers MARK).
+                for outpoint in released {
+                    var releasedDescriptor = FetchDescriptor<PersistentTxo>(
+                        predicate: #Predicate { $0.outpoint == outpoint }
+                    )
+                    releasedDescriptor.fetchLimit = 1
+                    let row: PersistentTxo?
                     do {
-                        try applySweptTransaction(
-                            walletId: walletId,
-                            txid: txid,
-                            supersededBy: supersededBy,
-                            released: released
-                        )
+                        row = try backgroundContext.fetch(releasedDescriptor).first
                     } catch {
-                        // Fail the round rather than report a deletion
-                        // that did not happen: Rust would clear the sweep
-                        // and the dead row would be replayed at the next
-                        // load.
+                        // Same contract as the loser loop: a release
+                        // silently skipped would report a removal durable
+                        // that never fully happened.
                         print(
-                            "⚠️ persistWalletChangesetSweeps: sweep of "
-                                + "\(txid.prefix(8).toHexString())… failed: "
+                            "⚠️ persistWalletChangesetSweeps: release lookup of "
+                                + "\(outpoint.prefix(8).toHexString())… failed: "
                                 + "\(error.localizedDescription); failing the round"
                         )
                         return false
                     }
+                    guard let txo = row,
+                          Self.resolvedWalletId(of: txo) == walletId,
+                          txo.spendingTransaction == nil else { continue }
+                    txo.isSpent = false
+                    txo.supersededByTxid = nil
+                    txo.spendingInputIndex = nil
+                    txo.lastUpdated = Date()
                 }
             }
 
