@@ -1674,6 +1674,12 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             if (rsDapiDocker && stockRsDapiImage.test(rsDapiDocker.image)) {
               rsDapiDocker.image = base.get('platform.dapi.rsDapi.docker.image');
             }
+
+            // The Commit timeout and BypassCommitTimeout overrides no longer
+            // exist in Tenderdash, which now only warns when they are set.
+            // Drop them: the config schema accepts no properties it does not
+            // define, so a config that kept them would fail validation.
+            delete options.platform?.drive?.tenderdash?.consensus?.unsafeOverride?.commit;
           });
 
         return configFile;
