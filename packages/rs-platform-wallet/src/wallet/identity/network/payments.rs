@@ -973,15 +973,80 @@ pub(crate) async fn confirm_sent_dashpay_payment_by_txid(
 /// `Confirmed`, in place, preserving amount/memo/counterparty.
 ///
 /// No-op when no entry exists for `txid`, it is not a `Sent` entry, or it
-/// is already past `Pending` (so repeated confirmed re-detections are
-/// idempotent and skip the persistence round). Separated from the event
-/// glue above so the state transition is unit-testable without
-/// constructing a full `TransactionRecord`.
+/// is already `Confirmed` (so repeated confirmed re-detections are
+/// idempotent and skip the persistence round). A `Failed` entry DOES
+/// advance: the only writer of `Failed` is the sweep hook below, a swept
+/// transaction's one road back is a chainlocked reinstatement, and that
+/// reinstatement re-emits the record confirmed — hard evidence the
+/// verdict reversed, which must be able to correct it.
 async fn confirm_sent_payment_by_txid(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     wallet_id: &WalletId,
     persister: &crate::wallet::persister::WalletPersister,
     txid: &str,
+) {
+    use crate::wallet::identity::types::dashpay::payment::PaymentStatus;
+    resolve_sent_payment_by_txid(
+        wallet_manager,
+        wallet_id,
+        persister,
+        txid,
+        PaymentStatus::Confirmed,
+    )
+    .await;
+}
+
+/// Mark the `Pending` `Sent` [`PaymentEntry`]s of swept transactions
+/// `Failed`, for a
+/// [`WalletEvent::TransactionsSwept`](key_wallet_manager::WalletEvent::TransactionsSwept).
+///
+/// A swept transaction was provably beaten to one of its inputs, so it can
+/// never confirm — exactly the "transaction was dropped" case
+/// [`PaymentStatus::Failed`](crate::wallet::identity::types::dashpay::payment::PaymentStatus::Failed)
+/// documents, and this PR's sweep also deletes the record that was the last
+/// thing `reconcile_sent_payments_from_tx_history` could have resolved the
+/// entry from. Without a terminal transition here the sender's payment sat
+/// `Pending` forever. `Confirmed` entries are never demoted — the sweep of
+/// an already-confirmed payment's txid would be stale by definition — and
+/// the one way the verdict reverses (chainlocked reinstatement) re-emits
+/// the record confirmed, which `confirm_sent_payment_by_txid` accepts from
+/// `Failed`.
+pub(crate) async fn fail_swept_sent_dashpay_payments(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: &WalletId,
+    persister: &crate::wallet::persister::WalletPersister,
+    txids: &[dashcore::Txid],
+) {
+    use crate::wallet::identity::types::dashpay::payment::PaymentStatus;
+    for txid in txids {
+        resolve_sent_payment_by_txid(
+            wallet_manager,
+            wallet_id,
+            persister,
+            &txid.to_string(),
+            PaymentStatus::Failed,
+        )
+        .await;
+    }
+}
+
+/// Shared flip for the two resolutions above: move the `Sent`
+/// [`PaymentEntry`] under `txid` to `to`, in place, preserving
+/// amount/memo/counterparty.
+///
+/// `Confirmed` is terminal — nothing demotes it. `Pending` advances to
+/// either verdict, and `Failed` advances only to `Confirmed` (the
+/// reinstatement correction); every other combination is a no-op, which is
+/// what keeps re-detections and re-emitted sweeps idempotent and skipping
+/// the persistence round. Separated from the event glue so the state
+/// machine is unit-testable without constructing a full
+/// `TransactionRecord`.
+async fn resolve_sent_payment_by_txid(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: &WalletId,
+    persister: &crate::wallet::persister::WalletPersister,
+    txid: &str,
+    to: crate::wallet::identity::types::dashpay::payment::PaymentStatus,
 ) {
     use crate::wallet::identity::types::dashpay::payment::{PaymentDirection, PaymentStatus};
 
@@ -991,27 +1056,32 @@ async fn confirm_sent_payment_by_txid(
     };
 
     // The sent transaction belongs to one managed identity; find the
-    // `Pending` `Sent` entry under this txid and confirm it in place.
+    // eligible `Sent` entry under this txid and resolve it in place.
     for owner in info.identity_manager.identity_ids() {
         let Some(managed) = info.identity_manager.managed_identity_mut(&owner) else {
             continue;
         };
-        let confirmed = match managed.dashpay().payments.get(txid) {
-            Some(entry)
-                if entry.direction == PaymentDirection::Sent
-                    && entry.status == PaymentStatus::Pending =>
-            {
+        let resolved = match managed.dashpay().payments.get(txid) {
+            Some(entry) if entry.direction == PaymentDirection::Sent => {
+                let eligible = match (entry.status, to) {
+                    (PaymentStatus::Pending, _) => true,
+                    (PaymentStatus::Failed, PaymentStatus::Confirmed) => true,
+                    _ => false,
+                };
+                if !eligible {
+                    continue;
+                }
                 let mut updated = entry.clone();
-                updated.status = PaymentStatus::Confirmed;
+                updated.status = to;
                 updated
             }
             _ => continue,
         };
-        tracing::info!(owner = %owner, %txid, "Confirming sent DashPay payment");
-        if let Err(e) = managed.record_dashpay_payment(txid.to_string(), confirmed, persister) {
+        tracing::info!(owner = %owner, %txid, status = ?to, "Resolving sent DashPay payment");
+        if let Err(e) = managed.record_dashpay_payment(txid.to_string(), resolved, persister) {
             tracing::warn!(
                 error = %e,
-                "Failed to persist sent-payment confirmation; will retry on next detection"
+                "Failed to persist sent-payment resolution; will retry on next detection"
             );
         }
         // txid is unique — only one identity can hold this entry.
@@ -2880,6 +2950,111 @@ mod tests {
         assert_eq!(
             read_entry(iw, &wallet_id, &owner, &txid).await.status,
             PaymentStatus::Confirmed
+        );
+    }
+
+    /// A sweep naming a `Pending` sent payment's transaction must fail the
+    /// entry: the transaction was provably beaten to one of its inputs and
+    /// can never confirm, and the same sweep deletes the record that was
+    /// the last thing reconciliation could have resolved the entry from —
+    /// so without this transition the sender's payment sat `Pending`
+    /// forever with no terminal state. Also pins the two guard rails: a
+    /// `Confirmed` entry is never demoted by a stale sweep, and the one
+    /// legitimate reversal — a chainlocked reinstatement re-emitting the
+    /// record confirmed — advances `Failed` to `Confirmed`.
+    #[tokio::test]
+    async fn swept_sent_payment_fails_and_a_reinstating_confirmation_recovers_it() {
+        use crate::wallet::identity::types::dashpay::payment::{PaymentEntry, PaymentStatus};
+        use key_wallet::WalletCoreBalance;
+        use key_wallet_manager::WalletEvent;
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let txid = dashcore::Txid::from([0xAB; 32]);
+        let txid_key = txid.to_string();
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .record_dashpay_payment(
+                    txid_key.clone(),
+                    PaymentEntry::new_sent(contact, 50_000, Some("dinner".into())),
+                    &p,
+                )
+                .expect("record pending sent");
+        }
+
+        async fn status(
+            iw: &crate::wallet::identity::IdentityWallet<crate::broadcaster::SpvBroadcaster>,
+            wallet_id: &WalletId,
+            owner: &Identifier,
+            txid: &str,
+        ) -> PaymentStatus {
+            let wm = iw.wallet_manager.read().await;
+            let info = wm.get_wallet_info(wallet_id).expect("info");
+            info.identity_manager
+                .managed_identity(owner)
+                .unwrap()
+                .dashpay()
+                .payments
+                .get(txid)
+                .expect("entry")
+                .status
+        }
+
+        let swept_event = || WalletEvent::TransactionsSwept {
+            wallet_id,
+            txids: vec![txid],
+            superseded_by: dashcore::Txid::from([0xCD; 32]),
+            released_outpoints: vec![],
+            balance: WalletCoreBalance::default(),
+            account_balances: std::collections::BTreeMap::new(),
+        };
+        // The sweep fails the pending entry, through the real hook dispatch
+        // (that a sweep spawns the hooks at all is pinned in
+        // `payment_handler`'s routing tests).
+        super::super::run_dashpay_payment_hooks(&iw.wallet_manager, &wallet_id, &p, &swept_event())
+            .await;
+        assert_eq!(
+            status(iw, &wallet_id, &owner, &txid_key).await,
+            PaymentStatus::Failed,
+            "a swept transaction can never confirm — its sent payment must fail"
+        );
+
+        // Re-emitted sweep: idempotent no-op.
+        super::super::run_dashpay_payment_hooks(&iw.wallet_manager, &wallet_id, &p, &swept_event())
+            .await;
+        assert_eq!(
+            status(iw, &wallet_id, &owner, &txid_key).await,
+            PaymentStatus::Failed
+        );
+
+        // The chainlocked reinstatement re-emits the record confirmed; the
+        // hard evidence must be able to correct the Failed verdict.
+        super::confirm_sent_payment_by_txid(&iw.wallet_manager, &wallet_id, &p, &txid_key).await;
+        assert_eq!(
+            status(iw, &wallet_id, &owner, &txid_key).await,
+            PaymentStatus::Confirmed,
+            "a reinstated, confirmed transaction must recover the payment"
+        );
+
+        // And a stale sweep arriving after confirmation never demotes it.
+        super::super::run_dashpay_payment_hooks(&iw.wallet_manager, &wallet_id, &p, &swept_event())
+            .await;
+        assert_eq!(
+            status(iw, &wallet_id, &owner, &txid_key).await,
+            PaymentStatus::Confirmed,
+            "Confirmed is terminal — a stale sweep must not demote it"
         );
     }
 
