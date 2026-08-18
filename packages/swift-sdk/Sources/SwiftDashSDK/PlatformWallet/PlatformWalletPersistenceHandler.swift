@@ -1145,8 +1145,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// it need not be wallet-relevant at all, and even when it is, the sweep
     /// can be committed in a round that arrives before the winner's record.
     /// So upstream computes the split and names the freed coins, and this
-    /// applies it verbatim — the rest are held spent with no spender named,
-    /// which keeps them out of the restore set.
+    /// applies it verbatim — the rest are held spent with no spender
+    /// linked, attributed to the winner via `supersededByTxid`, which keeps
+    /// them out of the restore set durably.
     ///
     /// A held input can also have no `PersistentTxo` at all yet — the loser
     /// was persisted before its own funding TXO was, so
@@ -1238,7 +1239,21 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // existed, and comparing it raw would make every such coin look
             // unowned and leave it untouched forever.
             for txo in row.inputs where Self.resolvedWalletId(of: txo) == walletId {
-                txo.isSpent = !released.contains(txo.outpoint)
+                let held = !released.contains(txo.outpoint)
+                txo.isSpent = held
+                // A held coin is attributed to the winner — the same stamp
+                // the pending-input drain writes, and the one SQLite
+                // records as `spent_in_txid`. Without it the hold has no
+                // durable carrier: `upsertUtxo`'s recovery clear frees a
+                // spent row with neither a spender nor a marker, and a
+                // restore-rescan re-delivers the funding output precisely
+                // because it is blind to an unconfirmed winner no block
+                // carries yet — resurrecting a provably consumed coin.
+                // Only an explicit release frees a stamped hold; a
+                // released coin's stale marker is likewise the release
+                // pass's business (the outpoint loop in the caller), not
+                // this one's.
+                if held { txo.supersededByTxid = supersededBy }
                 txo.spendingTransaction = nil
                 txo.lastUpdated = Date()
             }
@@ -1977,15 +1992,16 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
         // The wallet is handing this outpoint over as a UTXO, so it holds it
         // unspent — authoritative, and the only thing that can lift a mark
-        // left with no spender on record. `applySweptTransaction` parks the
-        // inputs of a sweep it cannot resolve in exactly that state; a
-        // rescan re-delivering the coin lands here and frees it. A row whose
-        // spend is still on record is left alone: the pending-input resolve
-        // below owns that transition. `supersededByTxid` is a different
-        // kind of "no spender" — a sweep's winner is known but its row
-        // never materialized here — and must not be lifted the same way,
-        // or a tombstone the pending-resolve below just wrote would be
-        // undone by the very next sync round that re-delivers this outpoint.
+        // with neither a spender nor a winner behind it (a pre-stamp row
+        // from before `applySweptTransaction` named its winner; every hold
+        // written today is stamped). A row whose spend is still on record
+        // is left alone: the pending-input resolve below owns that
+        // transition. So is a `supersededByTxid` hold: the winner that
+        // consumed this coin is known even though its row never
+        // materialized here, and a re-delivery cannot outrank that verdict
+        // — a restore-rescan re-finds the funding output precisely because
+        // it is blind to an unconfirmed winner no block carries yet. Only
+        // an explicit release frees a stamped coin.
         if record.isSpent, record.spendingTransaction == nil, record.supersededByTxid == nil {
             record.isSpent = false
         }

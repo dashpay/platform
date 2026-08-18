@@ -328,6 +328,11 @@ final class SweptTransactionPersistTests: XCTestCase {
             "a coin the chain has already spent must not come back"
         )
         XCTAssertNil(takenByWinner!.spendingTransaction, "and no spender is invented for it")
+        XCTAssertEqual(
+            takenByWinner!.supersededByTxid,
+            winnerTxid,
+            "the hold is attributed to the winner — SQLite's spent_in_txid, mirrored"
+        )
 
         let losersOwn = txo(container, txid: fundingTxid, vout: 1)
         XCTAssertNotNil(losersOwn)
@@ -337,11 +342,14 @@ final class SweptTransactionPersistTests: XCTestCase {
         )
     }
 
-    /// A coin held spent with no spender is not a dead end: the wallet is
-    /// the authority on what it holds, so re-delivering the coin as a UTXO —
-    /// what a rescan does — lifts the mark. This is the backstop for a sweep
-    /// that released nothing, and for any older row left in that state.
-    func testWalletReDeliveringAHeldCoinFreesIt() throws {
+    /// A re-delivery of the funding output — what a restore-rescan does,
+    /// blind to the unconfirmed winner no block carries yet — must NOT
+    /// outrank the sweep's verdict: the coin was provably consumed, and
+    /// handing it back would resurrect it into the restore set on every
+    /// restore-from-seed until the winner confirms. Only an explicit
+    /// release frees a stamped hold — the same answer the SQLite store's
+    /// upsert valve gives to the identical event stream.
+    func testWalletReDeliveringAStampedHeldCoinKeepsItSpent() throws {
         let (handler, container) = try makeHandler()
         try seedSpend(in: container, winnerTakesA: false)
         sweep(handler, [Batch(losers: [sweptTxid], winner: winnerTxid)])
@@ -349,10 +357,47 @@ final class SweptTransactionPersistTests: XCTestCase {
 
         redeliverCoinB(handler)
 
-        let freed = txo(container, txid: fundingTxid, vout: 1)
-        XCTAssertNotNil(freed)
-        XCTAssertFalse(freed!.isSpent, "the wallet holds it as a UTXO, so the hold is lifted")
-        XCTAssertNil(freed!.spendingTransaction)
+        let held = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 1))
+        XCTAssertTrue(held.isSpent, "the stamped hold survives re-delivery")
+        XCTAssertEqual(held.supersededByTxid, winnerTxid)
+        XCTAssertNil(held.spendingTransaction)
+    }
+
+    /// The backstop for rows written before holds named their winner: a
+    /// coin held spent with neither a spender nor a `supersededByTxid`
+    /// stamp has nothing durable behind it, so the wallet re-delivering it
+    /// as a UTXO — the authority on what it holds — still lifts the mark.
+    /// Every hold written today is stamped; this pins the migration path
+    /// for the ones already on disk.
+    func testAPreStampHoldStillFreesOnRedelivery() throws {
+        let (handler, container) = try makeHandler()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        let funding = PersistentTransaction(
+            txid: fundingTxid,
+            transactionData: Data(repeating: 0x04, count: 10),
+            context: 2,
+            blockHeight: 100,
+            netAmount: 40_000
+        )
+        context.insert(funding)
+        let coinB = PersistentTxo(
+            transaction: funding,
+            vout: 1,
+            amount: 40_000,
+            address: "yFundAddr",
+            height: 100
+        )
+        coinB.walletId = walletId
+        coinB.isSpent = true
+        context.insert(coinB)
+        try context.save()
+
+        redeliverCoinB(handler)
+
+        let freed = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 1))
+        XCTAssertFalse(freed.isSpent, "a hold with nothing durable behind it frees on re-delivery")
+        XCTAssertNil(freed.spendingTransaction)
     }
 
     /// Hand coin B back through the ordinary account changeset, the way a
