@@ -2844,6 +2844,72 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun twoWalletsReleasedPendingInputsDoNotDeadlockTheRowDelete() = runTest {
+        // Port of the Swift regression of the same name. A shared loser
+        // holds one unresolved pending input per wallet, and each wallet's
+        // own sweep releases its own coin. Released staged rows must be
+        // deleted outright: left attached they read as their wallet's claim
+        // in `hasOtherWalletClaim`, so each callback would see the other's
+        // row and decline the delete, and replaying either would reach the
+        // same stalemate — the dead row and both pending entries stored
+        // forever. The global marker keeps the funds correct either way;
+        // this pins the storage half.
+        val walletB = ByteArray(32) { 8 }
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        handler.onPersistWalletMetadata(walletB, testnet, groupId, 0)
+
+        val fundingTxid = ByteArray(32) { 65 }
+        val pA = makeOutpoint(fundingTxid, 8)
+        val pB = makeOutpoint(fundingTxid, 9)
+        val loserTxid = ByteArray(32) { 66 }
+        val winnerTxid = ByteArray(32) { 67 }
+
+        // The loser's row plus one still-unfunded pending claim per wallet
+        // — what each wallet's own record pass would have staged.
+        db.transactionDao().upsert(
+            TransactionEntity(txid = loserTxid, transactionData = ByteArray(10) { 5 }),
+        )
+        db.documentDao().upsertPendingInput(
+            PendingInputEntity(
+                outpoint = pA,
+                inputIndex = 0,
+                spendingTxid = loserTxid,
+                spendingTransactionTxid = loserTxid,
+                walletId = walletId,
+            ),
+        )
+        db.documentDao().upsertPendingInput(
+            PendingInputEntity(
+                outpoint = pB,
+                inputIndex = 1,
+                spendingTxid = loserTxid,
+                spendingTransactionTxid = loserTxid,
+                walletId = walletB,
+            ),
+        )
+
+        // Each wallet's independently committed callback, each releasing
+        // only its own coin.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(loserTxid), arrayOf(winnerTxid), arrayOf(pA),
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        handler.onChangesetBegin(walletB)
+        handler.onWalletChangesetTransactionsSwept(
+            walletB, arrayOf(loserTxid), arrayOf(winnerTxid), arrayOf(pB),
+        )
+        handler.onChangesetEnd(walletB, success = true)
+
+        assertNull(
+            "a released pending input is not a claim once its own wallet has resolved it",
+            db.transactionDao().getByTxid(loserTxid),
+        )
+        assertTrue(db.documentDao().getPendingInputsByOutpoint(pA).isEmpty())
+        assertTrue(db.documentDao().getPendingInputsByOutpoint(pB).isEmpty())
+    }
+
+    @Test
     fun aReinstatingRecordInALaterRoundRevivesASweptTransactionAndItsOutputs() = runTest {
         // Cross-round reinstatement — the BLOCKING finding this round
         // fixes. The sweep and its reinstating record land in two
@@ -3271,7 +3337,7 @@ class PlatformWalletPersistenceHandlerTest {
         // that fix repoints a held-but-unfunded pending input at its sweep's
         // winner and detaches it from `spendingTransactionTxid` so it
         // survives the loser's cascade-delete. But a SECOND sweep of that
-        // winner — `tombstoneUnreleasedPendingInputs` matches
+        // winner — the sweep's staged-row fetch matches
         // `spendingTransactionTxid = :txid`, which the first tombstoning
         // already cleared to null — cannot find the row that way anymore.
         // L spends P; W spends P and Q and sweeps L, holding the still-
