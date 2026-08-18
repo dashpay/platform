@@ -348,6 +348,14 @@ async fn run_wallet_event_adapter<P>(
             let asset_locks = reconstruct_asset_locks_for_event(&wallet_manager, &event).await;
             let flips = swept_payment_flips_for_event(&wallet_manager, &event).await;
             let entry = batch.entry(wallet_id).or_default();
+            retract_reinstated_payment_flips(
+                &wallet_manager,
+                entry,
+                &mut payment_rollbacks,
+                wallet_id,
+                &core.records,
+            )
+            .await;
             entry.core.merge(core);
             entry.asset_locks.merge(asset_locks);
             fold_payment_flips(entry, &mut payment_rollbacks, wallet_id, flips);
@@ -366,6 +374,14 @@ async fn run_wallet_event_adapter<P>(
                         reconstruct_asset_locks_for_event(&wallet_manager, &event).await;
                     let flips = swept_payment_flips_for_event(&wallet_manager, &event).await;
                     let entry = batch.entry(wallet_id).or_default();
+                    retract_reinstated_payment_flips(
+                        &wallet_manager,
+                        entry,
+                        &mut payment_rollbacks,
+                        wallet_id,
+                        &core.records,
+                    )
+                    .await;
                     entry.core.merge(core);
                     entry.asset_locks.merge(asset_locks);
                     fold_payment_flips(entry, &mut payment_rollbacks, wallet_id, flips);
@@ -790,9 +806,98 @@ async fn swept_payment_flips_for_event(
     }
 }
 
+/// The batch-level half of the reinstatement invariant: **a merged
+/// changeset must never carry a sweep-derived assertion about a txid the
+/// same fold reinstates.** Each sweep-derived channel enforces it where
+/// that channel folds:
+///
+/// - `core.sweeps.txids` — `CoreChangeSet::merge` retracts reinstated
+///   txids from folded batches;
+/// - `core.sweeps.released_outpoints` — deliberately NOT retracted; every
+///   backend withholds an outpoint a surviving record claims, so the
+///   reinstated transaction's own entries are inert (documented at the
+///   merge);
+/// - `asset_locks.removed` — `AssetLockChangeSet::merge` cancels a folded
+///   sweep tombstone when the reinstating reconstruction upsert lands;
+/// - `payments_overlay` + its rollback ledger — live at BATCH level, not
+///   inside any sub-changeset's `Merge`, so their retraction lives here.
+///   Any future sweep-derived channel carried on [`WalletBatch`] must get
+///   its retraction in this function too.
+///
+/// `reinstated` is exactly `core.records` of the event being folded — the
+/// same set `CoreChangeSet::merge` keys its own retraction on, taken from
+/// the same projection, so the two can never diverge. Without this, a
+/// buffered `[TransactionsSwept(X), BlockProcessed(chainlocked X)]` fold
+/// would commit X's reinstated record beside a stale `Failed` overlay row
+/// — and because the payment hooks confirm X on their own task, that row
+/// could overwrite a `Confirmed` the hooks had already persisted.
+///
+/// Three moves per reinstated txid, all before the overlay can reach a
+/// store: drop the staged overlay row, drop its rollback-ledger entry
+/// (a later rejection of this round must not replay the dead undo), and
+/// undo the in-memory flip through the guarded
+/// [`rollback_swept_payment_flips`] — which leaves the entry alone if the
+/// hooks already advanced it to `Confirmed`, the table's terminal.
+async fn retract_reinstated_payment_flips(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    entry: &mut WalletBatch,
+    payment_rollbacks: &mut BTreeMap<
+        WalletId,
+        Vec<(
+            dpp::prelude::Identifier,
+            String,
+            crate::wallet::identity::PaymentEntry,
+        )>,
+    >,
+    wallet_id: WalletId,
+    records: &[TransactionRecord],
+) {
+    if records.is_empty() {
+        return;
+    }
+    let ledger_live = payment_rollbacks
+        .get(&wallet_id)
+        .is_some_and(|ledger| !ledger.is_empty());
+    if entry.payments_overlay.is_empty() && !ledger_live {
+        return;
+    }
+    let reinstated: std::collections::HashSet<String> = records
+        .iter()
+        .map(|record| record.txid.to_string())
+        .collect();
+
+    for rows in entry.payments_overlay.values_mut() {
+        rows.retain(|txid, _| !reinstated.contains(txid));
+    }
+    entry.payments_overlay.retain(|_, rows| !rows.is_empty());
+
+    if let Some(ledger) = payment_rollbacks.get_mut(&wallet_id) {
+        let mut undo = Vec::new();
+        ledger.retain(|(owner, txid, previous)| {
+            if reinstated.contains(txid) {
+                undo.push((*owner, txid.clone(), previous.clone()));
+                false
+            } else {
+                true
+            }
+        });
+        if !undo.is_empty() {
+            crate::wallet::identity::network::rollback_swept_payment_flips(
+                wallet_manager,
+                &wallet_id,
+                undo,
+            )
+            .await;
+        }
+    }
+}
+
 /// Stage one event's sweep-payment flips: the overlay folds into the
 /// wallet's batch entry (last-write-wins per `(owner, txid)`, matching
 /// `PlatformWalletChangeSet::merge`), the rollback into the drain's ledger.
+/// The inverse — a later event in the same fold reinstating a flipped
+/// txid — is [`retract_reinstated_payment_flips`]' job, which the drain
+/// runs for every record-bearing event before merging it.
 fn fold_payment_flips(
     entry: &mut WalletBatch,
     payment_rollbacks: &mut BTreeMap<
@@ -3509,6 +3614,191 @@ mod tests {
             status(&wallet_manager, &wallet_id, &owner, &tx2.to_string()).await,
             PaymentStatus::Failed
         );
+
+        cancel.cancel();
+        handle.await.expect("adapter task joins");
+    }
+
+    /// The payment channel's half of the reinstatement invariant, end to
+    /// end: a buffered `[TransactionsSwept(X), BlockProcessed(chainlocked
+    /// X)]` pair folds into ONE store round, and that round must carry X's
+    /// reinstated record with NO sweep-derived `Failed` overlay row beside
+    /// it — `CoreChangeSet::merge` retracts the sweep, and
+    /// `retract_reinstated_payment_flips` must retract the payment flip
+    /// keyed on the very same record set. The in-memory flip is undone
+    /// with it, so the entry reads `Pending` for the confirm path the
+    /// reinstated record drives (the payment hooks run on their own task;
+    /// this harness runs only the adapter). Without the retraction the
+    /// fold committed a stale `Failed` row that could overwrite a
+    /// `Confirmed` the hooks had already persisted.
+    ///
+    /// Both events are queued BEFORE the adapter task spawns, which is
+    /// what makes the single-fold deterministic: the first `recv` takes
+    /// the sweep and the backlog `try_recv` folds the record.
+    #[tokio::test]
+    async fn a_reinstating_record_in_the_same_fold_retracts_the_payment_flip() {
+        use dpp::identity::v0::IdentityV0;
+        use dpp::identity::Identity;
+        use dpp::prelude::Identifier;
+        use key_wallet::account::account_type::StandardAccountType;
+        use key_wallet::account::AccountType;
+        use key_wallet::managed_account::transaction_record::{
+            TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::transaction_router::TransactionType;
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+
+        use super::spawn_wallet_event_adapter;
+        use crate::test_support::{funded_wallet_manager, NoopTestPersister};
+        use crate::wallet::identity::types::dashpay::payment::{PaymentEntry, PaymentStatus};
+        use crate::wallet::persister::WalletPersister;
+
+        let (wallet_manager, wallet_id, _generation, _signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+
+        // X: the transaction that is swept and then returns chainlocked in
+        // the same buffered fold.
+        let tx = dashcore::Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![dashcore::TxIn {
+                previous_output: dashcore::OutPoint::new(dashcore::Txid::from([0xD0; 32]), 0),
+                ..Default::default()
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        let record = TransactionRecord::new(
+            tx,
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            TransactionContext::InChainLockedBlock(BlockInfo::new(
+                4321,
+                {
+                    use dashcore::hashes::Hash as _;
+                    dashcore::BlockHash::all_zeros()
+                },
+                1_650_000_000,
+            )),
+            TransactionType::Standard,
+            TransactionDirection::Outgoing,
+            Vec::new(),
+            Vec::new(),
+            0,
+        );
+        let txid = record.txid;
+        let txid_key = txid.to_string();
+
+        let noop = WalletPersister::new(
+            wallet_id,
+            Arc::new(NoopTestPersister) as Arc<dyn crate::changeset::PlatformWalletPersistence>,
+        );
+        {
+            let mut wm = wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+            info.identity_manager
+                .add_identity(
+                    Identity::V0(IdentityV0 {
+                        id: owner,
+                        public_keys: std::collections::BTreeMap::new(),
+                        balance: 0,
+                        revision: 0,
+                    }),
+                    0,
+                    wallet_id,
+                    &noop,
+                )
+                .expect("add owner");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .record_dashpay_payment(
+                    txid_key.clone(),
+                    PaymentEntry::new_sent(contact, 50_000, None),
+                    &noop,
+                )
+                .expect("record pending sent");
+        }
+
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::with_capabilities(
+            obs_tx,
+            crate::changeset::PersistenceCapabilities::CORE_SWEEP_REMOVAL,
+        ));
+        let (event_tx, event_rx) = unbounded_channel();
+
+        // Queue BOTH events before the adapter runs, so they land in one
+        // fold: the sweep of X, then the chainlocked record reinstating X.
+        event_tx
+            .send(WalletEvent::TransactionsSwept {
+                wallet_id,
+                txids: vec![txid],
+                superseded_by: dashcore::Txid::from([0xD1; 32]),
+                released_outpoints: vec![],
+                balance: WalletCoreBalance::default(),
+                account_balances: BTreeMap::new(),
+            })
+            .expect("send sweep");
+        event_tx
+            .send(WalletEvent::BlockProcessed {
+                wallet_id,
+                height: 4321,
+                chain_lock: None,
+                inserted: vec![record],
+                updated: vec![],
+                matured: vec![],
+                balance: WalletCoreBalance::default(),
+                account_balances: BTreeMap::new(),
+                addresses_derived: vec![],
+            })
+            .expect("send reinstating record");
+
+        let cancel = CancellationToken::new();
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let handle = spawn_wallet_event_adapter(
+            Arc::clone(&wallet_manager),
+            Arc::clone(&persister),
+            event_rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
+        );
+
+        let observed = obs_rx.recv().await.expect("the folded store");
+        assert!(!observed.rejected);
+        assert_eq!(
+            observed.n_records, 1,
+            "the reinstated record must ride the fold's store"
+        );
+        assert_eq!(
+            observed.n_payment_overlay_rows, 0,
+            "a merged changeset must never carry a sweep-derived assertion about a \
+             txid the same fold reinstates"
+        );
+
+        {
+            let wm = wallet_manager.read().await;
+            let status = wm
+                .get_wallet_info(&wallet_id)
+                .expect("info")
+                .identity_manager
+                .managed_identity(&owner)
+                .expect("managed")
+                .dashpay()
+                .payments
+                .get(&txid_key)
+                .expect("entry")
+                .status;
+            assert_eq!(
+                status,
+                PaymentStatus::Pending,
+                "the retraction must undo the in-memory flip so the reinstated \
+                 record's own confirm path decides the entry"
+            );
+        }
 
         cancel.cancel();
         handle.await.expect("adapter task joins");

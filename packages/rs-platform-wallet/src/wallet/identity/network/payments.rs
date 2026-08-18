@@ -1106,19 +1106,31 @@ pub(crate) async fn flip_swept_sent_payments_for_store(
     flips
 }
 
-/// Undo [`flip_swept_sent_payments_for_store`]'s in-memory flips after the
-/// round they rode was rejected. Memory returns to the durable state
-/// (`Pending`, matching the store the rejection left untouched), which is
-/// what lets the replayed sweep — re-emitted by the re-scan, because the
-/// rejected round kept the loser's record too — find the entries eligible
-/// and recompute the flip. Without this, memory would read `Failed` ahead
-/// of the store, the replay's eligibility check would skip the entries,
-/// and the store would never learn.
+/// Undo [`flip_swept_sent_payments_for_store`]'s in-memory flips — after
+/// the round they rode was rejected, or after the same fold reinstated
+/// their transaction and the adapter retracted the staged overlay row.
+/// Memory returns to the durable state (`Pending`, matching the store the
+/// rejection left untouched), which is what lets the replayed sweep —
+/// re-emitted by the re-scan, because the rejected round kept the loser's
+/// record too — find the entries eligible and recompute the flip. Without
+/// this, memory would read `Failed` ahead of the store, the replay's
+/// eligibility check would skip the entries, and the store would never
+/// learn.
+///
+/// An undo is NOT a forward transition, so it does not go through
+/// [`sent_status_transition_allowed`] — but it obeys the same authority:
+/// it may only revert the sweep flip's own still-standing `Failed` write.
+/// An entry that moved on — the payment hooks confirming it concurrently,
+/// which the table permits from `Failed` — outranks the undo; restoring
+/// the captured `Pending` over a `Confirmed` the store may already hold
+/// would demote the terminal state the table exists to protect.
 pub(crate) async fn rollback_swept_payment_flips(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     wallet_id: &WalletId,
     rollback: Vec<(Identifier, String, crate::wallet::identity::PaymentEntry)>,
 ) {
+    use crate::wallet::identity::types::dashpay::payment::PaymentStatus;
+
     if rollback.is_empty() {
         return;
     }
@@ -1130,7 +1142,13 @@ pub(crate) async fn rollback_swept_payment_flips(
         let Some(managed) = info.identity_manager.managed_identity_mut(&owner) else {
             continue;
         };
-        managed.dashpay_payments_mut().insert(txid, previous);
+        let payments = managed.dashpay_payments_mut();
+        match payments.get(&txid) {
+            Some(current) if current.status == PaymentStatus::Failed => {
+                payments.insert(txid, previous);
+            }
+            _ => {}
+        }
     }
 }
 
@@ -3267,6 +3285,76 @@ mod tests {
             flips.overlay[&owner][&txid_key].status,
             PaymentStatus::Failed,
             "the replayed sweep must recompute the flip the rollback undid"
+        );
+    }
+
+    /// The rollback may only revert the sweep flip's own still-standing
+    /// `Failed` write. The payment hooks run on their own task, so a
+    /// confirmation can land between the flip and its undo (a rejected
+    /// round, or a same-fold reinstatement) — and `Confirmed` is the
+    /// terminal `sent_status_transition_allowed` protects. An
+    /// unconditional restore would clobber it back to the captured
+    /// `Pending`, demoting a status the store may already hold.
+    #[tokio::test]
+    async fn rollback_does_not_clobber_a_concurrently_confirmed_entry() {
+        use crate::wallet::identity::types::dashpay::payment::{PaymentEntry, PaymentStatus};
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let txid = dashcore::Txid::from([0xAE; 32]);
+        let txid_key = txid.to_string();
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .record_dashpay_payment(
+                    txid_key.clone(),
+                    PaymentEntry::new_sent(contact, 50_000, None),
+                    &p,
+                )
+                .expect("record pending sent");
+        }
+
+        let flips =
+            super::flip_swept_sent_payments_for_store(&iw.wallet_manager, &wallet_id, &[txid])
+                .await;
+        assert!(!flips.is_empty());
+
+        // The reinstated transaction's confirmation races in before the
+        // undo — Failed → Confirmed, the table's permitted correction.
+        super::confirm_sent_payment_by_txid(&iw.wallet_manager, &wallet_id, &p, &txid_key).await;
+
+        // The undo arrives late (rejected round or same-fold retraction);
+        // it must find its own write gone and leave the terminal alone.
+        super::rollback_swept_payment_flips(&iw.wallet_manager, &wallet_id, flips.rollback).await;
+
+        let wm = iw.wallet_manager.read().await;
+        let status = wm
+            .get_wallet_info(&wallet_id)
+            .expect("info")
+            .identity_manager
+            .managed_identity(&owner)
+            .expect("managed")
+            .dashpay()
+            .payments
+            .get(&txid_key)
+            .expect("entry")
+            .status;
+        assert_eq!(
+            status,
+            PaymentStatus::Confirmed,
+            "an undo may only revert the sweep's own still-standing Failed write — \
+             never a concurrently confirmed terminal"
         );
     }
 
