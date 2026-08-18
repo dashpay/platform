@@ -1,3 +1,20 @@
+### [4.1.1](https://github.com/dashpay/platform/compare/v4.1.0...v4.1.1) (2026-08-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dashmate:** pin Tenderdash to the 1.7 line and drop the removed Commit timeout overrides (#4411)
+
+### Bug Fixes
+
+* **drive-abci:** roll back dropped state transitions on the proposing path ([#4409](https://github.com/dashpay/platform/issues/4409))
+
+
+### Build System
+
+* **dashmate:** pin Tenderdash to the 1.7 line and drop the removed Commit timeout overrides ([#4411](https://github.com/dashpay/platform/issues/4411))
+* **dashmate:** track the floating Tenderdash 1.6 image tag ([#4410](https://github.com/dashpay/platform/issues/4410))
+
 ## [4.1.0](https://github.com/dashpay/platform/compare/v4.0.0...v4.1.0) (2026-07-27)
 
 
