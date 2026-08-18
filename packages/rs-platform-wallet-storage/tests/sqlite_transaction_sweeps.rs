@@ -1587,3 +1587,104 @@ fn a_record_reinstating_a_swept_txid_in_a_later_round_is_accepted_and_durable() 
         "and spendable — not left behind in some half-restored state"
     );
 }
+
+/// A release must land even when the swept txid has no `core_transactions`
+/// row of its own. A chained-sweep claim is a `core_utxos` placeholder that
+/// exists independently of any transaction row, and the loser now freeing
+/// it need not have one — a fatal flush error wipes a buffered round (the
+/// winner's record with it) while the faulted wallet keeps persisting later
+/// rounds. `apply_sweep` returns before its input loop for a missing row,
+/// so if that loop were the only place releases were applied the set would
+/// be silently dropped and the upsert valve would hold the placeholder's
+/// `spent_in_txid` forever.
+#[test]
+fn a_release_applies_even_when_the_swept_txid_has_no_row() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xE7);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = p2pkh(0x31);
+    let funding_txid = Txid::from_byte_array([0x30; 32]);
+    let p = OutPoint::new(funding_txid, 0);
+    let loser_txid = Txid::from_byte_array([0x31; 32]); // L
+    let winner_txid = Txid::from_byte_array([0x32; 32]); // W — never recorded
+    let final_winner = Txid::from_byte_array([0x33; 32]); // X
+
+    // Round 1: L, spending the still-unfunded P, is recorded and then swept
+    // by W with nothing released — leaving the held-but-absent placeholder.
+    {
+        let mut conn = persister.lock_conn_for_test();
+        derive_address(&conn, &w, 0, &addr);
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![tx_record(loser_txid, vec![p], vec![])],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![loser_txid],
+                superseded_by: winner_txid,
+                released_outpoints: vec![],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    {
+        let conn = persister.lock_conn_for_test();
+        assert!(
+            row_exists(&conn, &w, &p),
+            "sanity: the held claim left its placeholder"
+        );
+        assert!(unspent(&conn, &w).is_empty());
+    }
+
+    // Round 2: W is swept in turn, releasing P — but W's own record never
+    // reached this store, so there is no row and no input loop to walk.
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![winner_txid],
+                superseded_by: final_winner,
+                released_outpoints: vec![p],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    {
+        let conn = persister.lock_conn_for_test();
+        assert!(
+            unspent(&conn, &w).contains(&p),
+            "the release must reach the placeholder with no loser row to walk"
+        );
+    }
+
+    // The funding output finally arrives: the shed hold must let the
+    // upsert's valve accept the coin as unspent, with its real value.
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            new_utxos: vec![make_utxo(&addr, funding_txid, 0, 50_000)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    let conn = persister.lock_conn_for_test();
+    assert!(
+        unspent(&conn, &w).contains(&p),
+        "the funded coin stays spendable — the valve has no stale claim to defend"
+    );
+}

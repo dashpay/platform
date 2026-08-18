@@ -180,6 +180,31 @@ pub fn apply(
         for loser_txid in &batch.txids {
             apply_sweep(tx, wallet_id, loser_txid, &batch.superseded_by, &released)?;
         }
+        // Releases are outpoint-keyed facts, so they are applied by outpoint
+        // once the batch's losers are done — not only through each loser's
+        // decoded inputs above. A chained-sweep claim is a `core_utxos`
+        // placeholder that exists independently of any transaction row, and
+        // the loser now freeing it need not have one: a fatal flush error
+        // wipes a buffered round (the winner's record with it) while the
+        // faulted wallet keeps persisting later rounds, and `apply_sweep`
+        // above returns before its input loop when the swept txid has no
+        // row. Dropping the release set there would leave the `:340` valve
+        // holding the placeholder's `spent_in_txid` forever — the release
+        // is the one channel that clears it. Running after the loser loop
+        // rather than inside it changes nothing for inputs the loop already
+        // freed (same UPDATE, idempotent), and a coin a surviving record in
+        // this round re-claimed was already filtered out of `released`
+        // above.
+        if !released.is_empty() {
+            let mut release_stmt = tx.prepare_cached(
+                "UPDATE core_utxos SET spent = 0, spent_in_txid = NULL \
+                 WHERE wallet_id = ?1 AND outpoint = ?2",
+            )?;
+            for outpoint in &released {
+                let key = blob::encode_outpoint(outpoint)?;
+                release_stmt.execute(params![wallet_id.as_slice(), &key[..]])?;
+            }
+        }
     }
     Ok(())
 }
@@ -222,7 +247,10 @@ pub fn apply(
 ///
 /// Idempotent: a txid this store never recorded is a successful no-op, not an
 /// error. A sweep can legitimately name a transaction this wallet dropped, or
-/// never derived an address for in the first place.
+/// never derived an address for in the first place. Only the loser-scoped
+/// work is skipped in that case — the batch's released outpoints are applied
+/// by the caller, outside this function, precisely so a missing row cannot
+/// swallow them.
 fn apply_sweep(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,

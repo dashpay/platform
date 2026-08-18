@@ -834,9 +834,11 @@ impl PlatformWalletPersistence for SqlitePersister {
         // case, where it leaves a `core_utxos` placeholder keyed by outpoint
         // rather than by any relationship to the loser. That is what makes a
         // later sweep of the winner that replaces it chain-safe with no
-        // extra bookkeeping: the next `apply_sweep` call matches the same
-        // outpoint directly, so it repoints or releases the placeholder
-        // regardless of how many sweeps deep it is.
+        // extra bookkeeping: the next sweep matches the same outpoint
+        // directly — through the loser's decoded inputs when its row is on
+        // hand, and through the batch's own released set when it is not —
+        // so it repoints or releases the placeholder regardless of how many
+        // sweeps deep it is.
         PersistenceCapabilities::ATOMIC_CHANGESETS
             .union(PersistenceCapabilities::INVITATIONS)
             .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
