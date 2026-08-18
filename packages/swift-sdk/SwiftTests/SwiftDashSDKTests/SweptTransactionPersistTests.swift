@@ -1493,6 +1493,65 @@ final class SweptTransactionPersistTests: XCTestCase {
         XCTAssertEqual(coin.supersededByTxid, finalWinner)
     }
 
+    /// The whole chain inside ONE round: a single sweeps callback can carry
+    /// two batches where the second sweeps the first's winner, so the
+    /// tombstone the first batch just wrote — staged, unsaved, retargeted by
+    /// nothing but in-memory mutation — must be visible to the second
+    /// batch's scalar reconciliation. Pins the per-batch tombstone scan
+    /// reading the mutable columns off live objects; a store-side predicate
+    /// would test the stale saved values and miss the row entirely.
+    func testChainedSweepAcrossTwoBatchesInOneRoundReleasesTheFreshTombstone() throws {
+        let (handler, container) = try makeHandler()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+
+        let firstLoser = Data(repeating: 0xA1, count: 32) // L
+        let secondLoser = Data(repeating: 0xA2, count: 32) // W — batch 1's winner
+        let finalWinner = Data(repeating: 0xA3, count: 32) // X
+
+        let l = PersistentTransaction(
+            txid: firstLoser,
+            transactionData: Data(repeating: 0x05, count: 10),
+            context: 0,
+            blockHeight: 0,
+            netAmount: -50_000
+        )
+        context.insert(l)
+        context.insert(PersistentPendingInput(
+            outpoint: PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0),
+            inputIndex: 0,
+            spendingTxid: firstLoser,
+            spendingTransaction: l,
+            walletId: walletId
+        ))
+        try context.save()
+
+        // One callback, two batches: W beats L holding the unfunded coin,
+        // then X beats W and frees it.
+        sweep(handler, [
+            Batch(losers: [firstLoser], winner: secondLoser),
+            Batch(
+                losers: [secondLoser],
+                winner: finalWinner,
+                released: [(txid: fundingTxid, vout: 0)]
+            ),
+        ])
+
+        let pOutpoint = PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0)
+        let pendingDescriptor = FetchDescriptor<PersistentPendingInput>(
+            predicate: #Predicate { $0.outpoint == pOutpoint }
+        )
+        XCTAssertTrue(
+            try context.fetch(pendingDescriptor).isEmpty,
+            "the second batch must find and release the tombstone the first batch just wrote"
+        )
+
+        deliverFundingUtxo(handler, vout: 0, amount: 50_000)
+        let coin = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertFalse(coin.isSpent, "the released coin funds as spendable")
+        XCTAssertNil(coin.supersededByTxid)
+    }
+
     /// The funding-BEFORE-release ordering of the chained scenario above:
     /// the funding TXO arrives between the sweep that held the coin and the
     /// sweep that frees it, so the tombstone drains into

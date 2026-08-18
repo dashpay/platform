@@ -1016,15 +1016,50 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 let supersededBy = Swift.withUnsafeBytes(of: batch.superseded_by) { Data($0) }
 
                 if batch.txids_count > 0, let txidsPtr = batch.txids {
+                    // This wallet's detached tombstones, fetched ONCE per
+                    // batch and grouped by the live `spendingTxid` each
+                    // loser is looked up under. The per-loser form of this
+                    // fetch paid the pending-changes tax — an in-memory
+                    // predicate pass over every unsaved insert of the
+                    // entity — once per swept txid, and a single
+                    // network-derived sweep can carry many losers into the
+                    // same round as thousands of freshly staged records.
+                    // Pending changes stay ON (rows tombstoned earlier in
+                    // this round exist only as staged state), the predicate
+                    // names only the immutable `walletId`, and the mutable
+                    // halves (`isSweptTombstone`, `spendingTxid`) are read
+                    // off the live objects — a store-side predicate on a
+                    // mutable column would test stale saved values.
+                    // Rebuilt per batch, not per round: an earlier batch's
+                    // retargets must be visible to a later batch sweeping
+                    // that batch's winner. Within one batch no rebuild is
+                    // needed — rows retarget to the batch's own winner, and
+                    // upstream never lists a batch's winner among its own
+                    // losers.
+                    var tombstonesBySpender: [Data: [PersistentPendingInput]] = [:]
+                    do {
+                        var pendingDescriptor = FetchDescriptor<PersistentPendingInput>(
+                            predicate: #Predicate { $0.walletId == walletId }
+                        )
+                        pendingDescriptor.includePendingChanges = true
+                        for pending in try backgroundContext.fetch(pendingDescriptor)
+                        where pending.isSweptTombstone && !pending.isDeleted {
+                            tombstonesBySpender[pending.spendingTxid, default: []]
+                                .append(pending)
+                        }
+                    } catch {
+                        print(
+                            "⚠️ persistWalletChangesetSweeps: tombstone scan failed: "
+                                + "\(error.localizedDescription); failing the round"
+                        )
+                        return false
+                    }
+
                     for i in 0..<Int(batch.txids_count) {
                         let txid = Swift.withUnsafeBytes(of: txidsPtr[i]) { Data($0) }
+                        let row: PersistentTransaction?
                         do {
-                            try applySweptTransaction(
-                                walletId: walletId,
-                                txid: txid,
-                                supersededBy: supersededBy,
-                                released: released
-                            )
+                            row = try fetchSweepTransactionRow(txid: txid)
                         } catch {
                             // Fail the round rather than report a deletion
                             // that did not happen: Rust would clear the sweep
@@ -1037,6 +1072,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                             )
                             return false
                         }
+                        applySweptTransaction(
+                            walletId: walletId,
+                            supersededBy: supersededBy,
+                            released: released,
+                            row: row,
+                            priorTombstones: tombstonesBySpender[txid] ?? []
+                        )
                     }
                 }
 
@@ -1069,32 +1111,36 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 // the sweep phase, after relationship-driven mutations the
                 // round index cannot observe, and a store-only fetch here
                 // would refresh those away (see the fetch-helpers MARK).
-                for outpoint in released {
-                    var releasedDescriptor = FetchDescriptor<PersistentTxo>(
-                        predicate: #Predicate { $0.outpoint == outpoint }
-                    )
-                    releasedDescriptor.fetchLimit = 1
-                    let row: PersistentTxo?
+                // ONE fetch for the whole batch, keyed by the immutable
+                // outpoint set — the per-outpoint form paid the
+                // pending-changes tax (an in-memory pass over every unsaved
+                // TXO insert) once per released coin, and a release set is
+                // sized by a remote sender's transaction.
+                if !released.isEmpty {
+                    let rows: [PersistentTxo]
                     do {
-                        row = try backgroundContext.fetch(releasedDescriptor).first
+                        let releasedDescriptor = FetchDescriptor<PersistentTxo>(
+                            predicate: #Predicate { released.contains($0.outpoint) }
+                        )
+                        rows = try backgroundContext.fetch(releasedDescriptor)
                     } catch {
                         // Same contract as the loser loop: a release
                         // silently skipped would report a removal durable
                         // that never fully happened.
                         print(
-                            "⚠️ persistWalletChangesetSweeps: release lookup of "
-                                + "\(outpoint.prefix(8).toHexString())… failed: "
+                            "⚠️ persistWalletChangesetSweeps: release lookup failed: "
                                 + "\(error.localizedDescription); failing the round"
                         )
                         return false
                     }
-                    guard let txo = row,
-                          Self.resolvedWalletId(of: txo) == walletId,
-                          txo.spendingTransaction == nil else { continue }
-                    txo.isSpent = false
-                    txo.supersededByTxid = nil
-                    txo.spendingInputIndex = nil
-                    txo.lastUpdated = Date()
+                    for txo in rows where !txo.isDeleted {
+                        guard Self.resolvedWalletId(of: txo) == walletId,
+                              txo.spendingTransaction == nil else { continue }
+                        txo.isSpent = false
+                        txo.supersededByTxid = nil
+                        txo.spendingInputIndex = nil
+                        txo.lastUpdated = Date()
+                    }
                 }
             }
 
@@ -1194,34 +1240,28 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// wallet" is decided without an explicit cross-wallet coordination
     /// point.
     ///
-    /// Throws if SwiftData cannot answer the lookup. The caller fails the
-    /// round on that: a deletion silently skipped would let Rust clear the
-    /// sweep while the dead row survives.
+    /// Fetch-free by design: the caller resolves `row` (through the
+    /// round-index-aware sweep lookup, failing the round if SwiftData
+    /// cannot answer) and hands over this loser's `priorTombstones` from
+    /// its once-per-batch scan. A `nil` row skips only the row-scoped work,
+    /// NOT the whole function. Sweeps are idempotent and can name a
+    /// transaction this store never had — but they can also name one this
+    /// store DID have and another wallet's callback already deleted. The
+    /// row is shared; the detached tombstones this wallet wrote against it
+    /// are not, and they are exactly the state that is still findable — by
+    /// scalar `spendingTxid` — after the row is gone. Skipping them would
+    /// strand them: this wallet's release decision would never reach a
+    /// tombstone that then marks its coin spent by a transaction that no
+    /// longer exists, and a held one could never follow the chain to a
+    /// further winner. So the wallet-scoped tombstone reconciliation at the
+    /// bottom runs either way.
     private func applySweptTransaction(
         walletId: Data,
-        txid: Data,
         supersededBy: Data,
-        released: Set<Data>
-    ) throws {
-        var descriptor = FetchDescriptor<PersistentTransaction>(
-            predicate: #Predicate { $0.txid == txid }
-        )
-        descriptor.fetchLimit = 1
-        descriptor.relationshipKeyPathsForPrefetching = [\.outputs, \.inputs, \.pendingInputs]
-        // A successful fetch that finds nothing skips only the row-scoped
-        // work below, NOT the whole function. Sweeps are idempotent and can
-        // name a transaction this store never had — but they can also name
-        // one this store DID have and another wallet's callback already
-        // deleted. The row is shared; the detached tombstones this wallet
-        // wrote against it are not, and they are exactly the state that is
-        // still findable — by scalar `spendingTxid` — after the row is gone.
-        // Returning here would strand them: this wallet's release decision
-        // would never reach a tombstone that then marks its coin spent by a
-        // transaction that no longer exists, and a held one could never
-        // follow the chain to a further winner. So the wallet-scoped
-        // tombstone reconciliation at the bottom runs either way.
-        let row = try backgroundContext.fetch(descriptor).first
-
+        released: Set<Data>,
+        row: PersistentTransaction?,
+        priorTombstones: [PersistentPendingInput]
+    ) {
         if let row {
             // The global half, done every time this function runs regardless
             // of which wallet's callback it is or whether this row has been
@@ -1315,15 +1355,15 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
 
         // Chained-sweep continuation: a pending row an EARLIER sweep already
-        // tombstoned to `txid` (this transaction, itself a sweep's winner
-        // until now) is no longer reachable through `row.pendingInputs` —
-        // see the doc comment above. Find it by the scalar `spendingTxid`
-        // it carries instead, scoped to this wallet for the same reason the
-        // live pending inputs above were: the tombstone names one specific
-        // wallet's coin, and only that wallet's own released set is the
-        // right authority to re-decide it.
+        // tombstoned to this loser (itself a sweep's winner until now) is no
+        // longer reachable through `row.pendingInputs` — see the doc comment
+        // above. The caller found it by the scalar `spendingTxid` it carries
+        // instead (its once-per-batch scan), scoped to this wallet for the
+        // same reason the live pending inputs above were: the tombstone
+        // names one specific wallet's coin, and only that wallet's own
+        // released set is the right authority to re-decide it.
         //
-        // Deliberately outside the `if let row` above. A tombstone's very
+        // Deliberately runs even with `row` nil. A tombstone's very
         // existence means `resolveInputOutpoint` declined to re-attach a
         // pending row when the winner's own record arrived (the duplicate
         // guard matches on `(outpoint, spendingTxid)` and a tombstone
@@ -1334,20 +1374,49 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         // this wallet's private state; the row's fate says nothing about
         // whether they still need their release applied or their chain
         // continued.
-        var tombstoneDescriptor = FetchDescriptor<PersistentPendingInput>(
-            predicate: #Predicate {
-                $0.spendingTxid == txid && $0.isSweptTombstone == true && $0.walletId == walletId
-            }
-        )
-        tombstoneDescriptor.includePendingChanges = true
-        let priorTombstones = try backgroundContext.fetch(tombstoneDescriptor)
-        for pending in priorTombstones {
+        for pending in priorTombstones where !pending.isDeleted {
             if released.contains(pending.outpoint) {
                 backgroundContext.delete(pending)
             } else {
                 pending.spendingTxid = supersededBy
             }
         }
+    }
+
+    /// Sweep-phase transaction lookup: round-index first, store-only on a
+    /// miss, and the store hit is REGISTERED so the next lookup of the same
+    /// txid — a later batch of this round sweeping or chaining onto it —
+    /// returns the same object instead of re-fetching. That registration is
+    /// what makes the store-only miss path safe here: every transaction row
+    /// carrying staged state is already in the index (record upserts
+    /// register inserts and store hits, the drain registers
+    /// relationship-resolved winners, and this helper registers what it
+    /// fetches — covering `isGloballySwept` staged by an earlier batch), so
+    /// the refresh a store-only fetch performs can only land on a clean
+    /// row. The plain-fetch fallback with no active round keeps the old
+    /// behavior for unbracketed callers.
+    ///
+    /// This replaces a plain pending-changes fetch that paid an in-memory
+    /// predicate pass over every unsaved `PersistentTransaction` insert
+    /// once per swept txid — O(records × losers) in the folded rounds that
+    /// carry an initial scan's records and a large conflict sweep together,
+    /// all of it synchronous on the persistence queue before
+    /// `endChangeset`.
+    private func fetchSweepTransactionRow(txid: Data) throws -> PersistentTransaction? {
+        if let known = roundIndex?.transactionsByTxid[txid] {
+            return known.isDeleted ? nil : known
+        }
+        var descriptor = FetchDescriptor<PersistentTransaction>(
+            predicate: #Predicate { $0.txid == txid }
+        )
+        descriptor.fetchLimit = 1
+        descriptor.relationshipKeyPathsForPrefetching = [\.outputs, \.inputs, \.pendingInputs]
+        if roundIndex != nil { descriptor.includePendingChanges = false }
+        guard let row = try backgroundContext.fetch(descriptor).first, !row.isDeleted else {
+            return nil
+        }
+        roundIndex?.transactionsByTxid[txid] = row
+        return row
     }
 
     /// Find or create the `PersistentWallet` row for `walletId`.
@@ -1539,17 +1608,20 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     // store-only fetch still returns rows whose delete is staged but
     // unsaved.
     //
-    // `applySweptTransaction` stays on plain pending-changes fetches: its
-    // row fetch needs relationship prefetching, and its tombstone fetch
-    // keys on columns that MUTATE mid-round (`spendingTxid`,
-    // `isSweptTombstone`), which neither the index nor a store-only
-    // fetch can answer. Sweeps only target unconfirmed conflicts, so
-    // that path stays off the initial-scan hot loop. It also mutates
-    // TXO / pending rows through `row.inputs` / `row.pendingInputs`
-    // without any keyed lookup the index could observe — which is safe
-    // only because sweeps are applied LAST in `persistWalletChangeset`,
-    // so no store-only first-touch fetch can follow those mutations
-    // within the round and refresh them away.
+    // The sweep phase has its own fetch discipline. Loser rows resolve
+    // through `fetchSweepTransactionRow` — index-first, store-only on a
+    // miss, registering its hits so later batches reuse the object (see
+    // its doc for why the miss path cannot refresh staged state away).
+    // The per-batch tombstone scan and the by-outpoint release fetch stay
+    // on plain pending-changes fetches, ONCE per batch: they key on
+    // columns that MUTATE mid-round (`spendingTxid`, `isSweptTombstone`)
+    // or must see rows staged earlier in the round, which neither the
+    // index nor a store-only fetch can answer. The sweep pass also
+    // mutates TXO / pending rows through `row.inputs` /
+    // `row.pendingInputs` without any keyed lookup the index could
+    // observe — which is safe only because sweeps are applied LAST in
+    // `persistWalletChangeset`, so no store-only first-touch fetch can
+    // follow those mutations within the round and refresh them away.
 
     /// Resolve a `PersistentTransaction` by its unique `txid`.
     private func fetchTransactionRow(txid: Data) -> PersistentTransaction? {
