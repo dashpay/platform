@@ -93,9 +93,19 @@ interface TxoDao {
      * is only ever true of the wallet that computed it, so it should never
      * be able to touch another wallet's row even if an outpoint were ever
      * to collide.
+     *
+     * `supersededByTxid` clears in the same statement, the way the SQLite
+     * store's release UPDATE clears `spent_in_txid`. A chained sweep can
+     * free a coin whose claim already drained into that column (the funding
+     * TXO arrived between the sweep that held it and the one now freeing
+     * it), and this call is the only writer that ever clears it — a
+     * released coin keeping its dead winner's marker would turn the next
+     * hold on this outpoint permanent, because the redelivery carry-over in
+     * `onWalletChangesetUtxoAdded` reads a present marker as a durable
+     * claim and refuses to lift `isSpent` ever again.
      */
     @Query(
-        "UPDATE txos SET isSpent = 0, spendingInputIndex = NULL " +
+        "UPDATE txos SET isSpent = 0, spendingInputIndex = NULL, supersededByTxid = NULL " +
             "WHERE outpoint = :outpoint AND spendingTxid IS NULL AND walletId = :walletId",
     )
     suspend fun releaseByOutpoint(outpoint: ByteArray, walletId: ByteArray)

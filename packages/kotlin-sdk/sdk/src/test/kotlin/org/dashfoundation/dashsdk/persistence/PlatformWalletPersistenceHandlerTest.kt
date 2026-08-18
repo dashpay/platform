@@ -3187,6 +3187,85 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun aReleasedCoinDropsItsDeadWinnersMarker() = runTest {
+        // The funding-BEFORE-release ordering of the chained scenario above:
+        // the funding TXO arrives between the sweep that held the coin and
+        // the sweep that frees it, so the tombstone drains into
+        // `TxoEntity.supersededByTxid` and the pending row is gone by the
+        // time the release runs. `releaseByOutpoint` is the only writer
+        // that ever clears that column — a released coin keeping its dead
+        // winner's marker would turn the next hold on this outpoint
+        // permanent, because the redelivery carry-over in
+        // `onWalletChangesetUtxoAdded` reads a present marker as a durable
+        // claim and refuses to lift `isSpent` ever again.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yFundAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 96 }
+        val pOutpoint = makeOutpoint(fundingTxid, 0)
+        val loserTxid = ByteArray(32) { 97 } // L
+        val intermediateWinner = ByteArray(32) { 98 } // W — never recorded here
+        val finalWinner = ByteArray(32) { 99 } // X
+
+        // L spends the still-unfunded P.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, loserTxid, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -50_000, 0, false, "", 1_700_000_090,
+            pOutpoint, 1,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // First sweep: W beats L, holding P.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(loserTxid), arrayOf(intermediateWinner), emptyArray(),
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // P's funding TXO arrives NOW — the drain consumes the tombstone
+        // and stamps the claim onto the row itself.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 50_000, "yFundAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val stamped = db.txoDao().getByOutpoint(pOutpoint)!!
+        assertTrue("sanity: the drained claim holds the coin", stamped.isSpent)
+        assertTrue(intermediateWinner.contentEquals(stamped.supersededByTxid))
+
+        // Second sweep: X beats W, and this time upstream frees P.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(intermediateWinner), arrayOf(finalWinner), arrayOf(pOutpoint),
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val freed = db.txoDao().getByOutpoint(pOutpoint)!!
+        assertFalse("the released coin is spendable again", freed.isSpent)
+        assertNull(
+            "and its dead winner's marker goes with the hold it carried",
+            freed.supersededByTxid,
+        )
+        assertEquals(1, handler.onLoadWalletList().single().utxos.size)
+    }
+
+    @Test
     fun chainedSweepBeforeFundingRepointsAnEarlierTombstoneToTheNewWinner() = runTest {
         // The held (not released) half of the chained scenario above: the
         // second sweep keeps P spent instead of releasing it, and the
