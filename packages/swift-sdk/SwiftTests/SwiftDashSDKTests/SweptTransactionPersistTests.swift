@@ -1019,6 +1019,86 @@ final class SweptTransactionPersistTests: XCTestCase {
         XCTAssertEqual(coin.supersededByTxid, winnerTxid)
     }
 
+    /// Records precede sweeps within a round, so a wallet-relevant winner
+    /// whose own funding side is ALSO unobserved stages an ordinary pending
+    /// row for the same outpoint moments before the sweep repoints the
+    /// loser's row into a tombstone — and the tombstone keeps the loser's
+    /// original, older `createdAt`. The drain's newest-wins pick then
+    /// selected the winner's ordinary row, took the gated branch (`isSpent`
+    /// stays false until the winner confirms — never, for an IS-locked
+    /// unconfirmed winner), skipped the `supersededByTxid` stamp, and
+    /// deleted every pending row including the tombstone: the durable hold
+    /// evaporated and the consumed coin re-entered the restore set.
+    func testAWinnersOwnPendingRowDoesNotEvaporateTheSweepTombstone() throws {
+        let (handler, container) = try makeHandler()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+
+        let outpoint = PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0)
+
+        // The doomed spend arrived before its funding output — parked as a
+        // pending row, exactly what `resolveInputOutpoint` writes. Backdated
+        // so the winner's row below is strictly newer, as it always is in
+        // reality (the loser's record preceded the winner's by definition).
+        let loser = PersistentTransaction(
+            txid: sweptTxid,
+            transactionData: Data(repeating: 0x05, count: 10),
+            context: 0,
+            blockHeight: 0,
+            netAmount: -100_000
+        )
+        context.insert(loser)
+        let losersClaim = PersistentPendingInput(
+            outpoint: outpoint,
+            inputIndex: 0,
+            spendingTxid: sweptTxid,
+            spendingTransaction: loser,
+            walletId: walletId
+        )
+        losersClaim.createdAt = Date(timeIntervalSinceNow: -10)
+        context.insert(losersClaim)
+
+        // The winner's own record — IS-locked, still unconfirmed — lands in
+        // the same round as the sweep, records first, and stages its own
+        // ordinary pending row for the same still-unfunded outpoint.
+        let winner = PersistentTransaction(
+            txid: winnerTxid,
+            transactionData: Data(repeating: 0x06, count: 10),
+            context: 1,
+            blockHeight: 0,
+            netAmount: -100_000
+        )
+        context.insert(winner)
+        context.insert(PersistentPendingInput(
+            outpoint: outpoint,
+            inputIndex: 0,
+            spendingTxid: winnerTxid,
+            spendingTransaction: winner,
+            walletId: walletId
+        ))
+        try context.save()
+
+        sweep(handler, [Batch(losers: [sweptTxid], winner: winnerTxid)])
+
+        // Sanity: the coexisting pair this regression is about — the
+        // winner's ordinary row plus the repointed tombstone.
+        let pendingDescriptor = FetchDescriptor<PersistentPendingInput>(
+            predicate: #Predicate { $0.outpoint == outpoint }
+        )
+        let rows = try context.fetch(pendingDescriptor)
+        XCTAssertEqual(rows.count, 2)
+        XCTAssertEqual(rows.filter(\.isSweptTombstone).count, 1)
+
+        deliverFundingUtxo(handler, vout: 0, amount: 100_000)
+
+        let coin = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertTrue(
+            coin.isSpent,
+            "the sweep's hold must survive the winner's own coexisting pending row"
+        )
+        XCTAssertEqual(coin.supersededByTxid, winnerTxid)
+    }
+
     /// Chained-sweep continuation of `testSpendBeforeFundingSweptThenRestartedThenFundedStaysSpent`
     /// above: L spends P; W spends P and Q and sweeps L, holding P (still
     /// unfunded); X spends Q and sweeps W, this time releasing P. The

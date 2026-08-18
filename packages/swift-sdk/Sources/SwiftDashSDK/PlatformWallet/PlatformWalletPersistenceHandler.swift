@@ -1960,7 +1960,24 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // observation could leave multiple. Newest wins so the
             // visible spendingTransaction matches the most recent
             // observation; the rest are dropped.
-            let chosen = pendingRows.max(by: { $0.createdAt < $1.createdAt }) ?? pendingRows[0]
+            //
+            // A tombstone outranks every ordinary row regardless of age.
+            // Newest-wins arbitrates between competing *observations*, but a
+            // tombstone is not an observation — it is the sweep's settled
+            // verdict that its winner consumed this coin. The two coexist in
+            // exactly one way: records precede sweeps within a round, so the
+            // winner's own record can stage an ordinary pending row for this
+            // outpoint moments before the sweep repoints the loser's row —
+            // which keeps its original, older `createdAt`. Letting the
+            // younger ordinary row win there would take the gated branch
+            // below (`isSpent` false until the winner confirms), never stamp
+            // `supersededByTxid`, and then delete every row including the
+            // tombstone — the durable hold evaporates and the consumed coin
+            // re-enters the restore set.
+            let chosen = pendingRows.filter(\.isSweptTombstone)
+                .max(by: { $0.createdAt < $1.createdAt })
+                ?? pendingRows.max(by: { $0.createdAt < $1.createdAt })
+                ?? pendingRows[0]
 
             // Resolve the spending tx (prefer the relationship; fall
             // back to a txid lookup if the row wasn't faulted in).
