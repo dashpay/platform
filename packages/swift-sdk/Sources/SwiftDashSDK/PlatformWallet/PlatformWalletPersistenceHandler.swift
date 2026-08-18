@@ -152,7 +152,20 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         self.modelContainer = modelContainer
         self.network = network
         self.backgroundContext = ModelContext(modelContainer)
-        self.backgroundContext.autosaveEnabled = true
+        // Autosave off: this context is the transaction buffer for the
+        // begin → changeset → sweeps → end sequence, and autosave can commit
+        // its pending mutations between those callbacks. Since sweeps moved
+        // to their own callback the round spans two calls, so an autosave
+        // landing in between would make the watermark and the additive rows
+        // durable while the removal is still unstaged — and `rollback()`
+        // cannot take back a save that already happened. The handler
+        // attests `ATOMIC_CHANGESETS`, which is what Rust now relies on to
+        // trust the split transport, so that guarantee has to be real.
+        //
+        // Nothing depends on the implicit commits: every path either runs
+        // inside a round, which `endChangeset` commits with its single
+        // `save()`, or saves itself when `inChangeset` is clear.
+        self.backgroundContext.autosaveEnabled = false
     }
 
     /// Synchronously run `body` on `serialQueue`.
