@@ -384,7 +384,32 @@ async fn run_wallet_event_adapter<P>(
         // Captured before the batch moves into the closure: if the commit
         // thread panics, these are the wallets whose rows have an unknown fate
         // and whose watermark must therefore be frozen.
-        let batch_wallet_ids: Vec<WalletId> = batch.keys().copied().collect();
+        //
+        // Only wallets `commit_batch` can actually call `store()` for. A wallet
+        // contributes to the batch whenever it produced an event, including
+        // events that project to nothing — a `TransactionInstantLocked` that is
+        // ignored because the transaction is already chain-locked, a
+        // `SyncHeightAdvanced` for an unknown wallet. Those hit the
+        // `is_empty_no_records()` skip and never reach a store, so a sibling's
+        // panic says nothing about them; freezing them would strip a healthy
+        // wallet's watermark for the rest of the session over someone else's
+        // bad batch.
+        //
+        // Deliberately conservative in one direction: `commit_batch` re-tests
+        // emptiness AFTER `freeze_synced_height_if_faulted` has stripped a
+        // faulted wallet's watermark, so a batch that looks non-empty here can
+        // still be skipped there. That wallet is already faulted, so freezing
+        // it again costs nothing — whereas the reverse error, omitting a wallet
+        // whose store did run, would leave a watermark free to advance past
+        // rows nobody can account for.
+        let batch_wallet_ids: Vec<WalletId> = batch
+            .iter()
+            .filter(|(_, wallet_batch)| {
+                !wallet_batch.core.is_empty_no_records()
+                    || !Merge::is_empty(&wallet_batch.asset_locks)
+            })
+            .map(|(wallet_id, _)| *wallet_id)
+            .collect();
         // Filled by `commit_batch` as each wallet's `store()` returns. Lives
         // out here so a panicking commit thread cannot take it down with it:
         // what it holds is the difference between "this wallet's rows are
@@ -466,6 +491,29 @@ async fn run_wallet_event_adapter<P>(
                     for wallet_id in &unsettled {
                         fault.fault_wallet(*wallet_id, &sync_fault);
                     }
+                }
+                // Same one-shot marker the rejection arm emits, and via the same
+                // `log` facade, because this freeze is indistinguishable from
+                // that one as far as the host is concerned: the latch is up and
+                // a rescan is pending. Leaving it to `tracing` alone would hide
+                // a panic-induced freeze from logcat entirely, and — worse —
+                // leave `freeze_logged` clear, so a later rejected store would
+                // emit the supposedly one-shot line as though it were the first
+                // fault of the session.
+                //
+                // `swap` rather than load-then-store: a store panicking inside
+                // the same blocking task can race the flag the task wrote back
+                // on its way out, and emitting this line twice is a worse
+                // outcome than the branch reading its own write.
+                if !unsettled.is_empty() && !freeze_logged.swap(true, Ordering::Relaxed) {
+                    log::error!(
+                        "SYNC WATERMARK FROZEN: the wallet-event commit thread panicked ({}); \
+                         {} wallet(s) whose rows have an unknown outcome are now held so the \
+                         next scan re-persists them (dashpay/platform#4370). \
+                         syncFaultDetected() is latched.",
+                        join_error,
+                        unsettled.len()
+                    );
                 }
                 tracing::error!(
                     error = %join_error,
@@ -2418,6 +2466,97 @@ mod tests {
     /// let the NEXT batch persist a higher `synced_height` for a wallet whose
     /// earlier rows may never have landed, which is exactly the hole
     /// dashpay/platform#4069 closed.
+    /// The commit must not run on a Tokio worker.
+    ///
+    /// This is the behaviour the `spawn_blocking` move exists for, and no
+    /// other test covers it: the outcome-only assertions elsewhere all still
+    /// pass with `commit_batch` called inline, because a blocking store on a
+    /// multi-worker runtime merely steals one worker and the rest of the test
+    /// proceeds. Pinning the runtime to a single worker makes the difference
+    /// observable — inline, that one worker sits inside `store()` and nothing
+    /// else on the runtime can advance.
+    ///
+    /// The release is driven from a plain `std::thread`, and the verdict is
+    /// read there too, because a regression parks the only worker: the test
+    /// body cannot run, and neither can a `tokio::time::timeout` — the timer
+    /// needs the same worker to fire. An in-runtime deadline would therefore
+    /// hang CI instead of failing it, which is exactly what the bounded waits
+    /// elsewhere in this file exist to avoid.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn a_blocking_store_does_not_park_the_runtime() {
+        let wallet_id = [0xB1u8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        let (unblock, blocked) = persister.block_next();
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            test_manager(),
+            Arc::clone(&persister),
+            rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
+        ));
+
+        // Set before the store blocks, so it is waiting on the runtime rather
+        // than racing to be scheduled: whether it ran is then purely a question
+        // of the worker being free.
+        let progressed = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&progressed);
+        tokio::spawn(async move {
+            flag.store(true, Ordering::Relaxed);
+        });
+
+        tx.send(block_processed_event(wallet_id, 10)).unwrap();
+
+        // Outside the runtime entirely: waits for the store to park, records
+        // whether the unrelated task got to run while it was parked, then
+        // releases it so the test always terminates either way.
+        let observer_progressed = Arc::clone(&progressed);
+        let observer_blocked = Arc::clone(&blocked);
+        let watcher = std::thread::spawn(move || {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while !observer_blocked.load(Ordering::Relaxed) {
+                if std::time::Instant::now() > deadline {
+                    return Err("store never entered its block");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            // Give the runtime a moment it does not need when it is healthy;
+            // parked, no amount of waiting would help.
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            let ran_while_blocked = observer_progressed.load(Ordering::Relaxed);
+            drop(unblock);
+            Ok(ran_while_blocked)
+        });
+
+        let observed = obs_rx
+            .recv()
+            .await
+            .expect("the released store should report");
+        assert_eq!(observed.wallet_id, wallet_id);
+
+        let ran_while_blocked = watcher
+            .join()
+            .expect("watcher thread should not panic")
+            .expect("store never entered its block");
+        assert!(
+            ran_while_blocked,
+            "an unrelated task must make progress while the commit blocks — \
+             the commit is running on a runtime worker instead of a blocking thread"
+        );
+        assert!(
+            !sync_fault.load(Ordering::Relaxed),
+            "a slow store is not a fault"
+        );
+
+        cancel.cancel();
+        drop(tx);
+        let _ = handle.await;
+    }
+
     #[tokio::test]
     async fn a_panicking_commit_freezes_the_batch_wallets() {
         let wallet_id = [0xEEu8; 32];
