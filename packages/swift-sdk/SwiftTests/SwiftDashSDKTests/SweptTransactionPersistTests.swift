@@ -363,6 +363,124 @@ final class SweptTransactionPersistTests: XCTestCase {
         XCTAssertNil(held.spendingTransaction)
     }
 
+    /// The winner's own record can reach this store only after the sweep
+    /// and the funding TXO already did — IS-locked, not yet in a block.
+    /// Both writers it flows through resolved the in-block gate to false
+    /// and wrote it outright: `resolveInputOutpoint` on the record pass,
+    /// then `markUtxoSpent` on the `utxos_spent` emit riding the same
+    /// round. Either flipped the durable stamped hold back into the
+    /// restore set until the winner confirmed — contradicting the verdict
+    /// the sweep already recorded (and the handler's own "winner is
+    /// already final" reasoning).
+    func testAWinnersLateRecordDoesNotDowngradeAStampedHold() throws {
+        let (handler, container) = try makeHandler()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+
+        let l = PersistentTransaction(
+            txid: sweptTxid,
+            transactionData: Data(repeating: 0x05, count: 10),
+            context: 0,
+            blockHeight: 0,
+            netAmount: -100_000
+        )
+        context.insert(l)
+        context.insert(PersistentPendingInput(
+            outpoint: PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0),
+            inputIndex: 0,
+            spendingTxid: sweptTxid,
+            spendingTransaction: l,
+            walletId: walletId
+        ))
+        try context.save()
+
+        // The sweep holds the claim; the funding TXO then materializes it
+        // as a stamped hold.
+        sweep(handler, [Batch(losers: [sweptTxid], winner: winnerTxid)])
+        deliverFundingUtxo(handler, vout: 0, amount: 100_000)
+        XCTAssertTrue(try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0)).isSpent)
+
+        // The winner's own record finally arrives, IS-locked (context 1 <
+        // in-block), with the spent emit riding along the way a real round
+        // delivers both.
+        deliverRecordWithSpentEmit(
+            handler,
+            txid: winnerTxid,
+            context: 1,
+            inputOutpoint: (txid: fundingTxid, vout: 0)
+        )
+
+        let held = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertTrue(
+            held.isSpent,
+            "the winner's own unconfirmed arrival must not downgrade the stamped hold"
+        )
+        XCTAssertEqual(held.supersededByTxid, winnerTxid)
+        XCTAssertEqual(
+            held.spendingTransaction?.txid,
+            winnerTxid,
+            "the spender is linked all the same"
+        )
+    }
+
+    /// One changeset round carrying a transaction record and the
+    /// `utxos_spent` emit for the input it consumed — the shape a real
+    /// round takes when the wallet classifies the spend in the same flush
+    /// as the record.
+    private func deliverRecordWithSpentEmit(
+        _ handler: PlatformWalletPersistenceHandler,
+        txid: Data,
+        context: UInt32,
+        inputOutpoint: (txid: Data, vout: UInt32)
+    ) {
+        let name = strdup("Standard { index: 0 }")
+        defer { free(name) }
+
+        var input = OutPointFFI()
+        Swift.withUnsafeMutableBytes(of: &input.txid) { dst in
+            inputOutpoint.txid.withUnsafeBytes { src in dst.copyMemory(from: src) }
+        }
+        input.vout = inputOutpoint.vout
+
+        var record = TransactionRecordFFI()
+        Swift.withUnsafeMutableBytes(of: &record.txid) { dst in
+            txid.withUnsafeBytes { src in dst.copyMemory(from: src) }
+        }
+        record.context = context
+        record.block_height = 0
+
+        var spent = SpentOutPointFFI()
+        spent.outpoint = input
+        Swift.withUnsafeMutableBytes(of: &spent.spending_txid) { dst in
+            txid.withUnsafeBytes { src in dst.copyMemory(from: src) }
+        }
+
+        handler.beginChangeset(walletId: walletId)
+        withUnsafeMutablePointer(to: &input) { inputPtr in
+            record.input_outpoints = inputPtr
+            record.input_outpoints_count = 1
+            withUnsafeMutablePointer(to: &record) { recordPtr in
+                withUnsafeMutablePointer(to: &spent) { spentPtr in
+                    var account = AccountChangeSetFFI()
+                    account.account_type_name = name
+                    account.transactions = recordPtr
+                    account.transactions_count = 1
+                    account.utxos_spent = spentPtr
+                    account.utxos_spent_count = 1
+                    withUnsafeMutablePointer(to: &account) { accountPtr in
+                        var cs = WalletChangeSetFFI()
+                        cs.accounts = accountPtr
+                        cs.accounts_count = 1
+                        withUnsafePointer(to: &cs) { csPtr in
+                            handler.persistWalletChangeset(walletId: walletId, changeset: csPtr)
+                        }
+                    }
+                }
+            }
+        }
+        _ = handler.endChangeset(walletId: walletId, success: true)
+    }
+
     /// The backstop for rows written before holds named their winner: a
     /// coin held spent with neither a spender nor a `supersededByTxid`
     /// stamp has nothing durable behind it, so the wallet re-delivering it

@@ -1834,8 +1834,18 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // load can hand the TXO back to Rust for the post-restart
             // catch-up classifier to recognise as ours. The next
             // upsert of this same tx with a confirmed context flips
-            // `isSpent` then.
-            let expectedIsSpent = Self.spendIsInBlock(spendingTransaction)
+            // `isSpent` then. Monotonic, matching the Kotlin port: a
+            // flag already true is backed by something durable — an
+            // in-block spend, or a sweep hold stamped with its winner
+            // — and the arriving record must not downgrade it. The
+            // stamped case is the sharp one: the winner's own record
+            // arrives IS-locked (context below in-block) for a coin
+            // the sweep already proved consumed, and writing the
+            // gate's answer would flip the durable hold back into the
+            // restore set until the winner reaches a block. Flips to
+            // false stay with the paths that own them: the sweep
+            // release pass and `upsertUtxo`'s recovery clear.
+            let expectedIsSpent = txo.isSpent || Self.spendIsInBlock(spendingTransaction)
             let linkageChanged =
                 txo.isSpent != expectedIsSpent
                 || txo.spendingTransaction?.txid != spendingTxid
@@ -2097,7 +2107,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 record.isSpent = true
                 record.supersededByTxid = chosen.spendingTxid
             } else if let spending = resolvedSpending {
-                record.isSpent = Self.spendIsInBlock(spending)
+                // Monotonic like `resolveInputOutpoint` above (and the
+                // Kotlin drain): `record.isSpent` still true after the
+                // recovery clear is backed by a live spend or a stamped
+                // hold, and an unconfirmed pending spender must not
+                // downgrade it.
+                record.isSpent = record.isSpent || Self.spendIsInBlock(spending)
             }
             record.lastUpdated = Date()
             for row in pendingRows {
@@ -2141,9 +2156,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         // alone instead of writing `false`: the next upsert round
         // carrying the spending tx will run `resolveInputOutpoint`
         // and set it then. Writing `false` here would flap a
-        // previously-true `isSpent` on every reordered emit.
+        // previously-true `isSpent` on every reordered emit. A
+        // stamped hold is likewise off limits: this emit can carry
+        // the sweep winner's own IS-locked spend of a coin the sweep
+        // already proved consumed, and the gate's answer would flip
+        // the durable hold back into the restore set until the
+        // winner reaches a block.
         if let spending = spendingTx {
-            txo.isSpent = Self.spendIsInBlock(spending)
+            txo.isSpent = Self.spendIsInBlock(spending) || txo.supersededByTxid != nil
         }
         txo.lastUpdated = Date()
         // The spend signal landed both via the legacy
