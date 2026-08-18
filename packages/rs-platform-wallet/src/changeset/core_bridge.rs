@@ -427,21 +427,22 @@ async fn run_wallet_event_adapter<P>(
             let mut fault = fault_for_commit
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            let mut freeze_logged = freeze_for_commit.load(Ordering::Relaxed);
             let mut settled = settled_for_commit
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            let diag = commit_batch(
+            // The flag itself, not a copy: a local `bool` written back after
+            // `commit_batch` returns is lost when a later store in the same
+            // batch panics, and the panic branch would then emit the one-shot
+            // marker a second time for a freeze already announced.
+            commit_batch(
                 &*persister_for_commit,
                 batch,
                 folded,
                 &mut fault,
                 &sync_fault_for_commit,
-                &mut freeze_logged,
+                &freeze_for_commit,
                 &mut settled,
-            );
-            freeze_for_commit.store(freeze_logged, Ordering::Relaxed);
-            diag
+            )
         })
         .await;
 
@@ -497,7 +498,7 @@ async fn run_wallet_event_adapter<P>(
                 // that one as far as the host is concerned: the latch is up and
                 // a rescan is pending. Leaving it to `tracing` alone would hide
                 // a panic-induced freeze from logcat entirely, and — worse —
-                // leave `freeze_logged` clear, so a later rejected store would
+                // leave the flag clear, so a later rejected store would
                 // emit the supposedly one-shot line as though it were the first
                 // fault of the session.
                 //
@@ -568,7 +569,7 @@ fn commit_batch<P>(
     folded: usize,
     fault: &mut AdapterFaultState,
     sync_fault: &AtomicBool,
-    freeze_logged: &mut bool,
+    freeze_logged: &AtomicBool,
     settled: &mut Vec<WalletId>,
 ) -> BatchDiagnostics
 where
@@ -648,8 +649,7 @@ where
                 }
                 // One-shot, unambiguous logcat marker via the `log` facade
                 // (android_logger forwards `log` to logcat; `tracing` may not).
-                if !*freeze_logged {
-                    *freeze_logged = true;
+                if !freeze_logged.swap(true, Ordering::Relaxed) {
                     log::error!(
                         "SYNC WATERMARK FROZEN: persister rejected a changeset for wallet {} ({}); \
                          its durable sync height is now held so the next scan re-persists the \
@@ -2476,12 +2476,14 @@ mod tests {
     /// observable — inline, that one worker sits inside `store()` and nothing
     /// else on the runtime can advance.
     ///
-    /// The release is driven from a plain `std::thread`, and the verdict is
-    /// read there too, because a regression parks the only worker: the test
-    /// body cannot run, and neither can a `tokio::time::timeout` — the timer
-    /// needs the same worker to fire. An in-runtime deadline would therefore
-    /// hang CI instead of failing it, which is exactly what the bounded waits
-    /// elsewhere in this file exist to avoid.
+    /// Everything that decides the verdict happens on a plain `std::thread`,
+    /// for two reasons. The sentinel is spawned only after the store is
+    /// observed blocked: scheduled beforehand, the runtime could poll it first
+    /// and set the flag while nothing was blocking yet, so the test would pass
+    /// inline too. And a regression parks the only worker, so neither the test
+    /// body nor a `tokio::time::timeout` can run — the timer needs that same
+    /// worker — which would hang CI instead of failing it, the outcome the
+    /// bounded waits elsewhere in this file exist to avoid.
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn a_blocking_store_does_not_park_the_runtime() {
         let wallet_id = [0xB1u8; 32];
@@ -2500,34 +2502,37 @@ mod tests {
             cancel.clone(),
         ));
 
-        // Set before the store blocks, so it is waiting on the runtime rather
-        // than racing to be scheduled: whether it ran is then purely a question
-        // of the worker being free.
-        let progressed = Arc::new(AtomicBool::new(false));
-        let flag = Arc::clone(&progressed);
-        tokio::spawn(async move {
-            flag.store(true, Ordering::Relaxed);
-        });
-
         tx.send(block_processed_event(wallet_id, 10)).unwrap();
 
-        // Outside the runtime entirely: waits for the store to park, records
-        // whether the unrelated task got to run while it was parked, then
-        // releases it so the test always terminates either way.
+        let runtime = tokio::runtime::Handle::current();
+        let progressed = Arc::new(AtomicBool::new(false));
         let observer_progressed = Arc::clone(&progressed);
         let observer_blocked = Arc::clone(&blocked);
         let watcher = std::thread::spawn(move || {
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-            while !observer_blocked.load(Ordering::Relaxed) {
-                if std::time::Instant::now() > deadline {
-                    return Err("store never entered its block");
+            let wait_for = |flag: &AtomicBool, secs: u64| {
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(secs);
+                while !flag.load(Ordering::Relaxed) {
+                    if std::time::Instant::now() > deadline {
+                        return false;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10));
                 }
-                std::thread::sleep(std::time::Duration::from_millis(10));
+                true
+            };
+
+            if !wait_for(&observer_blocked, 10) {
+                drop(unblock);
+                return Err("store never entered its block");
             }
-            // Give the runtime a moment it does not need when it is healthy;
-            // parked, no amount of waiting would help.
-            std::thread::sleep(std::time::Duration::from_millis(200));
-            let ran_while_blocked = observer_progressed.load(Ordering::Relaxed);
+
+            // Scheduled from outside, with the store already parked: whether it
+            // runs is now purely a question of the worker being free.
+            let flag = Arc::clone(&observer_progressed);
+            runtime.spawn(async move {
+                flag.store(true, Ordering::Relaxed);
+            });
+
+            let ran_while_blocked = wait_for(&observer_progressed, 5);
             drop(unblock);
             Ok(ran_while_blocked)
         });
@@ -3184,7 +3189,7 @@ mod tests {
         let persister = ProbePersister::new(obs_tx);
         let sync_fault = AtomicBool::new(false);
         let mut fault = AdapterFaultState::default();
-        let mut freeze_logged = false;
+        let freeze_logged = AtomicBool::new(false);
 
         let mut batch = BTreeMap::new();
         batch.insert(
@@ -3200,7 +3205,7 @@ mod tests {
             1,
             &mut fault,
             &sync_fault,
-            &mut freeze_logged,
+            &freeze_logged,
             &mut Vec::new(),
         );
 
@@ -3265,7 +3270,7 @@ mod tests {
         let persister = ProbePersister::new(obs_tx);
         let sync_fault = AtomicBool::new(false);
         let mut fault = AdapterFaultState::default();
-        let mut freeze_logged = false;
+        let freeze_logged = AtomicBool::new(false);
 
         let diag = commit_batch(
             &persister,
@@ -3273,7 +3278,7 @@ mod tests {
             1,
             &mut fault,
             &sync_fault,
-            &mut freeze_logged,
+            &freeze_logged,
             &mut Vec::new(),
         );
 
@@ -3297,7 +3302,7 @@ mod tests {
         persister.fail_next(wallet_id);
         let sync_fault = AtomicBool::new(false);
         let mut fault = AdapterFaultState::default();
-        let mut freeze_logged = false;
+        let freeze_logged = AtomicBool::new(false);
 
         let diag = commit_batch(
             &persister,
@@ -3305,7 +3310,7 @@ mod tests {
             1,
             &mut fault,
             &sync_fault,
-            &mut freeze_logged,
+            &freeze_logged,
             &mut Vec::new(),
         );
 
@@ -3350,7 +3355,7 @@ mod tests {
         assert!(fault.is_faulted(&wallet_id));
         assert!(sync_fault.load(Ordering::Relaxed));
         assert!(
-            freeze_logged,
+            freeze_logged.load(Ordering::Relaxed),
             "the one-shot SYNC WATERMARK FROZEN marker must have been emitted"
         );
     }
@@ -3367,7 +3372,7 @@ mod tests {
         let mut fault = AdapterFaultState::default();
         // Pre-fault the wallet, as an earlier drain's rejection would have.
         fault.fault_wallet(wallet_id, &sync_fault);
-        let mut freeze_logged = true; // one-shot already spent
+        let freeze_logged = AtomicBool::new(true); // one-shot already spent
 
         let diag = commit_batch(
             &persister,
@@ -3375,7 +3380,7 @@ mod tests {
             1,
             &mut fault,
             &sync_fault,
-            &mut freeze_logged,
+            &freeze_logged,
             &mut Vec::new(),
         );
 
@@ -3411,7 +3416,7 @@ mod tests {
         let sync_fault = AtomicBool::new(false);
         let mut fault = AdapterFaultState::default();
         fault.fault_wallet(wallet_id, &sync_fault);
-        let mut freeze_logged = true;
+        let freeze_logged = AtomicBool::new(true);
 
         let core = CoreChangeSet {
             synced_height: Some(1234),
@@ -3423,7 +3428,7 @@ mod tests {
             1,
             &mut fault,
             &sync_fault,
-            &mut freeze_logged,
+            &freeze_logged,
             &mut Vec::new(),
         );
 
@@ -3448,7 +3453,7 @@ mod tests {
         persister.fail_next(rejecting);
         let sync_fault = AtomicBool::new(false);
         let mut fault = AdapterFaultState::default();
-        let mut freeze_logged = false;
+        let freeze_logged = AtomicBool::new(false);
 
         let mut batch = BTreeMap::new();
         batch.extend(one_wallet_batch(healthy, watermark_with_rows(10, 10)));
@@ -3460,7 +3465,7 @@ mod tests {
             2,
             &mut fault,
             &sync_fault,
-            &mut freeze_logged,
+            &freeze_logged,
             &mut Vec::new(),
         );
 
@@ -3496,7 +3501,7 @@ mod tests {
         let mut fault = AdapterFaultState::default();
         // Pre-fault the wallet, as an earlier drain's rejection would have.
         fault.fault_wallet(wallet_id, &sync_fault);
-        let mut freeze_logged = true;
+        let freeze_logged = AtomicBool::new(true);
 
         let diag = commit_batch(
             &persister,
@@ -3504,7 +3509,7 @@ mod tests {
             1,
             &mut fault,
             &sync_fault,
-            &mut freeze_logged,
+            &freeze_logged,
             &mut Vec::new(),
         );
 
