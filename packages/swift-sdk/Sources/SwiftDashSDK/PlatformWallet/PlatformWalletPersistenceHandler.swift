@@ -1185,19 +1185,28 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 txo.lastUpdated = Date()
             }
             for pending in row.pendingInputs where pending.walletId == walletId {
-                guard !released.contains(pending.outpoint) else { continue }
+                guard !released.contains(pending.outpoint) else {
+                    // Deleted now rather than left for the row's cascade.
+                    // Still attached it reads as this wallet's claim in the
+                    // ownership check below, so a shared loser holding one
+                    // released input per wallet deadlocks: each callback
+                    // sees the other's row and declines the delete, and
+                    // replaying either reaches the same stalemate. The
+                    // global marker keeps the dead transaction from
+                    // contributing funds regardless, but the row and both
+                    // pending entries would otherwise be stored forever.
+                    backgroundContext.delete(pending)
+                    continue
+                }
                 pending.spendingTransaction = nil
                 pending.spendingTxid = supersededBy
                 pending.isSweptTombstone = true
             }
 
-            // Whatever is still attached to `row` after the scoping above is
-            // either this wallet's own released pending input — deliberately
-            // left in place two paragraphs up so the cascade below removes it
-            // — or an input/pending row a different wallet has not yet
-            // weighed in on. Only the second case has to hold the delete
-            // back; the first would otherwise make a wallet wait on its own
-            // already-finished decision. Whichever callback finds nothing
+            // Whatever is still attached to `row` after the scoping above
+            // belongs to a different wallet that has not weighed in yet —
+            // this wallet's own rows are all resolved by now, held ones
+            // detached and released ones deleted. Whichever callback finds nothing
             // left over is the last one to run and performs the delete, so
             // order stops mattering. A wallet whose callback never arrives at
             // all just leaves the row behind with every other wallet's inputs
@@ -1212,7 +1221,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // tombstones deliberately do not count as claims here — they no
             // longer need the row (the scalar reconciliation below never
             // touches it), so holding the delete for them would leak the row
-            // for nothing.
+            // for nothing. Nor do this wallet's released pending inputs:
+            // they were deleted outright above precisely so they cannot
+            // stalemate another wallet's callback.
             let otherWalletStillClaims = row.inputs.contains { txo in
                 txo.spendingTransaction != nil && Self.resolvedWalletId(of: txo) != walletId
             } || row.pendingInputs.contains { pending in

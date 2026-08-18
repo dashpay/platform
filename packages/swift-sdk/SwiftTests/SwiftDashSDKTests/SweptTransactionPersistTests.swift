@@ -881,6 +881,65 @@ final class SweptTransactionPersistTests: XCTestCase {
         XCTAssertFalse(applied, "a genuinely failed wallet lookup must fail the round")
     }
 
+    /// Two wallets, each holding an unresolved *released* input on the same
+    /// shared loser — the case where the row would otherwise never be
+    /// reclaimed.
+    ///
+    /// Left attached, a released pending input reads as its wallet's claim
+    /// in the ownership check, so A declines the delete because B's row is
+    /// there and B declines because A's is: a stalemate no replay breaks.
+    /// The dead transaction contributes no funds either way thanks to the
+    /// global marker, so this is storage rather than balance — but the row
+    /// and both pending entries would be kept forever.
+    func testTwoWalletsReleasedPendingInputsDoNotDeadlockTheRowDelete() throws {
+        let (handler, container) = try makeHandler()
+        let walletB = Data(repeating: 0x02, count: 32)
+        try seedSharedLoserAcrossTwoWallets(
+            in: container, walletA: walletId, walletB: walletB, loserTxid: sweptTxid
+        )
+
+        // Each wallet has one pending input on the loser, and each will be
+        // released by its own wallet's sweep.
+        let context = ModelContext(container)
+        let loserTxid = sweptTxid
+        var descriptor = FetchDescriptor<PersistentTransaction>(
+            predicate: #Predicate { $0.txid == loserTxid }
+        )
+        descriptor.fetchLimit = 1
+        let loser = try XCTUnwrap(try context.fetch(descriptor).first)
+        let pendingA = PersistentPendingInput(
+            outpoint: PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 8),
+            inputIndex: 0,
+            spendingTxid: loserTxid,
+            spendingTransaction: loser,
+            walletId: walletId
+        )
+        let pendingB = PersistentPendingInput(
+            outpoint: PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 9),
+            inputIndex: 1,
+            spendingTxid: loserTxid,
+            spendingTransaction: loser,
+            walletId: walletB
+        )
+        context.insert(pendingA)
+        context.insert(pendingB)
+        try context.save()
+
+        sweep(handler, [
+            Batch(losers: [sweptTxid], winner: winnerTxid, released: [(txid: fundingTxid, vout: 8)])
+        ])
+        sweep(
+            handler,
+            [Batch(losers: [sweptTxid], winner: winnerTxid, released: [(txid: fundingTxid, vout: 9)])],
+            walletId: walletB
+        )
+
+        XCTAssertNil(
+            transaction(container, txid: sweptTxid),
+            "a released pending input is not a claim once its own wallet has resolved it"
+        )
+    }
+
     /// A txid the store has never seen is not an error: sweeps are
     /// idempotent, and a round can name a transaction this mirror never
     /// recorded in the first place.
