@@ -4392,6 +4392,56 @@ class PlatformWalletPersistenceHandlerTest {
         assertFalse(row.proofBytes != null)
     }
 
+    @Test
+    fun assetLockRemovalNeverDeletesAConsumedRow() = runTest {
+        // Parity with SQLite (`status != 'consumed'`) and Swift
+        // (`statusRaw == 4` skip): a Consumed row is deliberately retained
+        // for historical lookup, and neither removal producer — a
+        // rejected-at-broadcast Built row, or the sweep cascade for a swept
+        // funding tx — can legitimately name one, so a removal reaching a
+        // consumed row is by construction a stale write. Kotlin deleted
+        // unconditionally.
+        val liveOutpoint = makeOutpoint(ByteArray(32) { 43 }, 0)
+        val consumedOutpoint = makeOutpoint(ByteArray(32) { 44 }, 1)
+        handler.onChangesetBegin(walletId)
+        handler.onPersistAssetLockUpsert(
+            walletId = walletId,
+            outPoint = liveOutpoint,
+            transactionBytes = ByteArray(20) { 45 },
+            accountIndex = 0,
+            fundingType = 0,
+            identityIndex = 0,
+            amountDuffs = 100_000,
+            status = 1, // Broadcast — a removal may take this one
+            proofBytes = null,
+        )
+        handler.onPersistAssetLockUpsert(
+            walletId = walletId,
+            outPoint = consumedOutpoint,
+            transactionBytes = ByteArray(20) { 46 },
+            accountIndex = 0,
+            fundingType = 0,
+            identityIndex = 1,
+            amountDuffs = 55_000,
+            status = 4, // Consumed — terminal, retained for history
+            proofBytes = ByteArray(8) { 47 },
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistAssetLockRemoval(walletId, liveOutpoint)
+        handler.onPersistAssetLockRemoval(walletId, consumedOutpoint)
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertNull(
+            "a live row is removable",
+            db.assetLockDao().getByOutPointHex(encodeOutPointHex(liveOutpoint)),
+        )
+        val consumed = db.assetLockDao().getByOutPointHex(encodeOutPointHex(consumedOutpoint))
+        assertNotNull("a stale removal must never take the Consumed terminal", consumed)
+        assertEquals(4, consumed!!.statusRaw)
+    }
+
     // ── Invitations (DIP-13) ──────────────────────────────────────────
 
     @Test
