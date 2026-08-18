@@ -177,80 +177,71 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_extensions(
     )
 }
 
+/// Read one negotiated slot out of a size/version-tagged extension struct
+/// — the single authority for the gate every reader below applies. A slot
+/// is read only when the host's declared `struct_size` proves it was
+/// allocated, so an extension built before the slot existed keeps its
+/// earlier callbacks and simply never has the new one read — the
+/// fail-closed half of the negotiation a bare-pointer callback struct
+/// cannot perform itself (dashpay/platform#4406, finding 2). The version
+/// check stays an exact match on purpose: the version names the field
+/// ordering, and appending under it is what `struct_size` exists for.
+///
+/// # Safety
+/// `$extension` must point to a live extension struct of type `$ext_ty`
+/// whose `struct_size` honestly describes its allocation.
+macro_rules! negotiated_extension_slot {
+    ($extension:expr, $ext_ty:ty, $version_const:expr, $field:ident, $fn_ty:ty) => {{
+        let extension: *const $ext_ty = $extension;
+        let supplied_size = std::ptr::addr_of!((*extension).struct_size).read();
+        let version_end = std::mem::offset_of!($ext_ty, version) + std::mem::size_of::<u32>();
+        let callback_end =
+            std::mem::offset_of!($ext_ty, $field) + std::mem::size_of::<Option<$fn_ty>>();
+        if supplied_size < version_end
+            || std::ptr::addr_of!((*extension).version).read() != $version_const
+            || supplied_size < callback_end
+        {
+            None
+        } else {
+            std::ptr::addr_of!((*extension).$field).read()
+        }
+    }};
+}
+
 unsafe fn persistence_extension_dpns_callback(
     extension: *const PersistenceCallbacksExtension,
 ) -> Option<PersistDpnsNameStatesFn> {
-    let supplied_size = std::ptr::addr_of!((*extension).struct_size).read();
-    let version_end =
-        std::mem::offset_of!(PersistenceCallbacksExtension, version) + std::mem::size_of::<u32>();
-    if supplied_size < version_end {
-        return None;
-    }
-    let version = std::ptr::addr_of!((*extension).version).read();
-    if version != PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION {
-        return None;
-    }
-    let callback_end = std::mem::offset_of!(
+    negotiated_extension_slot!(
+        extension,
         PersistenceCallbacksExtension,
-        on_persist_dpns_name_states_fn
-    ) + std::mem::size_of::<Option<PersistDpnsNameStatesFn>>();
-    if supplied_size < callback_end {
-        return None;
-    }
-    std::ptr::addr_of!((*extension).on_persist_dpns_name_states_fn).read()
+        PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
+        on_persist_dpns_name_states_fn,
+        PersistDpnsNameStatesFn
+    )
 }
 
-/// Same gate, later field: the sweeps slot is read only when the host's
-/// declared `struct_size` proves it was allocated, so an extension built
-/// before the slot existed keeps its DPNS callback and simply never has
-/// sweeps read — the fail-closed half of the negotiation the changeset
-/// struct itself cannot perform (dashpay/platform#4406, finding 2). The
-/// version check stays an exact match on purpose: the version names the
-/// field ordering, and appending under it is what `struct_size` exists for.
 unsafe fn persistence_extension_sweeps_callback(
     extension: *const PersistenceCallbacksExtension,
 ) -> Option<PersistWalletChangesetSweepsFn> {
-    let supplied_size = std::ptr::addr_of!((*extension).struct_size).read();
-    let version_end =
-        std::mem::offset_of!(PersistenceCallbacksExtension, version) + std::mem::size_of::<u32>();
-    if supplied_size < version_end {
-        return None;
-    }
-    let version = std::ptr::addr_of!((*extension).version).read();
-    if version != PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION {
-        return None;
-    }
-    let callback_end = std::mem::offset_of!(
+    negotiated_extension_slot!(
+        extension,
         PersistenceCallbacksExtension,
-        on_persist_wallet_changeset_sweeps_fn
-    ) + std::mem::size_of::<Option<PersistWalletChangesetSweepsFn>>();
-    if supplied_size < callback_end {
-        return None;
-    }
-    std::ptr::addr_of!((*extension).on_persist_wallet_changeset_sweeps_fn).read()
+        PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
+        on_persist_wallet_changeset_sweeps_fn,
+        PersistWalletChangesetSweepsFn
+    )
 }
 
 unsafe fn event_extension_dpns_callback(
     extension: *const EventHandlerCallbacksExtension,
 ) -> Option<DpnsMarketplaceSyncCompletedFn> {
-    let supplied_size = std::ptr::addr_of!((*extension).struct_size).read();
-    let version_end =
-        std::mem::offset_of!(EventHandlerCallbacksExtension, version) + std::mem::size_of::<u32>();
-    if supplied_size < version_end {
-        return None;
-    }
-    let version = std::ptr::addr_of!((*extension).version).read();
-    if version != PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION {
-        return None;
-    }
-    let callback_end = std::mem::offset_of!(
+    negotiated_extension_slot!(
+        extension,
         EventHandlerCallbacksExtension,
-        on_dpns_marketplace_sync_completed_fn
-    ) + std::mem::size_of::<Option<DpnsMarketplaceSyncCompletedFn>>();
-    if supplied_size < callback_end {
-        return None;
-    }
-    std::ptr::addr_of!((*extension).on_dpns_marketplace_sync_completed_fn).read()
+        PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION,
+        on_dpns_marketplace_sync_completed_fn,
+        DpnsMarketplaceSyncCompletedFn
+    )
 }
 
 // The C entry point's own shape: every callback table and out-param the

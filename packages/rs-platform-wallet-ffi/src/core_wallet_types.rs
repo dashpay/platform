@@ -14,6 +14,21 @@ pub struct OutPointFFI {
     pub vout: u32,
 }
 
+impl From<&dashcore::OutPoint> for OutPointFFI {
+    /// The one authority for `OutPoint` → FFI conversion. This value is
+    /// the join key sweep releases use to find additive-path rows on the
+    /// host side, so a byte-order drift between hand-rolled copies would
+    /// silently unlink them — every conversion site routes through here.
+    fn from(outpoint: &dashcore::OutPoint) -> Self {
+        let mut txid = [0u8; 32];
+        txid.copy_from_slice(outpoint.txid.as_ref());
+        Self {
+            txid,
+            vout: outpoint.vout,
+        }
+    }
+}
+
 /// Outpoint of a TXO that was spent, paired with the spending
 /// transaction's txid. Replaces the bare `OutPointFFI` on
 /// `AccountChangeSetFFI.utxos_spent` so the Swift persister can
@@ -546,14 +561,7 @@ pub(crate) fn build_sweep_batches_for_callback(
             released: batch
                 .released_outpoints
                 .iter()
-                .map(|outpoint| {
-                    let mut txid = [0u8; 32];
-                    txid.copy_from_slice(outpoint.txid.as_ref());
-                    OutPointFFI {
-                        txid,
-                        vout: outpoint.vout,
-                    }
-                })
+                .map(OutPointFFI::from)
                 .collect(),
         })
         .collect();
@@ -997,13 +1005,8 @@ fn record_spent_outpoints_ffi(
         .iter()
         .filter_map(|d| {
             let input = rec.transaction.input.get(d.index as usize)?;
-            let mut txid = [0u8; 32];
-            txid.copy_from_slice(input.previous_output.txid.as_ref());
             Some(SpentOutPointFFI {
-                outpoint: OutPointFFI {
-                    txid,
-                    vout: input.previous_output.vout,
-                },
+                outpoint: OutPointFFI::from(&input.previous_output),
                 spending_txid,
             })
         })
@@ -1725,14 +1728,7 @@ fn tx_record_to_ffi(
         tr.transaction
             .input
             .iter()
-            .map(|input| {
-                let mut prev_txid = [0u8; 32];
-                prev_txid.copy_from_slice(input.previous_output.txid.as_ref());
-                OutPointFFI {
-                    txid: prev_txid,
-                    vout: input.previous_output.vout,
-                }
-            })
+            .map(|input| OutPointFFI::from(&input.previous_output))
             .collect()
     };
     let input_outpoints_count = input_outpoints_vec.len();

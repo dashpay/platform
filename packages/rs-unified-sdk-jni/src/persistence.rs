@@ -56,7 +56,7 @@ use platform_wallet_ffi::{
     AssetLockEntryFFI, ContactIgnoredSenderFFI, ContactProfileRestoreEntryFFI, ContactRequestFFI,
     ContactRequestRemovalFFI, CoreAddressEntryFFI, DpnsNameStateFFI, IdentityEntryFFI,
     IdentityKeyEntryFFI, IdentityKeyRemovalFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI,
-    InvitationEntryFFI, PaymentRestoreEntryFFI, PersistenceCallbacks,
+    InvitationEntryFFI, OutPointFFI, PaymentRestoreEntryFFI, PersistenceCallbacks,
     PersistenceCallbacksExtension, PlatformAddressFFI, ProviderSpecialTxRestoreEntryFFI,
     SpentOutPointFFI, SweepBatchFFI, TokenBalanceRemovalFFI, TokenBalanceUpsertFFI,
     TransactionRecordFFI, UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI, UtxoRestoreEntryFFI,
@@ -707,9 +707,7 @@ unsafe fn persist_changeset_sweep_batch(
     let released = slice_or_empty(batch.released_outpoints, batch.released_outpoints_count);
     let released_arr = env.new_object_array(released.len() as i32, &byte_array_cls, &empty)?;
     for (i, outpoint) in released.iter().enumerate() {
-        let mut key = [0u8; 36];
-        key[..32].copy_from_slice(&outpoint.txid);
-        key[32..].copy_from_slice(&outpoint.vout.to_le_bytes());
+        let key = pack_outpoint_key(outpoint);
         env.with_local_frame(4, |env| {
             let k = env.byte_array_from_slice(&key)?;
             env.set_object_array_element(&released_arr, i as i32, &k)
@@ -875,15 +873,14 @@ unsafe fn persist_changeset_transaction(
     let tx_type = cstr(env, t.transaction_type)?;
     let label = cstr(env, t.label)?;
     // Input outpoints (one per tx input, in vin order; empty for coinbase).
-    // Flatten to txid[32] || vout(u32 LE) = 36 bytes each — byte-identical to
-    // Kotlin/Swift makeOutpoint, so the pending-input join key matches with no
-    // per-element conversion on the Kotlin side. Dropping these is what left a
-    // spend-before-funding output restorable as spendable (CORE-06).
+    // Flattened 36-byte keys (see `pack_outpoint_key`), so the pending-input
+    // join key matches with no per-element conversion on the Kotlin side.
+    // Dropping these is what left a spend-before-funding output restorable
+    // as spendable (CORE-06).
     let ops = slice_or_empty(t.input_outpoints, t.input_outpoints_count);
     let mut packed = Vec::with_capacity(ops.len() * 36);
     for op in ops {
-        packed.extend_from_slice(&op.txid);
-        packed.extend_from_slice(&op.vout.to_le_bytes());
+        packed.extend_from_slice(&pack_outpoint_key(op));
     }
     let input_outpoints = env.byte_array_from_slice(&packed)?;
     let input_outpoint_count = ops.len() as i32;
@@ -4050,6 +4047,18 @@ unsafe fn slice_or_empty<'a, T>(ptr: *const T, count: usize) -> &'a [T] {
     } else {
         std::slice::from_raw_parts(ptr, count)
     }
+}
+
+/// Pack an [`OutPointFFI`] into the 36-byte key (raw txid ‖ little-endian
+/// vout) the Kotlin handler stores outpoints under — byte-identical to
+/// Kotlin's `makeOutpoint` (and Swift's). This is the join key sweep
+/// releases use to find additive-path rows, so every packing site routes
+/// through here rather than re-inlining the layout.
+fn pack_outpoint_key(outpoint: &OutPointFFI) -> [u8; 36] {
+    let mut key = [0u8; 36];
+    key[..32].copy_from_slice(&outpoint.txid);
+    key[32..].copy_from_slice(&outpoint.vout.to_le_bytes());
+    key
 }
 
 /// `Vec<T>` → `(*const T, len)`; empty vec yields `(null, 0)`. A non-null
