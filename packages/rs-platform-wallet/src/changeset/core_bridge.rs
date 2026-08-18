@@ -91,11 +91,17 @@ const ADAPTER_STORE_BATCH_LIMIT: usize = 512;
 /// Session fault state for the durable-watermark guard
 /// (dashpay/platform#4069).
 ///
-/// Now that the persistence channel is a lossless unbounded `mpsc`, the only
-/// remaining fault trigger is a **`store()` rejection**, which carries a
-/// `wallet_id`, so only THAT wallet's watermark freezes. A sibling wallet
-/// whose rows are still landing atomically keeps advancing — freezing it too
-/// would force a redundant rescan of a wallet that never lost a row.
+/// Now that the persistence channel is a lossless unbounded `mpsc`, two things
+/// fault a wallet, and both name the wallets they hit, so a sibling whose rows
+/// are still landing atomically keeps advancing — freezing it too would force a
+/// redundant rescan of a wallet that never lost a row.
+///
+/// - A **`store()` rejection**, which carries a `wallet_id`: that wallet's rows
+///   are known not to be on disk.
+/// - A **panic in the blocking commit thread**, which faults every wallet with
+///   something to persist that is absent from `settled` — the one that panicked
+///   plus every wallet the loop never reached. Their outcome is unknown rather
+///   than known-bad, and unknown must fail closed the same way.
 ///
 /// The old global (`broadcast::Lagged`) latch is gone: the unbounded channel
 /// can never `Lagged`, so there is no more "dropped events of unknown wallet"
@@ -103,7 +109,8 @@ const ADAPTER_STORE_BATCH_LIMIT: usize = 512;
 /// fail-closed backstop — in a healthy run it never fires.
 #[derive(Default)]
 struct AdapterFaultState {
-    /// Set by a `store()` rejection: freezes only the named wallet.
+    /// Set by a `store()` rejection, or by the panic-recovery branch for a
+    /// wallet whose commit outcome is unknown: freezes only the named wallets.
     per_wallet: HashMap<WalletId, bool>,
 }
 
@@ -113,8 +120,9 @@ impl AdapterFaultState {
         self.per_wallet.get(wallet_id).copied().unwrap_or(false)
     }
 
-    /// Fault a single wallet after its `store()` was rejected, and raise
-    /// the host-visible hard-fault signal.
+    /// Fault a single wallet — after its `store()` was rejected, or after a
+    /// commit panic left its outcome unknown — and raise the host-visible
+    /// hard-fault signal.
     fn fault_wallet(&mut self, wallet_id: WalletId, hard_signal: &AtomicBool) {
         self.per_wallet.insert(wallet_id, true);
         hard_signal.store(true, Ordering::Relaxed);
@@ -266,9 +274,11 @@ where
 ///
 /// # Durable-watermark guard (fail-closed backstop)
 ///
-/// One fault trigger remains: a rejected `store()` (the rows for that batch
-/// are not on disk). When a wallet faults this way, we never advance ITS
-/// persisted sync watermark again this session — [`freeze_synced_height_if_faulted`]
+/// Two things fault a wallet: a rejected `store()` (the rows for that batch
+/// are not on disk) and a panic in the blocking commit thread (the rows for
+/// every persistable wallet the commit did not settle have an unknown fate,
+/// which fails closed the same way). When a wallet faults either way, we never
+/// advance ITS persisted sync watermark again this session — [`freeze_synced_height_if_faulted`]
 /// strips `synced_height` from every subsequent changeset, holding the
 /// durable watermark at the last height whose rows were fully committed.
 /// Records/UTXO deltas in the same changeset still persist; only the height
@@ -276,8 +286,9 @@ where
 /// (lower) watermark and the persister's idempotent upserts re-apply the
 /// missing rows. This is a fail-closed safety property — the durable
 /// watermark never outruns the rows it implies — and in a healthy run it
-/// never fires, since the channel is lossless and a `store()` rejection means
-/// a genuine backend error, not overload.
+/// never fires, since the channel is lossless, and both triggers mean a
+/// genuine backend error rather than overload — a rejection is one the store
+/// reported, a panic one it could not.
 ///
 /// When a wallet faults, the task raises `sync_fault` (an `AtomicBool` the
 /// host polls via `PlatformWalletManager::sync_fault_detected`) and logs a
@@ -363,9 +374,10 @@ async fn run_wallet_event_adapter<P>(
             }
         }
 
-        // Commit the folded batch. The channel is lossless, so the only way a
-        // watermark is held back is a rejected `store()` (the fail-closed
-        // backstop inside `commit_batch`).
+        // Commit the folded batch. The channel is lossless, so a watermark is
+        // held back only by the fail-closed backstops around this call: a
+        // rejected `store()` inside `commit_batch`, or a panic in the commit
+        // thread, handled in the `Err` arm below.
         // Commit on a blocking thread, never on the async worker.
         //
         // `store()` is synchronous and, for the SQLite backend, commits a real
@@ -671,10 +683,11 @@ where
 
 /// Durable-watermark guard for dashpay/platform#4069.
 ///
-/// When a wallet has faulted this session (a `store()` was rejected), its
-/// persisted `synced_height` watermark must not advance past the last height
-/// whose rows were fully committed — otherwise the wallet believes it is
-/// scanned and never re-matches the blocks whose rows were lost. This
+/// When a wallet has faulted this session — its `store()` was rejected, or a
+/// commit panic left the batch's outcome unknown — its persisted
+/// `synced_height` watermark must not advance past the last height whose rows
+/// were fully committed; otherwise the wallet believes it is scanned and never
+/// re-matches the blocks whose rows were lost. This
 /// strips ONLY `synced_height`; every other field (records, UTXO
 /// deltas, `last_processed_height`, chain-lock) is left intact so
 /// in-flight rows still persist. Factored out as a pure function so the
@@ -2803,8 +2816,9 @@ mod tests {
 
         let (obs_tx, mut obs_rx) = unbounded_channel();
         let persister = Arc::new(ProbePersister::new(obs_tx));
-        // Fault the wallet via a rejected store (the only remaining trigger
-        // now that the lossless channel can't lag).
+        // Fault the wallet via a rejected store — the trigger with a known
+        // outcome. The other one, a commit panic, is covered by
+        // `a_panicking_commit_freezes_the_batch_wallets`.
         persister.fail_next(wallet_id);
         let sync_fault = Arc::new(AtomicBool::new(false));
         let cancel = CancellationToken::new();
