@@ -1088,12 +1088,21 @@ class PlatformWalletPersistenceHandler(
             val txo = db.txoDao().getByOutpoint(outpoint) ?: return@stage
             // Only mark spent when the spending tx exists in-block (never
             // flap false on an unresolved spend), mirroring markUtxoSpent.
+            // A `supersededByTxid` hold is likewise off limits: this emit
+            // can carry the sweep winner's own IS-locked spend of a coin
+            // the sweep already proved consumed, and the in-block gate's
+            // answer would flip the durable hold back into the restore set
+            // until the winner reaches a block.
             val spending = db.transactionDao().getByTxid(spendingTxid)
             val spentInBlock = spending != null && spending.context >= CONTEXT_IN_BLOCK
             db.txoDao().upsert(
                 txo.copy(
                     spendingTxid = if (spending != null) spendingTxid else txo.spendingTxid,
-                    isSpent = if (spending != null) spentInBlock else txo.isSpent,
+                    isSpent = if (spending != null) {
+                        spentInBlock || txo.supersededByTxid != null
+                    } else {
+                        txo.isSpent
+                    },
                     lastUpdated = now(),
                 ),
             )

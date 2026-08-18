@@ -2234,6 +2234,85 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun aWinnersLateSpentEmitDoesNotDowngradeAStampedHold() = runTest {
+        // The winner's own record can reach this store only after the sweep
+        // and the funding TXO already did — IS-locked, not yet in a block.
+        // Its record pass is monotonic and merely links the spender, but
+        // the utxos_spent emit that rides with it resolved the in-block
+        // gate to false and wrote it, flipping a durable stamped hold back
+        // into the restore set until the winner confirmed — contradicting
+        // the verdict the sweep already recorded.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yFundAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 56 }
+        val pOutpoint = makeOutpoint(fundingTxid, 0)
+        val loserTxid = ByteArray(32) { 57 }
+        val winnerTxid = ByteArray(32) { 58 }
+
+        // The doomed spend, before its funding output.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, loserTxid, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -50_000, 0, false, "", 1_700_000_050,
+            pOutpoint, 1,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // The sweep holds the claim; the funding TXO then materializes it
+        // as a stamped hold.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(loserTxid), arrayOf(winnerTxid), emptyArray(),
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 50_000, "yFundAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        assertTrue(db.txoDao().getByOutpoint(pOutpoint)!!.isSpent)
+
+        // The winner's own record finally arrives, IS-locked (context 1 <
+        // in-block), with the spent emit riding along the way a real round
+        // delivers both.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, winnerTxid, ByteArray(10) { 6 }, 1, 0, ByteArray(32),
+            0, 1, "Standard", 0, -50_000, 0, false, "", 1_700_000_060,
+            pOutpoint, 1,
+        )
+        handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 0, winnerTxid)
+        handler.onChangesetEnd(walletId, success = true)
+
+        val held = db.txoDao().getByOutpoint(pOutpoint)!!
+        assertTrue(
+            "the winner's own unconfirmed arrival must not downgrade the stamped hold",
+            held.isSpent,
+        )
+        assertTrue(winnerTxid.contentEquals(held.supersededByTxid))
+        assertTrue(
+            "the spender is linked all the same",
+            winnerTxid.contentEquals(held.spendingTxid),
+        )
+        assertTrue(handler.onLoadWalletList().single().utxos.isEmpty())
+    }
+
+    @Test
     fun aPreStampHoldStillFreesOnRedelivery() = runTest {
         // The backstop for rows written before holds named their winner: a
         // coin held spent with neither a spender nor a `supersededByTxid`
