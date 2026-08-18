@@ -168,34 +168,6 @@ pub fn apply(
         .flat_map(|record| record.transaction.input.iter())
         .map(|input| input.previous_output)
         .collect();
-    // The swept txids whose rows this changeset will actually delete —
-    // checked once, before any loser's pass has run, so the answer does not
-    // depend on the order the losers are walked in. `apply_sweep`'s
-    // co-swept-parent skip is scoped to exactly this set: a co-swept parent
-    // that IS on hand has its output rows deleted by its own pass, so the
-    // child must not re-create one as a placeholder — but a parent whose
-    // record this store lost (the same record-loss threat the by-outpoint
-    // release pass below exists for) deletes nothing, and skipping the
-    // child's claim there would leave the parent's surviving output row
-    // `spent = 0`: a phantom spendable coin `load()` would hand back.
-    let deleted_swept_txids: HashSet<dashcore::Txid> = {
-        let mut present_stmt = tx
-            .prepare_cached("SELECT 1 FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2")?;
-        let mut present = HashSet::new();
-        for txid in &swept_txids {
-            let found: bool = present_stmt
-                .query_row(
-                    params![wallet_id.as_slice(), AsRef::<[u8]>::as_ref(txid)],
-                    |_| Ok(true),
-                )
-                .optional()?
-                .unwrap_or(false);
-            if found {
-                present.insert(*txid);
-            }
-        }
-        present
-    };
     for batch in &cs.sweeps {
         // Only this stays per batch: a release is true of the wallet its own
         // sweep saw, which is what lets a later batch correct an earlier one.
@@ -212,7 +184,7 @@ pub fn apply(
                 loser_txid,
                 &batch.superseded_by,
                 &released,
-                &deleted_swept_txids,
+                &swept_txids,
             )?;
         }
         // Releases are outpoint-keyed facts, so they are applied by outpoint
@@ -292,7 +264,7 @@ fn apply_sweep(
     loser_txid: &dashcore::Txid,
     superseded_by: &dashcore::Txid,
     released: &HashSet<dashcore::OutPoint>,
-    deleted_swept_txids: &HashSet<dashcore::Txid>,
+    swept_txids: &HashSet<dashcore::Txid>,
 ) -> Result<(), WalletStorageError> {
     let loser_blob: Option<Vec<u8>> = tx
         .query_row(
@@ -354,26 +326,35 @@ fn apply_sweep(
     for input in &loser.transaction.input {
         let outpoint = input.previous_output;
         // An input funded by a transaction this same changeset also sweeps
-        // AND whose row is on hand is a dead parent's output, not a coin
-        // the winner took: upstream's descendant closure always sweeps
-        // parent and child together, its release computation excludes
-        // exactly these outpoints (so `freed` below can never be true for
-        // one), and the parent's own pass deletes its output rows. When the
-        // parent sorts before the child, holding the claim here would
-        // re-create the just-deleted row as a placeholder whose
-        // `spent_in_txid` the funding upsert's valve then defends — against
-        // the chainlocked reinstatement that is the one event that could
-        // bring the coin back — excluding a genuinely unspent coin from
-        // restore forever.
+        // is a dead parent's output — nobody's coin, not something the
+        // winner took: upstream's descendant closure always sweeps parent
+        // and child together, and its release computation excludes exactly
+        // these outpoints (so `freed` below can never be true for one). The
+        // right end state is NO row, deleted here outright rather than
+        // assumed away or marked:
         //
-        // The presence guard is what keeps the skip from overreaching: a
-        // co-swept parent whose record this store lost deletes nothing, so
-        // the child's claim on its surviving output must still be applied
-        // below — skipping it would leave the dead output `spent = 0`, a
-        // phantom spendable coin `load()` hands back. The set was computed
-        // before any loser's pass ran, so the answer is the same in both
-        // batch orders.
-        if deleted_swept_txids.contains(&outpoint.txid) {
+        // - Assuming the parent's own pass deleted it fails when the
+        //   parent's record was lost (the same record-loss threat the
+        //   caller's by-outpoint release pass exists for) — that pass
+        //   deletes nothing, and skipping the claim here would leave the
+        //   dead output `spent = 0`, a phantom spendable coin `load()`
+        //   hands back.
+        // - Holding it instead (`spent = 1`, `spent_in_txid = winner`, the
+        //   ordinary path below) survives as a claim the funding upsert's
+        //   valve then defends — against the chainlocked reinstatement
+        //   that is the ONE event that can bring the coin back, whose
+        //   re-emitted output must land freshly unspent.
+        //
+        // The delete is idempotent against the parent's own pass in either
+        // batch order, and a reinstatement re-creates the real row through
+        // the ordinary `utxos_added` upsert with nothing left standing in
+        // its way.
+        if swept_txids.contains(&outpoint.txid) {
+            let key = blob::encode_outpoint(&outpoint)?;
+            tx.execute(
+                "DELETE FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+                params![wallet_id.as_slice(), &key[..]],
+            )?;
             continue;
         }
         let key = blob::encode_outpoint(&outpoint)?;

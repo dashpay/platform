@@ -1785,15 +1785,17 @@ fn a_batch_sweeping_parent_and_child_leaves_no_placeholder_for_the_parents_outpu
     );
 }
 
-/// The presence guard on the co-swept skip. The skip exists because a
-/// parent that IS on hand has its output rows deleted by its own pass —
-/// but a parent whose record this store lost (the same record-loss threat
-/// the by-outpoint release pass exists for) deletes nothing, and skipping
-/// the child's claim there would leave the dead parent's surviving output
-/// row `spent = 0`: a phantom spendable coin `load()` hands back. The
-/// child's pass must still mark it.
+/// The record-loss half of the co-swept rule. A parent whose record this
+/// store lost (the same threat the by-outpoint release pass exists for)
+/// deletes nothing in its own pass, so the child's pass must take the
+/// surviving output row out of the restore set itself — leaving it
+/// `spent = 0` would hand back a phantom spendable coin. And it must do
+/// so by DELETING the row, not by holding it: a `spent_in_txid` claim is
+/// exactly what the funding upsert's valve defends, which would lock out
+/// the chainlocked reinstatement that is the one event able to bring the
+/// coin back for real.
 #[test]
-fn a_co_swept_parent_with_no_row_still_has_its_output_marked_spent() {
+fn a_co_swept_parent_with_no_row_still_has_its_output_removed() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xE9);
     ensure_wallet_meta(&persister, &w);
@@ -1843,10 +1845,44 @@ fn a_co_swept_parent_with_no_row_still_has_its_output_marked_spent() {
         core_state::apply(&tx, &w, &cs).unwrap();
         tx.commit().unwrap();
     }
+    {
+        let conn = persister.lock_conn_for_test();
+        assert!(
+            !unspent(&conn, &w).contains(&parent_output),
+            "a dead parent's output must not survive as a phantom spendable coin \
+             just because the parent's own record was lost"
+        );
+        assert!(
+            !row_exists(&conn, &w, &parent_output),
+            "and it must be deleted, not held — a spent_in_txid claim would lock \
+             out the reinstatement below"
+        );
+    }
+
+    // The chainlocked return: P is reinstated with its output re-emitted,
+    // and nothing this sweep left behind may stand in its way.
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![tx_record(
+                parent_txid,
+                vec![],
+                vec![TxOut {
+                    value: 5_000,
+                    script_pubkey: addr.script_pubkey(),
+                }],
+            )],
+            new_utxos: vec![make_utxo(&addr, parent_txid, 0, 5_000)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
     let conn = persister.lock_conn_for_test();
     assert!(
-        !unspent(&conn, &w).contains(&parent_output),
-        "a dead parent's output must not survive as a phantom spendable coin \
-         just because the parent's own record was lost"
+        unspent(&conn, &w).contains(&parent_output),
+        "the reinstated parent's genuinely unspent output must restore even when \
+         its record was lost at sweep time"
     );
 }
