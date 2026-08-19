@@ -305,8 +305,9 @@ pub enum PlatformWalletError {
     /// gone into `spent_by`, and the only recovery is to discard this lock
     /// and build a new one from currently-unspent inputs. `height` is the
     /// block height of the confirmed spender when the record carries block
-    /// info; `spender_chain_locked` is retained for message/ABI stability
-    /// and is always `true` here.
+    /// info. The variant carries no finality flag on purpose: finality IS
+    /// the variant — a constructor cannot produce a terminal error that
+    /// renders anything but chainlocked finality.
     ///
     /// A confirmed-but-not-yet-chainlocked spender raises
     /// [`Self::AssetLockInputContested`] instead: it equally stops the
@@ -325,15 +326,14 @@ pub enum PlatformWalletError {
     #[error(
         "Asset lock {out_point} can never confirm: it spends {input}, which was \
          already spent by confirmed transaction {spent_by} (block height \
-         {height:?}, chainlocked: {spender_chain_locked}) — the lock is a \
-         double spend and no peer will relay it"
+         {height:?}, chainlocked: true) — the lock is a double spend and no \
+         peer will relay it"
     )]
     AssetLockInputConflict {
         out_point: dashcore::OutPoint,
         input: dashcore::OutPoint,
         spent_by: dashcore::Txid,
         height: Option<CoreBlockHeight>,
-        spender_chain_locked: bool,
     },
 
     /// As [`Self::AssetLockInputConflict`], but the confirmed spender has

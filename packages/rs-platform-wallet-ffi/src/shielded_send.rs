@@ -1897,7 +1897,6 @@ mod tests {
                 },
                 spent_by: dashcore::Txid::all_zeros(),
                 height: Some(1_234),
-                spender_chain_locked: true,
             }),
             "shielded resume fund-from-asset-lock",
         );

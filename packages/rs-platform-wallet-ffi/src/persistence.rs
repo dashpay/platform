@@ -4810,14 +4810,11 @@ fn build_wallet_start_state(
     // was interrupted by an app kill can resume from the latest
     // status without rebroadcasting.
     let unused_asset_locks = build_unused_asset_locks(entry)?;
-    let asset_lock_input_spends = build_asset_lock_input_spends(entry);
-
     let wallet_state = ClientWalletStartState {
         wallet,
         wallet_info,
         identity_manager,
         unused_asset_locks,
-        asset_lock_input_spends,
     };
 
     let platform_address_state = if per_account.is_empty()
@@ -4836,83 +4833,6 @@ fn build_wallet_start_state(
     };
 
     Ok((wallet_state, platform_address_state))
-}
-
-/// Decode the host mirror's report of which transaction took each outpoint
-/// an unresolved asset lock spends.
-///
-/// A malformed row is skipped rather than failing the load: the map is
-/// evidence for a screen that degrades to its old behaviour without it, so a
-/// bad row must not cost the user their wallet. "Malformed" here means an
-/// all-zero txid on either side of the row — the shape a zero-initialised
-/// struct from a host that never filled the row in would take. (The 32-byte
-/// arrays themselves always parse, so this check is the row validation, not
-/// the `Txid` constructor.)
-fn build_asset_lock_input_spends(
-    entry: &WalletRestoreEntryFFI,
-) -> BTreeMap<dashcore::OutPoint, platform_wallet::wallet::platform_wallet::RestoredSpend> {
-    use dashcore::hashes::Hash;
-
-    let mut spends = BTreeMap::new();
-    if entry.asset_lock_input_spends.is_null() || entry.asset_lock_input_spends_count == 0 {
-        return spends;
-    }
-    let rows = unsafe {
-        slice::from_raw_parts(
-            entry.asset_lock_input_spends,
-            entry.asset_lock_input_spends_count,
-        )
-    };
-    for row in rows {
-        // A fixed 32-byte array always parses as a `Txid`, so the real
-        // malformed-row check is content: an all-zero txid on either side is
-        // the shape of a row a host zero-initialised and never filled in,
-        // and no genuine transaction hashes to zero.
-        if row.prev_txid == [0u8; 32] || row.spender_txid == [0u8; 32] {
-            tracing::warn!(
-                wallet_id = %hex::encode(entry.wallet_id),
-                "load: skipping asset-lock input-spend row with zeroed txid bytes"
-            );
-            continue;
-        }
-        let prev_txid = dashcore::Txid::from_slice(&row.prev_txid)
-            .expect("32-byte array always parses as Txid");
-        let spender_txid = dashcore::Txid::from_slice(&row.spender_txid)
-            .expect("32-byte array always parses as Txid");
-        // Match the known discriminants exactly rather than comparing by
-        // order: the contract defines 0..=3, and an unknown value must
-        // degrade to "no evidence" rather than being read as finality. The
-        // screen treats `in_block` as conclusive and returns a terminal code
-        // the host may act on by discarding the lock, so a malformed or
-        // forward-versioned byte manufacturing that verdict would be unsafe.
-        spends.insert(
-            dashcore::OutPoint {
-                txid: prev_txid,
-                vout: row.vout,
-            },
-            platform_wallet::wallet::platform_wallet::RestoredSpend {
-                spender: spender_txid,
-                height: (row.spender_height != 0).then_some(row.spender_height),
-                in_block: matches!(
-                    row.spender_context,
-                    TX_CONTEXT_RAW_IN_BLOCK | TX_CONTEXT_RAW_IN_CHAIN_LOCKED_BLOCK
-                ),
-                chain_locked: row.spender_context == TX_CONTEXT_RAW_IN_CHAIN_LOCKED_BLOCK,
-            },
-        );
-    }
-    if !spends.is_empty() {
-        // "rows", not "conflicts": the host emits whatever spender the
-        // mirror linked, which for a healthy broadcast lock is the lock's
-        // own transaction — whether a row is a conflict is decided
-        // per-lock by the screen, not here.
-        tracing::info!(
-            wallet_id = %hex::encode(entry.wallet_id),
-            count = spends.len(),
-            "load: restored asset-lock input-spend rows"
-        );
-    }
-    spends
 }
 
 /// Rebuild the `unused_asset_locks` map carried on
@@ -5895,16 +5815,28 @@ fn restore_unresolved_asset_lock_tx_records(
         };
 
         let account_type = account.managed_account_type().to_account_type();
+        // Classify from the transaction itself, the way the upstream
+        // router does: an `AssetLockPayloadType` special-tx payload IS
+        // the definition of an asset lock. This array carries both the
+        // locks' own funding transactions and the confirmed spenders of
+        // their inputs (the conflict screen's evidence), and tagging an
+        // ordinary spender as an asset lock would feed phantom entries
+        // to anything keying off `transaction_type`.
+        let transaction_type = if matches!(
+            tx.special_transaction_payload,
+            Some(
+                dashcore::transaction::special_transaction::TransactionPayload::AssetLockPayloadType(_)
+            )
+        ) {
+            TransactionType::AssetLock
+        } else {
+            TransactionType::Standard
+        };
         let record = TransactionRecord::new(
             tx,
             account_type,
             context,
-            // Funding transactions ARE asset locks by definition —
-            // the upstream router classifies them via the
-            // `AssetLockPayloadType` special-tx payload. Use the
-            // same tag here so any downstream code keying off
-            // `transaction_type` sees the canonical value.
-            TransactionType::AssetLock,
+            transaction_type,
             // The funding flow always starts from our own UTXOs
             // and writes one credit output to ourselves; per
             // `TransactionDirection::Internal`'s docstring, a
@@ -6051,46 +5983,6 @@ mod tests {
     //! exercising the in-memory mutation against synthetic input.
 
     use super::*;
-    use crate::wallet_restore_types::AssetLockInputSpendFFI;
-
-    // --- asset-lock input-spend linkage decode ---
-
-    /// The context byte decides whether persisted evidence may condemn a
-    /// tracked lock, so only the two known block discriminants may read as
-    /// final. An unknown value — corrupt row, forward-versioned host — must
-    /// degrade to "no evidence" rather than manufacture finality.
-    #[test]
-    fn asset_lock_input_spend_context_decodes_only_known_block_discriminants() {
-        for (context, expect_in_block, expect_chain_locked) in [
-            (0u32, false, false), // mempool
-            (1, false, false),    // InstantSend, replaceable
-            (2, true, false),     // in a block
-            (3, true, true),      // chain-locked block
-            (4, false, false),    //unknown / forward-versioned
-            (u32::MAX, false, false),
-        ] {
-            let row = AssetLockInputSpendFFI {
-                prev_txid: [7u8; 32],
-                vout: 1,
-                spender_txid: [9u8; 32],
-                spender_height: 1_532_949,
-                spender_context: context,
-            };
-            // The decoder reads only `wallet_id` (for the log line) and the
-            // spend slice; `Default` names every field, so the compiler
-            // re-checks this stand-in whenever the ABI struct grows.
-            let entry = WalletRestoreEntryFFI {
-                asset_lock_input_spends: &row,
-                asset_lock_input_spends_count: 1,
-                ..Default::default()
-            };
-
-            let spends = build_asset_lock_input_spends(&entry);
-            let spend = spends.values().next().expect("row decodes");
-            assert_eq!(spend.in_block, expect_in_block, "context={context}");
-            assert_eq!(spend.chain_locked, expect_chain_locked, "context={context}");
-        }
-    }
 
     // --- persists_durably: the fail-closed durability attestation ---
 

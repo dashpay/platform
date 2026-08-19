@@ -1680,7 +1680,6 @@ mod tests {
             },
             spent_by: out_point.txid,
             height: Some(1_234),
-            spender_chain_locked: true,
         }
         .into();
         assert_eq!(

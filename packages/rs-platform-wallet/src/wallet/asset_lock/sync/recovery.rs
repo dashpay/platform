@@ -265,10 +265,15 @@ fn first_confirmed_input_conflict(
 
     let history = info.core_wallet.transaction_history();
 
-    // Live history first. Records promote and demote in-session, so when
-    // one is present it is the freshest evidence there is; the restored map
-    // below is a load-time snapshot and must never outrank it.
-    if let Some(hit) = history
+    // One source of truth: live transaction history. The load path restores
+    // the relevant spender records into it (see the unresolved-record
+    // restore in the FFI persister), so the same records serve app-launch
+    // catch-up and the live session — and the same machinery keeps them
+    // honest: `apply_chain_lock` promotes them when a chainlock buries
+    // their block, and a reorg re-observation demotes them. An earlier
+    // revision carried a separate load-time snapshot map instead; it could
+    // neither promote nor demote, so its verdicts could not resolve.
+    history
         .iter()
         .filter(|record| record.txid != lock_txid && record.is_confirmed())
         .find_map(|record| {
@@ -285,41 +290,6 @@ fn first_confirmed_input_conflict(
                     .is_some_and(|(boundary, spender_height)| spender_height <= boundary);
             Some((conflicting_input, record.txid, height, spender_chain_locked))
         })
-    {
-        return Some(hit);
-    }
-
-    // The persistence mirror's answer, restored at load. Two gaps only this
-    // source covers: app-launch catch-up, when `transaction_history()` holds
-    // nothing but the unresolved locks' own records, and a chainlocked
-    // spender that `apply_chain_lock` already evicted from history. It is a
-    // snapshot — nothing demotes a row after a reorg — so it runs second,
-    // and a row whose spender the live history has since re-observed
-    // WITHOUT confirmation is treated as stale and skipped: the live record
-    // is the same transaction seen more recently, and it says "not settled".
-    // A spender absent from history entirely is indistinguishable from the
-    // load blind spot this map exists for, so such a row is trusted; that
-    // residual mis-verdict window closes only when the mirror learns to
-    // demote spend links on reorg.
-    lock_inputs.iter().find_map(|input| {
-        let (input, spend) = info
-            .restored_asset_lock_input_spends
-            .get_key_value(input)
-            .filter(|(_, spend)| spend.spender != lock_txid && spend.in_block)?;
-        let contradicted = history
-            .iter()
-            .any(|record| record.txid == spend.spender && !record.is_confirmed());
-        if contradicted {
-            return None;
-        }
-        // No chainlock-boundary fallback here, unlike the live scan above:
-        // the boundary only proves finality for a transaction known to sit
-        // in the surviving chain at that height, which a live record
-        // attests and a persisted snapshot does not — the recorded height
-        // may name a block a reorg has since dropped. Only the mirror's own
-        // observed chainlock context may claim that confidence tier.
-        Some((*input, spend.spender, spend.height, spend.chain_locked))
-    })
 }
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
@@ -444,7 +414,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     input,
                     spent_by,
                     height,
-                    spender_chain_locked,
                 }
             } else {
                 PlatformWalletError::AssetLockInputContested {
@@ -1139,7 +1108,6 @@ mod tests {
             generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
-            restored_asset_lock_input_spends: Default::default(),
             dpns_name_states: BTreeMap::new(),
         };
         let out_point = OutPoint::new(tx.txid(), 0);
@@ -1278,34 +1246,6 @@ mod tests {
             );
         }
 
-        /// Install a restored spend-linkage row for the lock's funded input,
-        /// the way the FFI load path does — the only source available at
-        /// app-launch catch-up, when `transaction_history()` is empty.
-        async fn restore_spend(&self, spender: Txid, in_block: bool) {
-            self.restore_spend_with(spender, in_block, in_block).await
-        }
-
-        /// As [`Self::restore_spend`], but with the persisted row's
-        /// chainlock flag chosen independently of `in_block` — the state a
-        /// spender mined before a chainlock the wallet applied later is
-        /// restored in, since the promotion that would have set the flag
-        /// never ran against the stored row.
-        async fn restore_spend_with(&self, spender: Txid, in_block: bool, chain_locked: bool) {
-            let mut wm = self.wallet_manager.write().await;
-            let info = wm
-                .get_wallet_info_mut(&self.wallet_id)
-                .expect("wallet must remain registered");
-            info.restored_asset_lock_input_spends.insert(
-                self.funded_input(),
-                crate::wallet::platform_wallet::RestoredSpend {
-                    spender,
-                    height: in_block.then_some(1_532_949),
-                    in_block,
-                    chain_locked,
-                },
-            );
-        }
-
         /// Park the wallet's applied-chainlock watermark at `height`
         /// without running the promotion pass, so restored rows keep the
         /// pre-chainlock context they were persisted with.
@@ -1398,180 +1338,6 @@ mod tests {
         ))
     }
 
-    /// The incident this screen exists for: a restored wallet re-spends an
-    /// outpoint one of its own earlier, already-confirmed transactions
-    /// consumed long ago. Peers drop the double spend without a reply, so
-    /// the pre-existing behaviour — re-broadcast, then wait, unbounded for
-    /// the user-facing funding flows — could never terminate. The resume
-    /// must fail with the typed terminal error and must not touch the
-    /// network on the way out.
-    ///
-    /// At app-launch catch-up `transaction_history()` is empty — the load
-    /// path restores only the unresolved locks' own funding records — so the
-    /// restored spend linkage is the sole evidence available. A confirmed
-    /// spender there must condemn the lock exactly as a history record does.
-    #[tokio::test]
-    async fn restored_spend_linkage_reports_the_conflict_with_an_empty_history() {
-        let fixture = ConflictFixture::new().await;
-        fixture.track(AssetLockStatus::Broadcast, None).await;
-
-        let spender_txid = transaction_spending(fixture.funded_input()).txid();
-        fixture.restore_spend(spender_txid, true).await;
-
-        let error = fixture
-            .manager
-            .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
-            .await
-            .expect_err("a double-spent asset lock must fail, not wait");
-        match error {
-            PlatformWalletError::AssetLockInputConflict {
-                input,
-                spent_by,
-                spender_chain_locked,
-                ..
-            } => {
-                assert_eq!(input, fixture.funded_input());
-                assert_eq!(spent_by, spender_txid);
-                assert!(spender_chain_locked);
-            }
-            other => panic!("expected AssetLockInputConflict, got {other:?}"),
-        }
-        assert_eq!(
-            fixture.broadcast_count(),
-            0,
-            "the screen must fire before the re-broadcast"
-        );
-    }
-
-    /// A restored spender mined below a chainlock the wallet applied later
-    /// still reports `spender_chain_locked: false`. The live history scan
-    /// may promote a record against the boundary because a live record
-    /// attests the transaction sits in the surviving chain at that height;
-    /// a persisted snapshot attests only that a block held it when the row
-    /// was written — a reorg may have dropped that block before the
-    /// chainlock landed, and nothing ever demotes the row. The conflict is
-    /// still reported (the screen fires either way); only the chainlock
-    /// confidence tier is withheld, so a host that auto-discards solely on
-    /// `spender_chain_locked` cannot be steered by a stale snapshot.
-    #[tokio::test]
-    async fn restored_spend_below_the_chainlock_boundary_stays_unpromoted() {
-        let fixture = ConflictFixture::new().await;
-        fixture.track(AssetLockStatus::Broadcast, None).await;
-
-        let spender_txid = transaction_spending(fixture.funded_input()).txid();
-        fixture.restore_spend_with(spender_txid, true, false).await;
-        fixture.set_chain_lock_boundary(1_532_950).await;
-
-        let error = fixture
-            .manager
-            .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
-            .await
-            .expect_err("a double-spent asset lock must fail, not wait");
-        match error {
-            PlatformWalletError::AssetLockInputContested { spent_by, .. } => {
-                assert_eq!(spent_by, spender_txid, "the conflict itself still fires");
-                // The contested variant IS the assertion: a snapshot height
-                // must not claim chainlock finality — the boundary only
-                // proves finality for a block the live chain is known to
-                // contain — so no restored row may produce the terminal,
-                // discard-licensing conflict from the boundary fallback.
-            }
-            other => panic!("expected AssetLockInputContested, got {other:?}"),
-        }
-    }
-
-    /// Live history outranks the restored snapshot. Records promote and
-    /// demote in-session; the snapshot cannot, so when both sources speak
-    /// for the same input the fresher one must win — here they name
-    /// different spenders, and the reported conflict is the history
-    /// record's.
-    #[tokio::test]
-    async fn live_history_outranks_the_restored_snapshot() {
-        let fixture = ConflictFixture::new().await;
-        fixture.track(AssetLockStatus::Broadcast, None).await;
-
-        let stale_spender = transaction_spending(fixture.funded_input()).txid();
-        fixture.restore_spend(stale_spender, true).await;
-
-        let mut live_spender = transaction_spending(fixture.funded_input());
-        live_spender.lock_time = 1; // distinct txid, same spent outpoint
-        let live_txid = live_spender.txid();
-        fixture
-            .file_record(record_for(live_spender, confirmed_at(1_234)))
-            .await;
-
-        let error = fixture
-            .manager
-            .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
-            .await
-            .expect_err("a double-spent asset lock must fail, not wait");
-        match error {
-            PlatformWalletError::AssetLockInputContested { spent_by, .. } => assert_eq!(
-                spent_by, live_txid,
-                "the live record, not the load-time snapshot, names the spender"
-            ),
-            other => panic!("expected AssetLockInputContested, got {other:?}"),
-        }
-    }
-
-    /// A restored row whose spender the live history has since re-observed
-    /// WITHOUT confirmation is stale — the same transaction seen more
-    /// recently says "not settled" — and must not condemn the lock. This is
-    /// the reorg shape: the spender's block was dropped, the wallet
-    /// re-observed it in the mempool, and only the snapshot still calls it
-    /// settled.
-    #[tokio::test]
-    async fn a_live_unconfirmed_sighting_retracts_the_restored_verdict() {
-        let fixture = ConflictFixture::new().await;
-        fixture.track(AssetLockStatus::Broadcast, None).await;
-
-        let spender = transaction_spending(fixture.funded_input());
-        let spender_txid = spender.txid();
-        fixture.restore_spend(spender_txid, true).await;
-        fixture
-            .file_record(record_for(spender, TransactionContext::Mempool))
-            .await;
-
-        let error = fixture
-            .manager
-            .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
-            .await
-            .expect_err("no proof means the resume runs and then times out");
-        assert!(
-            !matches!(error, PlatformWalletError::AssetLockInputConflict { .. }),
-            "a demoted live sighting must retract the snapshot verdict, got {error:?}"
-        );
-    }
-
-    /// A restored spender that never reached a block proves nothing — a
-    /// mempool sighting can still be replaced — and the lock's own txid is
-    /// not a conflict with itself. Neither may condemn the lock.
-    #[tokio::test]
-    async fn restored_spend_linkage_ignores_a_non_final_spender_and_the_lock_itself() {
-        for (spender_is_the_lock, in_block) in [(false, false), (true, true)] {
-            let fixture = ConflictFixture::new().await;
-            fixture.track(AssetLockStatus::Broadcast, None).await;
-
-            let spender_txid = if spender_is_the_lock {
-                fixture.transaction.txid()
-            } else {
-                transaction_spending(fixture.funded_input()).txid()
-            };
-            fixture.restore_spend(spender_txid, in_block).await;
-
-            let error = fixture
-                .manager
-                .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
-                .await
-                .expect_err("no proof means the resume runs and then times out");
-            assert!(
-                !matches!(error, PlatformWalletError::AssetLockInputConflict { .. }),
-                "spender_is_the_lock={spender_is_the_lock} in_block={in_block}: \
-                 got {error:?}"
-            );
-        }
-    }
-
     /// The spender here is merely `InBlock` with no applied chainlock
     /// covering it, so the verdict is provisional: the resume still stops
     /// before broadcasting or waiting, but through the contested variant,
@@ -1638,16 +1404,10 @@ mod tests {
             .await
             .expect_err("a double-spent asset lock must fail, not wait");
         match error {
-            PlatformWalletError::AssetLockInputConflict {
-                spent_by,
-                spender_chain_locked,
-                ..
-            } => {
+            PlatformWalletError::AssetLockInputConflict { spent_by, .. } => {
+                // The terminal variant IS the finality assertion: it is
+                // only constructed for a chainlock-final spender.
                 assert_eq!(spent_by, spender_txid);
-                assert!(
-                    spender_chain_locked,
-                    "a live record below the applied boundary is chainlock-final"
-                );
             }
             other => panic!("expected the terminal AssetLockInputConflict, got {other:?}"),
         }
@@ -1676,17 +1436,10 @@ mod tests {
         let rendered = error.to_string();
         match error {
             PlatformWalletError::AssetLockInputConflict {
-                spent_by,
-                height,
-                spender_chain_locked,
-                ..
+                spent_by, height, ..
             } => {
                 assert_eq!(spent_by, spender_txid);
                 assert_eq!(height, Some(1_234));
-                assert!(
-                    spender_chain_locked,
-                    "an InChainLockedBlock spender must report ChainLock finality"
-                );
             }
             other => panic!("expected AssetLockInputConflict, got {other:?}"),
         }
@@ -1756,8 +1509,9 @@ mod tests {
             !matches!(
                 outcome,
                 Err(PlatformWalletError::AssetLockInputConflict { .. })
+                    | Err(PlatformWalletError::AssetLockInputContested { .. })
             ),
-            "a lock's own record must never condemn it, got {outcome:?}"
+            "a lock's own record must never condemn it under either variant, got {outcome:?}"
         );
     }
 

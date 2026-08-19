@@ -3,14 +3,17 @@ import SwiftData
 import DashSDKFFI
 @testable import SwiftDashSDK
 
-/// Coverage for the spend-linkage half of the asset-lock restore:
-/// `asset_lock_input_spends`, the evidence the conflict screen runs on at
-/// app-launch catch-up.
+/// Coverage for the spender half of the asset-lock record restore: the
+/// settled spender of an unresolved lock's input rides
+/// `unresolved_asset_lock_tx_records`, the same array that restores the
+/// locks' own funding records, and Rust re-inserts it into live
+/// transaction history where the conflict screen scans it.
 ///
-/// At that moment the wallet's in-memory transaction history is empty, so a
-/// lock whose input a different, confirmed transaction already took has no
-/// other way to be recognised as dead — it sits in the full proof wait
-/// instead. The rows restored here are the only source that works.
+/// At app launch that history is otherwise empty, so a lock whose input a
+/// different, confirmed transaction already took has no other way to be
+/// recognised as dead — it sits in the full proof wait instead. Restoring
+/// the spender as an ordinary record (not a snapshot) keeps the evidence
+/// live: chainlock promotion and reorg demotion both reach it.
 @MainActor
 final class AssetLockInputSpendRestoreTests: XCTestCase {
 
@@ -63,7 +66,11 @@ final class AssetLockInputSpendRestoreTests: XCTestCase {
     /// before `PersistentTxo.walletId` existed carry an empty value, and the
     /// spend-reconciliation path sets `isSpent` and the spender link without
     /// backfilling it.
-    private func seed(in container: ModelContainer, legacyTxoWalletId: Bool) throws {
+    private func seed(
+        in container: ModelContainer,
+        legacyTxoWalletId: Bool,
+        spenderContext: UInt32 = 2
+    ) throws {
         let context = ModelContext(container)
         let wallet = PersistentWallet(walletId: walletId, network: .testnet)
         context.insert(wallet)
@@ -93,8 +100,8 @@ final class AssetLockInputSpendRestoreTests: XCTestCase {
         let spender = PersistentTransaction(
             txid: spenderTxid,
             transactionData: Data(repeating: 0x05, count: 10),
-            context: 2,
-            blockHeight: 101,
+            context: spenderContext,
+            blockHeight: spenderContext >= 2 ? 101 : 0,
             netAmount: -100_000
         )
         context.insert(spender)
@@ -127,24 +134,27 @@ final class AssetLockInputSpendRestoreTests: XCTestCase {
         try context.save()
     }
 
-    /// Drive the real load path and report how many spend-linkage rows the
-    /// wallet's restore entry carries.
-    private func restoredInputSpendCount(_ handler: PlatformWalletPersistenceHandler) -> Int {
+    /// Drive the real load path and report how many unresolved-lock tx
+    /// records the wallet's restore entry carries. In these fixtures the
+    /// lock's own txid has no `PersistentTransaction` row, so every entry
+    /// counted here is a restored spender record.
+    private func restoredRecordCount(_ handler: PlatformWalletPersistenceHandler) -> Int {
         let loaded = handler.loadWalletList()
         XCTAssertFalse(loaded.errored, "the load must not fail")
         XCTAssertGreaterThan(loaded.count, 0, "the wallet must produce a restore entry")
         guard let entries = loaded.entries, loaded.count > 0 else { return -1 }
         defer { handler.loadWalletListFree(entries: UnsafeRawPointer(entries)) }
-        return Int(entries[0].asset_lock_input_spends_count)
+        return Int(entries[0].unresolved_asset_lock_tx_records_count)
     }
 
     /// The ordinary case: the TXO carries its wallet id, and the confirmed
-    /// spender is reported so the conflict screen can act at startup.
+    /// spender's record is restored so the conflict screen's history scan
+    /// can act at startup.
     func testConfirmedSpenderOfALockInputIsRestored() throws {
         let (handler, container) = try makeHandler()
         try seed(in: container, legacyTxoWalletId: false)
 
-        XCTAssertEqual(restoredInputSpendCount(handler), 1)
+        XCTAssertEqual(restoredRecordCount(handler), 1)
     }
 
     /// The same coin on a row migrated from the older schema, where
@@ -157,18 +167,17 @@ final class AssetLockInputSpendRestoreTests: XCTestCase {
         try seed(in: container, legacyTxoWalletId: true)
 
         XCTAssertEqual(
-            restoredInputSpendCount(handler),
+            restoredRecordCount(handler),
             1,
             "a legacy TXO resolving to this wallet through its account must not be discarded"
         )
     }
 
-    /// The row payload is the one cross-language contract this feature adds,
-    /// and a count assertion alone would let a wrong-source copy — swapped
-    /// txids, a context read off the wrong transaction — ship green. Read
-    /// the emitted row back and pin every field to the fixture's distinct
-    /// values.
-    func testRestoredSpendRowCarriesTheExactPayload() throws {
+    /// The record payload is the cross-language contract, and a count
+    /// assertion alone would let a wrong-source copy — bytes from the wrong
+    /// transaction, a context read off the funding tx — ship green. Read
+    /// the emitted entry back and pin its fields to the spender's values.
+    func testRestoredSpenderRecordCarriesTheExactPayload() throws {
         let (handler, container) = try makeHandler()
         try seed(in: container, legacyTxoWalletId: false)
 
@@ -180,23 +189,27 @@ final class AssetLockInputSpendRestoreTests: XCTestCase {
         defer { handler.loadWalletListFree(entries: UnsafeRawPointer(entries)) }
 
         let entry = entries[0]
-        XCTAssertEqual(Int(entry.asset_lock_input_spends_count), 1)
-        guard let rows = entry.asset_lock_input_spends else {
+        XCTAssertEqual(Int(entry.unresolved_asset_lock_tx_records_count), 1)
+        guard let rows = entry.unresolved_asset_lock_tx_records else {
             return XCTFail("a count of 1 must come with a row pointer")
         }
         let row = rows[0]
         XCTAssertEqual(
-            withUnsafeBytes(of: row.prev_txid) { Data($0) },
-            fundingTxid,
-            "prev_txid is the outpoint the lock spends, raw txid order"
+            Int(row.tx_bytes_len), 10,
+            "the spender's consensus bytes, not the funding tx's (which the fixture sizes differently)"
         )
-        XCTAssertEqual(row.vout, fundingVout)
-        XCTAssertEqual(
-            withUnsafeBytes(of: row.spender_txid) { Data($0) },
-            spenderTxid,
-            "spender_txid is the transaction the mirror linked, not the funding tx"
-        )
-        XCTAssertEqual(row.spender_height, 101, "the spender's persisted block height")
-        XCTAssertEqual(row.spender_context, 2, "the persisted context, verbatim")
+        XCTAssertEqual(row.context_raw, 2, "the spender's persisted context, verbatim")
+        XCTAssertEqual(row.block_height, 101, "the spender's persisted block height")
+    }
+
+    /// A mempool-context spender is deliberately NOT restored: it can still
+    /// be replaced, the screen ignores it, and shipping it would widen the
+    /// restore surface for nothing — the same minimum-surface rule as the
+    /// `statusRaw < 2` lock filter.
+    func testAMempoolSpenderIsNotRestored() throws {
+        let (handler, container) = try makeHandler()
+        try seed(in: container, legacyTxoWalletId: false, spenderContext: 0)
+
+        XCTAssertEqual(restoredRecordCount(handler), 0)
     }
 }

@@ -516,33 +516,6 @@ pub struct UnresolvedAssetLockTxRecordFFI {
     pub first_seen: u64,
 }
 
-/// One outpoint an unresolved asset lock spends, together with the
-/// transaction the persistence mirror recorded as having spent it.
-///
-/// The host emits whatever spender the mirror linked — INCLUDING the lock's
-/// own transaction (the normal broadcast case) — because at emission time it
-/// holds a flat outpoint set with no per-lock association. Consumers filter
-/// out the lock's own txid themselves; a row is a conflict only relative to
-/// a particular lock. The iOS host additionally emits only spends its mirror
-/// marked settled (in-block), so `spender_context` values `0` / `1` are
-/// decoded defensively but do not occur from that host today.
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct AssetLockInputSpendFFI {
-    /// The outpoint the asset lock spends: funding txid, then index.
-    pub prev_txid: [u8; 32],
-    pub vout: u32,
-    /// The transaction that actually took it.
-    pub spender_txid: [u8; 32],
-    /// Height of the block holding the spender; `0` when unknown.
-    pub spender_height: u32,
-    /// The spender's `TransactionContext` discriminant, verbatim: `0`
-    /// mempool, `1` InstantSend, `2` in a block, `3` in a chain-locked
-    /// block. The host reports what it stored; deciding which of those
-    /// count as final is Rust's call, not the mirror's.
-    pub spender_context: u32,
-}
-
 /// A persisted provider special transaction (ProRegTx / ProUpServTx /
 /// ProUpRegTx / ProUpRevTx) staged back into the wallet at load so its
 /// DIP-3 payload record is resident on the provider-key accounts again.
@@ -678,29 +651,6 @@ pub struct WalletRestoreEntryFFI {
     /// re-apply a fresh chainlock.
     pub last_applied_chain_lock_bytes: *const u8,
     pub last_applied_chain_lock_bytes_len: usize,
-    /// The spenders the persisted state records for the outpoints the
-    /// unresolved asset locks spend — the lock's own spend included, see
-    /// [`AssetLockInputSpendFFI`].
-    ///
-    /// The double-spend screen in `resume_asset_lock` reads the in-memory
-    /// transaction history, which this load path deliberately leaves empty
-    /// apart from the unresolved locks themselves — so at app-launch
-    /// catch-up it scans nothing and cannot fire, however dead the lock is.
-    /// The persistence mirror does know: the funding outpoint's row carries
-    /// the txid that spent it. Handing those few outpoints over is what lets
-    /// the screen work at the only moment it matters. `null` / `0` when
-    /// there are none.
-    ///
-    /// ABI note: these two fields sit at the TAIL of the struct on purpose,
-    /// and any future addition must go below them. This struct crosses the
-    /// boundary as a bare pointer with no size or version tag, so appending
-    /// is the only layout change that keeps every earlier field at its old
-    /// offset; inserting mid-struct would shift the fields after it and turn
-    /// a stale host/library pairing into silently misread memory. (In-tree
-    /// builds regenerate the header in lockstep; this discipline is for the
-    /// pairing nobody planned.)
-    pub asset_lock_input_spends: *const AssetLockInputSpendFFI,
-    pub asset_lock_input_spends_count: usize,
 }
 
 /// Every field named explicitly so that adding a field to this ABI struct
@@ -739,8 +689,6 @@ impl Default for WalletRestoreEntryFFI {
             core_address_pools_count: 0,
             last_applied_chain_lock_bytes: std::ptr::null(),
             last_applied_chain_lock_bytes_len: 0,
-            asset_lock_input_spends: std::ptr::null(),
-            asset_lock_input_spends_count: 0,
         }
     }
 }

@@ -199,7 +199,7 @@ class DashSdkErrorTest {
         // confirm.
         val message =
             "Asset lock a:0 can never confirm: it spends b:1, which was already spent by " +
-                "confirmed transaction c (block height Some(1234), chainlocked: false) — " +
+                "confirmed transaction c (block height Some(1234), chainlocked: true) — " +
                 "the lock is a double spend and no peer will relay it"
         val mapped = DashSdkError.fromNative(
             DashSDKException(

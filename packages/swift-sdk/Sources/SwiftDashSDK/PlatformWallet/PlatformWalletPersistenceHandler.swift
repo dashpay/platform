@@ -1162,36 +1162,28 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             predicate: #Predicate { $0.outpoint == outpoint }
         )
         if let txo = try? backgroundContext.fetch(txoDescriptor).first {
-            // `isSpent` only flips once the spending tx is in a block
-            // (see `spendIsInBlock`'s doc) — a mempool sighting
-            // alone links the spending relationship but keeps the
-            // row in the unspent set so a `restartWalletManager()`
-            // load can hand the TXO back to Rust for the post-restart
-            // catch-up classifier to recognise as ours. The next
-            // upsert of this same tx with a confirmed context flips
-            // `isSpent` then.
-            //
-            // Monotonic on purpose (mirrors the same guard on the
-            // sweep-persistence branch, so the merge is a no-op): a
-            // later mempool sighting of a DIFFERENT spender must not
-            // downgrade a flag an in-block spend already set — that
-            // stomp would also blank the spend-linkage evidence the
-            // asset-lock conflict screen restores at the next launch.
-            // Nothing upstream ever demotes a confirmed spend, so a
-            // true here is never stale.
-            let expectedIsSpent = txo.isSpent || Self.spendIsInBlock(spendingTransaction)
+            // Flag and link move together — see
+            // `reconcileSpendObservation` for the finality rule.
+            let verdict = Self.reconcileSpendObservation(
+                currentSpenderTxid: txo.spendingTransaction?.txid,
+                currentIsSpent: txo.isSpent,
+                incoming: spendingTransaction,
+                incomingTxid: spendingTxid
+            )
             let linkageChanged =
-                txo.isSpent != expectedIsSpent
-                || txo.spendingTransaction?.txid != spendingTxid
-                || txo.spendingInputIndex != inputIndex
+                txo.isSpent != verdict.isSpent
+                || (verdict.adoptLink && txo.spendingTransaction?.txid != spendingTxid)
+                || (verdict.adoptLink && txo.spendingInputIndex != inputIndex)
             if linkageChanged {
-                txo.isSpent = expectedIsSpent
-                if txo.spendingTransaction?.txid != spendingTxid {
-                    txo.spendingTransaction = spendingTransaction
+                txo.isSpent = verdict.isSpent
+                if verdict.adoptLink {
+                    if txo.spendingTransaction?.txid != spendingTxid {
+                        txo.spendingTransaction = spendingTransaction
+                    }
+                    // Capture the canonical vin index so the detail
+                    // view can render inputs in serialized order.
+                    txo.spendingInputIndex = inputIndex
                 }
-                // Capture the canonical vin index so the detail
-                // view can render inputs in serialized order.
-                txo.spendingInputIndex = inputIndex
                 txo.lastUpdated = Date()
             }
             // A pending entry from an earlier write is now stale —
@@ -1378,23 +1370,65 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // in `resolveInputOutpoint` — the only path that creates
             // pending rows captures the index from FFI's
             // `input_outpoints` slice, which mirrors `tx.input.iter()`.
-            record.spendingInputIndex = chosen.inputIndex
-            if let spending = resolvedSpending,
-               record.spendingTransaction?.txid != spending.txid {
-                record.spendingTransaction = spending
-            }
             if let spending = resolvedSpending {
-                // Monotonic — same rule as `resolveInputOutpoint`: a later
-                // mempool-context resolution must not downgrade a flag an
-                // in-block spend already set, or the conflict evidence the
-                // load path restores from `isSpent` rows evaporates.
-                record.isSpent = record.isSpent || Self.spendIsInBlock(spending)
+                // Flag and link move together — see
+                // `reconcileSpendObservation` for the finality rule.
+                let verdict = Self.reconcileSpendObservation(
+                    currentSpenderTxid: record.spendingTransaction?.txid,
+                    currentIsSpent: record.isSpent,
+                    incoming: spending,
+                    incomingTxid: spending.txid
+                )
+                record.isSpent = verdict.isSpent
+                if verdict.adoptLink {
+                    if record.spendingTransaction?.txid != spending.txid {
+                        record.spendingTransaction = spending
+                    }
+                    record.spendingInputIndex = chosen.inputIndex
+                }
+            } else {
+                record.spendingInputIndex = chosen.inputIndex
             }
             record.lastUpdated = Date()
             for row in pendingRows {
                 backgroundContext.delete(row)
             }
         }
+    }
+
+    /// The one rule every spend-linkage writer follows, so `isSpent` and
+    /// `spendingTransaction` move as a single finality-aware state instead
+    /// of a monotonic flag beside a last-writer-wins link (which could
+    /// diverge: a mempool competitor replacing a confirmed link under a
+    /// stuck-true flag, or a reorg demotion never lowering it).
+    ///
+    /// - Re-observation of the LINKED spender follows its context in both
+    ///   directions: a demotion is chain truth — key-wallet emits
+    ///   `InBlock` → `Mempool` context updates on a reorg — and keeping a
+    ///   stale flag would wedge the coin out of the restore set.
+    /// - A DIFFERENT in-block spender takes the link and the flag: its
+    ///   claim is chain-attested and mutually exclusive with the old one.
+    /// - A mempool competitor never displaces confirmed evidence: link and
+    ///   flag both stay.
+    /// - When nothing confirmed is at stake, the newest observation wins
+    ///   the link and the flag stays down.
+    private static func reconcileSpendObservation(
+        currentSpenderTxid: Data?,
+        currentIsSpent: Bool,
+        incoming: PersistentTransaction,
+        incomingTxid: Data
+    ) -> (adoptLink: Bool, isSpent: Bool) {
+        let incomingInBlock = spendIsInBlock(incoming)
+        if currentSpenderTxid == incomingTxid {
+            return (adoptLink: true, isSpent: incomingInBlock)
+        }
+        if incomingInBlock {
+            return (adoptLink: true, isSpent: true)
+        }
+        if currentIsSpent {
+            return (adoptLink: false, isSpent: true)
+        }
+        return (adoptLink: true, isSpent: false)
     }
 
     private func markUtxoSpent(_ entry: SpentOutPointFFI) {
@@ -1427,21 +1461,26 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     predicate: #Predicate { $0.txid == spendingTxid }
                 )
                 spendingTx = try? backgroundContext.fetch(txDescriptor).first
-                if let spending = spendingTx {
-                    txo.spendingTransaction = spending
-                }
             }
         }
-        // Gate the `isSpent` flip on the spending tx being in a
-        // block — same rule as `resolveInputOutpoint`. When the
-        // spending tx isn't resolved this flush, leave `isSpent`
-        // alone instead of writing `false`: the next upsert round
-        // carrying the spending tx will run `resolveInputOutpoint`
-        // and set it then. Writing `false` here would flap a
-        // previously-true `isSpent` on every reordered emit.
+        // When the spending tx isn't resolved this flush, leave the row
+        // alone instead of writing `false`: the next upsert round carrying
+        // the spending tx will run `resolveInputOutpoint` and settle it
+        // then. Writing `false` here would flap a previously-true
+        // `isSpent` on every reordered emit.
         if let spending = spendingTx {
-            // Monotonic — same rule as `resolveInputOutpoint`.
-            txo.isSpent = txo.isSpent || Self.spendIsInBlock(spending)
+            // Flag and link move together — see
+            // `reconcileSpendObservation` for the finality rule.
+            let verdict = Self.reconcileSpendObservation(
+                currentSpenderTxid: txo.spendingTransaction?.txid,
+                currentIsSpent: txo.isSpent,
+                incoming: spending,
+                incomingTxid: spendingTxid
+            )
+            txo.isSpent = verdict.isSpent
+            if verdict.adoptLink, txo.spendingTransaction?.txid != spendingTxid {
+                txo.spendingTransaction = spending
+            }
         }
         txo.lastUpdated = Date()
         // The spend signal landed both via the legacy
@@ -5099,19 +5138,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             entry.unresolved_asset_lock_tx_records = unresolvedBuf.map { UnsafePointer($0) }
             entry.unresolved_asset_lock_tx_records_count = UInt(unresolvedCount)
 
-            // Which transaction took each output this wallet spent in a
-            // block. Rust filters this down to the outpoints its unresolved
-            // locks spend and uses it to screen them for a double spend —
-            // evidence it cannot obtain for itself at load, since the
-            // transaction history that screen normally reads is empty then.
-            let (inputSpendBuf, inputSpendCount) =
-                buildAssetLockInputSpendBuffer(
-                    walletId: w.walletId,
-                    allocation: allocation
-                )
-            entry.asset_lock_input_spends = inputSpendBuf.map { UnsafePointer($0) }
-            entry.asset_lock_input_spends_count = UInt(inputSpendCount)
-
             // Provider special transactions (ProRegTx / ProUpServTx /
             // ProUpRegTx / ProUpRevTx) re-staged onto the provider-key
             // accounts so #876 retention keeps them and the masternode
@@ -5488,121 +5514,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         return (buf, written)
     }
 
-    /// Report which transaction the mirror recorded as spending the inputs of
-    /// this wallet's unresolved asset locks. Emits settled spends only: the
-    /// loop below is gated on `isSpent`, which this mirror flips exclusively
-    /// for in-block spenders, so mempool / InstantSend sightings never cross
-    /// here — a consumer that needs unsettled spends must widen this gate
-    /// first. Within that set the spender is whatever the mirror linked,
-    /// the lock's own transaction included; Rust filters per lock.
-    ///
-    /// Rust knows which outpoints its locks spend but not who took them: the
-    /// in-memory transaction history it would normally consult is empty at
-    /// load. The spender's context is passed through verbatim; how much
-    /// finality each emitted context carries is Rust's decision.
-    private func buildAssetLockInputSpendBuffer(
-        walletId: Data,
-        allocation: LoadAllocation
-    ) -> (UnsafeMutablePointer<AssetLockInputSpendFFI>?, Int) {
-        // Resolve the outpoints of interest first — the inputs of the
-        // unresolved asset locks — and query only those. Fetching the
-        // wallet's spent TXOs and capping the result would be wrong: nothing
-        // orders that set, so a wallet with more history than the cap could
-        // return a page that excludes the very outpoint the screen needs, and
-        // startup would be back to no evidence and a full proof wait.
-        let lockInputs = unresolvedAssetLockInputs(walletId: walletId)
-        guard !lockInputs.isEmpty else { return (nil, 0) }
-
-        // One point lookup per outpoint, rather than one query with the whole
-        // set inlined: `outpoint` is the unique key, so each fetch is an index
-        // hit, and equality is the one predicate shape this file already
-        // relies on everywhere. A captured-collection `contains` would have to
-        // survive SwiftData's own translation, and this query runs on the load
-        // path where a translation failure is not something `try?` can catch.
-        //
-        // Everything else is decided in Swift, on the fetched row — never in
-        // the predicate. In particular `spendingTransaction` is read here and
-        // not chased in a predicate: that drops SwiftData onto a
-        // nested-optional codepath that crashes the process (see
-        // `PersistentTxo.isSpent`, which exists for exactly this reason).
-        // `isSpent` is likewise checked in Swift; it flips under the same
-        // in-block condition the conflict screen requires of a spender, so it
-        // stays as the guard, just on this side of the fetch.
-        //
-        // Rows are collected into an array first: a row with no spender or a
-        // malformed txid is skipped, so the count is not known until the loop
-        // ends — and registering the buffer for a count larger than the
-        // initialized prefix would have `release()` deinitialize uninitialized
-        // memory, which is UB.
-        var rows: [AssetLockInputSpendFFI] = []
-        rows.reserveCapacity(lockInputs.count)
-        for key in lockInputs {
-            var descriptor = FetchDescriptor<PersistentTxo>(
-                predicate: #Predicate { $0.outpoint == key }
-            )
-            descriptor.fetchLimit = 1
-            descriptor.relationshipKeyPathsForPrefetching = [\.spendingTransaction]
-            // Ownership goes through `resolvedWalletId`, not the raw column:
-            // `PersistentTxo.walletId` is empty on rows written before it
-            // existed, and the spend-reconciliation path sets `isSpent` and
-            // the spender link without backfilling it. Comparing the column
-            // directly discards exactly the legacy rows a confirmed
-            // conflicting spender is recorded on, leaving the restored map
-            // empty and startup back in the full proof wait. This is the same
-            // fallback `loadWalletList` already uses.
-            guard let txo = try? backgroundContext.fetch(descriptor).first else { continue }
-            guard Self.resolvedWalletId(of: txo) == walletId else {
-                // Ownership can miss for a same-seed twin wallet entry (the
-                // outpoint-unique row belongs to the sibling) or a fully
-                // orphaned legacy row. Evidence found-but-discarded must at
-                // least be diagnosable, since the cost is the full proof
-                // wait this path exists to remove.
-                SDKLogger.log(
-                    "load: asset-lock input-spend row skipped on ownership; "
-                        + "row resolves to a different wallet")
-                continue
-            }
-            guard txo.isSpent,
-                  let spender = txo.spendingTransaction,
-                  spender.txid.count == 32
-            else { continue }
-
-            // The row's identity comes from `key` — the 36-byte outpoint the
-            // fetch matched on — not from the fetched row's computed `txid`
-            // property, whose primary source is the `transaction`
-            // relationship. On a corrupt row the two can diverge, and Rust
-            // keys the lock's inputs by exactly this outpoint: deriving the
-            // fields from anything else would turn the keyed exact match
-            // back into a guess.
-            let keyBytes = [UInt8](key)
-            guard keyBytes.count == 36 else { continue }
-            var row = AssetLockInputSpendFFI()
-            keyBytes[0..<32].withUnsafeBytes { src in
-                Swift.withUnsafeMutableBytes(of: &row.prev_txid) { dst in
-                    dst.copyMemory(from: src)
-                }
-            }
-            row.vout = UInt32(keyBytes[32])
-                | (UInt32(keyBytes[33]) << 8)
-                | (UInt32(keyBytes[34]) << 16)
-                | (UInt32(keyBytes[35]) << 24)
-            spender.txid.withUnsafeBytes { src in
-                Swift.withUnsafeMutableBytes(of: &row.spender_txid) { dst in
-                    dst.copyMemory(from: src)
-                }
-            }
-            row.spender_height = spender.blockHeight
-            row.spender_context = spender.context
-            rows.append(row)
-        }
-        guard !rows.isEmpty else { return (nil, 0) }
-
-        let buf = UnsafeMutablePointer<AssetLockInputSpendFFI>.allocate(capacity: rows.count)
-        buf.initialize(from: rows, count: rows.count)
-        allocation.assetLockInputSpendBuffers.append((buf, rows.count))
-        return (buf, rows.count)
-    }
-
     /// The 36-byte outpoints spent by this wallet's unresolved asset locks
     /// (`statusRaw < 2`), decoded from the funding transaction each lock row
     /// carries. Deduplicated, since two locks built from the same UTXO name
@@ -5662,22 +5573,30 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     }
 
     /// Build the per-wallet `UnresolvedAssetLockTxRecordFFI` array
-    /// for the load callback. One entry per `PersistentAssetLock` row
+    /// for the load callback: one entry per `PersistentAssetLock` row
     /// at `statusRaw < 2` (Built / Broadcast) whose funding tx has a
-    /// matching `PersistentTransaction` row. Returns `(nil, 0)` when
+    /// matching `PersistentTransaction` row, plus one entry for each
+    /// settled spender of those locks' inputs. Returns `(nil, 0)` when
     /// there are no eligible rows.
     ///
     /// The Rust side reads each row and re-inserts the decoded
-    /// transaction into the matching BIP44 account's in-memory
-    /// `transactions()` map so the next chain-lock event can promote
-    /// it via `apply_chain_lock`. See
+    /// transaction into the matching account's in-memory
+    /// `transactions()` map. That serves two consumers with one
+    /// mechanism: the next chain-lock event can promote the funding
+    /// records via `apply_chain_lock`, and the double-spend screen in
+    /// `resume_asset_lock` — which reads live history, empty at load
+    /// apart from this array — can see a confirmed sibling that
+    /// already took a lock's input. Restoring the spenders as ordinary
+    /// records rather than a snapshot keeps the evidence live:
+    /// promotion and reorg demotion both reach it, so a provisional
+    /// conflict verdict can actually resolve. See
     /// `restore_unresolved_asset_lock_tx_records` for the Rust-side
     /// contract.
     ///
     /// Rows with no matching `PersistentTransaction` (e.g. an
     /// orphaned asset-lock row whose tx never made it into the
     /// transaction table) are skipped — the Rust side has no way to
-    /// reconstruct the funding tx without its consensus bytes, so
+    /// reconstruct a transaction without its consensus bytes, so
     /// projecting an empty row would just bloat the FFI surface.
     private func buildUnresolvedAssetLockTxRecordBuffer(
         walletId: Data,
@@ -5697,50 +5616,20 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             return (nil, 0)
         }
 
-        // Pre-query the matching `PersistentTransaction` rows.
-        // `PersistentAssetLock.outPointHex` carries the txid in
-        // display order; `PersistentTransaction.txid` is wire order
-        // — the same flip `decodeOutPointHex` already performs.
-        let buf = UnsafeMutablePointer<UnresolvedAssetLockTxRecordFFI>.allocate(
-            capacity: locks.count
-        )
-        var written = 0
-        for lock in locks {
-            guard let outpoint = decodeOutPointHex(lock.outPointHex) else {
-                continue
-            }
-            let txid = outpoint.prefix(32)
-            let txidData = Data(txid)
-            let txDescriptor = FetchDescriptor<PersistentTransaction>(
-                predicate: #Predicate { $0.txid == txidData }
-            )
-            guard let txRow = try? backgroundContext.fetch(txDescriptor).first else {
-                // No matching tx — Rust can't reconstruct the
-                // funding body without its consensus bytes. Skip.
-                continue
-            }
+        // Project one `PersistentTransaction` row into an FFI entry,
+        // staging its consensus bytes on the allocation (freed by
+        // `LoadAllocation.release()` after Rust returns). A stub row
+        // whose real upsert never arrived has no bytes and is skipped.
+        func recordEntry(
+            for txRow: PersistentTransaction, accountIndex: UInt32
+        ) -> UnresolvedAssetLockTxRecordFFI? {
             let txBytes = txRow.transactionData
-            guard !txBytes.isEmpty else {
-                // A stub row whose real upsert never arrived;
-                // skip rather than emit an undecodable buffer.
-                continue
-            }
-
-            // Allocate the consensus-bytes buffer. Lifetime is
-            // owned by `allocation.scalarBuffers`, freed by
-            // `LoadAllocation.release()` after Rust returns.
+            guard !txBytes.isEmpty else { return nil }
             let txBuf = UnsafeMutablePointer<UInt8>.allocate(capacity: txBytes.count)
             txBytes.copyBytes(to: txBuf, count: txBytes.count)
             allocation.scalarBuffers.append((txBuf, txBytes.count))
-
             var entry = UnresolvedAssetLockTxRecordFFI()
-            // Use the row's persisted `accountIndexRaw` — the Rust
-            // side looks up `standard_bip44_accounts.get(&account_index)`
-            // and silently drops the restore if the account doesn't
-            // exist, so passing the actual funding account is
-            // load-bearing for any wallet that funded an asset lock
-            // from a non-zero BIP44 account index.
-            entry.account_index = UInt32(bitPattern: lock.accountIndexRaw)
+            entry.account_index = accountIndex
             entry.tx_bytes = txBuf
             entry.tx_bytes_len = UInt(txBytes.count)
             entry.context_raw = txRow.context
@@ -5752,15 +5641,72 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             }
             entry.block_timestamp = UInt64(txRow.blockTimestamp)
             entry.first_seen = txRow.firstSeen
-            buf[written] = entry
-            written += 1
+            return entry
         }
-        if written == 0 {
-            buf.deallocate()
-            return (nil, 0)
+
+        var entries: [UnresolvedAssetLockTxRecordFFI] = []
+        var emittedTxids = Set<Data>()
+
+        for lock in locks {
+            guard let outpoint = decodeOutPointHex(lock.outPointHex) else {
+                continue
+            }
+            // `PersistentAssetLock.outPointHex` carries the txid in
+            // display order; `PersistentTransaction.txid` is wire order
+            // — the flip `decodeOutPointHex` already performs.
+            let txidData = Data(outpoint.prefix(32))
+            guard !emittedTxids.contains(txidData) else { continue }
+            let txDescriptor = FetchDescriptor<PersistentTransaction>(
+                predicate: #Predicate { $0.txid == txidData }
+            )
+            // Use the row's persisted `accountIndexRaw` — the Rust
+            // side routes by this index and silently drops the restore
+            // if the account doesn't exist, so passing the actual
+            // funding account is load-bearing for any wallet that
+            // funded an asset lock from a non-zero account index.
+            guard let txRow = try? backgroundContext.fetch(txDescriptor).first,
+                  let entry = recordEntry(
+                      for: txRow,
+                      accountIndex: UInt32(bitPattern: lock.accountIndexRaw)
+                  )
+            else { continue }
+            entries.append(entry)
+            emittedTxids.insert(txidData)
         }
-        allocation.unresolvedAssetLockTxRecordArrays.append((buf, written))
-        return (buf, written)
+
+        // The settled spenders of the locks' inputs ride the same array.
+        // Scope: settled only (`context >= 2`) — the same minimum-surface
+        // rule as `statusRaw < 2` above; an unsettled sighting can still
+        // be replaced and the screen deliberately ignores it, so shipping
+        // it would widen the restore for nothing. Which contexts count as
+        // final stays Rust's call; this only bounds the payload.
+        for key in unresolvedAssetLockInputs(walletId: walletId) {
+            var txoDescriptor = FetchDescriptor<PersistentTxo>(
+                predicate: #Predicate { $0.outpoint == key }
+            )
+            txoDescriptor.fetchLimit = 1
+            txoDescriptor.relationshipKeyPathsForPrefetching = [\.spendingTransaction]
+            guard let txo = try? backgroundContext.fetch(txoDescriptor).first,
+                  Self.resolvedWalletId(of: txo) == walletId,
+                  let spender = txo.spendingTransaction,
+                  spender.context >= 2,
+                  !emittedTxids.contains(spender.txid)
+            else { continue }
+            let accountIndex = txo.account?.accountIndex ?? 0
+            guard let entry = recordEntry(for: spender, accountIndex: accountIndex) else {
+                continue
+            }
+            entries.append(entry)
+            emittedTxids.insert(spender.txid)
+        }
+
+        guard !entries.isEmpty else { return (nil, 0) }
+        let buf = UnsafeMutablePointer<UnresolvedAssetLockTxRecordFFI>.allocate(
+            capacity: entries.count
+        )
+        buf.initialize(from: entries, count: entries.count)
+        allocation.unresolvedAssetLockTxRecordArrays.append((buf, entries.count))
+        return (buf, entries.count)
     }
 
     /// Stage this wallet's persisted provider special transactions
@@ -6607,10 +6553,6 @@ private final class LoadAllocation {
     /// so the next chain-lock event can cascade-promote them. The
     /// `tx_bytes` buffer each row references lives in `scalarBuffers`.
     var unresolvedAssetLockTxRecordArrays: [(UnsafeMutablePointer<UnresolvedAssetLockTxRecordFFI>, Int)] = []
-    /// `AssetLockInputSpendFFI` arrays per wallet — which transaction took
-    /// each output this wallet spent, so Rust can screen an unresolved asset
-    /// lock for a double spend at load time.
-    var assetLockInputSpendBuffers: [(UnsafeMutablePointer<AssetLockInputSpendFFI>, Int)] = []
     /// Per-wallet `ProviderSpecialTxRestoreEntryFFI` arrays — provider
     /// special txs re-staged so #876 retention keeps them resident after a
     /// restart. The `tx_bytes` buffer each row references lives in
@@ -6684,10 +6626,6 @@ private final class LoadAllocation {
             ptr.deallocate()
         }
         for (ptr, count) in assetLockArrays {
-            ptr.deinitialize(count: count)
-            ptr.deallocate()
-        }
-        for (ptr, count) in assetLockInputSpendBuffers {
             ptr.deinitialize(count: count)
             ptr.deallocate()
         }

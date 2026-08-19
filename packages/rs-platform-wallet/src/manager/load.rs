@@ -67,7 +67,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 wallet_info,
                 identity_manager,
                 unused_asset_locks,
-                asset_lock_input_spends,
             } = wallet_state;
 
             // Flatten the (account → outpoint → lock) map into the flat
@@ -100,7 +99,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 generation: Arc::clone(&generation),
                 identity_manager: IdentityManager::from(identity_manager),
                 tracked_asset_locks,
-                restored_asset_lock_input_spends: asset_lock_input_spends,
                 dpns_name_states: std::collections::BTreeMap::new(),
             };
 
@@ -272,7 +270,6 @@ mod idempotent_load_tests {
                     wallet_info: self.managed.clone(),
                     identity_manager: IdentityManagerStartState::default(),
                     unused_asset_locks: BTreeMap::new(),
-                    asset_lock_input_spends: Default::default(),
                 },
             );
             Ok(ClientStartState {
