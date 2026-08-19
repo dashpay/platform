@@ -96,6 +96,58 @@ describe('analyseConfigFactory', () => {
     expect(problems[0].getDescription()).to.include('SSL certificate files are not found');
   });
 
+  describe('ZeroSSL remediation', () => {
+    it('should offer both renewing with ZeroSSL and switching to Let\'s Encrypt', () => {
+      // Whether renewing works depends on the operator's ZeroSSL plan, which dashmate cannot
+      // see, so both routes are offered rather than one being asserted to be the answer.
+      const [problem] = analyseSslSample({
+        error: ZEROSSL_ERRORS.CERTIFICATE_EXPIRES_SOON,
+        data: { certificate: { expires: '2026-01-01' } },
+      });
+
+      expect(problem.getSolution()).to.include('dashmate ssl obtain');
+      expect(problem.getSolution()).to.include('platform.gateway.ssl.provider letsencrypt');
+    });
+
+    it('should state the cost of switching so the choice is informed', () => {
+      const [problem] = analyseSslSample({
+        error: ZEROSSL_ERRORS.CERTIFICATE_EXPIRES_SOON,
+        data: { certificate: { expires: '2026-01-01' } },
+      });
+
+      expect(problem.getSolution()).to.include('6 days');
+    });
+
+    it('should surface the reason ZeroSSL itself gave', () => {
+      const [problem] = analyseSslSample({
+        error: ZEROSSL_ERRORS.ZERO_SSL_API_ERROR,
+        data: { error: { message: 'Limit of certificates on your ZeroSSL account was reached' } },
+      });
+
+      expect(problem.getDescription()).to.include('Limit of certificates');
+      expect(problem.getSolution()).to.include('platform.gateway.ssl.provider letsencrypt');
+    });
+
+    it('should still report an API failure that carried no message', () => {
+      // The description doubles as the presence check, so an empty one dropped the problem
+      const problems = analyseSslSample({
+        error: ZEROSSL_ERRORS.ZERO_SSL_API_ERROR,
+        data: {},
+      });
+
+      expect(problems).to.have.lengthOf(1);
+    });
+
+    it('should not suggest a command that does not exist', () => {
+      const [problem] = analyseSslSample({
+        error: ZEROSSL_ERRORS.CERTIFICATE_IS_NOT_VALID,
+        data: {},
+      });
+
+      expect(problem.getSolution()).to.not.include('ssl zerossl obtain');
+    });
+  });
+
   it('should not report a problem for a valid certificate', () => {
     const problems = analyseSslSample({ data: {} });
 

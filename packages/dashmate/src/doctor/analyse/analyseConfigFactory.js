@@ -5,6 +5,19 @@ import { ERRORS as ZEROSSL_ERRORS } from '../../ssl/zerossl/validateZeroSslCerti
 import { SEVERITY } from '../Prescription.js';
 import Problem from '../Problem.js';
 
+/**
+ * Whether a ZeroSSL certificate can be renewed depends on the operator's plan, which dashmate
+ * cannot see. Both routes are offered rather than assuming which one applies, and the cost of
+ * switching is stated so the choice is an informed one.
+ */
+const LETSENCRYPT_ALTERNATIVE = chalk`Or switch to Let's Encrypt, which issues certificates for IP addresses free of
+charge and renews them automatically:
+  {bold.cyanBright dashmate config set platform.gateway.ssl.provider letsencrypt}
+  {bold.cyanBright dashmate config set platform.gateway.ssl.providerConfigs.letsencrypt.email EMAIL}
+  {bold.cyanBright dashmate ssl obtain}
+Its certificates for IP addresses are valid for 6 days and renew every few days on
+their own, rather than the 90 days a ZeroSSL certificate lasts.`;
+
 export default function analyseConfigFactory() {
   /**
    * @typedef analyseConfig
@@ -113,7 +126,10 @@ and revoke the previous certificate in the ZeroSSL dashboard`,
               },
               [ZEROSSL_ERRORS.CERTIFICATE_EXPIRES_SOON]: {
                 description: chalk`ZeroSSL certificate expires at ${ssl?.data?.certificate?.expires}.`,
-                solution: chalk`Please run {bold.cyanBright dashmate ssl obtain} to get a new one`,
+                solution: chalk`Please run {bold.cyanBright dashmate ssl obtain} to get a new one, which needs an
+available certificate on your ZeroSSL plan.
+
+${LETSENCRYPT_ALTERNATIVE}`,
               },
               [ZEROSSL_ERRORS.CERTIFICATE_IS_NOT_VALIDATED]: {
                 description: chalk`ZeroSSL certificate is not approved.`,
@@ -121,11 +137,22 @@ and revoke the previous certificate in the ZeroSSL dashboard`,
               },
               [ZEROSSL_ERRORS.CERTIFICATE_IS_NOT_VALID]: {
                 description: chalk`ZeroSSL certificate is not valid.`,
-                solution: chalk`Please run {bold.cyanBright dashmate ssl zerossl obtain} to get a new one.`,
+                solution: chalk`Please run {bold.cyanBright dashmate ssl obtain} to get a new one.
+
+${LETSENCRYPT_ALTERNATIVE}`,
               },
               [ZEROSSL_ERRORS.ZERO_SSL_API_ERROR]: {
-                description: ssl?.data?.error?.message,
-                solution: chalk`Please contact ZeroSSL support if needed.`,
+                // ZeroSSL's own wording is the most accurate account of what went wrong - it
+                // names an exhausted certificate limit, an unpaid invoice or a rejected key
+                // directly. The fallback keeps the problem reported when it sends none, since
+                // an empty description would otherwise drop it silently.
+                description: ssl?.data?.error?.message
+                  ? chalk`ZeroSSL rejected the request: ${ssl.data.error.message}`
+                  : chalk`The ZeroSSL API could not be reached, so the certificate cannot be checked or renewed.`,
+                solution: chalk`If this is something you can resolve with ZeroSSL, such as an expired plan or a
+rejected API key, fix it there and run {bold.cyanBright dashmate ssl obtain}.
+
+${LETSENCRYPT_ALTERNATIVE}`,
               },
             };
 
