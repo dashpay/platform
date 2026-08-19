@@ -2368,6 +2368,11 @@ fn build_wallet_restore_entry(
         tracked_asset_locks_count: 0,
         unresolved_asset_lock_tx_records: ptr::null(),
         unresolved_asset_lock_tx_records_count: 0,
+        // Not staged on this host yet: the Kotlin persister has no
+        // equivalent of the Swift spend-linkage query, so the conflict
+        // screen keeps its previous transaction-history behaviour here.
+        asset_lock_input_spends: ptr::null(),
+        asset_lock_input_spends_count: 0,
         core_address_pools: ptr::null(),
         core_address_pools_count: 0,
         last_applied_chain_lock_bytes: ptr::null(),

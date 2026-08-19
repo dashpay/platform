@@ -40,6 +40,7 @@ impl WalletInfoInterface for PlatformWalletInfo {
             generation: std::sync::Arc::new(super::core::WalletGeneration::new()),
             identity_manager: super::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
+            restored_asset_lock_input_spends: Default::default(),
             dpns_name_states: std::collections::BTreeMap::new(),
         }
     }
@@ -53,6 +54,7 @@ impl WalletInfoInterface for PlatformWalletInfo {
             generation: std::sync::Arc::new(super::core::WalletGeneration::new()),
             identity_manager: super::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
+            restored_asset_lock_input_spends: Default::default(),
             dpns_name_states: std::collections::BTreeMap::new(),
         }
     }

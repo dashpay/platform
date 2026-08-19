@@ -363,6 +363,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             generation: Arc::clone(&generation),
             identity_manager: crate::wallet::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
+            restored_asset_lock_input_spends: Default::default(),
             dpns_name_states: std::collections::BTreeMap::new(),
         };
 

@@ -4,7 +4,8 @@ use std::collections::BTreeMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
-use dashcore::OutPoint;
+use dashcore::prelude::CoreBlockHeight;
+use dashcore::{OutPoint, Txid};
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 #[cfg(feature = "shielded")]
@@ -228,6 +229,32 @@ fn plan_shield_inputs(
     })
 }
 
+/// What the host mirror recorded about the transaction that spent an
+/// outpoint, restored at load.
+///
+/// Its one consumer is the double-spend screen in `resume_asset_lock`, which
+/// needs proof the outpoint is *settled* and so acts only on `in_block`
+/// spenders — a mempool spend can still be replaced. The iOS host currently
+/// emits only in-block spends (its builder is gated on the mirror's own
+/// settled flag), so rows with `in_block: false` are decoded defensively but
+/// do not occur in practice; any future reader that needs unsettled spends
+/// must first widen the host-side gate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RestoredSpend {
+    /// The transaction the mirror recorded as spending the outpoint.
+    pub spender: Txid,
+    /// Height of the block holding it, when it reached one.
+    pub height: Option<CoreBlockHeight>,
+    /// Whether it reached a block at all — the bar for "settled".
+    pub in_block: bool,
+    /// Whether the mirror itself observed that block chain-locked. This is
+    /// the only basis on which restored evidence may claim chainlock
+    /// finality — the screen deliberately does not promote a persisted
+    /// height against the live boundary, because a snapshot height cannot
+    /// prove the block survived to be buried by it.
+    pub chain_locked: bool,
+}
+
 /// Consolidated mutable state for a platform wallet.
 ///
 /// Lives inside `WalletManager<PlatformWalletInfo>.wallet_infos`. The `Wallet`
@@ -257,6 +284,20 @@ pub struct PlatformWalletInfo {
     pub(crate) generation: Arc<WalletGeneration>,
     pub identity_manager: IdentityManager,
     pub tracked_asset_locks: BTreeMap<OutPoint, TrackedAssetLock>,
+    /// What the persistence mirror recorded as the spender of each outpoint
+    /// a tracked asset lock spends, keyed by outpoint. Includes the lock's
+    /// own spend of its inputs — the host emits whatever the mirror linked,
+    /// and consumers filter out the lock's own txid themselves.
+    ///
+    /// Restored at load only, and consulted strictly AFTER the live history
+    /// scan: the double-spend screen in `resume_asset_lock` normally reads
+    /// `core_wallet.transaction_history()`, but the FFI load path leaves
+    /// that map empty apart from the unresolved locks themselves, so at
+    /// app-launch catch-up — the one moment the screen runs — it has
+    /// nothing to scan. This snapshot fills that blind spot (and the
+    /// chainlocked-spender eviction gap); live records outrank it whenever
+    /// they exist, because nothing demotes these rows after a reorg.
+    pub restored_asset_lock_input_spends: BTreeMap<OutPoint, RestoredSpend>,
     /// DPNS name states with sale price (username marketplace), keyed by
     /// domain document id. Session-lifetime working set for the
     /// marketplace sync/orchestration ops; the durable copy is the
