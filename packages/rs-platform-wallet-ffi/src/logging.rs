@@ -36,6 +36,19 @@ pub unsafe extern "C" fn platform_wallet_enable_file_logging(
     enable_file_logging(level_to_directive(level), &path)
 }
 
+/// Level for the network-diagnostics targets (`rs_dapi_client`,
+/// `rs_sdk_trusted_context_provider`): their useful events (per-request
+/// execution, address ban/unban, quorum cache misses) sit at `debug`, so
+/// they get at least that regardless of the caller's global level — but a
+/// caller asking for `trace` still gets `trace`.
+fn diag_level(log_level: &str) -> &str {
+    if log_level == "trace" {
+        "trace"
+    } else {
+        "debug"
+    }
+}
+
 fn enable_file_logging(log_level: &str, path: &Path) -> bool {
     let Some(f_sdk) = open_file(path.join("dash_sdk").join("run.log")) else {
         return false;
@@ -108,7 +121,8 @@ fn enable_file_logging(log_level: &str, path: &Path) -> bool {
         .with_filter(tracing_subscriber::EnvFilter::new(format!(
             "dapi_grpc={log_level},tonic={log_level},h2={log_level},\
              hyper={log_level},tower={log_level},\
-             rs_dapi_client=debug,rs_sdk_trusted_context_provider=debug"
+             rs_dapi_client={diag},rs_sdk_trusted_context_provider={diag}",
+            diag = diag_level(log_level)
         )));
 
     if fs::write(path.join("build_info.txt"), build_info_string()).is_err() {
@@ -159,7 +173,8 @@ fn broad_env_filter(log_level: &str) -> tracing_subscriber::EnvFilter {
          dash_spv={log_level},key_wallet={log_level},\
          dapi_grpc={log_level},h2={log_level},tower={log_level},\
          hyper={log_level},tonic={log_level},\
-         rs_dapi_client=debug,rs_sdk_trusted_context_provider=debug"
+         rs_dapi_client={diag},rs_sdk_trusted_context_provider={diag}",
+        diag = diag_level(log_level)
     );
 
     tracing_subscriber::EnvFilter::try_from_default_env()

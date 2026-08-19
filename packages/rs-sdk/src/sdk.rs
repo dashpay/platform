@@ -97,9 +97,12 @@ const DEFAULT_REQUEST_SETTINGS: RequestSettings = RequestSettings {
 ///
 /// Seeds whose recorded Platform TLS probe shows a certificate that this
 /// client's rustls stack would deterministically reject (`Expired`,
-/// `SelfSigned`, `Untrusted`, `NoHandshake`) are skipped: every connect to
-/// them fails the handshake, so keeping them in rotation only costs
-/// retry/ban churn. `Valid` and `Unknown` (not probed) are kept. If the
+/// `SelfSigned`, `Untrusted`) are skipped: every connect to them fails the
+/// handshake, so keeping them in rotation only costs retry/ban churn.
+/// `NoHandshake` is skipped only when the probe's TCP connect succeeded
+/// (`reachable == Ok`) — the prober also stamps `NoHandshake` on TCP
+/// timeouts and probe-budget expiry, which are transient conditions best
+/// left to runtime banning. `Valid` and `Unknown` (not probed) are kept. If the
 /// filter would empty the list (e.g. a seed file with all-stale probes),
 /// it falls back to the unfiltered set so the client can still bootstrap
 /// and let runtime banning sort it out.
@@ -124,17 +127,20 @@ fn default_address_list_for_network(network: Network) -> AddressList {
                 continue;
             };
             if skip_bad_tls {
-                let ssl = seed.platform.as_ref().map(|p| p.ssl);
-                if matches!(
-                    ssl,
-                    Some(
-                        SslStatus::Expired
-                            | SslStatus::SelfSigned
-                            | SslStatus::Untrusted
-                            | SslStatus::NoHandshake
-                    )
-                ) {
-                    continue;
+                if let Some(platform) = seed.platform.as_ref() {
+                    let deterministic_bad = match platform.ssl {
+                        SslStatus::Expired | SslStatus::SelfSigned | SslStatus::Untrusted => true,
+                        // Also stamped on TCP timeout / probe-budget expiry,
+                        // which are transient — only trust it when the TCP
+                        // connect itself succeeded.
+                        SslStatus::NoHandshake => {
+                            platform.reachable == dash_network_seeds::Reachability::Ok
+                        }
+                        SslStatus::Valid | SslStatus::Unknown => false,
+                    };
+                    if deterministic_bad {
+                        continue;
+                    }
                 }
             }
             let url = format!("https://{}:{}", seed.address.ip(), port);

@@ -725,7 +725,16 @@ impl ContextProvider for TrustedHttpContextProvider {
 
         let this = self.clone();
         let quorum =
-            dash_async::block_on(async move { this.find_quorum(quorum_type, quorum_hash).await })?
+            dash_async::block_on(async move { this.find_quorum(quorum_type, quorum_hash).await })
+                .map_err(|e| {
+                    tracing::warn!(
+                        quorum_type,
+                        quorum_hash = %hex::encode(quorum_hash),
+                        elapsed_ms = ?elapsed_ms(),
+                        "quorum refetch failed to execute: {}", e
+                    );
+                    e
+                })?
                 .map_err(|e| {
                     tracing::warn!(
                         quorum_type,
