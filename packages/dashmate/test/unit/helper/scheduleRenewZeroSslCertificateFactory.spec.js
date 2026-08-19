@@ -65,4 +65,33 @@ describe('scheduleRenewZeroSslCertificateFactory', () => {
       expect(setTimeoutStub.firstCall.args[1]).to.equal(60 * 60 * 1000);
     });
   });
+
+  it('should resume obtaining a pending certificate that has no expiry date', async function it() {
+    const clock = this.sinon.useFakeTimers({
+      now: new Date('2026-08-19T00:00:00.000Z'),
+    });
+    this.sinon.stub(console, 'log');
+
+    const certificate = {
+      id: 'pending-certificate-id',
+      status: 'pending_validation',
+      expires: null,
+      isExpiredInDays: this.sinon.stub().returns(false),
+    };
+    const tasks = {
+      run: this.sinon.stub().resolves(),
+    };
+
+    getCertificate.resolves(certificate);
+    obtainZeroSSLCertificateTask.returns(tasks);
+
+    await scheduleRenewZeroSslCertificate(config);
+    await clock.tickAsync(3000);
+
+    expect(obtainZeroSSLCertificateTask).to.have.been.calledOnceWithExactly(config);
+    expect(tasks.run).to.have.been.calledOnceWithExactly({
+      expirationDays: 3,
+      noRetry: true,
+    });
+  });
 });
