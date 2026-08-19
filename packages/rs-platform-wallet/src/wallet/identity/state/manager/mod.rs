@@ -35,7 +35,7 @@ use crate::changeset::IdentityManagerStartState;
 use crate::wallet::platform_wallet::WalletId;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Plain alias for the BIP-9 HD identity index used as the inner-bucket
 /// key for wallet-owned identities. Keeps the type signatures readable
@@ -95,6 +95,24 @@ pub struct IdentityManager {
     /// callers that need to drop an identity reach the buckets through
     /// `remove_for_apply` so the index stays in sync.
     location_index: BTreeMap<Identifier, IdentityLocation>,
+
+    /// Wallet ids whose most recent identity-discovery scan answered
+    /// EVERY gap-limit probe — a scan with zero failed probes. The
+    /// ordered-startup path (`crate::manager::startup`) takes its
+    /// warm-launch shortcut — skip the network scan when a local identity
+    /// is already on file — ONLY for wallets in this set. A wallet whose
+    /// last scan was incomplete (a failed probe left an index unprobed, or
+    /// the scan was abandoned at the startup budget) is absent, so startup
+    /// re-runs discovery on the next launch instead of shortcutting past an
+    /// index a failed probe skipped and stranding the identity there
+    /// (issue #4365).
+    ///
+    /// Round-trips through
+    /// [`IdentityManagerStartState`](crate::changeset::IdentityManagerStartState)
+    /// so a genuinely-complete wallet keeps its shortcut across restart on
+    /// backends that persist it. Absent-on-load defaults to "not complete",
+    /// the safe direction: re-scan rather than strand.
+    fully_discovered_wallets: BTreeSet<WalletId>,
 }
 
 impl From<IdentityManagerStartState> for IdentityManager {
@@ -102,6 +120,7 @@ impl From<IdentityManagerStartState> for IdentityManager {
         let IdentityManagerStartState {
             out_of_wallet_identities,
             wallet_identities,
+            fully_discovered_wallets,
         } = state;
 
         // Rebuild the side-index from the two buckets — `IdentityManagerStartState`
@@ -127,6 +146,7 @@ impl From<IdentityManagerStartState> for IdentityManager {
             out_of_wallet_identities,
             wallet_identities,
             location_index,
+            fully_discovered_wallets,
         }
     }
 }
@@ -476,6 +496,89 @@ mod tests {
         assert!(manager.identity(&owned_b1).is_some());
         assert!(manager.identity(&observed).is_some());
         assert_eq!(manager.identity_count(), 4);
+    }
+
+    /// #4365: the identity-discovery completion flag round-trips through the
+    /// start state so a genuinely-complete wallet keeps its startup warm-launch
+    /// shortcut across a reload, while a wallet absent from the set defaults to
+    /// not-fully-discovered (re-scan, never strand).
+    #[test]
+    fn discovery_complete_flag_round_trips_through_start_state() {
+        let complete: WalletId = [21u8; 32];
+        let other: WalletId = [22u8; 32];
+
+        let mut start = IdentityManagerStartState::default();
+        start.fully_discovered_wallets.insert(complete);
+
+        let manager: IdentityManager = start.into();
+        assert!(
+            manager.is_wallet_fully_discovered(&complete),
+            "a wallet marked fully-discovered in the start state stays so after load"
+        );
+        assert!(
+            !manager.is_wallet_fully_discovered(&other),
+            "a wallet absent from the set defaults to not-fully-discovered"
+        );
+    }
+
+    /// The setter flips membership both ways and persists each real transition
+    /// via a changeset carrying the verdict, so the flag survives restart on
+    /// backends that read it back. A no-op transition costs no persist.
+    #[test]
+    fn set_wallet_discovery_complete_toggles_and_persists() {
+        use crate::changeset::{
+            ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+        };
+        use std::sync::Mutex;
+
+        #[derive(Default)]
+        struct CapturingPersister {
+            stored: Mutex<Vec<Option<bool>>>,
+        }
+        impl PlatformWalletPersistence for CapturingPersister {
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                self.stored
+                    .lock()
+                    .unwrap()
+                    .push(changeset.identity_discovery_complete);
+                Ok(())
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+
+        let wallet_id: WalletId = [7u8; 32];
+        let capture = Arc::new(CapturingPersister::default());
+        let persister = WalletPersister::new(wallet_id, capture.clone());
+
+        let mut manager = IdentityManager::new();
+        assert!(!manager.is_wallet_fully_discovered(&wallet_id));
+
+        // Mark complete → membership set.
+        manager.set_wallet_discovery_complete(wallet_id, true, &persister);
+        assert!(manager.is_wallet_fully_discovered(&wallet_id));
+
+        // Re-marking complete is a no-op: no membership change, no extra persist.
+        manager.set_wallet_discovery_complete(wallet_id, true, &persister);
+
+        // Mark incomplete → membership cleared.
+        manager.set_wallet_discovery_complete(wallet_id, false, &persister);
+        assert!(!manager.is_wallet_fully_discovered(&wallet_id));
+
+        let stored = capture.stored.lock().unwrap();
+        assert_eq!(
+            *stored,
+            vec![Some(true), Some(false)],
+            "only the two real transitions persist, each carrying its verdict"
+        );
     }
 
     #[test]

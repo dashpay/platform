@@ -122,6 +122,13 @@ impl PlatformWalletInfo {
             // start-state path. No changeset-replay hook in apply.
             pending_contact_crypto_added: _,
             pending_contact_crypto_cleared: _,
+            // The identity-discovery completion flag (#4365) is persistence-only
+            // here for the same reason: the in-memory set is mutated directly at
+            // the discovery site (`IdentityManager::set_wallet_discovery_complete`)
+            // and restored at load via the start-state path
+            // (`IdentityManagerStartState::fully_discovered_wallets`). No
+            // changeset-replay hook in apply.
+            identity_discovery_complete: _,
             // Shielded deltas are owned by `ShieldedWallet` (which
             // mutates its store directly during sync / spend); the
             // canonical in-memory state lives there and the

@@ -4786,6 +4786,13 @@ fn build_wallet_start_state(
     let identity_manager = IdentityManagerStartState {
         out_of_wallet_identities: BTreeMap::new(),
         wallet_identities,
+        // The FFI persister vtable has no slot for the identity-discovery
+        // completion flag (#4365) yet, so it is not restored here — it defaults
+        // to "not fully discovered", the safe direction: a warm launch re-runs
+        // discovery rather than shortcutting past an unprobed index. See the
+        // durability caveat on
+        // `PlatformWalletChangeSet::identity_discovery_complete`.
+        fully_discovered_wallets: std::collections::BTreeSet::new(),
     };
 
     // Rehydrate tracked asset-locks (built / broadcast / IS-locked

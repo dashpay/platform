@@ -74,8 +74,9 @@ pub(crate) async fn broadcast_releasing_on_rejection<B: TransactionBroadcaster +
     }
 }
 
-/// Release the funding accounts' UTXO reservations for `tx` after its
-/// broadcast came back [`BroadcastError::Rejected`].
+/// Release `tx`'s UTXO reservations across every funding account, owner-guarded
+/// when the build's [`ReservationToken`](key_wallet::ReservationToken) is
+/// supplied.
 ///
 /// `funding_accounts` are the accounts that contributed inputs to `tx` — the
 /// accounts handed to `add_funding` when it was built. A build funded from
@@ -84,12 +85,14 @@ pub(crate) async fn broadcast_releasing_on_rejection<B: TransactionBroadcaster +
 /// must reconcile; releasing only the first would leave the rest of the inputs
 /// held until the TTL backstop reclaims them.
 ///
-/// Callers that pair the release with other rejection cleanup must order
-/// that cleanup **before** this call when it removes state a concurrent
-/// flow could act on — while the reservation is still held the inputs
-/// cannot be re-selected by a new build, so the pre-release window is
-/// safe.
-pub(crate) async fn release_reservation_after_rejected_broadcast(
+/// `reservation_token` owner-guards the release. This cleanup runs after the
+/// reservation was taken and, on the broadcast path, after `.await`s during
+/// which a TTL sweep could have reclaimed it and a NEWER build re-reserved the
+/// same outpoints — an unconditional release would then free that newer owner's
+/// inputs (the double-spend window of `dashpay/platform#4185`). Callers without
+/// a token (paths that predate token plumbing) pass `None` and keep the
+/// historical unconditional release.
+pub(crate) async fn release_funding_reservations(
     wallet_manager: &RwLock<WalletManager<PlatformWalletInfo>>,
     wallet_id: &WalletId,
     funding_accounts: &[AccountType],
@@ -104,19 +107,12 @@ pub(crate) async fn release_reservation_after_rejected_broadcast(
         tracing::warn!(
             wallet_id = %hex::encode(wallet_id),
             ?funding_accounts,
-            "could not release UTXO reservation after rejected broadcast: wallet not found"
+            "could not release UTXO reservation: wallet not found"
         );
         return;
     };
     for funding_account in funding_accounts {
         match info.core_wallet.accounts.funds_account(funding_account) {
-            // Owner-guarded when the build's `ReservationToken` is available:
-            // this cleanup always runs after `.await`s (build → broadcast), so
-            // the original reservation may have been swept and the same
-            // outpoints re-reserved by a NEWER build — an unconditional release
-            // would clobber that newer owner and make its inputs re-selectable
-            // by a conflicting transaction. Callers without a token (paths that
-            // predate token plumbing) keep the historical unconditional release.
             Some(account) => match reservation_token {
                 Some(token) => account.release_reservation_if_owner(tx, token),
                 None => account.release_reservation(tx),
@@ -124,9 +120,35 @@ pub(crate) async fn release_reservation_after_rejected_broadcast(
             None => tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
                 ?funding_account,
-                "could not release UTXO reservation after rejected broadcast: \
-                 funds account not found"
+                "could not release UTXO reservation: funds account not found"
             ),
         }
     }
+}
+
+/// Release the funding accounts' UTXO reservations for `tx` after its
+/// broadcast came back [`BroadcastError::Rejected`]. Thin alias over
+/// [`release_funding_reservations`] — the name the broadcast-side callers read
+/// against — see it for the owner-guard rationale.
+///
+/// Callers that pair the release with other rejection cleanup must order
+/// that cleanup **before** this call when it removes state a concurrent
+/// flow could act on — while the reservation is still held the inputs
+/// cannot be re-selected by a new build, so the pre-release window is
+/// safe.
+pub(crate) async fn release_reservation_after_rejected_broadcast(
+    wallet_manager: &RwLock<WalletManager<PlatformWalletInfo>>,
+    wallet_id: &WalletId,
+    funding_accounts: &[AccountType],
+    tx: &Transaction,
+    reservation_token: Option<key_wallet::ReservationToken>,
+) {
+    release_funding_reservations(
+        wallet_manager,
+        wallet_id,
+        funding_accounts,
+        tx,
+        reservation_token,
+    )
+    .await;
 }

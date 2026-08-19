@@ -460,18 +460,40 @@ impl IdentityWallet {
         }
 
         if tally.is_trustworthy() {
-            // Found something despite a failed probe: the discovered
-            // identities are already persisted, so return them rather than
-            // discarding the work. The gap is still worth a line — an identity
-            // at the failed index would be missed until the next scan.
-            if tally.failed_probes > 0 {
+            // A trustworthy scan reached Platform. Record whether it was
+            // COMPLETE — every probe answered, zero failed — so the ordered
+            // startup path preserves its warm-launch shortcut only for wallets
+            // we fully scanned. A scan that saw an identity but had a failed
+            // probe is trustworthy (its finds are already persisted) yet
+            // INCOMPLETE: an identity at the failed index is still unaccounted
+            // for. Marking such a wallet not-fully-discovered is the #4365 fix —
+            // the next launch re-runs discovery (resuming past the known
+            // identities) instead of shortcutting past that index forever.
+            let fully_scanned = tally.failed_probes == 0;
+            if !fully_scanned {
                 tracing::warn!(
                     "Identity discovery completed with {} unanswered probe(s); an identity at \
                      a failed index may be missing until the next scan",
                     tally.failed_probes
                 );
             }
+            {
+                let mut wm_guard = self.wallet_manager.write().await;
+                if let Some(info) = wm_guard.get_wallet_info_mut(&self.wallet_id) {
+                    info.identity_manager.set_wallet_discovery_complete(
+                        self.wallet_id,
+                        fully_scanned,
+                        &self.persister,
+                    );
+                }
+            }
         } else {
+            // Untrustworthy: no identity seen and at least one probe failed, so
+            // we cannot tell empty-from-unreachable. Return the retryable error
+            // WITHOUT touching the completion flag — an all-failure rescan does
+            // not invalidate a prior clean scan, and a wallet still awaiting its
+            // first clean scan stays not-fully-discovered and re-scans next
+            // launch.
             return Err(tally.into_incomplete_error(start_index, identity_index));
         }
 
@@ -929,6 +951,54 @@ mod tests {
         assert_eq!(tally.identities_seen, 1);
         assert_eq!(tally.failed_probes, 2);
         assert!(tally.is_trustworthy());
+    }
+
+    /// #4365: the completion verdict that gates the startup warm-launch
+    /// shortcut is "every probe answered" (`failed_probes == 0`), NOT merely
+    /// "trustworthy". A scan that saw an identity but had a failed probe is
+    /// trustworthy — its finds are already persisted — yet INCOMPLETE: an
+    /// identity at the failed index is unaccounted for, so `discover_inner` must
+    /// mark the wallet NOT fully discovered and let the next launch re-scan
+    /// rather than shortcut past that index forever.
+    #[test]
+    fn completion_requires_every_probe_answered_not_just_trustworthiness() {
+        // Found identity 0, then a failed probe at index 1: trustworthy, incomplete.
+        let incomplete = run_scan(
+            5,
+            [
+                Ok(Some(())),
+                Err(()),
+                Ok(None),
+                Ok(None),
+                Ok(None),
+                Ok(None),
+            ],
+        );
+        assert!(incomplete.is_trustworthy());
+        // This is exactly `discover_inner`'s `fully_scanned` expression.
+        let fully_scanned = incomplete.failed_probes == 0;
+        assert!(
+            !fully_scanned,
+            "a trustworthy-with-failures scan must NOT be marked fully discovered (#4365)"
+        );
+
+        // Every probe answered: complete.
+        let complete = run_scan(
+            5,
+            [
+                Ok(Some(())),
+                Ok(None),
+                Ok(None),
+                Ok(None),
+                Ok(None),
+                Ok(None),
+            ],
+        );
+        assert!(complete.is_trustworthy());
+        assert_eq!(
+            complete.failed_probes, 0,
+            "a clean scan is fully discovered"
+        );
     }
 
     /// A rescan re-confirms identities the manager already holds, which never

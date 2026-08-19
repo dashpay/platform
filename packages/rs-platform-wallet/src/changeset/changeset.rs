@@ -1636,6 +1636,25 @@ pub struct PlatformWalletChangeSet {
     /// failed). Append-only delta; apply removes matching `(owner, contact,
     /// kind)` from the persisted queue.
     pub pending_contact_crypto_cleared: Vec<PendingContactCryptoKey>,
+    /// Per-wallet identity-discovery completion flag (issue #4365), keyed by
+    /// the changeset's wallet id (the `store(wallet_id, changeset)` argument).
+    /// `Some(true)` when the wallet's most recent gap-limit identity scan
+    /// answered every probe (zero failed probes); `Some(false)` when a scan was
+    /// incomplete (a failed probe left an index unprobed). `None` means no
+    /// change in this delta. Merge policy: last-write-wins (a later `Some`
+    /// overrides an earlier one).
+    ///
+    /// It gates the ordered-startup warm-launch shortcut: only a wallet whose
+    /// last scan was complete may skip the network scan when a local identity
+    /// is already on file, so an incomplete initial scan re-runs discovery next
+    /// launch instead of shortcutting past a failed-probe index forever.
+    ///
+    /// Durability caveat (mirrors [`Self::pending_contact_crypto_added`]): the
+    /// SQLite backend persists this flag; the FFI persister vtable has no slot
+    /// for it yet, so on iOS/Android hosts it is process-lifetime only — a warm
+    /// launch there conservatively re-runs discovery (safe: never strands)
+    /// until the vtable slot and native handlers land.
+    pub identity_discovery_complete: Option<bool>,
     /// Shielded sub-wallet deltas: per-subwallet decrypted notes,
     /// spent marks, sync watermarks, nullifier checkpoints. The
     /// commitment tree itself is **not** in here — it lives on
@@ -1757,6 +1776,12 @@ impl Merge for PlatformWalletChangeSet {
             .extend(other.pending_contact_crypto_added);
         self.pending_contact_crypto_cleared
             .extend(other.pending_contact_crypto_cleared);
+        // Identity-discovery completion: last-write-wins. A later delta's
+        // verdict (a scan just finished) supersedes an earlier one; `None`
+        // keeps the current value.
+        if other.identity_discovery_complete.is_some() {
+            self.identity_discovery_complete = other.identity_discovery_complete;
+        }
         #[cfg(feature = "shielded")]
         {
             self.shielded.merge(other.shielded);
@@ -1783,7 +1808,8 @@ impl Merge for PlatformWalletChangeSet {
             && self.provider_key_account_registrations.is_empty()
             && self.account_address_pools.is_empty()
             && self.pending_contact_crypto_added.is_empty()
-            && self.pending_contact_crypto_cleared.is_empty();
+            && self.pending_contact_crypto_cleared.is_empty()
+            && self.identity_discovery_complete.is_none();
         #[cfg(feature = "shielded")]
         {
             core_empty && self.shielded.as_ref().is_none_or(|s| s.is_empty())

@@ -254,8 +254,11 @@ pub unsafe extern "C" fn platform_wallet_sync_contact_requests(
         block_on_worker(async move { identity.dashpay().sync_contact_requests().await })
     });
     let result = unwrap_option_or_return!(option);
-    let list = unwrap_result_or_return!(result);
-    unsafe { *out_array = ContactRequestHandleArray::from_requests(list) };
+    let outcome = unwrap_result_or_return!(result);
+    // This on-demand FFI fetch surfaces only the ingested requests; the
+    // `fetch_complete` flag is consumed by the in-Rust ordered-startup gate
+    // (`manager::startup`), not by this C entry point.
+    unsafe { *out_array = ContactRequestHandleArray::from_requests(outcome.requests) };
     PlatformWalletFFIResult::ok()
 }
 

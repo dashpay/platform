@@ -92,6 +92,59 @@ impl IdentityManager {
         Ok(())
     }
 
+    /// Whether `wallet_id`'s most recent identity-discovery scan was COMPLETE —
+    /// every gap-limit probe answered, zero failed probes.
+    ///
+    /// The ordered-startup path (`crate::manager::startup`) consults this to
+    /// decide whether it may take its warm-launch shortcut (skip the network
+    /// scan when a local identity is already on file). Defaults to `false` for
+    /// a wallet never scanned to completion — the safe direction: re-scan
+    /// rather than shortcut past a not-yet-probed index (#4365).
+    pub fn is_wallet_fully_discovered(&self, wallet_id: &WalletId) -> bool {
+        self.fully_discovered_wallets.contains(wallet_id)
+    }
+
+    /// Record whether `wallet_id`'s most recent identity-discovery scan was
+    /// COMPLETE, and persist the verdict.
+    ///
+    /// `complete == true` enters the wallet into `fully_discovered_wallets`
+    /// (enabling the startup warm-launch shortcut); `false` removes it, so the
+    /// next launch re-runs discovery instead of shortcutting past an index a
+    /// failed probe skipped (#4365). Persists the `identity_discovery_complete`
+    /// changeset flag via `persister` so the verdict survives restart on
+    /// backends that carry it; a persist failure is logged, not fatal (mirrors
+    /// [`Self::add_identity`]) — the worst case is one unnecessary rescan next
+    /// launch, which is safe. A no-op (no persist) when the verdict is
+    /// unchanged, so a clean rescan of an already-complete wallet costs no host
+    /// write.
+    pub fn set_wallet_discovery_complete(
+        &mut self,
+        wallet_id: WalletId,
+        complete: bool,
+        persister: &WalletPersister,
+    ) {
+        let changed = if complete {
+            self.fully_discovered_wallets.insert(wallet_id)
+        } else {
+            self.fully_discovered_wallets.remove(&wallet_id)
+        };
+        if !changed {
+            return;
+        }
+
+        let cs = PlatformWalletChangeSet {
+            identity_discovery_complete: Some(complete),
+            ..Default::default()
+        };
+        if let Err(e) = persister.store(cs) {
+            tracing::error!(
+                wallet_id = %hex::encode(wallet_id),
+                error = %e,
+                "failed to persist identity-discovery completion flag"
+            );
+        }
+    }
+
     /// Add an identity to the out-of-wallet (observed read-only) bucket.
     ///
     /// Replaces the previous `add_watched_identity` — we no longer keep

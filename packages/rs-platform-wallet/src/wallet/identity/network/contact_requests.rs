@@ -20,6 +20,31 @@ use crate::error::PlatformWalletError;
 use crate::wallet::identity::types::dashpay::contact_request::ContactRequest;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
 
+/// Result of one contact-request sync pass: the requests it ingested, plus
+/// whether every identity's fetch reached Platform.
+///
+/// `fetch_complete` is the load-bearing distinction the ordered-startup path
+/// (`crate::manager::startup`) depends on. An empty `requests` with
+/// `fetch_complete == true` is a proof there are no incoming contact requests,
+/// so the caller may record the sync pass as having run and let Core SPV
+/// proceed. An empty `requests` with `fetch_complete == false` means Platform
+/// could not be reached for one or more identities: the ingested set is
+/// known-incomplete, and treating it as "no contacts" would start SPV past a
+/// contact's funding height with that contact's DIP-15 addresses underived —
+/// producing born-wrong / missing payment records. The recurring background
+/// sweep ignores this flag (it retries every interval regardless); startup must
+/// not, which is why the value is surfaced rather than swallowed.
+#[derive(Debug, Clone)]
+pub struct ContactRequestSyncOutcome {
+    /// Newly discovered incoming contact requests ingested this pass.
+    pub requests: Vec<ContactRequest>,
+    /// True iff EVERY identity's received AND sent fetch reached Platform this
+    /// pass. False when any per-identity fetch failed — including the
+    /// per-identity skips this method swallows so one identity's transient DAPI
+    /// error does not abort the sweep for the others.
+    pub fetch_complete: bool,
+}
+
 // ---------------------------------------------------------------------------
 // Deferred-crypto drain provider
 // ---------------------------------------------------------------------------
@@ -1118,8 +1143,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// register functions called — mirroring the accept path. Calling
     /// them inline under the guard would deadlock on first execution.
     ///
-    /// Returns all newly discovered incoming contact requests.
-    pub async fn sync_contact_requests(&self) -> Result<Vec<ContactRequest>, PlatformWalletError> {
+    /// Returns the newly discovered incoming contact requests together with a
+    /// `fetch_complete` flag — see [`ContactRequestSyncOutcome`]. An empty list
+    /// is only a proof of "no contacts" when `fetch_complete` is `true`;
+    /// otherwise Platform could not be reached for at least one identity and the
+    /// result is known-incomplete.
+    pub async fn sync_contact_requests(
+        &self,
+    ) -> Result<ContactRequestSyncOutcome, PlatformWalletError> {
         // Snapshot each identity's high-water cursors up front so the
         // incremental query bound is read before any mutation this sweep.
         let identities: Vec<(Identifier, Option<u64>, Option<u64>)> = {
@@ -1148,6 +1179,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         };
 
         let mut all_requests = Vec::new();
+        // Cleared by ANY per-identity fetch failure below (a hard DAPI error on
+        // the received or sent fetch). A pass that could not reach Platform for
+        // some identity must not report an empty result as "no contacts" — that
+        // is the F1 regression this flag closes: with every identity's fetch
+        // failing, `all_requests` is empty and, without this, the caller read
+        // it as a settled empty and started SPV with contact addresses
+        // underived. Stays `true` for the genuine-empty fast path.
+        let mut fetch_complete = true;
 
         for (identity_id, hw_received, hw_sent) in identities {
             // --- Fetch (no guard held during the awaits). ---
@@ -1169,6 +1208,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         error = %e,
                         "Failed to fetch received contact requests; skipping this identity"
                     );
+                    // Known-incomplete: this identity was not synced this pass.
+                    fetch_complete = false;
                     continue;
                 }
             };
@@ -1191,6 +1232,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         "Failed to fetch sent contact requests; reconciling received side only"
                     );
                     sent_ok = false;
+                    // Known-incomplete: the sent side did not reach Platform, so
+                    // this pass cannot be reported as a settled empty either.
+                    fetch_complete = false;
                     Default::default()
                 }
             };
@@ -1460,7 +1504,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             self.enqueue_pending_auto_accepts(&identity_id).await;
         }
 
-        Ok(all_requests)
+        Ok(ContactRequestSyncOutcome {
+            requests: all_requests,
+            fetch_complete,
+        })
     }
 
     /// Parse a received `contactRequest` document into a [`ContactRequest`],

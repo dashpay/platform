@@ -4,7 +4,7 @@
 //! struct — no methods, no invariants, no live handles — so persisters
 //! can round-trip it without dragging in the manager's business logic.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use dpp::prelude::Identifier;
 
@@ -26,4 +26,12 @@ pub struct IdentityManagerStartState {
     /// Wallet-owned identities, outer-keyed by wallet id and
     /// inner-keyed by BIP-9 registration index.
     pub wallet_identities: BTreeMap<WalletId, BTreeMap<RegistrationIndex, ManagedIdentity>>,
+    /// Wallet ids whose most recent identity-discovery scan answered every
+    /// gap-limit probe (zero failed probes) — see
+    /// [`IdentityManager::is_wallet_fully_discovered`](crate::wallet::identity::IdentityManager::is_wallet_fully_discovered).
+    /// A backend that persists the `identity_discovery_complete` changeset flag
+    /// populates this so a genuinely-complete wallet keeps its startup
+    /// warm-launch shortcut across restart; a backend that does not leaves it
+    /// empty, which is the safe default (re-scan rather than strand, #4365).
+    pub fully_discovered_wallets: BTreeSet<WalletId>,
 }

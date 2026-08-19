@@ -1098,7 +1098,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // re-acquires that (non-reentrant) lock internally.
         self.drain_pending_contact_crypto(provider).await;
 
-        let (payment_address, used_flip_changeset, tx, fee, funding_accounts) = {
+        let (payment_address, used_flip_changeset, tx, fee, funding_accounts, reservation_token) = {
             let mut wm = self.wallet_manager.write().await;
 
             // Resolve the external account's xpub so we can derive addresses.
@@ -1269,13 +1269,24 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             // `impl<S: Signer> TransactionSigner for S`) rather than the
             // resident `wallet`, so funding-input signatures are produced
             // from Keychain-derived keys without a resident seed.
-            // `build_signed` returns the fee the transaction actually
+            // `build_signed_reserved` returns the fee the transaction actually
             // pays — Σ(selected input values) − Σ(output values), a
             // dropped sub-dust change remainder included — since
             // rust-dashcore#872 (pinned above). No caller-side
             // recomputation needed.
-            let (tx, fee) = match builder
-                .build_signed(signer, |addr| funding_paths.get(&addr).cloned())
+            //
+            // `build_signed_reserved` (not `build_signed`) so we keep the
+            // `ReservationToken` this build stamped onto the selected inputs.
+            // `build_signed` reserves identically but drops the token, which
+            // forces every later release to be unconditional — and both later
+            // releases here (the store-failure abort and a rejected broadcast)
+            // run after `.await`s during which a TTL sweep could reclaim this
+            // reservation and a concurrent build re-reserve the same outpoints.
+            // An unconditional release would then free that newer build's
+            // inputs (the double-spend window of `dashpay/platform#4185`), so
+            // we thread the token through and release owner-guarded.
+            let (tx, fee, reservation_token) = match builder
+                .build_signed_reserved(signer, |addr| funding_paths.get(&addr).cloned())
                 .await
             {
                 Ok(built) => built,
@@ -1313,6 +1324,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 tx,
                 fee,
                 offered_accounts,
+                reservation_token,
             )
         };
 
@@ -1327,11 +1339,26 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // leaves a one-address gap that the pool's gap window absorbs on
         // retry — bounded, because a signed transaction exists here, unlike
         // the unbounded build-failure case rolled back above.
-        self.persister.store(used_flip_changeset).map_err(|e| {
-            PlatformWalletError::Persistence(format!(
+        if let Err(e) = self.persister.store(used_flip_changeset) {
+            // The used flip did not reach disk, so nothing will be broadcast on
+            // this path (the `?` return below is now this branch). Release the
+            // inputs this build reserved instead of stranding them until the TTL
+            // backstop — owner-guarded via the build's token so we never free a
+            // newer build's re-reservation of the same outpoints. Previously the
+            // `?` returned here WITHOUT releasing, leaving every input the build
+            // pooled (now the whole spendable set, per #4373) reserved until TTL.
+            crate::wallet::reservations::release_funding_reservations(
+                &self.wallet_manager,
+                &self.wallet_id,
+                &funding_accounts,
+                &tx,
+                reservation_token,
+            )
+            .await;
+            return Err(PlatformWalletError::Persistence(format!(
                 "failed to persist payment-address used flip: {e}"
-            ))
-        })?;
+            )));
+        }
 
         // --- 3. Broadcast the transaction, releasing the build's UTXO
         // reservation if the broadcast is definitively rejected pre-send. ---
@@ -1347,9 +1374,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     &self.wallet_id,
                     &funding_accounts,
                     &tx,
-                    // This path does not thread the build's reservation token
-                    // either; keep the historical unconditional release.
-                    None,
+                    // Owner-guarded: pass the build's token so a TTL sweep +
+                    // re-build that re-reserved these outpoints on a possibly-
+                    // sent tx is not clobbered (`release_reservation_if_owner`).
+                    reservation_token,
                 )
                 .await;
                 Err(e)
@@ -1519,6 +1547,11 @@ mod tests {
     #[derive(Default)]
     struct RecordingPersister {
         stores: Mutex<Vec<(WalletId, PlatformWalletChangeSet)>>,
+        /// When armed, `store` returns a backend error instead of recording.
+        /// Lets a test drive the pre-broadcast store-failure abort in
+        /// `send_payment`, which must release the build's UTXO reservation.
+        /// Defaults to disarmed, so existing tests are unaffected.
+        fail_stores: std::sync::atomic::AtomicBool,
     }
 
     impl PlatformWalletPersistence for RecordingPersister {
@@ -1527,6 +1560,9 @@ mod tests {
             wallet_id: WalletId,
             changeset: PlatformWalletChangeSet,
         ) -> Result<(), PersistenceError> {
+            if self.fail_stores.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(PersistenceError::backend("store armed to fail"));
+            }
             self.stores.lock().unwrap().push((wallet_id, changeset));
             Ok(())
         }
@@ -6339,6 +6375,61 @@ mod tests {
             .expect(
                 "an immediate retry must reselect every pooled input — a reservation left \
                  on the contact-receiving account strands funds until the TTL backstop",
+            );
+    }
+
+    /// #4373 (F3, consequence a): a pre-broadcast used-flip STORE FAILURE must
+    /// release the build's UTXO reservation. Before the fix the `?` returned
+    /// without releasing, so every input the build reserved — now the whole
+    /// spendable set, since #4373 widened the funding pool — stayed reserved
+    /// until the TTL backstop and an immediate retry failed with a spurious
+    /// insufficient-funds.
+    #[tokio::test]
+    async fn send_payment_store_failure_releases_the_reservation() {
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+        use std::sync::atomic::Ordering;
+
+        let (manager, persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+
+        // A SINGLE funded UTXO: the retry can only succeed if the first send's
+        // store-failure released it — otherwise it is still reserved and coin
+        // selection refuses for lack of funds.
+        fund_bip44_account_0(&manager, wallet_id, 0xD1, 120_000).await;
+
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let signer = SeedSigner::new(seed, Network::Testnet);
+
+        // Arm the persister so the pre-broadcast used-flip store fails. The send
+        // builds + signs (reserving the UTXO), then the store fails and the
+        // send must release the reservation before returning.
+        persister.fail_stores.store(true, Ordering::SeqCst);
+        let accepting = with_accepting_broadcaster(iw);
+        let err = accepting
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 50_000, None, &signer, &provider)
+            .await
+            .expect_err("an armed store failure must abort the send");
+        assert!(
+            matches!(err, PlatformWalletError::Persistence(_)),
+            "the send must fail at the used-flip persist, got: {err:?}"
+        );
+
+        // Disarm and retry: the retry can only reselect the single UTXO if the
+        // failed send released its reservation.
+        persister.fail_stores.store(false, Ordering::SeqCst);
+        accepting
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 50_000, None, &signer, &provider)
+            .await
+            .expect(
+                "an immediate retry must reselect the freed input — a reservation left held \
+                 after the store failure strands funds until the TTL backstop",
             );
     }
 

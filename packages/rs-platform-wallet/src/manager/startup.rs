@@ -87,6 +87,20 @@ async fn within_budget<F: std::future::Future>(deadline: Instant, future: F) -> 
     tokio::time::timeout(remaining, future).await.ok()
 }
 
+/// Whether the bring-up may take its warm-launch shortcut — skip the network
+/// identity scan — for a wallet.
+///
+/// True only when a local identity is already on file AND that wallet's last
+/// discovery scan was COMPLETE (every gap-limit probe answered). The
+/// completeness half is the fix for issue #4365: before it, a local identity
+/// alone took the shortcut, so a wallet whose initial scan saw identity 0 but
+/// got no answer for identity 1 shortcut past index 1 on every later launch and
+/// stranded that identity + its contacts until a manual Discover. Pinned as a
+/// pure predicate so the decision is tested without an SDK or a network.
+fn may_take_warm_shortcut(has_local_identity: bool, discovery_complete: bool) -> bool {
+    has_local_identity && discovery_complete
+}
+
 /// Produces the master xpriv an identity scan needs, on demand.
 ///
 /// **Lazy is the point.** Which branches scan is this module's decision — a
@@ -326,6 +340,23 @@ impl StartupTally {
         self.dashpay_sync_ran = true;
     }
 
+    /// Record the startup contact-request pass, gated on `fetch_complete`.
+    ///
+    /// Only a pass that reached Platform for EVERY identity marks the sync as
+    /// run. This is the F1 fix: `sync_contact_requests` returns an empty set
+    /// both when there genuinely are no contact requests AND when Platform was
+    /// unreachable for every identity, and the two must not be conflated. An
+    /// unreachable-Platform empty is NOT a proof of "no contacts", so it is
+    /// deliberately not recorded — leaving `dashpay_sync_ran` false keeps the
+    /// wallet out of `Ready` (via the `!dashpay_sync_ran` guard in
+    /// [`Self::status`]), so Core SPV stays gated / the pass re-runs rather than
+    /// scanning past a contact's funding height with DIP-15 addresses underived.
+    pub(crate) fn record_contact_sync_pass(&mut self, fetch_complete: bool) {
+        if fetch_complete {
+            self.record_sync_ran();
+        }
+    }
+
     pub(crate) fn record_drain(&mut self, drained: usize, pending: usize) {
         self.contact_accounts_drained = drained;
         self.contact_accounts_pending = pending;
@@ -440,19 +471,32 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
         let identity_wallet = wallet.identity();
 
         // 1. Local identities first. A warm launch must not pay for a network
-        //    scan it does not need.
-        if let Some(known) = self.local_identity_id(wallet_id).await {
-            tally.record_local_identity(known);
-        } else {
-            self.discover_identity_with_backoff(
-                wallet_id,
-                identity_wallet,
-                scan_key,
-                opts.gap_limit,
-                deadline,
-                &mut tally,
-            )
-            .await;
+        //    scan it does not need — but only when the wallet's last scan was
+        //    COMPLETE. A wallet with a local identity whose initial scan was
+        //    incomplete (a failed probe left a later index unprobed) must NOT
+        //    take the shortcut, or that later identity + its contacts stay
+        //    stranded until a manual Discover (#4365). Re-running discovery
+        //    resumes past the already-known identities, so the cost is bounded.
+        let local_identity = self.local_identity_id(wallet_id).await;
+        let take_shortcut = match local_identity {
+            Some(_) => {
+                may_take_warm_shortcut(true, self.wallet_discovery_is_complete(wallet_id).await)
+            }
+            None => false,
+        };
+        match local_identity {
+            Some(known) if take_shortcut => tally.record_local_identity(known),
+            _ => {
+                self.discover_identity_with_backoff(
+                    wallet_id,
+                    identity_wallet,
+                    scan_key,
+                    opts.gap_limit,
+                    deadline,
+                    &mut tally,
+                )
+                .await;
+            }
         }
 
         // With no identity there is nothing to sync and nothing to drain, and
@@ -465,12 +509,24 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
         //    Log-and-continue: a prior session may already have queued work
         //    that this call can still complete.
         match within_budget(deadline, identity_wallet.dashpay().sync_contact_requests()).await {
-            Some(Ok(requests)) => {
-                tally.record_sync_ran();
+            Some(Ok(outcome)) => {
+                // Gate on `fetch_complete` (F1): an empty result from a Platform
+                // that was unreachable for every identity must NOT be recorded
+                // as a completed sync, or `status()` would report `Ready` and
+                // start SPV promising contact addresses this pass never fetched.
+                tally.record_contact_sync_pass(outcome.fetch_complete);
+                if !outcome.fetch_complete {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        "startup: contact-request pass could not reach Platform for every \
+                         identity; not marking sync as run so the wallet stays out of Ready"
+                    );
+                }
                 tracing::debug!(
                     wallet_id = %hex::encode(wallet_id),
-                    requests = requests.len(),
-                    "startup: contact-request pass complete"
+                    requests = outcome.requests.len(),
+                    fetch_complete = outcome.fetch_complete,
+                    "startup: contact-request pass finished"
                 );
             }
             Some(Err(e)) => {
@@ -558,6 +614,18 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
             .next()
     }
 
+    /// Whether this wallet's most recent identity-discovery scan was COMPLETE —
+    /// every gap-limit probe answered. Gates the warm-launch shortcut (#4365);
+    /// see [`crate::wallet::identity::IdentityManager::is_wallet_fully_discovered`].
+    /// A wallet never scanned to completion (or one whose backend does not
+    /// persist the flag) reads `false` — the safe direction: re-scan.
+    async fn wallet_discovery_is_complete(&self, wallet_id: &WalletId) -> bool {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(wallet_id)
+            .map(|info| info.identity_manager.is_wallet_fully_discovered(wallet_id))
+            .unwrap_or(false)
+    }
+
     /// Scan for an identity, retrying only while Platform stays unreachable.
     ///
     /// An `Ok` result ends the loop whether or not it found anything: Platform
@@ -627,6 +695,16 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
             let Some(result) = within_budget(deadline, attempt_future).await else {
                 // Sightings persist incrementally, so an abandoned scan may
                 // still have folded an identity in before it was cut off.
+                //
+                // #4365 coverage: this budget-expiry path records the identity
+                // into the run's tally but the scan was NOT completed, so
+                // `discover_inner` never marked the wallet fully-discovered —
+                // the completion flag stays not-complete. We only reach
+                // discovery here because the warm-launch shortcut was declined
+                // (no local identity, or the flag was not complete), so the flag
+                // remains not-complete and the NEXT launch re-runs discovery
+                // rather than shortcutting past an index this abandoned scan
+                // never probed.
                 if let Some(known) = self.local_identity_id(wallet_id).await {
                     tally.record_local_identity(known);
                     return;
@@ -834,6 +912,57 @@ mod tests {
         tally.record_proven_absent();
 
         assert!(!tally.has_identity());
+    }
+
+    /// F1: a contact-request pass that could not reach Platform for every
+    /// identity comes back with an EMPTY set, and that empty must NOT be
+    /// reported as `Ready` — an unreachable-Platform empty is not a proof of
+    /// "no contacts". Before the fix, `record_sync_ran()` fired unconditionally
+    /// on `Ok(_)`, so an all-identities-fetch-fail pass settled as `Ready` and
+    /// started SPV promising contact addresses it never fetched.
+    #[test]
+    fn contact_sync_that_could_not_reach_platform_is_not_ready() {
+        let mut tally = StartupTally::default();
+        tally.record_discovered(identity());
+        // fetch_complete == false: Platform unreachable for some/all identities.
+        tally.record_contact_sync_pass(false);
+        tally.record_drain(0, 0);
+
+        assert!(
+            !tally.dashpay_sync_ran,
+            "an incomplete fetch must not mark the sync as run"
+        );
+        assert_ne!(tally.status(), WalletStartupStatus::Ready);
+        assert_eq!(tally.status(), WalletStartupStatus::PartialAccountsPending);
+    }
+
+    /// F1 fast path: a pass that reached Platform for every identity and found
+    /// no requests is a genuine empty, so it settles as `Ready`.
+    #[test]
+    fn contact_sync_genuine_empty_is_ready() {
+        let mut tally = StartupTally::default();
+        tally.record_discovered(identity());
+        // fetch_complete == true, empty result: genuinely no contact requests.
+        tally.record_contact_sync_pass(true);
+        tally.record_drain(0, 0);
+
+        assert!(tally.dashpay_sync_ran);
+        assert_eq!(tally.status(), WalletStartupStatus::Ready);
+    }
+
+    /// #4365: the warm-launch shortcut (skip the network identity scan when a
+    /// local identity is on file) is taken ONLY when the wallet's last scan was
+    /// complete. A local identity whose initial scan was incomplete must re-run
+    /// discovery next launch instead of shortcutting past the unprobed index.
+    #[test]
+    fn warm_shortcut_requires_a_complete_prior_scan() {
+        // Local identity + complete prior scan → shortcut (the optimization).
+        assert!(may_take_warm_shortcut(true, true));
+        // Local identity but INCOMPLETE prior scan → must re-scan (was the bug).
+        assert!(!may_take_warm_shortcut(true, false));
+        // No local identity → always scan, regardless of the completion flag.
+        assert!(!may_take_warm_shortcut(false, true));
+        assert!(!may_take_warm_shortcut(false, false));
     }
 
     /// Every network step is abandonable, so `within_budget` must return
