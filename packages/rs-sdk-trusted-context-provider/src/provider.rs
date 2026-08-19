@@ -717,7 +717,7 @@ impl ContextProvider for TrustedHttpContextProvider {
         #[cfg(target_arch = "wasm32")]
         let elapsed_ms = || None::<u64>;
 
-        tracing::info!(
+        tracing::debug!(
             quorum_type,
             quorum_hash = %hex::encode(quorum_hash),
             "quorum cache miss; blocking refetch of quorum lists"
@@ -745,7 +745,7 @@ impl ContextProvider for TrustedHttpContextProvider {
                     ContextProviderError::Generic(format!("Failed to find quorum: {}", e))
                 })?;
 
-        tracing::info!(
+        tracing::debug!(
             quorum_type,
             quorum_hash = %hex::encode(quorum_hash),
             elapsed_ms = ?elapsed_ms(),
