@@ -42,7 +42,7 @@ use crate::contact_request::CONTACT_REQUEST_STORAGE;
 use crate::error::*;
 use crate::established_contact::ESTABLISHED_CONTACT_STORAGE;
 use crate::handle::*;
-use crate::runtime::block_on_worker;
+use crate::runtime::{block_on_worker, try_block_on_worker};
 use crate::types::*;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 
@@ -878,7 +878,7 @@ pub unsafe extern "C" fn platform_wallet_drain_pending_contact_crypto(
                 network,
             )
         };
-        block_on_worker(async move {
+        try_block_on_worker(async move {
             let drained = identity
                 .dashpay()
                 .drain_pending_contact_crypto(&provider)
@@ -897,7 +897,7 @@ pub unsafe extern "C" fn platform_wallet_drain_pending_contact_crypto(
             drained + accepted
         })
     });
-    let total = unwrap_option_or_return!(option);
+    let total = unwrap_result_or_return!(unwrap_option_or_return!(option));
     unsafe {
         *out_drained = total as u32;
     }
@@ -927,9 +927,9 @@ pub unsafe extern "C" fn platform_wallet_pending_contact_crypto_count(
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity = wallet.identity().clone();
-        block_on_worker(async move { identity.dashpay().pending_contact_crypto_count().await })
+        try_block_on_worker(async move { identity.dashpay().pending_contact_crypto_count().await })
     });
-    let count = unwrap_option_or_return!(option);
+    let count = unwrap_result_or_return!(unwrap_option_or_return!(option));
     unsafe {
         *out_count = count as u32;
     }
@@ -1201,9 +1201,11 @@ pub unsafe extern "C" fn platform_wallet_drainable_contact_crypto_count(
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity = wallet.identity().clone();
-        block_on_worker(async move { identity.dashpay().drainable_contact_crypto_count().await })
+        try_block_on_worker(
+            async move { identity.dashpay().drainable_contact_crypto_count().await },
+        )
     });
-    let count = unwrap_option_or_return!(option);
+    let count = unwrap_result_or_return!(unwrap_option_or_return!(option));
     unsafe {
         *out_count = count as u32;
     }

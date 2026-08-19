@@ -18,7 +18,7 @@
 use crate::error::*;
 use crate::handle::{Handle, CORE_WALLET_STORAGE};
 use crate::runtime::runtime;
-use crate::{check_ptr, unwrap_option_or_return};
+use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 use once_cell::sync::Lazy;
 use platform_wallet::broadcaster::SpvBroadcaster;
 use platform_wallet::{ReservationToken, SignedPaymentError, SignedPaymentRegistry};
@@ -86,8 +86,17 @@ pub unsafe extern "C" fn core_wallet_signed_payment_broadcast(
 
     let core = unwrap_option_or_return!(CORE_WALLET_STORAGE.with_item(core_handle, |w| w.clone()));
 
-    let result =
-        runtime().block_on(SIGNED_PAYMENT_REGISTRY.broadcast(ReservationToken::from(token), &core));
+    // `try_block_on`, deliberately NOT a `FromCaughtPanicError` impl on
+    // `SignedPaymentError`: its only generic-ish variant is `Broadcast(..)`,
+    // whose payload carries the typed retry semantics of a REAL broadcast
+    // outcome. A panic must not be dressed up as one — it reaches the host as
+    // the generic ErrorWalletOperation with the panic text instead.
+    let result = match runtime()
+        .try_block_on(SIGNED_PAYMENT_REGISTRY.broadcast(ReservationToken::from(token), &core))
+    {
+        Ok(result) => result,
+        Err(error) => return error.into(),
+    };
 
     match result {
         Ok(txid) => {
@@ -144,6 +153,10 @@ pub unsafe extern "C" fn core_wallet_signed_payment_broadcast(
 /// Always safe to call; `token` is a plain value.
 #[no_mangle]
 pub unsafe extern "C" fn core_wallet_signed_payment_release(token: u64) -> PlatformWalletFFIResult {
-    runtime().block_on(SIGNED_PAYMENT_REGISTRY.release(ReservationToken::from(token)));
+    // `try_block_on`: releasing IS this entry point's job, so a panic must
+    // not come back as a success the host records as "reservation released".
+    unwrap_result_or_return!(
+        runtime().try_block_on(SIGNED_PAYMENT_REGISTRY.release(ReservationToken::from(token)))
+    );
     PlatformWalletFFIResult::ok()
 }

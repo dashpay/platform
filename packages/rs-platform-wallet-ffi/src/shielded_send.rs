@@ -1526,11 +1526,12 @@ fn resolve_wallet(
     wallet_id: &[u8; 32],
 ) -> Result<std::sync::Arc<platform_wallet::PlatformWallet>, PlatformWalletFFIResult> {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.get_wallet(wallet_id))
+        runtime().try_block_on(manager.get_wallet(wallet_id))
     });
     match option {
-        Some(Some(wallet)) => Ok(wallet),
-        Some(None) => Err(PlatformWalletFFIResult::err(
+        Some(Ok(Some(wallet))) => Ok(wallet),
+        Some(Err(error)) => Err(PlatformWalletFFIResult::from(error)),
+        Some(Ok(None)) => Err(PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("wallet not found: {}", hex::encode(wallet_id)),
         )),
@@ -1556,14 +1557,15 @@ fn resolve_wallet_and_coordinator(
     PlatformWalletFFIResult,
 > {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(async {
+        runtime().try_block_on(async {
             let wallet = manager.get_wallet(wallet_id).await;
             let coordinator = manager.shielded_coordinator().await;
             (wallet, coordinator)
         })
     });
     let (wallet_opt, coord_opt) = match option {
-        Some(v) => v,
+        Some(Ok(v)) => v,
+        Some(Err(error)) => return Err(PlatformWalletFFIResult::from(error)),
         None => {
             return Err(PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorInvalidHandle,

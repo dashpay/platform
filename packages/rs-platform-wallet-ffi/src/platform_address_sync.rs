@@ -199,7 +199,12 @@ pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_sync_now(
         // limitation (rust-lang/rust issue #100013) against
         // `block_on_worker`'s `Send + 'static` bounds.
         run_on_big_stack_thread(|| {
-            runtime().block_on(manager.platform_address_sync().sync_now());
+            // `raw()`: a panic in this pass is already converted into an
+            // `io::Error` by `run_on_big_stack_thread`'s join, which the
+            // `Err` arm below turns into ErrorWalletOperation.
+            runtime()
+                .raw()
+                .block_on(manager.platform_address_sync().sync_now());
         })
     });
     let spawn_result = unwrap_option_or_return!(option);

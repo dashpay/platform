@@ -596,9 +596,9 @@ pub unsafe extern "C" fn platform_wallet_manager_get_wallet(
     let wallet_id_value = *wallet_id;
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
-        runtime().block_on(manager.get_wallet(&wallet_id_value))
+        runtime().try_block_on(manager.get_wallet(&wallet_id_value))
     });
-    let inner = unwrap_option_or_return!(option);
+    let inner = unwrap_result_or_return!(unwrap_option_or_return!(option));
     match inner {
         Some(wallet) => {
             let handle = PLATFORM_WALLET_STORAGE.insert(wallet);
@@ -638,18 +638,32 @@ pub unsafe extern "C" fn platform_wallet_manager_destroy(
         // platform-address sync. `shutdown()` is idempotent, so this is
         // safe even if the host already stopped some sync managers
         // before calling destroy.
-        let report = runtime().block_on(manager.shutdown());
-        if !report.all_clean() {
-            // A worker panicked, exceeded its join budget, or stayed
-            // detached. Its persister/event-handler Arcs keep the host
-            // callback contexts alive until it actually exits, so this
-            // is diagnostic, not a UAF hazard.
-            tracing::warn!(
-                ?report,
-                "platform wallet manager shutdown did not join every worker \
-                 cleanly; stragglers keep their callback contexts alive and \
-                 release them on exit"
-            );
+        // A panic inside `shutdown()` is logged and swallowed rather than
+        // returned: destroy has no failure mode in its published contract, and
+        // it must still drop the manager below so the host's callback contexts
+        // are released. `try_block_on` keeps the panic from unwinding into this
+        // function's `extern "C"` abort shim.
+        match runtime().try_block_on(manager.shutdown()) {
+            Ok(report) if !report.all_clean() => {
+                // A worker panicked, exceeded its join budget, or stayed
+                // detached. Its persister/event-handler Arcs keep the host
+                // callback contexts alive until it actually exits, so this
+                // is diagnostic, not a UAF hazard.
+                tracing::warn!(
+                    ?report,
+                    "platform wallet manager shutdown did not join every worker \
+                     cleanly; stragglers keep their callback contexts alive and \
+                     release them on exit"
+                );
+            }
+            Ok(_) => {}
+            Err(error) => {
+                tracing::error!(
+                    %error,
+                    "platform wallet manager shutdown panicked; dropping the manager \
+                     anyway so its callback contexts are released"
+                );
+            }
         }
         // Dropping the manager here releases its persister/event-handler
         // references; the host contexts are released (via `release_fn`)
@@ -1190,7 +1204,7 @@ mod remove_wallet_lifecycle_tests {
         // which asserts on `outstanding()` counts — serialize against it.
         let _registry = crate::core_wallet::signed_payment::registry_test_guard();
 
-        runtime().block_on(async {
+        runtime().raw().block_on(async {
             let (manager, wallet_id) = test_platform_wallet_manager().await;
             let wallet = manager
                 .get_wallet(&wallet_id)
@@ -1335,7 +1349,7 @@ mod remove_wallet_lifecycle_tests {
         // which asserts on `outstanding()` counts — serialize against it.
         let _registry = crate::core_wallet::signed_payment::registry_test_guard();
 
-        runtime().block_on(async {
+        runtime().raw().block_on(async {
             let (manager, wallet_id) = test_platform_wallet_manager().await;
             let wallet = manager
                 .get_wallet(&wallet_id)
@@ -1435,7 +1449,7 @@ mod remove_wallet_lifecycle_tests {
         // The extern "C" entry points call `runtime().block_on` themselves, so
         // they must be invoked from OUTSIDE a runtime context — do the async
         // setup first, then call across the boundary.
-        let core = runtime().block_on(async {
+        let core = runtime().raw().block_on(async {
             let (manager, wallet_id) = test_platform_wallet_manager().await;
             let wallet = manager
                 .get_wallet(&wallet_id)
@@ -1500,7 +1514,7 @@ mod remove_wallet_lifecycle_tests {
     fn teardown_waits_for_an_in_flight_finalized_operation_and_then_sweeps_its_handle() {
         let _registry = crate::core_wallet::signed_payment::registry_test_guard();
 
-        let (core, transaction_handle) = runtime().block_on(async {
+        let (core, transaction_handle) = runtime().raw().block_on(async {
             let (manager, wallet_id) = test_platform_wallet_manager().await;
             let wallet = manager
                 .get_wallet(&wallet_id)
@@ -1572,7 +1586,7 @@ mod remove_wallet_lifecycle_tests {
     fn public_remove_wallet_waits_for_an_in_flight_payment_on_that_generation() {
         let _registry = crate::core_wallet::signed_payment::registry_test_guard();
 
-        runtime().block_on(async {
+        runtime().raw().block_on(async {
             let (manager, wallet_id) = test_platform_wallet_manager().await;
             let wallet = manager
                 .get_wallet(&wallet_id)
@@ -1624,7 +1638,7 @@ mod remove_wallet_lifecycle_tests {
     fn an_in_flight_payment_does_not_block_an_unrelated_wallets_teardown() {
         let _registry = crate::core_wallet::signed_payment::registry_test_guard();
 
-        runtime().block_on(async {
+        runtime().raw().block_on(async {
             let (manager_a, wallet_id_a) = test_platform_wallet_manager().await;
             let (manager_b, wallet_id_b) = test_platform_wallet_manager().await;
 

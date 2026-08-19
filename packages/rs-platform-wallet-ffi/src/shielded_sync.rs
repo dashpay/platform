@@ -17,9 +17,9 @@ use platform_wallet::wallet::shielded::ShieldedSyncSummary;
 
 use crate::error::*;
 use crate::handle::*;
-use crate::runtime::{block_on_worker, runtime};
+use crate::runtime::{block_on_worker, runtime, try_block_on_worker};
 use crate::shielded_types::ShieldedSyncWalletResultFFI;
-use crate::{check_ptr, unwrap_option_or_return};
+use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 use rs_sdk_ffi::MnemonicResolverHandle;
 
 impl ShieldedSyncWalletResultFFI {
@@ -89,9 +89,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_stop(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.shielded_sync().quiesce())
+        runtime().try_block_on(manager.shielded_sync().quiesce())
     });
-    let drained = unwrap_option_or_return!(option);
+    let drained = unwrap_result_or_return!(unwrap_option_or_return!(option));
     if !drained {
         // The in-flight pass did not drain within the quiesce budget —
         // it may still fire persistence / completion callbacks. Surface
@@ -191,9 +191,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_sync_now(
         // and on-sim 2026-07-07 from the Sync Now button). The worker
         // dispatch moves the compute onto the runtime's 8 MB-stack
         // threads (see runtime.rs) — same fix as dashpay_sync.
-        block_on_worker(async move { mgr.sync_now(true).await });
+        try_block_on_worker(async move { mgr.sync_now(true).await })
     });
-    unwrap_option_or_return!(option);
+    unwrap_result_or_return!(unwrap_option_or_return!(option));
     PlatformWalletFFIResult::ok()
 }
 
@@ -271,13 +271,13 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
     // self-registers its viewing keys for the coordinator-driven
     // sync loop.
     let lookup = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(async {
+        runtime().try_block_on(async {
             let wallet = manager.get_wallet(&wallet_id).await;
             let coordinator = manager.shielded_coordinator().await;
             (wallet, coordinator)
         })
     });
-    let (wallet_arc, coordinator) = unwrap_option_or_return!(lookup);
+    let (wallet_arc, coordinator) = unwrap_result_or_return!(unwrap_option_or_return!(lookup));
     let wallet_arc = match wallet_arc {
         Some(w) => w,
         None => {
@@ -497,7 +497,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_default_address(
     }
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(async {
+        runtime().try_block_on(async {
             match manager.get_wallet(&wallet_id).await {
                 None => Outcome::WalletMissing,
                 Some(w) => match w.shielded_default_address(account).await {
@@ -507,7 +507,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_default_address(
             }
         })
     });
-    let outcome = unwrap_option_or_return!(option);
+    let outcome = unwrap_result_or_return!(unwrap_option_or_return!(option));
 
     match outcome {
         Outcome::WalletMissing => PlatformWalletFFIResult::err(

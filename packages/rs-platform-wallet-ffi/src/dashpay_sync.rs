@@ -31,8 +31,8 @@ use std::time::Duration;
 
 use crate::error::*;
 use crate::handle::*;
-use crate::runtime::{block_on_worker, runtime};
-use crate::{check_ptr, unwrap_option_or_return};
+use crate::runtime::{runtime, try_block_on_worker};
+use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 
 /// Start the recurring DashPay sync loop in the background. Idempotent
 /// — calling while already running is a no-op.
@@ -170,9 +170,9 @@ pub unsafe extern "C" fn platform_wallet_manager_dashpay_sync_sync_now(
         // the ~512 KB stack of the iOS calling thread (SIGBUS observed
         // on-device 2026-06-12). The worker dispatch moves the compute
         // onto the runtime's 8 MB-stack threads (see runtime.rs).
-        block_on_worker(async move { mgr.sync_now().await })
+        try_block_on_worker(async move { mgr.sync_now().await })
     });
-    let summary = unwrap_option_or_return!(option);
+    let summary = unwrap_result_or_return!(unwrap_option_or_return!(option));
 
     if !out_success_count.is_null() {
         *out_success_count = summary.success_count();

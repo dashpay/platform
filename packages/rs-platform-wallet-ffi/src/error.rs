@@ -690,6 +690,17 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // rides `NotFound` rather than spending a fifth marketplace
             // code hosts would handle identically.
             PlatformWalletError::DpnsNameNotFound { .. } => PlatformWalletFFIResultCode::NotFound,
+            // A panic caught below an entry point by `crate::panic_guard` and
+            // converted into a value instead of being allowed to abort the
+            // host. It rides the crate's GENERIC code deliberately: a panic
+            // proves nothing about whether the operation reached the network,
+            // so it must not borrow any of the codes above that carry a
+            // retry/outcome contract. The message keeps
+            // `panic_guard::FFI_PANIC_PREFIX` at position 0, so a host (or a
+            // log grep) can still separate it from an ordinary code-6 failure.
+            PlatformWalletError::InternalPanic(..) => {
+                PlatformWalletFFIResultCode::ErrorWalletOperation
+            }
             // NOTE: `MessageSigningFailed` is deliberately NOT matched, so it
             // falls to the `ErrorUnknown` catch-all below. Its causes are
             // internal invariant breaks (a public key that does not own the

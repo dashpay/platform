@@ -451,7 +451,7 @@ mod destroy_tests {
         // NativeCleaner threads do (never from inside a tokio runtime). Calling
         // them from within an outer `block_on` would nest runtimes and abort, so
         // they run on the plain test thread below.
-        let (manager, handle_a, handle_b, token, baseline) = runtime().block_on(async {
+        let (manager, handle_a, handle_b, token, baseline) = runtime().raw().block_on(async {
             let (manager, wallet_id) = test_platform_wallet_manager().await;
 
             // Two independent handles for the SAME logical wallet, exactly as two
@@ -510,7 +510,9 @@ mod destroy_tests {
 
         // The token is still fully live: its owner can release it even after both
         // wrappers are gone (the registry entry pinned its own `CoreWallet`).
-        runtime().block_on(SIGNED_PAYMENT_REGISTRY.release(token));
+        runtime()
+            .raw()
+            .block_on(SIGNED_PAYMENT_REGISTRY.release(token));
         assert_eq!(
             SIGNED_PAYMENT_REGISTRY.outstanding(),
             baseline,

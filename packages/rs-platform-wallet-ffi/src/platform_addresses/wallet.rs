@@ -48,13 +48,13 @@ pub unsafe extern "C" fn platform_address_wallet_restore_sync_state(
     last_known_recent_block: u64,
 ) -> PlatformWalletFFIResult {
     let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| {
-        runtime().block_on(wallet.restore_sync_state(
+        runtime().try_block_on(wallet.restore_sync_state(
             sync_height,
             sync_timestamp,
             last_known_recent_block,
-        ));
+        ))
     });
-    unwrap_option_or_return!(option);
+    unwrap_result_or_return!(unwrap_option_or_return!(option));
     PlatformWalletFFIResult::ok()
 }
 
@@ -70,9 +70,10 @@ pub unsafe extern "C" fn platform_address_wallet_total_credits(
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_credits);
 
-    let option = PLATFORM_ADDRESS_WALLET_STORAGE
-        .with_item(handle, |wallet| runtime().block_on(wallet.total_credits()));
-    *out_credits = unwrap_option_or_return!(option);
+    let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| {
+        runtime().try_block_on(wallet.total_credits())
+    });
+    *out_credits = unwrap_result_or_return!(unwrap_option_or_return!(option));
     PlatformWalletFFIResult::ok()
 }
 
@@ -136,20 +137,22 @@ pub unsafe extern "C" fn platform_address_wallet_addresses_with_balances(
     check_ptr!(out_count);
 
     let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| {
-        let balances = runtime().block_on(wallet.addresses_with_balances());
-        balances
-            .into_iter()
-            .map(|(address, balance)| AddressBalanceEntryFFI {
-                address: address.into(),
-                balance,
-                nonce: 0,
-                account_index: 0,
-                address_index: 0,
-                as_of_height: 0,
-            })
-            .collect::<Vec<_>>()
+        let balances = runtime().try_block_on(wallet.addresses_with_balances())?;
+        Ok::<_, platform_wallet::PlatformWalletError>(
+            balances
+                .into_iter()
+                .map(|(address, balance)| AddressBalanceEntryFFI {
+                    address: address.into(),
+                    balance,
+                    nonce: 0,
+                    account_index: 0,
+                    address_index: 0,
+                    as_of_height: 0,
+                })
+                .collect::<Vec<_>>(),
+        )
     });
-    let entries = unwrap_option_or_return!(option);
+    let entries = unwrap_result_or_return!(unwrap_option_or_return!(option));
     *out_count = entries.len();
     if entries.is_empty() {
         *out_entries = std::ptr::null_mut();

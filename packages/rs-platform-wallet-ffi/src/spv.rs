@@ -144,9 +144,9 @@ pub unsafe extern "C" fn platform_wallet_manager_sync_progress(
     check_ptr!(out_progress);
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.spv().sync_progress())
+        runtime().try_block_on(manager.spv().sync_progress())
     });
-    let progress = unwrap_option_or_return!(option);
+    let progress = unwrap_result_or_return!(unwrap_option_or_return!(option));
     *out_progress = match progress {
         Some(p) => progress_to_ffi(&p),
         None => FFISpvSyncProgress::default(),
@@ -296,9 +296,9 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_connected_peers(
     *out_count = 0;
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.spv().connected_peers())
+        runtime().try_block_on(manager.spv().connected_peers())
     });
-    let peers = unwrap_option_or_return!(option);
+    let peers = unwrap_result_or_return!(unwrap_option_or_return!(option));
     if peers.is_empty() {
         return PlatformWalletFFIResult::ok();
     }
@@ -371,9 +371,9 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_tip_unix_seconds(
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_unix_seconds);
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.spv().tip_block_time())
+        runtime().try_block_on(manager.spv().tip_block_time())
     });
-    let tip = unwrap_option_or_return!(option);
+    let tip = unwrap_result_or_return!(unwrap_option_or_return!(option));
     *out_unix_seconds = tip.map(|t| t as u64).unwrap_or(0);
     PlatformWalletFFIResult::ok()
 }

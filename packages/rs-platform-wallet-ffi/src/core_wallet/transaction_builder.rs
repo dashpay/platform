@@ -165,11 +165,11 @@ pub unsafe extern "C" fn core_wallet_tx_builder_finalize(
     // the signer await, never around it: holding it across an open signing prompt
     // would stall this wallet's teardown for as long as the user takes, and the
     // check makes that unnecessary.
-    let (_lifecycle, wallet_is_live) = runtime().block_on(async {
+    let (_lifecycle, wallet_is_live) = unwrap_result_or_return!(runtime().try_block_on(async {
         let gate = wallet.core().generation_payment_guard().await;
         let live = wallet.core().is_current_generation().await;
         (gate, live)
-    });
+    }));
     if !wallet_is_live {
         // No handle was published, so nothing would ever release this build's
         // reservation. Reconcile it here: the release is generation-bound, so on
@@ -299,11 +299,11 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
     // Deliberately acquired AFTER the signer await rather than around it: holding
     // it across an open signing prompt would stall this wallet's teardown for as
     // long as the user takes, and the check below makes that unnecessary.
-    let (_lifecycle, wallet_is_live) = runtime().block_on(async {
+    let (_lifecycle, wallet_is_live) = unwrap_result_or_return!(runtime().try_block_on(async {
         let gate = wallet.core().generation_payment_guard().await;
         let live = wallet.core().is_current_generation().await;
         (gate, live)
-    });
+    }));
     if !wallet_is_live {
         // Nothing was registered, so no token would ever release this build's
         // reservation. Reconcile it here: the release is generation-bound, so on

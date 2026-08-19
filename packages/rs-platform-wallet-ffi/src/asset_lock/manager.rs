@@ -3,7 +3,7 @@
 use crate::error::*;
 use crate::handle::*;
 use crate::runtime::runtime;
-use crate::{check_ptr, unwrap_option_or_return};
+use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 
 /// C-compatible tracked asset lock entry.
 #[repr(C)]
@@ -54,7 +54,7 @@ pub unsafe extern "C" fn asset_lock_manager_list_tracked_locks(
     let option = ASSET_LOCK_MANAGER_STORAGE.with_item(handle, |manager| {
         use platform_wallet::AssetLockStatus;
 
-        let locks = runtime().block_on(manager.list_tracked_locks());
+        let locks = runtime().try_block_on(manager.list_tracked_locks())?;
         let entries: Vec<TrackedAssetLockFFI> = locks
             .iter()
             .map(|lock| {
@@ -86,9 +86,9 @@ pub unsafe extern "C" fn asset_lock_manager_list_tracked_locks(
                 }
             })
             .collect();
-        entries
+        Ok::<_, platform_wallet::PlatformWalletError>(entries)
     });
-    let entries = unwrap_option_or_return!(option);
+    let entries = unwrap_result_or_return!(unwrap_option_or_return!(option));
 
     *out_count = entries.len();
     if entries.is_empty() {

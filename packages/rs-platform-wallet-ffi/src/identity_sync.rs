@@ -18,8 +18,8 @@ use platform_wallet::{IdentityTokenSyncInfo, IdentityTokenSyncState};
 
 use crate::error::*;
 use crate::handle::*;
-use crate::runtime::{block_on_worker, runtime};
-use crate::{check_ptr, unwrap_option_or_return};
+use crate::runtime::{runtime, try_block_on_worker};
+use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 
 /// Flattened per-(identity, token) row mirroring
 /// [`IdentityTokenSyncInfo`].
@@ -136,9 +136,9 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_last_sync_unix_se
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         let mgr = manager.identity_sync_arc();
-        runtime().block_on(async move { mgr.last_sync_unix_for_identity(&identity_id).await })
+        runtime().try_block_on(async move { mgr.last_sync_unix_for_identity(&identity_id).await })
     });
-    let value = unwrap_option_or_return!(option);
+    let value = unwrap_result_or_return!(unwrap_option_or_return!(option));
     *out_last_sync_unix = value.unwrap_or(0);
     PlatformWalletFFIResult::ok()
 }
@@ -175,9 +175,9 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_sync_now(
         // stack of the host's dispatch/concurrency calling thread
         // (same SIGBUS as the shielded/dashpay Sync Now buttons).
         let mgr = manager.identity_sync_arc();
-        block_on_worker(async move { mgr.sync_now().await });
+        try_block_on_worker(async move { mgr.sync_now().await })
     });
-    unwrap_option_or_return!(option);
+    unwrap_result_or_return!(unwrap_option_or_return!(option));
     PlatformWalletFFIResult::ok()
 }
 
@@ -214,9 +214,9 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_state_for_identit
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         let mgr = manager.identity_sync_arc();
-        runtime().block_on(async move { mgr.state_for_identity(&identity_id).await })
+        runtime().try_block_on(async move { mgr.state_for_identity(&identity_id).await })
     });
-    let row = unwrap_option_or_return!(option);
+    let row = unwrap_result_or_return!(unwrap_option_or_return!(option));
     match row {
         Some(state) => {
             let rows: Vec<IdentityTokenSyncInfoFFI> = state
@@ -263,9 +263,9 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_state_all(
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         let mgr = manager.identity_sync_arc();
-        runtime().block_on(async move { mgr.all_state().await })
+        runtime().try_block_on(async move { mgr.all_state().await })
     });
-    let snapshot = unwrap_option_or_return!(option);
+    let snapshot = unwrap_result_or_return!(unwrap_option_or_return!(option));
     let mut rows: Vec<IdentityTokenSyncInfoFFI> = Vec::new();
     for state in snapshot.values() {
         for info in &state.tokens {
@@ -347,9 +347,9 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_register_identity
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         let mgr = manager.identity_sync_arc();
-        runtime().block_on(async move { mgr.register_identity(identity_id, token_ids).await });
+        runtime().try_block_on(async move { mgr.register_identity(identity_id, token_ids).await })
     });
-    unwrap_option_or_return!(option);
+    unwrap_result_or_return!(unwrap_option_or_return!(option));
     PlatformWalletFFIResult::ok()
 }
 
@@ -369,9 +369,9 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_unregister_identi
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         let mgr = manager.identity_sync_arc();
-        runtime().block_on(async move { mgr.unregister_identity(&identity_id).await });
+        runtime().try_block_on(async move { mgr.unregister_identity(&identity_id).await })
     });
-    unwrap_option_or_return!(option);
+    unwrap_result_or_return!(unwrap_option_or_return!(option));
     PlatformWalletFFIResult::ok()
 }
 
@@ -405,8 +405,9 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_update_watched_to
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         let mgr = manager.identity_sync_arc();
-        runtime().block_on(async move { mgr.update_watched_tokens(identity_id, token_ids).await });
+        runtime()
+            .try_block_on(async move { mgr.update_watched_tokens(identity_id, token_ids).await })
     });
-    unwrap_option_or_return!(option);
+    unwrap_result_or_return!(unwrap_option_or_return!(option));
     PlatformWalletFFIResult::ok()
 }

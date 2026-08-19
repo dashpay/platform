@@ -59,6 +59,7 @@ pub mod manager;
 pub mod manager_diagnostics;
 pub mod memory_explorer;
 pub mod mnemonic_words;
+mod panic_guard;
 pub mod persistence;
 pub mod platform_address_sync;
 pub mod platform_address_types;

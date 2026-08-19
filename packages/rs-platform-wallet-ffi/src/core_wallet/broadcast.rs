@@ -76,11 +76,11 @@ pub unsafe extern "C" fn core_wallet_broadcast_signed_transaction(
     // exclusive side, so it cannot interleave between the check and the send.
     // Scoped per generation, so this send — up to the broadcaster's timeout —
     // blocks only THIS wallet's teardown, never an unrelated wallet's.
-    let (_lifecycle, wallet_is_live) = runtime().block_on(async {
+    let (_lifecycle, wallet_is_live) = unwrap_result_or_return!(runtime().try_block_on(async {
         let gate = wallet.generation_payment_guard().await;
         let live = wallet.is_current_generation().await;
         (gate, live)
-    });
+    }));
     if !wallet_is_live {
         runtime().block_on(finalized.wallet.abandon_transaction(&finalized.transaction));
         return PlatformWalletFFIResult::err(
@@ -264,6 +264,7 @@ mod tests {
 
     fn finalize(core: &TestCore, signer: &WalletSigner, tag: u8) -> SignedCoreTransaction {
         runtime()
+            .raw()
             .block_on(core.finalize_transaction(
                 TransactionBuilder::new().add_output(
                     &Address::dummy(Network::Testnet, usize::from(tag)),
@@ -285,13 +286,14 @@ mod tests {
 
     fn assert_released(core: &TestCore, signer: &WalletSigner, tag: u8) {
         let retry = finalize(core, signer, tag);
-        runtime().block_on(core.abandon_transaction(&retry));
+        runtime().raw().block_on(core.abandon_transaction(&retry));
     }
 
     #[test]
     fn double_free_is_safe_and_releases_reservation() {
-        let (core, signer) =
-            runtime().block_on(funded_spv_core_wallet(StandardAccountType::BIP44Account));
+        let (core, signer) = runtime()
+            .raw()
+            .block_on(funded_spv_core_wallet(StandardAccountType::BIP44Account));
         let transaction_handle = insert(&core, finalize(&core, &signer, 40));
 
         core_wallet_signed_transaction_free(transaction_handle);
@@ -302,8 +304,9 @@ mod tests {
 
     #[test]
     fn invalid_or_wrong_wallet_consumes_and_releases() {
-        let (origin, origin_signer) =
-            runtime().block_on(funded_spv_core_wallet(StandardAccountType::BIP44Account));
+        let (origin, origin_signer) = runtime()
+            .raw()
+            .block_on(funded_spv_core_wallet(StandardAccountType::BIP44Account));
         let invalid_transaction = insert(&origin, finalize(&origin, &origin_signer, 42));
         let invalid =
             unsafe { core_wallet_abandon_signed_transaction(u64::MAX, invalid_transaction) };
@@ -313,8 +316,9 @@ mod tests {
         );
         assert_released(&origin, &origin_signer, 43);
 
-        let (other, _) =
-            runtime().block_on(funded_spv_core_wallet(StandardAccountType::BIP44Account));
+        let (other, _) = runtime()
+            .raw()
+            .block_on(funded_spv_core_wallet(StandardAccountType::BIP44Account));
         let other_handle = CORE_WALLET_STORAGE.insert(other);
         let wrong_transaction = insert(&origin, finalize(&origin, &origin_signer, 44));
         let wrong =
@@ -329,8 +333,9 @@ mod tests {
 
     #[test]
     fn abandon_then_free_or_broadcast_cannot_reconsume_handle() {
-        let (core, signer) =
-            runtime().block_on(funded_spv_core_wallet(StandardAccountType::BIP44Account));
+        let (core, signer) = runtime()
+            .raw()
+            .block_on(funded_spv_core_wallet(StandardAccountType::BIP44Account));
         let core_handle = CORE_WALLET_STORAGE.insert(core.clone());
         let transaction_handle = insert(&core, finalize(&core, &signer, 46));
 
