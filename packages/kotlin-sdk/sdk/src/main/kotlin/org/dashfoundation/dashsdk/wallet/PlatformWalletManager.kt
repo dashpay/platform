@@ -2077,9 +2077,17 @@ class PlatformWalletManager(
     suspend fun unlockWalletFromKeystore(managed: ManagedPlatformWallet): Boolean {
         val walletId = managed.walletId
         require(walletId.size == 32) { "walletId must be 32 bytes, got ${walletId.size}" }
-        if (!walletStorage.hasMnemonic(walletId)) return false
 
         val key = walletId.toHex()
+        if (isGenuineWatchOnly(
+                hasMnemonic = walletStorage.hasMnemonic(walletId),
+                clearSeedMismatch = {
+                    updateUnlockStatus(key) { it.copy(seedMismatch = false) }
+                },
+            )
+        ) {
+            return false
+        }
         // Wrong-seed / wrong-wallet gate. `seedMismatch` is published from
         // the verify result itself, scoped to JUST this call: the verify
         // FFI maps Rust `SeedMismatch` → ErrorInvalidParameter (de-offset
@@ -2354,6 +2362,35 @@ data class DashPaySyncSummary(
     val errors: Int,
     val syncUnixSeconds: Long,
 )
+
+/**
+ * The genuine-watch-only short-circuit of
+ * [PlatformWalletManager.unlockWalletFromKeystore].
+ *
+ * A wallet with no stored mnemonic (imported by xpub, or one whose Keystore
+ * entry was removed) is genuine watch-only. Reporting that MUST first clear
+ * any stale `seedMismatch`: no mnemonic is not a mismatch, and a wallet whose
+ * seed once failed to bind and whose Keystore entry was then deleted would
+ * otherwise keep publishing the unlock banner forever for a seed that is no
+ * longer there — nothing downstream of the early return can clear it.
+ *
+ * The ordering is the whole contract, which is why it lives in a function
+ * rather than inline: [clearSeedMismatch] runs BEFORE `true` is returned.
+ * Extracted from [PlatformWalletManager.unlockWalletFromKeystore] so that
+ * contract is unit-testable without the native library. Mirror of the Swift
+ * `verifySeedBinding` watch-only arm (PlatformWalletManager.swift:764-770).
+ *
+ * @return true when the wallet is watch-only and the caller must report it as
+ *   such; false when a mnemonic exists and the binding verify must run.
+ */
+internal fun isGenuineWatchOnly(
+    hasMnemonic: Boolean,
+    clearSeedMismatch: () -> Unit,
+): Boolean {
+    if (hasMnemonic) return false
+    clearSeedMismatch()
+    return true
+}
 
 /**
  * Decode the tagged shielded-create payload the JNI returns:
