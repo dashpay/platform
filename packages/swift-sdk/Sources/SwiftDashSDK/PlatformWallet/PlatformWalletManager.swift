@@ -1045,13 +1045,10 @@ public class PlatformWalletManager: ObservableObject {
             }
             guard !outpoints.isEmpty else { continue }
             Task.detached(priority: .background) { [weak self] in
-                let conflict = await withTaskGroup(
-                    of: PlatformWalletError?.self,
-                    returning: PlatformWalletError?.self
-                ) { group in
+                await withTaskGroup(of: PlatformWalletError?.self) { group in
                     let maxConcurrent = 4
                     var nextIndex = 0
-                    var firstConflict: PlatformWalletError?
+                    var published = false
                     // Seed the group with up to `maxConcurrent` tasks.
                     // Each `group.addTask` closure captures
                     // `assetLockManager` — that retain keeps the
@@ -1066,11 +1063,19 @@ public class PlatformWalletManager: ObservableObject {
                         }
                         nextIndex += 1
                     }
-                    // As each finishes, queue the next pending entry;
-                    // keep the first double-spend verdict for the host.
+                    // As each finishes, queue the next pending entry —
+                    // and publish the FIRST double-spend verdict the
+                    // moment its own task returns. A sibling catch-up
+                    // can legitimately sit in its 300s proof wait, and
+                    // the host must not wait on that drain to learn a
+                    // lock is dead. `lastError` is the manager's one
+                    // public error surface; a UI that offers discard
+                    // (42) or explains the pending retry (43) reads it
+                    // from here.
                     while let outcome = await group.next() {
-                        if firstConflict == nil, let verdict = outcome {
-                            firstConflict = verdict
+                        if !published, let verdict = outcome {
+                            published = true
+                            await MainActor.run { self?.lastError = verdict }
                         }
                         if nextIndex < outpoints.count {
                             let (txid, vout) = outpoints[nextIndex]
@@ -1080,14 +1085,6 @@ public class PlatformWalletManager: ObservableObject {
                             nextIndex += 1
                         }
                     }
-                    return firstConflict
-                }
-                // Publish the verdict where hosts already observe
-                // failures. `lastError` is the manager's one public
-                // error surface; a UI that offers discard (42) or
-                // explains the pending retry (43) reads it from here.
-                if let conflict {
-                    await MainActor.run { self?.lastError = conflict }
                 }
             }
         }
