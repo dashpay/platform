@@ -808,16 +808,24 @@ async fn build_core_changeset(
             ..
         } => {
             let mut cs = CoreChangeSet::default();
-            // Inserted records bring fresh UTXOs and may consume previous ones.
-            for r in inserted {
+            // Inserted records bring fresh UTXOs and may consume previous
+            // ones. Updated records CAN change UTXO topology too: a gap-limit
+            // rescan re-processing a block can newly attribute an output the
+            // first processing recorded as Sent (its address was beyond the
+            // watch window then) — key-wallet corrects the record in place
+            // and re-emits it here (rust-dashcore fix/key-wallet-rescan-
+            // changeset). Deriving from `updated` as well forwards that
+            // correction; for ordinary re-confirmations it re-emits the same
+            // UTXOs, which the persisters absorb idempotently (the Kotlin
+            // handler's upsertUtxoRow preserves spend linkage, and a
+            // spend-first output is flipped spent by its deferred-input
+            // drain).
+            for r in inserted.iter().chain(updated.iter()) {
                 cs.new_utxos.extend(derive_new_utxos(r));
                 cs.spent_utxos.extend(derive_spent_utxos(r));
             }
-            // Updated records (re-confirmation, IS-lock applied to a known
-            // mempool tx, etc.) don't usually change UTXO topology — the
-            // record's content does change though, so re-emit it.
-            // Matured coinbase records likewise: no UTXO topology change,
-            // just a status update for the persister.
+            // Matured coinbase records: no UTXO topology change, just a
+            // status update for the persister.
             //
             // Contact watch-only records are filtered out of all three
             // lists: re-emitting one on confirmation would re-clobber the
@@ -2023,6 +2031,56 @@ mod contact_watch_only_projection_tests {
 
         assert_eq!(cs.records.len(), 1);
         assert_eq!(cs.records[0].direction, TransactionDirection::Outgoing);
+    }
+
+    /// A gap-limit rescan correction arrives as an `updated` record whose
+    /// output roles flipped from Sent to Received/Change (key-wallet
+    /// fix/key-wallet-rescan-changeset). The bridge must derive its UTXOs —
+    /// with `inserted`-only derivation the corrected record row lands but
+    /// the store's TXO set keeps the hole, which is the reload fund-loss
+    /// this whole chain exists to prevent.
+    #[tokio::test]
+    async fn updated_record_correction_contributes_its_utxos() {
+        let tx = tx_with(&[
+            (&our_receive_address(), PAID_TO_CONTACT),
+            (&our_change_address(), CHANGE),
+        ]);
+        let corrected = record(
+            &tx,
+            bip44_account_0(),
+            TransactionDirection::Internal,
+            vec![our_input()],
+            vec![
+                output(
+                    0,
+                    OutputRole::Received,
+                    &our_receive_address(),
+                    PAID_TO_CONTACT,
+                ),
+                output(1, OutputRole::Change, &our_change_address(), CHANGE),
+            ],
+            (PAID_TO_CONTACT + CHANGE) as i64 - FUNDING as i64,
+        );
+        let event = WalletEvent::BlockProcessed {
+            wallet_id: WALLET_ID,
+            height: 1_001,
+            chain_lock: None,
+            inserted: vec![],
+            updated: vec![corrected],
+            matured: vec![],
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+            addresses_derived: vec![],
+        };
+        let cs = build_core_changeset(&test_manager(), &event).await;
+
+        assert_eq!(
+            cs.new_utxos.len(),
+            2,
+            "an updated (corrected) record's owned outputs must reach the store"
+        );
+        assert_eq!(cs.spent_utxos.len(), 1, "its spent input is re-marked idempotently");
+        assert_eq!(cs.records.len(), 1, "and the corrected row itself is re-emitted");
     }
 
     /// A contact spending an output that a *pre-fix* build already
