@@ -4,7 +4,7 @@ use drive_proof_verifier::types::{
     ShieldedEncryptedNote, ShieldedEncryptedNotes, ShieldedEncryptedNotesQuery,
 };
 use rs_dapi_client::RequestSettings;
-use tracing::{info, warn};
+use tracing::{debug, warn};
 
 /// Fetch a single chunk of encrypted notes from the network.
 ///
@@ -28,7 +28,7 @@ pub async fn fetch_chunk(
         count: chunk_size as u32,
     };
 
-    info!(chunk_start, chunk_size, "fetching shielded notes chunk");
+    debug!(chunk_start, chunk_size, "fetching shielded notes chunk");
 
     // `Instant` is unavailable on wasm32; a chunk fetched there logs
     // `elapsed_ms=None` rather than a fabricated duration.
@@ -59,7 +59,7 @@ pub async fn fetch_chunk(
         None => (Vec::new(), 0),
     };
 
-    info!(
+    debug!(
         chunk_start,
         notes_returned = notes.len(),
         block_height = metadata.height,

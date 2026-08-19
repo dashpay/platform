@@ -76,7 +76,9 @@ fn enable_file_logging(log_level: &str, path: &Path) -> bool {
         .with_writer(Mutex::new(f_sdk))
         .with_ansi(false)
         .with_filter(tracing_subscriber::EnvFilter::new(format!(
-            "dash_sdk={log_level},rs_sdk_ffi={log_level},rs_sdk_ffi::metrics=off"
+            "dash_sdk={log_level},rs_sdk_ffi={log_level},rs_sdk_ffi::metrics=off,\
+             dash_sdk::platform::shielded={diag}",
+            diag = diag_level(log_level)
         )));
 
     let l_sdk_metrics = tracing_subscriber::fmt::layer()
@@ -173,7 +175,8 @@ fn broad_env_filter(log_level: &str) -> tracing_subscriber::EnvFilter {
          dash_spv={log_level},key_wallet={log_level},\
          dapi_grpc={log_level},h2={log_level},tower={log_level},\
          hyper={log_level},tonic={log_level},\
-         rs_dapi_client={diag},rs_sdk_trusted_context_provider={diag}",
+         rs_dapi_client={diag},rs_sdk_trusted_context_provider={diag},\
+         dash_sdk::platform::shielded={diag}",
         diag = diag_level(log_level)
     );
 
