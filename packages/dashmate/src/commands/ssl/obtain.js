@@ -94,12 +94,14 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
           // is already up keeps serving the previous certificate until it is
           // told to reload. Without this the command reports success while
           // nothing changes on the wire.
+          //
+          // This runs whenever the gateway is up, including when the obtain
+          // wrote no new files: providers install the pair by different routes,
+          // and nothing on disk reveals which certificate Envoy currently
+          // holds, so an obtain that skipped the write is also how an operator
+          // retries a reload that failed earlier.
           title: 'Reload gateway',
-          skip: async (ctx) => {
-            if (!ctx.certificateSaved) {
-              return 'Certificate is already up to date';
-            }
-
+          skip: async () => {
             if (!await dockerCompose.isServiceRunning(config, 'gateway')) {
               return 'Gateway is not running';
             }

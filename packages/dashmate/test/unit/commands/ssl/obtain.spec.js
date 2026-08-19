@@ -4,25 +4,20 @@ import ObtainCommand from '../../../../src/commands/ssl/obtain.js';
 describe('SSL obtain command', () => {
   /**
    * @param {Object} sinon
-   * @param {boolean} certificateSaved
+   * @param {string} [provider]
    * @return {Object}
    */
-  function obtainDependencies(sinon, certificateSaved) {
+  function obtainDependencies(sinon, provider = 'letsencrypt') {
     return {
+      provider,
       config: {
-        get: sinon.stub().returns('letsencrypt'),
+        get: sinon.stub().returns(provider),
       },
       dockerCompose: {
         isServiceRunning: sinon.stub().resolves(true),
         execCommand: sinon.stub().resolves(),
       },
-      obtainLetsEncryptCertificateTask: sinon.stub().callsFake(() => new Listr([
-        {
-          task: (ctx) => {
-            ctx.certificateSaved = certificateSaved;
-          },
-        },
-      ])),
+      obtainTask: sinon.stub().callsFake(() => new Listr([{ task: () => {} }])),
     };
   }
 
@@ -30,7 +25,11 @@ describe('SSL obtain command', () => {
    * @param {Object} dependencies
    * @return {Promise}
    */
-  function runObtain({ config, dockerCompose, obtainLetsEncryptCertificateTask }) {
+  function runObtain({
+    provider, config, dockerCompose, obtainTask,
+  }) {
+    const noop = () => new Listr([]);
+
     return new ObtainCommand().runWithDependencies(
       {},
       {
@@ -38,11 +37,11 @@ describe('SSL obtain command', () => {
         'no-retry': true,
         'expiration-days': undefined,
         force: false,
-        provider: 'letsencrypt',
+        provider,
       },
       config,
-      () => new Listr([]),
-      obtainLetsEncryptCertificateTask,
+      provider === 'zerossl' ? obtainTask : noop,
+      provider === 'letsencrypt' ? obtainTask : noop,
       { write: () => {} },
       {},
       dockerCompose,
@@ -53,7 +52,7 @@ describe('SSL obtain command', () => {
   // without telling the gateway to reload leaves the operator with a command
   // that reports success while the node keeps serving the old certificate.
   it('should reload the gateway after obtaining a certificate', async function it() {
-    const dependencies = obtainDependencies(this.sinon, true);
+    const dependencies = obtainDependencies(this.sinon);
 
     await runObtain(dependencies);
 
@@ -61,16 +60,40 @@ describe('SSL obtain command', () => {
       .to.have.been.calledOnceWith(dependencies.config, 'gateway', 'kill -SIGHUP 1');
   });
 
-  it('should not reload the gateway when the certificate was already up to date', async function it() {
-    const dependencies = obtainDependencies(this.sinon, undefined);
+  // ZeroSSL writes the certificate pair itself rather than going through
+  // saveCertificateTask, so the reload cannot depend on anything that task
+  // records.
+  it('should reload the gateway after obtaining a ZeroSSL certificate', async function it() {
+    const dependencies = obtainDependencies(this.sinon, 'zerossl');
 
     await runObtain(dependencies);
 
-    expect(dependencies.dockerCompose.execCommand).to.have.not.been.called();
+    expect(dependencies.dockerCompose.execCommand)
+      .to.have.been.calledOnceWith(dependencies.config, 'gateway', 'kill -SIGHUP 1');
+  });
+
+  // Nothing on disk reveals which certificate a running Envoy actually holds,
+  // so an obtain that writes no new files still has to reload. Otherwise an
+  // operator whose earlier reload failed can never recover by running the
+  // command again.
+  it('should reload the gateway when the certificate was already installed', async function it() {
+    const dependencies = obtainDependencies(this.sinon);
+    dependencies.obtainTask.callsFake(() => new Listr([
+      {
+        title: 'Certificate is up to date',
+        skip: () => true,
+        task: () => {},
+      },
+    ]));
+
+    await runObtain(dependencies);
+
+    expect(dependencies.dockerCompose.execCommand)
+      .to.have.been.calledOnceWith(dependencies.config, 'gateway', 'kill -SIGHUP 1');
   });
 
   it('should not reload a gateway that is not running', async function it() {
-    const dependencies = obtainDependencies(this.sinon, true);
+    const dependencies = obtainDependencies(this.sinon);
     dependencies.dockerCompose.isServiceRunning.resolves(false);
 
     await runObtain(dependencies);

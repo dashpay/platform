@@ -57,10 +57,6 @@ export default function saveCertificateTaskFactory(homeDir) {
           fs.writeFileSync(keyFile, ctx.privateKeyFile, { encoding: 'utf8', mode: keyMode });
           fs.chmodSync(keyFile, keyMode);
 
-          // A running gateway only picks up what was written here once it is
-          // told to reload, so let callers see that the pair changed.
-          ctx.certificateSaved = true;
-
           config.set('platform.gateway.ssl.enabled', true);
         },
       }]);
