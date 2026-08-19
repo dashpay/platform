@@ -613,10 +613,27 @@ fn map_spend_result(
     }
 }
 
-/// Preserve the typed "already consumed" funding report across the FFI
+/// Preserve the typed funding reports that hosts branch on across the FFI
 /// boundary while keeping every other funding failure on the existing generic
-/// error path. The wallet retains nonterminal consumption-unknown state; the
-/// host must not interpret this code as authenticated completion.
+/// error path.
+///
+/// Both preserved variants reach their dedicated code through the blanket
+/// `From<PlatformWalletError> for PlatformWalletFFIResult` impl in
+/// [`crate::error`], so `e.into()` also carries each typed `Display`
+/// rendering verbatim — the structured figures ride the message string or
+/// not at all (`PlatformWalletFFIResult` is ABI-frozen at code + message).
+///
+/// - `AssetLockAlreadyConsumed` -> `ErrorAssetLockAlreadyConsumed` (24). The
+///   wallet retains nonterminal consumption-unknown state; the host must not
+///   interpret this code as authenticated completion.
+/// - `AssetLockInsufficientFunds` -> `ErrorAssetLockInsufficientFunds` (29).
+///   Coin selection came up short over the permitted funding set, so nothing
+///   was built or broadcast and no funding output was consumed; the host may
+///   re-run preflight and confirm a smaller amount. Without this arm the
+///   shortfall flattened into the generic `ErrorWalletOperation` (6)
+///   catch-all below, hiding a typed error behind the code every unclassified
+///   failure already uses and forcing hosts back to substring-matching the
+///   Display text.
 fn map_asset_lock_funding_result(
     result: Result<(), PlatformWalletError>,
     operation: &str,
@@ -624,6 +641,7 @@ fn map_asset_lock_funding_result(
     match result {
         Ok(()) => PlatformWalletFFIResult::ok(),
         Err(e @ PlatformWalletError::AssetLockAlreadyConsumed(_)) => e.into(),
+        Err(e @ PlatformWalletError::AssetLockInsufficientFunds { .. }) => e.into(),
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("{operation} failed: {e}"),
@@ -1853,7 +1871,7 @@ mod tests {
     }
 
     #[test]
-    fn map_asset_lock_funding_result_preserves_already_consumed_code_only() {
+    fn map_asset_lock_funding_result_preserves_typed_funding_codes() {
         let out_point = dashcore::OutPoint {
             txid: dashcore::Txid::all_zeros(),
             vout: 7,
@@ -1880,6 +1898,70 @@ mod tests {
         assert_eq!(
             map_asset_lock_funding_result(Ok(()), "shielded fund-from-asset-lock").code,
             PlatformWalletFFIResultCode::Success
+        );
+    }
+
+    /// The asset-lock coin-selection shortfall must reach hosts as the
+    /// dedicated `ErrorAssetLockInsufficientFunds` (29) through THIS entry
+    /// point — `platform_wallet_manager_shielded_fund_from_asset_lock`, the
+    /// exact-amount funding form, whose whole result path is this helper.
+    /// The blanket `From` impl has always produced 29
+    /// (`error::tests::asset_lock_insufficient_funds_maps_to_dedicated_code`),
+    /// but the helper's catch-all used to flatten the variant to
+    /// `ErrorWalletOperation` (6) before it ever got there, so the typed code
+    /// never actually crossed the boundary on this call. Kotlin already
+    /// mirrors 29 as
+    /// `DashSdkError.PlatformWallet.AssetLockInsufficientFunds`
+    /// (`DashSdkError.kt`) — this pins the Rust side that feeds it.
+    #[test]
+    fn map_asset_lock_funding_result_preserves_shortfall_code_29() {
+        let err = PlatformWalletError::AssetLockInsufficientFunds {
+            available: 18_000_000,
+            required: 100_000_000,
+        };
+        let rendered = err.to_string();
+        let result = map_asset_lock_funding_result(Err(err), "shielded fund-from-asset-lock");
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockInsufficientFunds,
+            "must not flatten into the generic ErrorWalletOperation catch-all \
+             (rendered: {rendered})"
+        );
+        assert_ne!(
+            result.code as i32,
+            PlatformWalletFFIResultCode::ErrorWalletOperation as i32
+        );
+        // The number, not the name, is what Swift/Kotlin mirror by hand.
+        assert_eq!(result.code as i32, 29);
+
+        // The structured available/required duffs have no out-params, so they
+        // only survive if the arm hands the typed error to the blanket impl
+        // verbatim instead of re-wrapping it behind an operation prefix.
+        assert_eq!(
+            message_of(&result),
+            rendered,
+            "structured available/required duffs must cross the boundary verbatim"
+        );
+        assert!(message_of(&result).contains("asset lock coin selection is short"));
+    }
+
+    /// The resume sibling shares the helper, so the shortfall stays typed on
+    /// `platform_wallet_manager_shielded_resume_fund_from_asset_lock` too — a
+    /// host must not have to classify the same failure two different ways
+    /// depending on which funding entry point it came in through.
+    #[test]
+    fn map_asset_lock_funding_result_shortfall_is_typed_on_resume_too() {
+        let result = map_asset_lock_funding_result(
+            Err(PlatformWalletError::AssetLockInsufficientFunds {
+                available: 0,
+                required: 100_000_000,
+            }),
+            "shielded resume fund-from-asset-lock",
+        );
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockInsufficientFunds
         );
     }
 }
