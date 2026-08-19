@@ -111,8 +111,9 @@ These are shipped ABI. Do not renumber.
 | 98 | `NotFound` | Sentinel — `Option` returned as an error |
 | 99 | `ErrorUnknown` | Sentinel — unmapped/flattened errors |
 
-**Next allocatable integer: 43** — 27–42 are all claimed (27, 31, 34–41
-merged; 29 proposed by active #4361; 42 proposed by active #4356; 28, 30,
+**Next allocatable integer: 46** — 27–45 are all claimed (27, 31, 34–41
+merged; 29 proposed by active #4361; 42 proposed by active #4356; 43–45
+proposed by active #4313 at head `0302b188ab`; 28, 30,
 32 and 33 reserved). **28, 30,
 32 and 33 are RESERVED, not free**: 28 and 30 were vacated when the
 reservation trio moved to 34–36; 32 and 33 lapsed when their in-repo owners
@@ -120,7 +121,7 @@ reservation trio moved to 34–36; 32 and 33 lapsed when their in-repo owners
 unclaimed rather than back-filled, so no number is reused within a single
 review cycle. Rule 1's "do not reuse a gap unless this file marks it free"
 applies — this file does **not** mark any of them free, so the frontier is
-the only allocation source and a new code takes 43.
+the only allocation source and a new code takes 46.
 
 ## Proposed allocations (open PRs)
 
@@ -134,7 +135,8 @@ policy. Of the successors: #4308 **merged** (the trio, 34–36 — now in the
 merged table); three others — #4316, #4310 and #4311 — **closed without
 merging** (32 and 33 lapse to RESERVED; 29 is carried live by #4361, which
 holds the typed shortfall today); and #4313 (the shielded-invite
-claim) lost 37 to merged #4348 and takes the frontier when it revives.
+claim) lost 37 to merged #4348, revived, and now holds 43–45 from the
+frontier at head `0302b188ab` — see its three rows below.
 Fork-era numbers remain in the collision history, which is immutable record.
 
 | Code | Name | Owning PR | Status |
@@ -145,14 +147,16 @@ Fork-era numbers remain in the collision history, which is immutable record.
 | 30 | *(reserved — vacated)* | — | Vacated by #4185/#4256 on 2026-08-02; RESERVED, not reissuable — the next-free frontier is the only allocation source |
 | 32 | *(reserved — lapsed)* | — | Owner #4310 (successor of fork-era #4247) closed without merging; RESERVED, not reissuable |
 | 33 | *(reserved — lapsed)* | — | Owner #4311 (successor of fork-era #4256) closed without merging; RESERVED, not reissuable |
-| 37→(frontier) | `ErrorShieldedInviteAlreadyClaimed` | #4313 | On hold — its claim of 37 (a 32 → 37 move; successor of fork-era #4204) was **taken by merged #4348** (`ErrorDocumentNotForSale = 37`, ABI since 2026-08-09). It holds **no number** while on hold: on revival it renumbers its Rust discriminant and Swift/Kotlin mappings to whatever this file's frontier is at that moment, recording the claim here first. The frontier (see the frontier note above) stays public until then |
+| 43 | `ErrorShieldedInviteAlreadyClaimed` | #4313 | In review — **ACTIVE; the former "on hold — holds no number" row is obsolete.** The branch revived and renumbered to the frontier exactly as that row prescribed. Lineage: fork-era #4204's 32 → 37 move, then 37 **taken by merged #4348** (`ErrorDocumentNotForSale = 37`, ABI since 2026-08-09), then 37 → 43 on revival. `ErrorShieldedInviteAlreadyClaimed = 43` at head `0302b188ab`. **Rule 5 is satisfied at that head**: Swift carries all three edits — the raw case, the `init(ffi:)` arm, and the typed `PlatformWalletError.shieldedInviteAlreadyClaimed` case with its arm in `init(code:message:)` (which `init(result:)` delegates to) — plus `errorDescription`; Kotlin has the typed terminal `PlatformWallet.ShieldedInviteAlreadyClaimed`, the `43 ->` arm in `fromPlatformWalletNative`, and a `DashSdkErrorTest` pin on 43. Swift's 43 mirror predates `0302b188ab` on the branch; the raw-value test pin for 43 is Kotlin's (Swift's `ErrorHandlingTests` pins 44 and 45 only) |
+| 44 | `ErrorShieldedScanBudgetExhausted` | #4313 | In review — claimed from the frontier; carries the #4306 scan-budget semantics (retryable — progress is checkpointed). **Rule 5 is satisfied as of `0302b188ab`, and was not before it.** At that commit's parent Kotlin already mirrored 44 (typed `ShieldedScanBudgetExhausted`, the `fromPlatformWalletNative` arm, a `DashSdkErrorTest` pin) while Swift carried none of rule 5's three edits, so 44 fell to `init(ffi:)`'s `default:` and lost its identity as `.errorUnknown` — one host typed, the other blind, the same failure shape as row 29's. `0302b188ab` adds the raw case, the `init(ffi:)` arm, the typed case with its `init(code:message:)` arm and `errorDescription`, and an `ErrorHandlingTests` pin of raw value 44 |
+| 45 | `ErrorShieldedLifecycleBusy` | #4313 | In review — claimed from the frontier. A shielded lifecycle operation refused because teardown/clear holds the wallet (retryable — nothing consumed); the FFI remove path passes the refusal through as 45 instead of flattening it to `ErrorWalletOperation` (6). Same rule-5 history as 44: Kotlin mirrored 45 at the parent commit already; Swift's three edits and an `ErrorHandlingTests` pin of raw value 45 landed in `0302b188ab`. **Rule 5 is satisfied at that head** |
 
 **Code 31 left this table on 2026-08-04.** `ErrorSigningKeyUnavailable` sat here
 as #4183's proposal until #4183 merged (`189a3abb1c`); it is now in the merged
 table above and rule 3 applies to it in full. It has since had company: the
 reservation trio (34–36, #4308) and the 37–41 block (#4348, #4360) also
 merged out of proposal — see the merged table, and take the current
-frontier only from the frontier note above (43 as of 2026-08-11).
+frontier only from the frontier note above (46 as of 2026-08-19).
 
 PRs that touch `rs-platform-wallet-ffi` but claim **no** new code, verified
 2026-08-04 against each PR's file list and the `error.rs` at its head (a
@@ -237,7 +241,7 @@ PR `#3968` is the serious one: rule 3 forbids renumbering a code that has
 shipped, and `ErrorTransactionBroadcastRejected = 26` is merged ABI. Moving it
 to 28 would silently reinterpret every 26 an already-compiled host returns.
 PR #3968 must keep 26 where it is and take fresh integers **from the
-frontier (43+ as of 2026-08-11 — check the frontier note above)** for its two
+frontier (46+ as of 2026-08-19 — check the frontier note above)** for its two
 persister codes. Its 27 is now doubly wrong: 27 is merged
 ABI (`ErrorShutdownIncomplete`), so rule 3 protects it too. Note that 28 is
 reserved, not free — it is not available to #3968 either.
@@ -403,7 +407,7 @@ The detail behind those rows:
   simply the merged base's, and there is no second claim to reconcile.
 
 PR `#3968` needs a rebase onto current `v4.2-dev` **and** fresh integers from
-the frontier (**43+**, per the frontier note above). It must leave 26 alone; 27 is no longer available to it
+the frontier (**46+**, per the frontier note above). It must leave 26 alone; 27 is no longer available to it
 either (merged ABI now), and neither are the reserved 28 and 30.
 
 ### 26 — RESOLVED: #4196 restacked onto #4185 and is on 34 / 35 / 36
