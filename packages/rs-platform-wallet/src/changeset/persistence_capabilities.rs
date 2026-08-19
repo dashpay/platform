@@ -169,6 +169,10 @@ impl PersistenceCapabilities {
                 PersistenceCapabilities::CORE_SWEEP_REMOVAL,
                 "core_sweep_removal",
             ),
+            (
+                PersistenceCapabilities::DASHPAY_PAYMENTS,
+                "dashpay_payments",
+            ),
         ];
 
         KNOWN
@@ -199,6 +203,7 @@ mod tests {
         assert_eq!(PersistenceCapabilities::DPNS_NAME_STATES.bits(), 0x100);
         assert_eq!(PersistenceCapabilities::TRACKED_ASSET_LOCKS.bits(), 0x200);
         assert_eq!(PersistenceCapabilities::CORE_SWEEP_REMOVAL.bits(), 0x400);
+        assert_eq!(PersistenceCapabilities::DASHPAY_PAYMENTS.bits(), 0x800);
         assert_eq!(
             PersistenceCapabilities::ASSET_LOCK_RECONCILIATION.bits(),
             0x281
@@ -214,5 +219,22 @@ mod tests {
             missing.names(),
             vec!["asset_lock_funding_indices", "wallet_restore"]
         );
+    }
+
+    /// Every declarable bit must be nameable. A bit missing from `KNOWN`
+    /// still gates behaviour but vanishes from every diagnostic that
+    /// reports capabilities by name, so a host debugging why its rows
+    /// never landed sees nothing about the capability that withheld them
+    /// — which is exactly what `DASHPAY_PAYMENTS` did until this test.
+    #[test]
+    fn every_declared_bit_has_a_stable_name() {
+        for shift in 0..12u32 {
+            let bit = PersistenceCapabilities::from_bits_retain(1 << shift);
+            assert_eq!(
+                bit.names().len(),
+                1,
+                "bit 1 << {shift} is declarable but has no name in KNOWN"
+            );
+        }
     }
 }
