@@ -3152,6 +3152,202 @@ fn core_selection_strategy(
     }
 }
 
+/// `platform_wallet_account_utxos` swept across every account — the
+/// engine-side UTXO inventory `PlatformWalletManager.reconcileTxoStore`
+/// diffs against the Room `txos` mirror (dropped change outputs of
+/// CoinJoin-funded sends leave the mirror short; the engine reloads from
+/// that mirror on restart, so an un-reconciled hole becomes a fund-loss).
+/// Returns a JSON object `{"utxos":[...],"errors":[...]}` — one `utxos`
+/// row per output the engine currently holds, tagged with its owning
+/// account. Accounts are enumerated with the same `get_account_balances`
+/// sweep the DashPay tab uses; keys-only accounts return no UTXOs and
+/// contribute nothing. `network` follows `Network.ffiValue` (0 mainnet,
+/// 2 devnet, 3 regtest, else testnet) and selects the address encoding;
+/// an output whose script has no address form carries an empty `address`
+/// for the caller to skip. A per-account read failure lands in `errors`
+/// instead of failing the sweep — the reconciler must still see every
+/// account that DID read, so one faulted account cannot mask the others'
+/// repair.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerAllUtxosJson(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    network: jni::sys::jint,
+) -> jni::sys::jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(wid) = read_id32(env, &wallet_id) else {
+            return ptr::null_mut();
+        };
+        let net = match network {
+            0 => dashcore::Network::Mainnet,
+            2 => dashcore::Network::Devnet,
+            3 => dashcore::Network::Regtest,
+            _ => dashcore::Network::Testnet,
+        };
+        let mut entries: *const platform_wallet_ffi::AccountBalanceEntryFFI = ptr::null();
+        let mut count: usize = 0;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_get_account_balances(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                &mut entries,
+                &mut count,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let mut rows: Vec<String> = Vec::new();
+        let mut errors: Vec<String> = Vec::new();
+        if !entries.is_null() && count > 0 {
+            let accounts = unsafe { std::slice::from_raw_parts(entries, count) };
+            for acc in accounts {
+                let spec = platform_wallet_ffi::AccountSpecFFI {
+                    type_tag: acc.type_tag as u8,
+                    standard_tag: acc.standard_tag as u8,
+                    index: acc.index,
+                    registration_index: acc.registration_index,
+                    key_class: acc.key_class,
+                    user_identity_id: acc.user_identity_id,
+                    friend_identity_id: acc.friend_identity_id,
+                    account_xpub_bytes: ptr::null(),
+                    account_xpub_bytes_len: 0,
+                };
+                let mut utxos: *const platform_wallet_ffi::AccountUtxoEntryFFI = ptr::null();
+                let mut utxo_count: usize = 0;
+                let res = unsafe {
+                    platform_wallet_ffi::platform_wallet_account_utxos(
+                        manager_handle as Handle,
+                        wid.as_ptr(),
+                        &spec,
+                        &mut utxos,
+                        &mut utxo_count,
+                    )
+                };
+                if let Some(msg) = pwffi_error_message(res) {
+                    errors.push(format!(
+                        "{{\"typeTag\":{},\"index\":{},\"message\":{}}}",
+                        acc.type_tag as u8,
+                        acc.index,
+                        json_escape(&msg),
+                    ));
+                    continue;
+                }
+                if utxos.is_null() || utxo_count == 0 {
+                    continue;
+                }
+                let items = unsafe { std::slice::from_raw_parts(utxos, utxo_count) };
+                for u in items {
+                    let script: &[u8] = if u.script_pubkey.is_null() || u.script_pubkey_len == 0 {
+                        &[]
+                    } else {
+                        unsafe {
+                            std::slice::from_raw_parts(u.script_pubkey, u.script_pubkey_len)
+                        }
+                    };
+                    let script_buf = dashcore::ScriptBuf::from(script.to_vec());
+                    let address = dashcore::Address::from_script(&script_buf, net)
+                        .map(|a| a.to_string())
+                        .unwrap_or_default();
+                    rows.push(format!(
+                        "{{\"typeTag\":{},\"standardTag\":{},\"index\":{},\
+                         \"txid\":\"{}\",\"vout\":{},\"amount\":{},\
+                         \"address\":{},\"scriptHex\":\"{}\",\
+                         \"height\":{},\"isLocked\":{}}}",
+                        acc.type_tag as u8,
+                        acc.standard_tag as u8,
+                        acc.index,
+                        hex_lower(&u.outpoint_txid),
+                        u.outpoint_vout,
+                        u.value_duffs,
+                        json_escape(&address),
+                        hex_lower(script),
+                        u.height,
+                        u.is_locked,
+                    ));
+                }
+                unsafe {
+                    platform_wallet_ffi::platform_wallet_account_utxos_free(
+                        utxos as *mut platform_wallet_ffi::AccountUtxoEntryFFI,
+                        utxo_count,
+                    )
+                };
+            }
+        }
+        unsafe {
+            platform_wallet_ffi::platform_wallet_manager_free_account_balances(
+                entries as *mut platform_wallet_ffi::AccountBalanceEntryFFI,
+                count,
+            )
+        };
+        let json = format!(
+            "{{\"utxos\":[{}],\"errors\":[{}]}}",
+            rows.join(","),
+            errors.join(","),
+        );
+        env.new_string(json)
+            .map(|s| s.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// Extract-and-free a `PlatformWalletFFIResult`'s error message WITHOUT
+/// throwing — the per-account soft-fail path of
+/// [`Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerAllUtxosJson`]
+/// reports account faults in-band so the sweep keeps going. `None` on
+/// success.
+fn pwffi_error_message(
+    mut result: platform_wallet_ffi::PlatformWalletFFIResult,
+) -> Option<String> {
+    if result.code == platform_wallet_ffi::PlatformWalletFFIResultCode::Success {
+        return None;
+    }
+    let message = if result.message.is_null() {
+        format!("platform-wallet error (code {})", result.code as i32)
+    } else {
+        // SAFETY: non-null message is a valid CString produced by the FFI.
+        unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned()
+    };
+    // SAFETY: `result` is a fresh PlatformWalletFFIResult; free its message.
+    unsafe { platform_wallet_ffi::platform_wallet_ffi_result_free(&mut result) };
+    Some(message)
+}
+
+/// Lower-hex of a byte slice (txid bytes are emitted in the same order
+/// the changeset path hands Kotlin, so hex→bytes on the Kotlin side
+/// reproduces the exact `txos.txid` blob).
+fn hex_lower(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        s.push_str(&format!("{:02x}", b));
+    }
+    s
+}
+
+/// Minimal JSON string escape (quotes, backslash, control chars) — the
+/// values here are base58/bech32 addresses and FFI error strings.
+fn json_escape(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() + 2);
+    out.push('"');
+    for c in value.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
 /// Read a 32-byte id from a Java `byte[]`; throws + returns None on the
 /// wrong length or a JNI error.
 fn read_id32(env: &mut JNIEnv, arr: &JByteArray) -> Option<[u8; 32]> {

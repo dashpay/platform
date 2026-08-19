@@ -128,6 +128,25 @@ internal object WalletManagerNative {
     /** Balance as `long[4]` = {confirmed, unconfirmed, immature, locked}. */
     external fun walletGetBalance(walletHandle: Long): LongArray
 
+    /**
+     * The engine's full UTXO inventory for one wallet, every account, as
+     * JSON `{"utxos":[...],"errors":[...]}` — the source of truth the
+     * TXO-store reconciler ([PlatformWalletManager.reconcileTxoStore])
+     * diffs against the Room `txos` mirror. Each `utxos` row carries the
+     * owning account tags, the txid hex in the same byte order the
+     * changeset path hands [PlatformWalletPersistenceHandler] (so
+     * hex→bytes reproduces the `txos.txid` blob), vout, amount (duffs),
+     * derived address (empty when the script has no address form),
+     * scriptHex, height and isLocked. Per-account read failures land in
+     * `errors` instead of failing the sweep. `network` is
+     * [org.dashfoundation.dashsdk.Network.ffiValue].
+     */
+    external fun walletManagerAllUtxosJson(
+        managerHandle: Long,
+        walletId: ByteArray,
+        network: Int,
+    ): String?
+
     // ── Core transaction builder (1:1 over `core_wallet_tx_builder_*`) ─
     //
     // Each step is a thin extern (one export = one FFI call, per

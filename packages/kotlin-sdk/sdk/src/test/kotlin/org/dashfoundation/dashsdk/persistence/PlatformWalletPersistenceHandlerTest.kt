@@ -5038,6 +5038,61 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(row.isSweptTombstone)
     }
 
+    // ── TXO-store reconcile (the job-flower change-drop repair) ───────
+
+    private val changeTxid = ByteArray(32) { 7 }
+    private val reconcileTip = 1_536_950
+
+    private fun engineUtxoJson(
+        txidHex: String,
+        vout: Int,
+        amount: Long,
+        address: String = "yStxXHHzhAx58JhaPBNhn3xsH93UwBM2nd",
+        height: Int = 1_534_921,
+    ): String =
+        """{"utxos":[{"typeTag":0,"standardTag":0,"index":0,"txid":"$txidHex","vout":$vout,""" +
+            """"amount":$amount,"address":"$address","scriptHex":"76a914000088ac",""" +
+            """"height":$height,"isLocked":false}],"errors":[]}"""
+
+    private fun ByteArray.toHexLower() = joinToString("") { "%02x".format(it) }
+
+    @Test
+    fun reconcileHealsMissingChangeTxoAndRepairsNetAmount() = runTest {
+        // A send record born blind to its own change output: netAmount
+        // persisted as the full input value (the job-flower 6cef55ab…
+        // shape) and NO txos row for the change.
+        db.transactionDao().upsert(
+            org.dashfoundation.dashsdk.persistence.entities.TransactionEntity(
+                txid = changeTxid,
+                transactionData = byteArrayOf(1, 2, 3),
+                netAmount = -1_000_010_000L,
+            ),
+        )
+
+        val report = handler.reconcileTxos(
+            walletId,
+            engineUtxoJson(changeTxid.toHexLower(), vout = 1, amount = 989_009_773L),
+            tipHeight = reconcileTip,
+        )
+
+        assertEquals(1, report.inserted)
+        assertEquals(989_009_773L, report.insertedDuffs)
+        assertEquals(1, report.netAmountRepairs)
+
+        val row = db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 1))
+        assertNotNull(row)
+        assertFalse(row!!.isSpent)
+        assertEquals(989_009_773L, row.amount)
+        assertTrue(row.isConfirmed)
+
+        // -10.00010000 + 9.89009773 = -0.11000227 — history now matches
+        // what the engine (and dashj) report for this send.
+        assertEquals(
+            -11_000_227L,
+            db.transactionDao().getByTxid(changeTxid)!!.netAmount,
+        )
+    }
+
     @Test
     fun aRepointedTombstoneIsRestampedToTheLaterSweep() = runTest {
         // A chained sweep that re-points a still-unfunded claim to a new
@@ -5433,5 +5488,63 @@ class PlatformWalletPersistenceHandlerTest {
 
         chainLockHeightRound(handler, 600)
         assertEquals(600, db.walletDao().getByWalletId(walletId)!!.lastAppliedChainLockHeight)
+    }
+
+    @Test
+    fun reconcileIsIdempotentAndNeverDoubleCredits() = runTest {
+        db.transactionDao().upsert(
+            org.dashfoundation.dashsdk.persistence.entities.TransactionEntity(
+                txid = changeTxid,
+                transactionData = byteArrayOf(1),
+                netAmount = -1_000_010_000L,
+            ),
+        )
+        val json = engineUtxoJson(changeTxid.toHexLower(), vout = 1, amount = 989_009_773L)
+
+        handler.reconcileTxos(walletId, json, tipHeight = reconcileTip)
+        val second = handler.reconcileTxos(walletId, json, tipHeight = reconcileTip)
+
+        assertEquals(0, second.inserted)
+        assertEquals(0, second.netAmountRepairs)
+        assertEquals(
+            -11_000_227L,
+            db.transactionDao().getByTxid(changeTxid)!!.netAmount,
+        )
+    }
+
+    @Test
+    fun reconcileSkipsImmatureOutputsAndPreservesSpentRows() = runTest {
+        // Immature: inside the 100-conf gate (flags on the engine snapshot
+        // can't carry coinbase/IS-lock, so fresh rows wait for a later
+        // sweep) — nothing inserted.
+        val fresh = handler.reconcileTxos(
+            walletId,
+            engineUtxoJson(changeTxid.toHexLower(), vout = 0, amount = 5L, height = reconcileTip - 3),
+            tipHeight = reconcileTip,
+        )
+        assertEquals(0, fresh.inserted)
+        assertEquals(1, fresh.skippedImmature)
+        assertNull(db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 0)))
+
+        // A row the mirror already holds — even marked spent while the
+        // engine still lists it — is left untouched: reconcile is
+        // insert-only and never flips spend state.
+        assertEquals(
+            0,
+            handler.onWalletChangesetUtxoAdded(
+                walletId, changeTxid, 2, 42L, "yTestAddr", byteArrayOf(0x51), 1_500_000,
+                false, true, false, false,
+            ),
+        )
+        val seeded = db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 2))!!
+        db.txoDao().upsert(seeded.copy(isSpent = true))
+
+        val report = handler.reconcileTxos(
+            walletId,
+            engineUtxoJson(changeTxid.toHexLower(), vout = 2, amount = 42L, height = 1_500_000),
+            tipHeight = reconcileTip,
+        )
+        assertEquals(0, report.inserted)
+        assertTrue(db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 2))!!.isSpent)
     }
 }
