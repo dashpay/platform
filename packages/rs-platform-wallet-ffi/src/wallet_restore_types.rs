@@ -703,6 +703,48 @@ pub struct WalletRestoreEntryFFI {
     pub asset_lock_input_spends_count: usize,
 }
 
+/// Every field named explicitly so that adding a field to this ABI struct
+/// is a compile error here rather than a silently-widened `mem::zeroed()`
+/// in test code: the all-zero bit pattern is valid for today's pointers,
+/// integers and `FFINetwork`, but stops being valid the moment a field
+/// with a validity niche (a `NonNull`, a reference, a gap-ful enum) joins
+/// the struct — and that regression would otherwise be silent UB.
+impl Default for WalletRestoreEntryFFI {
+    fn default() -> Self {
+        Self {
+            wallet_id: [0u8; 32],
+            network: crate::types::FFINetwork::Testnet,
+            accounts: std::ptr::null(),
+            accounts_count: 0,
+            platform_address_balances: std::ptr::null(),
+            platform_address_balances_count: 0,
+            platform_sync_height: 0,
+            platform_sync_timestamp: 0,
+            platform_last_known_recent_block: 0,
+            identities: std::ptr::null(),
+            identities_count: 0,
+            birth_height: 0,
+            synced_height: 0,
+            last_processed_height: 0,
+            last_synced: 0,
+            utxos: std::ptr::null(),
+            utxos_count: 0,
+            tracked_asset_locks: std::ptr::null(),
+            tracked_asset_locks_count: 0,
+            unresolved_asset_lock_tx_records: std::ptr::null(),
+            unresolved_asset_lock_tx_records_count: 0,
+            provider_special_txs: std::ptr::null(),
+            provider_special_txs_count: 0,
+            core_address_pools: std::ptr::null(),
+            core_address_pools_count: 0,
+            last_applied_chain_lock_bytes: std::ptr::null(),
+            last_applied_chain_lock_bytes_len: 0,
+            asset_lock_input_spends: std::ptr::null(),
+            asset_lock_input_spends_count: 0,
+        }
+    }
+}
+
 // SAFETY: Pointers are Swift-owned and lifetime-scoped to the callback.
 // Sending the struct across threads without being used is fine; any
 // use must happen within the callback window.

@@ -342,8 +342,9 @@ pub enum PlatformWalletError {
     ///
     /// The immediate consequence is the same — while the sibling stands,
     /// peers reject the lock as a double spend and a proof wait would hang
-    /// unboundedly, so the resume stops here without broadcasting or
-    /// waiting. The verdict, however, is provisional, and this variant
+    /// unboundedly, so the resume stops here without a further broadcast
+    /// or wait (a `Broadcast`-status lock was already sent on an earlier
+    /// call). The verdict, however, is provisional, and this variant
     /// carries NO licence to discard the tracked lock. The host keeps the
     /// lock and retries later; the situation resolves itself in one of two
     /// ways: the sibling reaches a chainlock and the next resume reports

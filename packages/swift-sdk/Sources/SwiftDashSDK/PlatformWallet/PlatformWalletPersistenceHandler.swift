@@ -1384,7 +1384,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 record.spendingTransaction = spending
             }
             if let spending = resolvedSpending {
-                record.isSpent = Self.spendIsInBlock(spending)
+                // Monotonic — same rule as `resolveInputOutpoint`: a later
+                // mempool-context resolution must not downgrade a flag an
+                // in-block spend already set, or the conflict evidence the
+                // load path restores from `isSpent` rows evaporates.
+                record.isSpent = record.isSpent || Self.spendIsInBlock(spending)
             }
             record.lastUpdated = Date()
             for row in pendingRows {
@@ -1436,7 +1440,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         // and set it then. Writing `false` here would flap a
         // previously-true `isSpent` on every reordered emit.
         if let spending = spendingTx {
-            txo.isSpent = Self.spendIsInBlock(spending)
+            // Monotonic — same rule as `resolveInputOutpoint`.
+            txo.isSpent = txo.isSpent || Self.spendIsInBlock(spending)
         }
         txo.lastUpdated = Date()
         // The spend signal landed both via the legacy

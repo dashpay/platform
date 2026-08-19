@@ -6077,9 +6077,9 @@ mod tests {
                 spender_context: context,
             };
             // The decoder reads only `wallet_id` (for the log line) and the
-            // spend slice, so a zeroed entry is a sound stand-in for the
-            // ~40 pointer fields it never touches.
-            let mut entry: WalletRestoreEntryFFI = unsafe { std::mem::zeroed() };
+            // spend slice; `Default` names every field, so the compiler
+            // re-checks this stand-in whenever the ABI struct grows.
+            let mut entry = WalletRestoreEntryFFI::default();
             entry.asset_lock_input_spends = &row;
             entry.asset_lock_input_spends_count = 1;
 

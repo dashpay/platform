@@ -266,7 +266,8 @@ pub enum PlatformWalletFFIResultCode {
     //   39  ErrorInsufficientIdentityCredits DPNS username marketplace
     //   40  ErrorContestedNameNotTradable   DPNS username marketplace
     //   41  ErrorShieldedInsufficientBalance Platform→Shielded capacity preflight
-    //   42  ErrorAssetLockInputConflict     asset-lock double-spend detection
+    //   42  ErrorAssetLockInputConflict     asset-lock double-spend detection (terminal)
+    //   43  ErrorAssetLockInputContested    asset-lock double-spend detection (provisional)
     //
     // 38/39/40 carry a STABLE JSON detail object in the result `message`
     // instead of the typed `Display` rendering — see each variant's doc for
@@ -382,7 +383,8 @@ pub enum PlatformWalletFFIResultCode {
     /// indefinitely.
     ///
     /// TERMINAL, and the only code here that authorises a host to discard
-    /// a tracked asset lock: this resume broadcast nothing, and the
+    /// a tracked asset lock: this resume performed no additional broadcast
+    /// (a `Broadcast`-status lock was sent on an earlier call), and the
     /// spender that took the input has reached ChainLock finality — its
     /// block can never be reorganised away, so no retry of this outpoint
     /// can ever succeed. The remedy is to drop the lock and build a new
@@ -411,7 +413,7 @@ pub enum PlatformWalletFFIResultCode {
     /// Maps `PlatformWalletError::AssetLockInputContested`. Same detection
     /// as [`Self::ErrorAssetLockInputConflict`] — a confirmed transaction
     /// of this wallet already spent one of the tracked lock's inputs, so
-    /// the resume stopped before broadcasting into a wait that cannot
+    /// the resume stopped without a further broadcast or a wait that cannot
     /// return — but the spender sits in an ordinary block a
     /// reorganisation can still drop, so the verdict is PROVISIONAL.
     ///
