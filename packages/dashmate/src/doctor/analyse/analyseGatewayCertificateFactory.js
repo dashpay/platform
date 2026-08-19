@@ -119,12 +119,13 @@ ${RESTART_HINT}`,
       ));
     }
 
-    // Both providers validate over inbound port 80. Being closed is only reported alongside a
-    // certificate problem: the port is bound just for the seconds a validation takes, so an
-    // external check finds it closed on healthy nodes too and on its own would be noise.
-    const acmeHttpPort = samples.getServiceInfo('gateway', 'acmeHttpPort');
+    // Both obtainable providers reach this node on port 80 to validate it. Being closed is
+    // only reported alongside a certificate problem: the port is bound just for the seconds a
+    // validation takes, so an external check finds it closed on healthy nodes too and on its
+    // own would be noise.
+    const validationHttpPort = samples.getServiceInfo('gateway', 'validationHttpPort');
 
-    if (problems.length > 0 && acmeHttpPort && acmeHttpPort !== 'OPEN') {
+    if (problems.length > 0 && validationHttpPort && validationHttpPort !== 'OPEN') {
       problems.push(new Problem(
         'Inbound port 80 is not reachable, which is how certificates are validated. '
         + 'This may be why renewal is failing',

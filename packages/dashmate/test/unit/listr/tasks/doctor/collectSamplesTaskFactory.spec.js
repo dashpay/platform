@@ -232,7 +232,7 @@ describe('collectSamplesTaskFactory', () => {
     expect(servedCertificate.state).to.equal('served');
     expect(servedCertificate.identityVerified).to.be.true();
     expect(servedCertificate.matchesOnDisk).to.be.true();
-    expect(samples.getServiceInfo('gateway', 'acmeHttpPort')).to.equal('OPEN');
+    expect(samples.getServiceInfo('gateway', 'validationHttpPort')).to.equal('OPEN');
   });
 
   it('should collect metrics as text rather than an unresolved promise', async () => {

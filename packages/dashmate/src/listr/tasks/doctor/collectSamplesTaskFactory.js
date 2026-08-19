@@ -233,23 +233,22 @@ export default function collectSamplesTaskFactory(
                       : null;
                   }
 
-                  obfuscateObjectRecursive(result, (_field, value) => (typeof value === 'string' ? value.replaceAll(
-                    process.env.USER,
-                    hideString(process.env.USER),
-                  ) : value));
-
                   ctx.samples.setServiceInfo('gateway', 'servedCertificate', result);
                 },
               },
               {
-                // Both certificate providers validate this node over inbound port 80.
-                enabled: () => config.get('platform.enable'),
-                title: 'ACME HTTP validation port',
+                // Both obtainable providers reach this node on port 80 to prove it controls
+                // its address before issuing: Let's Encrypt over ACME, ZeroSSL over its own
+                // verification server. A self-signed or operator-supplied certificate is
+                // never validated, so the port means nothing for those.
+                enabled: () => config.get('platform.enable')
+                  && ['zerossl', 'letsencrypt'].includes(config.get('platform.gateway.ssl.provider')),
+                title: 'Certificate validation port',
                 task: async () => {
                   const response = await providers.mnowatch.checkPortStatus(80, config.get('externalIp'))
                     .catch((e) => e.toString());
 
-                  ctx.samples.setServiceInfo('gateway', 'acmeHttpPort', response);
+                  ctx.samples.setServiceInfo('gateway', 'validationHttpPort', response);
                 },
               },
               {

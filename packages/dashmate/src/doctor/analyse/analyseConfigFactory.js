@@ -7,16 +7,13 @@ import Problem from '../Problem.js';
 
 /**
  * Whether a ZeroSSL certificate can be renewed depends on the operator's plan, which dashmate
- * cannot see. Both routes are offered rather than assuming which one applies, and the cost of
- * switching is stated so the choice is an informed one.
+ * cannot see, so both routes are offered rather than assuming which one applies.
  */
-const LETSENCRYPT_ALTERNATIVE = chalk`Or switch to Let's Encrypt, which issues certificates for IP addresses free of
-charge and renews them automatically:
+const LETSENCRYPT_ALTERNATIVE = chalk`Or switch to Let's Encrypt, which issues certificates for IP addresses free
+of charge:
   {bold.cyanBright dashmate config set platform.gateway.ssl.provider letsencrypt}
   {bold.cyanBright dashmate config set platform.gateway.ssl.providerConfigs.letsencrypt.email EMAIL}
-  {bold.cyanBright dashmate ssl obtain}
-Its certificates for IP addresses are valid for 6 days and renew every few days on
-their own, rather than the 90 days a ZeroSSL certificate lasts.`;
+  {bold.cyanBright dashmate ssl obtain}`;
 
 export default function analyseConfigFactory() {
   /**

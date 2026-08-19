@@ -129,7 +129,7 @@ describe('analyseGatewayCertificateFactory', () => {
   });
 
   it('should report a closed port 80 as a likely cause when a certificate problem exists', () => {
-    samples.setServiceInfo('gateway', 'acmeHttpPort', 'CLOSED');
+    samples.setServiceInfo('gateway', 'validationHttpPort', 'CLOSED');
 
     const problems = analyse(served({
       certificate: { fingerprint256: 'AA:BB', validTo: validTo(-3) },
@@ -142,7 +142,7 @@ describe('analyseGatewayCertificateFactory', () => {
   it('should not report a closed port 80 on a node whose certificate is healthy', () => {
     // The port is only bound for the seconds a validation takes, so an external check finds it
     // closed on actively renewing nodes too. Alone it would fire far more often than it is right.
-    samples.setServiceInfo('gateway', 'acmeHttpPort', 'CLOSED');
+    samples.setServiceInfo('gateway', 'validationHttpPort', 'CLOSED');
 
     expect(analyse(served())).to.be.empty();
   });

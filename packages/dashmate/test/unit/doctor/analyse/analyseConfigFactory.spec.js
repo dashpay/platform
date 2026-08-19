@@ -109,13 +109,14 @@ describe('analyseConfigFactory', () => {
       expect(problem.getSolution()).to.include('platform.gateway.ssl.provider letsencrypt');
     });
 
-    it('should state the cost of switching so the choice is informed', () => {
+    it('should name what makes the alternative worth taking', () => {
+      // Both providers renew on their own, so that is not what separates them
       const [problem] = analyseSslSample({
         error: ZEROSSL_ERRORS.CERTIFICATE_EXPIRES_SOON,
         data: { certificate: { expires: '2026-01-01' } },
       });
 
-      expect(problem.getSolution()).to.include('6 days');
+      expect(problem.getSolution()).to.include('free');
     });
 
     it('should surface the reason ZeroSSL itself gave', () => {
