@@ -53,7 +53,14 @@ export default function scheduleRenewZeroSslCertificateFactory(
     }
 
     let expiresAt;
-    if (certificate.isExpiredInDays(Certificate.EXPIRATION_LIMIT_DAYS)) {
+    if (certificate.expires === null) {
+      // A draft or pending certificate has no expiry date yet. Resume its
+      // obtain flow instead of passing a date in the past to cron.
+      expiresAt = new Date(Date.now() + 3000);
+
+      // eslint-disable-next-line no-console
+      console.log(`SSL certificate ${certificate.id} has not been issued yet. Schedule to obtain it NOW.`);
+    } else if (certificate.isExpiredInDays(Certificate.EXPIRATION_LIMIT_DAYS)) {
       // Obtain new certificate right away
       expiresAt = new Date(Date.now() + 3000);
 
