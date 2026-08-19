@@ -1159,19 +1159,52 @@ pub async fn transfer_multi<S: ShieldedStore, P: OrchardProver>(
             "builder fee must match the reserved minimum fee"
         );
 
-        // One activity row for the whole transition. The counterparty is only meaningful when
-        // every output lands on the same address (the fund-an-address-with-N-notes shape); a
-        // genuine multi-recipient send has no single counterparty to record.
+        // One activity row for the whole transition.
         //
-        // Routed through the shared `unanimous_bytes` rule over the canonical 43-byte raw
-        // address encoding — the exact form the cold-restore deriver recovers from the
-        // OVK-decrypted outgoing notes. Both paths call this one function, so a restored row
-        // names a recipient exactly when this live row does, for the same transition.
-        let recipients: Vec<Vec<u8>> = outputs
+        // Partition the requested outputs into EXTERNAL payments and WALLET-OWNED receipts
+        // first, using the same test the cold-restore deriver uses: `is_own_orchard_recipient`
+        // (coordinator.rs) runs each recipient through this account's
+        // `IncomingViewingKey::diversifier_index` — Orchard addresses are diversified, so a
+        // fixed-address comparison cannot work — and the deriver then drops the own outputs
+        // before aggregating the external payment.
+        //
+        // The public multi-transfer API accepts ANY valid Orchard address, including this
+        // account's own diversified ones. Without the split, 10 credits to an external address
+        // plus 20 to an own address recorded live as a 30-credit `Sent` with no counterparty
+        // but restored as a 10-credit `Sent` to the external address, and an all-own output set
+        // recorded live as `Sent` but restored as a shielded spend (#4312 review finding
+        // 379da4cc0ad0).
+        let external: Vec<&(PaymentAddress, u64)> = outputs
+            .iter()
+            .filter(|(addr, _)| views.incoming_viewing_key.diversifier_index(addr).is_none())
+            .collect();
+        let external_total: u64 = external.iter().map(|(_, amount)| *amount).sum();
+
+        // `counterparty` still goes through the shared `unanimous_bytes` rule over the canonical
+        // 43-byte raw address encoding — the exact form the deriver recovers from the
+        // OVK-decrypted outgoing notes — but over the EXTERNAL subset only, which is what the
+        // deriver feeds it. Both paths call this one function, so a restored row names a
+        // recipient exactly when this live row does, for the same transition. It is `None` for
+        // an empty subset, which is also the all-own answer.
+        let external_recipients: Vec<Vec<u8>> = external
             .iter()
             .map(|(addr, _)| addr.to_raw_address_bytes().to_vec())
             .collect();
-        let counterparty = unanimous_bytes(recipients.iter().map(|r| r.as_slice()));
+        let counterparty = unanimous_bytes(external_recipients.iter().map(|r| r.as_slice()));
+
+        // With no external output nothing was paid to anyone, so the only credits that left the
+        // pool are the fee — and no memo is claimed, because the deriver's own-only arms record
+        // none. That mirrors the deriver from the other side: an all-own cluster has no external
+        // recipient, so it classifies as `ShieldedSpend`, never `Sent`.
+        let (kind, amount, entry_memo) = if external.is_empty() {
+            (ShieldedActivityKind::ShieldedSpend, fee_used, None)
+        } else {
+            (
+                ShieldedActivityKind::Sent,
+                external_total,
+                non_zero_memo(&memo),
+            )
+        };
 
         pending_entry = record_pending_activity(
             store,
@@ -1180,12 +1213,12 @@ pub async fn transfer_multi<S: ShieldedStore, P: OrchardProver>(
             id,
             &views,
             LiveEntryParams {
-                kind: ShieldedActivityKind::Sent,
+                kind,
                 direction: ShieldedDirection::Out,
-                amount: total_amount,
+                amount,
                 fee: Some(fee_used),
                 counterparty,
-                memo: non_zero_memo(&memo),
+                memo: entry_memo,
                 actions: shielded_actions(&state_transition),
                 spent_notes: &selected_notes,
             },

@@ -984,6 +984,134 @@ mod tests {
         unanimous_bytes(recipients.iter().map(|r| r.as_slice()))
     }
 
+    /// The live `transfer_multi` ROW, evaluated exactly as
+    /// `operations::transfer_multi` evaluates it: partition the requested
+    /// `(recipient, amount)` outputs into external vs wallet-owned, then
+    /// derive kind / amount / counterparty from the EXTERNAL subset only.
+    ///
+    /// The live recorder partitions with
+    /// `views.incoming_viewing_key.diversifier_index`, which is exactly
+    /// what `coordinator::is_own_orchard_recipient` uses to build the
+    /// `own_addresses` set this side matches against — so modelling the
+    /// partition with [`is_own_recipient`] here compares the two paths on
+    /// equal terms.
+    fn live_row(
+        outputs: &[(Vec<u8>, u64)],
+        own_addresses: &[Vec<u8>],
+        fee: u64,
+    ) -> (ShieldedActivityKind, u64, Option<Vec<u8>>) {
+        let external: Vec<&(Vec<u8>, u64)> = outputs
+            .iter()
+            .filter(|(recipient, _)| !is_own_recipient(recipient, own_addresses))
+            .collect();
+        if external.is_empty() {
+            // Nothing was paid to anyone: only the fee left the pool.
+            (ShieldedActivityKind::ShieldedSpend, fee, None)
+        } else {
+            (
+                ShieldedActivityKind::Sent,
+                external.iter().map(|(_, amount)| *amount).sum(),
+                unanimous_bytes(external.iter().map(|(r, _)| r.as_slice())),
+            )
+        }
+    }
+
+    #[test]
+    fn live_and_restored_agree_on_a_mixed_external_and_own_output_set() {
+        // The reviewer's mixed case: ONE Type-16 transition paying 10
+        // credits to an EXTERNAL address and 20 to one of the account's
+        // OWN diversified addresses (the public API accepts both).
+        //
+        // Restoration removes the own output before aggregating, so it
+        // records a 10-credit send to the external address. The live
+        // recorder must reach the same verdict — before the fix it summed
+        // every requested output and recorded a 30-credit send with no
+        // counterparty (#4312 review finding 379da4cc0ad0).
+        let external = addr(0xAA);
+        let own = addr(0x01);
+        let fee = 7u64;
+
+        let input = ScanDeriveInput {
+            notes: vec![],
+            outgoing: vec![
+                outgoing(0x70, external.clone(), 800, 10, vec![0u8; 36]),
+                outgoing(0x71, own.clone(), 800, 20, vec![0u8; 36]),
+            ],
+            own_addresses: vec![own.clone()],
+        };
+        let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
+        assert_eq!(d.len(), 1, "one transition restores as one activity row");
+
+        let (kind, amount, counterparty) = live_row(
+            &[(external.clone(), 10), (own.clone(), 20)],
+            std::slice::from_ref(&own),
+            fee,
+        );
+
+        assert_eq!(d[0].kind, kind, "kind must agree");
+        assert_eq!(kind, ShieldedActivityKind::Sent);
+        assert_eq!(
+            d[0].amount, amount,
+            "amount must agree, and must count only the external payment"
+        );
+        assert_eq!(amount, 10, "the own output is change, not a payment");
+        assert_eq!(d[0].counterparty, counterparty, "counterparty must agree");
+        assert_eq!(
+            counterparty,
+            Some(external.clone()),
+            "one external recipient names itself"
+        );
+
+        // Pin the regression itself: the pre-fix live row was the SUM over
+        // every output with no counterparty, which restoration never
+        // produces for this transition.
+        assert_ne!(amount, 30, "the own output must not inflate the amount");
+    }
+
+    #[test]
+    fn live_and_restored_agree_that_an_all_own_output_set_is_not_a_send() {
+        // Every output lands on an address this account owns, so nothing
+        // was paid to anyone. Restoration cannot classify this as `Sent`
+        // (it has no external recipient to aggregate); the live recorder
+        // must not either.
+        let own_a = addr(0x01);
+        let own_b = addr(0x02);
+        let fee = 7u64;
+
+        let (kind, amount, counterparty) = live_row(
+            &[(own_a.clone(), 10), (own_b.clone(), 20)],
+            &[own_a.clone(), own_b.clone()],
+            fee,
+        );
+        assert_eq!(
+            kind,
+            ShieldedActivityKind::ShieldedSpend,
+            "an all-own output set is a shielded spend, not a send"
+        );
+        assert_eq!(amount, fee, "only the fee left the pool");
+        assert_eq!(counterparty, None, "there is no counterparty to name");
+
+        // The restore side agrees on the kind: with both outgoing notes
+        // recognized as own, the cluster has no external recipient, so the
+        // `Sent` arm cannot fire.
+        let input = ScanDeriveInput {
+            notes: vec![own_note(0x80, 0x81, 900, 1_000, true)],
+            outgoing: vec![
+                outgoing(0x82, own_a.clone(), 900, 10, vec![0u8; 36]),
+                outgoing(0x83, own_b.clone(), 900, 20, vec![0u8; 36]),
+            ],
+            own_addresses: vec![own_a, own_b],
+        };
+        let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
+        assert_eq!(d.len(), 1);
+        assert_ne!(
+            d[0].kind,
+            ShieldedActivityKind::Sent,
+            "restoration must not call an all-own output set a send"
+        );
+        assert_eq!(d[0].kind, kind, "kind must agree with the live row");
+    }
+
     #[test]
     fn multi_recipient_restore_aggregates_without_attributing_to_one_recipient() {
         // The reviewer's case: ONE Type-16 transition paying 10 credits to
