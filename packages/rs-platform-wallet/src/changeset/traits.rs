@@ -459,17 +459,29 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// ## Default
     ///
     /// `Ok(None)` — "this backend does not index DPNS rows by label".
-    /// Backends that never wire the capability (e.g.
-    /// [`NoPlatformPersistence`](crate::wallet::persister::NoPlatformPersistence),
-    /// or an FFI vtable that leaves the callback unset) keep the
-    /// default and the caller degrades to exactly today's behaviour:
-    /// the departure is still classified and the label still removed,
-    /// only the removal delta is skipped. `Ok(None)` is therefore never
-    /// an error condition — it means "no better answer than the
-    /// in-memory map already gave". Backends that persist
+    /// Backends without the lookup keep the default and the caller
+    /// degrades to exactly the pre-fallback behaviour: the departure is
+    /// still classified and the label still removed, only the removal
+    /// delta is skipped — the restart orphan described above remains.
+    /// `Ok(None)` is therefore never an error condition — it means "no
+    /// better answer than the in-memory map already gave".
+    ///
+    /// ## Who actually implements this
+    ///
+    /// Today: `SqlitePersister` only.
+    /// [`NoPlatformPersistence`](crate::wallet::persister::NoPlatformPersistence)
+    /// keeps the default by design. So does the FFI persister — and not
+    /// as a host choice: the persistence vtable has NO read slot for
+    /// this lookup, so there is no callback a host could set. The
+    /// mobile mirrors that persist
     /// [`DpnsNameStateChangeSet`](crate::changeset::DpnsNameStateChangeSet)
-    /// rows (`SqlitePersister`, the SwiftData iOS persister, the
-    /// Android Room persister) should override.
+    /// rows (the Android Room `dpns_names` table, the iOS SwiftData
+    /// `PersistentDPNSName`) hold exactly the row this method asks for,
+    /// but cannot be asked for it until a `get_dpns_name_state` read
+    /// callback is added to the vtable — planned with the other batched
+    /// vtable/ABI additions, deliberately not part of the change that
+    /// introduced this method. Until then the restart orphan is closed
+    /// on SQLite-backed hosts only and is still live on FFI hosts.
     fn get_dpns_name_state(
         &self,
         _wallet_id: WalletId,

@@ -392,8 +392,16 @@ fn insert_sync_row(rows: &mut BTreeMap<Identifier, DpnsNameStateEntry>, entry: D
 /// 1. `previous_rows`, the snapshot of the in-memory working set taken
 ///    at the top of the sync pass. Authoritative when populated, and
 ///    free.
-/// 2. The persister — the durable host mirror — when the snapshot has
-///    nothing.
+/// 2. The persister — when the snapshot has nothing AND the backend
+///    actually implements `get_dpns_name_state`. Today that is the
+///    SQLite backend only. `FFIPersister` has no read slot for this
+///    lookup in its vtable — there is no callback a host could set —
+///    so on the mobile hosts (the Android Room and iOS SwiftData
+///    mirrors) the trait's `Ok(None)` default answers, step 2 finds
+///    nothing, and the restart orphan described below is STILL LIVE
+///    there. That holds until a `get_dpns_name_state` read callback is
+///    added to the persistence vtable, planned with the other batched
+///    vtable/ABI additions rather than piecemeal.
 ///
 /// Step 2 is not belt-and-braces; it is the only source that survives a
 /// restart. `PlatformWalletInfo::dpns_name_states` is session-scoped:
@@ -1618,7 +1626,9 @@ impl IdentityWallet {
     /// The removal delta needs the departed name's `document_id`, which
     /// [`previous_document_id_for`] resolves from the in-memory snapshot
     /// and — when that is empty, as it always is on the first pass after
-    /// a process start — from the durable persister mirror.
+    /// a process start — from the persister, on backends that implement
+    /// the lookup (SQLite today; FFI hosts have no read slot yet and
+    /// still resolve nothing — see [`previous_document_id_for`]).
     async fn resolve_departed_name(
         &self,
         identity_id: &Identifier,
