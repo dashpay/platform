@@ -42,20 +42,37 @@ public enum WalletStartupStatus: UInt8, Sendable {
     /// this wallet; a rerun with the right signer completes the work, which is
     /// still queued.
     case seedBindingUnverified = 5
+    /// An identity is known and every later step ran, but the gap-limit
+    /// identity scan is still on record as having left indices unanswered.
+    ///
+    /// Not a failure of this launch's work — the contact sync and the drain
+    /// both ran for the identity that *is* known. It says the identity SET is
+    /// not established: an identity sitting at an unanswered index is
+    /// invisible to everything that reads local state, and reporting ``ready``
+    /// would promise a set this launch never proved. The verdict stays on
+    /// record, so the next launch re-scans instead of taking the warm
+    /// shortcut.
+    case identityScanIncomplete = 6
 
     /// Whether another discovery scan could change the answer.
     ///
-    /// True only for ``partialNoIdentity``. The others are terminal for this
-    /// launch — an identity was found, absence was proven, or the failure is
-    /// local and will still be there next time.
-    public var discoveryWorthRetrying: Bool { self == .partialNoIdentity }
+    /// True for ``partialNoIdentity`` (Platform was never reached) and
+    /// ``identityScanIncomplete`` (it was reached, but not for every index).
+    /// The others are terminal for this launch — absence was proven, the
+    /// failure is local and will still be there next time, or the scan
+    /// answered everything it probed.
+    public var discoveryWorthRetrying: Bool {
+        self == .partialNoIdentity || self == .identityScanIncomplete
+    }
 
     /// Whether the identity question has an answer.
     ///
     /// Not the inverse of ``discoveryWorthRetrying``: ``discoveryFailed``
-    /// leaves the question open *and* is not worth retrying. Use this to decide
-    /// what to show, and ``discoveryWorthRetrying`` to decide whether to scan
-    /// again.
+    /// leaves the question open *and* is not worth retrying, while
+    /// ``identityScanIncomplete`` has an answer that is merely known to be
+    /// partial — an identity was found, so there is something to show. Use
+    /// this to decide what to show, and ``discoveryWorthRetrying`` to decide
+    /// whether to scan again.
     public var identityIsSettled: Bool {
         self != .partialNoIdentity && self != .discoveryFailed
     }
@@ -79,6 +96,11 @@ public struct WalletStartupOutcome: Sendable, Equatable {
     /// provider does not resolve this wallet's seed. Nothing was derived and
     /// nothing was written; the queued work is intact.
     public let seedBindingUnverified: Bool
+    /// The wallet's identity scan is on record as having left indices
+    /// unanswered and this launch did not close the gap. Any identity reported
+    /// here is real; it may not be the only one. Carried separately from
+    /// ``status`` because a pending contact queue outranks it there.
+    public let identityScanIncomplete: Bool
     /// Contact-crypto entries the drain completed.
     public let contactAccountsDrained: UInt32
     /// Contact-account builds still queued on return. Non-zero means the
@@ -263,6 +285,7 @@ extension WalletStartupOutcome {
         self.discoveryAttempts = ffi.discovery_attempts
         self.dashPaySyncRan = ffi.dashpay_sync_ran
         self.seedBindingUnverified = ffi.seed_binding_unverified
+        self.identityScanIncomplete = ffi.identity_scan_incomplete
         self.contactAccountsDrained = ffi.contact_accounts_drained
         self.contactAccountsPending = ffi.contact_accounts_pending
         self.elapsed = TimeInterval(ffi.elapsed_ms) / 1000
