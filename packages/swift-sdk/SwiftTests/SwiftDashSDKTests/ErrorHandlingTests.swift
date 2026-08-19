@@ -56,6 +56,55 @@ final class ErrorHandlingTests: XCTestCase {
         )
     }
 
+    /// The two shielded-lifecycle codes added on dashpay/platform#4313 must
+    /// cross the ABI with their own raw values. There is no compile-time check
+    /// between `PlatformWalletFFIResultCode` (Rust) and
+    /// `PlatformWalletResultCode` (Swift), so a drifted number silently
+    /// reclassifies a retryable refusal as something else — which is the exact
+    /// failure both codes were introduced to end.
+    func testShieldedLifecycleFFIResultMappings() {
+        XCTAssertEqual(
+            PlatformWalletResultCode(
+                ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_SCAN_BUDGET_EXHAUSTED
+            ),
+            .errorShieldedScanBudgetExhausted
+        )
+        XCTAssertEqual(PlatformWalletResultCode.errorShieldedScanBudgetExhausted.rawValue, 44)
+
+        XCTAssertEqual(
+            PlatformWalletResultCode(
+                ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_LIFECYCLE_BUSY
+            ),
+            .errorShieldedLifecycleBusy
+        )
+        XCTAssertEqual(PlatformWalletResultCode.errorShieldedLifecycleBusy.rawValue, 45)
+
+        // Both must reach the typed error family, not `.unknown` — hosts branch
+        // on the case, and both are RETRYABLE.
+        let budget = PlatformWalletError(
+            code: .errorShieldedScanBudgetExhausted,
+            message: "scanned 250000 positions without finding the funding note"
+        )
+        guard case .shieldedScanBudgetExhausted(let budgetMessage) = budget else {
+            return XCTFail("expected typed shieldedScanBudgetExhausted error")
+        }
+        XCTAssertEqual(
+            budgetMessage,
+            "scanned 250000 positions without finding the funding note"
+        )
+        XCTAssertEqual(budget.errorDescription, budgetMessage)
+
+        let busy = PlatformWalletError(
+            code: .errorShieldedLifecycleBusy,
+            message: "a one-time-key claim is still in flight"
+        )
+        guard case .shieldedLifecycleBusy(let busyMessage) = busy else {
+            return XCTFail("expected typed shieldedLifecycleBusy error")
+        }
+        XCTAssertEqual(busyMessage, "a one-time-key claim is still in flight")
+        XCTAssertEqual(busy.errorDescription, busyMessage)
+    }
+
     func testShieldedInsufficientBalanceFFIResultMapping() {
         XCTAssertEqual(
             PlatformWalletResultCode(

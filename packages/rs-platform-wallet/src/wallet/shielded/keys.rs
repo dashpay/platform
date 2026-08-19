@@ -37,19 +37,45 @@ const DASH_COIN_TYPE_TESTNET: u32 = 1;
 /// final use so it never survives into long-lived async frames across
 /// network awaits.
 ///
-/// The safety argument is the `needs_drop` gate below: scrubbing is only
-/// performed for types with no drop glue (both Orchard key types qualify —
-/// `SpendingKey` is `Copy`; `SpendAuthorizingKey` is a plain scalar wrapper
-/// with no `Drop`), so overwriting the bytes in place cannot double-free or
-/// corrupt owned indirections. A type WITH drop glue is left untouched
-/// (its own `Drop` still runs normally) — that would be a silent no-scrub,
-/// so the guard is only for the two key types named above. (What no bound
-/// can rule out is the caller having made further copies — the guard
-/// contains the representation it owns; avoiding stray copies is the call
-/// site's job.)
-pub(crate) struct ScrubOnDrop<T>(pub(crate) T);
+/// The safety argument has two halves. The first is the
+/// [`ScrubbableSecret`] bound: the guard is instantiable ONLY over the two
+/// audited Orchard key types, each of which is a fixed-size plain-old-data
+/// representation with no owned indirections and no drop glue, so
+/// overwriting its bytes in place cannot double-free, leave a dangling
+/// pointer, or skip a destructor that had to run (#4313 review finding
+/// keys.rs:64 — a blanket `impl<T>` made the guard silently applicable to
+/// any type, including ones for which byte-scrubbing is unsound). The
+/// second is the `needs_drop` gate below, kept as defence in depth against
+/// an orchard upgrade that adds `Drop` to one of them: the scrub is skipped
+/// rather than made unsound, and `orchard_secret_types_have_no_drop_glue`
+/// turns that silent no-scrub into a test failure.
+///
+/// (What no bound can rule out is the caller having made further copies —
+/// the guard contains the representation it owns; avoiding stray copies is
+/// the call site's job.)
+pub(crate) struct ScrubOnDrop<T: ScrubbableSecret>(pub(crate) T);
 
-impl<T> Drop for ScrubOnDrop<T> {
+/// Marker for the secret types [`ScrubOnDrop`] is audited to byte-scrub.
+///
+/// Implemented for exactly two types — orchard 0.14's [`SpendingKey`] and
+/// [`SpendAuthorizingKey`] — and deliberately NOT blanket-implemented. It is
+/// the bound that keeps the guard's `write_volatile` loop sound: an
+/// implementor must be a fixed-size value whose entire representation is
+/// plain data (no heap pointers, no file descriptors, no `Drop`), so zeroing
+/// it in place destroys the secret and nothing else.
+///
+/// Adding an impl is therefore an explicit audit step, not an accident of
+/// generic inference. The trait is crate-private, so no downstream crate can
+/// widen it at all.
+pub(crate) trait ScrubbableSecret {}
+
+// The complete audited set. `SpendingKey` is a `Copy` 32-byte array wrapper;
+// `SpendAuthorizingKey` is a `Copy` scalar wrapper. Neither has a `Zeroize`
+// impl nor a scrubbing `Drop`, which is why the guard exists at all.
+impl ScrubbableSecret for SpendingKey {}
+impl ScrubbableSecret for SpendAuthorizingKey {}
+
+impl<T: ScrubbableSecret> Drop for ScrubOnDrop<T> {
     fn drop(&mut self) {
         // Const-folded: for the Orchard key types this is `false` and the
         // scrub always runs. Overwriting a value that still has drop glue
@@ -66,7 +92,7 @@ impl<T> Drop for ScrubOnDrop<T> {
     }
 }
 
-impl<T> core::ops::Deref for ScrubOnDrop<T> {
+impl<T: ScrubbableSecret> core::ops::Deref for ScrubOnDrop<T> {
     type Target = T;
     fn deref(&self) -> &T {
         &self.0
@@ -84,6 +110,18 @@ mod scrub_tests {
     fn orchard_secret_types_have_no_drop_glue() {
         assert!(!core::mem::needs_drop::<SpendingKey>());
         assert!(!core::mem::needs_drop::<SpendAuthorizingKey>());
+    }
+
+    /// The guard is instantiable over the audited types — and, because
+    /// [`ScrubbableSecret`] has no blanket impl, over nothing else. A type
+    /// with owned indirections (`Vec<u8>`, say) fails to compile here rather
+    /// than being byte-scrubbed into a leak or a double free
+    /// (#4313 review finding keys.rs:64).
+    #[test]
+    fn only_audited_secret_types_are_scrubbable() {
+        fn assert_scrubbable<T: ScrubbableSecret>() {}
+        assert_scrubbable::<SpendingKey>();
+        assert_scrubbable::<SpendAuthorizingKey>();
     }
 }
 

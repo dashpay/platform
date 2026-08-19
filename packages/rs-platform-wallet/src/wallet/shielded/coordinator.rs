@@ -755,7 +755,53 @@ impl NetworkShieldedCoordinator {
     /// re-bind of the same wallet would resume from the stale
     /// `last_synced_note_index` and silently skip re-emitting its
     /// notes to the host.
-    pub async fn unregister_wallet(&self, wallet_id: WalletId) {
+    ///
+    /// # All-or-nothing
+    ///
+    /// This either completes the whole removal or changes NOTHING, returning
+    /// [`PlatformWalletError::ShieldedLifecycleBusy`]. It used to clear the
+    /// registries first and merely log when the purge could not be admitted,
+    /// which reported success to `remove_wallet_with_teardown` while the
+    /// wallet's decrypted notes, watermarks, activity rows and pending-claim
+    /// record were all still on disk — and, because the manager had by then
+    /// dropped the wallet, the advertised "retry the removal" answered
+    /// `WalletNotFound` and could never finish the job
+    /// (#4313 review finding coordinator.rs:805). Failing before the first
+    /// mutation is what makes the retry real.
+    ///
+    /// [`PlatformWalletError::ShieldedLifecycleBusy`]: crate::error::PlatformWalletError::ShieldedLifecycleBusy
+    pub async fn unregister_wallet(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<(), crate::error::PlatformWalletError> {
+        self.unregister_wallet_with(wallet_id, || {}).await
+    }
+
+    /// [`Self::unregister_wallet`], plus `on_admitted` run at the one instant
+    /// where the removal is committed but nothing has been torn down yet:
+    /// destructive admission is held, the `lifecycle` mutex is held, and no
+    /// registry has been touched.
+    ///
+    /// That instant is exactly where `PlatformWallet::mark_shielded_detached`
+    /// has to go. The flag must be set BEFORE the registries are cleared (an
+    /// in-flight bind would otherwise land its registration after the purge and
+    /// resurrect the state this call exists to drop) but must NOT be set when
+    /// the removal aborts (the wallet survives, and a permanently
+    /// unbindable survivor is its own bug). Running it inside the critical
+    /// section satisfies both without a rollback: binds take the same
+    /// `lifecycle` mutex, so none can interleave, and an abort returns before
+    /// the closure is ever reached.
+    ///
+    /// `on_admitted` is synchronous by design — it runs with locks held, and
+    /// the only caller sets an `AtomicBool`.
+    pub async fn unregister_wallet_with<F>(
+        &self,
+        wallet_id: WalletId,
+        on_admitted: F,
+    ) -> Result<(), crate::error::PlatformWalletError>
+    where
+        F: FnOnce(),
+    {
         // Same lifecycle serialization as an install transaction —
         // without it a concurrent register could interleave between the
         // two map mutations and end up with visible accounts whose
@@ -763,6 +809,27 @@ impl NetworkShieldedCoordinator {
         // restore could repopulate (and re-mark hydrated) the state
         // purged below after the purge ran.
         let _lifecycle = self.lifecycle.lock().await;
+
+        // STORE-level destructive admission, taken BEFORE any registration is
+        // cleared (#4313). The `lifecycle` mutex above serializes this against
+        // `clear` and against bind installs, but a one-time-key claim never
+        // takes it — and could not be made to, since a second coordinator on
+        // the same SQLite file would hold a different mutex. Admission waits
+        // for claims already in flight and locks out new ones.
+        //
+        // On failure we abort with the claim's own retryable error and leave
+        // the coordinator untouched, exactly as `clear()` does. Forcing the
+        // purge would strand the identity an in-flight claim's transition
+        // creates; doing it half-way — the previous behaviour — reported a
+        // removal that had not happened.
+        let admission = self
+            .acquire_destructive_admission(Some(wallet_id), "unregister_wallet")
+            .await?;
+
+        // Committed: past this point every step is best-effort cleanup, never
+        // a reason to abort. The caller's pre-teardown hook runs here.
+        on_admitted();
+
         self.accounts
             .write()
             .await
@@ -770,41 +837,25 @@ impl NetworkShieldedCoordinator {
         self.persisters.write().await.remove(&wallet_id);
         self.hydrated.write().await.remove(&wallet_id);
 
-        // The purge runs under STORE-level destructive admission (#4313): the
-        // `lifecycle` mutex above serializes this against `clear` and against
-        // bind installs, but a one-time-key claim never takes it — and could
-        // not be made to, since a second coordinator on the same SQLite file
-        // would hold a different mutex. Admission waits for claims that are
-        // already in flight and locks out new ones; on failure the purge is
-        // SKIPPED rather than forced, because deleting a pending-claim record
-        // while its transition is on the wire strands the identity it created.
-        // Skipping is consistent with this method's existing contract, which
-        // already tolerates (and warns about) a purge that did not happen.
-        match self
-            .acquire_destructive_admission(Some(wallet_id), "unregister_wallet")
-            .await
-        {
-            Ok(admission) => {
-                if let Err(e) = self.store.write().await.purge_wallet(wallet_id) {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(wallet_id),
-                        error = %e,
-                        "Failed to purge per-subwallet store state on unregister"
-                    );
-                }
-                self.release_destructive_admission(admission).await;
-            }
-            Err(e) => {
-                tracing::warn!(
-                    wallet_id = %hex::encode(wallet_id),
-                    error = %e,
-                    "Skipping the per-subwallet store purge on unregister: a one-time-key claim \
-                     still holds lifecycle admission and its pending-claim record must survive. \
-                     The registries are cleared regardless, so no sync runs; retry the removal to \
-                     purge the store state."
-                );
-            }
+        let purged = self.store.write().await.purge_wallet(wallet_id);
+        self.release_destructive_admission(admission).await;
+        if let Err(e) = purged {
+            // The registries ARE gone, so no sync can run for this wallet and
+            // the host's removal is honoured. A store-level failure here is a
+            // genuine I/O fault rather than a contended lifecycle, so it is
+            // reported as one — not as the retryable busy error above.
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                error = %e,
+                "Failed to purge per-subwallet store state on unregister"
+            );
+            return Err(crate::error::PlatformWalletError::ShieldedStoreError(
+                format!(
+                    "unregister_wallet: purge_wallet failed after the registries were cleared: {e}"
+                ),
+            ));
         }
+        Ok(())
     }
 
     /// Take store-level destructive admission over `scope` and wait for
@@ -2527,7 +2578,10 @@ mod tests {
 
         // And unregister clears it too.
         coordinator.mark_hydrated(wallet_id, true).await;
-        coordinator.unregister_wallet(wallet_id).await;
+        coordinator
+            .unregister_wallet(wallet_id)
+            .await
+            .expect("unregister");
         assert!(!coordinator.is_hydrated(wallet_id).await);
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -2642,7 +2696,10 @@ mod tests {
         );
 
         drop(install);
-        remover.await.expect("unregister task");
+        remover
+            .await
+            .expect("unregister task")
+            .expect("unregister must succeed once the install transaction commits");
         assert!(
             coordinator.registered_subwallets().await.is_empty(),
             "the queued unregister runs as soon as the transaction commits"
@@ -2935,23 +2992,51 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// `unregister_wallet` returns `()` and has always tolerated a purge that
-    /// did not happen (it warns). A live claim is one more such case: the
-    /// registries are dropped either way — so no sync runs — but the store
-    /// purge is SKIPPED rather than forced, leaving the claim's recovery
-    /// record intact.
+    /// `unregister_wallet` must REFUSE — all or nothing — while a one-time-key
+    /// claim holds destructive admission (#4313 review finding
+    /// coordinator.rs:805).
+    ///
+    /// The old behaviour cleared the registries and merely logged the skipped
+    /// purge. That reported a successful removal to
+    /// `remove_wallet_with_teardown` while the wallet's decrypted notes,
+    /// watermarks, activity rows and pending-claim record all stayed on disk —
+    /// and since the manager had by then dropped the wallet, the "retry the
+    /// removal" the log advised answered `WalletNotFound` forever. So this
+    /// asserts the three things that make the retry real: a typed retryable
+    /// error, registrations untouched, and the pre-teardown hook never fired.
     #[tokio::test(start_paused = true)]
-    async fn unregister_skips_the_purge_while_a_one_time_claim_holds_admission() {
+    async fn unregister_refuses_while_a_one_time_claim_holds_admission() {
         let dir = temp_dir("unregister_admission_busy");
         let coordinator = coordinator_with_one_wallet(&dir).await;
         let wallet_id: WalletId = [0x11; 32];
         let (lease, id) = arm_an_in_flight_claim(&coordinator, wallet_id).await;
 
-        coordinator.unregister_wallet(wallet_id).await;
-
+        let registered_before = coordinator.registered_subwallets().await;
         assert!(
-            coordinator.registered_subwallets().await.is_empty(),
-            "the registries are dropped regardless, so no sync runs for a removed wallet"
+            !registered_before.is_empty(),
+            "precondition: the wallet is registered"
+        );
+
+        let mut hook_fired = false;
+        let refused = coordinator
+            .unregister_wallet_with(wallet_id, || hook_fired = true)
+            .await;
+        assert!(
+            matches!(
+                refused,
+                Err(crate::error::PlatformWalletError::ShieldedLifecycleBusy { .. })
+            ),
+            "unregister must refuse while a claim holds admission, got {refused:?}"
+        );
+        assert!(
+            !hook_fired,
+            "an aborted removal must not run the pre-teardown hook — the wallet survives, \
+             and marking it detached would leave it permanently unbindable"
+        );
+        assert_eq!(
+            coordinator.registered_subwallets().await,
+            registered_before,
+            "a refused removal must leave every registration exactly as it found it"
         );
         assert_eq!(
             coordinator
@@ -2962,17 +3047,26 @@ mod tests {
                 .expect("records")
                 .len(),
             1,
-            "the in-flight claim's recovery record must survive the skipped purge"
+            "the in-flight claim's recovery record must survive the refused removal"
         );
 
-        // Retrying after the claim settles completes the purge.
+        // Retrying after the claim settles completes the whole removal.
         coordinator
             .store()
             .write()
             .await
             .end_claim_admission(lease)
             .expect("release lease");
-        coordinator.unregister_wallet(wallet_id).await;
+        let mut retry_hook_fired = false;
+        coordinator
+            .unregister_wallet_with(wallet_id, || retry_hook_fired = true)
+            .await
+            .expect("the retry must succeed once the claim has released");
+        assert!(retry_hook_fired, "the committed removal runs the hook");
+        assert!(
+            coordinator.registered_subwallets().await.is_empty(),
+            "the retry drops the registrations it refused to touch before"
+        );
         assert!(
             coordinator
                 .store()
@@ -3018,7 +3112,10 @@ mod tests {
             )
             .expect("arm an unrelated record");
 
-        coordinator.unregister_wallet(registered).await;
+        coordinator
+            .unregister_wallet(registered)
+            .await
+            .expect("an unrelated wallet's claim must not refuse this removal");
 
         let store = coordinator.store().read().await;
         assert!(

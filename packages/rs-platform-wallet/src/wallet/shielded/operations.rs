@@ -1782,11 +1782,24 @@ where
     // who owns it. The in-process guard stays as the fast path — it parks a
     // same-coordinator second caller before it ever reaches the store — and
     // this is the backstop for the two cases that guard cannot see.
+    //
+    // The SAME atomic step also returns the durable pending-claim record, if
+    // one already exists (#4313 review finding r3767229122). It has to. The
+    // record lookup used to run separately, through `pending_redrives`, which
+    // in the file-backed store reads an in-memory mirror hydrated once at
+    // store OPEN — so a record a PEER store armed after that open was
+    // invisible. This claim would then see "no record", build a SECOND
+    // transition with a different padded identity id, and replace the peer's
+    // only recovery row while the peer's transition was already on the wire,
+    // stranding the identity that transition creates. Reading the row inside
+    // the reservation's transaction closes the gap by construction: whoever
+    // settles the reservation settles what already exists under it, together.
+    let claim_records_id = SubwalletId::new(wallet_id, ONE_TIME_CLAIM_RECORDS_ACCOUNT);
     let reservation = store
         .write()
         .await
         .reserve_one_time_claim_key(
-            wallet_id,
+            claim_records_id,
             claim_record_key,
             admission,
             super::store::admission_now_ms(),
@@ -1806,10 +1819,12 @@ where
             return Err(e);
         }
     };
-    if let super::store::ClaimKeyReservation::Held { holder, expires_at } = reservation {
+    if let super::store::ClaimKeyReservation::Held { holder, expires_at } = reservation.reservation
+    {
         debug!(
             holder = %hex::encode(holder.0),
             expires_at,
+            resumable_record = reservation.pending.is_some(),
             "one-time claim: another claimant holds this invitation's claim-record key"
         );
     }
@@ -1825,10 +1840,11 @@ where
             sdk,
             store,
             scan_checkpoints,
-            wallet_id,
+            claim_records_id,
             claim_record_key,
             admission,
             reservation.is_acquired(),
+            reservation.pending,
             fvk,
             ivk,
             ask,
@@ -1949,15 +1965,23 @@ async fn release_claim_admission<S: ShieldedStore>(
 /// reservation. A caller that did NOT is forbidden to build, broadcast or arm
 /// anything: it may only RESUME the record the owner left, or refuse. See the
 /// branch below.
+///
+/// `pending_record` is that record, read from DURABLE state in the same atomic
+/// step that settled the reservation. It is passed in rather than looked up
+/// here on purpose: the file-backed store's `pending_redrives` reads a mirror
+/// hydrated at store open, which cannot see a row a peer store armed later, and
+/// a claim that trusted it would build a second transition over a live one
+/// (#4313 review finding r3767229122).
 #[allow(clippy::too_many_arguments)]
 async fn one_time_claim_admitted<S, P, IS>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
     scan_checkpoints: &super::sync::ForeignScanCheckpointCache,
-    wallet_id: WalletId,
+    claim_records_id: SubwalletId,
     claim_record_key: [u8; 32],
     admission: super::store::AdmissionToken,
     owns_claim_key: bool,
+    pending_record: Option<PendingRedrive>,
     fvk: grovedb_commitment_tree::FullViewingKey,
     ivk: grovedb_commitment_tree::IncomingViewingKey,
     ask: super::keys::ScrubOnDrop<grovedb_commitment_tree::SpendAuthorizingKey>,
@@ -2003,10 +2027,11 @@ where
     // byte-identical transition instead of rebuilding one whose preflight
     // would misread the spent notes as a foreign claim
     // (`ShieldedInviteAlreadyClaimed`).
-    let claim_records_id = SubwalletId::new(wallet_id, ONE_TIME_CLAIM_RECORDS_ACCOUNT);
-    if let Some(record) =
-        find_one_time_claim_record(store, claim_records_id, claim_record_key).await?
-    {
+    //
+    // The record arrives from the caller, read out of DURABLE state in the same
+    // transaction that settled the claim-key reservation — never from the
+    // store's startup-hydrated mirror (#4313 review finding r3767229122).
+    if let Some(record) = pending_record {
         match resume_one_time_claim(
             sdk,
             store,
@@ -2556,9 +2581,23 @@ impl ForeignClaimGuards {
     }
 }
 
-/// Look up the persisted pending-claim record for `key`. Fail-closed on a
-/// store read error: proceeding to a fresh build while a record might exist
-/// is exactly the unrecoverable-padded-claim hazard the record prevents.
+/// Look up the pending-claim record for `key` through
+/// [`ShieldedStore::pending_redrives`].
+///
+/// **Test-only.** The production claim path no longer reads the record this
+/// way: `pending_redrives` is served from the file-backed store's
+/// startup-hydrated mirror, which cannot see a row a peer store armed after
+/// our open, and a claim that trusted it would build a second transition over
+/// a live one (#4313 review finding r3767229122). The real lookup now comes
+/// back from [`ShieldedStore::reserve_one_time_claim_key`], read out of
+/// durable state in the same transaction that settles the reservation.
+///
+/// It survives here because the arm/clear/finalize round-trip tests drive the
+/// [`InMemoryShieldedStore`], whose map IS its durable state — so for THEM the
+/// two reads are the same read.
+///
+/// [`InMemoryShieldedStore`]: super::store::InMemoryShieldedStore
+#[cfg(test)]
 async fn find_one_time_claim_record<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
@@ -6557,6 +6596,7 @@ mod claim_lease_heartbeat_tests {
         let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
         let wallet_id: WalletId = [0x43; 32];
         let claim_key = [0xC5; 32];
+        let claim_records_id = SubwalletId::new(wallet_id, ONE_TIME_CLAIM_RECORDS_ACCOUNT);
         let holder = AdmissionToken([0x43; 16]);
         let rival = AdmissionToken([0x44; 16]);
         let t0 = admission_now_ms();
@@ -6567,8 +6607,15 @@ mod claim_lease_heartbeat_tests {
                 .expect("lease"));
             assert_eq!(
                 guard
-                    .reserve_one_time_claim_key(wallet_id, claim_key, holder, t0, SHORT_LEASE_MS)
-                    .expect("reserve"),
+                    .reserve_one_time_claim_key(
+                        claim_records_id,
+                        claim_key,
+                        holder,
+                        t0,
+                        SHORT_LEASE_MS
+                    )
+                    .expect("reserve")
+                    .reservation,
                 ClaimKeyReservation::Acquired
             );
         }
@@ -6583,7 +6630,7 @@ mod claim_lease_heartbeat_tests {
                 .expect("rival lease"));
             guard
                 .reserve_one_time_claim_key(
-                    wallet_id,
+                    claim_records_id,
                     claim_key,
                     rival,
                     t0 + SHORT_LEASE_MS + 1,

@@ -18,11 +18,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retention};
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 use super::store::{
-    AdmissionToken, ClaimKeyReservation, PendingRedrive, ShieldedNote, ShieldedOutgoingNote,
-    ShieldedStore, StalePendingSpend, SubwalletId, SubwalletState,
+    AdmissionToken, ClaimKeyReservation, ClaimKeyReservationOutcome, PendingRedrive, ShieldedNote,
+    ShieldedOutgoingNote, ShieldedStore, StalePendingSpend, SubwalletId, SubwalletState,
 };
 use crate::wallet::platform_wallet::WalletId;
 
@@ -103,7 +103,11 @@ impl FileBackedShieldedStore {
         let conn = Self::open_tuned_connection(&path)?;
         let tree = ClientPersistentCommitmentTree::open(conn, max_checkpoints)
             .map_err(|e| FileShieldedStoreError(format!("open commitment tree: {e}")))?;
-        let pending_conn = Self::open_tuned_connection(&path)?;
+        // `open_durable_connection`, NOT `open_tuned_connection`: this
+        // connection owns the unreconstructable claim-recovery row, so it runs
+        // at `synchronous=FULL` (#4313 review finding file_store.rs:107). The
+        // tree connection above keeps NORMAL — see both doc comments.
+        let mut pending_conn = Self::open_durable_connection(&path)?;
         pending_conn
             .execute(
                 "CREATE TABLE IF NOT EXISTS shielded_pending_spends (
@@ -120,7 +124,7 @@ impl FileBackedShieldedStore {
                 [],
             )
             .map_err(|e| FileShieldedStoreError(format!("create pending_spends table: {e}")))?;
-        Self::add_pending_spends_identity_index(&pending_conn)?;
+        Self::add_pending_spends_identity_index(&mut pending_conn)?;
         // Cross-instance / cross-PROCESS lifecycle admission (#4313). Lives in
         // the same SQLite file as the records it protects — that file is the
         // only thing two `FileBackedShieldedStore` instances (or two
@@ -191,9 +195,31 @@ impl FileBackedShieldedStore {
     /// NULLABLE with no default: an existing claim record genuinely does not
     /// know which slot its attempt targeted, and `NULL` says exactly that —
     /// far better than back-filling a guess a resume would then enforce.
-    fn add_pending_spends_identity_index(conn: &Connection) -> Result<(), FileShieldedStoreError> {
+    ///
+    /// # Racing opens
+    ///
+    /// Probe-then-ALTER is only idempotent if the two are ONE step. Two
+    /// processes (or two `FileBackedShieldedStore` instances) opening the same
+    /// path concurrently would otherwise both read "absent" and both ALTER,
+    /// and the loser's `open_path` would fail outright with
+    /// `duplicate column name` (#4313 review finding file_store.rs:206). Two
+    /// independent guards close that:
+    ///
+    /// 1. `BEGIN IMMEDIATE` takes the write lock BEFORE the probe, so SQLite's
+    ///    one-writer rule totally orders the probe+ALTER pairs against each
+    ///    other — the second one to run sees the column and does nothing.
+    /// 2. A `duplicate column name` failure is tolerated as benign anyway.
+    ///    The post-condition this function owes its caller is "the column
+    ///    exists", and that error says it does. Belt and braces, because the
+    ///    cost of being wrong is a store that will not open at all.
+    fn add_pending_spends_identity_index(
+        conn: &mut Connection,
+    ) -> Result<(), FileShieldedStoreError> {
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|e| FileShieldedStoreError(format!("begin pending_spends migration: {e}")))?;
         let present = {
-            let mut stmt = conn
+            let mut stmt = tx
                 .prepare("SELECT 1 FROM pragma_table_info('shielded_pending_spends') WHERE name = 'identity_index'")
                 .map_err(|e| {
                     FileShieldedStoreError(format!("prepare pending_spends column probe: {e}"))
@@ -202,15 +228,46 @@ impl FileBackedShieldedStore {
                 .map_err(|e| FileShieldedStoreError(format!("probe pending_spends columns: {e}")))?
         };
         if !present {
-            conn.execute(
+            match tx.execute(
                 "ALTER TABLE shielded_pending_spends ADD COLUMN identity_index INTEGER",
                 [],
-            )
-            .map_err(|e| {
-                FileShieldedStoreError(format!("add pending_spends.identity_index: {e}"))
-            })?;
+            ) {
+                Ok(_) => {}
+                Err(e) if Self::is_duplicate_column(&e) => {
+                    // Guard 2 above: another opener won the race and the
+                    // column is already there, which is exactly the state
+                    // this function exists to reach.
+                    tracing::debug!(
+                        "shielded_pending_spends.identity_index already added by a concurrent \
+                         opener; treating as migrated"
+                    );
+                }
+                Err(e) => {
+                    return Err(FileShieldedStoreError(format!(
+                        "add pending_spends.identity_index: {e}"
+                    )))
+                }
+            }
         }
+        tx.commit()
+            .map_err(|e| FileShieldedStoreError(format!("commit pending_spends migration: {e}")))?;
         Ok(())
+    }
+
+    /// Whether `e` is SQLite's `duplicate column name` rejection of an
+    /// `ALTER TABLE ... ADD COLUMN` — i.e. "the column you asked for is
+    /// already there".
+    ///
+    /// Matched on the message rather than on a code: SQLite reports it as a
+    /// bare `SQLITE_ERROR` with no distinguishing extended code, so the text
+    /// is the only discriminator available. Deliberately narrow — every other
+    /// `SQLITE_ERROR` still fails the open.
+    fn is_duplicate_column(e: &rusqlite::Error) -> bool {
+        matches!(
+            e,
+            rusqlite::Error::SqliteFailure(_, Some(msg))
+                if msg.to_ascii_lowercase().contains("duplicate column name")
+        )
     }
 
     /// Reload every persisted [`PendingRedrive`] into the in-memory
@@ -269,21 +326,106 @@ impl FileBackedShieldedStore {
                 .map(|c| <[u8; 32]>::try_from(c).expect("chunks_exact(32)"))
                 .collect();
             let id = SubwalletId::new(wallet_id, account_index);
-            let sw = self.subwallets.entry(id).or_default();
-            for n in &nullifiers {
-                sw.mark_pending(n);
-                sw.set_pending_spend(n, anchor, activity_id);
-            }
-            sw.arm_redrive(PendingRedrive {
-                activity_id,
-                anchor,
-                nullifiers,
-                st_bytes,
-                attempts,
-                identity_index,
-            });
+            Self::hydrate_pending_row(
+                self.subwallets.entry(id).or_default(),
+                PendingRedrive {
+                    activity_id,
+                    anchor,
+                    nullifiers,
+                    st_bytes,
+                    attempts,
+                    identity_index,
+                },
+            );
         }
         Ok(())
+    }
+
+    /// Read ONE `shielded_pending_spends` row — the record armed under
+    /// `activity_id` in subwallet `id` — straight from SQLite.
+    ///
+    /// Takes a `&Connection` (a `&Transaction` derefs to one) precisely so the
+    /// caller chooses the transaction it runs in:
+    /// [`reserve_one_time_claim_key`] calls it inside the reservation's
+    /// `BEGIN IMMEDIATE`, which is what makes "who owns this invitation" and
+    /// "what record already exists for it" a single atomic answer
+    /// (#4313 review finding r3767229122).
+    ///
+    /// A corrupt row reads as `None` with a warning, matching
+    /// [`rehydrate_pending_spends`]: a row that cannot be decoded cannot be
+    /// resumed either, and failing the whole claim on it would be worse than
+    /// rebuilding.
+    ///
+    /// [`reserve_one_time_claim_key`]: ShieldedStore::reserve_one_time_claim_key
+    /// [`rehydrate_pending_spends`]: Self::rehydrate_pending_spends
+    fn read_pending_row(
+        conn: &Connection,
+        id: SubwalletId,
+        activity_id: &[u8; 32],
+    ) -> Result<Option<PendingRedrive>, FileShieldedStoreError> {
+        let row = conn
+            .query_row(
+                "SELECT anchor, nullifiers, st_bytes, attempts, identity_index \
+                 FROM shielded_pending_spends \
+                 WHERE wallet_id = ?1 AND account_index = ?2 AND activity_id = ?3",
+                rusqlite::params![
+                    id.wallet_id.as_slice(),
+                    id.account_index,
+                    activity_id.as_slice()
+                ],
+                |row| {
+                    Ok((
+                        row.get::<_, Vec<u8>>(0)?,
+                        row.get::<_, Vec<u8>>(1)?,
+                        row.get::<_, Vec<u8>>(2)?,
+                        row.get::<_, u32>(3)?,
+                        row.get::<_, Option<u32>>(4)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|e| FileShieldedStoreError(format!("read pending claim record: {e}")))?;
+        let Some((anchor, nullifiers, st_bytes, attempts, identity_index)) = row else {
+            return Ok(None);
+        };
+        let Ok(anchor) = <[u8; 32]>::try_from(anchor.as_slice()) else {
+            tracing::warn!("ignoring corrupt shielded_pending_spends row (bad anchor width)");
+            return Ok(None);
+        };
+        if nullifiers.is_empty() || nullifiers.len() % 32 != 0 {
+            tracing::warn!("ignoring corrupt shielded_pending_spends row (bad nullifiers)");
+            return Ok(None);
+        }
+        Ok(Some(PendingRedrive {
+            activity_id: *activity_id,
+            anchor,
+            nullifiers: nullifiers
+                .chunks_exact(32)
+                .map(|c| <[u8; 32]>::try_from(c).expect("chunks_exact(32)"))
+                .collect(),
+            st_bytes,
+            attempts,
+            identity_index,
+        }))
+    }
+
+    /// Fold a durable `shielded_pending_spends` row into the in-memory mirror:
+    /// re-arm the redrive record AND the note reservations its nullifiers
+    /// carry, so an unconfirmed broadcast keeps its notes excluded from
+    /// selection for as long as the record lives.
+    ///
+    /// Shared by [`rehydrate_pending_spends`] (store open) and by
+    /// [`reserve_one_time_claim_key`] (a row a PEER store armed after our
+    /// open), so both reach the identical in-memory shape.
+    ///
+    /// [`rehydrate_pending_spends`]: Self::rehydrate_pending_spends
+    /// [`reserve_one_time_claim_key`]: ShieldedStore::reserve_one_time_claim_key
+    fn hydrate_pending_row(sw: &mut SubwalletState, record: PendingRedrive) {
+        for n in &record.nullifiers {
+            sw.mark_pending(n);
+            sw.set_pending_spend(n, record.anchor, record.activity_id);
+        }
+        sw.arm_redrive(record);
     }
 
     /// Open a `rusqlite::Connection` on `path` with the same WAL /
@@ -297,6 +439,57 @@ impl FileBackedShieldedStore {
     /// [`open_path`]: Self::open_path
     /// [`reset_commitment_tree`]: ShieldedStore::reset_commitment_tree
     fn open_tuned_connection(path: &Path) -> Result<rusqlite::Connection, FileShieldedStoreError> {
+        Self::open_connection_with_sync(path, "NORMAL")
+    }
+
+    /// Open the RECOVERY connection — the one owning `shielded_pending_spends`
+    /// and the admission tables — with `synchronous=FULL` rather than the
+    /// commitment tree connection's `NORMAL`.
+    ///
+    /// # Why this connection alone pays for FULL
+    ///
+    /// Under WAL, `synchronous=NORMAL` does not fsync at commit: the commit
+    /// returns as soon as the frames reach the OS, so a host crash or power
+    /// loss can discard a transaction that already reported success. That is
+    /// the right trade for the commitment tree, where no row is user money —
+    /// every commitment is chain-side authenticated and rebuildable by
+    /// re-running sync from `last_synced_note_index` (see [`open_path`]).
+    ///
+    /// It is the WRONG trade for the row this connection writes.
+    /// [`arm_redrive_under_claim`] persists a one-time-claim record whose
+    /// `st_bytes` carry the RANDOMIZED padded identity id of a transition
+    /// that is broadcast immediately afterwards: the padding action's dummy
+    /// nullifier is generated fresh at build time and participates in the
+    /// consensus id derivation, so that id exists nowhere else and is NOT
+    /// re-derivable from the invitation. Losing the row after the broadcast
+    /// therefore strands an identity that exists on chain, permanently and
+    /// unreconstructably (#4313 review finding file_store.rs:107). FULL
+    /// closes the window by fsync'ing before the commit returns.
+    ///
+    /// The cost lands where it is affordable: a handful of writes per claim
+    /// (arm, lease renew, release) rather than the tree's millions of
+    /// `append_commitment` calls. `synchronous` is per-CONNECTION, so the
+    /// tree connection keeps NORMAL; `journal_mode=WAL` is per-database and
+    /// shared by both.
+    ///
+    /// [`open_path`]: Self::open_path
+    /// [`arm_redrive_under_claim`]: ShieldedStore::arm_redrive_under_claim
+    fn open_durable_connection(
+        path: &Path,
+    ) -> Result<rusqlite::Connection, FileShieldedStoreError> {
+        Self::open_connection_with_sync(path, "FULL")
+    }
+
+    /// Shared body of [`open_tuned_connection`] and
+    /// [`open_durable_connection`] — identical WAL / `temp_store` / busy-timeout
+    /// setup, with the caller choosing the `synchronous` level its data needs.
+    ///
+    /// [`open_tuned_connection`]: Self::open_tuned_connection
+    /// [`open_durable_connection`]: Self::open_durable_connection
+    fn open_connection_with_sync(
+        path: &Path,
+        synchronous: &str,
+    ) -> Result<rusqlite::Connection, FileShieldedStoreError> {
         let conn = rusqlite::Connection::open(path)
             .map_err(|e| FileShieldedStoreError(format!("open sqlite: {e}")))?;
         // Pragmas must be applied before the schema is touched. They survive
@@ -304,7 +497,7 @@ impl FileBackedShieldedStore {
         // subsequent reopen on the same file until explicitly changed.
         for (k, v) in [
             ("journal_mode", "WAL"),
-            ("synchronous", "NORMAL"),
+            ("synchronous", synchronous),
             ("temp_store", "MEMORY"),
         ] {
             conn.pragma_update(None, k, v)
@@ -963,89 +1156,120 @@ impl ShieldedStore for FileBackedShieldedStore {
 
     fn reserve_one_time_claim_key(
         &mut self,
-        wallet_id: WalletId,
+        claim_records_id: SubwalletId,
         claim_record_key: [u8; 32],
         token: AdmissionToken,
         now_ms: u64,
         lease_ms: u64,
-    ) -> Result<ClaimKeyReservation, Self::Error> {
+    ) -> Result<ClaimKeyReservationOutcome, Self::Error> {
+        let wallet_id = claim_records_id.wallet_id;
         // BEGIN IMMEDIATE, like every other admission write. SQLite admits one
         // writer at a time across every connection AND every process on the
-        // file, so the reap + insert-if-absent + read-back below is one totally
-        // ordered step even between two `FileBackedShieldedStore` instances
-        // that share nothing but the path. That total order is what makes
-        // "exactly one caller sees `Acquired`" true rather than probable.
-        let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
-        let tx = conn
-            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-            .map_err(|e| FileShieldedStoreError(format!("begin claim-key reservation: {e}")))?;
-        // Reap first, so a claimant that died without releasing cannot hold an
-        // invitation hostage past its lease.
-        tx.execute(
-            "DELETE FROM shielded_one_time_claim_reservation WHERE expires_at <= ?1",
-            rusqlite::params![Self::as_sqlite_millis(now_ms)],
-        )
-        .map_err(|e| FileShieldedStoreError(format!("reap claim-key reservations: {e}")))?;
-        // ON CONFLICT DO NOTHING, never OR REPLACE: losing this insert must
-        // leave the winner's row byte-for-byte untouched. The rowcount decides
-        // the outcome, and the read-back below reports the durable truth either
-        // way.
-        let inserted = tx
-            .execute(
-                "INSERT INTO shielded_one_time_claim_reservation \
-                 (wallet_id, claim_record_key, token, expires_at) VALUES (?1, ?2, ?3, ?4) \
-                 ON CONFLICT (wallet_id, claim_record_key) DO NOTHING",
-                rusqlite::params![
-                    wallet_id.as_slice(),
-                    claim_record_key.as_slice(),
-                    token.0.as_slice(),
-                    Self::as_sqlite_millis(now_ms.saturating_add(lease_ms)),
-                ],
+        // file, so the reap + insert-if-absent + read-back + pending-row read
+        // below is one totally ordered step even between two
+        // `FileBackedShieldedStore` instances that share nothing but the path.
+        // That total order is what makes "exactly one caller sees `Acquired`"
+        // true rather than probable — and what lets the pending row come back
+        // with it (#4313 review finding r3767229122).
+        let (reservation, pending) = {
+            let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
+            let tx = conn
+                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+                .map_err(|e| FileShieldedStoreError(format!("begin claim-key reservation: {e}")))?;
+            // Reap first, so a claimant that died without releasing cannot hold
+            // an invitation hostage past its lease.
+            tx.execute(
+                "DELETE FROM shielded_one_time_claim_reservation WHERE expires_at <= ?1",
+                rusqlite::params![Self::as_sqlite_millis(now_ms)],
             )
-            .map_err(|e| FileShieldedStoreError(format!("insert claim-key reservation: {e}")))?;
-        let outcome = if inserted > 0 {
-            ClaimKeyReservation::Acquired
-        } else {
-            // Query the DURABLE row rather than assuming the conflict was
-            // someone else's: our own token re-entering is idempotent (and
-            // re-stamps), anyone else's is a genuine loss.
-            let (holder, expires_at): (Vec<u8>, i64) = tx
-                .query_row(
-                    "SELECT token, expires_at FROM shielded_one_time_claim_reservation \
-                     WHERE wallet_id = ?1 AND claim_record_key = ?2",
-                    rusqlite::params![wallet_id.as_slice(), claim_record_key.as_slice()],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
-                )
-                .map_err(|e| FileShieldedStoreError(format!("read claim-key reservation: {e}")))?;
-            let holder = <[u8; 16]>::try_from(holder.as_slice()).map_err(|_| {
-                FileShieldedStoreError(
-                    "corrupt claim-key reservation row (bad token width)".to_string(),
-                )
-            })?;
-            if holder == token.0 {
-                tx.execute(
-                    "UPDATE shielded_one_time_claim_reservation SET expires_at = ?1 \
-                     WHERE wallet_id = ?2 AND claim_record_key = ?3",
+            .map_err(|e| FileShieldedStoreError(format!("reap claim-key reservations: {e}")))?;
+            // ON CONFLICT DO NOTHING, never OR REPLACE: losing this insert must
+            // leave the winner's row byte-for-byte untouched. The rowcount
+            // decides the outcome, and the read-back below reports the durable
+            // truth either way.
+            let inserted = tx
+                .execute(
+                    "INSERT INTO shielded_one_time_claim_reservation \
+                     (wallet_id, claim_record_key, token, expires_at) VALUES (?1, ?2, ?3, ?4) \
+                     ON CONFLICT (wallet_id, claim_record_key) DO NOTHING",
                     rusqlite::params![
-                        Self::as_sqlite_millis(now_ms.saturating_add(lease_ms)),
                         wallet_id.as_slice(),
                         claim_record_key.as_slice(),
+                        token.0.as_slice(),
+                        Self::as_sqlite_millis(now_ms.saturating_add(lease_ms)),
                     ],
                 )
                 .map_err(|e| {
-                    FileShieldedStoreError(format!("re-stamp claim-key reservation: {e}"))
+                    FileShieldedStoreError(format!("insert claim-key reservation: {e}"))
                 })?;
+            let reservation = if inserted > 0 {
                 ClaimKeyReservation::Acquired
             } else {
-                ClaimKeyReservation::Held {
-                    holder: AdmissionToken(holder),
-                    expires_at: expires_at.max(0) as u64,
+                // Query the DURABLE row rather than assuming the conflict was
+                // someone else's: our own token re-entering is idempotent (and
+                // re-stamps), anyone else's is a genuine loss.
+                let (holder, expires_at): (Vec<u8>, i64) = tx
+                    .query_row(
+                        "SELECT token, expires_at FROM shielded_one_time_claim_reservation \
+                         WHERE wallet_id = ?1 AND claim_record_key = ?2",
+                        rusqlite::params![wallet_id.as_slice(), claim_record_key.as_slice()],
+                        |row| Ok((row.get(0)?, row.get(1)?)),
+                    )
+                    .map_err(|e| {
+                        FileShieldedStoreError(format!("read claim-key reservation: {e}"))
+                    })?;
+                let holder = <[u8; 16]>::try_from(holder.as_slice()).map_err(|_| {
+                    FileShieldedStoreError(
+                        "corrupt claim-key reservation row (bad token width)".to_string(),
+                    )
+                })?;
+                if holder == token.0 {
+                    tx.execute(
+                        "UPDATE shielded_one_time_claim_reservation SET expires_at = ?1 \
+                         WHERE wallet_id = ?2 AND claim_record_key = ?3",
+                        rusqlite::params![
+                            Self::as_sqlite_millis(now_ms.saturating_add(lease_ms)),
+                            wallet_id.as_slice(),
+                            claim_record_key.as_slice(),
+                        ],
+                    )
+                    .map_err(|e| {
+                        FileShieldedStoreError(format!("re-stamp claim-key reservation: {e}"))
+                    })?;
+                    ClaimKeyReservation::Acquired
+                } else {
+                    ClaimKeyReservation::Held {
+                        holder: AdmissionToken(holder),
+                        expires_at: expires_at.max(0) as u64,
+                    }
                 }
-            }
+            };
+            // The pending-claim row, read from SQLITE in this same transaction
+            // (#4313 review finding r3767229122). It deliberately does NOT come
+            // from `self.subwallets`: that mirror is hydrated once at store
+            // open, so a row a PEER store armed after our open is invisible in
+            // it. A claimant that trusted the mirror would see "no record",
+            // build a second transition with a different padded identity id,
+            // and `arm_redrive_under_claim` would replace the peer's only
+            // recovery handle for an identity already on the wire.
+            let pending = Self::read_pending_row(&tx, claim_records_id, &claim_record_key)?;
+            tx.commit().map_err(|e| {
+                FileShieldedStoreError(format!("commit claim-key reservation: {e}"))
+            })?;
+            (reservation, pending)
         };
-        tx.commit()
-            .map_err(|e| FileShieldedStoreError(format!("commit claim-key reservation: {e}")))?;
-        Ok(outcome)
+        // Fold the durable row into this instance's mirror so every later
+        // in-memory read (`pending_redrives`, `bump_redrive_attempts`,
+        // `clear_redrive`) agrees with disk for the rest of this claim. Without
+        // it the resume path would arm and clear against a map that never knew
+        // the record existed.
+        if let Some(record) = pending.clone() {
+            Self::hydrate_pending_row(self.subwallets.entry(claim_records_id).or_default(), record);
+        }
+        Ok(ClaimKeyReservationOutcome {
+            reservation,
+            pending,
+        })
     }
 
     fn arm_redrive_under_claim(
@@ -2185,14 +2409,16 @@ mod tests {
         // The key, however, admits exactly one.
         assert_eq!(
             first
-                .reserve_one_time_claim_key(wallet_id, claim_key, winner, now, 60_000)
-                .expect("first reservation"),
+                .reserve_one_time_claim_key(id, claim_key, winner, now, 60_000)
+                .expect("first reservation")
+                .reservation,
             ClaimKeyReservation::Acquired
         );
         assert_eq!(
             second
-                .reserve_one_time_claim_key(wallet_id, claim_key, loser, now, 60_000)
-                .expect("second reservation"),
+                .reserve_one_time_claim_key(id, claim_key, loser, now, 60_000)
+                .expect("second reservation")
+                .reservation,
             ClaimKeyReservation::Held {
                 holder: winner,
                 expires_at: now + 60_000,
@@ -2247,6 +2473,7 @@ mod tests {
         let path = temp_tree_path("claim_key_lifetime");
         let wallet_id: WalletId = [0x32; 32];
         let claim_key = [0xC3; 32];
+        let id = SubwalletId::new(wallet_id, CLAIM_ACCOUNT);
         let mut store = FileBackedShieldedStore::open_path(&path, 8).expect("store");
         let now = 1_000_000;
 
@@ -2256,15 +2483,17 @@ mod tests {
             .expect("lease"));
         assert_eq!(
             store
-                .reserve_one_time_claim_key(wallet_id, claim_key, first, now, 60_000)
-                .expect("reserve"),
+                .reserve_one_time_claim_key(id, claim_key, first, now, 60_000)
+                .expect("reserve")
+                .reservation,
             ClaimKeyReservation::Acquired
         );
         // Re-entry by the SAME token is idempotent, never a self-lockout.
         assert_eq!(
             store
-                .reserve_one_time_claim_key(wallet_id, claim_key, first, now + 1, 60_000)
-                .expect("re-enter"),
+                .reserve_one_time_claim_key(id, claim_key, first, now + 1, 60_000)
+                .expect("re-enter")
+                .reservation,
             ClaimKeyReservation::Acquired
         );
 
@@ -2279,7 +2508,7 @@ mod tests {
             .expect("second lease"));
         assert!(
             !store
-                .reserve_one_time_claim_key(wallet_id, claim_key, second, now + 70_000, 60_000)
+                .reserve_one_time_claim_key(id, claim_key, second, now + 70_000, 60_000)
                 .expect("contend after renewal")
                 .is_acquired(),
             "the renewed reservation must still be held past the ORIGINAL expiry"
@@ -2290,8 +2519,9 @@ mod tests {
         store.end_claim_admission(first).expect("release");
         assert_eq!(
             store
-                .reserve_one_time_claim_key(wallet_id, claim_key, second, now + 70_000, 60_000)
-                .expect("reserve after release"),
+                .reserve_one_time_claim_key(id, claim_key, second, now + 70_000, 60_000)
+                .expect("reserve after release")
+                .reservation,
             ClaimKeyReservation::Acquired
         );
 
@@ -2300,8 +2530,9 @@ mod tests {
         let third = AdmissionToken::new();
         assert_eq!(
             store
-                .reserve_one_time_claim_key(wallet_id, claim_key, third, now + 200_000, 60_000)
-                .expect("reserve after expiry"),
+                .reserve_one_time_claim_key(id, claim_key, third, now + 200_000, 60_000)
+                .expect("reserve after expiry")
+                .reservation,
             ClaimKeyReservation::Acquired,
             "an expired reservation must be reaped"
         );
@@ -2330,7 +2561,13 @@ mod tests {
             .begin_claim_admission(wallet_id, other, now, 60_000)
             .expect("other lease"));
         store
-            .reserve_one_time_claim_key(wallet_id, [0xC4; 32], holder, now, 60_000)
+            .reserve_one_time_claim_key(
+                SubwalletId::new(wallet_id, CLAIM_ACCOUNT),
+                [0xC4; 32],
+                holder,
+                now,
+                60_000,
+            )
             .expect("reserve one invitation");
 
         // A redrive under a DIFFERENT activity id is unaffected by that hold.
@@ -2342,6 +2579,201 @@ mod tests {
         );
 
         drop(store);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A pending-claim row armed by store A must come back to store B the
+    /// moment B acquires the released reservation — read from SQLITE inside
+    /// the reservation's own transaction, never from B's startup-hydrated
+    /// mirror (#4313 review finding r3767229122).
+    ///
+    /// This is the exact sequence the reviewer described. A arms a claim,
+    /// returns `ShieldedBroadcastUnconfirmed` (record kept, reservation
+    /// released) and B takes the freed key. Before the fix B's mirror — loaded
+    /// once when B opened, which was BEFORE A armed anything — reported no
+    /// record, so B built a SECOND transition with a different padded identity
+    /// id and replaced A's row. If A's transition had executed, its randomized
+    /// id was then unrecoverable forever.
+    #[test]
+    fn a_peer_stores_pending_claim_row_comes_back_with_the_reservation() {
+        let path = temp_tree_path("claim_row_handover");
+        let wallet_id: WalletId = [0x34; 32];
+        let claim_key = [0xC7; 32];
+        let id = SubwalletId::new(wallet_id, CLAIM_ACCOUNT);
+        let mut a = FileBackedShieldedStore::open_path(&path, 8).expect("store a");
+        // B opens BEFORE A arms anything: its mirror is hydrated now and never
+        // again, which is precisely the staleness this test exists to defeat.
+        let mut b = FileBackedShieldedStore::open_path(&path, 8).expect("store b");
+        let now = 1_000_000;
+
+        // ---- A: lease, reserve, arm, release ----
+        let a_token = AdmissionToken::new();
+        assert!(a
+            .begin_claim_admission(wallet_id, a_token, now, 60_000)
+            .expect("a lease"));
+        let a_out = a
+            .reserve_one_time_claim_key(id, claim_key, a_token, now, 60_000)
+            .expect("a reserve");
+        assert_eq!(a_out.reservation, ClaimKeyReservation::Acquired);
+        assert!(
+            a_out.pending.is_none(),
+            "a fresh invitation has no record to resume"
+        );
+
+        let mut record = admission_record(0xC7);
+        record.activity_id = claim_key;
+        record.st_bytes = vec![0xA7; 128];
+        record.identity_index = Some(9);
+        assert!(a
+            .arm_redrive_under_claim(id, record.clone(), a_token, now, 60_000)
+            .expect("a arms"));
+        // The ShieldedBroadcastUnconfirmed shape: the RECORD is deliberately
+        // kept (its retry needs the declared id) while the lease and its
+        // reservation are released.
+        a.end_claim_admission(a_token).expect("a releases");
+
+        // ---- The precondition: B's mirror is blind to A's row ----
+        assert!(
+            b.pending_redrives(id).expect("b mirror").is_empty(),
+            "precondition: B's startup-hydrated mirror cannot see A's row — if this \
+             ever starts passing by itself the mirror changed, and the assertion \
+             below is no longer testing what it claims"
+        );
+
+        // ---- B: acquires the freed key and MUST be handed A's row ----
+        let b_token = AdmissionToken::new();
+        assert!(b
+            .begin_claim_admission(wallet_id, b_token, now + 1, 60_000)
+            .expect("b lease"));
+        let b_out = b
+            .reserve_one_time_claim_key(id, claim_key, b_token, now + 1, 60_000)
+            .expect("b reserve");
+        assert_eq!(
+            b_out.reservation,
+            ClaimKeyReservation::Acquired,
+            "A released, so the key is B's to take"
+        );
+        let resumed = b_out
+            .pending
+            .expect("B must RESUME A's durable row, not find None and arm a fresh one");
+        assert_eq!(
+            resumed.st_bytes,
+            vec![0xA7; 128],
+            "A's byte-exact transition — the only handle on its padded identity id — \
+             must survive into B's resume"
+        );
+        assert_eq!(resumed.identity_index, Some(9));
+        assert_eq!(resumed.activity_id, claim_key);
+        assert_eq!(resumed.anchor, record.anchor);
+        assert_eq!(resumed.nullifiers, record.nullifiers);
+
+        // The handover also folds the row into B's mirror, so the rest of B's
+        // claim (attempt bumps, finalize/clear) agrees with disk.
+        assert_eq!(
+            b.pending_redrives(id).expect("b mirror after").len(),
+            1,
+            "the resumed row must be visible to B's own later reads"
+        );
+
+        drop((a, b));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// The recovery connection runs at `synchronous=FULL`; the commitment
+    /// tree's stays at `NORMAL` (#4313 review finding file_store.rs:107).
+    ///
+    /// The asymmetry is the point. A claim record's `st_bytes` carry a
+    /// randomized padded identity id that exists nowhere else, and it is
+    /// broadcast immediately after the commit — so a commit that returns
+    /// before the WAL is on disk can lose an identity permanently. Every row
+    /// in the tree, by contrast, is chain-authenticated and rebuildable by
+    /// re-running sync, and fsync'ing per `append_commitment` is what made a
+    /// 1M-leaf build take minutes instead of seconds.
+    #[test]
+    fn the_recovery_connection_is_fsync_durable_and_the_tree_connection_is_not() {
+        let path = temp_tree_path("pending_conn_sync_level");
+        let store = FileBackedShieldedStore::open_path(&path, 8).expect("store");
+
+        // 2 == FULL in SQLite's `synchronous` encoding (0 OFF, 1 NORMAL,
+        // 2 FULL, 3 EXTRA).
+        let recovery: i32 = store
+            .pending_conn
+            .lock()
+            .expect("pending_conn mutex")
+            .pragma_query_value(None, "synchronous", |row| row.get(0))
+            .expect("read recovery synchronous");
+        assert_eq!(
+            recovery, 2,
+            "the claim-recovery connection must be synchronous=FULL: its row is \
+             unreconstructable once the transition it describes is on the wire"
+        );
+
+        let tree = FileBackedShieldedStore::open_tuned_connection(&path).expect("tree conn");
+        let tree_level: i32 = tree
+            .pragma_query_value(None, "synchronous", |row| row.get(0))
+            .expect("read tree synchronous");
+        assert_eq!(
+            tree_level, 1,
+            "the commitment-tree connection must stay NORMAL — paying an fsync per \
+             appended cmx is the cost this split exists to avoid"
+        );
+
+        drop(tree);
+        drop(store);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Two openers racing the `identity_index` migration must both succeed
+    /// (#4313 review finding file_store.rs:206).
+    ///
+    /// Probe-then-ALTER used to be two steps, so two processes opening one file
+    /// could both read "absent", and the loser's `open_path` failed outright
+    /// with `duplicate column name`. Both guards are pinned here: the
+    /// sequential double-open (which the `BEGIN IMMEDIATE` orders), and the
+    /// classification of the duplicate-column rejection as benign.
+    #[test]
+    fn the_identity_index_migration_tolerates_a_racing_opener() {
+        let path = temp_tree_path("identity_index_migration_race");
+
+        // A pre-#4313 database: the old table shape, with no identity_index.
+        {
+            let conn = rusqlite::Connection::open(&path).expect("legacy conn");
+            conn.execute(
+                "CREATE TABLE shielded_pending_spends (
+                    wallet_id      BLOB    NOT NULL,
+                    account_index  INTEGER NOT NULL,
+                    activity_id    BLOB    NOT NULL,
+                    anchor         BLOB    NOT NULL,
+                    nullifiers     BLOB    NOT NULL,
+                    st_bytes       BLOB    NOT NULL,
+                    attempts       INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (wallet_id, account_index, activity_id)
+                )",
+                [],
+            )
+            .expect("legacy table");
+        }
+
+        let first = FileBackedShieldedStore::open_path(&path, 8).expect("first open migrates");
+        let second = FileBackedShieldedStore::open_path(&path, 8)
+            .expect("a second open must not fail on the column the first one added");
+        drop((first, second));
+
+        // The tolerated error is genuinely recognised — the belt to the
+        // BEGIN IMMEDIATE braces. Matched on SQLite's real message rather than
+        // a hand-written string.
+        let conn = rusqlite::Connection::open(&path).expect("probe conn");
+        let err = conn
+            .execute(
+                "ALTER TABLE shielded_pending_spends ADD COLUMN identity_index INTEGER",
+                [],
+            )
+            .expect_err("the column exists by now, so this must be rejected");
+        assert!(
+            FileBackedShieldedStore::is_duplicate_column(&err),
+            "the duplicate-column rejection must be classified benign, got: {err}"
+        );
+        drop(conn);
         let _ = std::fs::remove_file(&path);
     }
 }

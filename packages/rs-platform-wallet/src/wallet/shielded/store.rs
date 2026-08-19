@@ -572,12 +572,13 @@ pub trait ShieldedStore: Send + Sync {
     ///
     /// # Contract
     ///
-    /// Implementations MUST make the insert-if-absent and the read-back of the
-    /// durable row ONE atomic step against every other admission operation on
-    /// the same underlying state, and MUST NOT overwrite a live row. The
-    /// returned value is derived from the durable row as it stands after the
-    /// attempt, so exactly one concurrent caller can see
-    /// [`ClaimKeyReservation::Acquired`]:
+    /// Implementations MUST make the insert-if-absent, the read-back of the
+    /// durable reservation row, AND the read of the durable pending-claim
+    /// record ONE atomic step against every other admission operation on the
+    /// same underlying state, and MUST NOT overwrite a live row. The returned
+    /// [`ClaimKeyReservationOutcome::reservation`] is derived from the durable
+    /// row as it stands after the attempt, so exactly one concurrent caller
+    /// can see [`ClaimKeyReservation::Acquired`]:
     ///
     /// * [`ClaimKeyReservation::Acquired`] — this `token` owns the key. Also
     ///   returned when `token` already owned it (re-entry is idempotent and
@@ -586,6 +587,18 @@ pub trait ShieldedStore: Send + Sync {
     ///   The caller MUST NOT build, broadcast or arm anything: it either
     ///   RESUMES the durable pending-claim record that claimant left, or
     ///   refuses with [`PlatformWalletError::ShieldedLifecycleBusy`].
+    ///
+    /// [`ClaimKeyReservationOutcome::pending`] carries the pending-claim record
+    /// armed under `claim_record_key` in `claim_records_id`, read from DURABLE
+    /// state in that same step — never from a mirror populated at store open.
+    /// A caller that receives `Some` resumes it; arming a fresh record over it
+    /// is what strands an already-broadcast identity
+    /// (#4313 review finding r3767229122, and see the type's docs).
+    ///
+    /// `claim_records_id` is the reserved subwallet the claim records live
+    /// under, so implementations can address the row exactly; the reservation
+    /// itself is keyed by `(claim_records_id.wallet_id, claim_record_key)` —
+    /// an invitation is contended per WALLET, not per account.
     ///
     /// The reservation is bound to `token` for its whole life: it is re-stamped
     /// by [`Self::renew_claim_admission`] and by [`Self::arm_redrive_under_claim`]
@@ -596,12 +609,12 @@ pub trait ShieldedStore: Send + Sync {
     /// [`PlatformWalletError::ShieldedLifecycleBusy`]: crate::error::PlatformWalletError::ShieldedLifecycleBusy
     fn reserve_one_time_claim_key(
         &mut self,
-        wallet_id: WalletId,
+        claim_records_id: SubwalletId,
         claim_record_key: [u8; 32],
         token: AdmissionToken,
         now_ms: u64,
         lease_ms: u64,
-    ) -> Result<ClaimKeyReservation, Self::Error>;
+    ) -> Result<ClaimKeyReservationOutcome, Self::Error>;
 
     /// Re-stamp a live claim lease to `now_ms + lease_ms`, WITHOUT touching the
     /// pending record.
@@ -904,6 +917,46 @@ impl ClaimKeyReservation {
     /// Whether the requesting token came away owning the key.
     pub fn is_acquired(&self) -> bool {
         matches!(self, Self::Acquired)
+    }
+}
+
+/// Everything [`ShieldedStore::reserve_one_time_claim_key`] settles in its one
+/// atomic step: who owns the invitation's record key, AND the durable
+/// pending-claim row that already exists under it (if any).
+///
+/// # Why the row rides along
+///
+/// The claim path used to read the pending record separately, through
+/// [`ShieldedStore::pending_redrives`]. In the file-backed store that reads an
+/// in-memory mirror hydrated once at store OPEN, so a second store instance —
+/// a second coordinator, or a second process — could not see a row a peer had
+/// armed after that open. The consequence was not a stale read but a lost
+/// identity: store A arms a claim, returns `ShieldedBroadcastUnconfirmed` and
+/// releases its reservation; store B then acquires the freed reservation,
+/// sees an empty mirror, builds a DIFFERENT padded transition and REPLACES
+/// A's row via [`ShieldedStore::arm_redrive_under_claim`]. If A's transition
+/// executes, its randomized identity id is gone for good
+/// (#4313 review finding r3767229122).
+///
+/// So the row is read from the durable state in the SAME transaction that
+/// settles the reservation, and handed back here. A caller that receives
+/// `Some` RESUMES that record; it must never arm a fresh one over it.
+/// Implementations MUST source `pending` from durable state, never from a
+/// startup-hydrated mirror.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClaimKeyReservationOutcome {
+    /// Who owns the invitation's claim-record key after this attempt.
+    pub reservation: ClaimKeyReservation,
+    /// The durable pending-claim record already armed under
+    /// `claim_record_key`, read in the same atomic step. `None` when no
+    /// earlier attempt left one.
+    pub pending: Option<PendingRedrive>,
+}
+
+impl ClaimKeyReservationOutcome {
+    /// Whether the requesting token came away owning the key.
+    pub fn is_acquired(&self) -> bool {
+        self.reservation.is_acquired()
     }
 }
 
@@ -1567,33 +1620,34 @@ impl ShieldedStore for InMemoryShieldedStore {
 
     fn reserve_one_time_claim_key(
         &mut self,
-        wallet_id: WalletId,
+        claim_records_id: SubwalletId,
         claim_record_key: [u8; 32],
         token: AdmissionToken,
         now_ms: u64,
         lease_ms: u64,
-    ) -> Result<ClaimKeyReservation, Self::Error> {
+    ) -> Result<ClaimKeyReservationOutcome, Self::Error> {
+        let wallet_id = claim_records_id.wallet_id;
         // Reap first, so a dead claimant's row cannot hold an invitation
         // hostage past its lease. One `&mut self` step covers reap, insert and
         // read-back, which is the atomicity the trait requires.
         self.claim_key_reservations
             .retain(|r| r.expires_at > now_ms);
         let expires_at = now_ms.saturating_add(lease_ms);
-        match self
+        let reservation = match self
             .claim_key_reservations
             .iter_mut()
             .find(|r| r.wallet_id == wallet_id && r.claim_record_key == claim_record_key)
         {
             // Someone else's live row: read it back and report the holder. The
             // row is NOT touched — that is the whole guarantee.
-            Some(existing) if existing.token != token => Ok(ClaimKeyReservation::Held {
+            Some(existing) if existing.token != token => ClaimKeyReservation::Held {
                 holder: existing.token,
                 expires_at: existing.expires_at,
-            }),
+            },
             // Our own row: idempotent re-entry, re-stamped.
             Some(existing) => {
                 existing.expires_at = expires_at;
-                Ok(ClaimKeyReservation::Acquired)
+                ClaimKeyReservation::Acquired
             }
             None => {
                 self.claim_key_reservations.push(ClaimKeyLease {
@@ -1602,9 +1656,22 @@ impl ShieldedStore for InMemoryShieldedStore {
                     token,
                     expires_at,
                 });
-                Ok(ClaimKeyReservation::Acquired)
+                ClaimKeyReservation::Acquired
             }
-        }
+        };
+        // Read the pending-claim record in the SAME `&mut self` step. This
+        // store keeps no separate durable tier — the map IS the durable state —
+        // so reading it here is the atomicity the trait asks for, and the
+        // file-backed store's SQLite read is the equivalent
+        // (#4313 review finding r3767229122).
+        let pending = self
+            .subwallets
+            .get(&claim_records_id)
+            .and_then(|sw| sw.redrives.get(&claim_record_key).cloned());
+        Ok(ClaimKeyReservationOutcome {
+            reservation,
+            pending,
+        })
     }
 
     fn renew_claim_admission(
@@ -2159,6 +2226,7 @@ mod tests {
         let mut store = InMemoryShieldedStore::new();
         let wallet: WalletId = [0xAA; 32];
         let key = [0xC1; 32];
+        let id = SubwalletId::new(wallet, u32::MAX);
         let winner = claim_token(0x11);
         let loser = claim_token(0x12);
         let t0 = 1_000_000u64;
@@ -2174,14 +2242,16 @@ mod tests {
 
         assert_eq!(
             store
-                .reserve_one_time_claim_key(wallet, key, winner, t0, CLAIM_LEASE_MS)
-                .unwrap(),
+                .reserve_one_time_claim_key(id, key, winner, t0, CLAIM_LEASE_MS)
+                .unwrap()
+                .reservation,
             ClaimKeyReservation::Acquired
         );
         assert_eq!(
             store
-                .reserve_one_time_claim_key(wallet, key, loser, t0, CLAIM_LEASE_MS)
-                .unwrap(),
+                .reserve_one_time_claim_key(id, key, loser, t0, CLAIM_LEASE_MS)
+                .unwrap()
+                .reservation,
             ClaimKeyReservation::Held {
                 holder: winner,
                 expires_at: t0 + CLAIM_LEASE_MS,
@@ -2190,7 +2260,6 @@ mod tests {
 
         // The gate refuses the loser's record write, so the winner's row cannot
         // be replaced.
-        let id = SubwalletId::new(wallet, u32::MAX);
         let record = |b: u8| PendingRedrive {
             activity_id: key,
             anchor: [b; 32],
@@ -2212,13 +2281,19 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].st_bytes, vec![0xAA; 8]);
 
-        // Release hands the invitation straight over; no lease-length wait.
+        // Release hands the invitation straight over; no lease-length wait —
+        // and the winner's durable record comes back WITH the reservation, so
+        // the new owner resumes it instead of arming a second transition over
+        // it (#4313 review finding r3767229122).
         store.end_claim_admission(winner).unwrap();
+        let handover = store
+            .reserve_one_time_claim_key(id, key, loser, t0, CLAIM_LEASE_MS)
+            .unwrap();
+        assert_eq!(handover.reservation, ClaimKeyReservation::Acquired);
         assert_eq!(
-            store
-                .reserve_one_time_claim_key(wallet, key, loser, t0, CLAIM_LEASE_MS)
-                .unwrap(),
-            ClaimKeyReservation::Acquired
+            handover.pending.as_ref().map(|r| r.st_bytes.clone()),
+            Some(vec![0xAA; 8]),
+            "acquiring a released key must hand back the record already armed under it"
         );
     }
 }
