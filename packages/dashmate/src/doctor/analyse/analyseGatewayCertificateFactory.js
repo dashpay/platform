@@ -7,7 +7,7 @@ import Problem from '../Problem.js';
  * operator following the advice can succeed and see no change on the wire. Every message about
  * a certificate the gateway has not picked up has to say this.
  */
-const RESTART_HINT = chalk`Then restart the node so the gateway picks it up: {bold.cyanBright dashmate restart}`;
+const RESTART_HINT = chalk`Then restart Platform so the gateway picks it up: {bold.cyanBright dashmate restart --platform}`;
 
 export default function analyseGatewayCertificateFactory() {
   /**
@@ -80,7 +80,7 @@ ${RESTART_HINT}`,
         `The gateway is serving a certificate that expired on ${served.certificate.validTo}, `
         + 'while a newer one is already present on disk',
         chalk`The certificate was renewed but never reached the gateway.
-{bold.cyanBright dashmate restart}`,
+{bold.cyanBright dashmate restart --platform}`,
         SEVERITY.HIGH,
       ));
     } else if (isServedExpired) {
@@ -100,7 +100,7 @@ ${RESTART_HINT}`,
         'The gateway is serving an older certificate than the one on disk. '
         + `It will stop accepting clients on ${served.certificate.validTo}`,
         chalk`The certificate was renewed but never reached the gateway.
-{bold.cyanBright dashmate restart}`,
+{bold.cyanBright dashmate restart --platform}`,
         SEVERITY.HIGH,
       ));
     }

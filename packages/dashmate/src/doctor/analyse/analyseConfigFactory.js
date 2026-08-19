@@ -182,7 +182,7 @@ ${LETSENCRYPT_ALTERNATIVE}`,
                 description: chalk`A renewed Let's Encrypt certificate has not been installed for the gateway.`,
                 solution: chalk`The gateway keeps serving the previous certificate until it is reloaded,
 and will stop accepting clients when that one expires.
-Please restart the node: {bold.cyanBright dashmate restart}`,
+Please restart Platform: {bold.cyanBright dashmate restart --platform}`,
               },
               [LETSENCRYPT_ERRORS.CERTIFICATE_NOT_VALID]: {
                 description: chalk`Let's Encrypt certificate is not valid.`,

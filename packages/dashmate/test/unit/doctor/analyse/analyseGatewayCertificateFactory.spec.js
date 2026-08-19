@@ -81,7 +81,7 @@ describe('analyseGatewayCertificateFactory', () => {
 
     expect(problems).to.have.lengthOf(1);
     expect(problems[0].getDescription()).to.include('newer one is already present on disk');
-    expect(problems[0].getSolution()).to.include('dashmate restart');
+    expect(problems[0].getSolution()).to.include('dashmate restart --platform');
   });
 
   it('should warn before the outage when a renewed certificate has not been picked up', () => {
