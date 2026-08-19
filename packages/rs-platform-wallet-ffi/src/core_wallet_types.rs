@@ -258,11 +258,18 @@ impl WalletChangeSetFFI {
     /// dashpay/platform#4363 began *suppressing* a contact's watch-only
     /// record from `records` while still emitting its spend — the
     /// stale-TXO heal. With nothing left in `records` to re-derive from,
-    /// those spends reached no mobile host at all, so the heal was dead on
-    /// Android and iOS; only the SQLite backend, which reads `spent_utxos`
-    /// directly, ever ran it. `CoreChangeSet::unrecorded_spends` carries
-    /// exactly that residue — outpoint, spending txid and owning account —
-    /// and is folded into the per-account `utxos_spent` arrays below.
+    /// those spends reached no mobile host at all; only the SQLite backend,
+    /// which reads `spent_utxos` directly, ever ran the heal.
+    /// `CoreChangeSet::unrecorded_spends` carries exactly that residue —
+    /// outpoint, spending txid and owning account — and is folded into the
+    /// per-account `utxos_spent` arrays below.
+    ///
+    /// That closes the gap *at this boundary only*. The entries now cross
+    /// the FFI, but neither host acts on them yet: both gate the `isSpent`
+    /// flip on resolving `spending_txid` to a persisted transaction row, and
+    /// for a suppressed record no such row is ever written. Do not read the
+    /// fold below as "the heal runs on mobile" — see
+    /// `CoreChangeSet::unrecorded_spends` for what still has to land.
     ///
     /// `chain` carries `synced_height` from the changeset's
     /// `synced_height` field; `block_hash` is omitted because
@@ -920,6 +927,13 @@ fn record_spent_outpoints_ffi(
 /// The spending txid is carried through rather than zeroed: both host
 /// handlers resolve it to decide whether the spend is final, and a zero txid
 /// makes the emit a no-op on each of them.
+///
+/// A non-zero txid is not sufficient either, and today it is not: the hosts
+/// look the txid up in their own transaction table, and a suppressed record
+/// never puts it there, so these entries currently land and do nothing. The
+/// txid is carried because it is the one fact that cannot be recovered
+/// downstream once the record is gone — see
+/// `CoreChangeSet::unrecorded_spends`.
 ///
 /// [`UnrecordedSpend`]: platform_wallet::changeset::UnrecordedSpend
 fn unrecorded_spend_ffi(spend: &platform_wallet::changeset::UnrecordedSpend) -> SpentOutPointFFI {
@@ -1897,6 +1911,12 @@ mod tests {
     /// (which reads `cs.spent_utxos` directly) and no mobile host.
     ///
     /// Pre-fix this emitted zero accounts and zero spends.
+    ///
+    /// Scope: this pins the *FFI boundary*, not the heal. Both host handlers
+    /// still require a persisted row for `spending_txid` before they touch
+    /// `isSpent`, and a suppressed record produces none — so what this test
+    /// asserts is that the entry arrives with everything a host would need,
+    /// not that any host acts on it today.
     #[test]
     fn contact_spend_of_a_stale_txo_crosses_the_ffi() {
         use dashcore::hashes::Hash;

@@ -621,7 +621,10 @@ async fn build_core_changeset(
                 // Suppressed below but still spending: keep the outpoint,
                 // its spender and its account alive for the FFI persister,
                 // which projects per account off `records` and would
-                // otherwise never see this spend at all.
+                // otherwise never see this spend at all. First sighting
+                // only — the `BlockProcessed` arm re-derives on the
+                // confirming phase, which is the emit the hosts' in-block
+                // gate actually needs.
                 unrecorded_spends: derive_unrecorded_spends(record),
                 // A contact's watch-only chain never defines the
                 // wallet's transaction row (see `is_contact_watch_only`).
@@ -676,9 +679,30 @@ async fn build_core_changeset(
             for r in inserted {
                 cs.new_utxos.extend(derive_new_utxos(r));
                 cs.spent_utxos.extend(derive_spent_utxos(r));
-                // Same source as `spent_utxos` — only `inserted` changes
-                // UTXO topology — so the suppressed-record spends track it
-                // exactly. `updated` / `matured` re-emit content, not spends.
+            }
+            // Suppressed-record spends track `records`, NOT `spent_utxos`.
+            //
+            // The UTXO topology vecs above are correctly `inserted`-only: a
+            // confirmation re-emit changes no outpoint's existence, and
+            // re-deriving them would re-delete and re-add rows for nothing.
+            // `unrecorded_spends` is a different kind of thing — it is the
+            // stand-in for the FFI emit a *record* would have produced, and
+            // records re-emit from all three phases (see `cs.records`
+            // below). Deriving it from `inserted` alone reproduced, for
+            // suppressed records, exactly the bug the phase-chaining on
+            // `cs.records` exists to avoid: a spend first sighted in the
+            // mempool got one emit, at a context that can never satisfy the
+            // hosts' `context >= IN_BLOCK` gate on the `isSpent` flip, and
+            // then nothing when the block that confirmed it arrived. A
+            // surviving record gets a fresh emit at every new context; a
+            // suppressed one must too.
+            //
+            // No double-count: within one `BlockProcessed` a record appears
+            // in exactly one of the three lists, and `derive_unrecorded_spends`
+            // is non-empty only for records the filter below drops — so this
+            // stays disjoint from the spends the FFI builder re-derives from
+            // `cs.records`.
+            for r in inserted.iter().chain(updated.iter()).chain(matured.iter()) {
                 cs.unrecorded_spends.extend(derive_unrecorded_spends(r));
             }
             // Updated records (re-confirmation, IS-lock applied to a known
@@ -1081,18 +1105,6 @@ fn derive_new_utxos(record: &TransactionRecord) -> Vec<Utxo> {
         .collect()
 }
 
-/// Derive the "ours" UTXOs spent by a transaction's inputs.
-///
-/// Walks `record.input_details` (the entries keyed to inputs that spent
-/// our outpoints) and synthesizes a `Utxo` per entry using the data we
-/// have: the outpoint from `transaction.input[index].previous_output`,
-/// the value and address from `InputDetail`. The script_pubkey, height,
-/// and confirmation flags belong to the *previous* transaction's
-/// output and aren't carried in `InputDetail`; they're filled with
-/// defaults (`ScriptBuf::default()`, height 0, all flags false). The
-/// persister deletes by `outpoint` so the missing fields are
-/// informational only — they never affect correctness of the spent-set
-/// removal, only the audit-trail richness on the way out.
 /// Derive the spend-clears that `records` suppression would otherwise lose.
 ///
 /// Empty for every record that *does* reach the persister's `records` list —
@@ -1103,7 +1115,10 @@ fn derive_new_utxos(record: &TransactionRecord) -> Vec<Utxo> {
 /// pre-#4363 build wrote.
 ///
 /// Pairs each outpoint with the spending txid and the owning account, the two
-/// facts [`CoreChangeSet::unrecorded_spends`] exists to preserve.
+/// facts [`CoreChangeSet::unrecorded_spends`] exists to preserve. Read that
+/// field's docs before relying on this: the entries cross the FFI, but neither
+/// mobile handler acts on them yet, so this is plumbing for a heal that is
+/// live on SQLite and still dormant on Android/iOS.
 fn derive_unrecorded_spends(record: &TransactionRecord) -> Vec<UnrecordedSpend> {
     if !is_contact_watch_only(record) {
         return Vec::new();
@@ -1122,6 +1137,18 @@ fn derive_unrecorded_spends(record: &TransactionRecord) -> Vec<UnrecordedSpend> 
         .collect()
 }
 
+/// Derive the "ours" UTXOs spent by a transaction's inputs.
+///
+/// Walks `record.input_details` (the entries keyed to inputs that spent
+/// our outpoints) and synthesizes a `Utxo` per entry using the data we
+/// have: the outpoint from `transaction.input[index].previous_output`,
+/// the value and address from `InputDetail`. The script_pubkey, height,
+/// and confirmation flags belong to the *previous* transaction's
+/// output and aren't carried in `InputDetail`; they're filled with
+/// defaults (`ScriptBuf::default()`, height 0, all flags false). The
+/// persister deletes by `outpoint` so the missing fields are
+/// informational only — they never affect correctness of the spent-set
+/// removal, only the audit-trail richness on the way out.
 fn derive_spent_utxos(record: &TransactionRecord) -> Vec<Utxo> {
     record
         .input_details
@@ -1289,6 +1316,28 @@ mod contact_watch_only_projection_tests {
     }
 
     #[allow(clippy::too_many_arguments)]
+    fn record_at(
+        tx: &Transaction,
+        account_type: AccountType,
+        direction: TransactionDirection,
+        input_details: Vec<InputDetail>,
+        output_details: Vec<OutputDetail>,
+        net_amount: i64,
+        context: TransactionContext,
+    ) -> TransactionRecord {
+        TransactionRecord::new(
+            tx.clone(),
+            account_type,
+            context,
+            TransactionType::Standard,
+            direction,
+            input_details,
+            output_details,
+            net_amount,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn record(
         tx: &Transaction,
         account_type: AccountType,
@@ -1297,16 +1346,46 @@ mod contact_watch_only_projection_tests {
         output_details: Vec<OutputDetail>,
         net_amount: i64,
     ) -> TransactionRecord {
-        TransactionRecord::new(
-            tx.clone(),
+        record_at(
+            tx,
             account_type,
-            in_block(1_000),
-            TransactionType::Standard,
             direction,
             input_details,
             output_details,
             net_amount,
+            in_block(1_000),
         )
+    }
+
+    /// The record a contact's spend of a *stale pre-#4363* TXO produces, at
+    /// the given context.
+    ///
+    /// The spent outpoint is [`funding_outpoint`] — the row a pre-fix build
+    /// wrongly wrote into our TXO set when it let the contact's watch-only
+    /// record define the transaction. The contact can spend it; we cannot.
+    fn contact_spend_of_a_stale_txo(
+        context: TransactionContext,
+    ) -> (Transaction, TransactionRecord) {
+        let tx = tx_with(&[(&contact_address(), PAID_TO_CONTACT)]);
+        let spend = record_at(
+            &tx,
+            contact_external_account(),
+            TransactionDirection::Outgoing,
+            vec![InputDetail {
+                index: 0,
+                value: PAID_TO_CONTACT,
+                address: contact_address(),
+            }],
+            vec![output(
+                0,
+                OutputRole::Sent,
+                &contact_address(),
+                PAID_TO_CONTACT,
+            )],
+            -(PAID_TO_CONTACT as i64),
+            context,
+        );
+        (tx, spend)
     }
 
     /// The record pair a payment to a contact really produces: the
@@ -1597,24 +1676,7 @@ mod contact_watch_only_projection_tests {
     /// new-TXO projection are suppressed.
     #[tokio::test]
     async fn contact_spend_still_clears_a_stale_pre_fix_txo() {
-        let tx = tx_with(&[(&contact_address(), PAID_TO_CONTACT)]);
-        let watch_only_spend = record(
-            &tx,
-            contact_external_account(),
-            TransactionDirection::Outgoing,
-            vec![InputDetail {
-                index: 0,
-                value: PAID_TO_CONTACT,
-                address: contact_address(),
-            }],
-            vec![output(
-                0,
-                OutputRole::Sent,
-                &contact_address(),
-                PAID_TO_CONTACT,
-            )],
-            -(PAID_TO_CONTACT as i64),
-        );
+        let (tx, watch_only_spend) = contact_spend_of_a_stale_txo(in_block(1_000));
         let cs =
             build_core_changeset(&test_manager(), &block_processed(vec![watch_only_spend])).await;
 
@@ -1630,10 +1692,13 @@ mod contact_watch_only_projection_tests {
         assert_eq!(cs.spent_utxos[0].outpoint, funding_outpoint());
 
         // `spent_utxos` alone only heals the backends that read it directly
-        // (SQLite). The FFI persister projects per account off `records`,
-        // which is empty here, so the clear needs the suppressed record's
-        // spend carried explicitly — with the spending txid, which a `Utxo`
-        // does not have and which both host handlers require.
+        // (SQLite), where the #4363 heal is already live. The FFI persister
+        // projects per account off `records`, which is empty here, so the
+        // clear needs the suppressed record's spend carried explicitly —
+        // with the spending txid, which a `Utxo` does not have and which
+        // both host handlers require. That gets the entry across the FFI;
+        // acting on it still needs the host-side piece described on
+        // `CoreChangeSet::unrecorded_spends`.
         assert_eq!(
             cs.unrecorded_spends.len(),
             1,
@@ -1662,6 +1727,114 @@ mod contact_watch_only_projection_tests {
             cs.unrecorded_spends.is_empty(),
             "a record the persister will see must not also be carried as an \
              unrecorded spend — the FFI builder would emit its inputs twice"
+        );
+    }
+
+    /// A suppressed spend first sighted in the **mempool** must re-emit when
+    /// its block confirmation arrives.
+    ///
+    /// Both host handlers gate the `isSpent` flip on the spending transaction
+    /// having reached `context >= IN_BLOCK`, so a mempool-context emit can
+    /// never satisfy them on its own. Surviving records get a fresh emit from
+    /// every record-carrying phase — `inserted`, `updated` and `matured` all
+    /// feed `cs.records` — but `unrecorded_spends` was derived from `inserted`
+    /// alone, tracking the UTXO-topology vecs instead. A suppressed record
+    /// therefore got exactly one emit, forever at mempool context, and the
+    /// `updated` phase that confirmed it carried nothing at all.
+    ///
+    /// Pre-fix, phase 2 below asserted `left: 0, right: 1`.
+    #[tokio::test]
+    async fn a_suppressed_spend_re_emits_when_its_block_confirmation_arrives() {
+        // Phase 1 — mempool sighting, delivered as `TransactionDetected`.
+        let (tx, mempool_spend) = contact_spend_of_a_stale_txo(TransactionContext::Mempool);
+        let cs = build_core_changeset(&test_manager(), &transaction_detected(mempool_spend)).await;
+
+        assert!(
+            cs.records.is_empty(),
+            "the contact's record is suppressed on first sighting"
+        );
+        assert_eq!(
+            cs.unrecorded_spends.len(),
+            1,
+            "the first sighting emits — but at a context no host will act on"
+        );
+
+        // Phase 2 — the block that confirms it. The record already exists, so
+        // upstream re-emits it under `updated` (its context advanced), never
+        // under `inserted`.
+        let (_, confirmed_spend) = contact_spend_of_a_stale_txo(in_block(1_000));
+        let event = WalletEvent::BlockProcessed {
+            wallet_id: WALLET_ID,
+            height: 1_000,
+            chain_lock: None,
+            inserted: vec![],
+            updated: vec![confirmed_spend],
+            matured: vec![],
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+            addresses_derived: vec![],
+        };
+        let cs = build_core_changeset(&test_manager(), &event).await;
+
+        assert!(
+            cs.records.is_empty(),
+            "confirmation does not un-suppress the contact's record"
+        );
+        assert!(
+            cs.spent_utxos.is_empty(),
+            "the UTXO-topology vecs stay `inserted`-only — a confirmation \
+             re-emit destroys and creates no outpoint"
+        );
+        assert_eq!(
+            cs.unrecorded_spends.len(),
+            1,
+            "the confirming phase must re-emit the spend — it is the only \
+             emit that can ever satisfy the hosts' in-block gate"
+        );
+        let unrecorded = &cs.unrecorded_spends[0];
+        assert_eq!(unrecorded.outpoint, funding_outpoint());
+        assert_eq!(
+            unrecorded.spending_txid,
+            tx.txid(),
+            "the spending txid must survive the re-emit"
+        );
+        assert_eq!(unrecorded.account_type, contact_external_account());
+    }
+
+    /// Chaining the phases must not blur the two spend sources: a block that
+    /// confirms a contact's suppressed spend while also inserting a
+    /// transaction of ours yields one unrecorded spend (the contact's) and one
+    /// record (ours), and the unrecorded entry is routed to the contact's
+    /// account — not the funding account whose record the FFI builder will
+    /// re-derive spends from itself.
+    #[tokio::test]
+    async fn phase_chaining_keeps_suppressed_and_surviving_spends_disjoint() {
+        let (_, funding, _) = contact_payment_records();
+        let (_, confirmed_contact_spend) = contact_spend_of_a_stale_txo(in_block(1_000));
+        let event = WalletEvent::BlockProcessed {
+            wallet_id: WALLET_ID,
+            height: 1_000,
+            chain_lock: None,
+            inserted: vec![funding],
+            updated: vec![confirmed_contact_spend],
+            matured: vec![],
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+            addresses_derived: vec![],
+        };
+        let cs = build_core_changeset(&test_manager(), &event).await;
+
+        assert_eq!(cs.records.len(), 1, "only our own record defines a row");
+        assert_eq!(cs.records[0].account_type, bip44_account_0());
+        assert_eq!(
+            cs.unrecorded_spends.len(),
+            1,
+            "our inserted record contributes no unrecorded spend"
+        );
+        assert_eq!(
+            cs.unrecorded_spends[0].account_type,
+            contact_external_account(),
+            "the entry is routed to the suppressed record's account"
         );
     }
 }
