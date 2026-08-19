@@ -2358,4 +2358,353 @@ mod tests {
             );
         }
     }
+
+    /// MAINNET HALT HOTFIX (evo1, 2026-08-14/15: ~2h stalls after 415652 and 415661).
+    ///
+    /// Execution can write into the shared block transaction before failing (the address-input
+    /// fee flow is apply-then-check), and a transition whose result strips it from the block
+    /// (`InternalError` -> `TxAction::Removed`) left those writes behind: the proposer gossiped
+    /// a block WITHOUT the transition while advertising an app hash computed WITH its writes,
+    /// so no validator could reproduce the hash and every proposer carrying the transition
+    /// burned its round.
+    ///
+    /// The hotfix rolls such transitions back on the PROPOSING path only. These tests pin both
+    /// halves of that contract: the proposing path leaves no trace, and the validating path is
+    /// byte-identical to v4.1.0 (rolling back there would change what a received block
+    /// evaluates to — a consensus change that must ride a protocol-version gate, not a hotfix).
+    ///
+    /// Both tests use a fault hook rather than a real under-funded shield so they are
+    /// independent of the fee-estimation constants that made the mainnet transitions fail
+    /// (dashpay/grovedb#812).
+    mod proposer_rollback_hotfix {
+        use super::*;
+        use crate::execution::platform_events::state_transition_processing::test_fault_injection::FAIL_NEXT_SUCCESSFUL_EXECUTION;
+        use crate::execution::validation::state_transition::state_transitions::test_helpers::insert_dummy_encrypted_notes;
+        use dpp::block::block_info::BlockInfo;
+
+        /// Note count on mainnet's shielded commitment tree around the halt.
+        const MAINNET_NOTES: u64 = 494;
+
+        struct Bundle {
+            actions: Vec<SerializedAction>,
+            shield_amount: u64,
+            anchor: [u8; 32],
+            proof: Vec<u8>,
+            binding_sig: [u8; 64],
+        }
+
+        fn build_bundle() -> Bundle {
+            let mut rng = OsRng;
+            let pk = get_proving_key();
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+
+            let mut builder = Builder::<DashMemo>::new(
+                BundleType::Transactional {
+                    flags: OrchardFlags::SPENDS_DISABLED,
+                    bundle_required: false,
+                },
+                Anchor::empty_tree(),
+            );
+            builder
+                .add_output(None, recipient, NoteValue::from_raw(5000u64), [0u8; 36])
+                .unwrap();
+            let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+            let commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&commitment, &[]);
+            let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
+            let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
+
+            let (actions, _flags, value_balance, anchor, proof, binding_sig) =
+                serialize_authorized_bundle_with_flags(&bundle);
+            assert!(
+                value_balance < 0,
+                "a shield must have negative value balance"
+            );
+            Bundle {
+                actions,
+                shield_amount: (-value_balance) as u64,
+                anchor,
+                proof,
+                binding_sig,
+            }
+        }
+
+        async fn build_signed(
+            b: &Bundle,
+            signer: &TestAddressSigner,
+            addr: PlatformAddress,
+            declared_input: u64,
+        ) -> StateTransition {
+            let mut inputs = BTreeMap::new();
+            inputs.insert(addr, (1 as AddressNonce, declared_input));
+
+            let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
+                inputs: inputs.clone(),
+                actions: b.actions.clone(),
+                amount: b.shield_amount,
+                anchor: b.anchor,
+                proof: b.proof.clone(),
+                binding_signature: b.binding_sig,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                user_fee_increase: 0,
+                input_witnesses: vec![],
+            }));
+            let signable = st.signable_bytes().expect("should compute signable bytes");
+            let mut witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
+            for a in inputs.keys() {
+                witnesses.push(
+                    signer
+                        .sign_create_witness(a, &signable)
+                        .await
+                        .expect("sign"),
+                );
+            }
+            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
+                v0.input_witnesses = witnesses;
+            }
+            st
+        }
+
+        struct RunOutcome {
+            dropped_as_internal_error: bool,
+            pool_delta: i128,
+            notes_delta: i128,
+            hash_changed: bool,
+        }
+
+        /// Run a fully-funded shield with the post-apply fault injected, on the proposing or
+        /// validating path, and report what it left behind.
+        async fn run_injected(proposing: bool) -> RunOutcome {
+            let pv = PlatformVersion::latest();
+            let b = build_bundle();
+            // Fully funded: without the injected failure this shield would execute and land.
+            let headroom = 5_000_000_000u64;
+
+            let mut platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, MAINNET_NOTES);
+            let mut signer = TestAddressSigner::new();
+            let addr = signer.add_p2pkh([1u8; 32]);
+            let declared_input = b.shield_amount + headroom;
+            setup_address_with_balance_and_system_credits(&mut platform, addr, 0, declared_input);
+
+            let st = build_signed(&b, &signer, addr, declared_input).await;
+            let bytes = st.serialize_to_bytes().expect("serialize");
+            let state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let pool_before = platform
+                .drive
+                .read_shielded_pool_total_balance(Some(&transaction), &mut vec![], pv)
+                .expect("pool balance");
+            let notes_before = platform
+                .drive
+                .shielded_pool_notes_count(Some(&transaction), &mut vec![], pv)
+                .expect("notes count");
+            let hash_before = platform
+                .drive
+                .grove
+                .root_hash(Some(&transaction), &pv.drive.grove_version)
+                .unwrap()
+                .expect("root hash");
+
+            FAIL_NEXT_SUCCESSFUL_EXECUTION.with(|flag| flag.set(true));
+
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![bytes],
+                    &state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    pv,
+                    proposing,
+                    None,
+                )
+                .expect("processing must not be a block-level error");
+
+            assert!(
+                !FAIL_NEXT_SUCCESSFUL_EXECUTION.with(|flag| flag.get()),
+                "sanity: the injection must have been consumed (the shield must have executed \
+                 successfully before being overridden)"
+            );
+
+            let dropped_as_internal_error = matches!(
+                result.execution_results().first(),
+                Some(StateTransitionExecutionResult::InternalError(_))
+            );
+
+            let pool_after = platform
+                .drive
+                .read_shielded_pool_total_balance(Some(&transaction), &mut vec![], pv)
+                .expect("pool balance");
+            let notes_after = platform
+                .drive
+                .shielded_pool_notes_count(Some(&transaction), &mut vec![], pv)
+                .expect("notes count");
+            let hash_after = platform
+                .drive
+                .grove
+                .root_hash(Some(&transaction), &pv.drive.grove_version)
+                .unwrap()
+                .expect("root hash");
+
+            RunOutcome {
+                dropped_as_internal_error,
+                pool_delta: pool_after as i128 - pool_before as i128,
+                notes_delta: notes_after as i128 - notes_before as i128,
+                hash_changed: hash_after != hash_before,
+            }
+        }
+
+        /// The fix: a transition dropped as `InternalError` while PROPOSING must leave the
+        /// shielded pool, the note commitment tree, and the root hash untouched — the proposal
+        /// then omits the transition AND its app hash omits its writes, so any validator
+        /// (including un-upgraded v4.1.0 ones) reproduces the hash and the round commits.
+        #[tokio::test]
+        async fn proposing_must_not_leave_state_of_dropped_transition() {
+            let outcome = run_injected(true).await;
+            assert!(
+                outcome.dropped_as_internal_error,
+                "expected the injected InternalError"
+            );
+            assert_eq!(
+                outcome.pool_delta, 0,
+                "STATE LEAK: a transition dropped from the proposal still credited the \
+                 shielded pool"
+            );
+            assert_eq!(
+                outcome.notes_delta, 0,
+                "STATE LEAK: a transition dropped from the proposal still appended note \
+                 commitments"
+            );
+            assert!(
+                !outcome.hash_changed,
+                "APP HASH POISONED: a transition dropped from the proposal changed the app \
+                 hash; validators replaying the block (which omits it) can never reproduce \
+                 this hash and the chain stalls"
+            );
+        }
+
+        /// The consensus-invisibility guarantee: the VALIDATING path must behave exactly as
+        /// v4.1.0 did — no savepoint, no rollback, the leak preserved. Rolling back here would
+        /// change what state a received block evaluates to, i.e. a consensus change: an
+        /// upgraded validator would then disagree with un-upgraded ones about any block that
+        /// carries such a transition. That change is version-gated to protocol v14 and MUST
+        /// NOT be active in this hotfix. If this test ever fails because the deltas became
+        /// zero, the hotfix has silently become a fork.
+        #[tokio::test]
+        async fn validating_must_behave_exactly_as_v4_1_0() {
+            let outcome = run_injected(false).await;
+            assert!(
+                outcome.dropped_as_internal_error,
+                "expected the injected InternalError"
+            );
+            assert_eq!(
+                outcome.pool_delta, 5000,
+                "the validating path must keep v4.1.0 behavior bit-for-bit (leak preserved)"
+            );
+            assert_eq!(
+                outcome.notes_delta, 2,
+                "the validating path must keep v4.1.0 behavior bit-for-bit (leak preserved)"
+            );
+            assert!(
+                outcome.hash_changed,
+                "the validating path must keep v4.1.0 behavior bit-for-bit (leak preserved)"
+            );
+        }
+
+        /// The real mainnet scenario, no fault hook: a shield funded at the edge of the
+        /// estimated-vs-actual fee band measured on v4.2-dev (actual metered fee
+        /// 177,215,760 credits at 494 notes; headroom one credit below). The grovedb pin
+        /// differs on the v4.1 line so the exact constants may shift; whatever this funding
+        /// level produces here, the proposing path must leave state consistent with it:
+        /// a dropped or rejected transition leaves NO trace (this was the halt), and only a
+        /// genuinely successful one changes state.
+        #[tokio::test]
+        async fn proposing_real_underfunded_shield_leaves_no_trace() {
+            let pv = PlatformVersion::latest();
+            let b = build_bundle();
+            let headroom = 177_215_759u64;
+
+            let mut platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, MAINNET_NOTES);
+            let mut signer = TestAddressSigner::new();
+            let addr = signer.add_p2pkh([1u8; 32]);
+            let declared_input = b.shield_amount + headroom;
+            setup_address_with_balance_and_system_credits(&mut platform, addr, 0, declared_input);
+
+            let st = build_signed(&b, &signer, addr, declared_input).await;
+            let bytes = st.serialize_to_bytes().expect("serialize");
+            let state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let hash_before = platform
+                .drive
+                .grove
+                .root_hash(Some(&transaction), &pv.drive.grove_version)
+                .unwrap()
+                .expect("root hash");
+
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![bytes],
+                    &state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    pv,
+                    true, // proposing, exactly as prepare_proposal does
+                    None,
+                )
+                .expect("processing must not be a block-level error");
+
+            let hash_after = platform
+                .drive
+                .grove
+                .root_hash(Some(&transaction), &pv.drive.grove_version)
+                .unwrap()
+                .expect("root hash");
+
+            println!(
+                "outcome at band-edge headroom: {:?}",
+                result.execution_results().first()
+            );
+            match result.execution_results().first() {
+                Some(StateTransitionExecutionResult::InternalError(msg)) => {
+                    // The mainnet halt case: accepted by estimated-fee validation, failed by
+                    // actual-fee execution, dropped from the proposal. Must leave no trace.
+                    assert!(
+                        msg.contains("not fully covered"),
+                        "expected the fee coverage guard, got: {msg}"
+                    );
+                    assert_eq!(
+                        hash_before, hash_after,
+                        "APP HASH POISONED: the exact mainnet halt scenario leaked state on \
+                         the proposing path"
+                    );
+                }
+                Some(StateTransitionExecutionResult::UnpaidConsensusError(_)) => {
+                    // Fee constants on this line put the estimate above this funding level:
+                    // rejected before execution. Fine — but still must leave no trace.
+                    assert_eq!(
+                        hash_before, hash_after,
+                        "a validation-rejected shield must not touch state"
+                    );
+                }
+                Some(StateTransitionExecutionResult::SuccessfulExecution { .. }) => {
+                    // Fee constants on this line put the actual fee at or below this funding
+                    // level: the shield legitimately landed, so state MUST have changed.
+                    assert_ne!(
+                        hash_before, hash_after,
+                        "a successful shield must change state"
+                    );
+                }
+                other => panic!("unexpected execution result: {other:?}"),
+            }
+        }
+    }
 }
