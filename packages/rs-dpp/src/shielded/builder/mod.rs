@@ -219,14 +219,17 @@ pub const PER_KEY_SIGNATURE_ALLOWANCE_BYTES: u64 = 97;
 
 /// Serialized size of one variable-length transition envelope field, measured
 /// with the same bincode configuration the transition's own wire serialization
-/// uses (`standard().with_big_endian()`, per `platform_serialization`), so the
+/// uses (`standard().with_big_endian().with_no_limit()`, per
+/// `platform_serialization`'s unversioned `PlatformSerialize` path), so the
 /// pre-proving gate prices exactly the bytes the byte prefilter will see.
 /// `what` names the field in the error.
 pub fn serialized_envelope_bytes<T: bincode::Encode>(
     field: &T,
     what: &str,
 ) -> Result<u64, ProtocolError> {
-    let config = bincode::config::standard().with_big_endian();
+    let config = bincode::config::standard()
+        .with_big_endian()
+        .with_no_limit();
     bincode::encode_to_vec(field, config)
         .map(|bytes| bytes.len() as u64)
         .map_err(|e| {
