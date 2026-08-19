@@ -1598,6 +1598,7 @@ impl PlatformWallet {
                 one_time_sk,
                 funding_birth_height,
                 &change_address,
+                identity_index,
                 public_keys,
                 denomination,
                 send_to_address_on_creation_failure,

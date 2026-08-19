@@ -2864,6 +2864,7 @@ mod tests {
                     nullifiers: vec![[0x0B; 32]],
                     st_bytes: vec![0xCD; 64],
                     attempts: 0,
+                    identity_index: None,
                 },
                 lease,
                 admission_now_ms(),
@@ -3012,6 +3013,7 @@ mod tests {
                     nullifiers: vec![[0x0C; 32]],
                     st_bytes: vec![0xEF; 32],
                     attempts: 0,
+                    identity_index: None,
                 },
             )
             .expect("arm an unrelated record");

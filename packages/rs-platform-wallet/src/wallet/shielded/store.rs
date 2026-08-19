@@ -159,6 +159,18 @@ pub struct PendingRedrive {
     pub st_bytes: Vec<u8>,
     /// Re-broadcast attempts made so far.
     pub attempts: u32,
+    /// For a one-time-key CLAIM record: the local DIP-9 identity slot the
+    /// original attempt was creating the identity at. `None` for every
+    /// ordinary spend redrive (which registers no identity), and for claim
+    /// records written before this field existed.
+    ///
+    /// Persisted rather than derived because it appears NOWHERE in
+    /// `st_bytes` — it is a purely local placement, so the transition cannot
+    /// witness it and a resume has nothing else to check a retry's slot
+    /// against. Without it a retry could present the original keys with a
+    /// different index and `IdentityManager::add_identity` would insert into
+    /// an occupied slot without complaint (#4313 review finding 5d4d6efa).
+    pub identity_index: Option<u32>,
 }
 
 /// The result of [`SubwalletState::mark_spent`].
@@ -658,9 +670,11 @@ pub trait ShieldedStore: Send + Sync {
 /// removing the wallet again".
 ///
 /// The lease is re-stamped when the record is armed
-/// ([`ShieldedStore::arm_redrive_under_claim`]), so the window that actually
-/// protects the durable record runs from the arm — not from the start of the
-/// claim — and covers the broadcast and confirmation wait that follow it.
+/// ([`ShieldedStore::arm_redrive_under_claim`]) and, independently of that, on
+/// a [`CLAIM_LEASE_RENEW_INTERVAL`] heartbeat that the wallet layer runs around
+/// the COMPLETE admitted claim — fresh build and pending-record resume alike.
+/// So this constant bounds the gap between two renewals, not the length of a
+/// claim: the protected window follows the work.
 pub(crate) const CLAIM_LEASE_MS: u64 = 5 * 60 * 1_000;
 
 /// How often an in-flight claim re-stamps its lease
@@ -1741,6 +1755,7 @@ mod tests {
             nullifiers: vec![n1, n2],
             st_bytes: vec![1, 2, 3],
             attempts: 0,
+            identity_index: None,
         };
 
         // Landing path: mark_spent on one nullifier drops the record.
@@ -2182,6 +2197,7 @@ mod tests {
             nullifiers: vec![[b; 32]],
             st_bytes: vec![b; 8],
             attempts: 0,
+            identity_index: None,
         };
         assert!(store
             .arm_redrive_under_claim(id, record(0xAA), winner, t0, CLAIM_LEASE_MS)

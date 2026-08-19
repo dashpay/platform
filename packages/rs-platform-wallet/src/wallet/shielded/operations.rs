@@ -1636,6 +1636,7 @@ pub async fn identity_create_from_one_time_key<S, P, IS>(
     one_time_sk: zeroize::Zeroizing<[u8; 32]>,
     funding_birth_height: Option<u32>,
     change_address: &OrchardAddress,
+    identity_index: u32,
     public_keys: Vec<(IdentityPublicKey, IdentityPublicKeyInCreation)>,
     denomination: u64,
     send_to_address_on_creation_failure: PlatformAddress,
@@ -1813,32 +1814,113 @@ where
         );
     }
 
-    let claim_result = one_time_claim_admitted(
-        sdk,
+    // The heartbeat wraps the COMPLETE admitted claim body — pending-record
+    // lookup, resume, transient scan, build, arm, broadcast and confirmation
+    // wait alike (#4313 review finding 8de8d05a). See
+    // `under_renewed_claim_lease` for why it cannot sit any deeper.
+    let claim_result = under_renewed_claim_lease(
         store,
-        scan_checkpoints,
-        wallet_id,
-        claim_record_key,
         admission,
-        reservation.is_acquired(),
-        fvk,
-        ivk,
-        ask,
-        funding_birth_height,
-        change_address,
-        public_keys,
-        num_keys,
-        master_key_hash,
-        submitted_public_keys,
-        denomination,
-        send_to_address_on_creation_failure,
-        identity_signer,
-        prover,
+        one_time_claim_admitted(
+            sdk,
+            store,
+            scan_checkpoints,
+            wallet_id,
+            claim_record_key,
+            admission,
+            reservation.is_acquired(),
+            fvk,
+            ivk,
+            ask,
+            funding_birth_height,
+            change_address,
+            identity_index,
+            public_keys,
+            num_keys,
+            master_key_hash,
+            submitted_public_keys,
+            denomination,
+            send_to_address_on_creation_failure,
+            identity_signer,
+            prover,
+        ),
     )
     .await;
 
     release_claim_admission(store, admission).await;
     claim_result
+}
+
+/// Drive `body` to completion while re-stamping the claim lease `admission` on
+/// a [`CLAIM_LEASE_RENEW_INTERVAL`](super::store::CLAIM_LEASE_RENEW_INTERVAL)
+/// timer, so the protected window is tied to how long the claim actually runs
+/// rather than to a fixed guess from whenever the lease was last stamped.
+///
+/// # Why it wraps the whole admitted body
+///
+/// The heartbeat originally wrapped only the fresh-build path's broadcast. That
+/// left the RESUME path — pending-record lookup, nullifier queries, repeated
+/// identity recovery, re-broadcast of the stored transition and an unbounded
+/// confirmation wait — running under the INITIAL lease alone, because it
+/// returns before the fresh-build path is ever reached (#4313 review finding
+/// 8de8d05a). Resume is if anything the slower of the two: it is the path a
+/// claim takes precisely because the previous attempt could not resolve
+/// quickly.
+///
+/// A lease that lapses mid-claim is reaped, at which point a concurrent purge
+/// counts zero live claims and deletes the very record the in-flight claim
+/// needs to recover — so the window has to cover every phase between taking the
+/// lease and releasing it. Hoisting it to the single call site around
+/// [`one_time_claim_admitted`] covers both paths by construction, and there is
+/// no deeper place that could: the two paths only converge here.
+///
+/// The claim-key reservation taken under the same token rides along, because
+/// [`ShieldedStore::renew_claim_admission`] re-stamps it in the same step.
+///
+/// Cancellation-safe: dropping the returned future drops `body` with it, and
+/// the lease is then reclaimed by expiry.
+async fn under_renewed_claim_lease<S, F, T>(
+    store: &Arc<RwLock<S>>,
+    admission: super::store::AdmissionToken,
+    body: F,
+) -> T
+where
+    S: ShieldedStore,
+    F: std::future::Future<Output = T>,
+{
+    tokio::pin!(body);
+    loop {
+        tokio::select! {
+            // Bias the body so a renewal tick can never starve the outcome we
+            // are actually waiting for.
+            biased;
+            outcome = &mut body => break outcome,
+            _ = tokio::time::sleep(super::store::CLAIM_LEASE_RENEW_INTERVAL) => {
+                let renewed = store
+                    .write()
+                    .await
+                    .renew_claim_admission(
+                        admission,
+                        super::store::admission_now_ms(),
+                        super::store::CLAIM_LEASE_MS,
+                    );
+                match renewed {
+                    Ok(true) => {}
+                    // A transition may already be on the wire; aborting cannot
+                    // un-send it and would only lose the outcome
+                    // classification. Carry on, loudly.
+                    Ok(false) => warn!(
+                        "one-time claim lease lapsed or was displaced mid-claim; a \
+                         concurrent wallet removal may purge this claim's recovery record"
+                    ),
+                    Err(e) => warn!(
+                        error = %e,
+                        "could not renew the one-time claim lease mid-claim"
+                    ),
+                }
+            }
+        }
+    }
 }
 
 /// Release a claim's store admission — its lifecycle lease AND the claim-key
@@ -1881,6 +1963,7 @@ async fn one_time_claim_admitted<S, P, IS>(
     ask: super::keys::ScrubOnDrop<grovedb_commitment_tree::SpendAuthorizingKey>,
     funding_birth_height: Option<u32>,
     change_address: &OrchardAddress,
+    identity_index: u32,
     public_keys: Vec<(IdentityPublicKey, IdentityPublicKeyInCreation)>,
     num_keys: usize,
     master_key_hash: Option<[u8; 20]>,
@@ -1932,6 +2015,7 @@ where
             master_key_hash,
             submitted_public_keys.clone(),
             denomination,
+            identity_index,
         )
         .await
         {
@@ -2111,61 +2195,26 @@ where
         &selected_nullifiers,
         &st,
         admission,
+        identity_index,
     )
     .await?;
 
-    // Hold the lease OPEN for as long as the claim actually runs, rather than
-    // for a fixed CLAIM_LEASE_MS from the arm above (#4313 review finding
-    // 161a517fce36). Broadcast plus confirmation can outrun five minutes — one
-    // slow or retrying DAPI node is enough — and a lapsed lease is reaped, so a
-    // concurrent purge counts zero live claims and destroys the very record
-    // this claim needs to recover. Renewing on a timer keeps the protected
-    // window tied to the work instead of to a guess about its duration.
-    let result = {
-        let broadcast = broadcast_and_confirm_one_time_claim(
-            sdk,
-            st,
-            identity_id,
-            expected_identity_id,
-            master_key_hash,
-            &selected_nullifiers,
-            submitted_public_keys,
-            denomination,
-        );
-        tokio::pin!(broadcast);
-        loop {
-            tokio::select! {
-                // Bias the broadcast so a renewal tick can never starve the
-                // outcome we are actually waiting for.
-                biased;
-                outcome = &mut broadcast => break outcome,
-                _ = tokio::time::sleep(super::store::CLAIM_LEASE_RENEW_INTERVAL) => {
-                    let renewed = store
-                        .write()
-                        .await
-                        .renew_claim_admission(
-                            admission,
-                            super::store::admission_now_ms(),
-                            super::store::CLAIM_LEASE_MS,
-                        );
-                    match renewed {
-                        Ok(true) => {}
-                        // The transition may already be on the wire; aborting
-                        // cannot un-send it and would only lose the outcome
-                        // classification. Carry on, loudly.
-                        Ok(false) => tracing::warn!(
-                            "one-time claim lease lapsed or was displaced mid-broadcast; \
-                             a concurrent wallet removal may purge this claim's recovery record"
-                        ),
-                        Err(e) => tracing::warn!(
-                            error = %e,
-                            "could not renew the one-time claim lease mid-broadcast"
-                        ),
-                    }
-                }
-            }
-        }
-    };
+    // The renewal heartbeat that holds the lease open across this broadcast and
+    // its confirmation wait runs in the CALLER, around the whole admitted claim
+    // body — see `under_renewed_claim_lease`. It used to wrap only this
+    // broadcast, which left the resume path (returning above) covered by the
+    // initial lease alone (#4313 review finding 8de8d05a).
+    let result = broadcast_and_confirm_one_time_claim(
+        sdk,
+        st,
+        identity_id,
+        expected_identity_id,
+        master_key_hash,
+        &selected_nullifiers,
+        submitted_public_keys,
+        denomination,
+    )
+    .await;
     finalize_one_time_claim_record(store, claim_records_id, claim_record_key, &result).await;
     result
 }
@@ -2536,13 +2585,21 @@ async fn find_one_time_claim_record<S: ShieldedStore>(
 /// ([`ShieldedStore::arm_redrive_under_claim`]), which is what leaves no gap
 /// between "still admitted" and "record written" for a concurrent
 /// `clear`/`unregister_wallet` to slot into (#4313). The same step re-stamps
-/// the lease, so the window that protects the freshly written record runs from
-/// here — covering the broadcast and confirmation wait — rather than from the
-/// start of a claim that may have spent minutes scanning.
+/// the lease (and the claim-key reservation riding the same token), so the
+/// record is written into a freshly extended window rather than into whatever
+/// remained of one a long scan had already spent. Keeping that window open past
+/// this point is the heartbeat's job — see [`under_renewed_claim_lease`].
 ///
 /// A lost lease is a hard stop, not a warning: nothing has been broadcast yet,
 /// so refusing is clean and retryable, whereas broadcasting without the record
 /// is how a padded single-note claim's identity becomes unrecoverable.
+///
+/// `identity_index` is persisted with the record because it is the ONE part of
+/// the claim's binding the transition cannot witness — a purely local DIP-9
+/// slot that appears nowhere in `st_bytes` (#4313 review finding 5d4d6efa).
+/// Everything else a resume checks is re-derived from the stored bytes; see
+/// [`resume_one_time_claim`].
+#[allow(clippy::too_many_arguments)]
 async fn arm_one_time_claim_record<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
@@ -2551,6 +2608,7 @@ async fn arm_one_time_claim_record<S: ShieldedStore>(
     nullifiers: &[[u8; 32]],
     st: &StateTransition,
     admission: super::store::AdmissionToken,
+    identity_index: u32,
 ) -> Result<(), PlatformWalletError> {
     use dpp::serialization::PlatformSerializable;
 
@@ -2568,6 +2626,7 @@ async fn arm_one_time_claim_record<S: ShieldedStore>(
                 nullifiers: nullifiers.to_vec(),
                 st_bytes,
                 attempts: 0,
+                identity_index: Some(identity_index),
             },
             admission,
             super::store::admission_now_ms(),
@@ -2638,14 +2697,37 @@ async fn finalize_one_time_claim_record<S: ShieldedStore>(
 /// that would register a foreign identity at this wallet's slot — is caught.
 /// A retry that merely *reorders* the same keys is not a mismatch: both sides
 /// are `BTreeMap`s keyed by key id.
+#[allow(clippy::too_many_arguments)]
 fn one_time_claim_binding_mismatch(
     stored_public_keys: &BTreeMap<u32, IdentityPublicKey>,
     stored_master_key_hash: Option<[u8; 20]>,
     stored_denomination: u64,
+    stored_identity_index: Option<u32>,
     submitted_public_keys: &BTreeMap<u32, IdentityPublicKey>,
     submitted_master_key_hash: Option<[u8; 20]>,
     submitted_denomination: u64,
+    submitted_identity_index: u32,
 ) -> Option<String> {
+    // The one field compared against the RECORD rather than against the
+    // transition, because the transition cannot witness it: the DIP-9 slot is a
+    // purely local placement (#4313 review finding 5d4d6efa). Checked first —
+    // it is the cheapest comparison, and a slot mismatch is the case whose
+    // consequence is least visible: `IdentityManager::add_identity` rejects a
+    // duplicate identity id but inserts into an OCCUPIED slot without
+    // complaint, so a retry that presents the original keys at a different
+    // index would silently displace whatever the wallet tracked there.
+    //
+    // `None` means the record predates the column; there is nothing to compare,
+    // and that record keeps exactly the transitive binding it was written
+    // under.
+    if let Some(stored) = stored_identity_index {
+        if stored != submitted_identity_index {
+            return Some(format!(
+                "identity index: the earlier attempt was registering at local slot {stored}, \
+                 retry asked for slot {submitted_identity_index}"
+            ));
+        }
+    }
     if stored_denomination != submitted_denomination {
         return Some(format!(
             "denomination: stored transition spends {stored_denomination}, retry asked for \
@@ -2703,11 +2785,11 @@ enum OneTimeClaimResume {
 /// values are what drive recovery, the empty-proof-result backfill and the
 /// re-broadcast.
 ///
-/// Deriving rather than persisting the binding is deliberate: the transition
-/// already carries it (`public_keys` are exactly what the binding signature
-/// committed to; `denomination` is the value that leaves the pool), so a
-/// derived binding needs no record-schema change and, more importantly, cannot
-/// drift from what was submitted the way a separately-persisted copy could.
+/// Deriving rather than persisting the binding is deliberate wherever the
+/// transition can witness it (`public_keys` are exactly what the binding
+/// signature committed to; `denomination` is the value that leaves the pool):
+/// a derived binding cannot drift from what was submitted the way a separately
+/// persisted copy could.
 ///
 /// If the caller's arguments disagree with the transition, this is **not** a
 /// resume of the same claim — it is a request to create a different identity
@@ -2716,22 +2798,33 @@ enum OneTimeClaimResume {
 /// re-broadcast (so no chargeable resubmission and no burned proof), and the
 /// record is left intact for a retry that presents the original arguments.
 ///
-/// ## What this does and does not bind
+/// ## What this binds
 ///
-/// Bound: the submitted key set (by id and content), the MASTER authentication
-/// key hash used for idempotent recovery, and the denomination.
+/// Derived from `record.st_bytes`: the submitted key set (by id and content),
+/// the MASTER authentication key hash used for idempotent recovery, and the
+/// denomination.
 ///
-/// Not directly bound: the caller's `identity_index`, the local DIP-9 slot the
-/// returned identity is registered at — it is a purely local placement and
-/// appears nowhere in the transition, so there is nothing in `st_bytes` to
-/// derive it from. It is bound *transitively*: the identity's keys are derived
-/// from the wallet seed at that slot, so a retry naming a different slot
-/// presents different keys and is refused above. That leaves exactly one
-/// uncovered case — a caller that pairs slot `i` with keys derived at slot `j`
-/// — which is a violation of the same caller contract that a *first* attempt
-/// relies on and mis-slots identically. The resume path is therefore no weaker
-/// than a fresh claim, which is the strongest guarantee available without
-/// persisting the slot.
+/// Read from the record itself: `identity_index`, the local DIP-9 slot the
+/// returned identity is registered at (#4313 review finding 5d4d6efa). It is
+/// the one part of the binding the transition CANNOT witness — a purely local
+/// placement that appears nowhere in `st_bytes` — so it is persisted with the
+/// claim precisely because there is nothing to derive it from.
+///
+/// It used to be left to a *transitive* argument: the identity's keys are
+/// derived from the wallet seed at that slot, so a retry naming a different
+/// slot ought to present different keys and be refused by the key check. That
+/// argument leaves the caller free to pair slot `i` with keys derived at slot
+/// `j`, and the consequence is not symmetric with a first attempt's: a retry
+/// that presents the ORIGINAL keys with a different index reaches
+/// `IdentityManager::add_identity`, which rejects a duplicate identity id but
+/// inserts into an occupied slot without complaint — silently displacing
+/// whatever identity the wallet already tracked there. Persisting the slot and
+/// comparing it closes that directly.
+///
+/// A record written before the column existed carries `None`; there is nothing
+/// to compare it against, so the check is skipped and that record keeps exactly
+/// the transitive binding it was written under.
+#[allow(clippy::too_many_arguments)]
 async fn resume_one_time_claim<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
@@ -2740,6 +2833,7 @@ async fn resume_one_time_claim<S: ShieldedStore>(
     master_key_hash: Option<[u8; 20]>,
     submitted_public_keys: BTreeMap<u32, IdentityPublicKey>,
     denomination: u64,
+    identity_index: u32,
 ) -> OneTimeClaimResume {
     use dpp::serialization::PlatformDeserializable;
     use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::accessors::IdentityCreateFromShieldedPoolTransitionAccessorsV0;
@@ -2790,9 +2884,11 @@ async fn resume_one_time_claim<S: ShieldedStore>(
         &stored_public_keys,
         stored_master_key_hash,
         stored_denomination,
+        record.identity_index,
         &submitted_public_keys,
         master_key_hash,
         denomination,
+        identity_index,
     ) {
         warn!(
             declared_id = %declared_id,
@@ -3409,6 +3505,7 @@ async fn arm_redrive_record<S: ShieldedStore>(
         nullifiers: notes.iter().map(|n| n.nullifier).collect(),
         st_bytes,
         attempts: 0,
+        identity_index: None,
     };
     if let Err(e) = store.write().await.arm_redrive(id, redrive) {
         warn!(
@@ -4447,6 +4544,7 @@ mod redrive_tests {
             nullifiers: vec![[activity ^ 0xFF; 32]],
             st_bytes: vec![0xDE, 0xAD], // never deserializes
             attempts,
+            identity_index: None,
         };
         {
             let mut guard = store.write().await;
@@ -4579,6 +4677,7 @@ mod nullifier_status_and_claim_record_tests {
                         nullifiers: vec![[3u8; 32]],
                         st_bytes: vec![1, 2, 3],
                         attempts: 0,
+                        identity_index: None,
                     },
                 )
                 .expect("arm must succeed");
@@ -4629,6 +4728,7 @@ mod nullifier_status_and_claim_record_tests {
             nullifiers: vec![[4u8; 32]],
             st_bytes: vec![0xDE, 0xAD], // never deserializes
             attempts: 0,
+            identity_index: None,
         };
         store
             .write()
@@ -4637,7 +4737,8 @@ mod nullifier_status_and_claim_record_tests {
             .expect("arm must succeed");
 
         let outcome =
-            resume_one_time_claim(&sdk, &store, id, &record, None, BTreeMap::new(), 100_000).await;
+            resume_one_time_claim(&sdk, &store, id, &record, None, BTreeMap::new(), 100_000, 0)
+                .await;
         assert!(matches!(outcome, OneTimeClaimResume::RecordUnusable));
         assert!(find_one_time_claim_record(&store, id, key)
             .await
@@ -5651,6 +5752,8 @@ mod one_time_claim_evidence_tests {
     const OTHER_MASTER_HASH: [u8; 20] = [0xB2; 20];
     /// Smallest member of the versioned exit-denomination set (0.1 DASH).
     const DENOMINATION: u64 = 10_000_000_000;
+    /// The local DIP-9 slot the original attempt registered at.
+    const IDENTITY_INDEX: u32 = 3;
 
     fn temp_store_path(tag: &str) -> std::path::PathBuf {
         let nanos = std::time::SystemTime::now()
@@ -5953,6 +6056,7 @@ mod one_time_claim_evidence_tests {
             nullifiers: our_nullifiers(),
             st_bytes,
             attempts: 0,
+            identity_index: Some(IDENTITY_INDEX),
         }
     }
 
@@ -6029,9 +6133,11 @@ mod one_time_claim_evidence_tests {
                 &keys,
                 Some(OUR_MASTER_HASH),
                 DENOMINATION,
+                Some(IDENTITY_INDEX),
                 &keys,
                 Some(OUR_MASTER_HASH),
                 DENOMINATION,
+                IDENTITY_INDEX,
             ),
             None,
             "identical arguments must not be treated as a mis-binding"
@@ -6056,9 +6162,11 @@ mod one_time_claim_evidence_tests {
                 &forward,
                 Some(OUR_MASTER_HASH),
                 DENOMINATION,
+                Some(IDENTITY_INDEX),
                 &reversed,
                 Some(OUR_MASTER_HASH),
                 DENOMINATION,
+                IDENTITY_INDEX,
             ),
             None
         );
@@ -6087,9 +6195,11 @@ mod one_time_claim_evidence_tests {
             &stored,
             Some(OUR_MASTER_HASH),
             DENOMINATION,
+            Some(IDENTITY_INDEX),
             &swapped,
             Some(OUR_MASTER_HASH),
             DENOMINATION,
+            IDENTITY_INDEX,
         );
         assert!(
             key_mismatch.is_some_and(|m| m.contains("public key set")),
@@ -6100,9 +6210,11 @@ mod one_time_claim_evidence_tests {
             &stored,
             Some(OUR_MASTER_HASH),
             DENOMINATION,
+            Some(IDENTITY_INDEX),
             &stored,
             Some(OTHER_MASTER_HASH),
             DENOMINATION,
+            IDENTITY_INDEX,
         );
         assert!(
             hash_mismatch.is_some_and(|m| m.contains("master authentication key hash")),
@@ -6113,9 +6225,11 @@ mod one_time_claim_evidence_tests {
             &stored,
             Some(OUR_MASTER_HASH),
             DENOMINATION,
+            Some(IDENTITY_INDEX),
             &stored,
             Some(OUR_MASTER_HASH),
             DENOMINATION * 3,
+            IDENTITY_INDEX,
         );
         assert!(
             denomination_mismatch.is_some_and(|m| m.contains("denomination")),
@@ -6155,6 +6269,7 @@ mod one_time_claim_evidence_tests {
             Some(OTHER_MASTER_HASH),
             keys_map(&[other_master_key()]),
             DENOMINATION,
+            IDENTITY_INDEX,
         )
         .await;
 
@@ -6195,5 +6310,290 @@ mod one_time_claim_evidence_tests {
 
         drop(store);
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// THE BUG (#4313 review finding 5d4d6efa): `identity_index` was bound only
+    /// TRANSITIVELY — "a different slot means different keys, so the key check
+    /// catches it". A retry that presents the ORIGINAL keys with a different
+    /// slot breaks that chain, and its consequence is not symmetric with a
+    /// first attempt's: `IdentityManager::add_identity` rejects a duplicate
+    /// identity id but inserts into an OCCUPIED slot without complaint, so the
+    /// retry silently displaces whatever identity the wallet tracked there.
+    ///
+    /// The record now carries the slot, so the mismatch is caught with
+    /// everything else byte-identical — exactly the case the transitive
+    /// argument could not cover.
+    #[test]
+    fn a_resume_at_a_different_identity_index_is_refused() {
+        let keys = keys_map(&[our_master_key()]);
+
+        let mismatch = one_time_claim_binding_mismatch(
+            &keys,
+            Some(OUR_MASTER_HASH),
+            DENOMINATION,
+            Some(IDENTITY_INDEX),
+            // Everything else is identical — only the slot moved.
+            &keys,
+            Some(OUR_MASTER_HASH),
+            DENOMINATION,
+            IDENTITY_INDEX + 1,
+        );
+        let mismatch = mismatch.expect("a slot mismatch must be refused");
+        assert!(
+            mismatch.contains("identity index"),
+            "the refusal must name the slot, got: {mismatch}"
+        );
+        assert!(
+            mismatch.contains(&IDENTITY_INDEX.to_string())
+                && mismatch.contains(&(IDENTITY_INDEX + 1).to_string()),
+            "the refusal must carry both slots, got: {mismatch}"
+        );
+    }
+
+    /// A record written before the column existed carries `None`. There is
+    /// nothing to compare it against, so it keeps exactly the transitive
+    /// binding it was written under rather than being refused outright — an
+    /// upgrade must not strand a claim that is mid-flight across it.
+    #[test]
+    fn a_pre_migration_record_still_resumes_at_any_index() {
+        let keys = keys_map(&[our_master_key()]);
+
+        assert_eq!(
+            one_time_claim_binding_mismatch(
+                &keys,
+                Some(OUR_MASTER_HASH),
+                DENOMINATION,
+                None,
+                &keys,
+                Some(OUR_MASTER_HASH),
+                DENOMINATION,
+                IDENTITY_INDEX + 7,
+            ),
+            None,
+            "a record with no persisted slot must not be refused on the slot"
+        );
+    }
+
+    /// END TO END on the real file store: arm a claim at slot N, attempt to
+    /// resume it at N+1, and get the typed refusal BEFORE any network work —
+    /// with the record left intact for a correct retry. The SDK is a bare mock
+    /// with no expectations registered, so reaching the spent-nullifier probe
+    /// or the re-broadcast would surface as something other than this error.
+    #[tokio::test]
+    async fn resuming_at_a_mismatched_identity_index_fails_closed() {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let path = temp_store_path("resume_slot_binding");
+        let store = Arc::new(RwLock::new(
+            FileBackedShieldedStore::open_path(&path, 100).expect("store opens"),
+        ));
+        let claim_records_id = SubwalletId::new([0x78; 32], ONE_TIME_CLAIM_RECORDS_ACCOUNT);
+
+        let (_, st_bytes) = stored_claim_transition(&[our_master_key()], DENOMINATION);
+        let record = stored_claim_record(st_bytes);
+        assert_eq!(
+            record.identity_index,
+            Some(IDENTITY_INDEX),
+            "precondition: the armed record carries the slot"
+        );
+        store
+            .write()
+            .await
+            .arm_redrive(claim_records_id, record.clone())
+            .expect("record arms");
+
+        // The retry presents the ORIGINAL keys, hash and denomination — only
+        // the slot differs. Nothing but the persisted index can catch this.
+        let outcome = resume_one_time_claim(
+            &sdk,
+            &store,
+            claim_records_id,
+            &record,
+            Some(OUR_MASTER_HASH),
+            keys_map(&[our_master_key()]),
+            DENOMINATION,
+            IDENTITY_INDEX + 1,
+        )
+        .await;
+
+        match outcome {
+            OneTimeClaimResume::Resolved(Err(
+                PlatformWalletError::ShieldedClaimBindingMismatch { mismatch },
+            )) => assert!(
+                mismatch.contains("identity index"),
+                "the refusal must name the slot, got: {mismatch}"
+            ),
+            other => panic!(
+                "a retry at a different slot must be refused, got {}",
+                match other {
+                    OneTimeClaimResume::RecordUnusable => "RecordUnusable".to_string(),
+                    OneTimeClaimResume::Resolved(r) => format!("Resolved({r:?})"),
+                }
+            ),
+        }
+
+        // Fail-closed: the record survives for a retry that names slot N.
+        let surviving = store
+            .read()
+            .await
+            .pending_redrives(claim_records_id)
+            .expect("records readable");
+        assert_eq!(surviving.len(), 1);
+        assert_eq!(surviving[0].identity_index, Some(IDENTITY_INDEX));
+
+        // …and the slot is DURABLE, not just in-memory: a cold reopen still
+        // carries it, which is the whole point of the schema change.
+        drop(store);
+        let reopened = FileBackedShieldedStore::open_path(&path, 100).expect("reopen");
+        let rehydrated = reopened
+            .pending_redrives(claim_records_id)
+            .expect("records readable");
+        assert_eq!(rehydrated.len(), 1);
+        assert_eq!(
+            rehydrated[0].identity_index,
+            Some(IDENTITY_INDEX),
+            "the persisted slot must survive a process restart"
+        );
+        drop(reopened);
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
+#[cfg(test)]
+mod claim_lease_heartbeat_tests {
+    use super::*;
+    use crate::wallet::shielded::store::{
+        admission_now_ms, AdmissionToken, InMemoryShieldedStore, CLAIM_LEASE_MS,
+        CLAIM_LEASE_RENEW_INTERVAL,
+    };
+
+    /// How long the initial lease is stamped for in these tests: long enough
+    /// that the first heartbeat tick still finds it live (wall-clock time
+    /// barely advances under a paused runtime), short enough that the probe
+    /// below can tell "renewed" from "not renewed".
+    const SHORT_LEASE_MS: u64 = 5_000;
+
+    /// A body shaped like the RESUME path: it does real awaiting and then
+    /// returns its own outcome, without ever reaching the fresh-build
+    /// broadcast the heartbeat used to wrap.
+    async fn resume_shaped_body() -> &'static str {
+        for _ in 0..3 {
+            tokio::time::sleep(CLAIM_LEASE_RENEW_INTERVAL).await;
+        }
+        "resumed"
+    }
+
+    /// THE BUG (#4313 review finding 8de8d05a): the heartbeat wrapped only the
+    /// fresh-build broadcast, so a claim that took the RESUME path — nullifier
+    /// queries, repeated identity recovery, re-broadcast, an unbounded
+    /// confirmation wait — ran under the initial lease alone. Outrun it and the
+    /// lease is reaped, at which point a concurrent purge counts zero live
+    /// claims and deletes the record the claim needs.
+    ///
+    /// Control half: run the same body bare and watch the lease lapse.
+    #[tokio::test(start_paused = true)]
+    async fn a_resume_shaped_body_run_bare_lets_its_lease_lapse() {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let wallet_id: WalletId = [0x41; 32];
+        let token = AdmissionToken([0x41; 16]);
+        let t0 = admission_now_ms();
+        assert!(store
+            .write()
+            .await
+            .begin_claim_admission(wallet_id, token, t0, SHORT_LEASE_MS)
+            .expect("lease"));
+
+        assert_eq!(resume_shaped_body().await, "resumed");
+
+        // Probe: is the lease still live at a point past its ORIGINAL expiry?
+        // Nothing re-stamped it, so no.
+        assert!(
+            !store
+                .write()
+                .await
+                .renew_claim_admission(token, t0 + SHORT_LEASE_MS + 1, CLAIM_LEASE_MS)
+                .expect("probe"),
+            "without a heartbeat the resume path's lease lapses — this is the bug"
+        );
+    }
+
+    /// The fix: the heartbeat wraps the COMPLETE admitted claim body, so the
+    /// resume path is covered by exactly the same renewal the fresh-build path
+    /// gets. Same body, same clock, opposite outcome.
+    #[tokio::test(start_paused = true)]
+    async fn the_heartbeat_keeps_a_resume_shaped_body_s_lease_live() {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let wallet_id: WalletId = [0x42; 32];
+        let token = AdmissionToken([0x42; 16]);
+        let t0 = admission_now_ms();
+        assert!(store
+            .write()
+            .await
+            .begin_claim_admission(wallet_id, token, t0, SHORT_LEASE_MS)
+            .expect("lease"));
+
+        let outcome = under_renewed_claim_lease(&store, token, resume_shaped_body()).await;
+        assert_eq!(
+            outcome, "resumed",
+            "the helper must return the body's value"
+        );
+
+        assert!(
+            store
+                .write()
+                .await
+                .renew_claim_admission(token, t0 + SHORT_LEASE_MS + 1, CLAIM_LEASE_MS)
+                .expect("probe"),
+            "the heartbeat must have re-stamped the lease past its original expiry"
+        );
+    }
+
+    /// The claim-key reservation rides the same token, so the heartbeat holds
+    /// the invitation too — a long resume must not lose its claim key to expiry
+    /// while its lease is being kept alive.
+    #[tokio::test(start_paused = true)]
+    async fn the_heartbeat_also_holds_the_claim_key_reservation() {
+        use crate::wallet::shielded::store::ClaimKeyReservation;
+
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let wallet_id: WalletId = [0x43; 32];
+        let claim_key = [0xC5; 32];
+        let holder = AdmissionToken([0x43; 16]);
+        let rival = AdmissionToken([0x44; 16]);
+        let t0 = admission_now_ms();
+        {
+            let mut guard = store.write().await;
+            assert!(guard
+                .begin_claim_admission(wallet_id, holder, t0, SHORT_LEASE_MS)
+                .expect("lease"));
+            assert_eq!(
+                guard
+                    .reserve_one_time_claim_key(wallet_id, claim_key, holder, t0, SHORT_LEASE_MS)
+                    .expect("reserve"),
+                ClaimKeyReservation::Acquired
+            );
+        }
+
+        under_renewed_claim_lease(&store, holder, resume_shaped_body()).await;
+
+        // Past the ORIGINAL reservation expiry, a rival must still be refused.
+        let contended = {
+            let mut guard = store.write().await;
+            assert!(guard
+                .begin_claim_admission(wallet_id, rival, t0 + SHORT_LEASE_MS + 1, CLAIM_LEASE_MS)
+                .expect("rival lease"));
+            guard
+                .reserve_one_time_claim_key(
+                    wallet_id,
+                    claim_key,
+                    rival,
+                    t0 + SHORT_LEASE_MS + 1,
+                    CLAIM_LEASE_MS,
+                )
+                .expect("rival reserve")
+        };
+        assert!(
+            !contended.is_acquired(),
+            "the heartbeat must carry the claim-key reservation past its original expiry"
+        );
     }
 }

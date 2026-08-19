@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retention};
+use rusqlite::Connection;
 
 use super::store::{
     AdmissionToken, ClaimKeyReservation, PendingRedrive, ShieldedNote, ShieldedOutgoingNote,
@@ -106,18 +107,20 @@ impl FileBackedShieldedStore {
         pending_conn
             .execute(
                 "CREATE TABLE IF NOT EXISTS shielded_pending_spends (
-                    wallet_id     BLOB    NOT NULL,
-                    account_index INTEGER NOT NULL,
-                    activity_id   BLOB    NOT NULL,
-                    anchor        BLOB    NOT NULL,
-                    nullifiers    BLOB    NOT NULL,
-                    st_bytes      BLOB    NOT NULL,
-                    attempts      INTEGER NOT NULL DEFAULT 0,
+                    wallet_id      BLOB    NOT NULL,
+                    account_index  INTEGER NOT NULL,
+                    activity_id    BLOB    NOT NULL,
+                    anchor         BLOB    NOT NULL,
+                    nullifiers     BLOB    NOT NULL,
+                    st_bytes       BLOB    NOT NULL,
+                    attempts       INTEGER NOT NULL DEFAULT 0,
+                    identity_index INTEGER,
                     PRIMARY KEY (wallet_id, account_index, activity_id)
                 )",
                 [],
             )
             .map_err(|e| FileShieldedStoreError(format!("create pending_spends table: {e}")))?;
+        Self::add_pending_spends_identity_index(&pending_conn)?;
         // Cross-instance / cross-PROCESS lifecycle admission (#4313). Lives in
         // the same SQLite file as the records it protects — that file is the
         // only thing two `FileBackedShieldedStore` instances (or two
@@ -179,6 +182,37 @@ impl FileBackedShieldedStore {
         Ok(store)
     }
 
+    /// Add `shielded_pending_spends.identity_index` to a database created
+    /// before that column existed (#4313 review finding 5d4d6efa).
+    ///
+    /// This store versions its schema by `CREATE TABLE IF NOT EXISTS` rather
+    /// than by `user_version`, so the matching idempotent form for a new column
+    /// is "read `PRAGMA table_info` and add it if absent". The column is
+    /// NULLABLE with no default: an existing claim record genuinely does not
+    /// know which slot its attempt targeted, and `NULL` says exactly that —
+    /// far better than back-filling a guess a resume would then enforce.
+    fn add_pending_spends_identity_index(conn: &Connection) -> Result<(), FileShieldedStoreError> {
+        let present = {
+            let mut stmt = conn
+                .prepare("SELECT 1 FROM pragma_table_info('shielded_pending_spends') WHERE name = 'identity_index'")
+                .map_err(|e| {
+                    FileShieldedStoreError(format!("prepare pending_spends column probe: {e}"))
+                })?;
+            stmt.exists([])
+                .map_err(|e| FileShieldedStoreError(format!("probe pending_spends columns: {e}")))?
+        };
+        if !present {
+            conn.execute(
+                "ALTER TABLE shielded_pending_spends ADD COLUMN identity_index INTEGER",
+                [],
+            )
+            .map_err(|e| {
+                FileShieldedStoreError(format!("add pending_spends.identity_index: {e}"))
+            })?;
+        }
+        Ok(())
+    }
+
     /// Reload every persisted [`PendingRedrive`] into the in-memory
     /// per-subwallet state, re-arming both the redrive record and the
     /// note reservations its nullifiers carry — an unconfirmed
@@ -190,7 +224,7 @@ impl FileBackedShieldedStore {
         let mut stmt = conn
             .prepare(
                 "SELECT wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, \
-                 attempts FROM shielded_pending_spends",
+                 attempts, identity_index FROM shielded_pending_spends",
             )
             .map_err(|e| FileShieldedStoreError(format!("prepare rehydrate: {e}")))?;
         let rows = stmt
@@ -203,12 +237,21 @@ impl FileBackedShieldedStore {
                     row.get::<_, Vec<u8>>(4)?,
                     row.get::<_, Vec<u8>>(5)?,
                     row.get::<_, u32>(6)?,
+                    row.get::<_, Option<u32>>(7)?,
                 ))
             })
             .map_err(|e| FileShieldedStoreError(format!("query rehydrate: {e}")))?;
         for row in rows {
-            let (wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, attempts) =
-                row.map_err(|e| FileShieldedStoreError(format!("read rehydrate row: {e}")))?;
+            let (
+                wallet_id,
+                account_index,
+                activity_id,
+                anchor,
+                nullifiers,
+                st_bytes,
+                attempts,
+                identity_index,
+            ) = row.map_err(|e| FileShieldedStoreError(format!("read rehydrate row: {e}")))?;
             let (Ok(wallet_id), Ok(activity_id), Ok(anchor)) = (
                 <[u8; 32]>::try_from(wallet_id.as_slice()),
                 <[u8; 32]>::try_from(activity_id.as_slice()),
@@ -237,6 +280,7 @@ impl FileBackedShieldedStore {
                 nullifiers,
                 st_bytes,
                 attempts,
+                identity_index,
             });
         }
         Ok(())
@@ -477,8 +521,9 @@ impl ShieldedStore for FileBackedShieldedStore {
             let nullifier_blob: Vec<u8> = redrive.nullifiers.iter().flatten().copied().collect();
             conn.execute(
                 "INSERT OR REPLACE INTO shielded_pending_spends \
-                 (wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, attempts) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                 (wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, attempts, \
+                  identity_index) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 rusqlite::params![
                     id.wallet_id.as_slice(),
                     id.account_index,
@@ -487,6 +532,7 @@ impl ShieldedStore for FileBackedShieldedStore {
                     nullifier_blob,
                     redrive.st_bytes,
                     redrive.attempts,
+                    redrive.identity_index,
                 ],
             )
             .map_err(|e| FileShieldedStoreError(format!("persist redrive: {e}")))?;
@@ -1058,8 +1104,9 @@ impl ShieldedStore for FileBackedShieldedStore {
             let nullifier_blob: Vec<u8> = redrive.nullifiers.iter().flatten().copied().collect();
             tx.execute(
                 "INSERT OR REPLACE INTO shielded_pending_spends \
-                 (wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, attempts) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                 (wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, attempts, \
+                  identity_index) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 rusqlite::params![
                     id.wallet_id.as_slice(),
                     id.account_index,
@@ -1068,6 +1115,7 @@ impl ShieldedStore for FileBackedShieldedStore {
                     nullifier_blob,
                     redrive.st_bytes,
                     redrive.attempts,
+                    redrive.identity_index,
                 ],
             )
             .map_err(|e| FileShieldedStoreError(format!("persist claim record: {e}")))?;
@@ -1199,6 +1247,7 @@ mod tests {
             nullifiers: vec![[3u8; 32], [4u8; 32]],
             st_bytes: vec![0xAB; 96],
             attempts: 0,
+            identity_index: None,
         };
         {
             let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
@@ -1260,6 +1309,7 @@ mod tests {
             nullifiers: vec![[nf; 32]],
             st_bytes: vec![0xCD; 32],
             attempts: 0,
+            identity_index: None,
         };
 
         // purge_wallet is scoped: it drops A's rows, keeps B's.
@@ -1335,6 +1385,7 @@ mod tests {
                         nullifiers: vec![nf],
                         st_bytes: vec![0xEF; 32],
                         attempts: 0,
+                        identity_index: None,
                     },
                 )
                 .expect("arm");
@@ -1702,6 +1753,7 @@ mod tests {
             nullifiers: vec![[0x0B; 32]],
             st_bytes: vec![0xCD; 64],
             attempts: 0,
+            identity_index: None,
         }
     }
 
@@ -1996,6 +2048,93 @@ mod tests {
             reopened.pending_redrives(id).expect("records").is_empty(),
             "once admitted, the purge is still a FULL wipe — no reserved account is exempted"
         );
+        drop(reopened);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    // ── Claim-record identity slot (#4313 5d4d6efa) ────────────────────
+
+    /// A database created before `shielded_pending_spends.identity_index`
+    /// existed must open, gain the column, and keep its rows — with the slot
+    /// reading `None` rather than a back-filled guess a resume would then
+    /// enforce. This store versions its schema by `CREATE TABLE IF NOT EXISTS`,
+    /// so a `PRAGMA table_info` probe plus `ALTER TABLE` is the matching
+    /// idempotent form; the second open below proves it does not re-run.
+    #[test]
+    fn a_pre_migration_database_gains_the_identity_index_column() {
+        let path = temp_tree_path("pending_spends_migration");
+        let id = SubwalletId::new([0x51; 32], CLAIM_ACCOUNT);
+
+        // Build the OLD schema by hand — no identity_index column — and seed a
+        // record through it, exactly as a shipped build would have left it.
+        {
+            let conn = Connection::open(&path).expect("raw open");
+            conn.execute(
+                "CREATE TABLE shielded_pending_spends (
+                    wallet_id     BLOB    NOT NULL,
+                    account_index INTEGER NOT NULL,
+                    activity_id   BLOB    NOT NULL,
+                    anchor        BLOB    NOT NULL,
+                    nullifiers    BLOB    NOT NULL,
+                    st_bytes      BLOB    NOT NULL,
+                    attempts      INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (wallet_id, account_index, activity_id)
+                )",
+                [],
+            )
+            .expect("old table");
+            conn.execute(
+                "INSERT INTO shielded_pending_spends \
+                 (wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, attempts) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)",
+                rusqlite::params![
+                    id.wallet_id.as_slice(),
+                    id.account_index,
+                    [0x99u8; 32].as_slice(),
+                    [0x0Au8; 32].as_slice(),
+                    [0x0Bu8; 32].as_slice(),
+                    vec![0xCDu8; 64],
+                ],
+            )
+            .expect("old row");
+        }
+
+        let store = FileBackedShieldedStore::open_path(&path, 8).expect("migrating open");
+        let records = store.pending_redrives(id).expect("records");
+        assert_eq!(records.len(), 1, "the pre-migration row must survive");
+        assert_eq!(records[0].activity_id, [0x99; 32]);
+        assert_eq!(
+            records[0].identity_index, None,
+            "a record that predates the column knows no slot, and must say so"
+        );
+        drop(store);
+
+        // Idempotent: opening again must not try to add the column twice.
+        let reopened = FileBackedShieldedStore::open_path(&path, 8).expect("second open");
+        assert_eq!(reopened.pending_redrives(id).expect("records").len(), 1);
+        drop(reopened);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A claim record's slot must round-trip through SQLite, not merely live in
+    /// the in-memory mirror: recovering it after a process restart is the only
+    /// reason to persist it at all.
+    #[test]
+    fn a_claim_records_identity_index_survives_a_reopen() {
+        let path = temp_tree_path("pending_spends_slot_roundtrip");
+        let wallet_id: WalletId = [0x52; 32];
+        let id = SubwalletId::new(wallet_id, CLAIM_ACCOUNT);
+        let mut store = FileBackedShieldedStore::open_path(&path, 8).expect("store");
+
+        let mut record = admission_record(0x77);
+        record.identity_index = Some(9);
+        store.arm_redrive(id, record).expect("arm");
+        drop(store);
+
+        let reopened = FileBackedShieldedStore::open_path(&path, 8).expect("reopen");
+        let records = reopened.pending_redrives(id).expect("records");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].identity_index, Some(9));
         drop(reopened);
         let _ = std::fs::remove_file(&path);
     }
