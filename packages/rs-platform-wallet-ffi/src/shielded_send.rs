@@ -629,11 +629,19 @@ fn map_spend_result(
 /// - `AssetLockInsufficientFunds` -> `ErrorAssetLockInsufficientFunds` (29).
 ///   Coin selection came up short over the permitted funding set, so nothing
 ///   was built or broadcast and no funding output was consumed; the host may
-///   re-run preflight and confirm a smaller amount. Without this arm the
-///   shortfall flattened into the generic `ErrorWalletOperation` (6)
-///   catch-all below, hiding a typed error behind the code every unclassified
-///   failure already uses and forcing hosts back to substring-matching the
-///   Display text.
+///   re-run preflight and retry. Recovery depends on which funding form
+///   raised it, and BOTH reach this one code: an exact-amount build
+///   (`AssetLockFunding::FromWalletBalance`) can be re-confirmed at a smaller
+///   amount, but the whole-account CoinJoin *drain* takes no amount argument
+///   at all — there is nothing to lower. A drain shortfall means the account's
+///   drainable balance sits under the required minimum lock floor, so the
+///   host's only remedies are to add funds to that account or lower the
+///   floor. Do not surface "try a smaller amount" for the drain form.
+///
+///   Without this arm the shortfall flattened into the generic
+///   `ErrorWalletOperation` (6) catch-all below, hiding a typed error behind
+///   the code every unclassified failure already uses and forcing hosts back
+///   to substring-matching the Display text.
 fn map_asset_lock_funding_result(
     result: Result<(), PlatformWalletError>,
     operation: &str,

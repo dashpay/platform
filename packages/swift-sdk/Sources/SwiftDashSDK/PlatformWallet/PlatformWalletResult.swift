@@ -79,7 +79,18 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// Asset-lock coin selection came up short over the *permitted* funding
     /// set (dashpay/platform#4073). Nothing was built or broadcast and no
     /// funding output was consumed, so the caller may refresh its preflight
-    /// and confirm a smaller amount.
+    /// and retry.
+    ///
+    /// **Recovery depends on the funding form** — both reach this one code,
+    /// and only one of them can be retried at a smaller amount:
+    /// - *exact-amount* funding carries a caller-chosen amount, so the fix is
+    ///   to re-run preflight and confirm a smaller one;
+    /// - a whole-account *drain* accepts no amount argument at all, so there
+    ///   is nothing to lower. Its shortfall means the account's drainable
+    ///   balance is under the required minimum lock floor: add funds to that
+    ///   account, or lower the floor.
+    ///
+    /// Do not present "try a smaller amount" to the user on the drain path.
     ///
     /// The structured `available` / `required` duff amounts travel in the
     /// message string — `PlatformWalletFFIResult` is ABI-frozen at code +
@@ -346,10 +357,12 @@ public enum PlatformWalletError: LocalizedError {
     case assetLockFundingMismatch(String)
     /// Asset-lock coin selection could not cover the requested funding over
     /// the permitted source set. Nothing was built or broadcast and no
-    /// funding output was consumed — refresh the preflight and confirm a
-    /// smaller amount. The `available` / `required` duff figures are in the
-    /// message. Kotlin parity:
-    /// `DashSdkError.PlatformWallet.AssetLockInsufficientFunds`.
+    /// funding output was consumed — refresh the preflight, then recover by
+    /// the funding form: an exact-amount build can confirm a smaller amount,
+    /// while a whole-account drain takes no amount to lower and instead needs
+    /// funds added to the drained account (or a lower minimum lock floor).
+    /// The `available` / `required` duff figures are in the message. Kotlin
+    /// parity: `DashSdkError.PlatformWallet.AssetLockInsufficientFunds`.
     case assetLockInsufficientFunds(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition
