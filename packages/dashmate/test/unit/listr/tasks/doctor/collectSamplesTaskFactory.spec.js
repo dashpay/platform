@@ -47,6 +47,7 @@ describe('collectSamplesTaskFactory', () => {
   let config;
   let getCertificate;
   let collectSamplesTask;
+  let createCollectSamplesTask;
   let analyseConfig;
   let samples;
 
@@ -109,7 +110,7 @@ describe('collectSamplesTaskFactory', () => {
       masternode: this.sinon.stub().resolves({ result: {} }),
     };
 
-    collectSamplesTask = collectSamplesTaskFactory(
+    createCollectSamplesTask = (isHelper = false) => collectSamplesTaskFactory(
       dockerCompose,
       this.sinon.stub().returns(rpcClient),
       this.sinon.stub().resolves('127.0.0.1'),
@@ -119,7 +120,10 @@ describe('collectSamplesTaskFactory', () => {
       homeDir,
       validateZeroSslCertificateFactory(homeDir, getCertificate),
       this.sinon.stub().resolves({}),
+      isHelper,
     );
+
+    collectSamplesTask = createCollectSamplesTask();
 
     analyseConfig = analyseConfigFactory();
 
@@ -233,6 +237,28 @@ describe('collectSamplesTaskFactory', () => {
     expect(servedCertificate.identityVerified).to.be.true();
     expect(servedCertificate.matchesOnDisk).to.be.true();
     expect(samples.getServiceInfo('gateway', 'acmeHttpPort')).to.equal('OPEN');
+  });
+
+  it('should not probe the gateway from inside the helper container', async () => {
+    // dashmate is installed in the helper image, so the CLI can be run there. Loopback is the
+    // helper's own there, not the host's, and probing it would report a healthy gateway as
+    // unreachable. Recorded as skipped so it reads as unknown rather than as a problem.
+    collectSamplesTask = createCollectSamplesTask(true);
+
+    getCertificate.resolves(new Certificate({
+      id: 'certificate-id',
+      common_name: EXTERNAL_IP,
+      status: 'issued',
+      created: toZeroSslDate(daysFromNow(-1)),
+      expires: toZeroSslDate(daysFromNow(89)),
+    }));
+
+    await collectSamples();
+
+    const servedCertificate = samples.getServiceInfo('gateway', 'servedCertificate');
+
+    expect(servedCertificate.state).to.equal('skipped');
+    expect(servedCertificate.reason).to.equal('helper-context');
   });
 
   it('should collect metrics as text rather than an unresolved promise', async () => {
