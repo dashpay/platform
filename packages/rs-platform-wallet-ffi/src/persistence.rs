@@ -6079,9 +6079,11 @@ mod tests {
             // The decoder reads only `wallet_id` (for the log line) and the
             // spend slice; `Default` names every field, so the compiler
             // re-checks this stand-in whenever the ABI struct grows.
-            let mut entry = WalletRestoreEntryFFI::default();
-            entry.asset_lock_input_spends = &row;
-            entry.asset_lock_input_spends_count = 1;
+            let entry = WalletRestoreEntryFFI {
+                asset_lock_input_spends: &row,
+                asset_lock_input_spends_count: 1,
+                ..Default::default()
+            };
 
             let spends = build_asset_lock_input_spends(&entry);
             let spend = spends.values().next().expect("row decodes");
