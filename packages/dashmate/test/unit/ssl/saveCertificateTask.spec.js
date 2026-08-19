@@ -102,6 +102,28 @@ describe('saveCertificateTaskFactory', () => {
     expect(mode(keyPath)).to.equal(0o600);
   });
 
+  // Writing in place needs the owner write bit, so a key hardened to 0400 is
+  // loosened for the write. A write that then fails must not leave it that way.
+  it('should keep a hardened private key mode when the write fails', async function it() {
+    fs.mkdirSync(certificatesDir, { recursive: true });
+    fs.writeFileSync(certificatePath, 'old-certificate');
+    fs.writeFileSync(keyPath, 'old-key');
+    fs.chmodSync(keyPath, 0o400);
+
+    const originalWriteFileSync = fs.writeFileSync.bind(fs);
+    this.sinon.stub(fs, 'writeFileSync').callsFake((filePath, data, options) => {
+      if (filePath === keyPath) {
+        throw new Error('key write failed');
+      }
+
+      return originalWriteFileSync(filePath, data, options);
+    });
+
+    await expect(savePair()).to.be.rejectedWith('key write failed');
+
+    expect(mode(keyPath)).to.equal(0o400);
+  });
+
   it('should keep a private key mode stricter than Dashmate would choose', async () => {
     fs.mkdirSync(certificatesDir, { recursive: true });
     fs.writeFileSync(certificatePath, 'old-certificate');

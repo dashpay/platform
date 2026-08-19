@@ -54,8 +54,15 @@ export default function saveCertificateTaskFactory(homeDir) {
             fs.chmodSync(keyFile, 0o600);
           }
 
-          fs.writeFileSync(keyFile, ctx.privateKeyFile, { encoding: 'utf8', mode: keyMode });
-          fs.chmodSync(keyFile, keyMode);
+          try {
+            fs.writeFileSync(keyFile, ctx.privateKeyFile, { encoding: 'utf8', mode: keyMode });
+          } finally {
+            // Also runs when the write throws, so a failure cannot leave the key
+            // at the looser mode it was given to make the write possible.
+            if (fs.existsSync(keyFile)) {
+              fs.chmodSync(keyFile, keyMode);
+            }
+          }
 
           config.set('platform.gateway.ssl.enabled', true);
         },
