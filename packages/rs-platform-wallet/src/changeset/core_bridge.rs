@@ -500,14 +500,41 @@ where
     P: PlatformWalletPersistence + ?Sized,
 {
     let mut diag = BatchDiagnostics::new(folded, batch.len());
-    for (
-        wallet_id,
-        WalletBatch {
-            mut core,
-            asset_locks,
-            payments_overlay,
-        },
-    ) in batch
+    for (wallet_id, wallet_batch) in batch {
+        commit_wallet(
+            persister,
+            wallet_id,
+            wallet_batch,
+            &mut diag,
+            fault,
+            sync_fault,
+            freeze_logged,
+        );
+    }
+    diag
+}
+
+/// Commit one wallet's folded changeset — the per-wallet unit of
+/// [`commit_batch`], split out so
+/// [`commit_batch_with_payment_revalidation`] can scope its manager-lock
+/// hold to exactly the store that lock orders instead of the whole
+/// multi-wallet batch.
+fn commit_wallet<P>(
+    persister: &P,
+    wallet_id: WalletId,
+    wallet_batch: WalletBatch,
+    diag: &mut BatchDiagnostics,
+    fault: &mut AdapterFaultState,
+    sync_fault: &AtomicBool,
+    freeze_logged: &mut bool,
+) where
+    P: PlatformWalletPersistence + ?Sized,
+{
+    let WalletBatch {
+        mut core,
+        asset_locks,
+        payments_overlay,
+    } = wallet_batch;
     {
         // Hold this wallet's durable watermark at the last fully persisted
         // height once it has faulted. Records/UTXOs still persist — only the
@@ -533,7 +560,7 @@ where
             // SyncHeightAdvanced for an unknown wallet, empty BlockProcessed, a
             // watermark-only batch stripped by the fault guard above, etc. —
             // nothing to persist. Skip the round-trip.
-            continue;
+            return;
         }
         // The height this changeset OFFERS to the store. It is counted as
         // persisted only in the `Ok` arm below.
@@ -589,7 +616,7 @@ where
                 // re-emits the sweep and the idempotent removal is retried
                 // against (hopefully, by then) a capable backend.
                 if fault_and_freeze(
-                    &mut diag,
+                    diag,
                     offered_height,
                     fault,
                     sync_fault,
@@ -625,7 +652,7 @@ where
                 // durable half this rejection discarded are rolled back.
                 diag.rejected_wallets.insert(wallet_id);
                 if fault_and_freeze(
-                    &mut diag,
+                    diag,
                     offered_height,
                     fault,
                     sync_fault,
@@ -649,7 +676,6 @@ where
             }
         }
     }
-    diag
 }
 
 /// The bookkeeping shared by the two ways a round fails to be durably
@@ -975,12 +1001,14 @@ fn fold_payment_flips(
 /// round does not order separate rounds — so the staged failure is applied
 /// conditionally instead.
 ///
-/// The manager READ lock is held from the re-validation through the
-/// `store()` itself, and that hold is load-bearing. The confirm path
+/// The manager READ lock is held from the re-validation of a wallet's
+/// staged rows through THAT wallet's `store()`, and that hold is
+/// load-bearing. The confirm path
 /// ([`resolve_sent_payment_by_txid`](crate::wallet::identity::network) via
 /// the payment hooks) advances memory and persists under one continuous
-/// hold of the manager WRITE lock, so the two critical sections are
-/// mutually exclusive and totally ordered:
+/// hold of the manager WRITE lock, so for every store that carries payment
+/// rows the two critical sections are mutually exclusive and totally
+/// ordered:
 ///
 /// - confirm first: this re-validation sees `Confirmed` and drops the
 ///   staged row (and its rollback-ledger entry — a later rejection of this
@@ -990,16 +1018,30 @@ fn fold_payment_flips(
 ///   Confirmed` is exactly the transition the shared table permits.
 ///
 /// A check released before the store would reopen the race: the whole
-/// confirm (memory advance + persist) could run inside the gap. Batches
-/// that stage no overlay rows — every drain on a payments-blind backend
-/// (bit 11 not attested; the fold never stages the overlay there), and
-/// every drain without a sweep — skip the lock entirely and commit exactly
-/// as before.
+/// confirm (memory advance + persist) could run inside the gap.
+///
+/// The hold is exactly as wide as that argument requires and no wider —
+/// the persistence trait permits inline I/O and calls made under the
+/// manager lock are latency-sensitive, so a writer must never wait out a
+/// synchronous store the lock is not ordering. Scoping per wallet keeps
+/// the proof intact, because the ordering obligation is per store: each
+/// overlay-carrying store runs inside a read hold that began before its
+/// own rows were re-validated, which is all the mutual exclusion above
+/// ever used — the guard that covered OTHER wallets' stores ordered
+/// nothing. Concretely:
+///
+/// - a wallet with no staged rows commits outside any guard (on a
+///   payments-blind backend — bit 11 not attested — that is every wallet,
+///   since the fold never stages the overlay there);
+/// - a wallet whose re-validation drops EVERY staged row commits after
+///   the guard is released: no payment row rides the round, so nothing
+///   needs ordering, exactly as if it never staged;
+/// - a wallet with surviving rows commits under the guard.
 #[allow(clippy::too_many_arguments)]
 async fn commit_batch_with_payment_revalidation<P>(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     persister: &P,
-    mut batch: BTreeMap<WalletId, WalletBatch>,
+    batch: BTreeMap<WalletId, WalletBatch>,
     payment_rollbacks: &mut BTreeMap<
         WalletId,
         Vec<(
@@ -1016,18 +1058,64 @@ async fn commit_batch_with_payment_revalidation<P>(
 where
     P: PlatformWalletPersistence + ?Sized,
 {
+    // The hot path: no wallet staged a payment row — every drain on a
+    // payments-blind backend, and every drain without a sweep — so the
+    // whole batch commits exactly as before, without a lock or the
+    // per-wallet branching below.
     if batch
         .values()
         .all(|entry| entry.payments_overlay.is_empty())
     {
         return commit_batch(persister, batch, folded, fault, sync_fault, freeze_logged);
     }
-    let wm = wallet_manager.read().await;
-    retract_superseded_payment_flips(&wm, &mut batch, payment_rollbacks);
-    // Deliberately still under `wm`: releasing the guard before the store
-    // is the race this function exists to close. `commit_batch` is
-    // synchronous and takes no manager lock, so this cannot deadlock.
-    commit_batch(persister, batch, folded, fault, sync_fault, freeze_logged)
+    let mut diag = BatchDiagnostics::new(folded, batch.len());
+    for (wallet_id, mut wallet_batch) in batch {
+        if wallet_batch.payments_overlay.is_empty() {
+            commit_wallet(
+                persister,
+                wallet_id,
+                wallet_batch,
+                &mut diag,
+                fault,
+                sync_fault,
+                freeze_logged,
+            );
+            continue;
+        }
+        let wm = wallet_manager.read().await;
+        retract_superseded_payment_flips(&wm, wallet_id, &mut wallet_batch, payment_rollbacks);
+        if wallet_batch.payments_overlay.is_empty() {
+            // Every staged row was superseded: nothing left on this round
+            // needs ordering against the confirm path, so release the
+            // writers before the store.
+            drop(wm);
+            commit_wallet(
+                persister,
+                wallet_id,
+                wallet_batch,
+                &mut diag,
+                fault,
+                sync_fault,
+                freeze_logged,
+            );
+        } else {
+            // Deliberately still under `wm`: releasing the guard before
+            // this store is the race this function exists to close.
+            // `commit_wallet` is synchronous and takes no manager lock, so
+            // this cannot deadlock.
+            commit_wallet(
+                persister,
+                wallet_id,
+                wallet_batch,
+                &mut diag,
+                fault,
+                sync_fault,
+                freeze_logged,
+            );
+            drop(wm);
+        }
+    }
+    diag
 }
 
 /// Drop every staged payment overlay row whose in-memory entry is no
@@ -1047,7 +1135,8 @@ where
 /// longer holds it.
 fn retract_superseded_payment_flips(
     wm: &WalletManager<PlatformWalletInfo>,
-    batch: &mut BTreeMap<WalletId, WalletBatch>,
+    wallet_id: WalletId,
+    entry: &mut WalletBatch,
     payment_rollbacks: &mut BTreeMap<
         WalletId,
         Vec<(
@@ -1059,46 +1148,44 @@ fn retract_superseded_payment_flips(
 ) {
     use crate::wallet::identity::types::dashpay::payment::PaymentStatus;
 
-    for (wallet_id, entry) in batch.iter_mut() {
-        if entry.payments_overlay.is_empty() {
-            continue;
-        }
-        let info = wm.get_wallet_info(wallet_id);
-        // Owner-keyed index of the dropped rows, probed once per ledger
-        // entry below. A sweep event can carry many payment txids, and a
-        // linear rescan of the dropped set per ledger entry would be
-        // O(dropped × ledger) identifier-and-string comparisons on the
-        // commit path.
-        let mut superseded: BTreeMap<dpp::prelude::Identifier, BTreeSet<String>> = BTreeMap::new();
-        for (owner, rows) in entry.payments_overlay.iter_mut() {
-            rows.retain(|txid, _| {
-                let still_failed = info
-                    .and_then(|info| info.identity_manager.managed_identity(owner))
-                    .and_then(|managed| managed.dashpay().payments.get(txid))
-                    .is_some_and(|live| live.status == PaymentStatus::Failed);
-                if !still_failed {
-                    tracing::info!(
-                        owner = %owner,
-                        txid = %txid,
-                        "Retracting a staged sweep-failed payment row superseded in memory \
-                         before its round stored"
-                    );
-                    superseded.entry(*owner).or_default().insert(txid.clone());
-                }
-                still_failed
-            });
-        }
-        entry.payments_overlay.retain(|_, rows| !rows.is_empty());
-        if superseded.is_empty() {
-            continue;
-        }
-        if let Some(ledger) = payment_rollbacks.get_mut(wallet_id) {
-            ledger.retain(|(owner, txid, _)| {
-                !superseded
-                    .get(owner)
-                    .is_some_and(|txids| txids.contains(txid))
-            });
-        }
+    if entry.payments_overlay.is_empty() {
+        return;
+    }
+    let info = wm.get_wallet_info(&wallet_id);
+    // Owner-keyed index of the dropped rows, probed once per ledger
+    // entry below. A sweep event can carry many payment txids, and a
+    // linear rescan of the dropped set per ledger entry would be
+    // O(dropped × ledger) identifier-and-string comparisons on the
+    // commit path.
+    let mut superseded: BTreeMap<dpp::prelude::Identifier, BTreeSet<String>> = BTreeMap::new();
+    for (owner, rows) in entry.payments_overlay.iter_mut() {
+        rows.retain(|txid, _| {
+            let still_failed = info
+                .and_then(|info| info.identity_manager.managed_identity(owner))
+                .and_then(|managed| managed.dashpay().payments.get(txid))
+                .is_some_and(|live| live.status == PaymentStatus::Failed);
+            if !still_failed {
+                tracing::info!(
+                    owner = %owner,
+                    txid = %txid,
+                    "Retracting a staged sweep-failed payment row superseded in memory \
+                     before its round stored"
+                );
+                superseded.entry(*owner).or_default().insert(txid.clone());
+            }
+            still_failed
+        });
+    }
+    entry.payments_overlay.retain(|_, rows| !rows.is_empty());
+    if superseded.is_empty() {
+        return;
+    }
+    if let Some(ledger) = payment_rollbacks.get_mut(&wallet_id) {
+        ledger.retain(|(owner, txid, _)| {
+            !superseded
+                .get(owner)
+                .is_some_and(|txids| txids.contains(txid))
+        });
     }
 }
 
