@@ -7,6 +7,8 @@ import obfuscateConfig from '../../../config/obfuscateConfig.js';
 import { DASHMATE_VERSION } from '../../../constants.js';
 import LegoCertificate from '../../../ssl/letsencrypt/LegoCertificate.js';
 import Certificate from '../../../ssl/zerossl/Certificate.js';
+import probeServedCertificate, { STATE as PROBE_STATE } from '../../../ssl/probeServedCertificate.js';
+import readCertificateBundle from '../../../ssl/readCertificateBundle.js';
 import providers from '../../../status/providers.js';
 import hideString from '../../../util/hideString.js';
 import obfuscateObjectRecursive from '../../../util/obfuscateObjectRecursive.js';
@@ -188,6 +190,66 @@ export default function collectSamplesTaskFactory(
                     default:
                       throw new Error('Unknown SSL provider');
                   }
+                },
+              },
+              {
+                // Every other certificate check reads a file or the provider's API, so a
+                // certificate that was renewed on disk but never reached the gateway looks
+                // healthy to all of them. This connects to the gateway and records what it
+                // actually serves. Doctor only ever runs from the CLI - the helper exposes
+                // status and nothing else - so the listener is reached on its published port.
+                enabled: () => config.get('platform.enable')
+                  && config.get('platform.gateway.ssl.provider') !== 'self-signed',
+                title: 'Gateway served certificate',
+                task: async () => {
+                  const listenerHost = config.get('platform.gateway.listeners.dapiAndDrive.host');
+                  const port = config.get('platform.gateway.listeners.dapiAndDrive.port');
+
+                  const result = await probeServedCertificate({
+                    host: listenerHost === '0.0.0.0' ? '127.0.0.1' : listenerHost,
+                    port,
+                    externalIp: config.get('externalIp'),
+                  });
+
+                  result.port = port;
+
+                  if (result.state === PROBE_STATE.SERVED) {
+                    // Read beside the probe rather than at analysis time: renewal replaces the
+                    // file and signals the gateway moments apart, and the rest of the sample
+                    // collection takes long enough that the two would routinely be read from
+                    // either side of a renewal and reported as a mismatch.
+                    const onDisk = readCertificateBundle(path.join(
+                      homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl'),
+                      'bundle.crt',
+                    ));
+
+                    result.onDisk = onDisk && {
+                      fingerprint256: onDisk.fingerprint256,
+                      validTo: onDisk.validTo.toUTCString(),
+                    };
+
+                    result.matchesOnDisk = onDisk
+                      ? onDisk.fingerprint256 === result.certificate.fingerprint256
+                      : null;
+                  }
+
+                  obfuscateObjectRecursive(result, (_field, value) => (typeof value === 'string' ? value.replaceAll(
+                    process.env.USER,
+                    hideString(process.env.USER),
+                  ) : value));
+
+                  ctx.samples.setServiceInfo('gateway', 'servedCertificate', result);
+                },
+              },
+              {
+                // Both certificate providers validate this node over inbound port 80.
+                enabled: () => config.get('platform.enable'),
+                title: 'ACME HTTP validation port',
+                task: async () => {
+                  const response = await providers.mnowatch.checkPortStatus(80, config.get('externalIp'))
+                    .catch((e) => e.toString());
+
+                  ctx.samples.setServiceInfo('gateway', 'acmeHttpPort', response);
                 },
               },
               {

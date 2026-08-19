@@ -1,5 +1,9 @@
+import { execFileSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'fs';
+import os from 'node:os';
 import path from 'path';
+import tls from 'node:tls';
 import { Listr } from 'listr2';
 import getBaseConfigFactory from '../../../../../configs/defaults/getBaseConfigFactory.js';
 import HomeDir from '../../../../../src/config/HomeDir.js';
@@ -165,6 +169,70 @@ describe('collectSamplesTaskFactory', () => {
     expect(samples.getServiceInfo('gateway', 'ssl').error).to.be.undefined();
 
     expect(analyseConfig(samples)).to.be.empty();
+  });
+
+  it('should collect the certificate the gateway actually serves', async () => {
+    const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const key = privateKey.export({ type: 'pkcs8', format: 'pem' });
+
+    const certDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dashmate-served-'));
+    const keyPath = path.join(certDir, 'key.pem');
+    const certPath = path.join(certDir, 'cert.pem');
+
+    fs.writeFileSync(keyPath, key);
+
+    execFileSync('openssl', [
+      'req', '-x509', '-new', '-key', keyPath, '-out', certPath,
+      '-subj', `/CN=${EXTERNAL_IP}`,
+      '-addext', `subjectAltName=IP:${EXTERNAL_IP}`,
+      '-addext', 'basicConstraints=CA:FALSE',
+      '-days', '30',
+    ], { stdio: 'ignore' });
+
+    const cert = fs.readFileSync(certPath, 'utf8');
+
+    const server = tls.createServer({ cert, key }, (socket) => socket.end());
+    const liveSockets = [];
+
+    server.on('secureConnection', (socket) => liveSockets.push(socket));
+
+    await new Promise((resolve) => {
+      server.listen(0, '127.0.0.1', resolve);
+    });
+
+    // The gateway's own bundle is the certificate the server presents, so disk and wire agree
+    fs.writeFileSync(
+      path.join(homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl'), 'bundle.crt'),
+      cert,
+      'utf8',
+    );
+
+    config.set('platform.gateway.listeners.dapiAndDrive.port', server.address().port);
+
+    getCertificate.resolves(new Certificate({
+      id: 'certificate-id',
+      common_name: EXTERNAL_IP,
+      status: 'issued',
+      created: toZeroSslDate(daysFromNow(-1)),
+      expires: toZeroSslDate(daysFromNow(89)),
+    }));
+
+    try {
+      await collectSamples();
+    } finally {
+      liveSockets.forEach((socket) => socket.destroy());
+      await new Promise((resolve) => {
+        server.close(resolve);
+      });
+      fs.rmSync(certDir, { recursive: true, force: true });
+    }
+
+    const servedCertificate = samples.getServiceInfo('gateway', 'servedCertificate');
+
+    expect(servedCertificate.state).to.equal('served');
+    expect(servedCertificate.identityVerified).to.be.true();
+    expect(servedCertificate.matchesOnDisk).to.be.true();
+    expect(samples.getServiceInfo('gateway', 'acmeHttpPort')).to.equal('OPEN');
   });
 
   it('should collect metrics as text rather than an unresolved promise', async () => {
