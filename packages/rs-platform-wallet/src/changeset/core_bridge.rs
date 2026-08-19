@@ -32,7 +32,7 @@
 //! manager's lifetime; on shutdown, fire the [`CancellationToken`] to
 //! make the task exit cleanly.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -1064,7 +1064,12 @@ fn retract_superseded_payment_flips(
             continue;
         }
         let info = wm.get_wallet_info(wallet_id);
-        let mut superseded: Vec<(dpp::prelude::Identifier, String)> = Vec::new();
+        // Owner-keyed index of the dropped rows, probed once per ledger
+        // entry below. A sweep event can carry many payment txids, and a
+        // linear rescan of the dropped set per ledger entry would be
+        // O(dropped × ledger) identifier-and-string comparisons on the
+        // commit path.
+        let mut superseded: BTreeMap<dpp::prelude::Identifier, BTreeSet<String>> = BTreeMap::new();
         for (owner, rows) in entry.payments_overlay.iter_mut() {
             rows.retain(|txid, _| {
                 let still_failed = info
@@ -1078,7 +1083,7 @@ fn retract_superseded_payment_flips(
                         "Retracting a staged sweep-failed payment row superseded in memory \
                          before its round stored"
                     );
-                    superseded.push((*owner, txid.clone()));
+                    superseded.entry(*owner).or_default().insert(txid.clone());
                 }
                 still_failed
             });
@@ -1090,10 +1095,8 @@ fn retract_superseded_payment_flips(
         if let Some(ledger) = payment_rollbacks.get_mut(wallet_id) {
             ledger.retain(|(owner, txid, _)| {
                 !superseded
-                    .iter()
-                    .any(|(superseded_owner, superseded_txid)| {
-                        superseded_owner == owner && superseded_txid == txid
-                    })
+                    .get(owner)
+                    .is_some_and(|txids| txids.contains(txid))
             });
         }
     }
