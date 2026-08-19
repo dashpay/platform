@@ -55,6 +55,15 @@ pub(crate) const RESERVATION_MAX_AGE_BLOCKS: u32 = 20;
 /// [`WalletGeneration::pin_in_broadcast`](crate::wallet::core::WalletGeneration::pin_in_broadcast)'s
 /// pending-spend phase.
 ///
+/// "Past dispatch" means past a `last_processed_height` sampled once the
+/// broadcaster has RETURNED, not the one the pre-send freshness check consumed.
+/// A broadcast await can suspend for minutes mid-catch-up, and anchoring this
+/// interval before it means the fence can arrive already lapsed — which is the
+/// same as never installing it (`dashpay/platform#4309`). A dispatch that stops
+/// without that sample fences unbounded until the next coin selection stamps it
+/// from its own height. See `CoreWallet::dispatch_unexpired` and
+/// `WalletGeneration::in_broadcast_conflict`.
+///
 /// # Why a fence past dispatch is needed at all
 ///
 /// `SpvBroadcaster` injects the dispatched transaction into dash-spv's local
@@ -76,11 +85,14 @@ pub(crate) const RESERVATION_MAX_AGE_BLOCKS: u32 = 20;
 /// key-wallet exposes no such primitive at the pinned revision (`ReservationSet`
 /// and its `RESERVATION_TTL_BLOCKS` are private). This constant is that renewal
 /// implemented one layer up: **24, key-wallet's own `RESERVATION_TTL_BLOCKS`**
-/// (~1 h at the mainnet block target), measured from dispatch instead of from
-/// the build. The inputs are then continuously protected — by the reservation
-/// until its build-anchored TTL, then by this fence — for a full TTL past the
-/// moment they were actually committed to the network, which is the point the
-/// TTL was always meant to be measured from. Coupled by convention, exactly as
+/// (~1 h at the mainnet block target), measured from the broadcaster's return
+/// instead of from the build. The inputs are then continuously protected — by
+/// the reservation until its build-anchored TTL, then by this fence — for a full
+/// TTL past the moment they were actually committed to the network, which is the
+/// point the TTL was always meant to be measured from. Sampling the anchor
+/// *after* the send is what makes that literally true rather than approximately:
+/// an anchor taken before a long await measures from a moment the transaction
+/// had not yet gone anywhere. Coupled by convention, exactly as
 /// [`RESERVATION_MAX_AGE_BLOCKS`] above is: if key-wallet's TTL changes, change
 /// this in lockstep.
 ///

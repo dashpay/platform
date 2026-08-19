@@ -73,18 +73,47 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     ///   breath, so an instant rebuild can reselect the inputs.
     /// * **Anything else** (accepted, or an ambiguous `MaybeSent`) — the pin is
     ///   converted to a pending-spend fence
-    ///   (`InBroadcastPin::retain_pending_spend`)
+    ///   ([`InBroadcastPin::anchor_pending_spend`](super::generation::InBroadcastPin::anchor_pending_spend))
     ///   lasting
     ///   [`IN_BROADCAST_FENCE_BLOCKS`](crate::wallet::reservations::IN_BROADCAST_FENCE_BLOCKS)
-    ///   past the height this dispatch was authorized at. Once the wallet does
-    ///   observe the spend the outpoint stops reaching selection at all, so the
-    ///   fence goes inert without waiting for that bound; the bound is only the
-    ///   backstop for a transaction that is never observed, and matches the TTL
-    ///   the reservation itself would have had, re-anchored at dispatch.
+    ///   past a `last_processed_height` sampled **after** the broadcaster
+    ///   returned. Once the wallet does observe the spend the outpoint stops
+    ///   reaching selection at all, so the fence goes inert without waiting for
+    ///   that bound; the bound is only the backstop for a transaction that is
+    ///   never observed, and matches the TTL the reservation itself would have
+    ///   had, re-anchored at the moment the transaction actually went out.
     ///
-    /// Neither phase touches the wallet-manager lock, so nothing here can
-    /// starve the SPV mempool pipeline: the guard is still dropped before the
-    /// broadcaster await, exactly as it was.
+    /// # Why the fence anchor is sampled after the await, not before
+    ///
+    /// The height that authorizes the send and the height that bounds the fence
+    /// are the same *clock* but must not be the same *reading*. A broadcast
+    /// await can suspend for minutes in the middle of chain catch-up — the
+    /// ordinary mobile case — and if the wallet advances a full
+    /// `IN_BROADCAST_FENCE_BLOCKS` in that gap, a fence anchored on the
+    /// pre-await reading is already expired at the instant it is installed. The
+    /// next coin selection reaps it and may reselect an input of a transaction
+    /// that reached the network: an expired fence is indistinguishable from no
+    /// fence (`dashpay/platform#4309`).
+    ///
+    /// So the post-await sample is the SINGLE anchor for the installed fence,
+    /// which keeps the check-vs-fence clock consistency intact — both readings
+    /// come from `last_processed_height` under the manager guard, the same clock
+    /// `in_broadcast_conflict` and key-wallet's TTL sweep run on. The
+    /// **dispatching** phase stays held across that sampling, so there is no
+    /// window in which the outpoints are neither pinned nor fenced.
+    ///
+    /// A dispatch that never reaches the sample — the caller's future cancelled
+    /// or unwound inside `broadcast`, or the wallet removed from the manager —
+    /// settles its fence UNANCHORED, blocking unconditionally until the first
+    /// coin selection stamps it from its own height. That is the drop-time
+    /// clock, deferred to the first moment a synchronous `Drop` could act on it,
+    /// and the fence is unreachable in between.
+    ///
+    /// Neither phase touches the wallet-manager lock while the broadcaster is
+    /// running, so nothing here can starve the SPV mempool pipeline: the guard
+    /// is still dropped before the broadcaster await, exactly as it was, and the
+    /// post-await sample is a short read taken only once the send has returned —
+    /// the same point the callers below already retake manager locks at.
     ///
     /// A wallet no longer in the manager skips the pin (there is no
     /// registered generation to fence builds on — they cannot fund from a
@@ -111,12 +140,10 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // and — unless the send is definitively rejected — outlives the
             // broadcaster return too, as a pending-spend fence.
             //
-            // That fence is anchored on the SAME `height` the freshness check
-            // just consumed, not a fresh sample: the two must not be able to
-            // disagree, or the fence could be stamped against a clock the
-            // check never saw.
-            info.zip(height)
-                .map(|(info, height)| info.generation.pin_in_broadcast(transaction, height))
+            // `height` is NOT handed to the pin. It anchors the freshness
+            // check and nothing else; the fence's own anchor is sampled after
+            // the await below, for the reason documented there.
+            info.map(|info| info.generation.pin_in_broadcast(transaction))
             // Guard dropped here — holding it across the await starves the
             // SPV pipeline that must complete the wait; the pin, not the
             // guard, covers check-to-wire.
@@ -137,6 +164,41 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         ) {
             if let Some(pin) = in_broadcast_pin.as_mut() {
                 pin.release_pending_spend();
+            }
+        } else if let Some(pin) = in_broadcast_pin.as_mut() {
+            // EVERY non-rejection outcome — accepted or ambiguous `MaybeSent` —
+            // anchors its fence on a height sampled HERE, after the broadcaster
+            // returned, and gets a full `IN_BROADCAST_FENCE_BLOCKS` from it.
+            //
+            // The pre-await sample cannot serve: `broadcast` can suspend for
+            // minutes mid-catch-up (mobile), and if the wallet advances a whole
+            // fence interval inside the await, a fence anchored back there is
+            // ALREADY LAPSED when it is installed — the next coin selection
+            // reaps it and can reselect an input of a transaction that may have
+            // reached the network. An expired fence is no fence
+            // (`dashpay/platform#4309`).
+            //
+            // Clock consistency — the property the pre-await anchor was chosen
+            // for — is kept by making THIS the single anchor: it is read from
+            // the same `last_processed_height` under the same manager guard the
+            // freshness check used, and `in_broadcast_conflict` compares against
+            // that same clock under the write lock. Nothing is stamped against a
+            // height no guarded section ever saw.
+            //
+            // The DISPATCHING phase is still held while this runs (the pin is
+            // alive; it settles at `drop` below), so the outpoints never become
+            // selectable between the broadcaster's return and the stamp — the
+            // manager read lock is awaited under that cover. A wallet that left
+            // the manager in the meantime yields no height and leaves the pin
+            // unanchored, which fences unconditionally until the next selection
+            // stamps it: strictly the safer side.
+            let height = {
+                let wm = self.wallet_manager.read().await;
+                wm.get_wallet_info(&self.wallet_id)
+                    .map(|info| info.core_wallet.last_processed_height())
+            };
+            if let Some(height) = height {
+                pin.anchor_pending_spend(height);
             }
         }
         drop(in_broadcast_pin);
@@ -751,9 +813,13 @@ mod tests {
     /// competing finalize's own selection sweeps the dispatched build's
     /// reservation and re-selects its input — pre-pin, that build completed
     /// and raced the already-signed transaction on the wire. With the pin
-    /// held across the await, the competing finalize must be REFUSED, and
-    /// only after the dispatch returns (pin dropped, RAII) may a new build
-    /// take the input again.
+    /// held across the await, the competing finalize must be REFUSED.
+    ///
+    /// The tail then covers the HANDOFF from the dispatching pin to the
+    /// pending-spend fence, which is where the catch-up in this test matters a
+    /// second time: the fence is anchored on the height sampled AFTER the
+    /// broadcaster returned, so a 48-block advance *inside* the await extends
+    /// the protection instead of expiring it (`dashpay/platform#4309`).
     #[tokio::test]
     async fn in_broadcast_pin_blocks_reselection_until_dispatch_returns() {
         let entered = Arc::new(tokio::sync::Barrier::new(2));
@@ -813,23 +879,42 @@ mod tests {
             "the pinned dispatch itself must complete, got {sent:?}"
         );
 
-        // A new build may take the input again — but note WHY, because it is
-        // no longer "the pin lifted with the dispatch". The dispatch converted
-        // its pin into a pending-spend fence bounded at
-        // `dispatch_height + IN_BROADCAST_FENCE_BLOCKS`, and the catch-up above
-        // raced 48 blocks past the reservation stamp — well beyond that bound —
-        // so the fence is already lapsed here. The retained fence itself, and
-        // the bound it lapses at, are covered by
-        // `dispatched_input_stays_fenced_after_the_broadcaster_returns`.
+        // The dispatching pin has now lifted — but the input is NOT selectable
+        // again, and the difference is the point of `dashpay/platform#4309`.
+        //
+        // This assertion used to read the other way: the fence was anchored on
+        // the height sampled BEFORE the await, the catch-up above raced 48
+        // blocks past it, and the fence was therefore installed already lapsed,
+        // so a new build took the input immediately. That "the pin lifted" pass
+        // was the bug in test form — the transaction had reached the network.
+        //
+        // The fence is now anchored on the POST-await sample, which is the
+        // height this catch-up moved to, so the input stays held.
+        let post_await = stamped + RESERVATION_MAX_AGE_BLOCKS + 48;
         assert!(
-            stamped + RESERVATION_MAX_AGE_BLOCKS + 48
-                >= (stamped + RESERVATION_MAX_AGE_BLOCKS - 1) + IN_BROADCAST_FENCE_BLOCKS,
-            "this test's catch-up must outrun the pending-spend bound for the \
-             assertion below to be about the pin, not the fence"
+            post_await >= (stamped + RESERVATION_MAX_AGE_BLOCKS - 1) + IN_BROADCAST_FENCE_BLOCKS,
+            "this test's catch-up must outrun a PRE-await anchor, so the \
+             assertion below distinguishes the two anchors"
         );
+        let still_fenced =
+            try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
+        match still_fenced {
+            Err(PlatformWalletError::TransactionBuild(message)) => assert!(
+                message.contains("mid-broadcast"),
+                "the post-dispatch refusal must name the in-flight broadcast, got: {message}"
+            ),
+            other => panic!(
+                "catch-up during the await must not expire the fence before it \
+                 is installed, got {other:?}"
+            ),
+        }
+
+        // And it lapses a full interval past that post-await anchor — bounded,
+        // not permanent.
+        advance_processed_height(&core, post_await + IN_BROADCAST_FENCE_BLOCKS).await;
         let after = try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
         let after = after.unwrap_or_else(|error| {
-            panic!("the dispatching pin must lift once the dispatch returns, got {error:?}")
+            panic!("the fence must lapse a bound past the post-await anchor, got {error:?}")
         });
         core.abandon_transaction(&after).await;
     }
@@ -903,6 +988,198 @@ mod tests {
         let after = try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
         let after = after
             .unwrap_or_else(|error| panic!("the fence must lapse at its bound, got {error:?}"));
+        core.abandon_transaction(&after).await;
+    }
+
+    /// `dashpay/platform#4309`: THE FENCE MUST NOT BE INSTALLED ALREADY EXPIRED.
+    ///
+    /// The scenario the reviewer identified, which fencing-by-default alone did
+    /// not close. The pending-spend bound used to be anchored on the
+    /// `last_processed_height` sampled BEFORE `broadcaster.broadcast().await`.
+    /// A broadcast await can suspend for minutes in the middle of chain
+    /// catch-up — routine on mobile — and if the wallet advances a full
+    /// `IN_BROADCAST_FENCE_BLOCKS` inside that await, the fence installed when
+    /// the send returns is ALREADY LAPSED. The very next coin selection reaps it
+    /// and reselects the input of a transaction that may be on the network: an
+    /// expired fence is indistinguishable from no fence at all.
+    ///
+    /// Here the broadcaster parks, catch-up runs a full fence interval plus 5
+    /// blocks past the pre-await sample, and the send then returns `Ok` — the
+    /// accepted case, where the transaction is certainly on the wire. The input
+    /// must still be fenced afterwards, and the bound must run from the
+    /// POST-await height.
+    ///
+    /// The reservation is provably swept by then (the catch-up outruns
+    /// key-wallet's 24-block TTL measured from the build stamp), so the fence is
+    /// the only thing holding the input — pre-fix this window was unreserved AND
+    /// unfenced, and the competing finalize below returned `Ok`.
+    #[tokio::test]
+    async fn fence_anchors_after_the_await_so_catch_up_cannot_pre_expire_it() {
+        let entered = Arc::new(tokio::sync::Barrier::new(2));
+        let release = Arc::new(tokio::sync::Barrier::new(2));
+        let (core, signer, outputs) = funded_core_wallet(
+            StandardAccountType::BIP44Account,
+            Arc::new(GatedBroadcaster {
+                entered: Arc::clone(&entered),
+                release: Arc::clone(&release),
+            }),
+        )
+        .await;
+        let stamped = core
+            .last_processed_height()
+            .await
+            .expect("last processed height");
+        let finalized = finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
+
+        // Dispatch while fresh: the pre-await sample is `stamped`, so that is
+        // the anchor the old code would have used.
+        let dispatcher = tokio::spawn({
+            let core = core.clone();
+            async move { core.broadcast_finalized_transaction(&finalized).await }
+        });
+        entered.wait().await;
+
+        // Catch-up INSIDE the await runs a whole fence interval past the
+        // pre-await sample. A fence anchored back there expires at
+        // `stamped + IN_BROADCAST_FENCE_BLOCKS`, which this height has passed.
+        let post_await = stamped + IN_BROADCAST_FENCE_BLOCKS + 5;
+        assert!(
+            post_await >= stamped + IN_BROADCAST_FENCE_BLOCKS,
+            "the catch-up must outrun a pre-await anchor for this test to \
+             distinguish the two"
+        );
+        assert!(
+            post_await >= stamped + 24,
+            "the catch-up must also outrun key-wallet's reservation TTL, so the \
+             fence is the only thing holding the input"
+        );
+        advance_processed_height(&core, post_await).await;
+
+        // The send returns accepted — the transaction IS on the network.
+        release.wait().await;
+        let sent = dispatcher.await.expect("dispatcher task");
+        assert!(
+            sent.is_ok(),
+            "the dispatch itself must succeed, got {sent:?}"
+        );
+
+        // Pre-fix: the fence was installed already lapsed and this build
+        // succeeded, constructing a double-spend of a transaction on the wire.
+        let racing = try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
+        match racing {
+            Err(PlatformWalletError::TransactionBuild(message)) => assert!(
+                message.contains("mid-broadcast"),
+                "the refusal must name the in-flight broadcast, got: {message}"
+            ),
+            other => panic!(
+                "a fence anchored before the await expires during catch-up and \
+                 leaves the input reselectable, got {other:?}"
+            ),
+        }
+
+        // The bound runs from the POST-await height: still fenced one below it,
+        // lapsed at it. Bounded protection, not a permanent hold.
+        advance_processed_height(&core, post_await + IN_BROADCAST_FENCE_BLOCKS - 1).await;
+        assert!(
+            matches!(
+                try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await,
+                Err(PlatformWalletError::TransactionBuild(_))
+            ),
+            "one block below the post-await bound must still fence"
+        );
+        advance_processed_height(&core, post_await + IN_BROADCAST_FENCE_BLOCKS).await;
+        let after = try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
+        let after = after.unwrap_or_else(|error| {
+            panic!("the fence must lapse at the post-await bound, got {error:?}")
+        });
+        core.abandon_transaction(&after).await;
+    }
+
+    /// `dashpay/platform#4309`, the CANCELLATION twin of the test above.
+    ///
+    /// A caller wrapping the send in `timeout`/`select!` drops the dispatching
+    /// future mid-`broadcast`. That path reaches neither the release nor the
+    /// post-await height sample, and cancellation proves nothing: DAPI may have
+    /// delivered the request while awaiting its response, SPV may have
+    /// dispatched to peers while awaiting an echo or IS-lock. Retaining the
+    /// fence there is necessary but NOT sufficient — if the retained fence is
+    /// stamped from a height sampled before the await, the same catch-up that
+    /// made the caller time out has already expired it.
+    ///
+    /// So a cancelled dispatch settles its fence with NO bound, and the first
+    /// coin selection to consult it stamps a full interval from its own height,
+    /// read under the manager write guard. Here catch-up runs well past a fence
+    /// interval before the abort, and the input must still be refused.
+    #[tokio::test]
+    async fn cancelled_dispatch_fence_survives_catch_up_during_the_await() {
+        let entered = Arc::new(tokio::sync::Barrier::new(2));
+        let release = Arc::new(tokio::sync::Barrier::new(2));
+        let (core, signer, outputs) = funded_core_wallet(
+            StandardAccountType::BIP44Account,
+            Arc::new(GatedBroadcaster {
+                entered: Arc::clone(&entered),
+                release: Arc::clone(&release),
+            }),
+        )
+        .await;
+        let stamped = core
+            .last_processed_height()
+            .await
+            .expect("last processed height");
+        let finalized = finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
+
+        let dispatcher = tokio::spawn({
+            let core = core.clone();
+            async move { core.broadcast_finalized_transaction(&finalized).await }
+        });
+        // Parked inside `broadcast`: pin held, guard dropped, nothing decided.
+        entered.wait().await;
+
+        // Catch-up past both key-wallet's reservation TTL and a whole fence
+        // interval measured from the pre-await sample.
+        let cancelled_at = stamped + IN_BROADCAST_FENCE_BLOCKS + 5;
+        advance_processed_height(&core, cancelled_at).await;
+
+        // Cancel mid-await, exactly as `timeout`/`select!` would. Awaiting the
+        // handle guarantees the future — and with it `InBroadcastPin::drop` —
+        // has actually run before the assertions below.
+        dispatcher.abort();
+        let cancelled = dispatcher.await;
+        assert!(
+            cancelled.is_err_and(|error| error.is_cancelled()),
+            "the dispatching future must have been cancelled mid-broadcast"
+        );
+
+        // Pre-fix: the retained fence carried the pre-await anchor and was
+        // already lapsed here, so this build reselected an input whose
+        // transaction may have been delivered.
+        let racing = try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
+        match racing {
+            Err(PlatformWalletError::TransactionBuild(message)) => assert!(
+                message.contains("mid-broadcast"),
+                "the refusal must name the in-flight broadcast, got: {message}"
+            ),
+            other => panic!(
+                "a cancelled dispatch must not leave an already-expired fence, \
+                 got {other:?}"
+            ),
+        }
+
+        // The build above is what anchored the fence, on the height it read.
+        // The interval runs from there, and then lapses.
+        advance_processed_height(&core, cancelled_at + IN_BROADCAST_FENCE_BLOCKS - 1).await;
+        assert!(
+            matches!(
+                try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await,
+                Err(PlatformWalletError::TransactionBuild(_))
+            ),
+            "one block below the anchored bound must still fence"
+        );
+        advance_processed_height(&core, cancelled_at + IN_BROADCAST_FENCE_BLOCKS).await;
+        let after = try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
+        let after = after.unwrap_or_else(|error| {
+            panic!("a cancelled dispatch's fence must still lapse, got {error:?}")
+        });
         core.abandon_transaction(&after).await;
     }
 
