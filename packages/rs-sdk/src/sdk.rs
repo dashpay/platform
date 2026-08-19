@@ -112,56 +112,62 @@ const DEFAULT_REQUEST_SETTINGS: RequestSettings = RequestSettings {
 /// Panics on networks other than `Mainnet` and `Testnet` — no upstream
 /// seed list exists for devnet/regtest.
 fn default_address_list_for_network(network: Network) -> AddressList {
-    use dash_network_seeds::SslStatus;
-
     if !matches!(network, Network::Mainnet | Network::Testnet) {
         panic!("default address list is only available for mainnet and testnet");
     }
 
     let seeds = dash_network_seeds::evo_seeds(network);
-
-    let build = |skip_bad_tls: bool| -> AddressList {
-        let mut list = AddressList::new();
-        for seed in &seeds {
-            let Some(port) = seed.platform_http_port else {
-                continue;
-            };
-            if skip_bad_tls {
-                if let Some(platform) = seed.platform.as_ref() {
-                    let deterministic_bad = match platform.ssl {
-                        SslStatus::Expired | SslStatus::SelfSigned | SslStatus::Untrusted => true,
-                        // Also stamped on TCP timeout / probe-budget expiry,
-                        // which are transient — only trust it when the TCP
-                        // connect itself succeeded.
-                        SslStatus::NoHandshake => {
-                            platform.reachable == dash_network_seeds::Reachability::Ok
-                        }
-                        SslStatus::Valid | SslStatus::Unknown => false,
-                    };
-                    if deterministic_bad {
-                        continue;
-                    }
-                }
-            }
-            let url = format!("https://{}:{}", seed.address.ip(), port);
-            if let Ok(uri) = url.parse::<Uri>() {
-                if let Ok(address) = Address::try_from(uri) {
-                    list.add(address);
-                }
-            }
-        }
-        list
-    };
-
-    let filtered = build(true);
+    let filtered = address_list_from_seeds(&seeds, true);
     if filtered.is_empty() {
         tracing::warn!(
             ?network,
             "all seed entries have failing TLS probes; falling back to unfiltered seed list"
         );
-        return build(false);
+        return address_list_from_seeds(&seeds, false);
     }
     filtered
+}
+
+/// Whether a seed's recorded Platform TLS probe is a failure this client
+/// would deterministically reproduce on every connect. `NoHandshake` is
+/// also stamped by the prober on TCP timeout / probe-budget expiry, which
+/// are transient — it only counts when the probe's TCP connect itself
+/// succeeded. An unprobed seed (`None` / `Unknown`) is never rejected.
+fn seed_tls_deterministically_bad(platform: Option<&dash_network_seeds::PlatformStatus>) -> bool {
+    use dash_network_seeds::{Reachability, SslStatus};
+    let Some(platform) = platform else {
+        return false;
+    };
+    match platform.ssl {
+        SslStatus::Expired | SslStatus::SelfSigned | SslStatus::Untrusted => true,
+        SslStatus::NoHandshake => platform.reachable == Reachability::Ok,
+        SslStatus::Valid | SslStatus::Unknown => false,
+    }
+}
+
+/// Build an [`AddressList`] of `https://<ip>:<platform_http_port>` entries
+/// from `seeds`, optionally skipping seeds whose TLS probe is a
+/// deterministic failure (see [`seed_tls_deterministically_bad`]).
+fn address_list_from_seeds(
+    seeds: &[dash_network_seeds::MasternodeSeed],
+    skip_bad_tls: bool,
+) -> AddressList {
+    let mut list = AddressList::new();
+    for seed in seeds {
+        let Some(port) = seed.platform_http_port else {
+            continue;
+        };
+        if skip_bad_tls && seed_tls_deterministically_bad(seed.platform.as_ref()) {
+            continue;
+        }
+        let url = format!("https://{}:{}", seed.address.ip(), port);
+        if let Ok(uri) = url.parse::<Uri>() {
+            if let Ok(address) = Address::try_from(uri) {
+                list.add(address);
+            }
+        }
+    }
+    list
 }
 
 /// Dash Platform SDK
@@ -1383,6 +1389,108 @@ mod test {
                 Some(MAINNET_PLATFORM_HTTP_PORT),
                 "mainnet bootstrap address must use the platform HTTP port",
             );
+        }
+    }
+
+    mod seed_tls_filter {
+        use super::super::{address_list_from_seeds, seed_tls_deterministically_bad};
+        use dash_network_seeds::{
+            CoreStatus, MasternodeSeed, MasternodeType, PlatformStatus, Reachability, SslStatus,
+        };
+
+        /// `host` disambiguates seeds — [`AddressList`] dedupes by URI, so
+        /// every test seed needs a distinct IP.
+        fn seed(host: u8, platform: Option<PlatformStatus>) -> MasternodeSeed {
+            MasternodeSeed {
+                address: format!("203.0.113.{host}:9999").parse().unwrap(),
+                mn_type: MasternodeType::Evo,
+                platform_http_port: Some(443),
+                core: CoreStatus::default(),
+                platform,
+            }
+        }
+
+        fn status(ssl: SslStatus, reachable: Reachability) -> PlatformStatus {
+            PlatformStatus {
+                reachable,
+                ssl,
+                ..PlatformStatus::default()
+            }
+        }
+
+        /// Every `SslStatus` × probe-reachability combination, against the
+        /// contract: cert-level verdicts (`Expired`/`SelfSigned`/`Untrusted`)
+        /// are deterministic regardless of reachability; `NoHandshake` is
+        /// deterministic only when the probe's TCP connect succeeded;
+        /// `Valid`/`Unknown`/unprobed are never rejected.
+        #[test]
+        fn classification_covers_every_status_combination() {
+            let reachabilities = [
+                Reachability::Unknown,
+                Reachability::Ok,
+                Reachability::Timeout,
+                Reachability::Refused,
+                Reachability::Error,
+            ];
+            for reachable in reachabilities {
+                for ssl in [SslStatus::Expired, SslStatus::SelfSigned, SslStatus::Untrusted] {
+                    assert!(
+                        seed_tls_deterministically_bad(Some(&status(ssl, reachable))),
+                        "{ssl:?} must be rejected regardless of {reachable:?}"
+                    );
+                }
+                for ssl in [SslStatus::Valid, SslStatus::Unknown] {
+                    assert!(
+                        !seed_tls_deterministically_bad(Some(&status(ssl, reachable))),
+                        "{ssl:?} must never be rejected ({reachable:?})"
+                    );
+                }
+                assert_eq!(
+                    seed_tls_deterministically_bad(Some(&status(
+                        SslStatus::NoHandshake,
+                        reachable
+                    ))),
+                    reachable == Reachability::Ok,
+                    "NoHandshake must be rejected only when TCP connect succeeded ({reachable:?})"
+                );
+            }
+            assert!(
+                !seed_tls_deterministically_bad(None),
+                "an unprobed seed must never be rejected"
+            );
+        }
+
+        #[test]
+        fn filter_drops_only_deterministic_failures() {
+            let seeds = vec![
+                seed(1, Some(status(SslStatus::Valid, Reachability::Ok))),
+                seed(2, Some(status(SslStatus::Expired, Reachability::Ok))),
+                seed(3, Some(status(SslStatus::NoHandshake, Reachability::Timeout))),
+                seed(4, Some(status(SslStatus::NoHandshake, Reachability::Ok))),
+                seed(5, None),
+            ];
+            assert_eq!(address_list_from_seeds(&seeds, true).len(), 3);
+            assert_eq!(address_list_from_seeds(&seeds, false).len(), 5);
+        }
+
+        /// The all-rejected input exercises the empty-filter result the
+        /// caller falls back from; the fallback itself must retain the
+        /// full set.
+        #[test]
+        fn all_rejected_input_yields_empty_filtered_and_full_unfiltered() {
+            let seeds = vec![
+                seed(1, Some(status(SslStatus::Expired, Reachability::Ok))),
+                seed(2, Some(status(SslStatus::Untrusted, Reachability::Timeout))),
+            ];
+            assert!(address_list_from_seeds(&seeds, true).is_empty());
+            assert_eq!(address_list_from_seeds(&seeds, false).len(), 2);
+        }
+
+        #[test]
+        fn seed_without_platform_port_is_always_skipped() {
+            let mut no_port = seed(1, Some(status(SslStatus::Valid, Reachability::Ok)));
+            no_port.platform_http_port = None;
+            assert!(address_list_from_seeds(&[no_port], false).is_empty());
         }
     }
 
