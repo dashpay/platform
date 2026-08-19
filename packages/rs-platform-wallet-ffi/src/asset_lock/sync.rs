@@ -148,12 +148,16 @@ pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
                 "asset_lock_manager_catch_up_blocking: resume_asset_lock failed"
             );
             match e {
-                // Terminal double spend: route through the typed conversion
-                // so the host still receives ErrorAssetLockInputConflict
-                // (42) — the one code that authorises discarding a tracked
-                // lock. Flattening it to ErrorWalletOperation here would
-                // leave the host with a spinner it can never resolve.
-                conflict @ PlatformWalletError::AssetLockInputConflict { .. } => conflict.into(),
+                // Double-spend verdicts route through the typed conversion
+                // so the host receives the real code: terminal
+                // ErrorAssetLockInputConflict (42) — the one code that
+                // authorises discarding a tracked lock — or the
+                // provisional ErrorAssetLockInputContested (43), which
+                // stops the wait but keeps the lock for a later retry.
+                // Flattening either to ErrorWalletOperation would leave
+                // the host with a spinner it can never resolve.
+                conflict @ (PlatformWalletError::AssetLockInputConflict { .. }
+                | PlatformWalletError::AssetLockInputContested { .. }) => conflict.into(),
                 other => PlatformWalletFFIResult::err(
                     PlatformWalletFFIResultCode::ErrorWalletOperation,
                     format!("{}", other),

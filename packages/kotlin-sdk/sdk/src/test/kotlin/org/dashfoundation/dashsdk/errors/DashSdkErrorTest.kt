@@ -220,6 +220,35 @@ class DashSdkErrorTest {
     }
 
     @Test
+    fun assetLockInputContestedCode43MapsTypedAndRetryable() {
+        // PROVISIONAL: the confirmed spender is not yet chainlocked, so its
+        // block can still reorg away. The host keeps the tracked lock and
+        // retries later — it must never treat this as the terminal 42's
+        // discard licence, and it must never fall through to Generic.
+        val message =
+            "Asset lock a:0 cannot currently confirm: it spends b:1, which confirmed " +
+                "transaction c (block height Some(1234)) has taken — but that spender is " +
+                "not yet chainlocked, so the verdict is provisional; keep the lock and " +
+                "retry after the next chainlock"
+        val mapped = DashSdkError.fromNative(
+            DashSDKException(
+                DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 43,
+                message,
+            ),
+        )
+
+        assertTrue(
+            "code 43 must not fall through to Generic",
+            mapped is DashSdkError.PlatformWallet.AssetLockInputContested,
+        )
+        assertEquals(message, mapped.message)
+        assertTrue(
+            "AssetLockInputContested is provisional — keep the lock and retry later",
+            mapped.isRetryable,
+        )
+    }
+
+    @Test
     fun signingKeyUnavailableCode31MapsTyped() {
         // The STRUCTURED discriminator (dashpay/platform#4060 finding 7):
         // PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable (31) maps

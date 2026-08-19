@@ -382,16 +382,20 @@ pub enum PlatformWalletFFIResultCode {
     /// indefinitely.
     ///
     /// TERMINAL, and the only code here that authorises a host to discard
-    /// a tracked asset lock: this resume broadcast nothing and no retry of
-    /// this outpoint can ever succeed while the confirmed spender stands.
-    /// The remedy is to drop the lock and build a new one from
-    /// currently-unspent inputs — a fund-safe action either way, because
-    /// the conflicting spender is necessarily this wallet's own
-    /// transaction (only this wallet can sign its outpoints): the value
-    /// lives in the sibling, and even a freak reorg that removed the
-    /// sibling would simply return the inputs to the spendable set.
-    /// Contrast `ErrorTransactionBroadcastUnconfirmed`, where the tx may
-    /// well be alive and discarding it would strand real funds.
+    /// a tracked asset lock: this resume broadcast nothing, and the
+    /// spender that took the input has reached ChainLock finality — its
+    /// block can never be reorganised away, so no retry of this outpoint
+    /// can ever succeed. The remedy is to drop the lock and build a new
+    /// one from currently-unspent inputs — fund-safe, because the
+    /// conflicting spender is necessarily this wallet's own transaction
+    /// (only this wallet can sign its outpoints): the value lives on in
+    /// the sibling. Contrast `ErrorTransactionBroadcastUnconfirmed`, where
+    /// the tx may well be alive and discarding it would strand real funds.
+    ///
+    /// A confirmed-but-not-chainlocked spender reports
+    /// [`Self::ErrorAssetLockInputContested`] (43) instead — same
+    /// stopped-wait, NO discard licence — so this code's finality claim
+    /// is structural, not advisory.
     ///
     /// Raised only on a positive detection; its ABSENCE is not a liveness
     /// signal. The wallet-side scan reads confirmed records still held in
@@ -401,8 +405,28 @@ pub enum PlatformWalletFFIResultCode {
     ///
     /// Message: the typed `Display` rendering, which names the asset-lock
     /// outpoint, the conflicting input, the confirmed spender's txid, and
-    /// the spender's finality (chainlocked or merely in a block).
+    /// the spender's finality (always chainlocked for this code).
     ErrorAssetLockInputConflict = 42,
+
+    /// Maps `PlatformWalletError::AssetLockInputContested`. Same detection
+    /// as [`Self::ErrorAssetLockInputConflict`] — a confirmed transaction
+    /// of this wallet already spent one of the tracked lock's inputs, so
+    /// the resume stopped before broadcasting into a wait that cannot
+    /// return — but the spender sits in an ordinary block a
+    /// reorganisation can still drop, so the verdict is PROVISIONAL.
+    ///
+    /// NOT a discard licence. The host keeps the tracked lock and retries
+    /// later (next launch, or after the next chainlock). The situation
+    /// resolves itself: either the sibling gets buried by a chainlock and
+    /// the next resume reports the terminal 42, or a reorg drops the
+    /// sibling and the next resume proceeds normally. Discarding tracking
+    /// state on this code risks stranding a lock that a replayed
+    /// broadcast could still confirm.
+    ///
+    /// Message: the typed `Display` rendering, which names the asset-lock
+    /// outpoint, the conflicting input, the confirmed spender's txid and
+    /// height, and says the verdict is provisional.
+    ErrorAssetLockInputContested = 43,
 
     /// The named thing does not exist.
     ///
@@ -662,6 +686,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // which no host may act on destructively.
             PlatformWalletError::AssetLockInputConflict { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockInputConflict
+            }
+            PlatformWalletError::AssetLockInputContested { .. } => {
+                PlatformWalletFFIResultCode::ErrorAssetLockInputContested
             }
             // A quiesce/drain barrier that did not complete within budget
             // (clear/reset paths). The host must fail closed: keep its

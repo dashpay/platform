@@ -156,6 +156,14 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// liveness — the Rust-side scan cannot see conflicts whose spender was
     /// already pruned.
     case errorAssetLockInputConflict = 42
+    /// The provisional sibling of `errorAssetLockInputConflict`: a confirmed
+    /// transaction of this wallet already spent one of the tracked lock's
+    /// inputs, so the resume stopped before broadcasting into a wait that
+    /// cannot return — but that spender sits in an ordinary block a reorg can
+    /// still drop, so the verdict is NOT final. No discard licence: keep the
+    /// lock tracked and retry later; the next chainlock either upgrades this
+    /// to the terminal 42 or the conflict disappears with the reorg.
+    case errorAssetLockInputContested = 43
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -255,6 +263,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorShieldedInsufficientBalance
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_INPUT_CONFLICT:
             self = .errorAssetLockInputConflict
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_INPUT_CONTESTED:
+            self = .errorAssetLockInputContested
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -450,6 +460,13 @@ public enum PlatformWalletError: LocalizedError {
     /// confirmed spender, and whether that spender is chainlocked, so a host
     /// can say *which* lock died and how firmly.
     case assetLockInputConflict(String)
+    /// The keep-and-retry sibling of `assetLockInputConflict`: the confirmed
+    /// spender is not yet chainlocked, so its block can still reorg away and
+    /// the verdict is provisional. The resume stopped (no broadcast, no
+    /// wait), but the tracked lock must NOT be discarded on this error —
+    /// retry on a later launch or after the next chainlock, when it either
+    /// upgrades to the terminal `assetLockInputConflict` or resolves clean.
+    case assetLockInputContested(String)
     /// The named thing does not exist. For the deferred payment calls this is
     /// the wallet-was-REMOVED case: the token's wallet (or the wallet a payment
     /// was just signed against) is no longer registered in the manager, so there
@@ -485,6 +502,7 @@ public enum PlatformWalletError: LocalizedError {
              .reservationWalletMismatch(let m),
              .notForSale(let m),
              .assetLockInputConflict(let m),
+             .assetLockInputContested(let m),
              .notFound(let m), .unknown(let m):
             return m
         // The three value-carrying marketplace rejections compose their
@@ -603,6 +621,8 @@ public enum PlatformWalletError: LocalizedError {
         // affordance off the case, not off text matching.
         case .errorAssetLockInputConflict:
             self = .assetLockInputConflict(detail)
+        case .errorAssetLockInputContested:
+            self = .assetLockInputContested(detail)
         case .notFound:               self = .notFound(detail)
         case .errorUnknown:           self = .unknown(detail)
         }

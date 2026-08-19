@@ -214,16 +214,19 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 /// the very failure it exists for — an old, long-settled spender — reported
 /// as an unbounded proof wait.
 ///
-/// Condemning the lock on a merely-`InBlock` sibling is fund-safe. That
-/// sibling is necessarily one of this wallet's own transactions (nobody
-/// else can sign this wallet's outpoints), so the value it carries is
-/// already the wallet's; discarding the conflicted lock strands nothing.
-/// Even in the freak case where a reorg unmines the sibling, the inputs
-/// return to this wallet's spendable set and fund a fresh lock — whereas
-/// the conflicted lock itself would still be unrelayable for as long as
-/// the sibling stood. `spender_chain_locked` is reported alongside the hit
-/// purely so a host can express confidence in what it shows the user; it
-/// is not a gate on raising the error.
+/// Reporting the conflict on a merely-`InBlock` sibling is fund-safe:
+/// that sibling is necessarily one of this wallet's own transactions
+/// (nobody else can sign this wallet's outpoints), so the value it
+/// carries is already the wallet's, and stopping the doomed wait costs
+/// nothing — the lock is unrelayable for as long as the sibling stands.
+/// What an in-block sibling does NOT justify is *discarding* the tracked
+/// lock: its block can still reorg out, at which point a peer can replay
+/// the already-broadcast lock and it can confirm — with its tracking
+/// state gone, the confirmed lock's credits would be stranded.
+/// `spender_chain_locked` therefore selects WHICH error the caller
+/// raises — the terminal, discard-licensing conflict for a chainlocked
+/// spender, the provisional keep-and-retry contested variant otherwise —
+/// it is never a gate on raising one at all.
 ///
 /// **Best-effort in one direction only.** A hit is conclusive: the
 /// spender is a confirmed transaction sitting in this wallet's own
@@ -344,11 +347,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// the proof already exists and no wait happens, so the value is moot.
     ///
     /// A `Built` / `Broadcast` lock is first screened by
-    /// [`first_confirmed_input_conflict`]; a hit short-circuits to
-    /// [`PlatformWalletError::AssetLockInputConflict`] without broadcasting
-    /// or waiting, because such a lock is a double spend that no peer will
-    /// relay. That screen is one-sided — read its docs before treating a
-    /// clean pass as evidence the lock is alive.
+    /// [`first_confirmed_input_conflict`]; a hit short-circuits without
+    /// broadcasting or waiting, because such a lock is a double spend that
+    /// no peer will relay while the spender stands. A chainlocked spender
+    /// raises the terminal
+    /// [`PlatformWalletError::AssetLockInputConflict`]; a merely-in-block
+    /// one raises the provisional
+    /// [`PlatformWalletError::AssetLockInputContested`], which keeps the
+    /// lock tracked for a later retry. The screen is one-sided — read its
+    /// docs before treating a clean pass as evidence the lock is alive.
     pub async fn resume_asset_lock(
         &self,
         out_point: &OutPoint,
@@ -418,15 +425,34 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 ?height,
                 spender_chain_locked,
                 "resume_asset_lock: asset lock double-spends an outpoint \
-                 already consumed by a confirmed transaction; it can never \
-                 confirm"
+                 already consumed by a confirmed transaction; it cannot \
+                 confirm while that spender stands"
             );
-            return Err(PlatformWalletError::AssetLockInputConflict {
-                out_point: *out_point,
-                input,
-                spent_by,
-                height,
-                spender_chain_locked,
+            // The finality of the spender decides WHICH verdict, not
+            // whether one is raised. A chainlocked spender can never be
+            // reorganised away, so the terminal variant — the one that
+            // licenses the host to discard the tracked lock — is sound.
+            // A merely-in-block spender stops the doomed wait all the
+            // same, but its block can still drop in a reorg (and a peer
+            // can then replay the already-broadcast lock), so the
+            // contested variant keeps the lock tracked for a later
+            // retry: the next chainlock either buries the sibling and
+            // upgrades the verdict, or the reorg clears the conflict.
+            return Err(if spender_chain_locked {
+                PlatformWalletError::AssetLockInputConflict {
+                    out_point: *out_point,
+                    input,
+                    spent_by,
+                    height,
+                    spender_chain_locked,
+                }
+            } else {
+                PlatformWalletError::AssetLockInputContested {
+                    out_point: *out_point,
+                    input,
+                    spent_by,
+                    height,
+                }
             });
         }
 
@@ -1442,20 +1468,15 @@ mod tests {
             .await
             .expect_err("a double-spent asset lock must fail, not wait");
         match error {
-            PlatformWalletError::AssetLockInputConflict {
-                spent_by,
-                spender_chain_locked,
-                ..
-            } => {
+            PlatformWalletError::AssetLockInputContested { spent_by, .. } => {
                 assert_eq!(spent_by, spender_txid, "the conflict itself still fires");
-                assert!(
-                    !spender_chain_locked,
-                    "a snapshot height must not claim chainlock finality: the \
-                     boundary only proves finality for a block the live chain \
-                     is known to contain"
-                );
+                // The contested variant IS the assertion: a snapshot height
+                // must not claim chainlock finality — the boundary only
+                // proves finality for a block the live chain is known to
+                // contain — so no restored row may produce the terminal,
+                // discard-licensing conflict from the boundary fallback.
             }
-            other => panic!("expected AssetLockInputConflict, got {other:?}"),
+            other => panic!("expected AssetLockInputContested, got {other:?}"),
         }
     }
 
@@ -1485,11 +1506,11 @@ mod tests {
             .await
             .expect_err("a double-spent asset lock must fail, not wait");
         match error {
-            PlatformWalletError::AssetLockInputConflict { spent_by, .. } => assert_eq!(
+            PlatformWalletError::AssetLockInputContested { spent_by, .. } => assert_eq!(
                 spent_by, live_txid,
                 "the live record, not the load-time snapshot, names the spender"
             ),
-            other => panic!("expected AssetLockInputConflict, got {other:?}"),
+            other => panic!("expected AssetLockInputContested, got {other:?}"),
         }
     }
 
@@ -1551,14 +1572,13 @@ mod tests {
         }
     }
 
-    /// The spender here is merely `InBlock`, which is the shape the screen
-    /// actually meets in production: under the default
-    /// `keep-finalized-transactions = OFF` build a chainlocked record is
-    /// evicted from history, so a chainlock gate would never fire. The
-    /// error is raised all the same, reporting the weaker finality rather
-    /// than withholding the verdict.
+    /// The spender here is merely `InBlock` with no applied chainlock
+    /// covering it, so the verdict is provisional: the resume still stops
+    /// before broadcasting or waiting, but through the contested variant,
+    /// which carries no licence to discard the tracked lock — that block
+    /// can still reorg out and the lock become viable again.
     #[tokio::test]
-    async fn broadcast_resume_reports_input_conflict_when_a_confirmed_tx_spent_the_input() {
+    async fn broadcast_resume_reports_a_contested_input_for_a_merely_in_block_spender() {
         let fixture = ConflictFixture::new().await;
         fixture.track(AssetLockStatus::Broadcast, None).await;
 
@@ -1572,32 +1592,65 @@ mod tests {
             .manager
             .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
             .await
-            .expect_err("a double-spent asset lock must fail, not wait");
+            .expect_err("a currently double-spent asset lock must fail, not wait");
         match error {
-            PlatformWalletError::AssetLockInputConflict {
+            PlatformWalletError::AssetLockInputContested {
                 out_point,
                 input,
                 spent_by,
                 height,
-                spender_chain_locked,
             } => {
                 assert_eq!(out_point, fixture.out_point);
                 assert_eq!(input, fixture.funded_input());
                 assert_eq!(spent_by, spender_txid);
                 assert_eq!(height, Some(1_234));
-                assert!(
-                    !spender_chain_locked,
-                    "an InBlock spender under no applied chainlock must \
-                     report the weaker finality, not claim ChainLock"
-                );
             }
-            other => panic!("expected AssetLockInputConflict, got {other:?}"),
+            other => panic!("expected AssetLockInputContested, got {other:?}"),
         }
         assert_eq!(
             fixture.broadcast_count(),
             0,
             "the screen must short-circuit ahead of the defensive re-broadcast"
         );
+    }
+
+    /// A live in-block record sitting at or below the applied chainlock
+    /// boundary IS final — the record's presence in live history attests
+    /// the block survived to be buried — so the boundary promotion holds
+    /// for live evidence and the verdict is the terminal, discard-licensing
+    /// conflict. (The restored snapshot deliberately gets no such
+    /// promotion; see `restored_spend_below_the_chainlock_boundary_stays_unpromoted`.)
+    #[tokio::test]
+    async fn a_live_spender_below_the_boundary_reports_the_terminal_conflict() {
+        let fixture = ConflictFixture::new().await;
+        fixture.track(AssetLockStatus::Broadcast, None).await;
+
+        let spender = transaction_spending(fixture.funded_input());
+        let spender_txid = spender.txid();
+        fixture
+            .file_record(record_for(spender, confirmed_at(1_234)))
+            .await;
+        fixture.set_chain_lock_boundary(1_300).await;
+
+        let error = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect_err("a double-spent asset lock must fail, not wait");
+        match error {
+            PlatformWalletError::AssetLockInputConflict {
+                spent_by,
+                spender_chain_locked,
+                ..
+            } => {
+                assert_eq!(spent_by, spender_txid);
+                assert!(
+                    spender_chain_locked,
+                    "a live record below the applied boundary is chainlock-final"
+                );
+            }
+            other => panic!("expected the terminal AssetLockInputConflict, got {other:?}"),
+        }
     }
 
     /// The same verdict with the strongest available evidence behind it: a

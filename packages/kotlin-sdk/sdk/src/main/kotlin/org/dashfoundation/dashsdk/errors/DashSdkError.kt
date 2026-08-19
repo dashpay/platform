@@ -139,6 +139,26 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorAssetLockInputContested` (native code 43). The provisional
+         * sibling of [AssetLockInputConflict]: a confirmed transaction of
+         * this wallet already spent one of the tracked lock's inputs, so
+         * the resume stopped before broadcasting into a wait that cannot
+         * return — but that spender sits in an ordinary block a
+         * reorganization can still drop, so the verdict is NOT final.
+         *
+         * NO discard licence: keep the tracked lock and retry later (next
+         * launch, or after the next chainlock). The situation resolves
+         * itself — the sibling gets chainlock-buried and the next resume
+         * reports the terminal code 42, or a reorg drops the sibling and
+         * the next resume proceeds normally. The Android analog of Swift's
+         * `PlatformWalletError.assetLockInputContested`.
+         */
+        class AssetLockInputContested(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
          * `ErrorShieldedNoRecordedAnchor` (native code 19). A shielded spend
          * could not be built against a Platform-recorded anchor because the
          * local commitment tree is mid-block. Nothing was broadcast and the
@@ -550,6 +570,7 @@ sealed class DashSdkError(
             } ?: PlatformWallet.Generic(code, message, cause)
             41 -> PlatformWallet.PlatformShieldCapacityExceeded(message, cause)
             42 -> PlatformWallet.AssetLockInputConflict(message, cause) // ErrorAssetLockInputConflict
+            43 -> PlatformWallet.AssetLockInputContested(message, cause) // ErrorAssetLockInputContested
             // ErrorSigningKeyUnavailable — the STRUCTURED signer
             // discriminator (dashpay/platform#4060 finding 7): the typed
             // completion code rides the whole Rust round-trip, no message

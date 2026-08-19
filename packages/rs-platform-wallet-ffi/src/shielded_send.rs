@@ -618,12 +618,14 @@ fn map_spend_result(
 /// error path. The wallet retains nonterminal consumption-unknown state; the
 /// host must not interpret this code as authenticated completion.
 ///
-/// The terminal double-spend report rides the same typed conversion (both the
+/// The double-spend verdicts ride the same typed conversion (both the
 /// fresh-build and resume entry points funnel through here, and the resume is
-/// where the pre-broadcast conflict screen actually fires). Its
+/// where the pre-broadcast conflict screen actually fires).
 /// `ErrorAssetLockInputConflict` (42) is the only code that authorises a host
-/// to discard a tracked lock, so flattening it to `ErrorWalletOperation` would
-/// strand the user on a lock that can never confirm.
+/// to discard a tracked lock, and `ErrorAssetLockInputContested` (43) is its
+/// provisional keep-and-retry sibling; flattening either to
+/// `ErrorWalletOperation` would strand the user on a lock the host cannot
+/// classify.
 fn map_asset_lock_funding_result(
     result: Result<(), PlatformWalletError>,
     operation: &str,
@@ -631,7 +633,10 @@ fn map_asset_lock_funding_result(
     match result {
         Ok(()) => PlatformWalletFFIResult::ok(),
         Err(e @ PlatformWalletError::AssetLockAlreadyConsumed(_)) => e.into(),
-        Err(e @ PlatformWalletError::AssetLockInputConflict { .. }) => e.into(),
+        Err(
+            e @ (PlatformWalletError::AssetLockInputConflict { .. }
+            | PlatformWalletError::AssetLockInputContested { .. }),
+        ) => e.into(),
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("{operation} failed: {e}"),
@@ -1892,7 +1897,7 @@ mod tests {
                 },
                 spent_by: dashcore::Txid::all_zeros(),
                 height: Some(1_234),
-                spender_chain_locked: false,
+                spender_chain_locked: true,
             }),
             "shielded resume fund-from-asset-lock",
         );
@@ -1906,8 +1911,32 @@ mod tests {
             "the typed Display must survive the wrapper: {conflict_message}"
         );
         assert!(
-            conflict_message.contains("chainlocked: false"),
+            conflict_message.contains("chainlocked: true"),
             "the spender's finality must reach the host: {conflict_message}"
+        );
+
+        // The provisional sibling rides the same wrapper under its own code:
+        // a merely-in-block spender stops the wait but must not surface as
+        // the terminal, discard-licensing 42.
+        let contested = map_asset_lock_funding_result(
+            Err(PlatformWalletError::AssetLockInputContested {
+                out_point,
+                input: dashcore::OutPoint {
+                    txid: dashcore::Txid::all_zeros(),
+                    vout: 3,
+                },
+                spent_by: dashcore::Txid::all_zeros(),
+                height: Some(1_234),
+            }),
+            "shielded resume fund-from-asset-lock",
+        );
+        assert_eq!(
+            contested.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockInputContested
+        );
+        assert!(
+            message_of(&contested).contains("provisional"),
+            "the contested Display must say the verdict is provisional"
         );
 
         let unrelated = map_asset_lock_funding_result(

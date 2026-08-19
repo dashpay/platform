@@ -299,23 +299,24 @@ pub enum PlatformWalletError {
     /// actually spent it — often one of the wallet's own earlier asset
     /// locks — has been confirmed for a long time.
     ///
-    /// Terminal, not retryable: the funds behind `input` are gone into
-    /// `spent_by`, so the only recovery is to discard this lock and build
-    /// a new one from currently-unspent inputs. `height` is the block
-    /// height of the confirmed spender when the record carries block info,
-    /// and `spender_chain_locked` reports whether that spender has reached
-    /// ChainLock finality — hosts show it as confidence, never as a gate.
+    /// Terminal, not retryable: this variant is raised only when the
+    /// spender has reached ChainLock finality — its block can never be
+    /// reorganised away — so the funds behind `input` are definitively
+    /// gone into `spent_by`, and the only recovery is to discard this lock
+    /// and build a new one from currently-unspent inputs. `height` is the
+    /// block height of the confirmed spender when the record carries block
+    /// info; `spender_chain_locked` is retained for message/ABI stability
+    /// and is always `true` here.
     ///
-    /// A merely-`InBlock` spender is enough to condemn the lock, and the
-    /// verdict stays fund-safe even then. Confirmed spends of one outpoint
-    /// are mutually exclusive, and the spender is necessarily this wallet's
-    /// OWN transaction — only this wallet can sign its outpoints — so the
-    /// value is never lost by discarding the conflicted lock: it either
-    /// lives on in the sibling, or, in the freak case where a reorg unmines
-    /// the sibling, the inputs simply return to this wallet's spendable set
-    /// and fund a fresh lock. Waiting for `spender_chain_locked` before
-    /// reporting would buy no safety and would in practice never fire (see
-    /// the detection helper).
+    /// A confirmed-but-not-yet-chainlocked spender raises
+    /// [`Self::AssetLockInputContested`] instead: it equally stops the
+    /// doomed broadcast-and-wait, but it does NOT authorise discarding the
+    /// tracked lock, because an ordinary block can still be reorganised
+    /// out — at which point the sibling no longer spends the input, a peer
+    /// can replay the already-broadcast lock, and it can confirm. Deleting
+    /// the tracking state on that evidence would strand the confirmed
+    /// lock's credits. Splitting the verdict is what keeps this variant's
+    /// discard licence sound.
     ///
     /// Raising this error is a definite verdict; NOT raising it proves
     /// nothing — see the detection helper in
@@ -333,6 +334,34 @@ pub enum PlatformWalletError {
         spent_by: dashcore::Txid,
         height: Option<CoreBlockHeight>,
         spender_chain_locked: bool,
+    },
+
+    /// As [`Self::AssetLockInputConflict`], but the confirmed spender has
+    /// NOT reached ChainLock finality: it sits in an ordinary block that a
+    /// reorganisation can still drop.
+    ///
+    /// The immediate consequence is the same — while the sibling stands,
+    /// peers reject the lock as a double spend and a proof wait would hang
+    /// unboundedly, so the resume stops here without broadcasting or
+    /// waiting. The verdict, however, is provisional, and this variant
+    /// carries NO licence to discard the tracked lock. The host keeps the
+    /// lock and retries later; the situation resolves itself in one of two
+    /// ways: the sibling reaches a chainlock and the next resume reports
+    /// the terminal [`Self::AssetLockInputConflict`], or a reorg drops the
+    /// sibling and the next resume proceeds normally. Both signed
+    /// transactions are this wallet's own, so no outcome loses funds —
+    /// but only the chainlocked verdict makes *discarding state* safe.
+    #[error(
+        "Asset lock {out_point} cannot currently confirm: it spends {input}, \
+         which confirmed transaction {spent_by} (block height {height:?}) has \
+         taken — but that spender is not yet chainlocked, so the verdict is \
+         provisional; keep the lock and retry after the next chainlock"
+    )]
+    AssetLockInputContested {
+        out_point: dashcore::OutPoint,
+        input: dashcore::OutPoint,
+        spent_by: dashcore::Txid,
+        height: Option<CoreBlockHeight>,
     },
 
     #[error("SDK error: {0}")]
