@@ -47,10 +47,13 @@ final class AssetLockInputSpendRestoreTests: XCTestCase {
     }
 
     /// `<txid hex, display order>:<vout>`, the form
-    /// `PersistentAssetLock.outPointHex` stores.
+    /// `PersistentAssetLock.outPointHex` stores — produced through the SDK's
+    /// own encoder so the fixture cannot drift from the format the load path
+    /// actually reads.
     private func outPointHex(txid: Data, vout: UInt32) -> String {
-        let display = txid.reversed().map { String(format: "%02x", $0) }.joined()
-        return "\(display):\(vout)"
+        var raw = Data(txid)
+        withUnsafeBytes(of: vout.littleEndian) { raw.append(contentsOf: $0) }
+        return PersistentAssetLock.encodeOutPoint(rawBytes: raw)
     }
 
     /// Seed an unresolved asset lock spending the funding coin, plus a
@@ -158,5 +161,42 @@ final class AssetLockInputSpendRestoreTests: XCTestCase {
             1,
             "a legacy TXO resolving to this wallet through its account must not be discarded"
         )
+    }
+
+    /// The row payload is the one cross-language contract this feature adds,
+    /// and a count assertion alone would let a wrong-source copy — swapped
+    /// txids, a context read off the wrong transaction — ship green. Read
+    /// the emitted row back and pin every field to the fixture's distinct
+    /// values.
+    func testRestoredSpendRowCarriesTheExactPayload() throws {
+        let (handler, container) = try makeHandler()
+        try seed(in: container, legacyTxoWalletId: false)
+
+        let loaded = handler.loadWalletList()
+        XCTAssertFalse(loaded.errored, "the load must not fail")
+        guard let entries = loaded.entries, loaded.count > 0 else {
+            return XCTFail("the wallet must produce a restore entry")
+        }
+        defer { handler.loadWalletListFree(entries: UnsafeRawPointer(entries)) }
+
+        let entry = entries[0]
+        XCTAssertEqual(Int(entry.asset_lock_input_spends_count), 1)
+        guard let rows = entry.asset_lock_input_spends else {
+            return XCTFail("a count of 1 must come with a row pointer")
+        }
+        let row = rows[0]
+        XCTAssertEqual(
+            withUnsafeBytes(of: row.prev_txid) { Data($0) },
+            fundingTxid,
+            "prev_txid is the outpoint the lock spends, raw txid order"
+        )
+        XCTAssertEqual(row.vout, fundingVout)
+        XCTAssertEqual(
+            withUnsafeBytes(of: row.spender_txid) { Data($0) },
+            spenderTxid,
+            "spender_txid is the transaction the mirror linked, not the funding tx"
+        )
+        XCTAssertEqual(row.spender_height, 101, "the spender's persisted block height")
+        XCTAssertEqual(row.spender_context, 2, "the persisted context, verbatim")
     }
 }
