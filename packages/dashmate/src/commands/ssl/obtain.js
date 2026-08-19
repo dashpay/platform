@@ -1,5 +1,6 @@
 import { Listr } from 'listr2';
 import { Flags } from '@oclif/core';
+import ServiceIsNotRunningError from '../../docker/errors/ServiceIsNotRunningError.js';
 import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
 import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
 import Certificate from '../../ssl/zerossl/Certificate.js';
@@ -40,6 +41,7 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
    * @param {obtainLetsEncryptCertificateTask} obtainLetsEncryptCertificateTask
    * @param {ConfigFileJsonRepository} configFileRepository
    * @param {ConfigFile} configFile
+   * @param {DockerCompose} dockerCompose
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -100,15 +102,25 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
           // and nothing on disk reveals which certificate Envoy currently
           // holds, so an obtain that skipped the write is also how an operator
           // retries a reload that failed earlier.
+          //
+          // The gateway is signalled without asking first whether it is running.
+          // execCommand makes that check itself, and asking separately leaves a
+          // gap in which the answer can change - the certificate has already
+          // been obtained by then, so failing there would report the whole
+          // command as failed and send the operator back to a provider that may
+          // have nothing left to issue.
           title: 'Reload gateway',
-          skip: async () => {
-            if (!await dockerCompose.isServiceRunning(config, 'gateway')) {
-              return 'Gateway is not running';
-            }
+          task: async (ctx, listrTask) => {
+            try {
+              await dockerCompose.execCommand(config, 'gateway', 'kill -SIGHUP 1');
+            } catch (e) {
+              if (!(e instanceof ServiceIsNotRunningError)) {
+                throw e;
+              }
 
-            return false;
+              listrTask.skip('Gateway is not running');
+            }
           },
-          task: () => dockerCompose.execCommand(config, 'gateway', 'kill -SIGHUP 1'),
         },
       ],
       {

@@ -1,5 +1,6 @@
 import { Listr } from 'listr2';
 import ObtainCommand from '../../../../src/commands/ssl/obtain.js';
+import ServiceIsNotRunningError from '../../../../src/docker/errors/ServiceIsNotRunningError.js';
 
 describe('SSL obtain command', () => {
   /**
@@ -92,13 +93,24 @@ describe('SSL obtain command', () => {
       .to.have.been.calledOnceWith(dependencies.config, 'gateway', 'kill -SIGHUP 1');
   });
 
-  it('should not reload a gateway that is not running', async function it() {
+  // The certificate has already been obtained by the time the gateway is signalled, so a
+  // gateway that is down must not turn the whole command into a failure - that would send the
+  // operator back to a provider that may have nothing left to issue.
+  it('should not fail when the gateway is not running', async function it() {
     const dependencies = obtainDependencies(this.sinon);
-    dependencies.dockerCompose.isServiceRunning.resolves(false);
+    dependencies.dockerCompose.execCommand
+      .rejects(new ServiceIsNotRunningError('testnet', 'gateway'));
 
     await runObtain(dependencies);
 
-    expect(dependencies.dockerCompose.execCommand).to.have.not.been.called();
+    expect(dependencies.dockerCompose.execCommand).to.have.been.calledOnce();
+  });
+
+  it('should still fail on a reload error that is not a stopped gateway', async function it() {
+    const dependencies = obtainDependencies(this.sinon);
+    dependencies.dockerCompose.execCommand.rejects(new Error('docker daemon is unreachable'));
+
+    await expect(runObtain(dependencies)).to.be.rejected();
   });
 
   it('should checkpoint a newly created ZeroSSL certificate before a later failure', async function it() {
