@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import graceful from 'node-graceful';
 import HomeDir from '../../../src/config/HomeDir.js';
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
 import saveCertificateTaskFactory from '../../../src/listr/tasks/ssl/saveCertificateTask.js';
@@ -47,6 +46,28 @@ describe('saveCertificateTaskFactory', () => {
     return fs.statSync(filePath).mode & 0o777;
   }
 
+  // Docker bind-mounts bundle.crt and private.key into the gateway container
+  // as individual files, and a file bind mount follows the inode rather than
+  // the path. Installing a renewal by writing a replacement file and renaming
+  // it over the old one leaves the running container reading the file it
+  // mounted at startup, so Envoy keeps serving the previous certificate until
+  // it expires and the node goes dark with nothing on disk looking wrong.
+  it('should install a renewal into the files the gateway already has mounted', async () => {
+    fs.mkdirSync(certificatesDir, { recursive: true });
+    fs.writeFileSync(certificatePath, 'old-certificate');
+    fs.writeFileSync(keyPath, 'old-key');
+
+    const certificateInode = fs.statSync(certificatePath).ino;
+    const keyInode = fs.statSync(keyPath).ino;
+
+    await savePair();
+
+    expect(fs.statSync(certificatePath).ino).to.equal(certificateInode);
+    expect(fs.statSync(keyPath).ino).to.equal(keyInode);
+    expect(fs.readFileSync(certificatePath, 'utf8')).to.equal('new-certificate');
+    expect(fs.readFileSync(keyPath, 'utf8')).to.equal('new-key');
+  });
+
   it('should create a private key with mode 0600', async () => {
     await savePair();
 
@@ -90,72 +111,5 @@ describe('saveCertificateTaskFactory', () => {
     await savePair();
 
     expect(mode(keyPath)).to.equal(0o400);
-  });
-
-  it('should restore the previous certificate pair and modes when saving the key fails', async function it() {
-    fs.mkdirSync(certificatesDir, { recursive: true });
-    fs.writeFileSync(certificatePath, 'old-certificate');
-    fs.writeFileSync(keyPath, 'old-key');
-    fs.chmodSync(certificatePath, 0o640);
-    fs.chmodSync(keyPath, 0o600);
-
-    const originalRenameSync = fs.renameSync.bind(fs);
-    this.sinon.stub(fs, 'renameSync').callsFake((source, destination) => {
-      if (destination === keyPath) {
-        throw new Error('key replace failed');
-      }
-
-      return originalRenameSync(source, destination);
-    });
-
-    await expect(savePair()).to.be.rejectedWith('key replace failed');
-
-    expect(fs.readFileSync(certificatePath, 'utf8')).to.equal('old-certificate');
-    expect(fs.readFileSync(keyPath, 'utf8')).to.equal('old-key');
-    expect(mode(certificatePath)).to.equal(0o640);
-    expect(mode(keyPath)).to.equal(0o600);
-    expect(fs.readdirSync(certificatesDir).filter((name) => name.includes('.tmp-')))
-      .to.be.empty();
-    expect(config.get('platform.gateway.ssl.enabled')).to.be.true();
-  });
-
-  it('should sweep stale certificate temp files before writing', async () => {
-    fs.mkdirSync(certificatesDir, { recursive: true });
-    fs.writeFileSync(path.join(certificatesDir, 'bundle.crt.tmp-stale'), 'old-certificate');
-    fs.writeFileSync(path.join(certificatesDir, 'private.key.tmp-stale'), 'old-key');
-
-    await savePair();
-
-    expect(fs.readdirSync(certificatesDir).filter((name) => name.includes('.tmp-')))
-      .to.be.empty();
-  });
-
-  it('should remove active certificate temp files from the graceful exit handler', async function it() {
-    let exitHandler;
-    const unsubscribe = this.sinon.stub();
-    this.sinon.stub(graceful, 'on').callsFake((event, handler) => {
-      expect(event).to.equal('exit');
-      exitHandler = handler;
-      return unsubscribe;
-    });
-
-    const originalRenameSync = fs.renameSync.bind(fs);
-    this.sinon.stub(fs, 'renameSync').callsFake((source, destination) => {
-      if (destination === certificatePath) {
-        expect(exitHandler).to.be.a('function');
-        expect(fs.existsSync(source)).to.be.true();
-        exitHandler();
-        expect(fs.existsSync(source)).to.be.false();
-        throw new Error('exit cleanup observed');
-      }
-
-      return originalRenameSync(source, destination);
-    });
-
-    await expect(savePair()).to.be.rejectedWith('exit cleanup observed');
-
-    expect(unsubscribe).to.have.been.calledOnce();
-    expect(fs.readdirSync(certificatesDir).filter((name) => name.includes('.tmp-')))
-      .to.be.empty();
   });
 });

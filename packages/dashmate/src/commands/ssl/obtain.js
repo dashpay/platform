@@ -56,6 +56,7 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
     obtainLetsEncryptCertificateTask,
     configFileRepository,
     configFile,
+    dockerCompose,
   ) {
     const provider = providerFlag || config.get('platform.gateway.ssl.provider');
 
@@ -87,6 +88,25 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
         {
           title: taskTitle,
           task: () => task(config, taskOptions),
+        },
+        {
+          // Envoy reads the certificate files once at startup, so a gateway that
+          // is already up keeps serving the previous certificate until it is
+          // told to reload. Without this the command reports success while
+          // nothing changes on the wire.
+          title: 'Reload gateway',
+          skip: async (ctx) => {
+            if (!ctx.certificateSaved) {
+              return 'Certificate is already up to date';
+            }
+
+            if (!await dockerCompose.isServiceRunning(config, 'gateway')) {
+              return 'Gateway is not running';
+            }
+
+            return false;
+          },
+          task: () => dockerCompose.execCommand(config, 'gateway', 'kill -SIGHUP 1'),
         },
       ],
       {
