@@ -94,14 +94,33 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 core_balance.immature(),
                 core_balance.locked(),
             );
-            let platform_info = PlatformWalletInfo {
+            let mut platform_info = PlatformWalletInfo {
                 observed_input_conflicts: Default::default(),
+                restored_record_txids: Default::default(),
                 core_wallet: wallet_info,
                 generation: Arc::clone(&generation),
                 identity_manager: IdentityManager::from(identity_manager),
                 tracked_asset_locks,
                 dpns_name_states: std::collections::BTreeMap::new(),
             };
+            // Everything in history at this point WAS restored — the load
+            // path starts from an empty map and only the selective record
+            // restore has run. Recording those txids lets the double-spend
+            // screen withhold height-only chainlock promotion from them
+            // (a restored block was never shown to be on the finalized
+            // chain), and seeding the screen's session memory here closes
+            // the race where SPV's chainlock dispatcher promotion-evicts a
+            // restored spender before the first catch-up resume reads it.
+            use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+            platform_info.restored_record_txids = platform_info
+                .core_wallet
+                .transaction_history()
+                .iter()
+                .map(|record| record.txid)
+                .collect();
+            crate::wallet::asset_lock::sync::recovery::seed_observed_input_conflicts(
+                &platform_info,
+            );
 
             // Canonical id recomputed from the wallet's own key material.
             // Computed up front — before `insert_wallet` consumes `wallet` —

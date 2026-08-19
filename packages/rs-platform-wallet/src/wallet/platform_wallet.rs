@@ -1,6 +1,6 @@
 //! The main PlatformWallet struct combining core, identity (+DashPay), and platform sub-wallets.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
@@ -249,6 +249,18 @@ pub struct ObservedInputConflict {
     pub spender: Txid,
     /// The block height it was seen at.
     pub height: CoreBlockHeight,
+    /// Provenance: `true` when the sighting traces to a RESTORED record
+    /// rather than one this session observed on the live chain. Restored
+    /// evidence never claims chainlock finality from a height-only
+    /// boundary — the wallet can persist a spender in an ordinary block,
+    /// sit offline through the reorg that drops it, and restore the stale
+    /// record; a later chainlock at or above the old height on the
+    /// REPLACEMENT chain would satisfy a height check without the
+    /// recorded block ever having been on the finalized chain. Restored
+    /// entries therefore stay provisional until the evidence is verified
+    /// live (or the mirror itself restores a chainlocked context next
+    /// session).
+    pub restored: bool,
 }
 
 /// Consolidated mutable state for a platform wallet.
@@ -285,6 +297,12 @@ pub struct PlatformWalletInfo {
     /// runs under the manager's read lock; a poisoned mutex degrades to
     /// "no memory" rather than failing a resume.
     pub observed_input_conflicts: std::sync::Mutex<BTreeMap<OutPoint, ObservedInputConflict>>,
+    /// Txids of the transaction records the load path restored into the
+    /// in-memory history, captured once at load. The double-spend screen
+    /// consults this to withhold height-only chainlock promotion from
+    /// restored records (see [`ObservedInputConflict::restored`]). Session
+    /// state, never persisted.
+    pub restored_record_txids: BTreeSet<Txid>,
     /// DPNS name states with sale price (username marketplace), keyed by
     /// domain document id. Session-lifetime working set for the
     /// marketplace sync/orchestration ops; the durable copy is the
