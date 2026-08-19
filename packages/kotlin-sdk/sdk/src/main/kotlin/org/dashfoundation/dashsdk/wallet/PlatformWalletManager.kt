@@ -2079,10 +2079,16 @@ class PlatformWalletManager(
         require(walletId.size == 32) { "walletId must be 32 bytes, got ${walletId.size}" }
 
         val key = walletId.toHex()
+        // Pure delegation — the WHOLE guard sequence (storage read, status-key
+        // derivation, stale-mismatch clear, early-return decision) lives in
+        // [isGenuineWatchOnly] so `WatchOnlySeedMismatchTest` pins it without
+        // the native library. Don't inline any of it back here: logic at this
+        // call site is exactly what the unit tests cannot see.
         if (isGenuineWatchOnly(
-                hasMnemonic = walletStorage.hasMnemonic(walletId),
-                clearSeedMismatch = {
-                    updateUnlockStatus(key) { it.copy(seedMismatch = false) }
+                walletId = walletId,
+                hasMnemonic = walletStorage::hasMnemonic,
+                updateUnlockStatus = { statusKey, transform ->
+                    updateUnlockStatus(statusKey, transform)
                 },
             )
         ) {
@@ -2364,8 +2370,13 @@ data class DashPaySyncSummary(
 )
 
 /**
- * The genuine-watch-only short-circuit of
- * [PlatformWalletManager.unlockWalletFromKeystore].
+ * The genuine-watch-only guard of
+ * [PlatformWalletManager.unlockWalletFromKeystore] — the COMPLETE sequence
+ * the unlock runs ahead of the binding verify: probe mnemonic existence
+ * through [hasMnemonic] ([WalletStorage.hasMnemonic] in production — an
+ * existence check, no decrypt), and when nothing is stored clear any stale
+ * `seedMismatch` under the wallet's hex status key BEFORE reporting
+ * watch-only.
  *
  * A wallet with no stored mnemonic (imported by xpub, or one whose Keystore
  * entry was removed) is genuine watch-only. Reporting that MUST first clear
@@ -2374,21 +2385,32 @@ data class DashPaySyncSummary(
  * otherwise keep publishing the unlock banner forever for a seed that is no
  * longer there — nothing downstream of the early return can clear it.
  *
- * The ordering is the whole contract, which is why it lives in a function
- * rather than inline: [clearSeedMismatch] runs BEFORE `true` is returned.
- * Extracted from [PlatformWalletManager.unlockWalletFromKeystore] so that
- * contract is unit-testable without the native library. Mirror of the Swift
- * `verifySeedBinding` watch-only arm (PlatformWalletManager.swift:764-770).
+ * The ordering is the whole contract, which is why the WHOLE guard — the
+ * storage read, the status-key derivation, the clearing transform, and the
+ * early-return decision — lives here rather than inline. The call site in
+ * [PlatformWalletManager.unlockWalletFromKeystore] is pure delegation, so
+ * this function IS the call-site shape and `WatchOnlySeedMismatchTest` pins
+ * it without the native library. (An earlier cut took a pre-computed
+ * `hasMnemonic: Boolean` and a bare clear lambda, which left the real
+ * read/clear/return sequence living untested at the call site.) Mirror of
+ * the Swift `verifySeedBinding` watch-only arm
+ * (PlatformWalletManager.swift:764-770).
  *
+ * @param hasMnemonic the storage existence probe, invoked with [walletId].
+ * @param updateUnlockStatus the manager's status-map updater, invoked with
+ *   the wallet's hex status key and the `seedMismatch = false` transform.
  * @return true when the wallet is watch-only and the caller must report it as
- *   such; false when a mnemonic exists and the binding verify must run.
+ *   such; false when a mnemonic exists and the binding verify must run —
+ *   this path must not touch `seedMismatch` (the verify publishes the real
+ *   result).
  */
-internal fun isGenuineWatchOnly(
-    hasMnemonic: Boolean,
-    clearSeedMismatch: () -> Unit,
+internal suspend fun isGenuineWatchOnly(
+    walletId: ByteArray,
+    hasMnemonic: suspend (walletId: ByteArray) -> Boolean,
+    updateUnlockStatus: (key: String, transform: (DashPayUnlockStatus) -> DashPayUnlockStatus) -> Unit,
 ): Boolean {
-    if (hasMnemonic) return false
-    clearSeedMismatch()
+    if (hasMnemonic(walletId)) return false
+    updateUnlockStatus(walletId.toHex()) { it.copy(seedMismatch = false) }
     return true
 }
 
