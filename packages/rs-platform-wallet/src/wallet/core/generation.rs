@@ -344,7 +344,7 @@ impl WalletGeneration {
     /// This call takes NO `last_processed_height`, even though one is in hand
     /// under the guard. The pending-spend phase must be measured from a height
     /// sampled once the broadcaster has RETURNED
-    /// ([`InBroadcastPin::anchor_pending_spend`]): a broadcast await can
+    /// ([`InBroadcastPin::settle_pending_spend`]): a broadcast await can
     /// suspend for minutes mid-catch-up, and a fence anchored on the pre-await
     /// sample arrives already lapsed whenever the wallet advanced a full fence
     /// interval in the gap — which is no fence at all
@@ -482,6 +482,29 @@ impl WalletGeneration {
             }
         }
     }
+
+    /// `outpoint`'s raw fence state — `(dispatching, pending_unanchored,
+    /// pending_until)` — or `None` when nothing holds it.
+    ///
+    /// A test-only WINDOW ON THE TRANSITION, deliberately not
+    /// [`in_broadcast_conflict`](Self::in_broadcast_conflict): that call anchors
+    /// and reaps as a side effect, so it cannot report whether a dispatch's
+    /// dispatching→pending handoff had completed at the moment it was observed.
+    /// `settle_does_not_interleave_with_a_parked_height_writer` needs exactly
+    /// that distinction (`dashpay/platform#4309`).
+    #[cfg(test)]
+    pub(crate) fn in_broadcast_fence_state(
+        &self,
+        outpoint: &OutPoint,
+    ) -> Option<(u32, bool, Option<u32>)> {
+        self.in_broadcast_lock().get(outpoint).map(|fence| {
+            (
+                fence.dispatching,
+                fence.pending_unanchored,
+                fence.pending_until,
+            )
+        })
+    }
 }
 
 /// RAII guard for one dispatch's in-broadcast input fence — see
@@ -490,9 +513,9 @@ impl WalletGeneration {
 /// the dispatching hold that call took, count-wise, never another dispatch's.
 ///
 /// The drop fences the outpoints by DEFAULT, as a pending spend. Only
-/// [`release_pending_spend`](Self::release_pending_spend) — called on a
-/// definitive pre-send rejection, the one outcome that PROVES the transaction
-/// is not on the wire — frees them outright.
+/// [`settle_released`](Self::settle_released) — called on a definitive pre-send
+/// rejection, the one outcome that PROVES the transaction is not on the wire —
+/// frees them outright.
 ///
 /// The default is deliberately the conservative one (`dashpay/platform#4309`).
 /// This guard's drop runs on paths that carry no information about whether the
@@ -507,13 +530,20 @@ impl WalletGeneration {
 ///
 /// Fencing by default is only half of it: a fence installed with an
 /// ALREADY-LAPSED bound is indistinguishable from no fence. The bound therefore
-/// comes from [`anchor_pending_spend`](Self::anchor_pending_spend), called with
-/// a `last_processed_height` sampled AFTER the broadcaster returned and while
-/// this pin's dispatching phase is still held. A pin that never reaches that
-/// call — the cancellation and unwind paths — settles UNANCHORED and blocks
+/// comes from [`settle_pending_spend`](Self::settle_pending_spend), called with
+/// a `last_processed_height` sampled AFTER the broadcaster returned and from a
+/// manager guard still held across the call. A pin that never reaches that call
+/// — the cancellation and unwind paths — settles UNANCHORED and blocks
 /// unconditionally until the next coin selection stamps it from its own clock.
 /// Neither path can consult the pre-await height, because this pin does not
 /// carry one (`dashpay/platform#4309`).
+///
+/// That settle CONSUMES the pin, so the dispatching→pending transition is a
+/// statement the dispatch places inside its guard scope rather than an
+/// end-of-scope drop that can float outside it. When it floated, a manager
+/// writer queued behind the released guard could advance the height between the
+/// sample and the install, and the fence landed dead in the same instant the
+/// dispatching hold was lifted (`dashpay/platform#4309`, review round 2).
 pub(crate) struct InBroadcastPin {
     generation: Arc<WalletGeneration>,
     outpoints: Vec<OutPoint>,
@@ -524,35 +554,64 @@ pub(crate) struct InBroadcastPin {
 }
 
 impl InBroadcastPin {
-    /// Bound the pending-spend fence at `current_height` +
+    /// End the dispatching phase and install the pending-spend fence, bounded at
+    /// `current_height` +
     /// [`IN_BROADCAST_FENCE_BLOCKS`](crate::wallet::reservations::IN_BROADCAST_FENCE_BLOCKS).
     ///
     /// `current_height` MUST be a `last_processed_height` sampled after the
-    /// broadcaster returned, under the wallet-manager guard, while this pin is
-    /// still alive. Those three conditions are what make the bound meaningful:
-    /// sampling before the await lets a long suspension (minutes, mid-catch-up
-    /// on mobile) age the anchor past the whole interval, so the fence lapses
-    /// the moment it is installed and the next selection reselects an input of
-    /// a transaction that may have reached the network; holding the pin across
-    /// the sampling leaves no window between the broadcaster's return and the
-    /// stamp; and reading under the manager guard keeps this anchor on the same
-    /// clock the freshness check, key-wallet's TTL sweep and
-    /// [`WalletGeneration::in_broadcast_conflict`] all use
-    /// (`dashpay/platform#4309`).
+    /// broadcaster returned, from a wallet-manager guard **the caller is still
+    /// holding across this call**; `None` says the wallet has left the manager,
+    /// so there is no height to read and the fence settles unanchored (the safer
+    /// side — it then blocks unconditionally until the first selection stamps
+    /// it).
     ///
-    /// Not calling this is always SAFE — the fence simply stays unanchored and
-    /// is stamped by the first selection instead — so a cancelled dispatch, an
-    /// unwind, or a wallet that left the manager needs no special handling.
-    pub(crate) fn anchor_pending_spend(&mut self, current_height: u32) {
-        // A rejection already proved nothing was sent; a late anchor must not
-        // resurrect a fence the caller deliberately released.
-        if self.settle != PendingSpendSettle::Released {
-            self.settle = PendingSpendSettle::AnchoredAt(current_height);
+    /// # Why this CONSUMES the pin
+    ///
+    /// The dispatching→pending transition is this call. Ending it at an implicit
+    /// end-of-scope drop instead put the sample and the install in two different
+    /// critical sections: the guard the height was read under was released
+    /// first, and a manager writer queued behind it could advance
+    /// `last_processed_height` before the drop landed. The fence then arrived
+    /// bounded on a height the wallet had already left — installed dead — at the
+    /// same instant the dispatching hold was removed, so the outpoint went from
+    /// fully held to fully free with no pending-spend phase in between
+    /// (`dashpay/platform#4309`, review round 2). Taking `self` moves the
+    /// transition to a statement the caller *places*, inside the guard scope,
+    /// rather than to wherever the binding happens to end.
+    ///
+    /// Three conditions make the bound meaningful, and this signature is what
+    /// keeps all three checkable at the call site: the sample is POST-await (a
+    /// suspension of minutes mid-catch-up would otherwise age a pre-await anchor
+    /// past the whole interval, so the fence lapses the moment it is installed);
+    /// the pin is still alive across the sampling (no window between the
+    /// broadcaster's return and the stamp); and the reading comes from the
+    /// manager guard, the same clock the freshness check, key-wallet's TTL sweep
+    /// and [`WalletGeneration::in_broadcast_conflict`] all use.
+    ///
+    /// # Deadlock safety
+    ///
+    /// Safe to call with the manager guard held: the settle takes only
+    /// [`WalletGeneration::in_broadcast`], a `std::sync::Mutex`, for a few hash
+    /// operations, never awaits, and never touches the wallet-manager lock. That
+    /// is the crate's existing lock order — manager lock, then `in_broadcast`,
+    /// exactly as every `in_broadcast_conflict` call site takes them under the
+    /// manager WRITE guard — so nothing here can invert it.
+    ///
+    /// Not calling this at all is always SAFE: [`Drop`] settles the fence
+    /// unanchored, which is precisely the cancellation/unwind fallback (see the
+    /// type docs).
+    pub(crate) fn settle_pending_spend(mut self, current_height: Option<u32>) {
+        if let Some(height) = current_height {
+            self.settle = PendingSpendSettle::AnchoredAt(height);
         }
+        // The transition happens HERE — while the caller's manager guard is
+        // still held — not at whatever later point this binding would have gone
+        // out of scope.
+        drop(self);
     }
 
-    /// Free the outpoints outright on drop, instead of leaving the pending-spend
-    /// fence this pin installs by default.
+    /// Free the outpoints outright, consuming the pin, instead of leaving the
+    /// pending-spend fence it installs by default.
     ///
     /// Call ONLY on a definitive pre-send rejection — the single outcome that
     /// proves the transaction never reached the network, so there is nothing on
@@ -560,8 +619,14 @@ impl InBroadcastPin {
     /// An ambiguous outcome, a cancellation, or an unwind must NOT call this:
     /// see the type docs and the `WalletGeneration::in_broadcast` field docs for
     /// why dispatch return is not, by itself, safe.
-    pub(crate) fn release_pending_spend(&mut self) {
+    ///
+    /// Unlike [`settle_pending_spend`](Self::settle_pending_spend) this needs no
+    /// manager guard and no height: it installs no bound, and freeing an
+    /// outpoint that provably never reached the wire cannot be mistimed by a
+    /// height advance.
+    pub(crate) fn settle_released(mut self) {
         self.settle = PendingSpendSettle::Released;
+        drop(self);
     }
 }
 
@@ -621,9 +686,9 @@ mod tests {
     /// anchor is the POST-await reading — `pin_in_broadcast` is deliberately
     /// given no height at all (`dashpay/platform#4309`).
     fn settle_dispatched(generation: &Arc<WalletGeneration>, tx: &Transaction, height: u32) {
-        let mut pin = generation.pin_in_broadcast(tx);
-        pin.anchor_pending_spend(height);
-        drop(pin);
+        generation
+            .pin_in_broadcast(tx)
+            .settle_pending_spend(Some(height));
     }
 
     /// A held pin flags every input of the pinned transaction — and only
@@ -638,7 +703,7 @@ mod tests {
         let b = outpoint(0x02, 1);
         let unrelated = outpoint(0x03, 0);
 
-        let mut pin = generation.pin_in_broadcast(&spending(&[a, b]));
+        let pin = generation.pin_in_broadcast(&spending(&[a, b]));
 
         // Both pinned inputs conflict; an unrelated selection does not.
         assert_eq!(
@@ -660,9 +725,8 @@ mod tests {
         );
 
         // A definitive pre-send rejection: nothing is on the wire, so the
-        // inputs are free again the moment the guard drops.
-        pin.release_pending_spend();
-        drop(pin);
+        // inputs are free again the moment the pin settles.
+        pin.settle_released();
         assert_eq!(
             generation.in_broadcast_conflict(&spending(&[a, b]), DISPATCH_HEIGHT),
             None,
@@ -683,9 +747,9 @@ mod tests {
         let a = outpoint(0x07, 0);
         let tx = spending(&[a]);
 
-        // Neither `release_pending_spend()` nor `anchor_pending_spend()` —
-        // models a dispatch cancelled inside `broadcast`, which reaches
-        // neither call.
+        // Neither `settle_released()` nor `settle_pending_spend()` — models a
+        // dispatch cancelled inside `broadcast`, which reaches neither call and
+        // falls back to `Drop`.
         drop(generation.pin_in_broadcast(&tx));
 
         assert_eq!(
@@ -878,9 +942,7 @@ mod tests {
 
         // An explicit release — this models `BroadcastError::Rejected`, the one
         // outcome that proves the transaction never reached the network.
-        let mut pin = generation.pin_in_broadcast(&tx);
-        pin.release_pending_spend();
-        drop(pin);
+        generation.pin_in_broadcast(&tx).settle_released();
 
         assert_eq!(
             generation.in_broadcast_conflict(&tx, DISPATCH_HEIGHT),
@@ -944,19 +1006,17 @@ mod tests {
 
         // Both model a definitive rejection, so the count — not a leftover
         // pending-spend fence — is what keeps the outpoint held.
-        let mut first = generation.pin_in_broadcast(&tx);
-        let mut second = generation.pin_in_broadcast(&tx);
-        first.release_pending_spend();
-        second.release_pending_spend();
+        let first = generation.pin_in_broadcast(&tx);
+        let second = generation.pin_in_broadcast(&tx);
 
-        drop(first);
+        first.settle_released();
         assert_eq!(
             generation.in_broadcast_conflict(&tx, DISPATCH_HEIGHT),
             Some(a),
             "one dispatch still in flight must keep the outpoint fenced"
         );
 
-        drop(second);
+        second.settle_released();
         assert_eq!(generation.in_broadcast_conflict(&tx, DISPATCH_HEIGHT), None);
     }
 
@@ -969,14 +1029,12 @@ mod tests {
         let a = outpoint(0x11, 0);
         let tx = spending(&[a]);
 
-        let mut early = generation.pin_in_broadcast(&tx);
-        let mut late = generation.pin_in_broadcast(&tx);
+        let early = generation.pin_in_broadcast(&tx);
+        let late = generation.pin_in_broadcast(&tx);
         // Each anchors on its OWN post-await sample; the later return sees the
         // higher clock.
-        early.anchor_pending_spend(DISPATCH_HEIGHT);
-        late.anchor_pending_spend(DISPATCH_HEIGHT + 5);
-        drop(late);
-        drop(early);
+        late.settle_pending_spend(Some(DISPATCH_HEIGHT + 5));
+        early.settle_pending_spend(Some(DISPATCH_HEIGHT));
 
         assert_eq!(
             generation.in_broadcast_conflict(&tx, DISPATCH_HEIGHT + IN_BROADCAST_FENCE_BLOCKS),

@@ -3,6 +3,7 @@ use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::ReservationToken;
 
+use super::generation::InBroadcastPin;
 use super::SignedCoreTransaction;
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
 use crate::wallet::reservations::{broadcast_releasing_on_rejection, reservation_expired};
@@ -73,7 +74,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     ///   breath, so an instant rebuild can reselect the inputs.
     /// * **Anything else** (accepted, or an ambiguous `MaybeSent`) — the pin is
     ///   converted to a pending-spend fence
-    ///   ([`InBroadcastPin::anchor_pending_spend`](super::generation::InBroadcastPin::anchor_pending_spend))
+    ///   ([`settle_dispatch_fence`](Self::settle_dispatch_fence))
     ///   lasting
     ///   [`IN_BROADCAST_FENCE_BLOCKS`](crate::wallet::reservations::IN_BROADCAST_FENCE_BLOCKS)
     ///   past a `last_processed_height` sampled **after** the broadcaster
@@ -102,6 +103,14 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// **dispatching** phase stays held across that sampling, so there is no
     /// window in which the outpoints are neither pinned nor fenced.
     ///
+    /// Sampling *and* installing happen under ONE guard
+    /// ([`settle_dispatch_fence`](Self::settle_dispatch_fence)), so the
+    /// dispatching→pending handoff is atomic with respect to height writers: no
+    /// manager writer can advance the clock between the reading and the install,
+    /// which is what would otherwise let the fence arrive already lapsed while
+    /// the dispatching hold was being lifted (`dashpay/platform#4309`, review
+    /// round 2).
+    ///
     /// A dispatch that never reaches the sample — the caller's future cancelled
     /// or unwound inside `broadcast`, or the wallet removed from the manager —
     /// settles its fence UNANCHORED, blocking unconditionally until the first
@@ -127,7 +136,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         reservation_height: u32,
         transaction: &Transaction,
     ) -> GuardedDispatch {
-        let mut in_broadcast_pin = {
+        let in_broadcast_pin = {
             let wm = self.wallet_manager.read().await;
             let info = wm.get_wallet_info(&self.wallet_id);
             let height = info.map(|info| info.core_wallet.last_processed_height());
@@ -158,51 +167,80 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         //
         // Only a definitive pre-send rejection proves nothing was sent, so it is
         // the one outcome that releases. An ambiguous `MaybeSent` stays fenced.
-        if matches!(
-            outcome,
-            Err(crate::broadcaster::BroadcastError::Rejected { .. })
-        ) {
-            if let Some(pin) = in_broadcast_pin.as_mut() {
-                pin.release_pending_spend();
-            }
-        } else if let Some(pin) = in_broadcast_pin.as_mut() {
-            // EVERY non-rejection outcome — accepted or ambiguous `MaybeSent` —
-            // anchors its fence on a height sampled HERE, after the broadcaster
-            // returned, and gets a full `IN_BROADCAST_FENCE_BLOCKS` from it.
-            //
-            // The pre-await sample cannot serve: `broadcast` can suspend for
-            // minutes mid-catch-up (mobile), and if the wallet advances a whole
-            // fence interval inside the await, a fence anchored back there is
-            // ALREADY LAPSED when it is installed — the next coin selection
-            // reaps it and can reselect an input of a transaction that may have
-            // reached the network. An expired fence is no fence
-            // (`dashpay/platform#4309`).
-            //
-            // Clock consistency — the property the pre-await anchor was chosen
-            // for — is kept by making THIS the single anchor: it is read from
-            // the same `last_processed_height` under the same manager guard the
-            // freshness check used, and `in_broadcast_conflict` compares against
-            // that same clock under the write lock. Nothing is stamped against a
-            // height no guarded section ever saw.
-            //
-            // The DISPATCHING phase is still held while this runs (the pin is
-            // alive; it settles at `drop` below), so the outpoints never become
-            // selectable between the broadcaster's return and the stamp — the
-            // manager read lock is awaited under that cover. A wallet that left
-            // the manager in the meantime yields no height and leaves the pin
-            // unanchored, which fences unconditionally until the next selection
-            // stamps it: strictly the safer side.
-            let height = {
-                let wm = self.wallet_manager.read().await;
-                wm.get_wallet_info(&self.wallet_id)
-                    .map(|info| info.core_wallet.last_processed_height())
-            };
-            if let Some(height) = height {
-                pin.anchor_pending_spend(height);
+        if let Some(pin) = in_broadcast_pin {
+            if matches!(
+                outcome,
+                Err(crate::broadcaster::BroadcastError::Rejected { .. })
+            ) {
+                // Provably nothing on the wire: free the outpoints outright.
+                // No height and no guard — this installs no bound, so there is
+                // nothing a concurrent height advance could mistime.
+                pin.settle_released();
+            } else {
+                // EVERY non-rejection outcome — accepted or ambiguous
+                // `MaybeSent` — hands the pin to the guarded settle below.
+                self.settle_dispatch_fence(pin).await;
             }
         }
-        drop(in_broadcast_pin);
         GuardedDispatch::Sent(outcome)
+    }
+
+    /// Close out one dispatch's **dispatching** phase and install its
+    /// **pending-spend** fence, both inside a SINGLE wallet-manager read guard.
+    ///
+    /// The fence is bounded a full
+    /// [`IN_BROADCAST_FENCE_BLOCKS`](crate::wallet::reservations::IN_BROADCAST_FENCE_BLOCKS)
+    /// past a `last_processed_height` sampled here, after the broadcaster
+    /// returned. The pre-await sample cannot serve: `broadcast` can suspend for
+    /// minutes mid-catch-up (mobile), and if the wallet advances a whole fence
+    /// interval inside the await, a fence anchored back there is ALREADY LAPSED
+    /// when it is installed — the next coin selection reaps it and can reselect
+    /// an input of a transaction that may have reached the network. An expired
+    /// fence is no fence (`dashpay/platform#4309`).
+    ///
+    /// # Why the guard spans the settle, not just the sample
+    ///
+    /// Sampling the height under the guard is not enough on its own. The
+    /// dispatching→pending transition is the pin's settle, and while the sample
+    /// and the settle sat in two different critical sections the guard was
+    /// released between them: a manager writer queued behind it — SPV catch-up
+    /// applying a batch of blocks is exactly that writer — could advance
+    /// `last_processed_height` in the gap, so the fence landed anchored on a
+    /// height the wallet had already left, at the same instant the dispatching
+    /// hold was lifted. The outpoint went from fully held to fully free with no
+    /// live pending-spend phase in between (`dashpay/platform#4309`, review
+    /// round 2).
+    ///
+    /// Holding the guard across both makes the transition atomic with respect to
+    /// height writers, so the installed bound is measured from the height that
+    /// is current at the instant the fence becomes the only protection — the
+    /// fence is never born dead. `settle_pending_spend` CONSUMES the pin so this
+    /// is a statement placed inside the guard's scope rather than an
+    /// end-of-scope drop that a later edit could float back outside it.
+    ///
+    /// # This cannot deadlock, and cannot starve the SPV pipeline
+    ///
+    /// The settle takes only `WalletGeneration::in_broadcast`, a
+    /// `std::sync::Mutex`, for a few hash operations; it never awaits and never
+    /// touches the wallet-manager lock. That is the crate's existing lock order
+    /// — manager lock, then `in_broadcast`, exactly as every
+    /// `in_broadcast_conflict` call site takes them under the manager WRITE
+    /// guard — so no inversion is possible. And the guarded section is still the
+    /// short, await-free read the broadcaster await was deliberately kept out
+    /// of; nothing here is held across a network wait.
+    ///
+    /// A wallet that left the manager yields no height and settles the pin
+    /// UNANCHORED, which fences unconditionally until the first coin selection
+    /// stamps it from its own clock: strictly the safer side.
+    async fn settle_dispatch_fence(&self, pin: InBroadcastPin) {
+        let manager = self.wallet_manager.read().await;
+        let height = manager
+            .get_wallet_info(&self.wallet_id)
+            .map(|info| info.core_wallet.last_processed_height());
+        // Consumes the pin: the dispatching hold lifts and the bound lands in
+        // one critical section, with `manager` still held around both.
+        pin.settle_pending_spend(height);
+        drop(manager);
     }
 
     /// Broadcast an atomically finalized transaction. A definitive rejection
@@ -1092,6 +1130,182 @@ mod tests {
         let after = after.unwrap_or_else(|error| {
             panic!("the fence must lapse at the post-await bound, got {error:?}")
         });
+        core.abandon_transaction(&after).await;
+    }
+
+    /// `dashpay/platform#4309`, REVIEW ROUND 2: THE DISPATCHING→PENDING HANDOFF
+    /// MUST BE ATOMIC AGAINST MANAGER WRITERS.
+    ///
+    /// Anchoring on the post-await sample is not enough if the guard that sample
+    /// was read under is released before the fence is installed. The sample sat
+    /// in one critical section and `drop(pin)` — the statement that lifts the
+    /// dispatching hold AND installs the bound — sat outside it. A manager
+    /// writer queued behind that guard (SPV catch-up applying a batch of blocks
+    /// is exactly that writer) is woken the instant it is released, and on
+    /// another worker thread it can advance `last_processed_height` before the
+    /// resuming dispatch reaches the install. The fence then lands anchored on a
+    /// height the wallet has already left, in the same instant the dispatching
+    /// hold goes away: born dead, reaped by the next selection, with the input
+    /// of a possibly-sent transaction reselectable.
+    ///
+    /// The writer here parks on the manager WRITE lock while the dispatch is
+    /// inside its post-await section, then advances a full fence interval, and
+    /// records what the transition looked like at the moment it was granted the
+    /// lock. Exactly two interleavings are legal, and the fence must be live
+    /// under both:
+    ///
+    /// * granted AFTER the handoff — it must see the pin settled (`dispatching`
+    ///   lifted) with a bound that is still ahead of the height it holds, i.e.
+    ///   the fence was born live; or
+    /// * granted BEFORE the dispatch even sampled — the dispatch then reads the
+    ///   advanced height, so the installed bound must run from the writer's own
+    ///   advance.
+    ///
+    /// The torn third case — granted mid-handoff, so it sees the pin still
+    /// dispatching AND the fence ends up anchored below its advance — is what
+    /// the released guard allowed, and is what this fails on.
+    ///
+    /// Repeated, because the interleaving is scheduler-dependent: the writer has
+    /// to be granted the lock inside the window to observe a split, and with the
+    /// sample and the settle adjacent that window is a handful of instructions.
+    /// It widens the moment anything suspends between them — an added `.await`,
+    /// a second guarded read — which is the regression this guards against, and
+    /// which a single attempt catches only intermittently.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn settle_does_not_interleave_with_a_parked_height_writer() {
+        for attempt in 0..16 {
+            parked_writer_handoff_attempt(attempt).await;
+        }
+    }
+
+    /// One scenario run of
+    /// [`settle_does_not_interleave_with_a_parked_height_writer`] — see its docs
+    /// for what the two legal interleavings are and why the third fails.
+    async fn parked_writer_handoff_attempt(attempt: u32) {
+        let entered = Arc::new(tokio::sync::Barrier::new(2));
+        let release = Arc::new(tokio::sync::Barrier::new(2));
+        let (core, signer, outputs) = funded_core_wallet(
+            StandardAccountType::BIP44Account,
+            Arc::new(GatedBroadcaster {
+                entered: Arc::clone(&entered),
+                release: Arc::clone(&release),
+            }),
+        )
+        .await;
+        let stamped = core
+            .last_processed_height()
+            .await
+            .expect("last processed height");
+        let finalized = finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
+        let fenced = finalized.transaction().input[0].previous_output;
+
+        // A full fence interval plus a margin: a bound anchored on `stamped` is
+        // dead at this height, so an anchor below it is observably stale.
+        let writer_height = stamped + IN_BROADCAST_FENCE_BLOCKS + 5;
+
+        let dispatcher = tokio::spawn({
+            let core = core.clone();
+            async move { core.broadcast_finalized_transaction(&finalized).await }
+        });
+        // Parked inside `broadcast`: freshness checked, pre-await guard already
+        // dropped, pin held, and nothing holds the manager lock.
+        entered.wait().await;
+
+        let writer = tokio::spawn({
+            let manager = Arc::clone(&core.wallet_manager);
+            let generation = Arc::clone(core.generation());
+            let wallet_id = core.wallet_id();
+            async move {
+                // Wait for the dispatch to be INSIDE its post-await manager read
+                // section. While nothing holds the lock a `try_write` succeeds,
+                // so the first failure is that read guard being held. Bounded:
+                // if the section is missed the writer simply parks late, which
+                // is the "granted after the handoff" case below.
+                let mut spins = 0u32;
+                while manager.try_write().is_ok() {
+                    spins += 1;
+                    if spins >= 200_000 {
+                        break;
+                    }
+                    if spins.is_multiple_of(512) {
+                        tokio::task::yield_now().await;
+                    }
+                }
+
+                // Park behind that read guard, exactly as an SPV catch-up batch
+                // waiting to apply blocks does.
+                let mut guard = manager.write().await;
+                // What did the handoff look like the moment we were granted it?
+                let observed = generation.in_broadcast_fence_state(&fenced);
+                let (_, info) = guard
+                    .get_wallet_and_info_mut(&wallet_id)
+                    .expect("wallet present in manager");
+                let height_at_grant = info.core_wallet.last_processed_height();
+                info.core_wallet.update_last_processed_height(writer_height);
+                drop(guard);
+                (observed, height_at_grant)
+            }
+        });
+
+        release.wait().await;
+        let sent = dispatcher.await.expect("dispatcher task");
+        assert!(
+            sent.is_ok(),
+            "the dispatch itself must succeed, got {sent:?}"
+        );
+        let (observed, height_at_grant) = writer.await.expect("writer task");
+
+        let installed = core
+            .generation()
+            .in_broadcast_fence_state(&fenced)
+            .expect("the dispatched input must still carry a fence");
+
+        match observed {
+            // Granted after the handoff completed: the bound must already have
+            // been installed, and installed LIVE at the height then current.
+            Some((0, false, Some(until))) => assert!(
+                until > height_at_grant,
+                "attempt {attempt}: the fence must be born live — bound {until} \
+                 was already lapsed at the height {height_at_grant} current when \
+                 the dispatching hold was lifted"
+            ),
+            // Granted before the dispatch sampled: the dispatch then reads the
+            // advanced height, so the bound must run from the writer's advance.
+            Some((1, false, None)) => assert!(
+                installed
+                    .2
+                    .is_some_and(|until| until >= writer_height + IN_BROADCAST_FENCE_BLOCKS),
+                "attempt {attempt}: a writer that advanced the clock to \
+                 {writer_height} before the dispatch sampled must have its \
+                 advance reflected in the installed fence, got {installed:?} — a \
+                 lower bound means the dispatching→pending handoff interleaved \
+                 with the advance and the fence was installed on a stale height"
+            ),
+            other => panic!(
+                "attempt {attempt}: unexpected fence state at the writer's \
+                 grant: {other:?} (installed: {installed:?})"
+            ),
+        }
+
+        // Whichever way it went, the fence is still BOUNDED — this hardening
+        // must not turn the pending-spend phase into a permanent hold. (The
+        // writer's own advance may already have consumed the bound: that is the
+        // designed lapse, not a defect, so only probe below it when there is a
+        // below.)
+        let lapses_at = installed.2.expect("an anchored bound");
+        if lapses_at > writer_height {
+            assert!(
+                matches!(
+                    try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await,
+                    Err(PlatformWalletError::TransactionBuild(_))
+                ),
+                "the input must stay fenced below the installed bound"
+            );
+        }
+        advance_processed_height(&core, lapses_at.max(writer_height)).await;
+        let after = try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
+        let after = after
+            .unwrap_or_else(|error| panic!("the fence must lapse at its bound, got {error:?}"));
         core.abandon_transaction(&after).await;
     }
 
