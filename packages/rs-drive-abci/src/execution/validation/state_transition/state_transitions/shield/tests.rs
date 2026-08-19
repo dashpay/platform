@@ -2124,6 +2124,13 @@ mod tests {
                 .unwrap()
                 .expect("root hash");
 
+            // Note on savepoint provenance: under protocol v14 the v1 processing loop sets
+            // its OWN savepoint (recording this same state — nothing is written in between)
+            // on top of this one, and leaves it on the stack for a kept transition. The
+            // `rollback_to_savepoint()` below therefore pops the LOOP's savepoint, not this
+            // one, which stays on the stack unused. Both record identical state, so every
+            // assertion is unaffected; this savepoint documents the mechanism under test and
+            // kept the test meaningful when the loop was still v0.
             transaction.set_savepoint();
 
             let result = platform

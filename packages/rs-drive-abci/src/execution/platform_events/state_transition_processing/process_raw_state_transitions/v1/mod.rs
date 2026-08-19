@@ -29,10 +29,31 @@ use super::super::StateTransitionAwareError;
 /// bug, so the rollback below stays pinned even once every known trigger is fixed.
 #[cfg(test)]
 pub(crate) mod test_fault_injection {
+    use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use std::cell::Cell;
 
     thread_local! {
         pub static FAIL_NEXT_SUCCESSFUL_EXECUTION: Cell<bool> = const { Cell::new(false) };
+    }
+
+    /// If armed, consume the flag and replace a successful execution with the
+    /// `InternalError` a post-apply failure would produce; identity for every other result
+    /// and while unarmed. Kept here so the processing loop carries a single call instead of
+    /// the override logic.
+    pub(crate) fn maybe_override(
+        execution_result: StateTransitionExecutionResult,
+    ) -> StateTransitionExecutionResult {
+        if matches!(
+            execution_result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        ) && FAIL_NEXT_SUCCESSFUL_EXECUTION.with(|flag| flag.replace(false))
+        {
+            StateTransitionExecutionResult::InternalError(
+                "injected post-apply failure (test_fault_injection)".to_string(),
+            )
+        } else {
+            execution_result
+        }
     }
 }
 
@@ -54,8 +75,10 @@ where
     /// Savepoints of kept transitions are left on the transaction's savepoint stack: RocksDB
     /// has no exposed way to pop one without rolling back, leftover savepoints are inert for
     /// commit, and the per-round transaction they live in is dropped when the round ends. The
-    /// one consumer of that stack — the genesis-height re-proposal path — drains the whole
-    /// stack rather than popping once, precisely so this residue cannot redirect it.
+    /// genesis height is excluded from the savepoint discipline entirely (deterministically —
+    /// `genesis_height` is chain configuration), because its re-proposal path rewinds to a
+    /// single savepoint set by init_chain and extra savepoints on that stack would redirect
+    /// the rewind. See `rollback_dropped_transitions` in the body.
     ///
     /// # Arguments
     ///
@@ -94,6 +117,25 @@ where
 
         let state_transition_container =
             self.decode_raw_state_transitions(raw_state_transitions, platform_version)?;
+
+        // Wrap each executed state transition in a savepoint and roll back when its result
+        // strips it from the block, ON EVERY NODE — proposer and validator alike. This is a
+        // consensus rule from protocol v14: a block carrying such a transition evaluates to
+        // the state WITHOUT its writes on every node, closing both the honest-proposer app
+        // hash poisoning (mainnet evo1 stalls of 2026-08-14/15) and the malicious-proposer
+        // variant where deliberately including the transition would commit identically
+        // leaked state everywhere.
+        //
+        // The genesis height is excluded — deterministically, since `genesis_height` is
+        // chain configuration, so all nodes agree. Its re-proposal path relies on a
+        // single-savepoint discipline: init_chain sets one savepoint and each genesis round
+        // rewinds to it with one `rollback_to_savepoint()` (see prepare_proposal /
+        // process_proposal). Savepoints of KEPT transitions stay on the stack — RocksDB
+        // exposes no pop-without-rollback — and extra savepoints on the genesis transaction
+        // would redirect that rewind. At every other height each proposal round runs in a
+        // freshly started transaction that is either committed (leftover savepoints are
+        // inert markers) or dropped when the round ends, so the residue can affect nothing.
+        let rollback_dropped_transitions = block_info.height != self.config.abci.genesis_height;
 
         let mut processing_result = StateTransitionsProcessingResult::default();
 
@@ -136,8 +178,11 @@ where
 
                         // Execution may write into the shared block transaction before its
                         // result is known, so mark the state we can return to if the result
-                        // strips this transition from the block.
-                        transaction.set_savepoint();
+                        // strips this transition from the block (see
+                        // `rollback_dropped_transitions` above).
+                        if rollback_dropped_transitions {
+                            transaction.set_savepoint();
+                        }
 
                         // Validate state transition and produce an execution event
                         let execution_result = process_state_transition(
@@ -168,36 +213,43 @@ where
                         .unwrap_or_else(error_to_internal_error_execution_result);
 
                         #[cfg(test)]
-                        let execution_result = if matches!(
-                            execution_result,
-                            StateTransitionExecutionResult::SuccessfulExecution { .. }
-                        )
-                            && test_fault_injection::FAIL_NEXT_SUCCESSFUL_EXECUTION
-                                .with(|flag| flag.replace(false))
-                        {
-                            StateTransitionExecutionResult::InternalError(
-                                "injected post-apply failure (test_fault_injection)".to_string(),
-                            )
-                        } else {
-                            execution_result
-                        };
+                        let execution_result =
+                            test_fault_injection::maybe_override(execution_result);
 
-                        match &execution_result {
-                            StateTransitionExecutionResult::InternalError(_)
-                            | StateTransitionExecutionResult::UnpaidConsensusError(_) => {
-                                // This transition will be stripped from the block
-                                // (`TxAction::Removed`), so none of its writes may remain in
-                                // the state the app hash is computed over. A rollback failure
-                                // means we can no longer produce a state matching the block —
-                                // fail the whole proposal rather than continue on leaked state.
-                                transaction.rollback_to_savepoint().map_err(|e| {
-                                    drive::grovedb::error::Error::StorageError(RocksDBError(e))
-                                })?;
-                            }
-                            _ => {
-                                // The transition stays in the block, so its writes stay. Its
-                                // savepoint is intentionally left on the stack (see the method
-                                // documentation).
+                        if rollback_dropped_transitions {
+                            match &execution_result {
+                                StateTransitionExecutionResult::InternalError(_)
+                                | StateTransitionExecutionResult::UnpaidConsensusError(_) => {
+                                    // This transition will be stripped from the block
+                                    // (`TxAction::Removed`), so none of its writes may remain
+                                    // in the state the app hash is computed over. A rollback
+                                    // failure means we can no longer produce a state matching
+                                    // the block — fail the whole run rather than continue on
+                                    // leaked state.
+                                    transaction.rollback_to_savepoint().map_err(|e| {
+                                        drive::grovedb::error::Error::StorageError(RocksDBError(e))
+                                    })?;
+                                }
+                                StateTransitionExecutionResult::SuccessfulExecution { .. }
+                                | StateTransitionExecutionResult::PaidConsensusError { .. } => {
+                                    // The transition stays in the block
+                                    // (`TxAction::Unmodified`), so its writes stay. Its
+                                    // savepoint is intentionally left on the stack (see
+                                    // `rollback_dropped_transitions` above: no
+                                    // pop-without-rollback exists, and at non-genesis heights
+                                    // the residue is inert).
+                                }
+                                StateTransitionExecutionResult::NotExecuted(_) => {
+                                    // Delayed to a later block (`TxAction::Delayed`) without
+                                    // having been executed: nothing was written since the
+                                    // savepoint, so rolling back and leaving it are
+                                    // equivalent. Leave it, like the kept outcomes above.
+                                    //
+                                    // Deliberately exhaustive: a new execution result variant
+                                    // must make an explicit savepoint decision here — the
+                                    // rollback classification must match the `TxAction`
+                                    // classification in `prepare_proposal`.
+                                }
                             }
                         }
 
