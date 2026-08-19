@@ -4,6 +4,11 @@
 /// `AggregateCountAndSumOnRange` primitive.
 pub mod document_average;
 pub mod document_count;
+/// Verified having-range (`GROUP BY … HAVING <aggregate> <op> <value>
+/// LIMIT n`) result. One entry per matching group, in axis order, read
+/// as a value-bounded range of an indexed tree's per-axis secondary
+/// (grovedb PR 657); see the file's docs.
+pub mod document_having;
 /// Verified ranked (`GROUP BY … ORDER BY <aggregate> LIMIT n
 /// [OFFSET m]`) result. One entry per returned group, in ranking order,
 /// plus the attested rank the page starts at, read from an indexed

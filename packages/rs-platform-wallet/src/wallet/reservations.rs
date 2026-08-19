@@ -1,11 +1,13 @@
 //! Broadcast-side UTXO reservation cleanup.
 //!
-//! `TransactionBuilder::build_signed` reserves the selected UTXOs in the
-//! funding account's `ReservationSet` and leaves the reservation held on
-//! success, expecting the transaction to be broadcast. When the broadcast
-//! *fails* the reservation must be reconciled here: released for an immediate
-//! retry when Core definitively rejected the transaction, kept (for the
-//! reservation-TTL backstop or a later sync) when acceptance is unknown.
+//! `TransactionBuilder::build_signed` reserves the selected UTXOs in each
+//! contributing funding account's `ReservationSet` and leaves the reservation
+//! held on success, expecting the transaction to be broadcast. When the
+//! broadcast *fails* the reservation must be reconciled here: released for an
+//! immediate retry when Core definitively rejected the transaction, kept (for
+//! the reservation-TTL backstop or a later sync) when acceptance is unknown.
+//! A pooled build reserves across several accounts under one owner token, so
+//! the reconciliation takes the whole contributor list, not one account.
 //!
 //! Every build-then-broadcast path must go through
 //! [`broadcast_releasing_on_rejection`] so the cleanup exists once instead of
@@ -16,6 +18,7 @@
 
 use dashcore::{Transaction, Txid};
 use key_wallet::account::account_type::StandardAccountType;
+use key_wallet::account::AccountType;
 use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
 
@@ -54,9 +57,15 @@ pub(crate) async fn broadcast_releasing_on_rejection<B: TransactionBroadcaster +
                 release_reservation_after_rejected_broadcast(
                     wallet_manager,
                     wallet_id,
-                    account_type,
-                    account_index,
+                    &[AccountType::Standard {
+                        index: account_index,
+                        standard_account_type: account_type,
+                    }],
                     tx,
+                    // The generic send path doesn't thread the build's
+                    // reservation token yet; keep its historical
+                    // unconditional release.
+                    None,
                 )
                 .await;
             }
@@ -65,8 +74,15 @@ pub(crate) async fn broadcast_releasing_on_rejection<B: TransactionBroadcaster +
     }
 }
 
-/// Release the funding account's UTXO reservation for `tx` after its
+/// Release the funding accounts' UTXO reservations for `tx` after its
 /// broadcast came back [`BroadcastError::Rejected`].
+///
+/// `funding_accounts` are the accounts that contributed inputs to `tx` — the
+/// accounts handed to `add_funding` when it was built. A build funded from
+/// several of them (a pooled asset lock, a pooled send) reserves in **each**
+/// account's own `ReservationSet` under the one token, so every one of them
+/// must reconcile; releasing only the first would leave the rest of the inputs
+/// held until the TTL backstop reclaims them.
 ///
 /// Callers that pair the release with other rejection cleanup must order
 /// that cleanup **before** this call when it removes state a concurrent
@@ -76,32 +92,41 @@ pub(crate) async fn broadcast_releasing_on_rejection<B: TransactionBroadcaster +
 pub(crate) async fn release_reservation_after_rejected_broadcast(
     wallet_manager: &RwLock<WalletManager<PlatformWalletInfo>>,
     wallet_id: &WalletId,
-    account_type: StandardAccountType,
-    account_index: u32,
+    funding_accounts: &[AccountType],
     tx: &Transaction,
+    reservation_token: Option<key_wallet::ReservationToken>,
 ) {
     // `release_reservation` takes `&self` and the manager map is
     // untouched, so a read lock suffices — this cleanup does not
     // serialize concurrent sends.
     let wm = wallet_manager.read().await;
-    let account = wm
-        .get_wallet_and_info(wallet_id)
-        .and_then(|(_, info)| match account_type {
-            StandardAccountType::BIP44Account => info
-                .core_wallet
-                .bip44_managed_account_at_index(account_index),
-            StandardAccountType::BIP32Account => info
-                .core_wallet
-                .bip32_managed_account_at_index(account_index),
-        });
-    match account {
-        Some(account) => account.release_reservation(tx),
-        None => tracing::warn!(
+    let Some((_, info)) = wm.get_wallet_and_info(wallet_id) else {
+        tracing::warn!(
             wallet_id = %hex::encode(wallet_id),
-            ?account_type,
-            account_index,
-            "could not release UTXO reservation after rejected broadcast: \
-             wallet or funds account not found"
-        ),
+            ?funding_accounts,
+            "could not release UTXO reservation after rejected broadcast: wallet not found"
+        );
+        return;
+    };
+    for funding_account in funding_accounts {
+        match info.core_wallet.accounts.funds_account(funding_account) {
+            // Owner-guarded when the build's `ReservationToken` is available:
+            // this cleanup always runs after `.await`s (build → broadcast), so
+            // the original reservation may have been swept and the same
+            // outpoints re-reserved by a NEWER build — an unconditional release
+            // would clobber that newer owner and make its inputs re-selectable
+            // by a conflicting transaction. Callers without a token (paths that
+            // predate token plumbing) keep the historical unconditional release.
+            Some(account) => match reservation_token {
+                Some(token) => account.release_reservation_if_owner(tx, token),
+                None => account.release_reservation(tx),
+            },
+            None => tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                ?funding_account,
+                "could not release UTXO reservation after rejected broadcast: \
+                 funds account not found"
+            ),
+        }
     }
 }

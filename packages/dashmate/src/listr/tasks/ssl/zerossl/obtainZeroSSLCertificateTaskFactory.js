@@ -18,8 +18,6 @@ import { ERRORS } from '../../../../ssl/zerossl/validateZeroSslCertificateFactor
  * @param {VerificationServer} verificationServer
  * @param {HomeDir} homeDir
  * @param {validateZeroSslCertificate} validateZeroSslCertificate
- * @param {ConfigFileJsonRepository} configFileRepository
- * @param {ConfigFile} configFile
  * @return {obtainZeroSSLCertificateTask}
  */
 export default function obtainZeroSSLCertificateTaskFactory(
@@ -34,15 +32,24 @@ export default function obtainZeroSSLCertificateTaskFactory(
   verificationServer,
   homeDir,
   validateZeroSslCertificate,
-  configFileRepository,
-  configFile,
 ) {
   /**
    * @typedef {obtainZeroSSLCertificateTask}
    * @param {Config} config
+   * @param {Object} options
+   * @param {function(): void} options.onCertificateCreated
    * @return {Listr}
    */
-  function obtainZeroSSLCertificateTask(config) {
+  function obtainZeroSSLCertificateTask(config, options = {}) {
+    const { onCertificateCreated } = options;
+
+    if (typeof onCertificateCreated !== 'function') {
+      throw new TypeError('onCertificateCreated callback is required');
+    }
+
+    const configurationUpdateRequired = !config.get('platform.gateway.ssl.enabled')
+      || config.get('platform.gateway.ssl.provider') !== 'zerossl';
+
     const tasks = new Listr([
       {
         title: 'Check if certificate already exists and not expiring soon',
@@ -141,13 +148,10 @@ export default function obtainZeroSSLCertificateTaskFactory(
             ctx.externalIp,
             ctx.apiKey,
           );
-
-          config.set('platform.gateway.ssl.enabled', true);
-          config.set('platform.gateway.ssl.provider', 'zerossl');
+          ctx.createdCertificate = true;
           config.set('platform.gateway.ssl.providerConfigs.zerossl.id', ctx.certificate.id);
 
-          // Save config file
-          configFileRepository.write(configFile);
+          onCertificateCreated();
         },
       },
       {
@@ -270,9 +274,26 @@ and all Dash service ports listed above.`);
       },
       {
         title: 'Save certificate private key file',
-        enabled: (ctx) => !ctx.isPrivateKeyFilePresent,
         task: async (ctx, task) => {
-          fs.writeFileSync(ctx.privateKeyFilePath, ctx.privateKeyFile, 'utf8');
+          if (ctx.isPrivateKeyFilePresent) {
+            // A key written before Dashmate set a mode is group- and
+            // world-readable, and reusing it skips the write that would fix
+            // that - so tighten what is already there. An owner that chose
+            // something stricter keeps it. Presence was decided by an earlier
+            // validation step, so confirm it rather than assume it still holds.
+            if (fs.existsSync(ctx.privateKeyFilePath)) {
+              // eslint-disable-next-line no-bitwise
+              const mode = fs.statSync(ctx.privateKeyFilePath).mode & 0o700;
+
+              fs.chmodSync(ctx.privateKeyFilePath, mode);
+            }
+          } else {
+            fs.writeFileSync(ctx.privateKeyFilePath, ctx.privateKeyFile, {
+              encoding: 'utf8',
+              mode: 0o600,
+            });
+            fs.chmodSync(ctx.privateKeyFilePath, 0o600);
+          }
 
           // eslint-disable-next-line no-param-reassign
           task.output = ctx.privateKeyFilePath;
@@ -304,6 +325,14 @@ and all Dash service ports listed above.`);
         task: async () => {
           await verificationServer.stop();
           await verificationServer.destroy();
+        },
+      },
+      {
+        title: 'Update configuration',
+        enabled: (ctx) => ctx.createdCertificate || configurationUpdateRequired,
+        task: async () => {
+          config.set('platform.gateway.ssl.enabled', true);
+          config.set('platform.gateway.ssl.provider', 'zerossl');
         },
       },
     ], {

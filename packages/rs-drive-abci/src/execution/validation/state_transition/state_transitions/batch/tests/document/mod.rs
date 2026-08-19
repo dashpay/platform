@@ -2,6 +2,7 @@ mod creation;
 mod deletion;
 mod dpns;
 mod nft;
+mod ranked_group_drain;
 mod replacement;
 mod transfer;
 

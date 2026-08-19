@@ -10,7 +10,7 @@ mod deletion_tests {
     async fn test_document_delete_on_document_type_that_is_mutable_and_can_be_deleted() {
         run_document_delete_on_document_type_that_is_mutable_and_can_be_deleted_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            1678920,
+            1699160,
         )
         .await;
     }
@@ -77,6 +77,8 @@ mod deletion_tests {
                 platform_version,
             )
             .expect("expected a random document");
+
+        set_valid_profile_payment_addresses(&mut document, profile);
 
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
 
@@ -788,6 +790,8 @@ mod deletion_tests {
                 platform_version,
             )
             .expect("expected a random document");
+
+        set_valid_profile_payment_addresses(&mut document, profile);
 
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
 

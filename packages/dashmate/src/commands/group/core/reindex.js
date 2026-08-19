@@ -5,6 +5,10 @@ import GroupBaseCommand from '../../../oclif/command/GroupBaseCommand.js';
 import MuteOneLineError from '../../../oclif/errors/MuteOneLineError.js';
 
 export default class GroupReindexCommand extends GroupBaseCommand {
+  // Reindex temporarily replaces each Core service configuration, so other
+  // configuration renderers must wait until it restores the ordinary files.
+  static mutatesConfig = true;
+
   static description = 'Reindex group Core data';
 
   static flags = {

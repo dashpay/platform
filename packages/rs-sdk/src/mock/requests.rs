@@ -789,3 +789,27 @@ impl MockResponse for drive_proof_verifier::DocumentRankedEntries {
         }
     }
 }
+
+impl MockResponse for drive_proof_verifier::DocumentHavingEntries {
+    /// Rides the ranked page encoding with a starting rank of `0`: a
+    /// having page is the same ordered `(group key, axis tag, value)`
+    /// list, just addressed by value bound instead of by rank, and it
+    /// has no rank base to preserve.
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        drive_proof_verifier::DocumentRankedEntries {
+            starting_rank: 0,
+            entries: self.entries.clone(),
+        }
+        .mock_serialize(sdk)
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let page = drive_proof_verifier::DocumentRankedEntries::mock_deserialize(sdk, buf);
+        drive_proof_verifier::DocumentHavingEntries {
+            entries: page.entries,
+        }
+    }
+}

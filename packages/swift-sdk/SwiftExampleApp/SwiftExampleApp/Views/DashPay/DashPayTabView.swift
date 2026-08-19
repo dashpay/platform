@@ -102,14 +102,14 @@ struct DashPayTabView: View {
         )
     }
 
-    /// Identities the DashPay tab can act as: on-network (not
-    /// local-only) and backed by a wallet that's currently loaded in
-    /// the manager — every DashPay FFI call resolves through that
-    /// wallet handle.
+    /// Identities the DashPay tab can act as: backed by a wallet
+    /// that's currently loaded in the manager — every DashPay FFI
+    /// call resolves through that wallet handle. (NOT gated on
+    /// `isLocal`: wallet-derived identities are always local, so
+    /// that flag doesn't discriminate here; the wallet linkage does.)
     private var eligibleIdentities: [PersistentIdentity] {
         identities.filter { identity in
-            guard !identity.isLocal,
-                  let walletId = identity.wallet?.walletId else { return false }
+            guard let walletId = identity.wallet?.walletId else { return false }
             return walletManager.wallet(for: walletId) != nil
         }
     }

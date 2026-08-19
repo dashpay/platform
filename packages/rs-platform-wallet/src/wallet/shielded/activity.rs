@@ -158,16 +158,37 @@ pub struct ShieldedActivityEntry {
     pub counterparty: Option<Vec<u8>>,
     /// 36-byte `DashMemo` when present and non-zero; `None` otherwise.
     pub memo: Option<Vec<u8>>,
-    /// Block height the operation confirmed at. `None` while pending or
-    /// when the live confirm couldn't read it from the proof metadata —
-    /// the scan deriver fills it in later. **Canonical sort key** (desc),
-    /// with pendings (None) floated to the top.
+    /// Block height the operation confirmed at. `None` while pending,
+    /// when the live confirm couldn't read it from the proof metadata,
+    /// or — permanently — on scan-derived (restored) entries: the
+    /// note-fetch proof carries no per-note inclusion height, so the
+    /// real height is unknowable client-side and is modeled as absent
+    /// rather than stamped with the discovering batch's proof-anchor
+    /// (scan-tip) height, which two devices would disagree on.
+    /// **Canonical sort key** (desc) — see [`sort_activity_for_display`]
+    /// for how the `None` bands order.
     pub block_height: Option<u64>,
     /// Confirmation status.
     pub status: ShieldedActivityStatus,
-    /// `SystemTime` (ms since epoch) at record time. Display-only and the
-    /// sort tiebreak after `block_height`; never the primary sort key.
+    /// `SystemTime` (ms since epoch) at record time for live-recorded
+    /// entries. **`0` = unknown**: scan-derived (restored) entries have
+    /// no wall-clock provenance — the chain data carries no per-note
+    /// block time — so they carry the honest sentinel instead of the
+    /// scan moment (which dated weeks-old restored history "today" and
+    /// differed between devices). Display-only and a sort tiebreak;
+    /// never the primary sort key. Hosts must render `0` as an unknown
+    /// date, never as the epoch.
     pub created_at_ms: u64,
+    /// Chain-order key for scan-derived (restored) entries whose date
+    /// and height are unknowable: the smallest commitment-tree position
+    /// among the entry's own received notes. Tree positions are
+    /// append-only chain order, so sorting by this reproduces the exact
+    /// on-chain sequence of otherwise-undatable history — identically
+    /// on every device. `None` on live-recorded entries (which carry a
+    /// real record time instead) and on the rare outgoing-only cluster
+    /// (OVK-recovered sends don't persist a position).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub min_note_position: Option<u64>,
     /// cmxs of the visible outputs that fed [`Self::id`] (own notes +
     /// recovered sends). Linkage for status confirmation and dedupe.
     /// Stored as `Vec<[u8;32]>` (serde derive covers `[u8;32]`).
@@ -242,12 +263,17 @@ pub struct ScanDeriveInput {
 pub struct DerivedActivity {
     /// Entries for clusters with no existing row — new history.
     pub new_entries: Vec<ShieldedActivityEntry>,
-    /// `(entry_id, block_height)` sightings for clusters whose id
-    /// already has a row: the cluster was observed on-chain at that
-    /// height. The caller upgrades a still-`Pending` (or height-less)
-    /// stored row to `Confirmed` at the height — preserving the live
-    /// entry's richer fields — and ignores sightings for rows that are
-    /// already confirmed.
+    /// `(entry_id, observed_at_height)` sightings for clusters whose id
+    /// already has a row: the cluster was observed on-chain **at or
+    /// before** that height (the discovering batch's proof-anchor
+    /// height — an upper bound, not the inclusion height, which the
+    /// note-fetch proof doesn't carry). The caller upgrades a
+    /// still-`Pending` (or height-less) stored row to `Confirmed` at
+    /// the height — preserving the live entry's richer fields — and
+    /// ignores sightings for rows that are already confirmed. For the
+    /// live flows this band serves, the pass runs near-tip so the bound
+    /// is within a few blocks of inclusion; scan-derived NEW entries
+    /// never carry it (see [`derive_activity_from_scan_data`]).
     pub confirmations: Vec<([u8; 32], u64)>,
 }
 
@@ -417,7 +443,30 @@ pub fn derive_activity_from_scan_data(
 ) -> DerivedActivity {
     let clusters = cluster_events(input);
     let mut out = DerivedActivity::default();
-    let now_ms = ShieldedActivityEntry::now_ms();
+    // Scan-derived entries deliberately carry NO height and NO
+    // timestamp (dashwallet-ios restored-history acceptance criteria):
+    //
+    // - `block_height: None` — the cluster key is the discovering
+    //   batch's proof-anchor height (the tip the response was proven
+    //   at), NOT the operation's inclusion height. The note-fetch proof
+    //   carries no per-note mined height, nullifier items are stored
+    //   with empty values, and the on-chain anchors-by-height index is
+    //   pruned to a recent window — so for restored history the real
+    //   height is unknowable client-side. Stamping the anchor height
+    //   dated the same entry at two different heights on two devices
+    //   restoring the same wallet; absence is the honest value.
+    // - `created_at_ms: 0` (unknown) — chain data carries no per-note
+    //   block time either, and stamping the scan clock grouped
+    //   weeks-old restored transfers under "today". Live-recorded
+    //   entries keep their genuine record time; only this
+    //   reconstruction path uses the sentinel.
+    //
+    // Both values are device-independent, so two restores of the same
+    // wallet produce byte-identical entries for the same id. The
+    // cluster height is still used ABOVE as the batch grouping key and
+    // in `confirmations` (an "observed at-or-before" bound for
+    // upgrading live pending rows) — it just never masquerades as an
+    // inclusion height on a derived entry.
 
     // Own-nullifier → (value, cmx) lookup for the rho linkage: a cluster
     // note whose `rho` is one of our own nullifiers is provably the
@@ -453,6 +502,11 @@ pub fn derive_activity_from_scan_data(
             continue;
         }
         let id = compute_activity_id(&visible_cmxs);
+        // Exact chain-order key: tree positions are append-only chain
+        // order, and the received notes carry theirs. Outgoing-only
+        // clusters (no persisted position on OVK-recovered sends)
+        // honestly report None.
+        let min_note_position = cluster.received.iter().map(|n| n.position).min();
         // Overlap-based dedupe: any stored entry whose visible cmx set
         // intersects this cluster's cmxs already owns (part of) the
         // cluster. `BTreeSet` so each overlapped id is reported once even
@@ -536,9 +590,10 @@ pub fn derive_activity_from_scan_data(
                 counterparty: unanimous_bytes(external.iter().map(|o| o.recipient.as_slice())),
                 memo: unanimous_bytes(external.iter().map(|o| o.memo.as_slice()))
                     .and_then(|m| non_zero_memo(&m)),
-                block_height: Some(height),
+                block_height: None,
                 status: ShieldedActivityStatus::Confirmed,
-                created_at_ms: now_ms,
+                created_at_ms: 0,
+                min_note_position,
                 note_cmxs: visible_cmxs,
                 spent_nullifiers: linked_nullifiers,
             }
@@ -558,9 +613,10 @@ pub fn derive_activity_from_scan_data(
                 fee: None,
                 counterparty: None,
                 memo: None,
-                block_height: Some(height),
+                block_height: None,
                 status: ShieldedActivityStatus::Confirmed,
-                created_at_ms: now_ms,
+                created_at_ms: 0,
+                min_note_position,
                 note_cmxs: visible_cmxs,
                 spent_nullifiers: linked_nullifiers,
             }
@@ -576,9 +632,10 @@ pub fn derive_activity_from_scan_data(
                 fee: None,
                 counterparty: None,
                 memo: None,
-                block_height: Some(height),
+                block_height: None,
                 status: ShieldedActivityStatus::Confirmed,
-                created_at_ms: now_ms,
+                created_at_ms: 0,
+                min_note_position,
                 note_cmxs: visible_cmxs,
                 spent_nullifiers: Vec::new(),
             }
@@ -594,9 +651,10 @@ pub fn derive_activity_from_scan_data(
                 fee: None,
                 counterparty: None,
                 memo: None,
-                block_height: Some(height),
+                block_height: None,
                 status: ShieldedActivityStatus::Confirmed,
-                created_at_ms: now_ms,
+                created_at_ms: 0,
+                min_note_position,
                 note_cmxs: visible_cmxs,
                 spent_nullifiers: Vec::new(),
             }
@@ -617,9 +675,10 @@ pub fn derive_activity_from_scan_data(
                 fee: None,
                 counterparty: None,
                 memo: None,
-                block_height: Some(height),
+                block_height: None,
                 status: ShieldedActivityStatus::Confirmed,
-                created_at_ms: now_ms,
+                created_at_ms: 0,
+                min_note_position,
                 note_cmxs: visible_cmxs,
                 spent_nullifiers: Vec::new(),
             }
@@ -671,35 +730,64 @@ pub(crate) fn non_zero_memo(memo: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
-/// Sort entries for display: `Pending` STATUS rows float to the very
-/// top, then confirmed/failed by `block_height` descending (height-less
-/// rows — live successes whose height the scan hasn't backfilled yet —
-/// above heighted ones), then tiebreak by `created_at_ms` descending,
-/// then by `id` for a total order. Mutates in place.
+/// Sort entries for display, in four bands. Mutates in place.
 ///
-/// Pending is a status, not "missing height": the live recorder flips
-/// successful ops to `Confirmed` with `block_height: None` and the scan
-/// fills the height later, so keying the pending band on height would
-/// misfile the common success shape (the Swift UI partitions by status
-/// for the same reason).
+/// 1. `Pending` STATUS rows float to the very top. Pending is a status,
+///    not "missing height": the live recorder flips successful ops to
+///    `Confirmed` with `block_height: None`, so keying this band on
+///    height would misfile the common success shape (the Swift UI
+///    partitions by status for the same reason).
+/// 2. Height-less rows **with a record time** — live successes whose
+///    height the scan hasn't backfilled yet — newest first. They sit
+///    above heighted rows because they are by construction the freshest
+///    operations.
+/// 3. Heighted rows, by `block_height` descending, tiebroken by
+///    `created_at_ms` descending.
+/// 4. Height-less rows with **no record time** (`created_at_ms == 0`) —
+///    scan-derived restored history, whose real height and time are
+///    unknowable client-side (see [`ShieldedActivityEntry::block_height`]).
+///    Unknown age must not read as "newest", so they sink below every
+///    dated/heighted row — ordered by [`min_note_position`] descending
+///    (tree positions are exact chain order, so the band reads
+///    newest-first like the rest of the list, identically on every
+///    device), position-less entries last.
+///
+/// A final `id` tiebreak makes the whole order total and deterministic.
+///
+/// [`min_note_position`]: ShieldedActivityEntry::min_note_position
 pub fn sort_activity_for_display(entries: &mut [ShieldedActivityEntry]) {
-    entries.sort_by(|a, b| {
-        let a_pending = a.status == ShieldedActivityStatus::Pending;
-        let b_pending = b.status == ShieldedActivityStatus::Pending;
-        match (a_pending, b_pending) {
-            (true, false) => std::cmp::Ordering::Less,
-            (false, true) => std::cmp::Ordering::Greater,
-            _ => match (a.block_height, b.block_height) {
-                (None, Some(_)) => std::cmp::Ordering::Less,
-                (Some(_), None) => std::cmp::Ordering::Greater,
-                (Some(ah), Some(bh)) => bh.cmp(&ah),
-                (None, None) => std::cmp::Ordering::Equal,
-            },
+    // Band rank per the doc above; lower sorts first.
+    fn band(e: &ShieldedActivityEntry) -> u8 {
+        if e.status == ShieldedActivityStatus::Pending {
+            0
+        } else if e.block_height.is_some() {
+            2
+        } else if e.created_at_ms > 0 {
+            1
+        } else {
+            3
         }
-        // Tiebreak: more recent record time first.
-        .then_with(|| b.created_at_ms.cmp(&a.created_at_ms))
-        // Final total order so the sort is deterministic.
-        .then_with(|| a.id.cmp(&b.id))
+    }
+    entries.sort_by(|a, b| {
+        band(a)
+            .cmp(&band(b))
+            .then_with(|| match (a.block_height, b.block_height) {
+                (Some(ah), Some(bh)) => bh.cmp(&ah),
+                _ => std::cmp::Ordering::Equal,
+            })
+            // Tiebreak: more recent record time first.
+            .then_with(|| b.created_at_ms.cmp(&a.created_at_ms))
+            // Chain order (band 4's primary key; a no-op elsewhere,
+            // where heights/record times already decided): later tree
+            // position first, position-less entries last.
+            .then_with(|| match (a.min_note_position, b.min_note_position) {
+                (Some(ap), Some(bp)) => bp.cmp(&ap),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            })
+            // Final total order so the sort is deterministic.
+            .then_with(|| a.id.cmp(&b.id))
     });
 }
 
@@ -851,7 +939,16 @@ mod tests {
         assert_eq!(d[0].kind, ShieldedActivityKind::Received);
         assert_eq!(d[0].direction, ShieldedDirection::In);
         assert_eq!(d[0].amount, 1_000);
-        assert_eq!(d[0].block_height, Some(50));
+        // Scan-derived entries carry NO height and NO record time — the
+        // note's stored height is the discovering batch's proof-anchor
+        // (scan-tip) height, not an inclusion height, and there is no
+        // wall-clock provenance for restored history. Both sentinels
+        // are device-independent (restored-history acceptance criteria).
+        assert_eq!(d[0].block_height, None);
+        assert_eq!(d[0].created_at_ms, 0);
+        // What they DO carry is the exact chain-order key: the received
+        // note's tree position.
+        assert_eq!(d[0].min_note_position, Some(0));
     }
 
     #[test]
@@ -1096,9 +1193,8 @@ mod tests {
         let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
         let e = d
             .iter()
-            .find(|e| e.block_height == Some(400))
+            .find(|e| e.kind == ShieldedActivityKind::ShieldedSpend)
             .expect("self-change cluster entry");
-        assert_eq!(e.kind, ShieldedActivityKind::ShieldedSpend);
         assert_eq!(e.direction, ShieldedDirection::SelfTransfer);
         assert!(e.fee.is_none());
     }
@@ -1137,14 +1233,22 @@ mod tests {
             outgoing: vec![outgoing(0x72, addr(0xEE), 20, 800, vec![])],
             own_addresses: vec![addr(0x01)],
         };
-        let mut d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
-        sort_activity_for_display(&mut d);
+        let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
         assert_eq!(d.len(), 2);
-        // After display sort, the more recent (h=20 Sent) comes first.
-        assert_eq!(d[0].kind, ShieldedActivityKind::Sent);
-        assert_eq!(d[0].block_height, Some(20));
-        assert_eq!(d[1].kind, ShieldedActivityKind::Received);
-        assert_eq!(d[1].block_height, Some(10));
+        // One entry per batch cluster; both carry the honest unknown
+        // sentinels (no inclusion height / record time is recoverable).
+        let sent = d
+            .iter()
+            .find(|e| e.kind == ShieldedActivityKind::Sent)
+            .expect("send cluster entry");
+        let received = d
+            .iter()
+            .find(|e| e.kind == ShieldedActivityKind::Received)
+            .expect("receive cluster entry");
+        assert_eq!(sent.block_height, None);
+        assert_eq!(received.block_height, None);
+        assert_eq!(sent.created_at_ms, 0);
+        assert_eq!(received.created_at_ms, 0);
     }
 
     #[test]
@@ -1160,7 +1264,7 @@ mod tests {
         existing.insert([0x70u8; 32], live_id);
         let d = derive_activity_from_scan_data(&input, &existing);
         assert_eq!(d.new_entries.len(), 1);
-        assert_eq!(d.new_entries[0].block_height, Some(20));
+        assert_eq!(d.new_entries[0].kind, ShieldedActivityKind::Sent);
         assert_eq!(
             d.confirmations,
             vec![(live_id, 10)],
@@ -1190,6 +1294,7 @@ mod tests {
                 ShieldedActivityStatus::Confirmed
             },
             created_at_ms: created,
+            min_note_position: None,
             note_cmxs: vec![[id; 32]],
             spent_nullifiers: vec![],
         };
@@ -1217,6 +1322,79 @@ mod tests {
         assert_eq!(v[2].block_height, Some(300));
         assert_eq!(v[3].block_height, Some(200));
         assert_eq!(v[4].block_height, Some(100));
+    }
+
+    /// Scan-derived restored rows (no height AND no record time) must
+    /// sink below every dated/heighted row: unknown age must never read
+    /// as "newest". Within the band they order by `min_note_position`
+    /// descending — tree positions are exact chain order — so restored
+    /// history reads newest-first like the rest of the list, and
+    /// identically on every device restoring the same wallet.
+    #[test]
+    fn display_sort_sinks_unknown_age_scan_derived_rows_in_chain_order() {
+        let mk = |height: Option<u64>, created: u64, position: Option<u64>, id: u8| {
+            ShieldedActivityEntry {
+                id: [id; 32],
+                kind: ShieldedActivityKind::Sent,
+                direction: ShieldedDirection::Out,
+                amount: 1,
+                fee: None,
+                counterparty: None,
+                memo: None,
+                block_height: height,
+                status: ShieldedActivityStatus::Confirmed,
+                created_at_ms: created,
+                min_note_position: position,
+                note_cmxs: vec![[id; 32]],
+                spent_nullifiers: vec![],
+            }
+        };
+        let mut v = vec![
+            // Scan-derived rows with positions deliberately out of id
+            // order: id 9 holds the EARLIER position, so chain order
+            // (position desc) must place id 2 first — proving the sort
+            // keys on position, not id.
+            mk(None, 0, Some(7), 9),
+            mk(Some(100), 1, None, 1), // settled
+            mk(None, 0, Some(41), 2),  // scan-derived, later in chain
+            mk(None, 0, None, 6),      // scan-derived, position-less (send-only cluster)
+            mk(None, 5, None, 3),      // fresh live success, height not yet backfilled
+        ];
+        sort_activity_for_display(&mut v);
+        assert_eq!(
+            (v[0].block_height, v[0].created_at_ms),
+            (None, 5),
+            "fresh live success stays on top of the settled bands"
+        );
+        assert_eq!(v[1].block_height, Some(100));
+        assert_eq!(
+            (v[2].id[0], v[3].id[0], v[4].id[0]),
+            (2, 9, 6),
+            "unknown-age rows sink to the bottom in chain order (position \
+             desc), position-less rows last"
+        );
+    }
+
+    /// The restored-history determinism criterion: deriving the same
+    /// wallet data twice (two devices restoring the same seed) must
+    /// produce byte-identical entries — same ids, same (absent) heights,
+    /// same (unknown) timestamps — with no scan-moment dependence.
+    #[test]
+    fn scan_derivation_is_deterministic_across_devices() {
+        let input = ScanDeriveInput {
+            notes: vec![own_note(0x70, 0x71, 10, 2_000, false)],
+            outgoing: vec![outgoing(0x72, addr(0xEE), 20, 800, vec![])],
+            own_addresses: vec![addr(0x01)],
+        };
+        let device_a = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
+        // "Second device": same persisted chain data, different scan
+        // moment — nothing in the derivation may read a clock.
+        let device_b = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
+        assert_eq!(device_a, device_b);
+        for e in &device_a {
+            assert_eq!(e.block_height, None);
+            assert_eq!(e.created_at_ms, 0);
+        }
     }
 
     #[test]
@@ -1279,9 +1457,8 @@ mod tests {
         let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
         let spend = d
             .iter()
-            .find(|e| e.block_height == Some(113))
+            .find(|e| e.kind == ShieldedActivityKind::ShieldedSpend)
             .expect("spend cluster entry");
-        assert_eq!(spend.kind, ShieldedActivityKind::ShieldedSpend);
         assert_eq!(spend.direction, ShieldedDirection::Out);
         assert_eq!(
             spend.amount, 10_000_000_000,
@@ -1310,9 +1487,8 @@ mod tests {
         let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
         let sent = d
             .iter()
-            .find(|e| e.block_height == Some(20))
+            .find(|e| e.kind == ShieldedActivityKind::Sent)
             .expect("send cluster entry");
-        assert_eq!(sent.kind, ShieldedActivityKind::Sent);
         assert_eq!(sent.amount, 10_000_000_000);
         assert_eq!(
             sent.fee,
@@ -1340,9 +1516,8 @@ mod tests {
         let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
         let e = d
             .iter()
-            .find(|e| e.block_height == Some(30))
+            .find(|e| e.kind == ShieldedActivityKind::ShieldedSpend)
             .expect("self-pay cluster entry");
-        assert_eq!(e.kind, ShieldedActivityKind::ShieldedSpend);
         assert_eq!(e.direction, ShieldedDirection::SelfTransfer);
         assert_eq!(e.amount, 1_000_000);
     }

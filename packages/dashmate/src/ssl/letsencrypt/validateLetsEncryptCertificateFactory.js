@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 import LegoCertificate from './LegoCertificate.js';
+import isCertificatePairInstalled from './isCertificatePairInstalled.js';
 
 export const ERRORS = {
   EMAIL_IS_NOT_SET: 'EMAIL_IS_NOT_SET',
@@ -67,6 +68,12 @@ export default function validateLetsEncryptCertificateFactory(homeDir) {
     // Check if gateway SSL files exist
     data.isPrivateKeyFilePresent = fs.existsSync(data.privateKeyFilePath);
     data.isBundleFilePresent = fs.existsSync(data.bundleFilePath);
+    data.isCertificatePairInstalled = isCertificatePairInstalled(
+      data.legoCertPath,
+      data.legoKeyPath,
+      data.bundleFilePath,
+      data.privateKeyFilePath,
+    );
 
     if (!data.isLegoCertPresent) {
       return {

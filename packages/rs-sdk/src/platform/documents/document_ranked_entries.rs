@@ -18,7 +18,10 @@
 //!
 //! Exactly one aggregate `select`, exactly one `group_by` property,
 //! exactly one `ORDER BY` clause naming that select's aggregate, and a
-//! `LIMIT` — plus an optional `OFFSET`. No `where`, no `having`, no
+//! `LIMIT` — plus an optional `OFFSET`. `where` clauses are equality
+//! pins on a covering compound ranked index's leading properties (one
+//! per leading property, selecting which prefix's own ranking the walk
+//! reads) — absent for a single-property index. No `having`, no
 //! `start_at`: each of those is rejected rather than ignored, on both
 //! sides, because a ranked walk cannot honour them and silently
 //! answering a different question is worse than an error.
@@ -32,8 +35,10 @@
 //! ## Contract prerequisites
 //!
 //! The index must opt in with `rankedCountable` / `rankedSummable` /
-//! `rankedAverageable` (meta-schema v3, **protocol version 14+**), and
-//! ranked indexes are single-property. Against a protocol-version-13
+//! `rankedAverageable` (meta-schema v3, **protocol version 14+**). The
+//! index may be single-property (`group_by` its property, no `where`)
+//! or compound (`group_by` its trailing property, equality-pin every
+//! leading one). Against a protocol-version-13
 //! node the request is refused — v13's query table has no ranked path
 //! and rejects the ordering as `Unsupported`. That is the intended
 //! activation gate, not a bug: a v13 node and a v14 node must disagree

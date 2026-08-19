@@ -38,8 +38,9 @@ impl IdentityManager {
     /// as applying it once. If the identity already exists in either
     /// bucket, the scalar fields are updated in place; balance/revision
     /// are gated on `entry.revision >= existing.identity.revision()`
-    /// matching the merge policy on `IdentityChangeSet`. Contested DPNS
-    /// labels are a complete canonical snapshot and are assigned wholesale.
+    /// matching the merge policy on `IdentityChangeSet`. DPNS labels and
+    /// contested DPNS labels are complete canonical snapshots and are
+    /// assigned wholesale.
     pub(crate) fn apply_identity_entry(&mut self, entry: IdentityEntry) {
         use dpp::identity::accessors::IdentitySettersV0;
 
@@ -55,11 +56,11 @@ impl IdentityManager {
             existing.last_synced_keys_block_time = entry.last_synced_keys_block_time;
             existing.status = entry.status;
             *existing.dashpay_profile_mut() = entry.dashpay_profile;
-            for name in entry.dpns_names {
-                if !existing.dpns_names.iter().any(|n| n.label == name.label) {
-                    existing.dpns_names.push(name);
-                }
-            }
+            // DPNS names: wholesale assign, matching the changeset's
+            // last-write-wins merge — entries carry the complete list
+            // (snapshotted via `from_managed`), and a sold/transferred
+            // name must be able to leave it.
+            existing.dpns_names = entry.dpns_names;
             existing.contested_dpns_names = entry.contested_dpns_names;
             existing
                 .dashpay_payments_mut()

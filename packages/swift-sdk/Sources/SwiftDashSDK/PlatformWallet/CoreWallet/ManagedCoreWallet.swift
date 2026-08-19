@@ -134,74 +134,111 @@ public class ManagedCoreWallet {
         try core_wallet_set_gap_limit(handle, accountType.ffi, accountIndex, gapLimit).check()
     }
 
+    // MARK: - Message Signing
+
+    /// Sign `message` with the private key behind `address` and return the
+    /// signature as base64 — a **classic Dash signed message**, byte-for-byte
+    /// compatible with dashj's `ECKey.signMessage` and Dash Core's `signmessage`
+    /// RPC, and verifiable by `verifymessage`, `ECKey.verifyMessage`, and
+    /// CrowdNode's server-side check.
+    ///
+    /// The signed digest is
+    /// `SHA256d(prefix ‖ varint(message.utf8.count) ‖ message.utf8)`: the length
+    /// prefix counts **UTF-8 bytes**, not `String.count`, which counts grapheme
+    /// clusters and diverges for any non-ASCII text.
+    /// The prefix is the historical `"\u{19}DarkCoin Signed Message:\n"` —
+    /// *not* `"Dash"`. Dash inherited that string from before the rename and
+    /// every existing verifier depends on it, so it can never change. The
+    /// returned signature is the 65-byte BIP-137-style recoverable form
+    /// (`header ‖ r ‖ s`, with `header = 27 + recoveryId + 4`, the `+ 4` marking
+    /// a compressed public key), base64-encoded. A verifier recovers the public
+    /// key from the digest and compares its hash to `address` — which is why
+    /// only P2PKH addresses can sign: no other payload has a defined recovery
+    /// comparison.
+    ///
+    /// This is a **proof of address ownership, not a spend** — the shape
+    /// CrowdNode needs, where short strings (a withdrawal amount, the account
+    /// email) are signed with the key behind the address that funded the
+    /// account. No UTXO is selected, reserved, spent, or broadcast, no balance
+    /// changes, and nothing is persisted, so calling it repeatedly is free and
+    /// side-effect-free.
+    ///
+    /// `address` must be a P2PKH address of *this* wallet, on this wallet's
+    /// network, already derived into one of its address pools, and belonging to
+    /// a **signable funds account** (BIP44 / BIP32 / CoinJoin /
+    /// DashPay-*receiving*). A watch-only DashPay **external** account holds a
+    /// contact's receiving addresses whose private keys we never had, so those
+    /// are refused exactly like any other address the wallet does not own.
+    ///
+    /// Signing is RFC6979 deterministic and low-s normalized, so the same
+    /// (`address`, `message`) pair on the same seed always returns the same
+    /// string.
+    ///
+    /// The key is derived through the Keychain mnemonic resolver Rust-side, like
+    /// every other seed-backed path here, so no private key crosses the boundary
+    /// and no resident seed is needed.
+    ///
+    /// - Parameters:
+    ///   - address: the P2PKH address whose key signs; must be one this wallet
+    ///     owns and has derived.
+    ///   - message: the string to sign, **verbatim**. It is length-prefixed into
+    ///     the digest, so trailing whitespace and newlines are significant and
+    ///     the verifier must receive the identical bytes. An empty string is
+    ///     valid and signable.
+    /// - Returns: the base64 signature (88 characters for the 65-byte payload).
+    /// - Throws: `PlatformWalletError.signingKeyUnavailable` when `address`
+    ///   belongs to no signable funds account of this wallet;
+    ///   `PlatformWalletError.invalidParameter` when it is unparseable, encoded
+    ///   for another network, or not P2PKH.
+    public func signMessage(address: String, message: String) throws -> String {
+        guard !address.isEmpty else {
+            throw PlatformWalletError.invalidParameter("address must not be empty")
+        }
+
+        // Resolver-backed core signer, as on every other seed-backed path.
+        let coreSigner = MnemonicResolver()
+        // Both arguments cross as raw UTF-8 bytes with an explicit length (no NUL
+        // terminator), so an embedded NUL cannot truncate what actually gets
+        // signed. `address` is non-empty per the guard above, so its
+        // `baseAddress` is non-nil; an empty `message` yields a nil
+        // `baseAddress`, which the FFI reads as the empty message at length 0 —
+        // the one case where it accepts a null pointer.
+        let addressBytes = Array(address.utf8)
+        let messageBytes = Array(message.utf8)
+
+        var signaturePtr: UnsafeMutablePointer<CChar>? = nil
+        // `withExtendedLifetime` keeps the resolver alive across the synchronous
+        // FFI call — the optimizer can otherwise drop it mid-call and a vtable
+        // callback would use-after-free.
+        let result: PlatformWalletFFIResult = withExtendedLifetime(coreSigner) {
+            addressBytes.withUnsafeBufferPointer {
+                addressBuf -> PlatformWalletFFIResult in
+                messageBytes.withUnsafeBufferPointer {
+                    messageBuf -> PlatformWalletFFIResult in
+                    core_wallet_sign_message(
+                        handle,
+                        addressBuf.baseAddress,
+                        UInt(addressBuf.count),
+                        messageBuf.baseAddress,
+                        UInt(messageBuf.count),
+                        coreSigner.handle,
+                        &signaturePtr
+                    )
+                }
+            }
+        }
+        try result.check()
+
+        guard let ptr = signaturePtr else {
+            throw PlatformWalletError.nullPointer(
+                "core_wallet_sign_message returned a NULL signature pointer"
+            )
+        }
+        defer { core_wallet_free_address(ptr) }
+        return String(cString: ptr)
+    }
+
     // MARK: - Transactions
-
-    /// Broadcast a transaction built by `CoreTransactionBuilder.buildSigned`.
-    ///
-    /// The funding account captured at build time is forwarded so that a
-    /// definitive broadcast rejection releases the UTXO reservation
-    /// `buildSigned` took, letting an immediate retry reselect those inputs.
-    ///
-    /// Returns the authoritative accepted/rejected/unknown network outcome.
-    /// Throws only for local or FFI failures that prevented an outcome from
-    /// being determined.
-    public func broadcastTransactionWithOutcome(
-        _ tx: CoreTransaction
-    ) throws -> CoreTransactionBroadcastOutcome {
-        var txidPtr: UnsafeMutablePointer<CChar>? = nil
-        let ffiResult = withUnsafePointer(to: tx.ffi) { txPtr in
-            core_wallet_broadcast_transaction(
-                handle, txPtr, tx.accountType.ffi, tx.accountIndex, &txidPtr
-            )
-        }
-        let result = PlatformWalletResult(ffiResult)
-
-        defer {
-            if let txidPtr {
-                platform_wallet_string_free(txidPtr)
-            }
-        }
-
-        switch result.code {
-        case .success, .errorTransactionBroadcastRejected,
-             .errorTransactionBroadcastUnconfirmed:
-            guard let txidPtr else {
-                throw PlatformWalletError.nullPointer(
-                    "core_wallet_broadcast_transaction returned a NULL txid pointer for \(result.code)"
-                )
-            }
-            let txid = String(cString: txidPtr)
-            let reason = result.message ?? "<no detail from Rust>"
-
-            return try CoreTransactionBroadcastOutcome(
-                resultCode: result.code,
-                txid: txid,
-                reason: reason
-            )
-
-        default:
-            try result.throwIfError()
-            throw PlatformWalletError.unknown(
-                "core_wallet_broadcast_transaction returned an unexpected success state"
-            )
-        }
-    }
-
-    /// Compatibility wrapper preserving the former throwing API.
-    ///
-    /// New code should inspect `broadcastTransactionWithOutcome` so an unknown
-    /// outcome cannot be mistaken for a definitive rejection.
-    @available(*, deprecated, message: "Use broadcastTransactionWithOutcome(_:) and handle accepted/rejected/unknown")
-    public func broadcastTransaction(_ tx: CoreTransaction) throws -> String {
-        switch try broadcastTransactionWithOutcome(tx) {
-        case .accepted(let txid):
-            return txid
-        case .rejected(_, let reason):
-            throw PlatformWalletError.transactionBroadcastRejected(reason)
-        case .unknown(_, let reason):
-            throw PlatformWalletError.transactionBroadcastUnconfirmed(reason)
-        }
-    }
 
     /// Consume and broadcast an atomically finalized transaction, returning
     /// the authoritative accepted/rejected/unknown network outcome.
@@ -210,7 +247,7 @@ public class ManagedCoreWallet {
     ) throws -> CoreTransactionBroadcastOutcome {
         let transactionHandle = try tx.takeForBroadcast()
         var txidPtr: UnsafeMutablePointer<CChar>? = nil
-        let result = PlatformWalletResult(core_wallet_broadcast_signed_transaction_v2(
+        let result = PlatformWalletResult(core_wallet_broadcast_signed_transaction(
             handle,
             transactionHandle,
             &txidPtr
@@ -227,7 +264,7 @@ public class ManagedCoreWallet {
              .errorTransactionBroadcastUnconfirmed:
             guard let txidPtr else {
                 throw PlatformWalletError.nullPointer(
-                    "core_wallet_broadcast_signed_transaction_v2 returned a NULL txid pointer for \(result.code)"
+                    "core_wallet_broadcast_signed_transaction returned a NULL txid pointer for \(result.code)"
                 )
             }
             return try CoreTransactionBroadcastOutcome(
@@ -239,7 +276,7 @@ public class ManagedCoreWallet {
         default:
             try result.throwIfError()
             throw PlatformWalletError.unknown(
-                "core_wallet_broadcast_signed_transaction_v2 returned an unexpected success state"
+                "core_wallet_broadcast_signed_transaction returned an unexpected success state"
             )
         }
     }
@@ -257,9 +294,36 @@ public class ManagedCoreWallet {
         }
     }
 
+    /// Broadcast the deferred (BIP70/BIP270) payment behind `token` and return
+    /// its txid. The token is consumed atomically before the send, so a repeated
+    /// or concurrent broadcast gets an error rather than a second send.
+    ///
+    /// An unusable token surfaces as one of three sibling errors instead:
+    /// `.staleReservationToken` (34) — the reservation may already have aged out
+    /// of key-wallet's TTL, rebuild the payment; `.reservationTokenConsumed`
+    /// (35) — unknown, already broadcast, or already released;
+    /// `.reservationWalletMismatch` (36) — minted against a different wallet
+    /// generation. `.notFound` (98) means the token's wallet was removed from
+    /// the manager entirely. None of them touched the network and none is
+    /// retryable in place.
+    ///
+    /// Kotlin parity: `ManagedCoreWallet.broadcastSignedPayment`
+    /// (`ManagedCoreWallet.kt`).
+    func broadcastSignedPayment(token: UInt64) throws -> String {
+        var txidPtr: UnsafeMutablePointer<CChar>? = nil
+        try core_wallet_signed_payment_broadcast(handle, token, &txidPtr).check()
+        guard let ptr = txidPtr else {
+            throw PlatformWalletError.nullPointer(
+                "core_wallet_signed_payment_broadcast returned a NULL txid pointer"
+            )
+        }
+        defer { core_wallet_free_address(ptr) }
+        return String(cString: ptr)
+    }
+
     /// Consume without sending and release its reservation immediately.
     public func abandonTransaction(_ tx: FinalizedCoreTransaction) throws {
-        try core_wallet_abandon_signed_transaction_v2(
+        try core_wallet_abandon_signed_transaction(
             handle,
             tx.takeForAbandon()
         ).check()
