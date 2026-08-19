@@ -225,6 +225,24 @@ pub fn build_shielded_transfer_transition_multi<P: OrchardProver>(
             "a multi-output shielded transfer needs at least one recipient output".to_string(),
         ));
     }
+    // Every recipient amount must be positive, enforced HERE — the lowest public builder — so
+    // the invariant does not depend on the entry point. The C, JNI and Kotlin boundaries all
+    // reject a zero amount already; a direct Rust caller bypassed them and could mint a
+    // zero-valued recipient note.
+    //
+    // That also protects the motivating two-note layout: with `[0, D]` a greedy claim
+    // selection covers the target from the full-value note alone and stops, leaving the
+    // zero-value note unspent — which restores exactly the random-padding nullifier the
+    // two-note split exists to avoid (#4312 review finding 1720257964f4).
+    if let Some((index, _)) = outputs
+        .iter()
+        .enumerate()
+        .find(|(_, output)| output.amount == 0)
+    {
+        return Err(ProtocolError::ShieldedBuildError(format!(
+            "multi-output shielded transfer amount at index {index} must be positive"
+        )));
+    }
 
     // Checked: a crafted output set could otherwise wrap u64 in release builds.
     let transfer_total = outputs
@@ -572,6 +590,82 @@ mod tests {
         .expect_err("an empty output set must be rejected");
         assert!(
             err.to_string().contains("at least one recipient output"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// A zero-valued recipient output must be refused by the BUILDER, not only by the C / JNI /
+    /// Kotlin boundaries — otherwise the amount invariant depends on the entry point, and the
+    /// `[0, D]` shape lets greedy claim selection stop after the full-value note and leave the
+    /// zero-value note unspent, restoring the random-padding nullifier the two-note layout
+    /// exists to avoid (#4312 review finding 1720257964f4).
+    #[test]
+    fn multi_output_transfer_rejects_zero_valued_recipient_output() {
+        let platform_version = PlatformVersion::latest();
+        let sk = SpendingKey::from_bytes([42u8; 32]).expect("valid sk");
+        let fvk = FullViewingKey::from(&sk);
+        let ask = SpendAuthorizingKey::from(&sk);
+        let change_address = test_orchard_address();
+        let recipient = test_orchard_address();
+
+        // The motivating `[0, D]` two-note shape: the zero output sits FIRST, so the error must
+        // name index 0 and the rejection must not depend on the position of the full-value note.
+        let outputs = vec![
+            ShieldedTransferOutput {
+                recipient,
+                amount: 0,
+                memo: [0u8; 36],
+            },
+            ShieldedTransferOutput {
+                recipient,
+                amount: 1_000_000,
+                memo: [0u8; 36],
+            },
+        ];
+
+        let err = build_shielded_transfer_transition_multi(
+            vec![test_spendable_note(u64::MAX / 2)],
+            &outputs,
+            &change_address,
+            &fvk,
+            &ask,
+            Anchor::empty_tree(),
+            &TestProver,
+            platform_version,
+        )
+        .expect_err("a zero-valued recipient output must be rejected");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("amount at index 0") && msg.contains("must be positive"),
+            "unexpected error: {msg}"
+        );
+
+        // A zero in any LATER position is rejected the same way, with its own index.
+        let outputs = vec![
+            ShieldedTransferOutput {
+                recipient,
+                amount: 1_000_000,
+                memo: [0u8; 36],
+            },
+            ShieldedTransferOutput {
+                recipient,
+                amount: 0,
+                memo: [0u8; 36],
+            },
+        ];
+        let err = build_shielded_transfer_transition_multi(
+            vec![test_spendable_note(u64::MAX / 2)],
+            &outputs,
+            &change_address,
+            &fvk,
+            &ask,
+            Anchor::empty_tree(),
+            &TestProver,
+            platform_version,
+        )
+        .expect_err("a trailing zero-valued recipient output must be rejected");
+        assert!(
+            err.to_string().contains("amount at index 1"),
             "unexpected error: {err}"
         );
     }
