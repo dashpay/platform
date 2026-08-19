@@ -1359,6 +1359,85 @@ mod tests {
         );
     }
 
+    /// A whole-account drain that finds nothing selectable must report the
+    /// `DrainAll` minimum-lock floor as the shortfall's `required`, judged at
+    /// BUILD level rather than by calling `map_builder_error` directly.
+    ///
+    /// This is the branch guard for the `AssetLockBuildAmount::DrainAll`
+    /// arm of that `required` computation. A drain's credit output carries a
+    /// ZERO placeholder value (the key-wallet builder rewrites it to
+    /// `Σ inputs − fee`), so reverting the arm to the built `amount_duffs`
+    /// would advertise the meaningless pair `available: 0, required: 0` — and
+    /// the direct-call unit test above, which passes its own `requested`
+    /// argument in, would stay green through that revert. This one would not.
+    ///
+    /// The zero-spendable-candidate state is reached by holding the first
+    /// build's reservation token for the whole test, which keeps the fixture's
+    /// single CoinJoin UTXO reserved and leaves the account fully committed.
+    #[tokio::test]
+    async fn drain_shortfall_reports_the_minimum_lock_floor_as_required() {
+        let broadcaster = Arc::new(CountingOkBroadcaster::default());
+        let (manager, signer, _persistence) =
+            coinjoin_funded_asset_lock_manager(Arc::clone(&broadcaster)).await;
+
+        // Reserve the account's only UTXO. `_token` is a live binding, so the
+        // reservation cannot be released before the second build runs; `None`
+        // skips the floor check, which a build never applies anyway (it is
+        // judged downstream against the BUILT payload).
+        let (_tx, _path, _token, _accounts) = manager
+            .build_asset_lock_transaction_with_funding(
+                super::AssetLockBuildAmount::DrainAll {
+                    minimum_lock_duffs: None,
+                },
+                &[AccountTypePreference::CoinJoin],
+                0,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                &signer,
+            )
+            .await
+            .expect("first drain builds over the funded CoinJoin account");
+
+        // Second drain: zero spendable candidates over a CoinJoin account,
+        // which is exactly the whole-account form the shielded flow uses.
+        let shortfall = manager
+            .build_asset_lock_transaction_with_funding(
+                super::AssetLockBuildAmount::DrainAll {
+                    minimum_lock_duffs: Some(12_345),
+                },
+                &[AccountTypePreference::CoinJoin],
+                0,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                &signer,
+            )
+            .await;
+
+        match shortfall {
+            Err(PlatformWalletError::AssetLockInsufficientFunds {
+                available,
+                required,
+            }) => {
+                assert_eq!(
+                    available, 0,
+                    "the fully-reserved CoinJoin account has nothing selectable"
+                );
+                assert_eq!(
+                    required, 12_345,
+                    "a drain must report the floor threaded through DrainAll, \
+                     not the zero credit-output placeholder"
+                );
+            }
+            other => panic!("expected typed AssetLockInsufficientFunds, got {other:?}"),
+        }
+
+        assert_eq!(
+            broadcaster.calls(),
+            0,
+            "a build-level shortfall must never reach the broadcaster"
+        );
+    }
+
     /// Builds an `AssetLockManager` over the shared BIP44-funded fixture.
     async fn funded_asset_lock_manager<B: TransactionBroadcaster>(
         broadcaster: Arc<B>,
