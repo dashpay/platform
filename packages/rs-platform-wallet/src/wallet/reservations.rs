@@ -96,6 +96,42 @@ pub(crate) async fn release_reservation_after_rejected_broadcast(
     tx: &Transaction,
     reservation_token: Option<key_wallet::ReservationToken>,
 ) {
+    release_build_reservation(
+        wallet_manager,
+        wallet_id,
+        funding_accounts,
+        tx,
+        reservation_token,
+    )
+    .await
+}
+
+/// Release the funding accounts' UTXO reservations for a built transaction the
+/// caller has decided not to send.
+///
+/// The general form of [`release_reservation_after_rejected_broadcast`]: same
+/// per-account, owner-guarded reconciliation, for aborts that are not a
+/// rejected broadcast. The other pre-broadcast abort is a persistence failure
+/// — `send_payment` must durably record its payment-address used flip *before*
+/// broadcasting, and when that store fails the send is abandoned with a fully
+/// signed transaction in hand whose inputs are all still reserved.
+///
+/// `funding_accounts` are the accounts that contributed inputs to `tx` — the
+/// accounts handed to `add_funding` when it was built. A build funded from
+/// several of them (a pooled asset lock, a pooled send) reserves in **each**
+/// account's own `ReservationSet` under the one token, so every one of them
+/// must reconcile; releasing only the first would leave the rest of the inputs
+/// held until the TTL backstop reclaims them.
+///
+/// Pass the build's [`ReservationToken`](key_wallet::ReservationToken)
+/// whenever it is available — see the owner-guard rationale inline below.
+pub(crate) async fn release_build_reservation(
+    wallet_manager: &RwLock<WalletManager<PlatformWalletInfo>>,
+    wallet_id: &WalletId,
+    funding_accounts: &[AccountType],
+    tx: &Transaction,
+    reservation_token: Option<key_wallet::ReservationToken>,
+) {
     // `release_reservation` takes `&self` and the manager map is
     // untouched, so a read lock suffices — this cleanup does not
     // serialize concurrent sends.
@@ -104,7 +140,7 @@ pub(crate) async fn release_reservation_after_rejected_broadcast(
         tracing::warn!(
             wallet_id = %hex::encode(wallet_id),
             ?funding_accounts,
-            "could not release UTXO reservation after rejected broadcast: wallet not found"
+            "could not release the build's UTXO reservation: wallet not found"
         );
         return;
     };
@@ -124,7 +160,7 @@ pub(crate) async fn release_reservation_after_rejected_broadcast(
             None => tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
                 ?funding_account,
-                "could not release UTXO reservation after rejected broadcast: \
+                "could not release the build's UTXO reservation: \
                  funds account not found"
             ),
         }

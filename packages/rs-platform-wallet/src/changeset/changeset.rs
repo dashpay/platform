@@ -80,6 +80,25 @@ use crate::wallet::identity::{
 /// so structural equality on `records` would require us to fork the
 /// upstream type. Tests that need to inspect a changeset's contents
 /// reach into individual fields directly.
+/// One outpoint whose spend must still be persisted even though the record
+/// that spent it never reaches the persister's `records` list.
+///
+/// See [`CoreChangeSet::unrecorded_spends`] for why this exists and why the
+/// spending txid cannot be recovered downstream.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct UnrecordedSpend {
+    /// The outpoint being spent — the stale row to clear.
+    pub outpoint: OutPoint,
+    /// Txid of the transaction that spends it. Both host persisters resolve
+    /// this to decide whether the spend is final, so it must survive.
+    pub spending_txid: Txid,
+    /// The account whose (suppressed) record spent the outpoint. Used only
+    /// to route the entry into a per-account bucket on the FFI surface;
+    /// both host handlers resolve the TXO by outpoint, wallet-wide.
+    pub account_type: AccountType,
+}
+
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CoreChangeSet {
@@ -103,6 +122,25 @@ pub struct CoreChangeSet {
     /// to one of our addresses (i.e. `OutputRole::Received` or
     /// `OutputRole::Change` per the upstream `TransactionRecord`).
     pub new_utxos: Vec<Utxo>,
+
+    /// Spend-clears whose spending record was deliberately **suppressed**
+    /// from [`Self::records`] — a contact's watch-only chain (see
+    /// `core_bridge`'s `is_contact_watch_only`, dashpay/platform#4363).
+    ///
+    /// [`Self::spent_utxos`] already carries these outpoints, and the
+    /// backend that consumes it directly (SQLite) needs nothing more. The
+    /// FFI persister does not: it derives its per-account spend lists from
+    /// `records`, so a spend whose only record was suppressed vanished
+    /// before reaching Android/iOS — the stale-TXO heal #4363 added never
+    /// ran on either mobile host.
+    ///
+    /// Reconstructing it from `spent_utxos` alone is not possible: a
+    /// [`Utxo`] carries no spending txid, and both host handlers key the
+    /// `isSpent` flip on resolving the spending transaction. So this
+    /// carries the two things record-suppression destroys — *which*
+    /// transaction did the spending, and *which* account's record it was —
+    /// leaving `spent_utxos` and its existing consumers untouched.
+    pub unrecorded_spends: Vec<UnrecordedSpend>,
 
     /// InstantSend locks observed for records that are NOT yet in a
     /// chain-locked block (i.e. records still in `Mempool`,
@@ -240,6 +278,7 @@ impl Merge for CoreChangeSet {
         self.records.extend(other.records);
         self.spent_utxos.extend(other.spent_utxos);
         self.new_utxos.extend(other.new_utxos);
+        self.unrecorded_spends.extend(other.unrecorded_spends);
 
         // IS-lock map: last-write-wins per txid. A second IS-lock for
         // the same txid (e.g. a follow-up event re-confirming the lock)
@@ -338,6 +377,7 @@ impl Merge for CoreChangeSet {
         self.records.is_empty()
             && self.spent_utxos.is_empty()
             && self.new_utxos.is_empty()
+            && self.unrecorded_spends.is_empty()
             && self.instant_locks_for_non_final_records.is_empty()
             && self.last_processed_height.is_none()
             && self.synced_height.is_none()

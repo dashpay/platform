@@ -254,6 +254,16 @@ impl WalletChangeSetFFI {
     /// (the records are authoritative), and re-deriving keeps the
     /// per-account routing self-contained.
     ///
+    /// That redundancy stopped holding for spends once
+    /// dashpay/platform#4363 began *suppressing* a contact's watch-only
+    /// record from `records` while still emitting its spend — the
+    /// stale-TXO heal. With nothing left in `records` to re-derive from,
+    /// those spends reached no mobile host at all, so the heal was dead on
+    /// Android and iOS; only the SQLite backend, which reads `spent_utxos`
+    /// directly, ever ran it. `CoreChangeSet::unrecorded_spends` carries
+    /// exactly that residue — outpoint, spending txid and owning account —
+    /// and is folded into the per-account `utxos_spent` arrays below.
+    ///
     /// `chain` carries `synced_height` from the changeset's
     /// `synced_height` field; `block_hash` is omitted because
     /// `WalletEvent::SyncHeightAdvanced` doesn't carry it (the upstream
@@ -351,6 +361,17 @@ impl WalletChangeSetFFI {
             }
         }
 
+        // Same for an account carrying only suppressed spend-clears. This is
+        // the common shape of the #4363 heal: a contact spends a stale row
+        // and their watch-only record — the batch's only record for that
+        // account — is dropped, so the bucket would not exist at all and the
+        // spend would have nowhere to be emitted.
+        for spend in &cs.unrecorded_spends {
+            if !by_account.iter().any(|(at, _)| at == &spend.account_type) {
+                by_account.push((spend.account_type, Vec::new()));
+            }
+        }
+
         let mut ffi_accounts = Vec::with_capacity(by_account.len());
         for (account_type, recs) in by_account {
             let type_name = CString::new(format!("{:?}", account_type))
@@ -367,6 +388,16 @@ impl WalletChangeSetFFI {
                 utxos_added.extend(record_new_utxos_ffi(rec));
                 utxos_spent.extend(record_spent_outpoints_ffi(rec));
             }
+            // Fold in the spends whose record never made it into `records`.
+            // Disjoint from the loop above by construction — `unrecorded_spends`
+            // is populated only for records that are suppressed — so no entry
+            // is emitted twice.
+            utxos_spent.extend(
+                cs.unrecorded_spends
+                    .iter()
+                    .filter(|spend| spend.account_type == account_type)
+                    .map(unrecorded_spend_ffi),
+            );
 
             // Transactions for this account.
             let transactions: Vec<TransactionRecordFFI> =
@@ -880,6 +911,29 @@ fn record_spent_outpoints_ffi(
             })
         })
         .collect()
+}
+
+/// Project an [`UnrecordedSpend`] — a spend whose record was suppressed from
+/// the changeset's `records` — into the same wire shape
+/// [`record_spent_outpoints_ffi`] produces.
+///
+/// The spending txid is carried through rather than zeroed: both host
+/// handlers resolve it to decide whether the spend is final, and a zero txid
+/// makes the emit a no-op on each of them.
+///
+/// [`UnrecordedSpend`]: platform_wallet::changeset::UnrecordedSpend
+fn unrecorded_spend_ffi(spend: &platform_wallet::changeset::UnrecordedSpend) -> SpentOutPointFFI {
+    let mut txid = [0u8; 32];
+    txid.copy_from_slice(spend.outpoint.txid.as_ref());
+    let mut spending_txid = [0u8; 32];
+    spending_txid.copy_from_slice(spend.spending_txid.as_ref());
+    SpentOutPointFFI {
+        outpoint: OutPointFFI {
+            txid,
+            vout: spend.outpoint.vout,
+        },
+        spending_txid,
+    }
 }
 
 /// Map upstream `TransactionType` to a stable `u8` discriminant for
@@ -1829,6 +1883,104 @@ mod tests {
         assert_eq!(bucket.internal_highest_used, 3);
         assert_eq!(bucket.transactions_count, 0);
         assert_eq!(bucket.utxos_added_count, 0);
+        unsafe { free_wallet_changeset_ffi(&ffi) };
+    }
+
+    /// A contact spending a stale pre-#4363 TXO must cross the FFI as a
+    /// spend-clear, carrying the spending txid.
+    ///
+    /// This is the changeset shape the #4363 heal produces: the contact's
+    /// watch-only record is suppressed from `records` (it is not a
+    /// transaction of ours), so the batch has **no record at all** for that
+    /// account — and `from_changeset` built its buckets, and derived every
+    /// spend, from `records` alone. The clear reached the SQLite backend
+    /// (which reads `cs.spent_utxos` directly) and no mobile host.
+    ///
+    /// Pre-fix this emitted zero accounts and zero spends.
+    #[test]
+    fn contact_spend_of_a_stale_txo_crosses_the_ffi() {
+        use dashcore::hashes::Hash;
+        use platform_wallet::changeset::UnrecordedSpend;
+
+        let account = AccountType::DashpayExternalAccount {
+            index: 0,
+            user_identity_id: [1u8; 32],
+            friend_identity_id: [2u8; 32],
+        };
+        let stale_txid = dashcore::Txid::from_slice(&[0x11; 32]).expect("txid");
+        let spending_txid = dashcore::Txid::from_slice(&[0x22; 32]).expect("txid");
+
+        let mut cs = CoreChangeSet::default();
+        cs.unrecorded_spends.push(UnrecordedSpend {
+            outpoint: dashcore::OutPoint {
+                txid: stale_txid,
+                vout: 1,
+            },
+            spending_txid,
+            account_type: account,
+        });
+
+        let ffi = WalletChangeSetFFI::from_changeset(&cs);
+        assert_eq!(
+            ffi.accounts_count, 1,
+            "the suppressed record's account must still get a bucket to carry \
+             the spend-clear"
+        );
+        let bucket = unsafe { &*ffi.accounts };
+        assert_eq!(
+            bucket.transactions_count, 0,
+            "the contact's spend is still not a transaction row of ours"
+        );
+        assert_eq!(
+            bucket.utxos_spent_count, 1,
+            "the stale TXO's spend-clear must cross the FFI"
+        );
+        let spent = unsafe { &*bucket.utxos_spent };
+        assert_eq!(spent.outpoint.txid, stale_txid.to_byte_array());
+        assert_eq!(spent.outpoint.vout, 1);
+        assert_eq!(
+            spent.spending_txid,
+            spending_txid.to_byte_array(),
+            "the spending txid must survive — both host handlers resolve it to \
+             decide the spend is final, and a zero txid makes the emit a no-op"
+        );
+        unsafe { free_wallet_changeset_ffi(&ffi) };
+    }
+
+    /// The projection must not double-count: an account that has both a
+    /// surviving record and (from another record) a suppressed spend emits
+    /// each spend once. `unrecorded_spends` is populated only for suppressed
+    /// records, so the two sources are disjoint by construction — this pins
+    /// that they stay so.
+    #[test]
+    fn unrecorded_spends_do_not_duplicate_record_derived_spends() {
+        use dashcore::hashes::Hash;
+        use platform_wallet::changeset::UnrecordedSpend;
+
+        let account = AccountType::DashpayExternalAccount {
+            index: 0,
+            user_identity_id: [1u8; 32],
+            friend_identity_id: [2u8; 32],
+        };
+        let mut cs = CoreChangeSet::default();
+        for vout in 0..3u32 {
+            cs.unrecorded_spends.push(UnrecordedSpend {
+                outpoint: dashcore::OutPoint {
+                    txid: dashcore::Txid::from_slice(&[0x33; 32]).expect("txid"),
+                    vout,
+                },
+                spending_txid: dashcore::Txid::from_slice(&[0x44; 32]).expect("txid"),
+                account_type: account,
+            });
+        }
+
+        let ffi = WalletChangeSetFFI::from_changeset(&cs);
+        assert_eq!(ffi.accounts_count, 1, "all three share one account bucket");
+        let bucket = unsafe { &*ffi.accounts };
+        assert_eq!(
+            bucket.utxos_spent_count, 3,
+            "each suppressed spend emits exactly once"
+        );
         unsafe { free_wallet_changeset_ffi(&ffi) };
     }
 

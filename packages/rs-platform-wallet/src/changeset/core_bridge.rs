@@ -52,7 +52,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::changeset::changeset::{
-    AssetLockChangeSet, CoreChangeSet, HighestUsedIndexes, PlatformWalletChangeSet,
+    AssetLockChangeSet, CoreChangeSet, HighestUsedIndexes, PlatformWalletChangeSet, UnrecordedSpend,
 };
 use crate::changeset::merge::Merge;
 use crate::changeset::traits::PlatformWalletPersistence;
@@ -618,6 +618,11 @@ async fn build_core_changeset(
             CoreChangeSet {
                 new_utxos: derive_new_utxos(record),
                 spent_utxos: derive_spent_utxos(record),
+                // Suppressed below but still spending: keep the outpoint,
+                // its spender and its account alive for the FFI persister,
+                // which projects per account off `records` and would
+                // otherwise never see this spend at all.
+                unrecorded_spends: derive_unrecorded_spends(record),
                 // A contact's watch-only chain never defines the
                 // wallet's transaction row (see `is_contact_watch_only`).
                 // The usage deltas below are still emitted, so the
@@ -671,6 +676,10 @@ async fn build_core_changeset(
             for r in inserted {
                 cs.new_utxos.extend(derive_new_utxos(r));
                 cs.spent_utxos.extend(derive_spent_utxos(r));
+                // Same source as `spent_utxos` — only `inserted` changes
+                // UTXO topology — so the suppressed-record spends track it
+                // exactly. `updated` / `matured` re-emit content, not spends.
+                cs.unrecorded_spends.extend(derive_unrecorded_spends(r));
             }
             // Updated records (re-confirmation, IS-lock applied to a known
             // mempool tx, etc.) don't usually change UTXO topology — the
@@ -1084,6 +1093,35 @@ fn derive_new_utxos(record: &TransactionRecord) -> Vec<Utxo> {
 /// persister deletes by `outpoint` so the missing fields are
 /// informational only — they never affect correctness of the spent-set
 /// removal, only the audit-trail richness on the way out.
+/// Derive the spend-clears that `records` suppression would otherwise lose.
+///
+/// Empty for every record that *does* reach the persister's `records` list —
+/// those spends are re-derived per account from the record itself on the FFI
+/// surface, and emitting them twice would duplicate the entry. Non-empty only
+/// for a contact's watch-only record (see [`is_contact_watch_only`]), which is
+/// dropped from `records` while its spends must still clear the stale rows a
+/// pre-#4363 build wrote.
+///
+/// Pairs each outpoint with the spending txid and the owning account, the two
+/// facts [`CoreChangeSet::unrecorded_spends`] exists to preserve.
+fn derive_unrecorded_spends(record: &TransactionRecord) -> Vec<UnrecordedSpend> {
+    if !is_contact_watch_only(record) {
+        return Vec::new();
+    }
+    record
+        .input_details
+        .iter()
+        .filter_map(|detail| {
+            let input = record.transaction.input.get(detail.index as usize)?;
+            Some(UnrecordedSpend {
+                outpoint: input.previous_output,
+                spending_txid: record.txid,
+                account_type: record.account_type,
+            })
+        })
+        .collect()
+}
+
 fn derive_spent_utxos(record: &TransactionRecord) -> Vec<Utxo> {
     record
         .input_details
@@ -1118,6 +1156,7 @@ impl CoreChangeSet {
         self.records.is_empty()
             && self.spent_utxos.is_empty()
             && self.new_utxos.is_empty()
+            && self.unrecorded_spends.is_empty()
             && self.instant_locks_for_non_final_records.is_empty()
             && self.last_processed_height.is_none()
             && self.synced_height.is_none()
@@ -1589,6 +1628,41 @@ mod contact_watch_only_projection_tests {
             "the stale pre-fix TXO must still be removed"
         );
         assert_eq!(cs.spent_utxos[0].outpoint, funding_outpoint());
+
+        // `spent_utxos` alone only heals the backends that read it directly
+        // (SQLite). The FFI persister projects per account off `records`,
+        // which is empty here, so the clear needs the suppressed record's
+        // spend carried explicitly — with the spending txid, which a `Utxo`
+        // does not have and which both host handlers require.
+        assert_eq!(
+            cs.unrecorded_spends.len(),
+            1,
+            "the suppressed record's spend must be carried for the FFI persister"
+        );
+        let unrecorded = &cs.unrecorded_spends[0];
+        assert_eq!(unrecorded.outpoint, funding_outpoint());
+        assert_eq!(
+            unrecorded.spending_txid,
+            tx.txid(),
+            "the spending txid must be the contact's spending transaction"
+        );
+        assert_eq!(unrecorded.account_type, contact_external_account());
+    }
+
+    /// The converse: a record that *survives* into `records` must NOT also
+    /// appear in `unrecorded_spends`. The FFI builder re-derives spends from
+    /// every surviving record, so emitting both would double-count the clear.
+    #[tokio::test]
+    async fn a_surviving_record_emits_no_unrecorded_spend() {
+        let (_, funding, _) = contact_payment_records();
+        let cs = build_core_changeset(&test_manager(), &transaction_detected(funding)).await;
+
+        assert_eq!(cs.records.len(), 1, "the funding record still persists");
+        assert!(
+            cs.unrecorded_spends.is_empty(),
+            "a record the persister will see must not also be carried as an \
+             unrecorded spend — the FFI builder would emit its inputs twice"
+        );
     }
 }
 

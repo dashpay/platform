@@ -1098,7 +1098,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // re-acquires that (non-reentrant) lock internally.
         self.drain_pending_contact_crypto(provider).await;
 
-        let (payment_address, used_flip_changeset, tx, fee, funding_accounts) = {
+        let (payment_address, used_flip_changeset, tx, fee, funding_accounts, reservation_token) = {
             let mut wm = self.wallet_manager.write().await;
 
             // Resolve the external account's xpub so we can derive addresses.
@@ -1269,13 +1269,37 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             // `impl<S: Signer> TransactionSigner for S`) rather than the
             // resident `wallet`, so funding-input signatures are produced
             // from Keychain-derived keys without a resident seed.
-            // `build_signed` returns the fee the transaction actually
-            // pays — Σ(selected input values) − Σ(output values), a
+            // `build_signed_reserved` returns the fee the transaction
+            // actually pays — Σ(selected input values) − Σ(output values), a
             // dropped sub-dust change remainder included — since
             // rust-dashcore#872 (pinned above). No caller-side
             // recomputation needed.
-            let (tx, fee) = match builder
-                .build_signed(signer, |addr| funding_paths.get(&addr).cloned())
+            //
+            // `build_signed_reserved` rather than `build_signed`: both reserve
+            // the selected inputs identically (upstream `build_signed` is a
+            // thin wrapper that *discards* the token), but only this one hands
+            // back the `ReservationToken` stamped onto them. Every failure
+            // path after this point has to reconcile that reservation, and two
+            // of them cannot do it correctly without the token:
+            //
+            //   * the `persister.store` failure below aborts pre-broadcast
+            //     while the inputs of a *fully signed* transaction stay
+            //     reserved — with no token there was nothing to release with,
+            //     so they were stranded until the TTL backstop and an
+            //     immediate retry failed with spurious insufficient funds;
+            //   * the rejected-broadcast release runs after two `.await`s, so
+            //     key-wallet's TTL sweep may already have reclaimed this
+            //     build's reservation and a *newer* build re-taken the same
+            //     outpoints. The unconditional by-outpoint release would then
+            //     clobber that newer owner and re-expose the inputs of a
+            //     transaction that may have been sent (`dashpay/platform#4185`,
+            //     and see `release_reservation_after_rejected_broadcast`).
+            //
+            // Since #4373 pooled the funding across BIP44 + BIP32 + every
+            // DashPay receiving account, the blast radius of both is the
+            // wallet's whole spendable set rather than one account.
+            let (tx, fee, reservation_token) = match builder
+                .build_signed_reserved(signer, |addr| funding_paths.get(&addr).cloned())
                 .await
             {
                 Ok(built) => built,
@@ -1295,6 +1319,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     // reconstruction. Used indices must chain within the
                     // gap limit, so consumption is committed only once a
                     // fully signed transaction exists.
+                    //
+                    // No reservation survives this arm, so there is nothing to
+                    // release here: selection failing never reserved, and a
+                    // signer failing is released owner-guarded inside
+                    // `build_signed_reserved` before it returns the error.
                     if let Some(external_account) = info
                         .core_wallet
                         .accounts
@@ -1313,6 +1342,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 tx,
                 fee,
                 offered_accounts,
+                reservation_token,
             )
         };
 
@@ -1327,11 +1357,31 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // leaves a one-address gap that the pool's gap window absorbs on
         // retry — bounded, because a signed transaction exists here, unlike
         // the unbounded build-failure case rolled back above.
-        self.persister.store(used_flip_changeset).map_err(|e| {
-            PlatformWalletError::Persistence(format!(
+        //
+        // The abort must also hand the build's reserved inputs back. This
+        // transaction is fully signed, so `build_signed_reserved` left every
+        // selected input reserved across each contributing account expecting a
+        // broadcast that now never happens; returning `?` without releasing
+        // stranded them until the reservation TTL expired, and — since #4373
+        // pooled the funding — that is the whole spendable set, not one
+        // account. The user's retry would fail with a spurious
+        // insufficient-funds until the backstop fired. Release owner-guarded:
+        // the store call is an `.await`-free but fallible step reached after
+        // the build's own `.await`, so a TTL sweep may already have handed
+        // these outpoints to a newer build that must not be clobbered.
+        if let Err(e) = self.persister.store(used_flip_changeset) {
+            crate::wallet::reservations::release_build_reservation(
+                &self.wallet_manager,
+                &self.wallet_id,
+                &funding_accounts,
+                &tx,
+                reservation_token,
+            )
+            .await;
+            return Err(PlatformWalletError::Persistence(format!(
                 "failed to persist payment-address used flip: {e}"
-            ))
-        })?;
+            )));
+        }
 
         // --- 3. Broadcast the transaction, releasing the build's UTXO
         // reservation if the broadcast is definitively rejected pre-send. ---
@@ -1347,9 +1397,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     &self.wallet_id,
                     &funding_accounts,
                     &tx,
-                    // This path does not thread the build's reservation token
-                    // either; keep the historical unconditional release.
-                    None,
+                    // Owner-guarded with the build's own token. The release
+                    // runs after the build and the broadcast have both
+                    // `.await`ed, so the TTL sweep may have reclaimed this
+                    // reservation and a newer build re-reserved the same
+                    // outpoints; the historical `None` took the unconditional
+                    // branch and freed *that* build's inputs, re-exposing the
+                    // inputs of a transaction that may since have been sent.
+                    reservation_token,
                 )
                 .await;
                 Err(e)
@@ -1519,6 +1574,10 @@ mod tests {
     #[derive(Default)]
     struct RecordingPersister {
         stores: Mutex<Vec<(WalletId, PlatformWalletChangeSet)>>,
+        /// Arms every subsequent `store` to fail, for the pre-broadcast
+        /// persistence-abort paths. Default `false`, so every existing test
+        /// keeps the always-succeeding behaviour.
+        fail_stores: Mutex<bool>,
     }
 
     impl PlatformWalletPersistence for RecordingPersister {
@@ -1527,6 +1586,9 @@ mod tests {
             wallet_id: WalletId,
             changeset: PlatformWalletChangeSet,
         ) -> Result<(), PersistenceError> {
+            if *self.fail_stores.lock().unwrap() {
+                return Err(PersistenceError::backend("injected store failure"));
+            }
             self.stores.lock().unwrap().push((wallet_id, changeset));
             Ok(())
         }
@@ -6441,6 +6503,139 @@ mod tests {
         );
     }
 
+    /// A `persister.store` failure aborts the send pre-broadcast holding a
+    /// **fully signed** transaction, so it must hand the build's reserved
+    /// inputs back.
+    ///
+    /// Pre-fix `send_payment` called `build_signed`, which reserves the
+    /// selected inputs exactly like `build_signed_reserved` but discards the
+    /// token, and the used-flip store propagated its error with `?` — no
+    /// release of any kind. The inputs of a transaction that will never be
+    /// broadcast stayed reserved until the TTL backstop, and since #4373
+    /// pooled the funding that is the whole spendable set.
+    ///
+    /// The retry is the assertion: the wallet holds a single UTXO, so the
+    /// second send can only build if the first one's reservation was
+    /// released. Against the pre-fix code it fails with insufficient funds.
+    #[tokio::test]
+    async fn send_payment_store_failure_releases_the_build_reservation() {
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+
+        let (manager, persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+
+        // Exactly one spendable UTXO: a leaked reservation is therefore
+        // indistinguishable from an empty wallet on the retry.
+        fund_bip44_account_0(&manager, wallet_id, 0xD1, 120_000).await;
+
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let signer = SeedSigner::new(seed, Network::Testnet);
+
+        // Arm the store to fail so the send aborts on the used-flip persist,
+        // after build + sign have reserved the input and before any broadcast.
+        *persister.fail_stores.lock().unwrap() = true;
+
+        let sending = with_accepting_broadcaster(iw);
+        let err = sending
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 50_000, None, &signer, &provider)
+            .await
+            .expect_err("the armed store failure must abort the send");
+        assert!(
+            matches!(err, PlatformWalletError::Persistence(_)),
+            "the send must abort on the used-flip persist (so the input was \
+             already reserved), got: {err:?}"
+        );
+
+        // Disarm: the retry must be able to persist its own flip.
+        *persister.fail_stores.lock().unwrap() = false;
+
+        sending
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 50_000, None, &signer, &provider)
+            .await
+            .expect(
+                "an immediate retry must reselect the input — a store failure that \
+                 returns without releasing strands the wallet's whole spendable set \
+                 until the reservation TTL backstop fires",
+            );
+    }
+
+    /// The rejected-broadcast release must be **owner-guarded**, so it cannot
+    /// clobber a newer build's reservation of the same outpoints.
+    ///
+    /// The release runs after two `.await`s (build, then broadcast), so
+    /// key-wallet's TTL sweep can reclaim this build's reservation and a newer
+    /// build re-reserve the same outpoint in between. Pre-fix `send_payment`
+    /// passed `reservation_token = None`, taking
+    /// `release_reservation_after_rejected_broadcast`'s unconditional
+    /// by-outpoint branch — which frees whatever holds the outpoint *now*,
+    /// including that newer owner, re-exposing the inputs of a transaction
+    /// that may since have been sent (`dashpay/platform#4185`).
+    ///
+    /// [`SweepingRejectingBroadcaster`] reproduces exactly that interleaving
+    /// inside the broadcast await. The assertion is that the newer
+    /// reservation *survives*: a later build must still be unable to select
+    /// the outpoint. Against the pre-fix `None` the clobber frees it and that
+    /// build succeeds.
+    #[tokio::test]
+    async fn send_payment_rejected_broadcast_release_is_owner_guarded() {
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+
+        let (manager, persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+
+        fund_bip44_account_0(&manager, wallet_id, 0xD2, 120_000).await;
+
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let signer = SeedSigner::new(seed, Network::Testnet);
+        persister.stores.lock().unwrap().clear();
+
+        let racing = with_sweeping_rejecting_broadcaster(iw);
+        let err = racing
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 50_000, None, &signer, &provider)
+            .await
+            .expect_err("the rejecting broadcaster must fail the send");
+        assert!(
+            matches!(err, PlatformWalletError::TransactionBroadcast(_)),
+            "the send must reach the broadcast, got: {err:?}"
+        );
+        assert!(
+            *racing.broadcaster.re_reserved.lock().unwrap(),
+            "the broadcaster must have swept and re-reserved the outpoint under a \
+             NEW token — without that interleaving the test proves nothing"
+        );
+
+        // The newer reservation must still hold the wallet's only UTXO, so a
+        // fresh build has nothing to select.
+        let retry = with_accepting_broadcaster(iw);
+        let retry_err = retry
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 50_000, None, &signer, &provider)
+            .await
+            .expect_err(
+                "the rejection released with the OLD token must leave the newer \
+                 build's reservation intact — an unconditional release clobbers it \
+                 and lets this build re-select an outpoint another transaction owns",
+            );
+        assert!(
+            matches!(retry_err, PlatformWalletError::TransactionBuild(_)),
+            "the outpoint must still be reserved (build-time insufficient funds), \
+             got: {retry_err:?}"
+        );
+    }
+
     /// The `send_payment` used-flag flip persist must run only AFTER the
     /// wallet-manager write guard is released (and before the broadcast).
     ///
@@ -6658,6 +6853,122 @@ mod tests {
             Err(crate::broadcaster::BroadcastError::Rejected {
                 reason: "test rejection".to_string(),
             })
+        }
+    }
+
+    /// Rejecting broadcaster that reproduces the reservation TTL race inside
+    /// the broadcast await: before answering `Rejected` it (1) releases the
+    /// in-flight build's reservation unconditionally — what key-wallet's TTL
+    /// sweep does when a build outlives the reservation window — and (2) lets
+    /// a *newer* build re-reserve the very same outpoints under a fresh
+    /// token.
+    ///
+    /// `send_payment`'s post-rejection cleanup therefore runs against an
+    /// outpoint owned by someone else, which is the whole point of releasing
+    /// owner-guarded.
+    struct SweepingRejectingBroadcaster {
+        wallet_manager: Arc<
+            tokio::sync::RwLock<
+                key_wallet_manager::WalletManager<
+                    crate::wallet::platform_wallet::PlatformWalletInfo,
+                >,
+            >,
+        >,
+        wallet_id: WalletId,
+        /// Set once the re-reservation under a new token actually happened,
+        /// so the test can assert it raced rather than silently no-op'd.
+        re_reserved: Mutex<bool>,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::broadcaster::TransactionBroadcaster for SweepingRejectingBroadcaster {
+        async fn broadcast(
+            &self,
+            transaction: &dashcore::Transaction,
+        ) -> Result<dashcore::Txid, crate::broadcaster::BroadcastError> {
+            use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
+            use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
+            use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+            {
+                // `send_payment` drops the manager write guard before it
+                // broadcasts, so this cannot deadlock.
+                let mut wm = self.wallet_manager.write().await;
+                let height = wm
+                    .get_wallet_info(&self.wallet_id)
+                    .expect("wallet info")
+                    .core_wallet
+                    .last_processed_height();
+                let (wallet, info) = wm
+                    .get_wallet_and_info_mut(&self.wallet_id)
+                    .expect("wallet and info");
+
+                let managed = info
+                    .core_wallet
+                    .accounts
+                    .standard_bip44_accounts
+                    .get_mut(&0)
+                    .expect("BIP-44 managed account 0");
+                // (1) The TTL sweep reclaims the in-flight build's inputs.
+                managed.release_reservation(transaction);
+
+                // Reuse one of the account's own derived addresses as the
+                // output — this build exists only to take the reservation.
+                let sink = managed
+                    .managed_account_type()
+                    .address_pools()
+                    .first()
+                    .expect("address pool")
+                    .addresses
+                    .values()
+                    .next()
+                    .expect("derived address")
+                    .address
+                    .clone();
+                let account = wallet
+                    .accounts
+                    .standard_bip44_accounts
+                    .get(&0)
+                    .expect("BIP-44 account 0");
+
+                // (2) A newer build re-reserves the same outpoint under a new
+                // token. Holding the returned token is unnecessary — the test
+                // asserts the reservation survives, not who owns it.
+                let (_tx, _fee, token) = TransactionBuilder::new()
+                    .set_current_height(height)
+                    .set_selection_strategy(SelectionStrategy::LargestFirst)
+                    .add_funding(managed, account)
+                    .add_output(&sink, 10_000)
+                    .build_unsigned_reserved()
+                    .expect("the swept outpoint must be selectable again");
+                *self.re_reserved.lock().unwrap() = token.is_some();
+            }
+
+            Err(crate::broadcaster::BroadcastError::Rejected {
+                reason: "test rejection after reservation sweep".to_string(),
+            })
+        }
+    }
+
+    /// [`with_rejecting_broadcaster`], but the transport sweeps and
+    /// re-reserves the build's inputs before rejecting.
+    fn with_sweeping_rejecting_broadcaster(
+        real: &crate::wallet::identity::IdentityWallet<crate::broadcaster::SpvBroadcaster>,
+    ) -> crate::wallet::identity::IdentityWallet<SweepingRejectingBroadcaster> {
+        crate::wallet::identity::IdentityWallet {
+            sdk: Arc::clone(&real.sdk),
+            wallet_manager: Arc::clone(&real.wallet_manager),
+            wallet_id: real.wallet_id,
+            asset_locks: Arc::clone(&real.asset_locks),
+            persister: real.persister.clone(),
+            broadcaster: Arc::new(SweepingRejectingBroadcaster {
+                wallet_manager: Arc::clone(&real.wallet_manager),
+                wallet_id: real.wallet_id,
+                re_reserved: Mutex::new(false),
+            }),
+            sdk_writer: Arc::clone(&real.sdk_writer),
+            dpns_operation_gate: Arc::clone(&real.dpns_operation_gate),
+            dpns_sync_progress: Arc::clone(&real.dpns_sync_progress),
         }
     }
 
