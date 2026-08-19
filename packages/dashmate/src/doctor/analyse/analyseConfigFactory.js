@@ -154,6 +154,12 @@ and revoke the previous certificate in the ZeroSSL dashboard`,
                 description: chalk`Let's Encrypt certificate expires at ${ssl?.data?.certificate?.expires}.`,
                 solution: chalk`Please run {bold.cyanBright dashmate ssl obtain --provider=letsencrypt} to renew`,
               },
+              [LETSENCRYPT_ERRORS.CERTIFICATE_NOT_INSTALLED]: {
+                description: chalk`A renewed Let's Encrypt certificate has not been installed for the gateway.`,
+                solution: chalk`The gateway keeps serving the previous certificate until it is reloaded,
+and will stop accepting clients when that one expires.
+Please restart the node: {bold.cyanBright dashmate restart}`,
+              },
               [LETSENCRYPT_ERRORS.CERTIFICATE_NOT_VALID]: {
                 description: chalk`Let's Encrypt certificate is not valid.`,
                 solution: chalk`Please run {bold.cyanBright dashmate ssl obtain --provider=letsencrypt --force} to get a new one.`,

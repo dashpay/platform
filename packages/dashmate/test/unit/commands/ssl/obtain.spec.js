@@ -2,6 +2,67 @@ import { Listr } from 'listr2';
 import ObtainCommand from '../../../../src/commands/ssl/obtain.js';
 
 describe('SSL obtain command', () => {
+  it('should reload the gateway so the new certificate is served', async function it() {
+    // Writing the certificate files is not enough: the gateway keeps serving the previous
+    // certificate until it is signalled, so an operator can run this command, see it succeed,
+    // and find nothing changed on the wire.
+    const config = {
+      get: this.sinon.stub().callsFake((option) => (option === 'platform.enable' ? true : 'letsencrypt')),
+    };
+    const dockerCompose = {
+      isServiceRunning: this.sinon.stub().resolves(true),
+      execCommand: this.sinon.stub().resolves(),
+    };
+
+    await new ObtainCommand().runWithDependencies(
+      {},
+      {
+        verbose: false,
+        'no-retry': true,
+        'expiration-days': undefined,
+        force: false,
+        provider: 'letsencrypt',
+      },
+      config,
+      this.sinon.stub(),
+      this.sinon.stub().returns(new Listr([{ task: () => {} }])),
+      { write: this.sinon.stub() },
+      {},
+      dockerCompose,
+    );
+
+    expect(dockerCompose.execCommand).to.have.been.calledOnceWith(config, 'gateway', 'kill -SIGHUP 1');
+  });
+
+  it('should not fail when the gateway is not running yet', async function it() {
+    const config = {
+      get: this.sinon.stub().callsFake((option) => (option === 'platform.enable' ? true : 'letsencrypt')),
+    };
+    const dockerCompose = {
+      isServiceRunning: this.sinon.stub().resolves(false),
+      execCommand: this.sinon.stub().resolves(),
+    };
+
+    await new ObtainCommand().runWithDependencies(
+      {},
+      {
+        verbose: false,
+        'no-retry': true,
+        'expiration-days': undefined,
+        force: false,
+        provider: 'letsencrypt',
+      },
+      config,
+      this.sinon.stub(),
+      this.sinon.stub().returns(new Listr([{ task: () => {} }])),
+      { write: this.sinon.stub() },
+      {},
+      dockerCompose,
+    );
+
+    expect(dockerCompose.execCommand).to.have.not.been.called();
+  });
+
   it('should checkpoint a newly created ZeroSSL certificate before a later failure', async function it() {
     const config = {
       get: this.sinon.stub().returns('zerossl'),
@@ -34,6 +95,7 @@ describe('SSL obtain command', () => {
       this.sinon.stub(),
       configFileRepository,
       configFile,
+      { isServiceRunning: this.sinon.stub().resolves(false), execCommand: this.sinon.stub() },
     )).to.be.rejected();
 
     expect(obtainZeroSSLCertificateTask).to.have.been.calledOnce();

@@ -40,6 +40,7 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
    * @param {obtainLetsEncryptCertificateTask} obtainLetsEncryptCertificateTask
    * @param {ConfigFileJsonRepository} configFileRepository
    * @param {ConfigFile} configFile
+   * @param {DockerCompose} dockerCompose
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -56,6 +57,7 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
     obtainLetsEncryptCertificateTask,
     configFileRepository,
     configFile,
+    dockerCompose,
   ) {
     const provider = providerFlag || config.get('platform.gateway.ssl.provider');
 
@@ -87,6 +89,16 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
         {
           title: taskTitle,
           task: () => task(config, taskOptions),
+        },
+        {
+          // Writing the certificate files does not change what the gateway serves. Without
+          // this it keeps presenting the previous certificate until the node is restarted,
+          // so the command reports success while nothing changes for clients.
+          title: 'Reload gateway',
+          enabled: () => config.get('platform.enable'),
+          skip: async () => !(await dockerCompose.isServiceRunning(config, 'gateway'))
+            && 'Gateway is not running, the certificate will be used when it starts',
+          task: async () => dockerCompose.execCommand(config, 'gateway', 'kill -SIGHUP 1'),
         },
       ],
       {
