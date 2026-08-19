@@ -70,6 +70,30 @@ pub const SHIELDED_PROOF_WIRE_BYTES_PER_ACTION: u64 = 2_273;
 /// prefilter remains the authoritative gate.
 pub const SHIELDED_TRANSITION_WIRE_OVERHEAD_BYTES: u64 = 2_932;
 
+/// Encoded size of the CHAIN asset-lock proof that is already counted inside
+/// [`SHIELDED_TRANSITION_WIRE_OVERHEAD_BYTES`]: 40 bytes.
+///
+/// The baseline envelope was measured from complete `ShieldFromAssetLock`
+/// transitions that each carried a chain asset-lock proof, so those bytes are
+/// part of the 2,932. A `ShieldFromAssetLock` that supplies its own proof
+/// REPLACES that field rather than adding to it — passing the full serialized
+/// proof as `extra_envelope_bytes` would model `baseline + full proof` and
+/// double-count this much. Callers therefore price the DELTA
+/// (`serialized proof − this constant`, saturating), which is the only part
+/// that actually grows the transition beyond the measured baseline.
+///
+/// Subtracting is safe in both directions: a chain proof is at or near this
+/// size so the delta floors at 0 and keeps the baseline ceiling, while an
+/// instant proof's several-KiB delta still tightens the ceiling. The
+/// remaining error is bounded by the few bytes a chain proof's varint fields
+/// vary by (`core_chain_locked_height` / `vout` magnitude), which is far below
+/// the ~2.7 KiB granularity of one action.
+///
+/// Pinned to the calibration proof by
+/// `baseline_asset_lock_proof_bytes_matches_the_calibration_proof` (#4312
+/// review finding b6f78dd76eb7).
+pub const SHIELDED_BASELINE_ASSET_LOCK_PROOF_BYTES: u64 = 40;
+
 /// Conservative estimate of a shielded transition's on-wire serialized size
 /// for a bundle of `num_actions` Orchard actions with the baseline envelope.
 ///

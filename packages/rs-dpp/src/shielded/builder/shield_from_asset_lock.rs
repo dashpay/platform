@@ -11,6 +11,30 @@ use super::{
     shielded_bundle_action_count, OrchardProver,
 };
 
+/// The asset-lock proof's envelope contribution BEYOND the measured baseline.
+///
+/// [`crate::shielded::SHIELDED_TRANSITION_WIRE_OVERHEAD_BYTES`] was calibrated from complete
+/// `ShieldFromAssetLock` transitions that already carried a chain asset-lock proof, so the
+/// baseline ALREADY contains one proof's worth of bytes. A supplied proof REPLACES that field
+/// rather than adding to it; only the difference grows the transition. Modelling
+/// `baseline + full proof` instead is conservative, but it can reject valid transitions at an
+/// action boundary — the proof-size window between two action counts is only a few dozen bytes
+/// wide (#4312 review finding b6f78dd76eb7).
+///
+/// Saturating: a chain proof at or below the baseline's own size yields `0` and leaves the
+/// baseline ceiling untouched, while an instant proof's multi-KiB delta still tightens it.
+///
+/// Both builders below route their pre-proving size gate through this one function, so the gate
+/// and its boundary tests cannot drift apart.
+fn asset_lock_proof_envelope_delta_bytes(
+    asset_lock_proof: &AssetLockProof,
+) -> Result<u64, ProtocolError> {
+    Ok(
+        serialized_envelope_bytes(asset_lock_proof, "the asset-lock proof")?
+            .saturating_sub(crate::shielded::SHIELDED_BASELINE_ASSET_LOCK_PROOF_BYTES),
+    )
+}
+
 /// Builds a ShieldFromAssetLock state transition (core asset lock -> shielded pool).
 ///
 /// Like Shield, constructs an output-only Orchard bundle. The funds come from
@@ -58,14 +82,18 @@ pub fn build_shield_from_asset_lock_transition<P: OrchardProver>(
     // The size side must price THIS transition's embedded asset-lock proof: an instant proof
     // carries its funding transaction and `InstantLock` (both hold input vectors — DPP admits
     // up to 100 inputs), which can consume the slack the baseline envelope leaves under
-    // `max_state_transition_size`. A chain proof serializes to a few dozen bytes, slightly
-    // double-counting the baseline's own measured chain proof — conservative by design.
+    // `max_state_transition_size`.
+    //
+    // Price the DELTA, not the whole proof: the baseline envelope was measured from
+    // `ShieldFromAssetLock` transitions that already carried a chain asset-lock proof, and this
+    // proof REPLACES that field rather than adding to it. Passing the full serialized size
+    // would model `baseline + full proof` and reject valid transitions at an action boundary
+    // (#4312 review finding b6f78dd76eb7).
     let num_outputs = dummy_outputs.checked_add(1).ok_or_else(|| {
         ProtocolError::ShieldedBuildError("dummy_outputs overflows the output count".to_string())
     })?;
-    let proof_envelope_bytes =
-        serialized_envelope_bytes(&asset_lock_proof, "the asset-lock proof")?;
-    shielded_bundle_action_count(0, num_outputs, proof_envelope_bytes, platform_version)?;
+    let proof_envelope_delta_bytes = asset_lock_proof_envelope_delta_bytes(&asset_lock_proof)?;
+    shielded_bundle_action_count(0, num_outputs, proof_envelope_delta_bytes, platform_version)?;
 
     let bundle = build_output_only_bundle(
         recipient,
@@ -150,13 +178,13 @@ where
 {
     // Same pre-proving gate as the non-signer sibling: both consensus ceilings, before the
     // proof, with the same checked output-count arithmetic and the same
-    // transition-specific proof envelope priced into the size side.
+    // transition-specific proof envelope DELTA priced into the size side (the baseline already
+    // carries a chain proof — see the sibling).
     let num_outputs = dummy_outputs.checked_add(1).ok_or_else(|| {
         ProtocolError::ShieldedBuildError("dummy_outputs overflows the output count".to_string())
     })?;
-    let proof_envelope_bytes =
-        serialized_envelope_bytes(&asset_lock_proof, "the asset-lock proof")?;
-    shielded_bundle_action_count(0, num_outputs, proof_envelope_bytes, platform_version)?;
+    let proof_envelope_delta_bytes = asset_lock_proof_envelope_delta_bytes(&asset_lock_proof)?;
+    shielded_bundle_action_count(0, num_outputs, proof_envelope_delta_bytes, platform_version)?;
 
     let bundle = build_output_only_bundle(
         recipient,
@@ -211,12 +239,16 @@ mod envelope_gate_tests {
     use dashcore::{InstantLock, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid};
     use platform_version::version::PlatformVersion;
 
+    use super::asset_lock_proof_envelope_delta_bytes;
     use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
     use crate::identity::state_transition::asset_lock_proof::{
         AssetLockProof, InstantAssetLockProof,
     };
     use crate::shielded::builder::{serialized_envelope_bytes, shielded_bundle_action_count};
-    use crate::shielded::{max_shielded_actions_for_envelope, max_shielded_actions_per_transition};
+    use crate::shielded::{
+        max_shielded_actions_for_envelope, max_shielded_actions_per_transition,
+        SHIELDED_BASELINE_ASSET_LOCK_PROOF_BYTES,
+    };
 
     fn txid() -> Txid {
         Txid::from_str("a477af6b2667c29670467e4e0728b685ee07b240235771862318e29ddbe58458").unwrap()
@@ -227,10 +259,17 @@ mod envelope_gate_tests {
     /// (up to 100 inputs) that the fixed baseline envelope cannot cover.
     /// Script sigs are sized like real signed P2PKH inputs (~107 bytes).
     fn instant_proof_with_inputs(num_inputs: usize) -> AssetLockProof {
+        instant_proof_with_padded_input(num_inputs, 0)
+    }
+
+    /// [`instant_proof_with_inputs`] with `pad` extra bytes on the FIRST input's script sig, so
+    /// the proof's serialized size can be tuned a byte at a time. Whole inputs move the size in
+    /// ~190-byte steps, which is far coarser than the boundary windows the gate tests probe.
+    fn instant_proof_with_padded_input(num_inputs: usize, pad: usize) -> AssetLockProof {
         let inputs: Vec<TxIn> = (0..num_inputs)
             .map(|i| TxIn {
                 previous_output: OutPoint::new(txid(), i as u32),
-                script_sig: ScriptBuf::from(vec![0u8; 107]),
+                script_sig: ScriptBuf::from(vec![0u8; 107 + if i == 0 { pad } else { 0 }]),
                 sequence: 0,
                 witness: Default::default(),
             })
@@ -344,6 +383,120 @@ mod envelope_gate_tests {
             .expect("measurable proof");
         assert!(max_bytes > bytes);
         assert!(max_shielded_actions_for_envelope(platform_version, max_bytes) <= ceiling);
+    }
+
+    /// `SHIELDED_BASELINE_ASSET_LOCK_PROOF_BYTES` must equal the encoded size of the very proof
+    /// the baseline envelope was calibrated with — the chain proof from
+    /// `shield_from_asset_lock_transition/signing_tests.rs::make_chain_asset_lock_proof`, whose
+    /// transitions produced the 2-, 6- and 7-action measurements behind
+    /// `SHIELDED_TRANSITION_WIRE_OVERHEAD_BYTES`. If the encoding moves, this fails instead of
+    /// silently biasing the gate.
+    #[test]
+    fn baseline_asset_lock_proof_bytes_matches_the_calibration_proof() {
+        let calibration_proof = AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 100,
+            out_point: OutPoint::from([11u8; 36]),
+        });
+        let measured = serialized_envelope_bytes(&calibration_proof, "the asset-lock proof")
+            .expect("measurable proof");
+        assert_eq!(
+            measured, SHIELDED_BASELINE_ASSET_LOCK_PROOF_BYTES,
+            "the baseline proof allowance must equal the calibration proof's encoded size"
+        );
+
+        // The calibration proof itself must therefore cost NOTHING extra: it is exactly what the
+        // baseline already models.
+        assert_eq!(
+            asset_lock_proof_envelope_delta_bytes(&calibration_proof).expect("measurable proof"),
+            0,
+            "the calibration proof must not be charged twice"
+        );
+        assert_eq!(
+            max_shielded_actions_for_envelope(PlatformVersion::latest(), 0),
+            max_shielded_actions_per_transition(PlatformVersion::latest()),
+        );
+    }
+
+    /// The fix, at the boundary it actually matters: a proof whose FULL serialized size pushes
+    /// the action ceiling down by one, but whose DELTA above the baseline does not.
+    ///
+    /// Under the old `baseline + full proof` model such a transition was rejected pre-proving
+    /// even though the real transition — which carries the proof INSTEAD of the baseline's own
+    /// chain proof — fits under `max_state_transition_size`. The window is only
+    /// `SHIELDED_BASELINE_ASSET_LOCK_PROOF_BYTES` wide, so it is searched for rather than
+    /// hardcoded: a limits change moves it, and the test follows.
+    #[test]
+    fn proof_envelope_prices_only_the_delta_above_the_baseline() {
+        let platform_version = PlatformVersion::latest();
+        let baseline = max_shielded_actions_per_transition(platform_version);
+
+        // Whole inputs step ~190 B at a time — far coarser than the ~40 B window where the two
+        // models disagree — so widen by whole inputs first, then by SINGLE script bytes. Take
+        // the largest input count still below the ceiling drop, then pad one byte at a time
+        // until the FULL size first costs an action; that first crossing is by construction
+        // within a byte or two of the threshold, hence inside the window.
+        let full_bytes = |proof: &AssetLockProof| {
+            serialized_envelope_bytes(proof, "the asset-lock proof").expect("measurable proof")
+        };
+        let costs_an_action =
+            |bytes: u64| max_shielded_actions_for_envelope(platform_version, bytes) < baseline;
+
+        let mut num_inputs = 1;
+        while num_inputs < 100
+            && !costs_an_action(full_bytes(&instant_proof_with_inputs(num_inputs + 1)))
+        {
+            num_inputs += 1;
+        }
+        assert!(
+            !costs_an_action(full_bytes(&instant_proof_with_inputs(num_inputs))),
+            "the starting input count must still afford the baseline ceiling"
+        );
+
+        let mut boundary = None;
+        for pad in 0..1_024 {
+            let proof = instant_proof_with_padded_input(num_inputs, pad);
+            let full = full_bytes(&proof);
+            if costs_an_action(full) {
+                boundary = Some((proof, full));
+                break;
+            }
+        }
+        let (proof, full) = boundary.expect("byte-level padding must cross the threshold");
+        let delta = asset_lock_proof_envelope_delta_bytes(&proof).expect("measurable proof");
+
+        assert_eq!(
+            delta,
+            full - SHIELDED_BASELINE_ASSET_LOCK_PROOF_BYTES,
+            "the delta must be the full proof minus the baseline's own proof"
+        );
+        assert_eq!(
+            max_shielded_actions_for_envelope(platform_version, delta),
+            baseline,
+            "at this boundary the delta must still afford the baseline ceiling ({baseline}), \
+             while the full proof ({full} bytes) does not — that gap is the double-count"
+        );
+
+        // The gate as the BUILDERS call it (same helper) now accepts the baseline-ceiling shape
+        // that the old full-proof model rejected pre-proving.
+        shielded_bundle_action_count(0, baseline, delta, platform_version).expect(
+            "the boundary transition must pass the pre-proving gate once the proof is priced \
+             as a delta",
+        );
+        shielded_bundle_action_count(0, baseline, full, platform_version).expect_err(
+            "the old full-proof model rejected this exact shape — that is the regression this \
+             test pins",
+        );
+
+        // The correction is a bounded credit, not a hole: a proof large enough on its own still
+        // tightens the ceiling even after the baseline is subtracted.
+        let big = instant_proof_with_inputs(100);
+        let big_delta = asset_lock_proof_envelope_delta_bytes(&big).expect("measurable proof");
+        assert!(
+            max_shielded_actions_for_envelope(platform_version, big_delta) < baseline,
+            "a DPP-maximal instant proof must still tighten the ceiling"
+        );
+        shielded_bundle_action_count(0, baseline, big_delta, platform_version)
+            .expect_err("a DPP-maximal instant proof must still be rejected at the baseline shape");
     }
 }
 
