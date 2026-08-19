@@ -52,14 +52,14 @@ members = [
 ]
 
 [workspace.dependencies]
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "173ffac0fdc0c73dda0626cf385bbcfcf2437aeb" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "173ffac0fdc0c73dda0626cf385bbcfcf2437aeb" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "173ffac0fdc0c73dda0626cf385bbcfcf2437aeb" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "173ffac0fdc0c73dda0626cf385bbcfcf2437aeb" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "173ffac0fdc0c73dda0626cf385bbcfcf2437aeb" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "173ffac0fdc0c73dda0626cf385bbcfcf2437aeb" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "173ffac0fdc0c73dda0626cf385bbcfcf2437aeb" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "173ffac0fdc0c73dda0626cf385bbcfcf2437aeb" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "bec50270cadb171f41bc61f63b6589eedc2edf0e" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "bec50270cadb171f41bc61f63b6589eedc2edf0e" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "bec50270cadb171f41bc61f63b6589eedc2edf0e" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "bec50270cadb171f41bc61f63b6589eedc2edf0e" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "bec50270cadb171f41bc61f63b6589eedc2edf0e" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "bec50270cadb171f41bc61f63b6589eedc2edf0e" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "bec50270cadb171f41bc61f63b6589eedc2edf0e" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "bec50270cadb171f41bc61f63b6589eedc2edf0e" }
 
 tokio-metrics = "0.5"
 
@@ -130,3 +130,4 @@ opt-level = 3
 
 version = "4.2.0-dev.1"
 rust-version = "1.92"
+
