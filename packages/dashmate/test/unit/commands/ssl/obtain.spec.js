@@ -1,5 +1,6 @@
 import { Listr } from 'listr2';
 import ObtainCommand from '../../../../src/commands/ssl/obtain.js';
+import ServiceIsNotRunningError from '../../../../src/docker/errors/ServiceIsNotRunningError.js';
 
 describe('SSL obtain command', () => {
   it('should reload the gateway so the new certificate is served', async function it() {
@@ -34,13 +35,13 @@ describe('SSL obtain command', () => {
     expect(dockerCompose.execCommand).to.have.been.calledOnceWith(config, 'gateway', 'kill -SIGHUP 1');
   });
 
-  it('should not fail when the gateway is not running yet', async function it() {
+  it('should not fail when the gateway stops before it can be signalled', async function it() {
     const config = {
       get: this.sinon.stub().callsFake((option) => (option === 'platform.enable' ? true : 'letsencrypt')),
     };
     const dockerCompose = {
-      isServiceRunning: this.sinon.stub().resolves(false),
-      execCommand: this.sinon.stub().resolves(),
+      isServiceRunning: this.sinon.stub().resolves(true),
+      execCommand: this.sinon.stub().rejects(new ServiceIsNotRunningError('testnet', 'gateway')),
     };
 
     await new ObtainCommand().runWithDependencies(
@@ -60,7 +61,7 @@ describe('SSL obtain command', () => {
       dockerCompose,
     );
 
-    expect(dockerCompose.execCommand).to.have.not.been.called();
+    expect(dockerCompose.execCommand).to.have.been.calledOnce();
   });
 
   it('should checkpoint a newly created ZeroSSL certificate before a later failure', async function it() {

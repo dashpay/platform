@@ -1,12 +1,10 @@
-import { execFileSync } from 'node:child_process';
-import crypto from 'node:crypto';
 import fs from 'fs';
-import os from 'node:os';
 import path from 'path';
 import tls from 'node:tls';
 import { Listr } from 'listr2';
 import getBaseConfigFactory from '../../../../../configs/defaults/getBaseConfigFactory.js';
 import HomeDir from '../../../../../src/config/HomeDir.js';
+import createCertificateForTest from '../../../../../src/test/createCertificateForTest.js';
 import analyseConfigFactory from '../../../../../src/doctor/analyse/analyseConfigFactory.js';
 import { SEVERITY } from '../../../../../src/doctor/Prescription.js';
 import Samples from '../../../../../src/doctor/Samples.js';
@@ -172,24 +170,7 @@ describe('collectSamplesTaskFactory', () => {
   });
 
   it('should collect the certificate the gateway actually serves', async () => {
-    const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
-    const key = privateKey.export({ type: 'pkcs8', format: 'pem' });
-
-    const certDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dashmate-served-'));
-    const keyPath = path.join(certDir, 'key.pem');
-    const certPath = path.join(certDir, 'cert.pem');
-
-    fs.writeFileSync(keyPath, key);
-
-    execFileSync('openssl', [
-      'req', '-x509', '-new', '-key', keyPath, '-out', certPath,
-      '-subj', `/CN=${EXTERNAL_IP}`,
-      '-addext', `subjectAltName=IP:${EXTERNAL_IP}`,
-      '-addext', 'basicConstraints=CA:FALSE',
-      '-days', '30',
-    ], { stdio: 'ignore' });
-
-    const cert = fs.readFileSync(certPath, 'utf8');
+    const { cert, key } = createCertificateForTest({ ip: EXTERNAL_IP, days: 30 });
 
     const server = tls.createServer({ cert, key }, (socket) => socket.end());
     const liveSockets = [];
@@ -224,7 +205,6 @@ describe('collectSamplesTaskFactory', () => {
       await new Promise((resolve) => {
         server.close(resolve);
       });
-      fs.rmSync(certDir, { recursive: true, force: true });
     }
 
     const servedCertificate = samples.getServiceInfo('gateway', 'servedCertificate');

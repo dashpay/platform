@@ -1,5 +1,6 @@
 import { Listr } from 'listr2';
 import { Flags } from '@oclif/core';
+import ServiceIsNotRunningError from '../../docker/errors/ServiceIsNotRunningError.js';
 import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
 import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
 import Certificate from '../../ssl/zerossl/Certificate.js';
@@ -96,9 +97,22 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
           // so the command reports success while nothing changes for clients.
           title: 'Reload gateway',
           enabled: () => config.get('platform.enable'),
-          skip: async () => !(await dockerCompose.isServiceRunning(config, 'gateway'))
-            && 'Gateway is not running, the certificate will be used when it starts',
-          task: async () => dockerCompose.execCommand(config, 'gateway', 'kill -SIGHUP 1'),
+          // Asking whether the gateway is running before signalling it would answer a question
+          // that can stop being true before the signal is sent, and the certificate has already
+          // been obtained by this point - failing here would send the operator back to a
+          // provider that has nothing left to give. execCommand makes the same check itself,
+          // so a gateway that is down is taken as nothing to reload.
+          task: async (ctx, listrTask) => {
+            try {
+              await dockerCompose.execCommand(config, 'gateway', 'kill -SIGHUP 1');
+            } catch (e) {
+              if (!(e instanceof ServiceIsNotRunningError)) {
+                throw e;
+              }
+
+              listrTask.skip('Gateway is not running, the certificate will be used when it starts');
+            }
+          },
         },
       ],
       {

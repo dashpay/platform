@@ -1,8 +1,7 @@
-import { execFileSync } from 'node:child_process';
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import HomeDir from '../../../../src/config/HomeDir.js';
+import createCertificateForTest from '../../../../src/test/createCertificateForTest.js';
 import validateLetsEncryptCertificateFactory, { ERRORS } from '../../../../src/ssl/letsencrypt/validateLetsEncryptCertificateFactory.js';
 
 const EXTERNAL_IP = '198.51.100.7';
@@ -15,29 +14,7 @@ describe('validateLetsEncryptCertificateFactory', () => {
   let config;
   let validateLetsEncryptCertificate;
 
-  /**
-   * @return {{cert: string, key: string}}
-   */
-  function issueCertificate() {
-    const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
-    const key = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
-
-    const dir = fs.mkdtempSync(path.join(homeDir.getPath(), 'issue-'));
-    const keyPath = path.join(dir, 'key.pem');
-    const certPath = path.join(dir, 'cert.pem');
-
-    fs.writeFileSync(keyPath, key);
-
-    execFileSync('openssl', [
-      'req', '-x509', '-new', '-key', keyPath, '-out', certPath,
-      '-subj', `/CN=${EXTERNAL_IP}`,
-      '-addext', `subjectAltName=IP:${EXTERNAL_IP}`,
-      '-addext', 'basicConstraints=CA:FALSE',
-      '-days', '60',
-    ], { stdio: 'ignore' });
-
-    return { cert: fs.readFileSync(certPath, 'utf8'), key };
-  }
+  const issueCertificate = () => createCertificateForTest({ ip: EXTERNAL_IP, days: 60 });
 
   beforeEach(function beforeEach() {
     homeDir = HomeDir.createTemp();
