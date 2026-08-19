@@ -4,7 +4,7 @@ use drive_proof_verifier::types::{
     ShieldedEncryptedNote, ShieldedEncryptedNotes, ShieldedEncryptedNotesQuery,
 };
 use rs_dapi_client::RequestSettings;
-use tracing::debug;
+use tracing::{info, warn};
 
 /// Fetch a single chunk of encrypted notes from the network.
 ///
@@ -28,21 +28,43 @@ pub async fn fetch_chunk(
         count: chunk_size as u32,
     };
 
-    debug!(chunk_start, chunk_size, "fetching shielded notes chunk");
+    info!(chunk_start, chunk_size, "fetching shielded notes chunk");
 
-    let (result, metadata) =
-        ShieldedEncryptedNotes::fetch_with_metadata(sdk, query, Some(settings)).await?;
+    // `Instant` is unavailable on wasm32; a chunk fetched there logs
+    // `elapsed_ms=None` rather than a fabricated duration.
+    #[cfg(not(target_arch = "wasm32"))]
+    let started = std::time::Instant::now();
+    #[cfg(not(target_arch = "wasm32"))]
+    let elapsed_ms = move || Some(started.elapsed().as_millis() as u64);
+    #[cfg(target_arch = "wasm32")]
+    let elapsed_ms = || None::<u64>;
+
+    let fetched = ShieldedEncryptedNotes::fetch_with_metadata(sdk, query, Some(settings)).await;
+
+    let (result, metadata) = match fetched {
+        Ok(v) => v,
+        Err(e) => {
+            warn!(
+                chunk_start,
+                elapsed_ms = ?elapsed_ms(),
+                error = %e,
+                "shielded notes chunk fetch failed"
+            );
+            return Err(e);
+        }
+    };
 
     let (notes, total_count) = match result {
         Some(ShieldedEncryptedNotes { notes, total_count }) => (notes, total_count),
         None => (Vec::new(), 0),
     };
 
-    debug!(
+    info!(
         chunk_start,
         notes_returned = notes.len(),
         block_height = metadata.height,
         total_count,
+        elapsed_ms = ?elapsed_ms(),
         "shielded notes chunk fetched"
     );
 

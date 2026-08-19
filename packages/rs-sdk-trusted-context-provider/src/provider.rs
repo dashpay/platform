@@ -706,13 +706,42 @@ impl ContextProvider for TrustedHttpContextProvider {
             )));
         }
 
+        // This network refetch blocks the caller (proof verification) and
+        // re-runs on every retry of the outer request, so record how long
+        // it takes. `Instant` is unavailable on wasm32; those builds log
+        // `elapsed_ms=None` rather than a fabricated duration.
+        #[cfg(not(target_arch = "wasm32"))]
+        let started = std::time::Instant::now();
+        #[cfg(not(target_arch = "wasm32"))]
+        let elapsed_ms = move || Some(started.elapsed().as_millis() as u64);
+        #[cfg(target_arch = "wasm32")]
+        let elapsed_ms = || None::<u64>;
+
+        tracing::info!(
+            quorum_type,
+            quorum_hash = %hex::encode(quorum_hash),
+            "quorum cache miss; blocking refetch of quorum lists"
+        );
+
         let this = self.clone();
         let quorum =
             dash_async::block_on(async move { this.find_quorum(quorum_type, quorum_hash).await })?
                 .map_err(|e| {
-                    debug!("Error finding quorum: {}", e);
+                    tracing::warn!(
+                        quorum_type,
+                        quorum_hash = %hex::encode(quorum_hash),
+                        elapsed_ms = ?elapsed_ms(),
+                        "quorum refetch failed: {}", e
+                    );
                     ContextProviderError::Generic(format!("Failed to find quorum: {}", e))
                 })?;
+
+        tracing::info!(
+            quorum_type,
+            quorum_hash = %hex::encode(quorum_hash),
+            elapsed_ms = ?elapsed_ms(),
+            "quorum refetch succeeded"
+        );
 
         Self::parse_quorum_public_key(&quorum.key)
     }

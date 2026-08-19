@@ -107,7 +107,8 @@ fn enable_file_logging(log_level: &str, path: &Path) -> bool {
         .with_ansi(false)
         .with_filter(tracing_subscriber::EnvFilter::new(format!(
             "dapi_grpc={log_level},tonic={log_level},h2={log_level},\
-             hyper={log_level},tower={log_level}"
+             hyper={log_level},tower={log_level},\
+             rs_dapi_client=debug,rs_sdk_trusted_context_provider=debug"
         )));
 
     if fs::write(path.join("build_info.txt"), build_info_string()).is_err() {
@@ -157,7 +158,8 @@ fn broad_env_filter(log_level: &str) -> tracing_subscriber::EnvFilter {
          platform_wallet={log_level},platform_wallet_ffi={log_level},\
          dash_spv={log_level},key_wallet={log_level},\
          dapi_grpc={log_level},h2={log_level},tower={log_level},\
-         hyper={log_level},tonic={log_level}"
+         hyper={log_level},tonic={log_level},\
+         rs_dapi_client=debug,rs_sdk_trusted_context_provider=debug"
     );
 
     tracing_subscriber::EnvFilter::try_from_default_env()
