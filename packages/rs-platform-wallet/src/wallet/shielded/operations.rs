@@ -19,7 +19,9 @@
 //! - **IdentityCreateFromShieldedPool** (Type 20): shielded pool → a brand-new Platform identity
 //!   funded by a fixed denomination leaving the pool (any excess re-enters as a change note)
 
-use super::activity::{ShieldedActivityKind, ShieldedActivityStatus, ShieldedDirection};
+use super::activity::{
+    unanimous_bytes, ShieldedActivityKind, ShieldedActivityStatus, ShieldedDirection,
+};
 use super::activity_recorder::{
     build_pending_entry, changeset_for_entry, non_zero_memo, with_status, LiveEntryParams,
 };
@@ -1120,10 +1122,16 @@ pub async fn transfer_multi<S: ShieldedStore, P: OrchardProver>(
         // One activity row for the whole transition. The counterparty is only meaningful when
         // every output lands on the same address (the fund-an-address-with-N-notes shape); a
         // genuine multi-recipient send has no single counterparty to record.
-        let counterparty = outputs
-            .first()
-            .filter(|(first, _)| outputs.iter().all(|(a, _)| a == first))
-            .map(|(addr, _)| addr.to_raw_address_bytes().to_vec());
+        //
+        // Routed through the shared `unanimous_bytes` rule over the canonical 43-byte raw
+        // address encoding — the exact form the cold-restore deriver recovers from the
+        // OVK-decrypted outgoing notes. Both paths call this one function, so a restored row
+        // names a recipient exactly when this live row does, for the same transition.
+        let recipients: Vec<Vec<u8>> = outputs
+            .iter()
+            .map(|(addr, _)| addr.to_raw_address_bytes().to_vec())
+            .collect();
+        let counterparty = unanimous_bytes(recipients.iter().map(|r| r.as_slice()));
 
         pending_entry = record_pending_activity(
             store,

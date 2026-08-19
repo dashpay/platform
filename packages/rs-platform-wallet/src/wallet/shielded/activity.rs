@@ -359,9 +359,13 @@ fn cluster_events(input: &ScanDeriveInput) -> BTreeMap<u64, HeightCluster> {
 /// Classification (client-side only — Option B), in priority order:
 /// - cluster has OVK outgoing note(s) to a NON-own address → [`Sent`]
 ///   (counterparty / value / memo from the outgoing notes; own receipts
-///   are the change and excluded from the amount). When the rho linkage
-///   (see [`note_rho`]) identifies the consumed note(s), the exact fee
-///   (spent − sent − change) is recovered too.
+///   are the change and excluded from the amount). The amount is the SUM
+///   over every external output, so a multi-output transfer yields one
+///   aggregate row; its `counterparty` / `memo` are filled only when all
+///   those outputs agree (see [`unanimous_bytes`]), matching the live
+///   `transfer_multi` recorder. When the rho linkage (see [`note_rho`])
+///   identifies the consumed note(s), the exact fee (spent − sent −
+///   change) is recovered too.
 /// - rho-linked cluster with no external recipient → [`ShieldedSpend`]
 ///   with direction `Out` and the exact amount that left the pool
 ///   (spent − change). This is provably our own spend (unshield /
@@ -498,12 +502,23 @@ pub fn derive_activity_from_scan_data(
         }
         let change_total: u64 = cluster.received.iter().map(|n| n.value).sum();
 
-        let entry = if let Some(send) = external.first() {
+        let entry = if !external.is_empty() {
             // SENT: at least one outgoing note to an address we don't own.
             // Amount = sum of external sends; own receipts in the cluster
             // are the change and are excluded. When the rho linkage
             // identified the consumed note(s), the exact fee falls out:
             // spent − sent − change.
+            //
+            // A multi-output transfer (Type 16 paying several recipients
+            // in one transition) restores as ONE such cluster, so
+            // `counterparty` and `memo` go through the shared
+            // [`unanimous_bytes`] rule: recorded only when every external
+            // output agrees, `None` otherwise. That is the same rule the
+            // live `transfer_multi` recorder applies — literally the same
+            // function — so a restored row names a recipient exactly when
+            // the live row would. Copying `external.first()` here instead
+            // would pin the whole aggregate amount on one of several
+            // distinct recipients.
             let amount: u64 = external.iter().map(|o| o.value).sum();
             let fee = (!linked_nullifiers.is_empty())
                 .then(|| {
@@ -518,8 +533,9 @@ pub fn derive_activity_from_scan_data(
                 direction: ShieldedDirection::Out,
                 amount,
                 fee,
-                counterparty: Some(send.recipient.clone()),
-                memo: non_zero_memo(&send.memo),
+                counterparty: unanimous_bytes(external.iter().map(|o| o.recipient.as_slice())),
+                memo: unanimous_bytes(external.iter().map(|o| o.memo.as_slice()))
+                    .and_then(|m| non_zero_memo(&m)),
                 block_height: Some(height),
                 status: ShieldedActivityStatus::Confirmed,
                 created_at_ms: now_ms,
@@ -612,6 +628,36 @@ pub fn derive_activity_from_scan_data(
     }
 
     out
+}
+
+/// Collapse a transfer's per-output byte values into the ONE value that
+/// describes the whole transfer, or `None` when the outputs disagree.
+///
+/// A shielded transfer publishes exactly one activity row per
+/// transition — the row's id is `sha256(sorted visible output cmxs)`
+/// over the WHOLE cluster, so per-recipient rows could never dedupe
+/// against the live row and a rescan would double-count. That single
+/// row's scalar fields (`counterparty`, `memo`) are therefore only
+/// meaningful when EVERY external output agrees on them: the
+/// fund-one-address-with-N-notes shape. When they disagree there is no
+/// honest single answer, and picking one output's value would attribute
+/// the full aggregate amount to one of several distinct recipients.
+/// "The first one" is not even a stable choice — Orchard's builder
+/// shuffles outputs before pairing them into actions, so the winner
+/// varies per build (and, on the restore path, per scan order).
+///
+/// Both the live recorder (`transfer_multi`) and the cold-restore
+/// deriver ([`derive_activity_from_scan_data`]) route their
+/// `counterparty` through this one function over the same canonical
+/// 43-byte raw address encoding, so the two paths reach an identical
+/// verdict for a given transition by construction rather than by two
+/// copies of the rule agreeing.
+///
+/// Returns `None` for an empty iterator (no outputs, nothing to name).
+pub(crate) fn unanimous_bytes<'a>(values: impl IntoIterator<Item = &'a [u8]>) -> Option<Vec<u8>> {
+    let mut values = values.into_iter();
+    let first = values.next()?;
+    values.all(|v| v == first).then(|| first.to_vec())
 }
 
 /// Return `Some(memo)` when `memo` is non-empty and not all-zero;
@@ -828,6 +874,193 @@ mod tests {
         assert_eq!(d[0].amount, 750);
         assert_eq!(d[0].counterparty.as_deref(), Some(addr(0xEE).as_slice()));
         assert_eq!(d[0].memo, Some(memo));
+    }
+
+    // ── multi-output transfers on the restore path ─────────────────
+
+    /// The live `transfer_multi` counterparty rule, evaluated exactly as
+    /// `operations::transfer_multi` evaluates it: the raw 43-byte
+    /// encoding of each `(address, amount)` output, in call order,
+    /// through the shared [`unanimous_bytes`] helper. The restore path
+    /// must agree with this for the same transition.
+    fn live_counterparty(recipients: &[Vec<u8>]) -> Option<Vec<u8>> {
+        unanimous_bytes(recipients.iter().map(|r| r.as_slice()))
+    }
+
+    #[test]
+    fn multi_recipient_restore_aggregates_without_attributing_to_one_recipient() {
+        // The reviewer's case: ONE Type-16 transition paying 10 credits to
+        // A and 20 to B. Both outgoing notes are OVK-recovered into the
+        // same height cluster, so restoration must produce ONE aggregate
+        // row of 30 — and must NOT pin that 30 on either recipient.
+        let a = addr(0xAA);
+        let b = addr(0xBB);
+        let input = ScanDeriveInput {
+            notes: vec![],
+            outgoing: vec![
+                outgoing(0x60, a.clone(), 700, 10, vec![0u8; 36]),
+                outgoing(0x61, b.clone(), 700, 20, vec![0u8; 36]),
+            ],
+            own_addresses: vec![addr(0x01)],
+        };
+        let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
+
+        assert_eq!(d.len(), 1, "one transition restores as one activity row");
+        assert_eq!(d[0].kind, ShieldedActivityKind::Sent);
+        assert_eq!(d[0].direction, ShieldedDirection::Out);
+        assert_eq!(d[0].amount, 30, "amount is the sum over both outputs");
+        assert_eq!(
+            d[0].counterparty, None,
+            "a 30-credit row covering two distinct recipients must name \
+             neither of them"
+        );
+        // Live-path parity: the same rule, over the same raw encodings,
+        // is what `transfer_multi` records for this transition.
+        assert_eq!(
+            d[0].counterparty,
+            live_counterparty(&[a, b]),
+            "restored attribution must match what the live recorder writes"
+        );
+    }
+
+    #[test]
+    fn multi_recipient_restore_is_independent_of_output_order() {
+        // Orchard's builder shuffles outputs before pairing them into
+        // actions, so "the first external output" is not a stable choice.
+        // Feeding the same two outputs in the opposite order must derive
+        // a byte-identical row (id included).
+        let a = addr(0xAA);
+        let b = addr(0xBB);
+        let forward = outgoing(0x60, a.clone(), 700, 10, vec![0u8; 36]);
+        let reverse = outgoing(0x61, b.clone(), 700, 20, vec![0u8; 36]);
+
+        let mut d1 = derive_activity_from_scan_data(
+            &ScanDeriveInput {
+                notes: vec![],
+                outgoing: vec![forward.clone(), reverse.clone()],
+                own_addresses: vec![addr(0x01)],
+            },
+            &BTreeMap::new(),
+        )
+        .new_entries;
+        let mut d2 = derive_activity_from_scan_data(
+            &ScanDeriveInput {
+                notes: vec![],
+                outgoing: vec![reverse, forward],
+                own_addresses: vec![addr(0x01)],
+            },
+            &BTreeMap::new(),
+        )
+        .new_entries;
+
+        assert_eq!(d1.len(), 1);
+        assert_eq!(d2.len(), 1);
+        // `created_at_ms` is wall-clock; everything that describes the
+        // transition must match. `note_cmxs` is stored in encounter
+        // order (only `compute_activity_id` sorts), so it is compared as
+        // the SET it represents — which is what the id contract keys on.
+        let (e1, e2) = (d1.remove(0), d2.remove(0));
+        assert_eq!(e1.id, e2.id, "cluster id is order-independent");
+        assert_eq!(e1.amount, e2.amount);
+        assert_eq!(
+            e1.counterparty, e2.counterparty,
+            "attribution must not depend on which output the scan saw first"
+        );
+        assert_eq!(e1.memo, e2.memo);
+        let (mut c1, mut c2) = (e1.note_cmxs.clone(), e2.note_cmxs.clone());
+        c1.sort_unstable();
+        c2.sort_unstable();
+        assert_eq!(c1, c2, "same cluster covers the same cmx set");
+    }
+
+    #[test]
+    fn multi_note_restore_to_a_single_address_keeps_the_counterparty() {
+        // The fund-one-address-with-N-notes shape (how a two-note invite
+        // is funded): every output names the SAME address, so the row
+        // still has one honest counterparty and must keep it — the fix
+        // must not over-correct into always dropping attribution.
+        let target = addr(0xCC);
+        let memo = {
+            let mut m = vec![0u8; 36];
+            m[0] = 1;
+            m
+        };
+        let input = ScanDeriveInput {
+            notes: vec![],
+            outgoing: vec![
+                outgoing(0x70, target.clone(), 800, 100, memo.clone()),
+                outgoing(0x71, target.clone(), 800, 250, memo.clone()),
+            ],
+            own_addresses: vec![addr(0x01)],
+        };
+        let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
+
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].kind, ShieldedActivityKind::Sent);
+        assert_eq!(d[0].amount, 350);
+        assert_eq!(
+            d[0].counterparty.as_deref(),
+            Some(target.as_slice()),
+            "all outputs agree on the address, so the row keeps it"
+        );
+        assert_eq!(
+            d[0].memo,
+            Some(memo),
+            "transfer_multi attaches one memo to every recipient note, so \
+             the unanimous memo survives"
+        );
+        assert_eq!(
+            d[0].counterparty,
+            live_counterparty(&[target.clone(), target]),
+            "restored attribution must match what the live recorder writes"
+        );
+    }
+
+    #[test]
+    fn multi_recipient_restore_drops_a_memo_the_outputs_disagree_on() {
+        // Same misattribution class as the counterparty: a memo that only
+        // one output carried must not be presented as the whole
+        // transfer's memo.
+        let mut memo_a = vec![0u8; 36];
+        memo_a[0] = 1;
+        let input = ScanDeriveInput {
+            notes: vec![],
+            outgoing: vec![
+                outgoing(0x80, addr(0xAA), 900, 10, memo_a),
+                outgoing(0x81, addr(0xBB), 900, 20, vec![0u8; 36]),
+            ],
+            own_addresses: vec![addr(0x01)],
+        };
+        let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
+
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].amount, 30);
+        assert_eq!(d[0].counterparty, None);
+        assert_eq!(d[0].memo, None, "outputs disagree, so no memo is claimed");
+    }
+
+    #[test]
+    fn unanimous_bytes_rule() {
+        assert_eq!(unanimous_bytes(std::iter::empty()), None, "no outputs");
+        assert_eq!(
+            unanimous_bytes([b"abc".as_slice()]),
+            Some(b"abc".to_vec()),
+            "a single output always names itself"
+        );
+        assert_eq!(
+            unanimous_bytes([b"abc".as_slice(), b"abc".as_slice()]),
+            Some(b"abc".to_vec())
+        );
+        assert_eq!(
+            unanimous_bytes([b"abc".as_slice(), b"abd".as_slice()]),
+            None
+        );
+        // Disagreement anywhere in the list counts, not just against the
+        // second element.
+        assert_eq!(
+            unanimous_bytes([b"abc".as_slice(), b"abc".as_slice(), b"zzz".as_slice()]),
+            None
+        );
     }
 
     #[test]
