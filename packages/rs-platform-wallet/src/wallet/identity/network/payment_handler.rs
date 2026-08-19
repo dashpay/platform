@@ -251,9 +251,14 @@ fn dashpay_payment_records(event: &WalletEvent) -> Vec<&TransactionRecord> {
         WalletEvent::BlockProcessed {
             inserted, updated, ..
         } => inserted.iter().chain(updated.iter()).collect(),
+        // `TransactionsSwept` is a removal signal carrying bare `txids`,
+        // not `TransactionRecord`s, so it can contribute nothing here —
+        // the exhaustiveness guard above is about variants that carry
+        // records, and this one structurally cannot.
         WalletEvent::TransactionInstantLocked { .. }
         | WalletEvent::SyncHeightAdvanced { .. }
-        | WalletEvent::ChainLockProcessed { .. } => Vec::new(),
+        | WalletEvent::ChainLockProcessed { .. }
+        | WalletEvent::TransactionsSwept { .. } => Vec::new(),
     }
 }
 
@@ -274,7 +279,16 @@ fn drives_payment_hooks(event: &WalletEvent) -> bool {
         WalletEvent::BlockProcessed {
             inserted, updated, ..
         } => !inserted.is_empty() || !updated.is_empty(),
-        WalletEvent::SyncHeightAdvanced { .. } | WalletEvent::ChainLockProcessed { .. } => false,
+        // A sweep only deletes records; the hooks it would run either
+        // record an incoming payment or confirm a sent one, and neither
+        // applies to a transaction that can never confirm. Skipping it
+        // avoids spawning a task that would take the wallet-manager write
+        // lock to do nothing. (Reflecting a sweep back into DashPay
+        // payment state would be new behaviour — see the note on
+        // `build_core_changeset`.)
+        WalletEvent::SyncHeightAdvanced { .. }
+        | WalletEvent::ChainLockProcessed { .. }
+        | WalletEvent::TransactionsSwept { .. } => false,
     }
 }
 

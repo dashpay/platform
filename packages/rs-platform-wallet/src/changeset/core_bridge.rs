@@ -751,6 +751,30 @@ async fn build_core_changeset(
                 ..CoreChangeSet::default()
             }
         }
+        // `TransactionsSwept` (new upstream in #961, extended with
+        // `released_outpoints` in #962) is the only removal-shaped event on
+        // this bus: it says "these recorded spends can never confirm — drop
+        // their rows, drop the UTXOs they created, and mark
+        // `released_outpoints` spendable again".
+        //
+        // `CoreChangeSet` cannot express any of that. Every field on it is
+        // additive (records / new_utxos / spent_utxos / watermarks); there
+        // is no removal channel, and the persister behind it has no delete
+        // path to drive. Projecting a removal through the additive fields
+        // would be wrong in the dangerous direction — e.g. replaying the
+        // released outpoints as `spent_utxos` marks the freed coins spent,
+        // the exact "money that does not exist" error #961 exists to stop.
+        //
+        // So this stays an explicit no-op, which is byte-for-byte the
+        // behaviour of the previous pin (where the variant did not exist and
+        // the event was never emitted to this bridge at all) — no regression
+        // is introduced here. The residual gap is upstream's documented one:
+        // a disk mirror that ignores this event keeps the dead rows and
+        // replays them on the next load. Closing it needs removal fields on
+        // `CoreChangeSet`, matching merge logic, and persister/Room delete
+        // support — a feature, deliberately not smuggled into a dependency
+        // bump.
+        WalletEvent::TransactionsSwept { .. } => CoreChangeSet::default(),
     }
 }
 

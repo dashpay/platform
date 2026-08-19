@@ -58,6 +58,15 @@ impl EventHandler for BalanceUpdateHandler {
             // and/or advance `last_applied_chain_lock`; neither
             // changes UTXO state or balances.
             WalletEvent::ChainLockProcessed { .. } => return,
+            // No balance on TransactionsSwept — upstream (#961/#962) puts
+            // only `txids` / `superseded_by` / `released_outpoints` on this
+            // variant, so there is nothing here to push into the cached
+            // balance. A sweep DOES change the true balance, but recomputing
+            // it would mean reaching back through the wallet-manager lock
+            // this handler exists to avoid; the next balance-bearing event
+            // carries the corrected figure. Matches the pre-merge behaviour,
+            // where this variant did not exist at all.
+            WalletEvent::TransactionsSwept { .. } => return,
         };
 
         // try_read on the wallets map (NOT the wallet_manager
