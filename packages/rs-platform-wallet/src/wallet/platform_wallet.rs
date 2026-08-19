@@ -94,13 +94,17 @@ impl ShieldedShieldInputPlan {
         }
 
         if amount > self.preflight.max_shieldable_credits {
-            let available = if self.usable_candidates.is_empty() {
-                self.preflight.account_balance_credits
-            } else {
-                self.preflight.usable_balance_credits
-            };
+            // `available` must be the usable-for-shield amount so a FAILED call
+            // never reports the self-contradictory `available > required`. When
+            // no candidate can retain the fee reserve (a fragmented account)
+            // `usable_balance_credits` is 0 — coherent with a nonzero
+            // `required = amount + fee_reserve`. The pre-fix fallback to
+            // `account_balance_credits` reported the FULL account balance here,
+            // which can exceed `required` and read as a contradictory shortfall;
+            // the total account balance stays available on the preflight
+            // snapshot (`account_balance_credits`) and its `reason` for display.
             return Err(PlatformWalletError::PlatformShieldCapacityExceeded {
-                available,
+                available: self.preflight.usable_balance_credits,
                 required: amount.saturating_add(self.preflight.fee_reserve_credits),
             });
         }
@@ -1575,7 +1579,7 @@ impl PlatformWallet {
                 }),
             account.address_balances.keys().copied(),
         );
-        let candidates = candidate_addresses
+        let candidates: Vec<(PlatformAddress, Credits)> = candidate_addresses
             .into_iter()
             .filter_map(|p2pkh| {
                 let balance = account.address_credit_balance(&p2pkh);
@@ -1585,11 +1589,21 @@ impl PlatformWallet {
 
         let platform_version = self.sdk.version();
         let state_transition_version = &platform_version.dpp.state_transitions;
+        let max_address_inputs = usize::from(state_transition_version.max_address_inputs);
+        // The reserve retained on input 0 must cover the per-input
+        // `SetBalanceToAddress` writes of every input a Max shield can admit
+        // from this account: the funded-candidate count, capped at the protocol
+        // maximum. That is an upper bound on the inputs any shield from this
+        // account uses, so the reserve is sufficient for every requested amount
+        // (`shielded_shield_from_account` re-plans through this same helper, so
+        // preflight and execution stay consistent) while staying tight — no
+        // always-16 over-reservation for accounts with few funded addresses.
+        let reserve_input_count = candidates.len().min(max_address_inputs);
         plan_shield_inputs(
             candidates,
-            shield_fee_reserve_credits(platform_version)?,
+            shield_fee_reserve_credits(platform_version, reserve_input_count)?,
             state_transition_version.address_funds.min_input_amount,
-            usize::from(state_transition_version.max_address_inputs),
+            max_address_inputs,
         )
     }
 
@@ -2055,8 +2069,12 @@ mod shield_input_selection_tests {
     use dpp::address_funds::PlatformAddress;
     use dpp::version::LATEST_PLATFORM_VERSION;
 
+    /// The zero-input base reserve (`2 × F`) — a stable unit for the selection
+    /// tests below, which exercise `plan_shield_inputs` / `select_inputs` with a
+    /// controlled reserve value. The input-count scaling of the reserve itself
+    /// is covered separately in `operations::reserve_shield_fee_tests`.
     fn reserve() -> Credits {
-        shield_fee_reserve_credits(LATEST_PLATFORM_VERSION)
+        shield_fee_reserve_credits(LATEST_PLATFORM_VERSION, 0)
             .expect("latest shield fee reserve must be computable")
     }
 
@@ -2132,11 +2150,45 @@ mod shield_input_selection_tests {
         );
         assert!(plan.preflight.reason.is_some());
         let err = plan.select_inputs(1).unwrap_err();
+        // `available` is the usable-for-shield amount (0 here — the sole address
+        // cannot retain the reserve), NOT the account balance, so it stays below
+        // `required` for this failed shield.
         assert!(matches!(
             err,
             PlatformWalletError::PlatformShieldCapacityExceeded { available, required }
-                if available == reserve() && required == 1 + reserve()
+                if available == 0 && required == 1 + reserve()
         ));
+    }
+
+    #[test]
+    fn fragmented_account_reports_coherent_available_not_exceeding_required() {
+        // Several addresses each holding exactly the reserve: none is strictly
+        // `> reserve`, so `usable_candidates` is empty and `max_shieldable` is 0,
+        // yet the account holds a large total balance. A failed shield must
+        // report `available` as the usable-for-shield amount (0), NOT the full
+        // account balance — otherwise a fragmented account yields the
+        // self-contradictory `available > required`.
+        let candidates = vec![(addr(1), reserve()), (addr(2), reserve()), (addr(3), reserve())];
+        let plan = plan(candidates).unwrap();
+        assert!(plan.usable_candidates.is_empty());
+        assert_eq!(plan.preflight.max_shieldable_credits, 0);
+        assert_eq!(plan.preflight.account_balance_credits, 3 * reserve());
+
+        let amount = 1;
+        match plan.select_inputs(amount).unwrap_err() {
+            PlatformWalletError::PlatformShieldCapacityExceeded { available, required } => {
+                assert_eq!(
+                    available, 0,
+                    "a fragmented account must report 0 usable, not the full balance"
+                );
+                assert_eq!(required, amount + reserve());
+                assert!(
+                    available < required,
+                    "a failed shield must never report available > required"
+                );
+            }
+            other => panic!("expected PlatformShieldCapacityExceeded, got {other:?}"),
+        }
     }
 
     #[test]

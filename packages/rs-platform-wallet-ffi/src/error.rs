@@ -586,6 +586,18 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::PlatformShieldCapacityExceeded { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance
             }
+            // The per-input sibling of the account-capacity variant above: a
+            // live pre-broadcast per-input shortfall (a stale-snapshot race).
+            // It rides the SAME capacity code — the host's corrective action is
+            // identical (refresh preflight, retry) — but as its OWN wallet
+            // variant so the message names the offending address and the typed
+            // `available`/`required` are understood as that single input's live
+            // figures, not an account maximum. Minting a distinct FFI code was
+            // deliberately avoided to not collide with the in-flight code-space
+            // frontier; the disambiguation lives in the message.
+            PlatformWalletError::PlatformShieldInputShortfall { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance
+            }
             // The core-transaction sibling of the shielded pair above: the
             // do-not-retry signal must survive the boundary as a typed code
             // so hosts can distinguish it from a definitive rejection.
@@ -708,6 +720,14 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // `MessageSigningKeyUnavailable` mapped above. By the time a
             // `MessageSigningFailed` reason exists, any marker in it sits
             // mid-string and is deliberately not matched.
+            // A panic recovered at the runtime-helper boundary
+            // (`runtime::block_on_worker` / `run_on_big_stack_thread`) instead
+            // of aborting the host. It is by definition an unexpected internal
+            // failure, so it reuses the generic `ErrorUnknown` code (per the
+            // "add or reuse an internal-panic code" contract); the panic text
+            // rides the message. An explicit arm — rather than the catch-all
+            // below — so the deliberate reuse is greppable.
+            PlatformWalletError::InternalPanic(..) => PlatformWalletFFIResultCode::ErrorUnknown,
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
         PlatformWalletFFIResult::err(code, error.to_string())

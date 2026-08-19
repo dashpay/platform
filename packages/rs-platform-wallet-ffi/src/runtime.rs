@@ -45,19 +45,144 @@ pub(crate) fn runtime() -> &'static tokio::runtime::Runtime {
     &RT
 }
 
+/// Convert a caught worker/thread panic into a value of the driven future's
+/// own output type, so a panic surfaces as a typed error at the FFI boundary
+/// instead of unwinding across `extern "C"` and aborting the host (workspace
+/// policy — `Cargo.toml`: "a JNI library must never abort the app process").
+///
+/// Implemented for every output type actually driven through
+/// [`block_on_worker`]: any `Result<T, E>` whose error type recovers (the
+/// overwhelmingly common shape — the panic becomes a typed `Err`), plus the
+/// handful of non-`Result`, best-effort outputs whose panic degrades to a
+/// logged, empty value. The [`block_on_worker`] bound is fail-closed: a new
+/// call site whose output does not implement this will not compile until it
+/// opts into an explicit recovery here.
+pub(crate) trait RecoverWorkerPanic {
+    fn recover_from_worker_panic(reason: String) -> Self;
+}
+
+impl<T, E: RecoverWorkerPanic> RecoverWorkerPanic for Result<T, E> {
+    fn recover_from_worker_panic(reason: String) -> Self {
+        Err(E::recover_from_worker_panic(reason))
+    }
+}
+
+impl RecoverWorkerPanic for platform_wallet::PlatformWalletError {
+    fn recover_from_worker_panic(reason: String) -> Self {
+        platform_wallet::PlatformWalletError::InternalPanic(reason)
+    }
+}
+
+/// Fire-and-forget `..._sync_now` entry points returning `()`: the panic is
+/// already logged by the runtime helper; the sync is a no-op for this pass and
+/// the host's next periodic sync retries.
+impl RecoverWorkerPanic for () {
+    fn recover_from_worker_panic(_reason: String) -> Self {}
+}
+
+/// Contact-crypto counters: a recovered panic reports zero (logged), which the
+/// host reconciles on its next sync — never an abort.
+impl RecoverWorkerPanic for usize {
+    fn recover_from_worker_panic(_reason: String) -> Self {
+        0
+    }
+}
+
+/// Best-effort sync summaries: a recovered panic yields an empty summary
+/// (0 processed / 0 errors), logged; the host's next sync retries. Never an
+/// abort.
+impl RecoverWorkerPanic for platform_wallet::DashPaySyncSummary {
+    fn recover_from_worker_panic(_reason: String) -> Self {
+        Self::default()
+    }
+}
+
+impl RecoverWorkerPanic for platform_wallet::manager::dpns_sync::DpnsSyncPassSummary {
+    fn recover_from_worker_panic(_reason: String) -> Self {
+        Self::default()
+    }
+}
+
+impl RecoverWorkerPanic for platform_wallet::manager::shielded_sync::ShieldedSyncPassSummary {
+    fn recover_from_worker_panic(_reason: String) -> Self {
+        Self::default()
+    }
+}
+
+/// Best-effort message from a caught panic payload (`Box<dyn Any>`), which is a
+/// `&'static str` or `String` for essentially every panic (`panic!`, `unwrap`,
+/// `expect`, assertions).
+fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = payload.downcast_ref::<&'static str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "non-string panic payload".to_string()
+    }
+}
+
 /// Drive `future` to completion, moving the actual polling onto a
 /// worker thread so the caller's stack size doesn't bound the
 /// computation.
 ///
 /// The calling thread still blocks (that's what FFI wants); it just
 /// parks on a oneshot instead of driving the future itself.
+///
+/// ## Panic safety
+///
+/// A panic inside `future` must NOT cross the `extern "C"` FFI boundary: on the
+/// `unwind` (Android/host) build that unwind aborts the process with `SIGABRT`
+/// (Rust aborts when a panic escapes an `extern "C"` fn), and the JNI shim's
+/// own `catch_unwind` (`rs-unified-sdk-jni`) sits ABOVE this callee, so it can
+/// never intercept the abort — exactly what the workspace policy in `Cargo.toml`
+/// forbids. Two panic surfaces are closed here:
+///
+///  1. `future` panics — tokio unwind-catches the spawned task into a
+///     `JoinError`. The pre-fix `.expect("tokio worker panicked")` re-raised it
+///     (that re-panic was the abort). We instead convert it into the output
+///     type's typed error via [`RecoverWorkerPanic`].
+///  2. Any stray panic while `block_on` drives the `JoinHandle` — caught by the
+///     surrounding `catch_unwind` and recovered the same way.
+///
+/// On the iOS `panic = "abort"` profiles (`dev-ios` / `release-ios`) this is
+/// INERT by design: the process aborts at the panic site before any
+/// `catch_unwind`/`JoinError` is observed. That matches the in-tree note that
+/// `catch_unwind` cannot protect an abort-configured build; this hardens the
+/// `unwind` builds without pretending to protect iOS.
+///
+/// The success path is unchanged: a future that completes normally returns its
+/// value directly.
 pub(crate) fn block_on_worker<F>(future: F) -> F::Output
 where
     F: std::future::Future + Send + 'static,
-    F::Output: Send + 'static,
+    F::Output: Send + 'static + RecoverWorkerPanic,
 {
     let rt = runtime();
-    rt.block_on(async move { rt.spawn(future).await.expect("tokio worker panicked") })
+    let joined = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        rt.block_on(async move { rt.spawn(future).await })
+    }));
+    match joined {
+        // Success path (unchanged): the task completed and returned its value.
+        Ok(Ok(output)) => output,
+        // The spawned task panicked (or was cancelled): tokio captured it as a
+        // `JoinError`. Recover into the output's typed error instead of
+        // re-raising it across the `extern "C"` caller.
+        Ok(Err(join_err)) => {
+            let reason = format!("tokio worker task did not complete: {join_err}");
+            tracing::error!(target: "platform_wallet_ffi", "{reason}");
+            F::Output::recover_from_worker_panic(reason)
+        }
+        // Belt and suspenders: a panic in the `block_on` driver itself.
+        Err(panic_payload) => {
+            let reason = format!(
+                "panic while driving tokio worker: {}",
+                panic_payload_message(panic_payload.as_ref())
+            );
+            tracing::error!(target: "platform_wallet_ffi", "{reason}");
+            F::Output::recover_from_worker_panic(reason)
+        }
+    }
 }
 
 /// Run `f` to completion on a freshly spawned scoped OS thread with the
@@ -76,16 +201,34 @@ where
 /// compiles: it reuses pooled runtime workers instead of paying a
 /// thread spawn per call.
 ///
-/// A panic inside `f` is propagated as a panic here, matching
-/// [`block_on_worker`]'s "tokio worker panicked" convention — a panic
-/// in the pass is a bug, not a recoverable condition.
+/// ## Panic safety
+///
+/// A panic inside `f` is CAUGHT (`std::thread::join` captures it) and mapped to
+/// an `io::Error`, rather than re-raised: the pre-fix
+/// `.expect("big-stack FFI thread panicked")` would have unwound across the
+/// `extern "C"` caller and aborted the host on the `unwind` build (`Cargo.toml`
+/// policy). The lone caller already threads the returned `io::Result` into its
+/// `PlatformWalletFFIResult`. On the iOS `abort` profiles this is inert (the
+/// process aborts at the panic site), as documented on [`block_on_worker`].
 pub(crate) fn run_on_big_stack_thread<T: Send>(f: impl FnOnce() -> T + Send) -> std::io::Result<T> {
     std::thread::scope(|scope| {
         let handle = std::thread::Builder::new()
             .name("pw-ffi-bigstack".into())
             .stack_size(WORKER_STACK_BYTES)
             .spawn_scoped(scope, f)?;
-        Ok(handle.join().expect("big-stack FFI thread panicked"))
+        match handle.join() {
+            Ok(value) => Ok(value),
+            Err(panic_payload) => {
+                let reason = panic_payload_message(panic_payload.as_ref());
+                tracing::error!(
+                    target: "platform_wallet_ffi",
+                    "big-stack FFI thread panicked: {reason}"
+                );
+                Err(std::io::Error::other(format!(
+                    "big-stack FFI thread panicked: {reason}"
+                )))
+            }
+        }
     })
 }
 
@@ -121,6 +264,48 @@ mod tests {
         // under WORKER_STACK_BYTES.
         let out = run_on_big_stack_thread(|| recurse(1_000)).expect("spawn should succeed");
         assert!(out > 0);
+    }
+
+    // --- Panic safety (the abort-hazard fix) -------------------------------
+    //
+    // Gated to the `unwind` config: on an `abort`-configured build the panic
+    // aborts the process at the panic site (documented, accepted iOS behavior),
+    // so there is no recoverable outcome to assert. Under the normal test
+    // profile (`unwind`) these prove a panicking future/closure returns the
+    // typed error instead of aborting the runner.
+
+    #[cfg(panic = "unwind")]
+    #[test]
+    fn block_on_worker_recovers_panicking_future_as_typed_error() {
+        let out: Result<u32, platform_wallet::PlatformWalletError> =
+            block_on_worker(async { panic!("boom in worker") });
+        match out {
+            Err(platform_wallet::PlatformWalletError::InternalPanic(msg)) => {
+                assert!(
+                    msg.contains("did not complete") || msg.contains("boom in worker"),
+                    "unexpected recovered message: {msg}"
+                );
+            }
+            other => panic!("expected recovered InternalPanic, got {other:?}"),
+        }
+    }
+
+    #[cfg(panic = "unwind")]
+    #[test]
+    fn block_on_worker_success_path_is_unchanged() {
+        let out: Result<u32, platform_wallet::PlatformWalletError> =
+            block_on_worker(async { Ok(7) });
+        assert!(matches!(out, Ok(7)));
+    }
+
+    #[cfg(panic = "unwind")]
+    #[test]
+    fn run_on_big_stack_thread_maps_panic_to_io_error() {
+        let result: std::io::Result<()> =
+            run_on_big_stack_thread(|| panic!("boom on big stack"));
+        let err = result.expect_err("a panicking closure must map to Err, not abort");
+        assert_eq!(err.kind(), std::io::ErrorKind::Other);
+        assert!(err.to_string().contains("big-stack FFI thread panicked"));
     }
 }
 
