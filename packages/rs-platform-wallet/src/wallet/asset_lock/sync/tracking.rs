@@ -85,6 +85,63 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         cs
     }
 
+    /// Remove a tracked asset lock that is sitting at
+    /// [`Broadcast`](AssetLockStatus::Broadcast) **without a proof** after a
+    /// re-broadcast came back definitively [`Rejected`].
+    ///
+    /// Companion to [`untrack_asset_lock`](Self::untrack_asset_lock), kept
+    /// separate rather than folded into it because the two have different
+    /// safety obligations. `untrack_asset_lock` is the build-time rejection
+    /// path, and its caller in `asset_lock/build.rs` uses "the row was
+    /// removed" as the trigger to RELEASE the funding-input reservation.
+    /// There, a row that advanced to `Broadcast` concurrently is treated as
+    /// positive evidence the transaction reached the network, so the guard
+    /// deliberately keeps it and holds the reservation. Widening that method
+    /// to remove `Broadcast` rows would release reservations for inputs
+    /// whose transaction may be live — a double-spend opening.
+    ///
+    /// This method is only reached from `resume_asset_lock` after the
+    /// broadcaster returned `Rejected`, which it does only when the send
+    /// provably did not happen. It releases no reservation.
+    ///
+    /// Guards, in addition to the status check:
+    ///
+    /// - `proof.is_none()` — a row carrying an IS/CL proof has authenticated
+    ///   on-chain evidence that outranks any broadcast verdict.
+    /// - Only `Broadcast` is removed. [`Consumed`](AssetLockStatus::Consumed)
+    ///   is a terminal tombstone that must survive (#4347), and
+    ///   `InstantSendLocked` / `ChainLocked` / `RecoveredFromChain` all imply
+    ///   finality that a broadcast rejection cannot contradict.
+    ///
+    /// Idempotent: an empty changeset when the outpoint is untracked or
+    /// fails a guard.
+    pub(crate) async fn untrack_unproven_broadcast_asset_lock(
+        &self,
+        out_point: &OutPoint,
+    ) -> AssetLockChangeSet {
+        let mut wm = self.wallet_manager.write().await;
+        let mut cs = AssetLockChangeSet::default();
+        if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+            match info.tracked_asset_locks.get(out_point) {
+                Some(entry)
+                    if entry.status == AssetLockStatus::Broadcast && entry.proof.is_none() =>
+                {
+                    info.tracked_asset_locks.remove(out_point);
+                    cs.removed.insert(*out_point);
+                }
+                Some(entry) => tracing::warn!(
+                    outpoint = %out_point,
+                    status = ?entry.status,
+                    has_proof = entry.proof.is_some(),
+                    "untrack_unproven_broadcast_asset_lock: lock is not an unproven \
+                     Broadcast row — leaving it tracked"
+                ),
+                None => {}
+            }
+        }
+        cs
+    }
+
     /// Mark a tracked asset lock as
     /// [`Consumed`](AssetLockStatus::Consumed) after a successful
     /// identity registration or top-up.
