@@ -60,10 +60,7 @@ export default function analyseConfigFactory() {
             }
             break;
           default: {
-            const {
-              description,
-              solution,
-            } = {
+            const fileProblems = {
               // File provider error
               'not-valid': {
                 description: 'SSL certificate files are not valid',
@@ -82,15 +79,17 @@ Private key file path: {bold.cyanBright ${ssl?.data?.privateFilePath}}
 
 Or use ZeroSSL https://docs.dash.org/en/stable/masternodes/dashmate.html#ssl-certificate`,
               },
-              // ZeroSSL validation errors
+            };
+
+            const zeroSslProblems = {
               [ZEROSSL_ERRORS.API_KEY_IS_NOT_SET]: {
                 description: 'ZeroSSL API key is not set.',
                 solution: chalk`Please obtain your API key from {underline.cyanBright https://app.zerossl.com/developer}
-And then update your configuration with {block.cyanBright dashmate config set platform.gateway.ssl.providerConfigs.zerossl.apiKey [KEY]}`,
+And then update your configuration with {bold.cyanBright dashmate config set platform.gateway.ssl.providerConfigs.zerossl.apiKey [KEY]}`,
               },
               [ZEROSSL_ERRORS.EXTERNAL_IP_IS_NOT_SET]: {
                 description: 'External IP is not set.',
-                solution: chalk`Please update your configuration to include your external IP using {block.cyanBright dashmate config set externalIp [IP]}`,
+                solution: chalk`Please update your configuration to include your external IP using {bold.cyanBright dashmate config set externalIp [IP]}`,
               },
               [ZEROSSL_ERRORS.CERTIFICATE_ID_IS_NOT_SET]: {
                 description: 'ZeroSSL certificate is not configured',
@@ -102,7 +101,7 @@ And then update your configuration with {block.cyanBright dashmate config set pl
 and revoke the previous certificate in the ZeroSSL dashboard`,
               },
               [ZEROSSL_ERRORS.EXTERNAL_IP_MISMATCH]: {
-                description: chalk`ZeroSSL IP ${ssl?.data?.certificate.common_name} does not match external IP ${ssl?.data?.externalIp}.`,
+                description: chalk`ZeroSSL IP ${ssl?.data?.certificate?.common_name} does not match external IP ${ssl?.data?.externalIp}.`,
                 solution: chalk`Please regenerate the certificate using {bold.cyanBright dashmate ssl obtain --force}
             and revoke the previous certificate in the ZeroSSL dashboard`,
               },
@@ -113,7 +112,7 @@ This makes auto-renewal impossible.`,
 and revoke the previous certificate in the ZeroSSL dashboard`,
               },
               [ZEROSSL_ERRORS.CERTIFICATE_EXPIRES_SOON]: {
-                description: chalk`ZeroSSL certificate expires at ${ssl?.data?.certificate.expires}.`,
+                description: chalk`ZeroSSL certificate expires at ${ssl?.data?.certificate?.expires}.`,
                 solution: chalk`Please run {bold.cyanBright dashmate ssl obtain} to get a new one`,
               },
               [ZEROSSL_ERRORS.CERTIFICATE_IS_NOT_VALIDATED]: {
@@ -128,7 +127,9 @@ and revoke the previous certificate in the ZeroSSL dashboard`,
                 description: ssl?.data?.error?.message,
                 solution: chalk`Please contact ZeroSSL support if needed.`,
               },
-              // Let's Encrypt validation errors
+            };
+
+            const letsEncryptProblems = {
               [LETSENCRYPT_ERRORS.EMAIL_IS_NOT_SET]: {
                 description: 'Let\'s Encrypt email is not set.',
                 solution: chalk`Please update your configuration with {bold.cyanBright dashmate config set platform.gateway.ssl.providerConfigs.letsencrypt.email [EMAIL]}`,
@@ -157,6 +158,21 @@ and revoke the previous certificate in the ZeroSSL dashboard`,
                 description: chalk`Let's Encrypt certificate is not valid.`,
                 solution: chalk`Please run {bold.cyanBright dashmate ssl obtain --provider=letsencrypt --force} to get a new one.`,
               },
+            };
+
+            // Both providers report some errors under the same name, so only the
+            // configured provider's messages are considered. Otherwise one provider's
+            // message would describe a problem found by the other one.
+            const providerProblems = config.get('platform.gateway.ssl.provider') === 'letsencrypt'
+              ? letsEncryptProblems
+              : zeroSslProblems;
+
+            const {
+              description,
+              solution,
+            } = {
+              ...fileProblems,
+              ...providerProblems,
             }[ssl.error] ?? {};
 
             if (description) {

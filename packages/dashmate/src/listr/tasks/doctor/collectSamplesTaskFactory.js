@@ -105,7 +105,10 @@ export default function collectSamplesTaskFactory(
                       const {
                         error,
                         data,
-                      } = validateZeroSslCertificate(config, Certificate.EXPIRATION_LIMIT_DAYS);
+                      } = await validateZeroSslCertificate(
+                        config,
+                        Certificate.EXPIRATION_LIMIT_DAYS,
+                      );
 
                       obfuscateObjectRecursive(data, (_field, value) => (typeof value === 'string' ? value.replaceAll(
                         process.env.USER,
@@ -311,7 +314,7 @@ export default function collectSamplesTaskFactory(
 
               const url = `http://${config.get('platform.drive.tenderdash.rpc.host')}:${config.get('platform.drive.tenderdash.rpc.port')}/metrics`;
 
-              const result = fetchTextOrError(url);
+              const result = await fetchTextOrError(url);
 
               ctx.samples.setServiceInfo('drive_tenderdash', 'metrics', result);
             }
@@ -322,7 +325,7 @@ export default function collectSamplesTaskFactory(
 
               const url = `http://${config.get('platform.drive.abci.metrics.host')}:${config.get('platform.drive.abci.metrics.port')}/metrics`;
 
-              const result = fetchTextOrError(url);
+              const result = await fetchTextOrError(url);
 
               ctx.samples.setServiceInfo('drive_abci', 'metrics', result);
             }
@@ -333,7 +336,7 @@ export default function collectSamplesTaskFactory(
 
               const url = `http://${config.get('platform.gateway.metrics.host')}:${config.get('platform.gateway.metrics.port')}/metrics`;
 
-              const result = fetchTextOrError(url);
+              const result = await fetchTextOrError(url);
 
               ctx.samples.setServiceInfo('gateway', 'metrics', result);
             }
