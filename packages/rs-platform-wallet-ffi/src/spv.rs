@@ -572,6 +572,9 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_stop(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        // Deliberately lossy (pre-existing contract): a `stop()` error — and,
+        // via the guarded `()` recovery, a panic — is logged but not reported;
+        // stop is best-effort teardown and hosts do not act on its outcome.
         runtime().block_on(async {
             let _ = manager.spv().stop().await;
         });

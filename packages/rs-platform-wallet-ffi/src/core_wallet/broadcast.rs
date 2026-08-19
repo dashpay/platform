@@ -138,11 +138,17 @@ pub unsafe extern "C" fn core_wallet_abandon_signed_transaction(
             "transaction was finalized by a different wallet generation".to_string(),
         );
     }
-    runtime().block_on(
+    // `try_block_on`: releasing the reservation IS this entry point's job, and
+    // the handle was consumed on entry so there is no retry — a panic must not
+    // fall through to a success the host records as "reservation released"
+    // (same contract as `core_wallet_signed_payment_release`). The two abandon
+    // calls in the error arms above stay on the swallowing `block_on`: they are
+    // best-effort cleanup on paths that already report an error of their own.
+    unwrap_result_or_return!(runtime().try_block_on(
         transaction
             .wallet
             .abandon_transaction(&transaction.transaction),
-    );
+    ));
     PlatformWalletFFIResult::ok()
 }
 
@@ -351,6 +357,54 @@ mod tests {
         assert_eq!(rebroadcast.code, PlatformWalletFFIResultCode::NotFound);
         assert!(txid.is_null());
         assert_released(&core, &signer, 47);
+        CORE_WALLET_STORAGE.remove(core_handle);
+    }
+
+    /// The main-path abandon is this entry point's whole job, and the handle
+    /// is consumed on entry — so a panic during the release must surface as
+    /// the typed panic error, never fall through to `ok()` for the host to
+    /// record as "reservation released".
+    ///
+    /// Driving the call from inside a runtime context makes the guarded
+    /// `block_on` panic in the guarded region of the genuine entry point
+    /// ("Cannot start a runtime from within a runtime") before the abandon
+    /// future is ever polled — a real panic, on the real path. Before the
+    /// fix, `block_on`'s `()` recovery swallowed exactly this panic and the
+    /// function reported `Success`.
+    #[test]
+    fn abandon_reports_a_panic_as_an_error_not_success() {
+        let (core, signer) = runtime()
+            .raw()
+            .block_on(funded_spv_core_wallet(StandardAccountType::BIP44Account));
+        let core_handle = CORE_WALLET_STORAGE.insert(core.clone());
+        let transaction_handle = insert(&core, finalize(&core, &signer, 48));
+
+        let result = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("build helper runtime")
+            .block_on(async {
+                unsafe { core_wallet_abandon_signed_transaction(core_handle, transaction_handle) }
+            });
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            "a panicked abandon must not report success — the host would \
+             record the reservation as released"
+        );
+        let message = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_str()
+            .expect("message is UTF-8");
+        assert!(
+            message.starts_with(crate::panic_guard::FFI_PANIC_PREFIX),
+            "message must carry the panic marker: {message}"
+        );
+
+        // The handle was consumed on entry regardless of the panic — a retry
+        // is a clean not-found error, not a second release attempt.
+        let retry =
+            unsafe { core_wallet_abandon_signed_transaction(core_handle, transaction_handle) };
+        assert_eq!(retry.code, PlatformWalletFFIResultCode::NotFound);
         CORE_WALLET_STORAGE.remove(core_handle);
     }
 }
