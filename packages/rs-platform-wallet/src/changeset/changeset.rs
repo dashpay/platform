@@ -1255,6 +1255,67 @@ pub struct WalletMetadataEntry {
     pub birth_height: u32,
 }
 
+/// Whether the last gap-limit identity scan for this wallet answered every
+/// index it probed.
+///
+/// A scan has three endings, and only two of them are visible in what it
+/// returns. It can find identities, it can prove there are none, or it can
+/// find *some* while one of its probes goes unanswered — and that third
+/// ending returns `Ok` with the identities it did find, because discarding
+/// them would be worse. `ScanTally::is_trustworthy` is
+/// `identities_seen > 0 || failed_probes == 0`, so a scan that saw index 0
+/// and got no answer at index 1 is reported as a success.
+///
+/// That is survivable only if something scans again. Nothing did: the
+/// warm-launch shortcut skips discovery whenever any identity is on file, and
+/// the fact that the scan behind that identity was partial existed nowhere
+/// once the process exited. An identity at the unanswered index then stayed
+/// invisible for the life of the installation, along with all of its contacts
+/// — a silent, permanent gap whose only symptom is a missing identity and
+/// DPNS name after a restore. See dashpay/platform#4365.
+///
+/// This is that missing fact. `complete` is stored rather than derived from
+/// `failed_indices` because the two ways a scan can end early are different:
+/// unanswered probes leave indices behind, while a scan abandoned at the
+/// startup budget leaves none and is no more complete for it.
+///
+/// Carried as `Option<IdentityScanStateEntry>` — at most one scan verdict per
+/// persist round, last-write-wins, which is correct because a later scan's
+/// verdict wholly supersedes an earlier one's.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct IdentityScanStateEntry {
+    /// Every index the scan probed was answered. Only a `true` here may let a
+    /// later launch skip discovery.
+    pub complete: bool,
+    /// One past the highest index the scan probed.
+    pub probed_through: u32,
+    /// Indices whose probe never got an answer, ascending. Empty for a scan
+    /// that was cut off before it could fail anything.
+    pub failed_indices: Vec<u32>,
+}
+
+impl IdentityScanStateEntry {
+    /// A scan that answered every index it probed.
+    pub fn completed(probed_through: u32) -> Self {
+        Self {
+            complete: true,
+            probed_through,
+            failed_indices: Vec::new(),
+        }
+    }
+
+    /// A scan that left at least one index unanswered, or was abandoned
+    /// before it could finish.
+    pub fn incomplete(probed_through: u32, failed_indices: Vec<u32>) -> Self {
+        Self {
+            complete: false,
+            probed_through,
+            failed_indices,
+        }
+    }
+}
+
 /// One entry per registered account. Captures the per-account xpub
 /// + type so a future load path can rebuild the wallet watch-only
 /// via `Account::from_xpub`. Hardened derivation at the account
@@ -1606,6 +1667,18 @@ pub struct PlatformWalletChangeSet {
     /// Per-wallet metadata emitted once at registration. See
     /// [`WalletMetadataEntry`] for the merge policy.
     pub wallet_metadata: Option<WalletMetadataEntry>,
+    /// Verdict of the most recent gap-limit identity scan. Emitted by
+    /// discovery and by the startup sequence when it abandons a scan; read on
+    /// the next launch to decide whether the warm-launch shortcut may skip
+    /// discovery. See [`IdentityScanStateEntry`].
+    ///
+    /// Durability caveat, the same one [`Self::pending_contact_crypto_added`]
+    /// carries: no persister vtable has a slot for this field yet, so on
+    /// hosts that have not adopted it the verdict is process-lifetime only.
+    /// Within a process it still redirects a second bring-up, and a partial
+    /// scan is now retried inside its own launch — but closing
+    /// dashpay/platform#4365 across launches needs the host slot.
+    pub identity_scan_state: Option<IdentityScanStateEntry>,
     /// Per-account registration entries emitted at registration / on
     /// later `add_account` calls. See [`AccountRegistrationEntry`] for
     /// the merge policy (plain `Vec::extend`, dedup is the apply-side
@@ -1741,6 +1814,13 @@ impl Merge for PlatformWalletChangeSet {
         if let Some(meta) = other.wallet_metadata {
             self.wallet_metadata = Some(meta);
         }
+        // Identity-scan verdict: last-write-wins. A later scan's verdict
+        // wholly supersedes an earlier one's — merging two would have to
+        // invent a rule for combining a complete scan with an incomplete one,
+        // and either answer would be wrong for one of them.
+        if let Some(scan) = other.identity_scan_state {
+            self.identity_scan_state = Some(scan);
+        }
         // Per-account specs and address-pool snapshots: append-only.
         // See the type docstrings for the rationale (registration
         // round emits each key once; snapshots are whole-pool, so
@@ -1779,6 +1859,7 @@ impl Merge for PlatformWalletChangeSet {
                 .as_ref()
                 .is_none_or(|m| m.is_empty())
             && self.wallet_metadata.is_none()
+            && self.identity_scan_state.is_none()
             && self.account_registrations.is_empty()
             && self.provider_key_account_registrations.is_empty()
             && self.account_address_pools.is_empty()

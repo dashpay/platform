@@ -31,7 +31,7 @@ mod apply;
 mod lifecycle;
 
 use super::managed_identity::ManagedIdentity;
-use crate::changeset::IdentityManagerStartState;
+use crate::changeset::{IdentityManagerStartState, IdentityScanStateEntry};
 use crate::wallet::platform_wallet::WalletId;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
@@ -95,6 +95,18 @@ pub struct IdentityManager {
     /// callers that need to drop an identity reach the buckets through
     /// `remove_for_apply` so the index stays in sync.
     location_index: BTreeMap<Identifier, IdentityLocation>,
+
+    /// Per-wallet verdict of the last gap-limit identity scan, keyed by wallet
+    /// id because a scan is a wallet-scoped act even though its result is a
+    /// set of identities.
+    ///
+    /// Consulted by the startup sequence before it takes the warm-launch
+    /// shortcut: a scan that could not answer every index must not let a
+    /// later launch conclude the identity set is settled. An absent entry
+    /// means no verdict is known — see
+    /// [`IdentityManagerStartState::scan_states`] for why that is deliberately
+    /// not read as "complete".
+    identity_scan_states: BTreeMap<WalletId, IdentityScanStateEntry>,
 }
 
 impl From<IdentityManagerStartState> for IdentityManager {
@@ -102,6 +114,7 @@ impl From<IdentityManagerStartState> for IdentityManager {
         let IdentityManagerStartState {
             out_of_wallet_identities,
             wallet_identities,
+            scan_states,
         } = state;
 
         // Rebuild the side-index from the two buckets — `IdentityManagerStartState`
@@ -127,6 +140,7 @@ impl From<IdentityManagerStartState> for IdentityManager {
             out_of_wallet_identities,
             wallet_identities,
             location_index,
+            identity_scan_states: scan_states,
         }
     }
 }
@@ -403,6 +417,83 @@ mod tests {
         assert!(manager.location_index().get(&observed_id).is_none());
         assert!(manager.identity(&observed_id).is_none());
         assert!(manager.location_index().is_empty());
+    }
+
+    /// The cross-launch half of dashpay/platform#4365: an incomplete scan
+    /// verdict restored from the start state must still say "incomplete", or
+    /// the next launch takes the warm shortcut over an identity set that was
+    /// never fully probed.
+    #[test]
+    fn an_incomplete_scan_verdict_survives_a_restore() {
+        use crate::changeset::{IdentityManagerStartState, IdentityScanStateEntry};
+
+        let wallet: WalletId = [10u8; 32];
+        let mut state = IdentityManagerStartState::default();
+        state
+            .scan_states
+            .insert(wallet, IdentityScanStateEntry::incomplete(5, vec![1]));
+
+        let manager = IdentityManager::from(state);
+
+        assert!(
+            manager.identity_scan_is_incomplete(&wallet),
+            "a restored partial scan must still force a rescan"
+        );
+        assert_eq!(
+            manager
+                .identity_scan_state(&wallet)
+                .expect("verdict restored")
+                .failed_indices,
+            vec![1]
+        );
+    }
+
+    /// The other side of it: a scan that answered everything restores as
+    /// complete, so the warm-launch shortcut keeps working and a healthy
+    /// wallet pays for no probes.
+    #[test]
+    fn a_complete_scan_verdict_permits_the_warm_shortcut() {
+        use crate::changeset::{IdentityManagerStartState, IdentityScanStateEntry};
+
+        let wallet: WalletId = [10u8; 32];
+        let mut state = IdentityManagerStartState::default();
+        state
+            .scan_states
+            .insert(wallet, IdentityScanStateEntry::completed(6));
+
+        let manager = IdentityManager::from(state);
+
+        assert!(!manager.identity_scan_is_incomplete(&wallet));
+    }
+
+    /// "No verdict" is not "incomplete". Every wallet that predates this
+    /// bookkeeping, and every host that does not persist the verdict yet,
+    /// lands here — and forcing them all to rescan on every launch would cost
+    /// a full gap-limit scan plus a Keychain round trip before every Core SPV
+    /// start, which is the cost the warm shortcut exists to avoid.
+    #[test]
+    fn an_unknown_scan_verdict_does_not_force_a_rescan() {
+        let manager = IdentityManager::new();
+
+        assert!(!manager.identity_scan_is_incomplete(&[42u8; 32]));
+        assert!(manager.identity_scan_state(&[42u8; 32]).is_none());
+    }
+
+    /// A later scan's verdict wholly supersedes an earlier one's — that is
+    /// what lets a clean rescan clear a prior partial scan and hand the
+    /// shortcut back.
+    #[test]
+    fn a_clean_rescan_clears_an_earlier_partial_verdict() {
+        use crate::changeset::IdentityScanStateEntry;
+
+        let wallet: WalletId = [10u8; 32];
+        let mut manager = IdentityManager::new();
+
+        manager.record_identity_scan(wallet, IdentityScanStateEntry::incomplete(5, vec![1]));
+        assert!(manager.identity_scan_is_incomplete(&wallet));
+
+        manager.record_identity_scan(wallet, IdentityScanStateEntry::completed(6));
+        assert!(!manager.identity_scan_is_incomplete(&wallet));
     }
 
     #[test]

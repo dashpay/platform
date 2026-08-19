@@ -202,6 +202,19 @@ pub enum WalletStartupStatus {
     /// is certain, not the reason. Either way those contacts' payments wait on
     /// the DIP-15 rescan.
     PartialAccountsPending,
+    /// The contact-crypto provider does not resolve the seed that owns this
+    /// wallet, so the drain was skipped without deriving anything.
+    ///
+    /// Not a slow-Platform outcome like the other partials — it says the host
+    /// handed this call a signer for a different wallet, and the only safe
+    /// response was to do nothing. Deriving anyway would write contact
+    /// receiving xpubs from the wrong seed, and because
+    /// `register_contact_account` keys its existence check on the contact pair
+    /// rather than on the xpub, those wrong addresses would be written once
+    /// and never revisited by a later correct-seed pass. The wallet would then
+    /// watch addresses nobody pays to, with no symptom but payments that never
+    /// arrive.
+    SeedBindingUnverified,
 }
 
 impl WalletStartupStatus {
@@ -240,9 +253,16 @@ pub struct WalletStartupOutcome {
     /// Discovery scans performed. `0` when a local identity was already known
     /// and no network scan was needed.
     pub discovery_attempts: u32,
-    /// Whether the inline DashPay sync pass ran (skipped when there is no
-    /// identity to sync for).
+    /// Whether the inline DashPay sync pass ran **to completion**. `false`
+    /// when it was skipped, failed, ran out of budget, or came back degraded —
+    /// a pass that could not read some identities' contact documents leaves
+    /// their account builds unenqueued, so it is not a pass the caller may
+    /// rely on.
     pub dashpay_sync_ran: bool,
+    /// The contact-account drain was skipped because the supplied
+    /// contact-crypto provider does not resolve this wallet's seed. Nothing
+    /// was derived and nothing was written; the queue is intact.
+    pub seed_binding_unverified: bool,
     /// Contact-crypto entries completed by the drain.
     pub contact_accounts_drained: usize,
     /// Contact-account builds still queued when this returned.
@@ -273,6 +293,9 @@ pub(crate) struct StartupTally {
     pub discovery_failed_locally: bool,
     pub discovery_attempts: u32,
     pub dashpay_sync_ran: bool,
+    /// The drain was skipped because the contact-crypto provider could not be
+    /// shown to resolve this wallet's seed.
+    pub seed_binding_unverified: bool,
     pub contact_accounts_drained: usize,
     pub contact_accounts_pending: usize,
 }
@@ -326,6 +349,12 @@ impl StartupTally {
         self.dashpay_sync_ran = true;
     }
 
+    /// The seed behind the contact-crypto provider could not be shown to own
+    /// this wallet, so the drain never ran.
+    pub(crate) fn record_seed_binding_unverified(&mut self) {
+        self.seed_binding_unverified = true;
+    }
+
     pub(crate) fn record_drain(&mut self, drained: usize, pending: usize) {
         self.contact_accounts_drained = drained;
         self.contact_accounts_pending = pending;
@@ -338,16 +367,32 @@ impl StartupTally {
     /// absence outranks the drain counters for the same reason — with no
     /// identity there is nothing to have drained.
     pub(crate) fn status(&self) -> WalletStartupStatus {
+        // Both of these say "the identity question is still open", so neither
+        // may decide the verdict once an identity is known. That used to be
+        // structurally impossible — discovery ran only when nothing was on
+        // file, and every branch that found something returned early — but a
+        // rescan forced by an incomplete prior scan reaches them with an
+        // identity already recorded, and reporting *that* launch as
+        // `DiscoveryFailed` would hide a sync and drain that both ran.
+        //
         // A local fault outranks unreachability: both leave the question open,
         // but only this one tells the client not to bother asking again.
-        if self.discovery_failed_locally {
+        if self.discovery_failed_locally && self.identity_id.is_none() {
             return WalletStartupStatus::DiscoveryFailed;
         }
-        if self.discovery_unreachable {
+        if self.discovery_unreachable && self.identity_id.is_none() {
             return WalletStartupStatus::PartialNoIdentity;
         }
         if self.proven_no_identity && self.identity_id.is_none() {
             return WalletStartupStatus::NoIdentity;
+        }
+        // Outranks the queue counters, and must: a wrong-seed provider is why
+        // the queue was not drained, and it is the one ending here that points
+        // at a host misconfiguration rather than at Platform being slow. It
+        // also has to outrank `Ready` — with an empty queue every other signal
+        // would read as a clean run.
+        if self.seed_binding_unverified {
+            return WalletStartupStatus::SeedBindingUnverified;
         }
         if self.contact_accounts_pending > 0 {
             return WalletStartupStatus::PartialAccountsPending;
@@ -368,6 +413,7 @@ impl StartupTally {
             identity_id: self.identity_id,
             discovery_attempts: self.discovery_attempts,
             dashpay_sync_ran: self.dashpay_sync_ran,
+            seed_binding_unverified: self.seed_binding_unverified,
             contact_accounts_drained: self.contact_accounts_drained,
             contact_accounts_pending: self.contact_accounts_pending,
             elapsed,
@@ -440,19 +486,49 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
         let identity_wallet = wallet.identity();
 
         // 1. Local identities first. A warm launch must not pay for a network
-        //    scan it does not need.
-        if let Some(known) = self.local_identity_id(wallet_id).await {
-            tally.record_local_identity(known);
-        } else {
-            self.discover_identity_with_backoff(
-                wallet_id,
-                identity_wallet,
-                scan_key,
-                opts.gap_limit,
-                deadline,
-                &mut tally,
-            )
-            .await;
+        //    scan it does not need — unless the scan that produced those
+        //    identities is on record as having left indices unanswered, in
+        //    which case "we already have one" is not evidence that we have
+        //    them all. A wallet whose second identity was hidden by a failed
+        //    probe used to stay that way for the life of the installation,
+        //    because this shortcut is the only thing that would have looked
+        //    again (dashpay/platform#4365).
+        //
+        //    Only a recorded incomplete scan re-opens the question. An absent
+        //    verdict keeps the shortcut, so hosts that do not persist it are
+        //    exactly where they were rather than paying for a scan every
+        //    launch.
+        let scan_incomplete = self.identity_scan_is_incomplete(wallet_id).await;
+        match self.local_identity_id(wallet_id).await {
+            Some(known) if !scan_incomplete => tally.record_local_identity(known),
+            Some(known) => {
+                tracing::info!(
+                    wallet_id = %hex::encode(wallet_id),
+                    "startup: the last identity scan left indices unanswered; rescanning \
+                     rather than trusting the identities already on file"
+                );
+                tally.record_local_identity(known);
+                self.discover_identity_with_backoff(
+                    wallet_id,
+                    identity_wallet,
+                    scan_key,
+                    opts.gap_limit,
+                    deadline,
+                    &mut tally,
+                )
+                .await;
+            }
+            None => {
+                self.discover_identity_with_backoff(
+                    wallet_id,
+                    identity_wallet,
+                    scan_key,
+                    opts.gap_limit,
+                    deadline,
+                    &mut tally,
+                )
+                .await;
+            }
         }
 
         // With no identity there is nothing to sync and nothing to drain, and
@@ -464,13 +540,42 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
         // 2. One contact-request pass, so the deferred builds exist to drain.
         //    Log-and-continue: a prior session may already have queued work
         //    that this call can still complete.
-        match within_budget(deadline, identity_wallet.dashpay().sync_contact_requests()).await {
-            Some(Ok(requests)) => {
+        match within_budget(
+            deadline,
+            identity_wallet.dashpay().sync_contact_requests_reporting(),
+        )
+        .await
+        {
+            Some(Ok(report)) if report.is_complete() => {
                 tally.record_sync_ran();
                 tracing::debug!(
                     wallet_id = %hex::encode(wallet_id),
-                    requests = requests.len(),
+                    requests = report.requests.len(),
+                    identities = report.identities_attempted,
                     "startup: contact-request pass complete"
+                );
+            }
+            // Reached Platform for some identities and not others (or for none
+            // at all). The requests it did fetch are real and already
+            // persisted, but the identities it missed have contact requests
+            // nobody has looked at, whose account builds were therefore never
+            // enqueued — so the queue being empty below proves nothing. Not
+            // recording the pass keeps `status()` off `Ready`, which is the
+            // promise that every contact's DIP-15 addresses exist before Core
+            // SPV starts.
+            //
+            // The failures retry themselves: a fetch that errored leaves that
+            // direction's high-water cursor unadvanced, so the next sweep
+            // re-requests exactly the range this pass missed.
+            Some(Ok(report)) => {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    requests = report.requests.len(),
+                    identities = report.identities_attempted,
+                    failed = report.failed_identities.len(),
+                    degraded = report.degraded_identities.len(),
+                    "startup: contact-request pass was degraded; not recording it as a \
+                     completed sync"
                 );
             }
             Some(Err(e)) => {
@@ -504,22 +609,70 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
         // `contact_accounts_pending`, rather than a drain that reports zero
         // because every crypto operation failed.
         let (drained, accepted) = match contact_crypto {
-            Some(contact_crypto) => {
-                let drained = identity_wallet
+            // Nothing queued means the drain would derive nothing, so there is
+            // no wrong-seed write to prevent and no reason to pay for the check
+            // below. Covers both drains: auto-accepts ride the same queue.
+            // Keeping the gate's cost proportional to its risk is what lets it
+            // live here — a warm launch with an empty queue still resolves no
+            // key material at all.
+            Some(contact_crypto)
+                if identity_wallet
                     .dashpay()
-                    .drain_pending_contact_crypto_until(contact_crypto, Some(deadline))
-                    .await;
-                let accepted = match identity_signer {
-                    Some(signer) => {
-                        identity_wallet
-                            .dashpay()
-                            .drain_auto_accepts_until(signer, contact_crypto, Some(deadline))
-                            .await
-                    }
-                    None => 0,
-                };
-                (drained, accepted)
+                    .drainable_contact_crypto_count()
+                    .await
+                    > 0 =>
+            {
+                // Everything past this point derives from whatever seed the
+                // provider resolves, and none of it is authenticated. A
+                // provider mapped to the wrong wallet derives contact receiving
+                // xpubs from the wrong seed, and `register_contact_account`
+                // keys its existence check on `(index, us, them)` — not on the
+                // xpub — so the wrong addresses are written once and every
+                // later correct-seed pass no-ops. The corruption is permanent
+                // and its only symptom is payments that never arrive.
+                //
+                // The gate belongs here rather than in each client for the
+                // same reason the ordering does: iOS enforces it in its Swift
+                // wrapper today, and a client that has to remember to gate this
+                // call is a client that will eventually forget. A JNI binding
+                // added later inherits the gate instead of the bug.
+                //
+                // Fail closed on every error, not only on a mismatch. A
+                // provider that cannot answer has not been shown to own this
+                // wallet, and skipping costs nothing that is not recoverable:
+                // the queue is untouched, so the next signer-present drain
+                // completes exactly the work this one declined to guess at.
+                if let Err(e) = wallet.verify_seed_binds(contact_crypto).await {
+                    tally.record_seed_binding_unverified();
+                    tracing::error!(
+                        wallet_id = %hex::encode(wallet_id),
+                        error = %e,
+                        "startup: the contact-crypto provider does not bind to this wallet's \
+                         seed; skipping the drain rather than deriving contact addresses that \
+                         could never be corrected"
+                    );
+                    (0, 0)
+                } else {
+                    let drained = identity_wallet
+                        .dashpay()
+                        .drain_pending_contact_crypto_until(contact_crypto, Some(deadline))
+                        .await;
+                    let accepted = match identity_signer {
+                        Some(signer) => {
+                            identity_wallet
+                                .dashpay()
+                                .drain_auto_accepts_until(signer, contact_crypto, Some(deadline))
+                                .await
+                        }
+                        None => 0,
+                    };
+                    (drained, accepted)
+                }
             }
+            // A provider was supplied and the queue is empty — the ordinary
+            // warm launch. Nothing to drain, nothing to verify, nothing to
+            // report beyond the pending count read below.
+            Some(_) => (0, 0),
             None => {
                 tracing::info!(
                     wallet_id = %hex::encode(wallet_id),
@@ -546,6 +699,20 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
         }
 
         Ok(tally.into_outcome(started.elapsed()))
+    }
+
+    /// Whether this wallet's last gap-limit scan is on record as having left
+    /// indices unanswered.
+    ///
+    /// `false` when no verdict is known — see
+    /// [`IdentityManager::identity_scan_is_incomplete`] for why "unknown" must
+    /// not read as "incomplete".
+    ///
+    /// [`IdentityManager::identity_scan_is_incomplete`]: crate::wallet::identity::IdentityManager::identity_scan_is_incomplete
+    async fn identity_scan_is_incomplete(&self, wallet_id: &WalletId) -> bool {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(wallet_id)
+            .is_some_and(|info| info.identity_manager.identity_scan_is_incomplete(wallet_id))
     }
 
     /// The first identity this wallet already owns locally, if any.
@@ -625,6 +792,15 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
                 }
             };
             let Some(result) = within_budget(deadline, attempt_future).await else {
+                // Dropped mid-await, so the scan recorded no verdict of its
+                // own. Record one here: an abandoned scan probed an unknown
+                // prefix of the index space and answered the rest of it not at
+                // all, which is exactly the state a later launch must not
+                // mistake for a settled identity set. Without this the
+                // budget-expiry path reproduces #4365 in its own right — it
+                // consults local state, finds the sighting that was persisted
+                // before cancellation, and records a warm launch.
+                self.record_identity_scan_cut_off(wallet_id).await;
                 // Sightings persist incrementally, so an abandoned scan may
                 // still have folded an identity in before it was cut off.
                 if let Some(known) = self.local_identity_id(wallet_id).await {
@@ -636,19 +812,44 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
 
             match result {
                 Ok(found) => {
-                    match found.first() {
-                        Some(identity) => tally.record_discovered(identity.id()),
+                    let identity = match found.first() {
+                        Some(identity) => Some(identity.id()),
                         // An empty return is not proof on its own: `discover`
                         // reports only identities THIS call inserted, so a
                         // concurrent startup that inserted one first leaves us
                         // seeing it as already-managed and returning nothing.
                         // Consult local state before calling it absence.
-                        None => match self.local_identity_id(wallet_id).await {
-                            Some(known) => tally.record_discovered(known),
-                            None => tally.record_proven_absent(),
-                        },
+                        None => self.local_identity_id(wallet_id).await,
+                    };
+                    let Some(identity) = identity else {
+                        tally.record_proven_absent();
+                        return;
+                    };
+                    tally.record_discovered(identity);
+                    // `Ok` does not mean "every index was answered": a scan
+                    // that saw an identity is reported as trustworthy even
+                    // when a later probe went unanswered, and an identity
+                    // hiding at that index is invisible until something scans
+                    // again. Retry it here, inside the budget the caller
+                    // already granted and with the scan key already resolved,
+                    // rather than leaving it to a launch that may never come.
+                    if !self.identity_scan_is_incomplete(wallet_id).await {
+                        return;
                     }
-                    return;
+                    if backoff.is_none() {
+                        // Out of attempts. The verdict stays on record, so the
+                        // next launch re-opens the question instead of taking
+                        // the warm shortcut.
+                        tracing::warn!(
+                            "startup: identity discovery still has unanswered indices after \
+                             every attempt; the recorded verdict will force a rescan"
+                        );
+                        return;
+                    }
+                    tracing::info!(
+                        attempt = attempt + 1,
+                        "startup: identity discovery left indices unanswered; rescanning"
+                    );
                 }
                 Err(PlatformWalletError::IdentityDiscoveryIncomplete { .. }) => {
                     tally.record_unreachable();
@@ -678,7 +879,46 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
             tokio::time::sleep((*backoff).min(remaining)).await;
         }
 
-        tally.record_discovery_gave_up();
+        // Only meaningful while the identity question is still open. The
+        // partial-scan retry above can exhaust the loop with an identity
+        // already recorded, and that launch is not an unreachable-Platform
+        // launch — it found something, it just could not prove it found
+        // everything.
+        if !tally.has_identity() {
+            tally.record_discovery_gave_up();
+        }
+    }
+
+    /// Record that a scan was abandoned before it could answer every index.
+    ///
+    /// Mirrors what `discover` publishes for itself; needed separately because
+    /// a scan dropped mid-await never reaches its own bookkeeping.
+    async fn record_identity_scan_cut_off(&self, wallet_id: &WalletId) {
+        {
+            let mut wm = self.wallet_manager.write().await;
+            match wm.get_wallet_info_mut(wallet_id) {
+                Some(info) => info.identity_manager.record_identity_scan(
+                    *wallet_id,
+                    crate::changeset::IdentityScanStateEntry::incomplete(0, Vec::new()),
+                ),
+                None => return,
+            }
+        }
+        let changeset = crate::changeset::PlatformWalletChangeSet {
+            identity_scan_state: Some(crate::changeset::IdentityScanStateEntry::incomplete(
+                0,
+                Vec::new(),
+            )),
+            ..Default::default()
+        };
+        if let Err(e) = self.persister.store(*wallet_id, changeset) {
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                error = %e,
+                "failed to persist an abandoned scan's verdict; the next launch may take the \
+                 warm shortcut over an incomplete identity set"
+            );
+        }
     }
 }
 
@@ -752,6 +992,7 @@ mod tests {
             WalletStartupStatus::NoIdentity,
             WalletStartupStatus::PartialAccountsPending,
             WalletStartupStatus::DiscoveryFailed,
+            WalletStartupStatus::SeedBindingUnverified,
         ] {
             assert!(
                 !terminal.discovery_worth_retrying(),
@@ -836,6 +1077,83 @@ mod tests {
         assert!(!tally.has_identity());
     }
 
+    /// A contact pass that could not read some identities' documents is not a
+    /// completed pass, and the whole point of tracking that is to keep it off
+    /// `Ready`. `Ready` promises the DIP-15 addresses exist before Core SPV
+    /// starts; a degraded pass never enqueued the account builds for the
+    /// identities it missed, so the queue being empty proves nothing.
+    #[test]
+    fn a_degraded_contact_pass_is_not_ready_even_with_an_empty_queue() {
+        let mut tally = StartupTally::default();
+        tally.record_discovered(identity());
+        // Deliberately no `record_sync_ran` — this is what startup does when
+        // the report comes back degraded.
+        tally.record_drain(0, 0);
+
+        assert_eq!(tally.status(), WalletStartupStatus::PartialAccountsPending);
+        assert!(!tally.dashpay_sync_ran);
+    }
+
+    /// The wrong-seed ending outranks every other non-discovery verdict,
+    /// including a clean-looking drain. With an empty queue the run is
+    /// otherwise indistinguishable from a healthy one, and reporting it as
+    /// `Ready` would hide the single condition here that points at a host
+    /// misconfiguration rather than at Platform being slow.
+    #[test]
+    fn an_unverified_seed_binding_outranks_a_clean_drain() {
+        let mut tally = StartupTally::default();
+        tally.record_discovered(identity());
+        tally.record_sync_ran();
+        tally.record_seed_binding_unverified();
+        tally.record_drain(0, 0);
+
+        assert_eq!(tally.status(), WalletStartupStatus::SeedBindingUnverified);
+        assert!(
+            tally.status().identity_is_settled(),
+            "the identity was found; it is the drain that did not run"
+        );
+        assert!(!tally.status().discovery_worth_retrying());
+    }
+
+    /// The outcome carries the flag so a client can tell "nothing was queued"
+    /// from "we refused to derive".
+    #[test]
+    fn an_unverified_seed_binding_reaches_the_outcome() {
+        let mut tally = StartupTally::default();
+        tally.record_discovered(identity());
+        tally.record_sync_ran();
+        tally.record_seed_binding_unverified();
+
+        let outcome = tally.into_outcome(Duration::from_secs(1));
+        assert!(outcome.seed_binding_unverified);
+        assert_eq!(outcome.status, WalletStartupStatus::SeedBindingUnverified);
+    }
+
+    /// A rescan forced by an incomplete prior scan can now reach the
+    /// discovery-failure branches with an identity already on file. Those
+    /// statuses say "the identity question is still open", which would be a
+    /// lie here — and it would also hide a sync and drain that both ran.
+    #[test]
+    fn a_failed_rescan_does_not_reopen_a_settled_identity() {
+        let mut unreachable = StartupTally::default();
+        unreachable.record_local_identity(identity());
+        unreachable.record_unreachable();
+        unreachable.record_discovery_gave_up();
+        unreachable.record_sync_ran();
+        unreachable.record_drain(1, 0);
+        assert_eq!(unreachable.status(), WalletStartupStatus::Ready);
+
+        let mut local_fault = StartupTally::default();
+        local_fault.record_local_identity(identity());
+        local_fault.record_discovery_failed_locally();
+        local_fault.record_sync_ran();
+        local_fault.record_drain(0, 2);
+        assert_eq!(
+            local_fault.status(),
+            WalletStartupStatus::PartialAccountsPending
+        );
+    }
+
     /// Every network step is abandonable, so `within_budget` must return
     /// `None` rather than run a future past the deadline. This is the guard for
     /// the gap review found: bounding only the discovery retries let a stalled
@@ -866,6 +1184,349 @@ mod tests {
         let deadline = Instant::now();
         tokio::time::sleep(Duration::from_secs(1)).await;
         assert_eq!(within_budget(deadline, async { "ran" }).await, None);
+    }
+
+    // ---------------------------------------------------------------------
+    // End-to-end: the seed-binding gate in front of the drain.
+    //
+    // Driven through the real `start_wallet_subsystems` over a mock SDK, so
+    // what is asserted is the sequence's actual behaviour rather than a
+    // restatement of the tally rules above.
+    // ---------------------------------------------------------------------
+
+    /// Canonical all-`abandon` BIP-39 vector — the seed
+    /// `test_platform_wallet_manager` builds its wallet from.
+    const OWNING_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+         abandon abandon abandon abandon abandon about";
+    /// A different valid BIP-39 vector: the mis-mapped Keychain slot.
+    const FOREIGN_MNEMONIC: &str =
+        "legal winner thank year wave sausage worth useful legal winner thank yellow";
+
+    /// Only ever passed as `None`, so the sequence skips the DIP-15
+    /// auto-accept pass — but the generic still has to be named.
+    #[derive(Debug)]
+    struct UnusedSigner;
+
+    #[async_trait::async_trait]
+    impl Signer<IdentityPublicKey> for UnusedSigner {
+        async fn sign(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<dpp::platform_value::BinaryData, dpp::ProtocolError> {
+            unreachable!("the auto-accept pass is never reached with a None signer")
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<dpp::address_funds::AddressWitness, dpp::ProtocolError> {
+            unreachable!("the auto-accept pass is never reached with a None signer")
+        }
+
+        fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+            false
+        }
+    }
+
+    fn seed_for(phrase: &str) -> [u8; 64] {
+        use key_wallet::mnemonic::{Language, Mnemonic};
+        Mnemonic::from_phrase(phrase, Language::English)
+            .expect("valid test mnemonic")
+            .to_seed("")
+    }
+
+    fn test_identity(id_byte: u8) -> dpp::identity::Identity {
+        use dpp::identity::v0::IdentityV0;
+        dpp::identity::Identity::V0(IdentityV0 {
+            id: Identifier::from([id_byte; 32]),
+            public_keys: std::collections::BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        })
+    }
+
+    /// A manager holding one wallet that owns one identity with a single
+    /// queued `RegisterReceiving` op — the smallest state in which the drain
+    /// has real work, and the op that derives a contact receiving xpub
+    /// straight from the provider with no network round trip.
+    async fn manager_with_queued_contact_crypto() -> (
+        std::sync::Arc<crate::PlatformWalletManager<crate::test_support::NoopTestPersister>>,
+        WalletId,
+    ) {
+        use crate::changeset::{
+            upsert_pending_contact_crypto, PendingContactCrypto, PendingContactCryptoOp,
+        };
+        use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+
+        let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
+        let persister = WalletPersister::new(wallet_id, std::sync::Arc::new(NoPlatformPersistence));
+
+        let mut wm = manager.wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+        info.identity_manager
+            .add_identity(test_identity(1), 0, wallet_id, &persister)
+            .expect("add identity");
+        let managed = info
+            .identity_manager
+            .managed_identity_mut(&Identifier::from([1u8; 32]))
+            .expect("managed identity");
+        upsert_pending_contact_crypto(
+            managed.dashpay_pending_contact_crypto_mut(),
+            PendingContactCrypto {
+                owner_identity_id: Identifier::from([1u8; 32]),
+                contact_id: Identifier::from([2u8; 32]),
+                op: PendingContactCryptoOp::RegisterReceiving,
+                enqueued_at_ms: 0,
+            },
+        );
+        drop(wm);
+
+        (manager, wallet_id)
+    }
+
+    /// Count the DashPay receiving accounts the wallet is watching. The thing
+    /// a wrong-seed drain would corrupt: `register_contact_account` keys its
+    /// existence check on `(index, us, them)` and NOT on the xpub, so an
+    /// account written from the wrong seed is never revisited.
+    async fn receiving_account_count(
+        manager: &crate::PlatformWalletManager<crate::test_support::NoopTestPersister>,
+        wallet_id: &WalletId,
+    ) -> usize {
+        let wm = manager.wallet_manager.read().await;
+        wm.get_wallet_info(wallet_id)
+            .map(|info| info.core_wallet.accounts.dashpay_receival_accounts.len())
+            .unwrap_or(0)
+    }
+
+    async fn drainable(
+        manager: &crate::PlatformWalletManager<crate::test_support::NoopTestPersister>,
+        wallet_id: &WalletId,
+    ) -> usize {
+        let wallet = manager.get_wallet(wallet_id).await.expect("wallet");
+        wallet
+            .identity()
+            .dashpay()
+            .drainable_contact_crypto_count()
+            .await
+    }
+
+    /// The defect this gate closes: a provider resolving someone else's seed
+    /// derives contact receiving xpubs that are written once and never
+    /// corrected, so the wallet watches addresses nobody pays to. The drain
+    /// must not run at all, and the queue must survive intact for the next
+    /// signer-present attempt.
+    #[tokio::test]
+    async fn a_wrong_seed_provider_never_reaches_the_drain() {
+        use crate::wallet::identity::network::SeedCryptoProvider;
+
+        let (manager, wallet_id) = manager_with_queued_contact_crypto().await;
+        assert_eq!(receiving_account_count(&manager, &wallet_id).await, 0);
+        assert_eq!(drainable(&manager, &wallet_id).await, 1);
+
+        let foreign =
+            SeedCryptoProvider::from_seed(seed_for(FOREIGN_MNEMONIC), key_wallet::Network::Testnet);
+        let outcome = manager
+            .start_wallet_subsystems(
+                &wallet_id,
+                None,
+                Some(&foreign),
+                None::<&UnusedSigner>,
+                WalletStartupOptions::default(),
+            )
+            .await
+            .expect("a wrong seed is reported, not raised");
+
+        assert_eq!(outcome.status, WalletStartupStatus::SeedBindingUnverified);
+        assert!(outcome.seed_binding_unverified);
+        assert_eq!(
+            outcome.contact_accounts_drained, 0,
+            "nothing may be drained with a provider that does not own the wallet"
+        );
+        assert_eq!(
+            receiving_account_count(&manager, &wallet_id).await,
+            0,
+            "not one contact account may be registered from the wrong seed"
+        );
+        assert_eq!(
+            drainable(&manager, &wallet_id).await,
+            1,
+            "the queue must survive so the next signer-present drain can do the work"
+        );
+    }
+
+    /// The other half: the wallet's own seed passes the gate and the drain
+    /// runs. Without this the test above would also pass if the gate simply
+    /// refused everything.
+    #[tokio::test]
+    async fn the_owning_seed_passes_the_gate_and_the_drain_runs() {
+        use crate::wallet::identity::network::SeedCryptoProvider;
+
+        let (manager, wallet_id) = manager_with_queued_contact_crypto().await;
+        let owning =
+            SeedCryptoProvider::from_seed(seed_for(OWNING_MNEMONIC), key_wallet::Network::Testnet);
+
+        let outcome = manager
+            .start_wallet_subsystems(
+                &wallet_id,
+                None,
+                Some(&owning),
+                None::<&UnusedSigner>,
+                WalletStartupOptions::default(),
+            )
+            .await
+            .expect("bring-up reports rather than raises");
+
+        assert!(
+            !outcome.seed_binding_unverified,
+            "the wallet's own seed must bind"
+        );
+        assert_ne!(outcome.status, WalletStartupStatus::SeedBindingUnverified);
+        assert_eq!(
+            outcome.contact_accounts_drained, 1,
+            "the queued RegisterReceiving op must have been completed"
+        );
+        assert_eq!(
+            receiving_account_count(&manager, &wallet_id).await,
+            1,
+            "the contact receiving account must exist after a verified drain"
+        );
+    }
+
+    /// The gate is paid for only when there is something to protect. An empty
+    /// queue means the drain would derive nothing, so no key material is
+    /// resolved — which is what keeps this affordable on a warm launch.
+    /// Proven with a provider that would FAIL the check: reaching a status
+    /// other than `SeedBindingUnverified` shows it was never consulted.
+    #[tokio::test]
+    async fn an_empty_queue_skips_the_gate_entirely() {
+        use crate::changeset::{PendingContactCryptoKey, PendingContactCryptoKind};
+        use crate::wallet::identity::network::SeedCryptoProvider;
+
+        let (manager, wallet_id) = manager_with_queued_contact_crypto().await;
+        // Empty the queue so the drain has nothing to do.
+        {
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+            let managed = info
+                .identity_manager
+                .managed_identity_mut(&Identifier::from([1u8; 32]))
+                .expect("managed identity");
+            let key = PendingContactCryptoKey {
+                owner_identity_id: Identifier::from([1u8; 32]),
+                contact_id: Identifier::from([2u8; 32]),
+                kind: PendingContactCryptoKind::RegisterReceiving,
+            };
+            managed
+                .dashpay_pending_contact_crypto_mut()
+                .retain(|e| e.key() != key);
+        }
+        assert_eq!(drainable(&manager, &wallet_id).await, 0);
+
+        let foreign =
+            SeedCryptoProvider::from_seed(seed_for(FOREIGN_MNEMONIC), key_wallet::Network::Testnet);
+        let outcome = manager
+            .start_wallet_subsystems(
+                &wallet_id,
+                None,
+                Some(&foreign),
+                None::<&UnusedSigner>,
+                WalletStartupOptions::default(),
+            )
+            .await
+            .expect("bring-up reports rather than raises");
+
+        assert!(
+            !outcome.seed_binding_unverified,
+            "with nothing to drain the binding check must not run at all"
+        );
+    }
+
+    /// The F1 regression, end to end and against a Platform that answers
+    /// nothing (the mock SDK fails every contact fetch, which is exactly the
+    /// DAPI-unreachable shape).
+    ///
+    /// Before the fix this pass returned `Ok(vec![])`, startup called
+    /// `record_sync_ran`, and a wallet whose contacts had never been read
+    /// reported `Ready` — the status that promises every contact's DIP-15
+    /// addresses exist before Core SPV starts.
+    #[tokio::test]
+    async fn a_contact_pass_that_reached_nobody_is_not_a_completed_sync() {
+        use crate::wallet::identity::network::SeedCryptoProvider;
+
+        let (manager, wallet_id) = manager_with_queued_contact_crypto().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+
+        // The pass itself: one identity attempted, none reached.
+        let report = wallet
+            .identity()
+            .dashpay()
+            .sync_contact_requests_reporting()
+            .await
+            .expect("the pass returns a report");
+        assert_eq!(report.identities_attempted, 1);
+        assert_eq!(report.failed_identities.len(), 1);
+        assert!(!report.is_complete());
+        assert!(report.is_fully_degraded());
+
+        // The back-compat return shape can no longer render this as success.
+        let err = wallet
+            .identity()
+            .dashpay()
+            .sync_contact_requests()
+            .await
+            .expect_err("reaching nobody must not look like an empty result");
+        assert!(
+            matches!(
+                err,
+                PlatformWalletError::ContactSyncUnreachable { identities: 1 }
+            ),
+            "expected ContactSyncUnreachable, got: {err:?}"
+        );
+
+        // The cursors stayed put, so the next sweep re-requests the same
+        // range — this is what makes the failure retried rather than buried.
+        {
+            let wm = manager.wallet_manager.read().await;
+            let managed = wm
+                .get_wallet_info(&wallet_id)
+                .expect("wallet info")
+                .identity_manager
+                .managed_identity(&Identifier::from([1u8; 32]))
+                .expect("managed identity");
+            assert_eq!(
+                managed.dashpay().high_water_received_ms(),
+                None,
+                "a failed fetch must not advance the cursor past requests it never read"
+            );
+            assert_eq!(managed.dashpay().high_water_sent_ms(), None);
+        }
+
+        // And the sequence must not record it as a sync that ran.
+        let owning =
+            SeedCryptoProvider::from_seed(seed_for(OWNING_MNEMONIC), key_wallet::Network::Testnet);
+        let outcome = manager
+            .start_wallet_subsystems(
+                &wallet_id,
+                None,
+                Some(&owning),
+                None::<&UnusedSigner>,
+                WalletStartupOptions::default(),
+            )
+            .await
+            .expect("bring-up reports rather than raises");
+
+        assert!(
+            !outcome.dashpay_sync_ran,
+            "a pass that read none of the wallet's identities is not a completed sync"
+        );
+        assert_ne!(
+            outcome.status,
+            WalletStartupStatus::Ready,
+            "Ready promises contact addresses this call never prepared"
+        );
+        assert_eq!(outcome.status, WalletStartupStatus::PartialAccountsPending);
     }
 
     #[test]

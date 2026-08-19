@@ -1089,6 +1089,63 @@ fn count_account_build_ops(queue: &[crate::changeset::PendingContactCrypto]) -> 
         .count()
 }
 
+/// What one contact-request pass actually reached, as opposed to what it
+/// returned.
+///
+/// The sweep is deliberately log-and-continue per identity: one identity's
+/// transient DAPI error must not stall DashPay sync for every other identity
+/// on the wallet. That is right for a recurring background sweep and wrong for
+/// anything that treats the pass as a precondition, because the two endings it
+/// collapses are opposites — "Platform answered, and there is nothing new" and
+/// "Platform answered nobody, so we do not know". Both used to arrive as
+/// `Ok(vec![])`.
+///
+/// The distinction matters most at startup, where a completed pass is the
+/// promise that a contact's DIP-15 addresses exist before the compact-filter
+/// scan passes their funding height. An address the wallet is not watching by
+/// then produces no transaction at all, so recording an unreachable pass as a
+/// successful one does not merely mislabel a status — it starts Core SPV
+/// against an address set that is silently short.
+#[derive(Debug, Default, Clone)]
+pub struct ContactSyncReport {
+    /// Newly discovered incoming contact requests. Real whatever else failed:
+    /// they were fetched, ingested and persisted.
+    pub requests: Vec<ContactRequest>,
+    /// Identities the pass tried to fetch for.
+    pub identities_attempted: usize,
+    /// Identities nothing was ingested for — the received-side fetch failed,
+    /// or their local state was gone when the write guard was taken. Their
+    /// high-water cursors are deliberately left unadvanced, so the next sweep
+    /// re-fetches exactly the range this one missed.
+    pub failed_identities: Vec<Identifier>,
+    /// Identities whose received side ingested but whose **sent**-side fetch
+    /// failed. Their incoming requests are real; what is missing is the
+    /// reciprocal reconciliation that establishes contacts, and the sent
+    /// cursor stays unadvanced so the next sweep retries it.
+    pub degraded_identities: Vec<Identifier>,
+}
+
+impl ContactSyncReport {
+    /// Every identity's fetches, both directions, were answered.
+    ///
+    /// The only state in which the pass may be recorded as a completed one. A
+    /// wallet with no identities is complete by this rule — there was nothing
+    /// to fetch, which is an answer rather than a degradation.
+    pub fn is_complete(&self) -> bool {
+        self.failed_identities.is_empty() && self.degraded_identities.is_empty()
+    }
+
+    /// Not one identity's contact documents could be read.
+    ///
+    /// The signature of an unreachable Platform rather than of an empty
+    /// wallet, and the ending that must never be mistaken for a clean pass. A
+    /// wallet with no identities is NOT fully degraded: nothing was attempted,
+    /// so nothing failed.
+    pub fn is_fully_degraded(&self) -> bool {
+        self.identities_attempted > 0 && self.failed_identities.len() == self.identities_attempted
+    }
+}
+
 impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Fetch and process contact requests from the platform for all local identities.
     ///
@@ -1119,7 +1176,36 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// them inline under the guard would deadlock on first execution.
     ///
     /// Returns all newly discovered incoming contact requests.
+    ///
+    /// # Errors
+    ///
+    /// [`PlatformWalletError::ContactSyncUnreachable`] when the pass had
+    /// identities to fetch for and not one of them could be read. That ending
+    /// is indistinguishable from a clean empty result in the return value
+    /// alone, and reporting it as success is what let a startup sequence
+    /// record an unreachable Platform as a completed contact pass. Callers
+    /// that need to tell a partial pass from a complete one — rather than only
+    /// a total failure from everything else — should call
+    /// [`Self::sync_contact_requests_reporting`] instead.
     pub async fn sync_contact_requests(&self) -> Result<Vec<ContactRequest>, PlatformWalletError> {
+        let report = self.sync_contact_requests_reporting().await?;
+        if report.is_fully_degraded() {
+            return Err(PlatformWalletError::ContactSyncUnreachable {
+                identities: report.identities_attempted,
+            });
+        }
+        Ok(report.requests)
+    }
+
+    /// [`Self::sync_contact_requests`], reporting what the pass reached.
+    ///
+    /// Same work, same side effects; the difference is only that the caller
+    /// gets the failure set rather than a `Vec` that cannot express it. Use
+    /// this wherever a *complete* pass is a precondition — a partial one is
+    /// still `Ok`, and still leaves some contacts' account builds unenqueued.
+    pub async fn sync_contact_requests_reporting(
+        &self,
+    ) -> Result<ContactSyncReport, PlatformWalletError> {
         // Snapshot each identity's high-water cursors up front so the
         // incremental query bound is read before any mutation this sweep.
         let identities: Vec<(Identifier, Option<u64>, Option<u64>)> = {
@@ -1147,6 +1233,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .collect()
         };
 
+        let mut report = ContactSyncReport {
+            identities_attempted: identities.len(),
+            ..Default::default()
+        };
         let mut all_requests = Vec::new();
 
         for (identity_id, hw_received, hw_sent) in identities {
@@ -1169,6 +1259,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         error = %e,
                         "Failed to fetch received contact requests; skipping this identity"
                     );
+                    // Nothing of this identity's is ingested this pass, and its
+                    // cursors stay where they were. Recorded rather than only
+                    // logged so a caller that treats the pass as a precondition
+                    // can tell this from a clean empty result — see
+                    // `ContactSyncReport`.
+                    report.failed_identities.push(identity_id);
                     continue;
                 }
             };
@@ -1191,6 +1287,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         "Failed to fetch sent contact requests; reconciling received side only"
                     );
                     sent_ok = false;
+                    report.degraded_identities.push(identity_id);
                     Default::default()
                 }
             };
@@ -1218,11 +1315,18 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             let candidates = {
                 let mut wm = self.wallet_manager.write().await;
                 let Some((wallet, info)) = wm.get_wallet_mut_and_info_mut(&self.wallet_id) else {
+                    // Fetched, but there is no longer anywhere to put it. Same
+                    // outcome for this identity as a failed fetch — nothing
+                    // ingested — so it is reported the same way.
+                    report.failed_identities.push(identity_id);
                     continue;
                 };
                 let managed = match info.identity_manager.managed_identity_mut(&identity_id) {
                     Some(m) => m,
-                    None => continue,
+                    None => {
+                        report.failed_identities.push(identity_id);
+                        continue;
+                    }
                 };
                 // Established contacts re-keyed by a rotation request in
                 // this pass — their stale external accounts are torn down
@@ -1460,7 +1564,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             self.enqueue_pending_auto_accepts(&identity_id).await;
         }
 
-        Ok(all_requests)
+        report.requests = all_requests;
+        Ok(report)
     }
 
     /// Parse a received `contactRequest` document into a [`ContactRequest`],
@@ -3792,6 +3897,94 @@ mod cursor_tests {
         // `0` is a real cursor value distinct from `None` — pin that a
         // future "treat 0 as unset" refactor would regress.
         assert_eq!(query_lower_bound(Some(0)), Some(0));
+    }
+}
+
+#[cfg(test)]
+mod contact_sync_report_tests {
+    use super::ContactSyncReport;
+    use dpp::prelude::Identifier;
+
+    fn id(b: u8) -> Identifier {
+        Identifier::from([b; 32])
+    }
+
+    /// The clean pass: every identity answered, nothing new to report. This
+    /// must stay distinguishable from the unreachable case below, because it
+    /// is the only one that entitles a caller to say the contact set is
+    /// current.
+    #[test]
+    fn an_answered_pass_with_no_new_requests_is_complete() {
+        let report = ContactSyncReport {
+            identities_attempted: 2,
+            ..Default::default()
+        };
+
+        assert!(report.is_complete());
+        assert!(!report.is_fully_degraded());
+    }
+
+    /// A wallet with no identities had nothing to fetch. That is an answer,
+    /// not a degradation — and specifically not a *total* one, or an empty
+    /// wallet would report the same thing as a total outage.
+    #[test]
+    fn a_wallet_with_no_identities_is_complete_and_not_degraded() {
+        let report = ContactSyncReport::default();
+
+        assert!(report.is_complete());
+        assert!(
+            !report.is_fully_degraded(),
+            "nothing was attempted, so nothing failed"
+        );
+    }
+
+    /// Not one identity could be read: the DAPI-unreachable ending that used
+    /// to arrive as `Ok(vec![])`.
+    #[test]
+    fn a_pass_that_read_no_identity_is_fully_degraded() {
+        let report = ContactSyncReport {
+            identities_attempted: 2,
+            failed_identities: vec![id(1), id(2)],
+            ..Default::default()
+        };
+
+        assert!(!report.is_complete());
+        assert!(report.is_fully_degraded());
+    }
+
+    /// The partial pass. What it fetched is real, so it is not a total
+    /// failure — and it is still not complete, because the identities it
+    /// missed have contact requests nobody looked at and account builds
+    /// nobody enqueued. Treating this as a completed sync is the same bug as
+    /// the total case, one identity at a time.
+    #[test]
+    fn a_partial_pass_is_neither_complete_nor_fully_degraded() {
+        let report = ContactSyncReport {
+            identities_attempted: 3,
+            failed_identities: vec![id(1)],
+            ..Default::default()
+        };
+
+        assert!(!report.is_complete());
+        assert!(!report.is_fully_degraded());
+    }
+
+    /// A sent-side failure ingests the received side, so nothing is lost —
+    /// but the reciprocal reconciliation that establishes contacts did not
+    /// happen, so the pass still may not be recorded as complete.
+    #[test]
+    fn a_sent_side_failure_alone_still_degrades_the_pass() {
+        let report = ContactSyncReport {
+            identities_attempted: 1,
+            degraded_identities: vec![id(1)],
+            ..Default::default()
+        };
+
+        assert!(!report.is_complete());
+        assert!(
+            !report.is_fully_degraded(),
+            "the received side was read; this is not a total failure"
+        );
     }
 }
 

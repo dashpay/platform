@@ -31,6 +31,7 @@ pub enum WalletStartupStatusFFI {
     PartialNoIdentity = 2,
     PartialAccountsPending = 3,
     DiscoveryFailed = 4,
+    SeedBindingUnverified = 5,
 }
 
 impl From<WalletStartupStatus> for WalletStartupStatusFFI {
@@ -41,6 +42,7 @@ impl From<WalletStartupStatus> for WalletStartupStatusFFI {
             WalletStartupStatus::PartialNoIdentity => Self::PartialNoIdentity,
             WalletStartupStatus::PartialAccountsPending => Self::PartialAccountsPending,
             WalletStartupStatus::DiscoveryFailed => Self::DiscoveryFailed,
+            WalletStartupStatus::SeedBindingUnverified => Self::SeedBindingUnverified,
         }
     }
 }
@@ -56,8 +58,13 @@ pub struct WalletStartupOutcomeFFI {
     pub identity_id: [u8; 32],
     /// Discovery scans performed; `0` when a local identity was already known.
     pub discovery_attempts: u32,
-    /// Whether the inline contact-request pass ran.
+    /// Whether the inline contact-request pass ran **to completion**. `false`
+    /// when it came back degraded — some identities' contact documents could
+    /// not be read, so their account builds were never enqueued.
     pub dashpay_sync_ran: bool,
+    /// The drain was skipped because the supplied contact-crypto provider does
+    /// not resolve this wallet's seed. Nothing was derived or written.
+    pub seed_binding_unverified: bool,
     /// Contact-crypto entries the drain completed.
     pub contact_accounts_drained: u32,
     /// Contact-account builds still queued on return.
@@ -78,6 +85,7 @@ impl From<WalletStartupOutcome> for WalletStartupOutcomeFFI {
             identity_id,
             discovery_attempts: outcome.discovery_attempts,
             dashpay_sync_ran: outcome.dashpay_sync_ran,
+            seed_binding_unverified: outcome.seed_binding_unverified,
             contact_accounts_drained: outcome.contact_accounts_drained as u32,
             contact_accounts_pending: outcome.contact_accounts_pending as u32,
             elapsed_ms: outcome.elapsed.as_millis() as u64,

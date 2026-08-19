@@ -452,12 +452,21 @@ impl IdentityWallet {
                         identity_index,
                         e
                     );
-                    tally.record_failure(e);
+                    tally.record_failure(identity_index, e);
                 }
             }
 
             identity_index += 1;
         }
+
+        // Record what this scan could and could not answer, before the verdict
+        // on whether its *result* is usable. The two are independent: a scan
+        // that found an identity despite an unanswered probe returns `Ok` and
+        // is still not a scan anybody may build a "nothing left to find"
+        // conclusion on. Published on the error path too — a scan that reached
+        // nobody is the strongest possible reason to scan again.
+        self.publish_scan_verdict(wallet_id, tally.verdict(identity_index))
+            .await;
 
         if tally.is_trustworthy() {
             // Found something despite a failed probe: the discovered
@@ -526,6 +535,50 @@ impl IdentityWallet {
 
         Ok(discovered)
     }
+
+    /// Record and persist what a gap-limit scan managed to probe.
+    ///
+    /// Best-effort by design, and on the persist half only: the in-memory
+    /// record always lands, so a second bring-up in this process already sees
+    /// an incomplete scan and rescans. A failed persist costs the verdict its
+    /// survival across a restart, which is the same exposure a host that has
+    /// no slot for the field already has — it must not be allowed to fail the
+    /// scan that just succeeded.
+    async fn publish_scan_verdict(
+        &self,
+        wallet_id: crate::wallet::platform_wallet::WalletId,
+        verdict: crate::changeset::IdentityScanStateEntry,
+    ) {
+        {
+            let mut wm = self.wallet_manager.write().await;
+            match wm.get_wallet_info_mut(&wallet_id) {
+                Some(info) => info
+                    .identity_manager
+                    .record_identity_scan(wallet_id, verdict.clone()),
+                None => {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        "identity scan finished for a wallet that is no longer managed; \
+                         dropping its verdict"
+                    );
+                    return;
+                }
+            }
+        }
+
+        let changeset = crate::changeset::PlatformWalletChangeSet {
+            identity_scan_state: Some(verdict),
+            ..Default::default()
+        };
+        if let Err(e) = self.persister.store(changeset) {
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                error = %e,
+                "failed to persist the identity-scan verdict; a partial scan may not be \
+                 retried after a restart"
+            );
+        }
+    }
 }
 
 /// Running bookkeeping for one gap-limit scan, and the verdict it produces.
@@ -548,6 +601,13 @@ struct ScanTally {
     consecutive_misses: u32,
     /// Probes that never reached Platform.
     failed_probes: u32,
+    /// The indices behind [`Self::failed_probes`], ascending.
+    ///
+    /// The count alone says a scan was partial; the indices say *where*, which
+    /// is what makes the verdict actionable — a later launch knows exactly
+    /// which slots were never answered, and a reader of the persisted verdict
+    /// can tell an unanswered probe from a scan that was simply cut short.
+    failed_indices: Vec<u32>,
     /// Every index Platform answered with an identity — including ones the
     /// manager already tracked, which never reach the returned `discovered`
     /// list. A rescan from index 0 (what the app's "Find identities" command
@@ -580,10 +640,29 @@ impl ScanTally {
     /// The probe never got an answer. It still advances the miss counter — the
     /// scan has to terminate when the network is down — but it is remembered
     /// separately, because the verdict depends on telling the two apart.
-    fn record_failure(&mut self, error: dash_sdk::Error) {
+    fn record_failure(&mut self, index: u32, error: dash_sdk::Error) {
         self.last_probe_error = Some(error);
         self.failed_probes += 1;
+        self.failed_indices.push(index);
         self.consecutive_misses += 1;
+    }
+
+    /// The verdict to persist for this scan.
+    ///
+    /// Separate from [`Self::is_trustworthy`] and not its mirror: a scan that
+    /// found an identity despite an unanswered probe IS trustworthy — its
+    /// findings are real and worth keeping — and is still not complete. That
+    /// gap is precisely where an identity goes missing for the life of an
+    /// installation, so the two questions get two methods.
+    fn verdict(&self, probed_through: u32) -> crate::changeset::IdentityScanStateEntry {
+        if self.failed_indices.is_empty() {
+            crate::changeset::IdentityScanStateEntry::completed(probed_through)
+        } else {
+            crate::changeset::IdentityScanStateEntry::incomplete(
+                probed_through,
+                self.failed_indices.clone(),
+            )
+        }
     }
 
     /// Whether the scan's literal result may be reported as-is.
@@ -886,14 +965,18 @@ mod tests {
         outcomes: impl IntoIterator<Item = Result<Option<()>, ()>>,
     ) -> ScanTally {
         let mut tally = ScanTally::default();
-        for outcome in outcomes {
+        // Index-carrying like the production loop, which probes from
+        // `start_index` upward — the harness scans from 0, so the element
+        // position IS the index.
+        for (index, outcome) in outcomes.into_iter().enumerate() {
             if !tally.should_continue(gap_limit) {
                 break;
             }
+            let index = index as u32;
             match outcome {
                 Ok(Some(())) => tally.record_sighting(),
                 Ok(None) => tally.record_miss(),
-                Err(()) => tally.record_failure(probe_failure()),
+                Err(()) => tally.record_failure(index, probe_failure()),
             }
         }
         tally
@@ -908,6 +991,64 @@ mod tests {
         assert_eq!(tally.failed_probes, 5);
         assert_eq!(tally.identities_seen, 0);
         assert!(!tally.is_trustworthy());
+    }
+
+    /// The #4365 shape: an identity at index 0, no answer at index 1. The
+    /// scan is trustworthy — its findings are real — and it is NOT complete,
+    /// and those are different questions. Reporting only the first is what let
+    /// an identity at the unanswered index stay hidden for the life of an
+    /// installation.
+    #[test]
+    fn a_scan_that_found_something_despite_a_failed_probe_is_trustworthy_but_incomplete() {
+        let tally = run_scan(5, [Ok(Some(())), Err(()), Ok(None), Ok(None), Ok(None)]);
+
+        assert!(
+            tally.is_trustworthy(),
+            "the identity it found is real and must not be discarded"
+        );
+        let verdict = tally.verdict(5);
+        assert!(
+            !verdict.complete,
+            "an unanswered index means the identity set is not settled"
+        );
+        assert_eq!(
+            verdict.failed_indices,
+            vec![1],
+            "the verdict names which index went unanswered"
+        );
+        assert_eq!(verdict.probed_through, 5);
+    }
+
+    /// A scan that answered everything is the only one that may let a later
+    /// launch skip discovery.
+    #[test]
+    fn a_fully_answered_scan_produces_a_complete_verdict() {
+        let tally = run_scan(
+            5,
+            [
+                Ok(Some(())),
+                Ok(None),
+                Ok(None),
+                Ok(None),
+                Ok(None),
+                Ok(None),
+            ],
+        );
+
+        let verdict = tally.verdict(6);
+        assert!(verdict.complete);
+        assert!(verdict.failed_indices.is_empty());
+    }
+
+    /// Every probe unanswered: the verdict records all of them, so a rescan
+    /// knows the whole range is open.
+    #[test]
+    fn a_scan_that_reached_nobody_records_every_failed_index() {
+        let tally = run_scan(3, [Err(()), Err(()), Err(())]);
+
+        let verdict = tally.verdict(3);
+        assert!(!verdict.complete);
+        assert_eq!(verdict.failed_indices, vec![0, 1, 2]);
     }
 
     /// The genuinely-empty wallet: every probe answered, all of them "none".

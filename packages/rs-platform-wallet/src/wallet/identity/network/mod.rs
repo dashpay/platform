@@ -67,8 +67,14 @@ pub use seed_binding::SeedBindingVerification;
 mod tokens;
 
 pub use contact_info::ContactInfoPublishOutcome;
+/// Seed-backed [`ContactCryptoProvider`] for tests. Lives behind the private
+/// `contact_requests` module, so sibling modules reach it directly and the
+/// manager's tests reach it through here.
+#[cfg(test)]
+pub(crate) use contact_requests::SeedCryptoProvider;
 pub use contact_requests::{
     AutoAcceptProofSource, ContactCryptoProvider, ContactInfoOpened, ContactInfoSealed,
+    ContactSyncReport,
 };
 pub use dashpay_view::DashPayView;
 pub use discovery::IdentityDiscoveryOptions;

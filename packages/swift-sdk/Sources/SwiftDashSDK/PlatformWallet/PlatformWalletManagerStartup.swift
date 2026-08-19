@@ -30,6 +30,18 @@ public enum WalletStartupStatus: UInt8, Sendable {
     /// reachability problem. The identity question is unanswered, and another
     /// scan will not answer it: the same fault is still there.
     case discoveryFailed = 4
+    /// The contact-crypto provider does not resolve the seed that owns this
+    /// wallet, so the contact-account drain was skipped without deriving
+    /// anything.
+    ///
+    /// Unlike the other partial cases this one is not about Platform being
+    /// slow — it says the signer handed to the call belongs to a different
+    /// wallet. Deriving anyway would write contact receiving addresses from
+    /// the wrong seed that no later correct-seed pass would ever revisit, so
+    /// doing nothing is the only safe response. Check the Keychain mapping for
+    /// this wallet; a rerun with the right signer completes the work, which is
+    /// still queued.
+    case seedBindingUnverified = 5
 
     /// Whether another discovery scan could change the answer.
     ///
@@ -57,8 +69,16 @@ public struct WalletStartupOutcome: Sendable, Equatable {
     /// Discovery scans performed. `0` when a local identity was already known
     /// and no network scan was needed.
     public let discoveryAttempts: UInt32
-    /// Whether the inline contact-request pass ran.
+    /// Whether the inline contact-request pass ran **to completion**. `false`
+    /// when it was skipped, failed, ran out of budget, or came back degraded:
+    /// a pass that could not read some identities' contact documents left
+    /// their account builds unenqueued, so an empty pending count does not
+    /// mean their addresses are ready.
     public let dashPaySyncRan: Bool
+    /// The contact-account drain was skipped because the contact-crypto
+    /// provider does not resolve this wallet's seed. Nothing was derived and
+    /// nothing was written; the queued work is intact.
+    public let seedBindingUnverified: Bool
     /// Contact-crypto entries the drain completed.
     public let contactAccountsDrained: UInt32
     /// Contact-account builds still queued on return. Non-zero means the
@@ -141,6 +161,15 @@ extension PlatformWalletManager {
         // hosts commonly kick the unlock off asynchronously, so the flag
         // races this call. The verify is marker-cached, so the common path
         // costs a string comparison.
+        //
+        // The shared Rust sequence now runs the same check of its own, just
+        // before the drain and only when something is actually queued, so a
+        // future JNI client inherits the gate instead of the bug. The two are
+        // not redundant: this one throws, refusing the call outright, while
+        // the Rust one fails closed and reports `seedBindingUnverified` — it
+        // has to let Core SPV start regardless. Keeping this here is what
+        // turns a wrong-seed pairing into a loud error on iOS rather than a
+        // silently degraded launch.
         //
         // Against `storage`, not a default one: the resolver below reads that
         // store, and verifying a different Keychain than the work will use
@@ -233,6 +262,7 @@ extension WalletStartupOutcome {
             : nil
         self.discoveryAttempts = ffi.discovery_attempts
         self.dashPaySyncRan = ffi.dashpay_sync_ran
+        self.seedBindingUnverified = ffi.seed_binding_unverified
         self.contactAccountsDrained = ffi.contact_accounts_drained
         self.contactAccountsPending = ffi.contact_accounts_pending
         self.elapsed = TimeInterval(ffi.elapsed_ms) / 1000
