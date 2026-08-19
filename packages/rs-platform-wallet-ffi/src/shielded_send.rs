@@ -2308,15 +2308,18 @@ mod tests {
     /// aborts the process). It becomes `ErrorShieldedSpendUnconfirmed` — the conservative
     /// "may have been broadcast, do NOT retry" contract, because a panic can strike after the
     /// notes are reserved and after the transition is submitted.
+    ///
+    /// The panic hook is deliberately left alone: it is process-global, `cargo test` runs tests
+    /// concurrently, and `take_hook` + restore from two tests can interleave so that one restores
+    /// the other's temporary hook last — suppressing panic diagnostics for the rest of the
+    /// process, including unrelated concurrent panics. The libtest harness already captures this
+    /// test's output, so the deliberate panic's backtrace does not reach the console anyway
+    /// (#4312 review finding 60c26fc233d3).
     #[test]
     fn catch_spend_panic_maps_a_panic_to_the_unconfirmed_contract() {
-        let previous = std::panic::take_hook();
-        // Silence the default hook's backtrace spew for this deliberate panic.
-        std::panic::set_hook(Box::new(|_| {}));
         let result = catch_spend_panic("shielded multi-output transfer", || {
             panic!("tokio worker panicked");
         });
-        std::panic::set_hook(previous);
 
         assert_eq!(
             result.code,
@@ -2358,12 +2361,11 @@ mod tests {
     /// maps a panic to the generic `ErrorUnknown` (its richer codes all promise things a panic
     /// cannot deliver — see the export's call site), and the asset-lock funding exports map it
     /// to their single existing error code, `ErrorWalletOperation`.
+    ///
+    /// Like the sibling guard test, this leaves the process-global panic hook untouched — see
+    /// `catch_spend_panic_maps_a_panic_to_the_unconfirmed_contract`.
     #[test]
     fn catch_panic_to_code_carries_the_per_operation_contract() {
-        let previous = std::panic::take_hook();
-        // Silence the default hook's backtrace spew for these deliberate panics.
-        std::panic::set_hook(Box::new(|_| {}));
-
         let identity = catch_panic_to_code(
             "shielded identity-create-from-pool",
             PlatformWalletFFIResultCode::ErrorUnknown,
@@ -2376,7 +2378,6 @@ mod tests {
             ASSET_LOCK_FUNDING_PANIC_GUIDANCE,
             || panic!("proving task panicked"),
         );
-        std::panic::set_hook(previous);
 
         assert_eq!(
             identity.code,
