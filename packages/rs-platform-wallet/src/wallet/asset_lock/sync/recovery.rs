@@ -265,7 +265,7 @@ fn first_confirmed_input_conflict(
 
     let history = info.core_wallet.transaction_history();
 
-    // One source of truth: live transaction history. The load path restores
+    // The source of truth: live transaction history. The load path restores
     // the relevant spender records into it (see the unresolved-record
     // restore in the FFI persister), so the same records serve app-launch
     // catch-up and the live session — and the same machinery keeps them
@@ -273,7 +273,7 @@ fn first_confirmed_input_conflict(
     // their block, and a reorg re-observation demotes them. An earlier
     // revision carried a separate load-time snapshot map instead; it could
     // neither promote nor demote, so its verdicts could not resolve.
-    history
+    if let Some(hit) = history
         .iter()
         .filter(|record| record.txid != lock_txid && record.is_confirmed())
         .find_map(|record| {
@@ -290,6 +290,65 @@ fn first_confirmed_input_conflict(
                     .is_some_and(|(boundary, spender_height)| spender_height <= boundary);
             Some((conflicting_input, record.txid, height, spender_chain_locked))
         })
+    {
+        // Remember the observation before returning it. Promotion is also
+        // EVICTION under the default `keep-finalized-transactions = OFF`
+        // build: the moment a chainlock buries the spender's block,
+        // `apply_chain_lock` removes the record this scan just read — which
+        // is exactly the moment the provisional verdict becomes terminal,
+        // and a retry would otherwise find nothing at all. The session
+        // memory below converts that disappearance into the terminal
+        // verdict. A poisoned mutex degrades to no memory, never a failure.
+        let (input, spender, height, _) = hit;
+        if let (Some(h), Ok(mut cache)) = (height, info.observed_input_conflicts.lock()) {
+            cache.insert(
+                input,
+                crate::wallet::platform_wallet::ObservedInputConflict { spender, height: h },
+            );
+        }
+        return Some(hit);
+    }
+
+    // No live record — consult the session memory. Three cases per
+    // remembered input:
+    //  * the remembered spender is back in history UNCONFIRMED: its block
+    //    was reorged away and the record demoted in place — the memory is
+    //    stale, retract it;
+    //  * the spender has LEFT history: promotion-eviction is the only path
+    //    that removes a record (a reorg demotes, nothing deletes), so the
+    //    remembered in-block spend was buried by a chainlock — terminal,
+    //    provided the applied boundary actually covers the remembered
+    //    height;
+    //  * eviction without a covering boundary should be impossible — stay
+    //    on the provisional verdict rather than inventing finality.
+    let Ok(mut cache) = info.observed_input_conflicts.lock() else {
+        return None;
+    };
+    for input in &lock_inputs {
+        let Some(observed) = cache.get(input).copied() else {
+            continue;
+        };
+        if let Some(record) = history
+            .iter()
+            .find(|record| record.txid == observed.spender)
+        {
+            if !record.is_confirmed() {
+                cache.remove(input);
+            }
+            // A confirmed record for this spender would have been the
+            // scan's hit above; nothing to add here either way.
+            continue;
+        }
+        let spender_chain_locked =
+            chain_locked_height.is_some_and(|boundary| observed.height <= boundary);
+        return Some((
+            *input,
+            observed.spender,
+            Some(observed.height),
+            spender_chain_locked,
+        ));
+    }
+    None
 }
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
@@ -1104,6 +1163,7 @@ mod tests {
         }
         let restored_wallet = Wallet::new_external_signable(Network::Testnet, wallet_id, accounts);
         let mut restored_info = PlatformWalletInfo {
+            observed_input_conflicts: Default::default(),
             core_wallet: ManagedWalletInfo::from_wallet(&restored_wallet, 0),
             generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
@@ -1281,6 +1341,23 @@ mod tests {
                 .insert(record.txid, record);
         }
 
+        /// Remove `txid`'s record from the wallet's BIP44 account, the way
+        /// `apply_chain_lock`'s promotion-eviction does under the default
+        /// `keep-finalized-transactions = OFF` build.
+        async fn evict_record(&self, txid: Txid) {
+            let mut wm = self.manager.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&self.wallet_id)
+                .expect("wallet must remain registered");
+            info.core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .expect("funded fixture has BIP44 account 0")
+                .transactions_mut()
+                .remove(&txid);
+        }
+
         fn broadcast_count(&self) -> usize {
             self.broadcaster
                 .transactions
@@ -1377,6 +1454,123 @@ mod tests {
             fixture.broadcast_count(),
             0,
             "the screen must short-circuit ahead of the defensive re-broadcast"
+        );
+    }
+
+    /// Promotion is eviction: once a chainlock buries the spender's block,
+    /// `apply_chain_lock` removes its record from history — at exactly the
+    /// moment the verdict becomes terminal. The screen's session memory
+    /// must convert that disappearance into the terminal conflict instead
+    /// of letting the resume fall back into the proof wait.
+    #[tokio::test]
+    async fn a_chainlock_evicted_spender_upgrades_the_remembered_verdict_to_terminal() {
+        let fixture = ConflictFixture::new().await;
+        fixture.track(AssetLockStatus::Broadcast, None).await;
+
+        let spender = transaction_spending(fixture.funded_input());
+        let spender_txid = spender.txid();
+        fixture
+            .file_record(record_for(spender, confirmed_at(1_234)))
+            .await;
+
+        // First resume: provisional, and the screen remembers the sighting.
+        let first = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect_err("a currently double-spent asset lock must fail, not wait");
+        assert!(
+            matches!(first, PlatformWalletError::AssetLockInputContested { .. }),
+            "before the chainlock the verdict is provisional, got {first:?}"
+        );
+
+        // The chainlock lands: boundary moves past the spender's height and
+        // the promotion evicts its record.
+        fixture.evict_record(spender_txid).await;
+        fixture.set_chain_lock_boundary(1_300).await;
+
+        let second = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect_err("a chainlock-settled double spend must fail, not wait");
+        match second {
+            PlatformWalletError::AssetLockInputConflict { spent_by, .. } => {
+                assert_eq!(spent_by, spender_txid, "the remembered spender, upgraded");
+            }
+            other => panic!("expected the terminal AssetLockInputConflict, got {other:?}"),
+        }
+    }
+
+    /// The memory retracts: a reorg demotes the spender's record in place,
+    /// and re-observing it unconfirmed must clear the remembered verdict —
+    /// the lock is viable again and the resume takes its normal course.
+    #[tokio::test]
+    async fn a_reorg_demoted_spender_retracts_the_remembered_verdict() {
+        let fixture = ConflictFixture::new().await;
+        fixture.track(AssetLockStatus::Broadcast, None).await;
+
+        let spender = transaction_spending(fixture.funded_input());
+        fixture
+            .file_record(record_for(spender.clone(), confirmed_at(1_234)))
+            .await;
+        let first = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect_err("a currently double-spent asset lock must fail, not wait");
+        assert!(matches!(
+            first,
+            PlatformWalletError::AssetLockInputContested { .. }
+        ));
+
+        // The reorg drops the block; the record survives, demoted.
+        fixture
+            .file_record(record_for(spender, TransactionContext::Mempool))
+            .await;
+
+        let second = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect_err("no proof means the resume runs and then times out");
+        assert!(
+            !matches!(
+                second,
+                PlatformWalletError::AssetLockInputConflict { .. }
+                    | PlatformWalletError::AssetLockInputContested { .. }
+            ),
+            "a demoted spender must retract the remembered verdict, got {second:?}"
+        );
+    }
+
+    /// Eviction without a covering boundary should be impossible; if it
+    /// ever happens, the screen stays on the provisional verdict rather
+    /// than inventing chainlock finality it cannot attest.
+    #[tokio::test]
+    async fn an_evicted_spender_without_a_covering_boundary_stays_provisional() {
+        let fixture = ConflictFixture::new().await;
+        fixture.track(AssetLockStatus::Broadcast, None).await;
+
+        let spender = transaction_spending(fixture.funded_input());
+        let spender_txid = spender.txid();
+        fixture
+            .file_record(record_for(spender, confirmed_at(1_234)))
+            .await;
+        let _ = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
+            .await;
+        fixture.evict_record(spender_txid).await;
+
+        let second = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect_err("the remembered conflict still stops the wait");
+        assert!(
+            matches!(second, PlatformWalletError::AssetLockInputContested { .. }),
+            "no boundary, no terminal claim, got {second:?}"
         );
     }
 

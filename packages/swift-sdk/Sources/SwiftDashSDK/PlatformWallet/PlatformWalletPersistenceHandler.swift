@@ -1340,37 +1340,29 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         )
         if let pendingRows = try? backgroundContext.fetch(pendingDescriptor),
            !pendingRows.isEmpty {
-            // Pick the freshest pending entry — under normal sync
-            // there's only one, but a chain reorg or double-spend
-            // observation could leave multiple. Newest wins so the
-            // visible spendingTransaction matches the most recent
-            // observation; the rest are dropped.
-            let chosen = pendingRows.max(by: { $0.createdAt < $1.createdAt }) ?? pendingRows[0]
-
-            // Resolve the spending tx (prefer the relationship; fall
-            // back to a txid lookup if the row wasn't faulted in).
-            // We need its `context` to gate `isSpent` — same rule as
-            // `resolveInputOutpoint`: mempool sighting links the
-            // spendingTransaction but doesn't flip `isSpent` until
-            // the spending tx is in a block.
-            let resolvedSpending: PersistentTransaction?
-            if let spending = chosen.spendingTransaction {
-                resolvedSpending = spending
-            } else {
-                let spendingTxid = chosen.spendingTxid
-                let txDescriptor = FetchDescriptor<PersistentTransaction>(
-                    predicate: #Predicate { $0.txid == spendingTxid }
-                )
-                resolvedSpending = try? backgroundContext.fetch(txDescriptor).first
-            }
-
-            // Carry the vin index forward so the spending tx's
-            // detail view can render its inputs in the canonical
-            // serialized order. Same source as the linkage write
-            // in `resolveInputOutpoint` — the only path that creates
-            // pending rows captures the index from FFI's
-            // `input_outpoints` slice, which mirrors `tx.input.iter()`.
-            if let spending = resolvedSpending {
+            // Reconcile EVERY deferred observation, not just the newest —
+            // the rows are about to be deleted, and picking one would let
+            // a mempool competitor recorded after a confirmed spender
+            // erase that confirmed evidence with the rows. Applying the
+            // finality-aware rule per row makes the order irrelevant by
+            // construction: confirmed evidence wins and is never
+            // displaced by a mempool observation, so the oldest-first
+            // pass below converges to the same state any order would.
+            var adoptedAny = false
+            for pending in pendingRows.sorted(by: { $0.createdAt < $1.createdAt }) {
+                // Resolve the spending tx (prefer the relationship; fall
+                // back to a txid lookup if the row wasn't faulted in).
+                let resolvedSpending: PersistentTransaction?
+                if let spending = pending.spendingTransaction {
+                    resolvedSpending = spending
+                } else {
+                    let spendingTxid = pending.spendingTxid
+                    let txDescriptor = FetchDescriptor<PersistentTransaction>(
+                        predicate: #Predicate { $0.txid == spendingTxid }
+                    )
+                    resolvedSpending = try? backgroundContext.fetch(txDescriptor).first
+                }
+                guard let spending = resolvedSpending else { continue }
                 // Flag and link move together — see
                 // `reconcileSpendObservation` for the finality rule.
                 let verdict = Self.reconcileSpendObservation(
@@ -1384,10 +1376,19 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     if record.spendingTransaction?.txid != spending.txid {
                         record.spendingTransaction = spending
                     }
-                    record.spendingInputIndex = chosen.inputIndex
+                    // The vin index rides with the adopted claim so the
+                    // spending tx's detail view renders inputs in the
+                    // canonical serialized order.
+                    record.spendingInputIndex = pending.inputIndex
+                    adoptedAny = true
                 }
-            } else {
-                record.spendingInputIndex = chosen.inputIndex
+            }
+            if !adoptedAny, let newest = pendingRows.max(by: { $0.createdAt < $1.createdAt }) {
+                // No row resolved a spending tx this flush: carry the
+                // newest claim's vin index forward the way the old
+                // single-row path did; the linkage itself catches up on
+                // the next flush that carries the spending tx.
+                record.spendingInputIndex = newest.inputIndex
             }
             record.lastUpdated = Date()
             for row in pendingRows {

@@ -4,7 +4,8 @@ use std::collections::BTreeMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
-use dashcore::OutPoint;
+use dashcore::{OutPoint, Txid};
+use dpp::prelude::CoreBlockHeight;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 #[cfg(feature = "shielded")]
@@ -228,6 +229,28 @@ fn plan_shield_inputs(
     })
 }
 
+/// One in-block spend of a tracked asset lock's input, as the double-spend
+/// screen last saw it in live transaction history.
+///
+/// Session-scoped memory, never persisted and never restored: it exists
+/// because `apply_chain_lock` EVICTS a record from history the moment a
+/// chainlock buries it (default `keep-finalized-transactions = OFF`), which
+/// is precisely the moment a provisional conflict becomes terminal — a
+/// retry after the chainlock would otherwise find nothing and fall back
+/// into the proof wait. The screen writes entries when it observes an
+/// in-block spender, retracts them when live history re-observes that
+/// spender unconfirmed (a reorg demotes the record in place), and converts
+/// an entry whose record has LEFT history under a covering boundary into
+/// the terminal verdict: promotion-eviction is the only path that removes
+/// a record, so the disappearance itself attests the chainlock.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ObservedInputConflict {
+    /// The confirmed transaction the screen saw spending the input.
+    pub spender: Txid,
+    /// The block height it was seen at.
+    pub height: CoreBlockHeight,
+}
+
 /// Consolidated mutable state for a platform wallet.
 ///
 /// Lives inside `WalletManager<PlatformWalletInfo>.wallet_infos`. The `Wallet`
@@ -257,6 +280,11 @@ pub struct PlatformWalletInfo {
     pub(crate) generation: Arc<WalletGeneration>,
     pub identity_manager: IdentityManager,
     pub tracked_asset_locks: BTreeMap<OutPoint, TrackedAssetLock>,
+    /// Session-scoped double-spend evidence for tracked asset locks — see
+    /// [`ObservedInputConflict`]. Interior mutability because the screen
+    /// runs under the manager's read lock; a poisoned mutex degrades to
+    /// "no memory" rather than failing a resume.
+    pub observed_input_conflicts: std::sync::Mutex<BTreeMap<OutPoint, ObservedInputConflict>>,
     /// DPNS name states with sale price (username marketplace), keyed by
     /// domain document id. Session-lifetime working set for the
     /// marketplace sync/orchestration ops; the durable copy is the
