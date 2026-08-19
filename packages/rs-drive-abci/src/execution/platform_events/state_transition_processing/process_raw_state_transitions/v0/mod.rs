@@ -29,10 +29,31 @@ use super::super::StateTransitionAwareError;
 /// on an under-estimated `Shield`) without depending on any particular estimation bug.
 #[cfg(test)]
 pub(crate) mod test_fault_injection {
+    use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use std::cell::Cell;
 
     thread_local! {
         pub static FAIL_NEXT_SUCCESSFUL_EXECUTION: Cell<bool> = const { Cell::new(false) };
+    }
+
+    /// If armed, consume the flag and replace a successful execution with the
+    /// `InternalError` a post-apply failure would produce; identity for every other result
+    /// and while unarmed. Kept here so the processing loop carries a single call instead of
+    /// the override logic.
+    pub(crate) fn maybe_override(
+        execution_result: StateTransitionExecutionResult,
+    ) -> StateTransitionExecutionResult {
+        if matches!(
+            execution_result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        ) && FAIL_NEXT_SUCCESSFUL_EXECUTION.with(|flag| flag.replace(false))
+        {
+            StateTransitionExecutionResult::InternalError(
+                "injected post-apply failure (test_fault_injection)".to_string(),
+            )
+        } else {
+            execution_result
+        }
     }
 }
 
@@ -95,10 +116,14 @@ where
         //
         // The validation path (`proposing_state_transitions == false`) is deliberately
         // untouched: rolling back there would change what state a received block evaluates
-        // to, which is a consensus change that must ride a protocol-version gate (it does,
-        // from v14). This proposer-side rollback only changes which blocks this node BUILDS —
-        // the published block and app hash are exactly what any un-upgraded validator
-        // computes from that block, so mixed networks cannot diverge.
+        // to, which is a consensus change needing a protocol-version gate — and one that is
+        // unnecessary, because `process_proposal` already REJECTS any block whose execution
+        // produced an `InternalError` or `UnpaidConsensusError` result (the
+        // `unexpected_execution_results` gate), so a block that carries such a transition
+        // can never commit and its writes die with the rejected round's transaction. This
+        // proposer-side rollback only changes which blocks this node BUILDS — the published
+        // block and app hash are exactly what any un-upgraded validator computes from that
+        // block, so mixed networks cannot diverge.
         //
         // The genesis height is excluded because its re-proposal path relies on a
         // single-savepoint discipline: init_chain sets one savepoint, and each genesis round
@@ -186,19 +211,8 @@ where
                         .unwrap_or_else(error_to_internal_error_execution_result);
 
                         #[cfg(test)]
-                        let execution_result = if matches!(
-                            execution_result,
-                            StateTransitionExecutionResult::SuccessfulExecution { .. }
-                        )
-                            && test_fault_injection::FAIL_NEXT_SUCCESSFUL_EXECUTION
-                                .with(|flag| flag.replace(false))
-                        {
-                            StateTransitionExecutionResult::InternalError(
-                                "injected post-apply failure (test_fault_injection)".to_string(),
-                            )
-                        } else {
-                            execution_result
-                        };
+                        let execution_result =
+                            test_fault_injection::maybe_override(execution_result);
 
                         if rollback_dropped_transitions {
                             match &execution_result {
