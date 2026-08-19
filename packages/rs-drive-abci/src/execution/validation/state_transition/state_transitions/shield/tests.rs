@@ -1904,8 +1904,9 @@ mod tests {
         ///
         /// If the two cost models agreed, the edges would coincide and the band would be empty.
         /// Any width is a range of funding levels where the transition is accepted by validation
-        /// and then dropped at execution — no longer a chain halt since the v14 per-transition
-        /// rollback, but still a transition that can never confirm despite paying the quoted fee.
+        /// and then dropped at execution — no longer a chain halt since the proposer-side
+        /// per-transition rollback (shipped in 4.1.1), but still a transition that can never
+        /// confirm despite paying the quoted fee.
         ///
         /// Ignored until the estimation gap is closed: the estimated-cost path skips the keyless
         /// commitment-tree append entirely (dashpay/grovedb#812), so the band is measurably open
@@ -2124,13 +2125,13 @@ mod tests {
                 .unwrap()
                 .expect("root hash");
 
-            // Note on savepoint provenance: under protocol v14 the v1 processing loop sets
-            // its OWN savepoint (recording this same state — nothing is written in between)
-            // on top of this one, and leaves it on the stack for a kept transition. The
-            // `rollback_to_savepoint()` below therefore pops the LOOP's savepoint, not this
-            // one, which stays on the stack unused. Both record identical state, so every
-            // assertion is unaffected; this savepoint documents the mechanism under test and
-            // kept the test meaningful when the loop was still v0.
+            // Note on savepoint provenance: while proposing at a non-genesis height the
+            // processing loop sets its OWN savepoint (recording this same state — nothing is
+            // written in between) on top of this one, and leaves it on the stack for a kept
+            // transition. The `rollback_to_savepoint()` below therefore pops the LOOP's
+            // savepoint, not this one, which stays on the stack unused. Both record identical
+            // state, so every assertion is unaffected; this savepoint documents the mechanism
+            // under test and kept the test meaningful before the loop rolled back on its own.
             transaction.set_savepoint();
 
             let result = platform
@@ -2259,7 +2260,7 @@ mod tests {
         /// `InternalError` after the fact, and assert the processing loop rolls its writes
         /// back. An `InternalError` maps to `TxAction::Removed`, so ANY path that produces one
         /// after `apply_drive_operations(apply = true)` must leave no trace in the state. This
-        /// pins the v14 per-transition rollback even after the estimation gap
+        /// pins the proposer-side per-transition rollback even after the estimation gap
         /// (dashpay/grovedb#812) is closed and no real transition can reach execution
         /// under-funded anymore.
         #[tokio::test]

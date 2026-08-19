@@ -186,9 +186,11 @@ where
             // mainnet evo1 stalls of 2026-08-14/15; the keyless commitment-tree append is skipped
             // in estimation, dashpay/grovedb#812). The invariant this guard actually enforces is
             // `estimated >= actual`. Note the ops were already applied above: an Err here leaves
-            // this transition's writes in the block transaction, which is only safe because the
-            // v14+ processing loop rolls dropped transitions back (process_raw_state_transitions
-            // v1); under v0 those writes leak into the proposer's app hash.
+            // this transition's writes in the block transaction. That is safe because the
+            // processing loop rolls dropped transitions back while proposing (the 4.1.1 fix),
+            // and a block that carries such a transition anyway is rejected wholesale by
+            // process_proposal's unexpected_execution_results gate, discarding the round's
+            // transaction along with the writes.
             if !fee_deduction_result.fee_fully_covered {
                 return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "address-input fee not fully covered at execution; validate_fees_of_event should have rejected the under-funded transition",

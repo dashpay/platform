@@ -1,8 +1,7 @@
 mod v0;
-mod v1;
 
 #[cfg(test)]
-pub(crate) use v1::test_fault_injection;
+pub(crate) use v0::test_fault_injection;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -66,18 +65,9 @@ where
                 proposing_state_transitions,
                 timer,
             ),
-            1 => self.process_raw_state_transitions_v1(
-                raw_state_transitions,
-                block_platform_state,
-                block_info,
-                transaction,
-                platform_version,
-                proposing_state_transitions,
-                timer,
-            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "process_raw_state_transitions".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0],
                 received: version,
             })),
         }
