@@ -1061,12 +1061,17 @@ fn map_one_time_claim_result(
         //   checkpointed. Flattened to 6 it reads as a hard failure, which
         //   strands a genuinely funded claim whose note sits deep in the tree
         //   (#4313 review finding, this entry point).
+        // * `ShieldedLifecycleBusy` → 45, RETRYABLE — the claim was refused
+        //   admission at the store (a purge holds it, or another claimant owns
+        //   this invitation's claim-record key). Nothing was scanned, built or
+        //   broadcast, so the host should simply retry.
         //
-        // The blanket conversion is the single source of truth for both; this
-        // arm only keeps them from reaching the catch-all.
+        // The blanket conversion is the single source of truth for all three;
+        // this arm only keeps them from reaching the catch-all.
         Err(
             e @ (PlatformWalletError::ShieldedInviteAlreadyClaimed { .. }
-            | PlatformWalletError::ShieldedForeignScanBudgetExhausted { .. }),
+            | PlatformWalletError::ShieldedForeignScanBudgetExhausted { .. }
+            | PlatformWalletError::ShieldedLifecycleBusy { .. }),
         ) => (None, e.into()),
         Err(e) => (
             None,

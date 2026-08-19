@@ -291,6 +291,35 @@ pub enum PlatformWalletFFIResultCode {
     /// lands.
     ErrorShieldedScanBudgetExhausted = 44,
 
+    /// Maps `PlatformWalletError::ShieldedLifecycleBusy`. A shielded lifecycle
+    /// operation was refused admission at the store rather than allowed to run
+    /// concurrently with the operation that holds it. Two directions, both
+    /// reaching this one code:
+    ///
+    /// * a one-time-key claim refused because `clear` / `unregister_wallet` /
+    ///   `remove_wallet` holds destructive admission over its wallet, or
+    ///   because another claimant already holds this invitation's claim-record
+    ///   key;
+    /// * a destructive operation refused because in-flight claims did not
+    ///   drain within its wait.
+    ///
+    /// RETRYABLE in both directions, and nothing was consumed: the claim
+    /// direction scanned, built and broadcast nothing, and the destructive
+    /// direction purged nothing. The refusal is the safe outcome of a
+    /// contended lifecycle, not a failure of the operation itself, so hosts
+    /// MUST render it as "busy — try again" and MUST NOT surface it as an
+    /// invalid or already-claimed invitation. Without a code of its own it
+    /// flattened to the generic `ErrorWalletOperation` (6), which hosts
+    /// classify as non-retryable — the same defect
+    /// [`Self::ErrorShieldedScanBudgetExhausted`] (44) fixes for the paused
+    /// scan.
+    ///
+    /// Code 45 — the next free integer past 44 above, taken from the frontier
+    /// rather than from a vacated gap (28, 30, 32 and 33 are RESERVED, not
+    /// reissuable). Swift mirror and the ERROR_CODE_REGISTRY.md row
+    /// (dashpay/platform#4318) are follow-ups.
+    ErrorShieldedLifecycleBusy = 45,
+
     // Codes 27-33 are claimed outside this PR and MUST NOT be reused here.
     // The deferred-token trio below therefore occupies the contiguous block
     // 34-36. Current owners (see ERROR_CODE_REGISTRY.md, dashpay/platform#4261):
@@ -642,6 +671,14 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // collapsing it into an unknown/terminal failure.
             PlatformWalletError::ShieldedForeignScanBudgetExhausted { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedScanBudgetExhausted
+            }
+            // Retryable in both of its directions (a refused claim, or a
+            // refused purge) and consuming nothing in either. Typed for the
+            // same reason as the scan-budget code above: flattened to the
+            // generic `ErrorWalletOperation` a contended lifecycle reads as a
+            // hard failure, and the host stops instead of retrying.
+            PlatformWalletError::ShieldedLifecycleBusy { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedLifecycleBusy
             }
             PlatformWalletError::ShieldedNoRecordedAnchor(..) => {
                 PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor
@@ -1671,6 +1708,67 @@ mod tests {
         assert_eq!(
             PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance as i32,
             41
+        );
+    }
+
+    /// This PR's three shielded-invite codes, pinned for the same reason the
+    /// marketplace block above is: the numeric values are the ABI contract with
+    /// the Swift/Kotlin mirrors and nothing checks them across the boundary at
+    /// compile time.
+    ///
+    /// 43 is FROZEN (it matches the integration-branch allocation already
+    /// shipped in QA AARs); 44 and 45 were taken from the registry frontier,
+    /// never from a vacated gap.
+    #[test]
+    fn shielded_invite_codes_are_pinned_at_43_through_45() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorShieldedInviteAlreadyClaimed as i32,
+            43
+        );
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorShieldedScanBudgetExhausted as i32,
+            44
+        );
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorShieldedLifecycleBusy as i32,
+            45
+        );
+    }
+
+    /// A contended shielded lifecycle is RETRYABLE and consumed nothing, in
+    /// both of its directions. Without a typed code it flattened to the generic
+    /// `ErrorWalletOperation` (6), which hosts classify as non-retryable —
+    /// so a claim refused for a few seconds by a concurrent purge, or by
+    /// another claimant holding the same invitation's claim-record key,
+    /// surfaced as a hard failure of the invitation itself.
+    #[test]
+    fn shielded_lifecycle_busy_maps_to_its_own_retryable_code() {
+        let claim_refused = PlatformWalletError::ShieldedLifecycleBusy {
+            reason: "this wallet's shielded state is being cleared or removed".to_string(),
+        };
+        let rendered = claim_refused.to_string();
+        let result: PlatformWalletFFIResult = claim_refused.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedLifecycleBusy,
+            "a refused lifecycle admission must not flatten into ErrorWalletOperation"
+        );
+        assert_eq!(
+            message_of(&result),
+            rendered,
+            "Display payload must survive verbatim"
+        );
+
+        // The other direction — a purge that could not drain in-flight claims —
+        // rides the same code, because hosts handle both identically: wait and
+        // retry.
+        let purge_refused: PlatformWalletFFIResult = PlatformWalletError::ShieldedLifecycleBusy {
+            reason: "clear_shielded: 1 one-time-key claim(s) still in flight".to_string(),
+        }
+        .into();
+        assert_eq!(
+            purge_refused.code,
+            PlatformWalletFFIResultCode::ErrorShieldedLifecycleBusy
         );
     }
 

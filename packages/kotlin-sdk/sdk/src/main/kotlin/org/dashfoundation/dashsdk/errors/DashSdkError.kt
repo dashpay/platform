@@ -404,6 +404,28 @@ sealed class DashSdkError(
         }
 
         /**
+         * `ErrorShieldedLifecycleBusy` (native code 45,
+         * dashpay/platform#4313). A shielded lifecycle operation was refused
+         * admission at the store instead of being allowed to run concurrently
+         * with the operation that holds it. Two directions, one code:
+         *
+         * * a one-time-key claim refused because a Clear / wallet removal
+         *   holds destructive admission over its wallet, or because another
+         *   claimant already holds this invitation's claim-record key;
+         * * a Clear / wallet removal refused because in-flight claims did not
+         *   drain within its wait.
+         *
+         * RETRYABLE ([isRetryable] `true`) and nothing was consumed in either
+         * direction: the claim scanned, built and broadcast nothing, and the
+         * purge deleted nothing. Hosts MUST render this as "busy — try again"
+         * and MUST NOT surface it as an invalid or already-claimed invitation.
+         */
+        class ShieldedLifecycleBusy(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -584,6 +606,12 @@ sealed class DashSdkError(
             // the claim scan paused at its per-attempt budget with progress
             // checkpointed; a retry resumes, it never restarts.
             44 -> PlatformWallet.ShieldedScanBudgetExhausted(message, cause)
+            // ErrorShieldedLifecycleBusy (#4313) — retryable, and nothing was
+            // consumed: a claim refused admission by a concurrent Clear /
+            // wallet removal or by another claimant holding the same
+            // invitation's claim-record key, or a Clear that refused to purge
+            // while claims are still in flight.
+            45 -> PlatformWallet.ShieldedLifecycleBusy(message, cause)
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

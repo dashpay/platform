@@ -117,6 +117,22 @@ class DashSdkErrorTest {
             scanBudget.isRetryable,
         )
 
+        // Code 45 (ErrorShieldedLifecycleBusy, dashpay/platform#4313): the
+        // claim was refused admission at the store — a concurrent Clear /
+        // wallet removal holds it, or another claimant already holds this
+        // invitation's claim-record key. Nothing was scanned, built or
+        // broadcast, so the polarity matches 44's: a host that read this as
+        // terminal would fail an invitation that is merely contended.
+        val lifecycleBusy =
+            DashSdkError.fromNative(
+                DashSDKException(offset + 45, "shielded state is being cleared or removed"),
+            )
+        assertTrue(lifecycleBusy is DashSdkError.PlatformWallet.ShieldedLifecycleBusy)
+        assertTrue(
+            "ShieldedLifecycleBusy is RETRYABLE — nothing was consumed",
+            lifecycleBusy.isRetryable,
+        )
+
         val broadcastUnconfirmed =
             DashSdkError.fromNative(DashSDKException(offset + 20, "ambiguous broadcast"))
         assertTrue(
