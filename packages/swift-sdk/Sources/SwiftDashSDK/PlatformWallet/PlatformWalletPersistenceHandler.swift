@@ -1170,7 +1170,16 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // catch-up classifier to recognise as ours. The next
             // upsert of this same tx with a confirmed context flips
             // `isSpent` then.
-            let expectedIsSpent = Self.spendIsInBlock(spendingTransaction)
+            //
+            // Monotonic on purpose (mirrors the same guard on the
+            // sweep-persistence branch, so the merge is a no-op): a
+            // later mempool sighting of a DIFFERENT spender must not
+            // downgrade a flag an in-block spend already set — that
+            // stomp would also blank the spend-linkage evidence the
+            // asset-lock conflict screen restores at the next launch.
+            // Nothing upstream ever demotes a confirmed spend, so a
+            // true here is never stale.
+            let expectedIsSpent = txo.isSpent || Self.spendIsInBlock(spendingTransaction)
             let linkageChanged =
                 txo.isSpent != expectedIsSpent
                 || txo.spendingTransaction?.txid != spendingTxid
@@ -5413,13 +5422,17 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     }
 
     /// Report which transaction the mirror recorded as spending the inputs of
-    /// this wallet's unresolved asset locks, whether or not that spender ever
-    /// reached a block.
+    /// this wallet's unresolved asset locks. Emits settled spends only: the
+    /// loop below is gated on `isSpent`, which this mirror flips exclusively
+    /// for in-block spenders, so mempool / InstantSend sightings never cross
+    /// here — a consumer that needs unsettled spends must widen this gate
+    /// first. Within that set the spender is whatever the mirror linked,
+    /// the lock's own transaction included; Rust filters per lock.
     ///
     /// Rust knows which outpoints its locks spend but not who took them: the
     /// in-memory transaction history it would normally consult is empty at
-    /// load. The spender's context is passed through verbatim; which contexts
-    /// count as final is Rust's decision.
+    /// load. The spender's context is passed through verbatim; how much
+    /// finality each emitted context carries is Rust's decision.
     private func buildAssetLockInputSpendBuffer(
         walletId: Data,
         allocation: LoadAllocation
@@ -5470,21 +5483,42 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // conflicting spender is recorded on, leaving the restored map
             // empty and startup back in the full proof wait. This is the same
             // fallback `loadWalletList` already uses.
-            guard let txo = try? backgroundContext.fetch(descriptor).first,
-                  Self.resolvedWalletId(of: txo) == walletId,
-                  txo.isSpent,
+            guard let txo = try? backgroundContext.fetch(descriptor).first else { continue }
+            guard Self.resolvedWalletId(of: txo) == walletId else {
+                // Ownership can miss for a same-seed twin wallet entry (the
+                // outpoint-unique row belongs to the sibling) or a fully
+                // orphaned legacy row. Evidence found-but-discarded must at
+                // least be diagnosable, since the cost is the full proof
+                // wait this path exists to remove.
+                SDKLogger.log(
+                    "load: asset-lock input-spend row skipped on ownership; "
+                        + "row resolves to a different wallet")
+                continue
+            }
+            guard txo.isSpent,
                   let spender = txo.spendingTransaction,
-                  txo.txid.count == 32,
                   spender.txid.count == 32
             else { continue }
 
+            // The row's identity comes from `key` — the 36-byte outpoint the
+            // fetch matched on — not from the fetched row's computed `txid`
+            // property, whose primary source is the `transaction`
+            // relationship. On a corrupt row the two can diverge, and Rust
+            // keys the lock's inputs by exactly this outpoint: deriving the
+            // fields from anything else would turn the keyed exact match
+            // back into a guess.
+            let keyBytes = [UInt8](key)
+            guard keyBytes.count == 36 else { continue }
             var row = AssetLockInputSpendFFI()
-            txo.txid.withUnsafeBytes { src in
+            keyBytes[0..<32].withUnsafeBytes { src in
                 Swift.withUnsafeMutableBytes(of: &row.prev_txid) { dst in
                     dst.copyMemory(from: src)
                 }
             }
-            row.vout = txo.vout
+            row.vout = UInt32(keyBytes[32])
+                | (UInt32(keyBytes[33]) << 8)
+                | (UInt32(keyBytes[34]) << 16)
+                | (UInt32(keyBytes[35]) << 24)
             spender.txid.withUnsafeBytes { src in
                 Swift.withUnsafeMutableBytes(of: &row.spender_txid) { dst in
                     dst.copyMemory(from: src)
@@ -5531,7 +5565,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         guard let locks = try? backgroundContext.fetch(descriptor), !locks.isEmpty else {
             return []
         }
-        guard let network = walletNetwork(walletId: walletId) else { return [] }
+        // The decoder's network argument only shapes the address rendering,
+        // which this caller discards — the outpoints decode identically on
+        // any network. A legacy wallet row whose network was never resolved
+        // must not lose its conflict evidence over a cosmetic parameter, so
+        // default rather than bail (the sibling load-path builders tolerate
+        // a nil network the same way).
+        let network = walletNetwork(walletId: walletId) ?? .testnet
 
         var outpoints: [Data] = []
         var seen = Set<Data>()
