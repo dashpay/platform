@@ -1764,6 +1764,55 @@ where
         });
     }
 
+    // ---- Durable per-INVITATION reservation (#4313 review finding cr-9d0e1a44) ----
+    //
+    // The lease above is per-WALLET: it orders this claim against a purge and
+    // nothing else, so it admits BOTH claims of the same invitation. The
+    // per-FVK mutex above serializes same-key claims that share THIS
+    // coordinator; a second coordinator, or a second process, opens its own
+    // SQLite connections to the same file and shares no lock at all. Both then
+    // found no pending record, built transitions with DIFFERENT padded identity
+    // ids, and the loser's `arm_redrive_under_claim` — an INSERT OR REPLACE —
+    // silently overwrote the winner's byte-exact recovery row while the
+    // winner's transition was already on the wire.
+    //
+    // So the invitation's record key is reserved durably, by an insert that
+    // cannot overwrite a live row, and the DURABLE row is read back to decide
+    // who owns it. The in-process guard stays as the fast path — it parks a
+    // same-coordinator second caller before it ever reaches the store — and
+    // this is the backstop for the two cases that guard cannot see.
+    let reservation = store
+        .write()
+        .await
+        .reserve_one_time_claim_key(
+            wallet_id,
+            claim_record_key,
+            admission,
+            super::store::admission_now_ms(),
+            super::store::CLAIM_LEASE_MS,
+        )
+        .map_err(|e| {
+            // Fail closed. Proceeding without knowing who owns the key is
+            // exactly the clobber this reservation exists to prevent.
+            PlatformWalletError::Persistence(format!(
+                "one-time claim: could not reserve the invitation's claim-record key: {e}"
+            ))
+        });
+    let reservation = match reservation {
+        Ok(r) => r,
+        Err(e) => {
+            release_claim_admission(store, admission).await;
+            return Err(e);
+        }
+    };
+    if let super::store::ClaimKeyReservation::Held { holder, expires_at } = reservation {
+        debug!(
+            holder = %hex::encode(holder.0),
+            expires_at,
+            "one-time claim: another claimant holds this invitation's claim-record key"
+        );
+    }
+
     let claim_result = one_time_claim_admitted(
         sdk,
         store,
@@ -1771,6 +1820,7 @@ where
         wallet_id,
         claim_record_key,
         admission,
+        reservation.is_acquired(),
         fvk,
         ivk,
         ask,
@@ -1787,13 +1837,23 @@ where
     )
     .await;
 
+    release_claim_admission(store, admission).await;
+    claim_result
+}
+
+/// Release a claim's store admission — its lifecycle lease AND the claim-key
+/// reservation taken under the same token. Best-effort: both carry an expiry,
+/// so a failure here only delays the next claimant of this invitation.
+async fn release_claim_admission<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    admission: super::store::AdmissionToken,
+) {
     if let Err(e) = store.write().await.end_claim_admission(admission) {
         warn!(
             error = %e,
             "one-time claim: failed to release the store lifecycle admission; it expires on its own"
         );
     }
-    claim_result
 }
 
 /// The one-time-key claim body, running under a held store admission lease.
@@ -1802,6 +1862,11 @@ where
 /// released on EVERY exit — including the many `?` paths — without threading a
 /// release through each of them (#4313). The caller owns acquire/release; this
 /// function owns the claim.
+///
+/// `owns_claim_key` is whether this caller won the durable per-invitation
+/// reservation. A caller that did NOT is forbidden to build, broadcast or arm
+/// anything: it may only RESUME the record the owner left, or refuse. See the
+/// branch below.
 #[allow(clippy::too_many_arguments)]
 async fn one_time_claim_admitted<S, P, IS>(
     sdk: &Arc<dash_sdk::Sdk>,
@@ -1810,6 +1875,7 @@ async fn one_time_claim_admitted<S, P, IS>(
     wallet_id: WalletId,
     claim_record_key: [u8; 32],
     admission: super::store::AdmissionToken,
+    owns_claim_key: bool,
     fvk: grovedb_commitment_tree::FullViewingKey,
     ivk: grovedb_commitment_tree::IncomingViewingKey,
     ask: super::keys::ScrubOnDrop<grovedb_commitment_tree::SpendAuthorizingKey>,
@@ -1879,6 +1945,36 @@ where
             // been cleared; build a fresh claim below.
             OneTimeClaimResume::RecordUnusable => {}
         }
+    }
+
+    // ---- Losing claimant: RESUME above, or REFUSE here ----
+    //
+    // Everything past this point builds a fresh transition and arms a fresh
+    // record under `claim_record_key`. Only the holder of the durable
+    // per-invitation reservation may do that (#4313 review finding
+    // cr-9d0e1a44). A claimant that lost the reservation reaches here in
+    // exactly two states, and neither may proceed:
+    //
+    // * the owner has already armed its record — then the resume above ran and
+    //   returned, so we are not here at all (or the record was unusable and the
+    //   owner will re-arm it, which is still not ours to do);
+    // * the owner is admitted but has not armed yet — building here is
+    //   precisely the race: two transitions with different padded identity ids,
+    //   and whichever arms second overwrites the other's only recovery handle.
+    //
+    // So refuse, retryably. Nothing was scanned, built or broadcast; the note
+    // is untouched; a retry a moment later either finds the owner's record and
+    // resumes it, or finds the key free and proceeds as the owner. The storage
+    // layer refuses the same case independently — `arm_redrive_under_claim`
+    // will not write under a foreign reservation — so this branch is the clean
+    // error, not the safety property.
+    if !owns_claim_key {
+        return Err(PlatformWalletError::ShieldedLifecycleBusy {
+            reason: "another claimant currently holds this invitation's claim record; nothing \
+                     was scanned, built or broadcast — retry shortly, and the retry will either \
+                     resume that claim's outcome or take the invitation over if it lapsed"
+                .to_string(),
+        });
     }
 
     // Transient scan: re-derive the one-time key's note(s) from the network.

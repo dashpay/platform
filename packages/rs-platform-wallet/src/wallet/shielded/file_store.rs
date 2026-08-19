@@ -20,8 +20,8 @@ use std::sync::Mutex;
 use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retention};
 
 use super::store::{
-    AdmissionToken, PendingRedrive, ShieldedNote, ShieldedOutgoingNote, ShieldedStore,
-    StalePendingSpend, SubwalletId, SubwalletState,
+    AdmissionToken, ClaimKeyReservation, PendingRedrive, ShieldedNote, ShieldedOutgoingNote,
+    ShieldedStore, StalePendingSpend, SubwalletId, SubwalletState,
 };
 use crate::wallet::platform_wallet::WalletId;
 
@@ -141,6 +141,32 @@ impl FileBackedShieldedStore {
             )
             .map_err(|e| {
                 FileShieldedStoreError(format!("create lifecycle_admission table: {e}"))
+            })?;
+        // One-time claim-key reservations (#4313 review finding cr-9d0e1a44).
+        // The lifecycle admission above is per-WALLET and orders a claim
+        // against a purge; it admits BOTH claims of the same invitation. This
+        // table is per-INVITATION: the PRIMARY KEY is what turns
+        // `INSERT ... ON CONFLICT DO NOTHING` into real mutual exclusion
+        // between two coordinators — or two processes — on one file, which is
+        // exactly where the coordinator's per-FVK mutex has no reach.
+        //
+        // Same lifetime rules as the admission table: rows are judged purely by
+        // `expires_at` and never wiped at open, so a live holder in another
+        // process keeps its reservation across our open while a dead one ages
+        // out.
+        pending_conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS shielded_one_time_claim_reservation (
+                    wallet_id        BLOB    NOT NULL,
+                    claim_record_key BLOB    NOT NULL,
+                    token            BLOB    NOT NULL,
+                    expires_at       INTEGER NOT NULL,
+                    PRIMARY KEY (wallet_id, claim_record_key)
+                )",
+                [],
+            )
+            .map_err(|e| {
+                FileShieldedStoreError(format!("create one_time_claim_reservation table: {e}"))
             })?;
         let mut store = Self {
             tree: Mutex::new(tree),
@@ -871,9 +897,109 @@ impl ShieldedStore for FileBackedShieldedStore {
                 ],
             )
             .map_err(|e| FileShieldedStoreError(format!("renew claim lease: {e}")))?;
+        if updated > 0 {
+            // Keep the claim-key reservation in lockstep with the lease that
+            // owns it, in the SAME transaction — a long claim must not lose its
+            // invitation to expiry while its lease is being kept alive.
+            tx.execute(
+                "UPDATE shielded_one_time_claim_reservation SET expires_at = ?1 WHERE token = ?2",
+                rusqlite::params![
+                    Self::as_sqlite_millis(now_ms.saturating_add(lease_ms)),
+                    token.0.as_slice(),
+                ],
+            )
+            .map_err(|e| FileShieldedStoreError(format!("renew claim-key reservation: {e}")))?;
+        }
         tx.commit()
             .map_err(|e| FileShieldedStoreError(format!("commit claim lease renewal: {e}")))?;
         Ok(updated > 0)
+    }
+
+    fn reserve_one_time_claim_key(
+        &mut self,
+        wallet_id: WalletId,
+        claim_record_key: [u8; 32],
+        token: AdmissionToken,
+        now_ms: u64,
+        lease_ms: u64,
+    ) -> Result<ClaimKeyReservation, Self::Error> {
+        // BEGIN IMMEDIATE, like every other admission write. SQLite admits one
+        // writer at a time across every connection AND every process on the
+        // file, so the reap + insert-if-absent + read-back below is one totally
+        // ordered step even between two `FileBackedShieldedStore` instances
+        // that share nothing but the path. That total order is what makes
+        // "exactly one caller sees `Acquired`" true rather than probable.
+        let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|e| FileShieldedStoreError(format!("begin claim-key reservation: {e}")))?;
+        // Reap first, so a claimant that died without releasing cannot hold an
+        // invitation hostage past its lease.
+        tx.execute(
+            "DELETE FROM shielded_one_time_claim_reservation WHERE expires_at <= ?1",
+            rusqlite::params![Self::as_sqlite_millis(now_ms)],
+        )
+        .map_err(|e| FileShieldedStoreError(format!("reap claim-key reservations: {e}")))?;
+        // ON CONFLICT DO NOTHING, never OR REPLACE: losing this insert must
+        // leave the winner's row byte-for-byte untouched. The rowcount decides
+        // the outcome, and the read-back below reports the durable truth either
+        // way.
+        let inserted = tx
+            .execute(
+                "INSERT INTO shielded_one_time_claim_reservation \
+                 (wallet_id, claim_record_key, token, expires_at) VALUES (?1, ?2, ?3, ?4) \
+                 ON CONFLICT (wallet_id, claim_record_key) DO NOTHING",
+                rusqlite::params![
+                    wallet_id.as_slice(),
+                    claim_record_key.as_slice(),
+                    token.0.as_slice(),
+                    Self::as_sqlite_millis(now_ms.saturating_add(lease_ms)),
+                ],
+            )
+            .map_err(|e| FileShieldedStoreError(format!("insert claim-key reservation: {e}")))?;
+        let outcome = if inserted > 0 {
+            ClaimKeyReservation::Acquired
+        } else {
+            // Query the DURABLE row rather than assuming the conflict was
+            // someone else's: our own token re-entering is idempotent (and
+            // re-stamps), anyone else's is a genuine loss.
+            let (holder, expires_at): (Vec<u8>, i64) = tx
+                .query_row(
+                    "SELECT token, expires_at FROM shielded_one_time_claim_reservation \
+                     WHERE wallet_id = ?1 AND claim_record_key = ?2",
+                    rusqlite::params![wallet_id.as_slice(), claim_record_key.as_slice()],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .map_err(|e| FileShieldedStoreError(format!("read claim-key reservation: {e}")))?;
+            let holder = <[u8; 16]>::try_from(holder.as_slice()).map_err(|_| {
+                FileShieldedStoreError(
+                    "corrupt claim-key reservation row (bad token width)".to_string(),
+                )
+            })?;
+            if holder == token.0 {
+                tx.execute(
+                    "UPDATE shielded_one_time_claim_reservation SET expires_at = ?1 \
+                     WHERE wallet_id = ?2 AND claim_record_key = ?3",
+                    rusqlite::params![
+                        Self::as_sqlite_millis(now_ms.saturating_add(lease_ms)),
+                        wallet_id.as_slice(),
+                        claim_record_key.as_slice(),
+                    ],
+                )
+                .map_err(|e| {
+                    FileShieldedStoreError(format!("re-stamp claim-key reservation: {e}"))
+                })?;
+                ClaimKeyReservation::Acquired
+            } else {
+                ClaimKeyReservation::Held {
+                    holder: AdmissionToken(holder),
+                    expires_at: expires_at.max(0) as u64,
+                }
+            }
+        };
+        tx.commit()
+            .map_err(|e| FileShieldedStoreError(format!("commit claim-key reservation: {e}")))?;
+        Ok(outcome)
     }
 
     fn arm_redrive_under_claim(
@@ -889,6 +1015,31 @@ impl ShieldedStore for FileBackedShieldedStore {
             let tx = conn
                 .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
                 .map_err(|e| FileShieldedStoreError(format!("begin armed claim write: {e}")))?;
+            // The claim-key gate, in the SAME transaction as the write it
+            // guards: a live reservation for this exact record key under a
+            // DIFFERENT token means another claimant owns this invitation, and
+            // the `INSERT OR REPLACE` below would overwrite its byte-exact
+            // recovery row. Refusing here is what makes that clobber
+            // structurally impossible rather than merely unreachable
+            // (#4313 review finding cr-9d0e1a44). Ordinary spend redrives take
+            // no reservation, so the count is 0 and the gate is a no-op.
+            let foreign_hold: i64 = tx
+                .query_row(
+                    "SELECT COUNT(*) FROM shielded_one_time_claim_reservation \
+                     WHERE wallet_id = ?1 AND claim_record_key = ?2 AND expires_at > ?3 \
+                       AND token != ?4",
+                    rusqlite::params![
+                        id.wallet_id.as_slice(),
+                        redrive.activity_id.as_slice(),
+                        Self::as_sqlite_millis(now_ms),
+                        token.0.as_slice(),
+                    ],
+                    |row| row.get(0),
+                )
+                .map_err(|e| FileShieldedStoreError(format!("read claim-key reservation: {e}")))?;
+            if foreign_hold > 0 {
+                return Ok(false);
+            }
             let live: i64 = tx
                 .query_row(
                     "SELECT COUNT(*) FROM shielded_lifecycle_admission \
@@ -930,6 +1081,16 @@ impl ShieldedStore for FileBackedShieldedStore {
                 ],
             )
             .map_err(|e| FileShieldedStoreError(format!("restamp claim lease: {e}")))?;
+            // The reservation rides the same re-stamp, for the same reason: the
+            // window that protects the record it guards must run from here.
+            tx.execute(
+                "UPDATE shielded_one_time_claim_reservation SET expires_at = ?2 WHERE token = ?1",
+                rusqlite::params![
+                    token.0.as_slice(),
+                    Self::as_sqlite_millis(now_ms.saturating_add(lease_ms)),
+                ],
+            )
+            .map_err(|e| FileShieldedStoreError(format!("restamp claim-key reservation: {e}")))?;
             tx.commit()
                 .map_err(|e| FileShieldedStoreError(format!("commit armed claim write: {e}")))?;
         }
@@ -938,12 +1099,27 @@ impl ShieldedStore for FileBackedShieldedStore {
     }
 
     fn end_claim_admission(&mut self, token: AdmissionToken) -> Result<(), Self::Error> {
-        let conn = self.pending_conn.lock().expect("pending_conn mutex");
-        conn.execute(
+        // Lease and claim-key reservation drop together, in one transaction:
+        // releasing the lease while leaving the key reserved would block the
+        // next claimant of this invitation for a full lease period for no
+        // reason, and releasing the key first would let a second claimant in
+        // while this one still holds the lease.
+        let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|e| FileShieldedStoreError(format!("begin claim lease release: {e}")))?;
+        tx.execute(
             "DELETE FROM shielded_lifecycle_admission WHERE token = ?1 AND destructive = 0",
             rusqlite::params![token.0.as_slice()],
         )
         .map_err(|e| FileShieldedStoreError(format!("release claim lease: {e}")))?;
+        tx.execute(
+            "DELETE FROM shielded_one_time_claim_reservation WHERE token = ?1",
+            rusqlite::params![token.0.as_slice()],
+        )
+        .map_err(|e| FileShieldedStoreError(format!("release claim-key reservation: {e}")))?;
+        tx.commit()
+            .map_err(|e| FileShieldedStoreError(format!("commit claim lease release: {e}")))?;
         Ok(())
     }
 
@@ -1821,6 +1997,212 @@ mod tests {
             "once admitted, the purge is still a FULL wipe — no reserved account is exempted"
         );
         drop(reopened);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    // ── Per-invitation claim-key reservation (#4313 cr-9d0e1a44) ───────
+    //
+    // A claim LEASE is per-wallet and admits both claimants of one invitation.
+    // These tests cover the reservation that is per-INVITATION, and they open
+    // two store instances on the same file for the same reason the tests above
+    // do: that is precisely the interleaving the coordinator's per-FVK mutex
+    // cannot see.
+
+    /// THE BUG: two coordinators (or two processes) on one SQLite file both got
+    /// admitted for the same invitation, built transitions with DIFFERENT
+    /// padded identity ids, and the second `arm_redrive_under_claim` —
+    /// `INSERT OR REPLACE` — overwrote the first's byte-exact recovery row
+    /// while the first's transition was already on the wire, stranding that
+    /// identity forever.
+    ///
+    /// Exactly one claimant may acquire the key; the loser is told who holds
+    /// it, and the storage layer refuses its arm outright so the winner's row
+    /// survives byte-for-byte.
+    #[test]
+    fn two_store_instances_cannot_both_claim_one_invitation() {
+        let path = temp_tree_path("claim_key_race");
+        let wallet_id: WalletId = [0x31; 32];
+        let claim_key = [0xC1; 32];
+        let id = SubwalletId::new(wallet_id, CLAIM_ACCOUNT);
+        let mut first = FileBackedShieldedStore::open_path(&path, 8).expect("store a");
+        let mut second = FileBackedShieldedStore::open_path(&path, 8).expect("store b");
+        let now = 1_000_000;
+
+        // Both are admitted by the per-WALLET lease — that is the point: the
+        // lease is not, and was never, mutual exclusion between claimants.
+        let winner = AdmissionToken::new();
+        let loser = AdmissionToken::new();
+        assert!(first
+            .begin_claim_admission(wallet_id, winner, now, 60_000)
+            .expect("first lease"));
+        assert!(
+            second
+                .begin_claim_admission(wallet_id, loser, now, 60_000)
+                .expect("second lease"),
+            "the per-wallet lease admits both claimants; only the claim-key \
+             reservation separates them"
+        );
+
+        // The key, however, admits exactly one.
+        assert_eq!(
+            first
+                .reserve_one_time_claim_key(wallet_id, claim_key, winner, now, 60_000)
+                .expect("first reservation"),
+            ClaimKeyReservation::Acquired
+        );
+        assert_eq!(
+            second
+                .reserve_one_time_claim_key(wallet_id, claim_key, loser, now, 60_000)
+                .expect("second reservation"),
+            ClaimKeyReservation::Held {
+                holder: winner,
+                expires_at: now + 60_000,
+            },
+            "the loser must be handed the DURABLE row, not a fresh one of its own"
+        );
+
+        // The winner arms its byte-exact recovery record.
+        let mut winning_record = admission_record(0xC1);
+        winning_record.activity_id = claim_key;
+        winning_record.st_bytes = vec![0xAA; 96];
+        assert!(first
+            .arm_redrive_under_claim(id, winning_record.clone(), winner, now, 60_000)
+            .expect("winner arms"));
+
+        // The loser's arm — the INSERT OR REPLACE that used to clobber — is
+        // refused at the storage layer, even though its OWN lease is live.
+        let mut losing_record = admission_record(0xC2);
+        losing_record.activity_id = claim_key;
+        losing_record.st_bytes = vec![0xBB; 96];
+        assert!(
+            !second
+                .arm_redrive_under_claim(id, losing_record, loser, now, 60_000)
+                .expect("loser arms"),
+            "a claimant that does not hold the key must not be able to write this record"
+        );
+
+        // The winner's record is intact, byte-for-byte, on a cold reopen.
+        drop((first, second));
+        let reopened = FileBackedShieldedStore::open_path(&path, 8).expect("reopen");
+        let records = reopened.pending_redrives(id).expect("records");
+        assert_eq!(
+            records.len(),
+            1,
+            "exactly one claim record for one invitation"
+        );
+        assert_eq!(records[0].activity_id, claim_key);
+        assert_eq!(
+            records[0].st_bytes,
+            vec![0xAA; 96],
+            "the winner's byte-exact transition must survive the loser's attempt"
+        );
+        drop(reopened);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// The reservation is bound to its lease for its whole life: released with
+    /// it, re-stamped with it, and otherwise reaped by expiry so a claimant
+    /// that died cannot hold an invitation hostage.
+    #[test]
+    fn a_claim_key_reservation_lives_and_dies_with_its_lease() {
+        let path = temp_tree_path("claim_key_lifetime");
+        let wallet_id: WalletId = [0x32; 32];
+        let claim_key = [0xC3; 32];
+        let mut store = FileBackedShieldedStore::open_path(&path, 8).expect("store");
+        let now = 1_000_000;
+
+        let first = AdmissionToken::new();
+        assert!(store
+            .begin_claim_admission(wallet_id, first, now, 60_000)
+            .expect("lease"));
+        assert_eq!(
+            store
+                .reserve_one_time_claim_key(wallet_id, claim_key, first, now, 60_000)
+                .expect("reserve"),
+            ClaimKeyReservation::Acquired
+        );
+        // Re-entry by the SAME token is idempotent, never a self-lockout.
+        assert_eq!(
+            store
+                .reserve_one_time_claim_key(wallet_id, claim_key, first, now + 1, 60_000)
+                .expect("re-enter"),
+            ClaimKeyReservation::Acquired
+        );
+
+        // Renewing the lease carries the reservation with it, so a long claim
+        // cannot lose its invitation to expiry while its lease is kept alive.
+        assert!(store
+            .renew_claim_admission(first, now + 30_000, 60_000)
+            .expect("renew"));
+        let second = AdmissionToken::new();
+        assert!(store
+            .begin_claim_admission(wallet_id, second, now + 70_000, 60_000)
+            .expect("second lease"));
+        assert!(
+            !store
+                .reserve_one_time_claim_key(wallet_id, claim_key, second, now + 70_000, 60_000)
+                .expect("contend after renewal")
+                .is_acquired(),
+            "the renewed reservation must still be held past the ORIGINAL expiry"
+        );
+
+        // Releasing the lease releases the key in the same step — the next
+        // claimant of this invitation must not wait out a full lease period.
+        store.end_claim_admission(first).expect("release");
+        assert_eq!(
+            store
+                .reserve_one_time_claim_key(wallet_id, claim_key, second, now + 70_000, 60_000)
+                .expect("reserve after release"),
+            ClaimKeyReservation::Acquired
+        );
+
+        // And a holder that dies without releasing ages out rather than
+        // stranding the invitation forever.
+        let third = AdmissionToken::new();
+        assert_eq!(
+            store
+                .reserve_one_time_claim_key(wallet_id, claim_key, third, now + 200_000, 60_000)
+                .expect("reserve after expiry"),
+            ClaimKeyReservation::Acquired,
+            "an expired reservation must be reaped"
+        );
+
+        drop(store);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// The claim-key gate must not touch ordinary spend redrives, which never
+    /// take a reservation: a different invitation's live hold is irrelevant to
+    /// them, and to each other.
+    #[test]
+    fn the_claim_key_gate_leaves_unreserved_redrives_alone() {
+        let path = temp_tree_path("claim_key_gate_scope");
+        let wallet_id: WalletId = [0x33; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let mut store = FileBackedShieldedStore::open_path(&path, 8).expect("store");
+        let now = 1_000_000;
+
+        let holder = AdmissionToken::new();
+        let other = AdmissionToken::new();
+        assert!(store
+            .begin_claim_admission(wallet_id, holder, now, 60_000)
+            .expect("holder lease"));
+        assert!(store
+            .begin_claim_admission(wallet_id, other, now, 60_000)
+            .expect("other lease"));
+        store
+            .reserve_one_time_claim_key(wallet_id, [0xC4; 32], holder, now, 60_000)
+            .expect("reserve one invitation");
+
+        // A redrive under a DIFFERENT activity id is unaffected by that hold.
+        assert!(
+            store
+                .arm_redrive_under_claim(id, admission_record(0xD1), other, now, 60_000)
+                .expect("unrelated redrive"),
+            "an unreserved activity id must still arm normally"
+        );
+
+        drop(store);
         let _ = std::fs::remove_file(&path);
     }
 }

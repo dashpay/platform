@@ -513,6 +513,21 @@ pub trait ShieldedStore: Send + Sync {
     /// between "the claim checked that it was admitted" and "the claim wrote
     /// the record": the two are one transaction, so a destructive operation
     /// cannot slot in between them.
+    ///
+    /// # The claim-key gate
+    ///
+    /// The same step ALSO refuses — `Ok(false)`, nothing written — when a live
+    /// [claim-key reservation](Self::reserve_one_time_claim_key) covers
+    /// `(id.wallet_id, redrive.activity_id)` under a *different* token. That is
+    /// what makes the `INSERT OR REPLACE` below structurally unable to clobber
+    /// another claimant's record rather than merely unlikely to
+    /// (#4313 review finding cr-9d0e1a44): a second claimant that somehow
+    /// reached this call without owning the key is stopped at the storage
+    /// layer, in the same transaction that would have overwritten the row.
+    ///
+    /// Ordinary spend redrives are unaffected — they never take a claim-key
+    /// reservation, so no live row covers their activity id and the gate is a
+    /// no-op for them.
     fn arm_redrive_under_claim(
         &mut self,
         id: SubwalletId,
@@ -521,6 +536,60 @@ pub trait ShieldedStore: Send + Sync {
         now_ms: u64,
         lease_ms: u64,
     ) -> Result<bool, Self::Error>;
+
+    /// Reserve this invitation's claim-record key for the holder of claim lease
+    /// `token`, atomically, and report who owns it afterwards.
+    ///
+    /// # Why this exists
+    ///
+    /// The claim lease taken by [`Self::begin_claim_admission`] is per-WALLET:
+    /// it orders a claim against a destructive purge, and nothing else. Two
+    /// claims of the SAME invitation are both admitted by it. In-process they
+    /// are serialized by the coordinator's per-FVK single-flight mutex — but
+    /// that mutex is per-coordinator, and two coordinators (or two processes)
+    /// open independent SQLite connections to one file and share no lock at
+    /// all. Both then found no pending record, built transitions with
+    /// DIFFERENT padded identity ids, and the second `arm_redrive_under_claim`
+    /// — an `INSERT OR REPLACE` — silently overwrote the first's byte-exact
+    /// recovery row while its transition was already on the wire, stranding
+    /// that identity forever (#4313 review finding cr-9d0e1a44).
+    ///
+    /// So the key itself is reserved where the contention actually is: one
+    /// durable row per `(wallet_id, claim_record_key)`, claimed by an
+    /// insert that cannot overwrite an existing row.
+    ///
+    /// # Contract
+    ///
+    /// Implementations MUST make the insert-if-absent and the read-back of the
+    /// durable row ONE atomic step against every other admission operation on
+    /// the same underlying state, and MUST NOT overwrite a live row. The
+    /// returned value is derived from the durable row as it stands after the
+    /// attempt, so exactly one concurrent caller can see
+    /// [`ClaimKeyReservation::Acquired`]:
+    ///
+    /// * [`ClaimKeyReservation::Acquired`] — this `token` owns the key. Also
+    ///   returned when `token` already owned it (re-entry is idempotent and
+    ///   re-stamps the row).
+    /// * [`ClaimKeyReservation::Held`] — a different, live claimant owns it.
+    ///   The caller MUST NOT build, broadcast or arm anything: it either
+    ///   RESUMES the durable pending-claim record that claimant left, or
+    ///   refuses with [`PlatformWalletError::ShieldedLifecycleBusy`].
+    ///
+    /// The reservation is bound to `token` for its whole life: it is re-stamped
+    /// by [`Self::renew_claim_admission`] and by [`Self::arm_redrive_under_claim`]
+    /// alongside the lease, released by [`Self::end_claim_admission`], and
+    /// otherwise reaped by expiry — so a claimant that died without releasing
+    /// cannot hold an invitation hostage beyond [`CLAIM_LEASE_MS`].
+    ///
+    /// [`PlatformWalletError::ShieldedLifecycleBusy`]: crate::error::PlatformWalletError::ShieldedLifecycleBusy
+    fn reserve_one_time_claim_key(
+        &mut self,
+        wallet_id: WalletId,
+        claim_record_key: [u8; 32],
+        token: AdmissionToken,
+        now_ms: u64,
+        lease_ms: u64,
+    ) -> Result<ClaimKeyReservation, Self::Error>;
 
     /// Re-stamp a live claim lease to `now_ms + lease_ms`, WITHOUT touching the
     /// pending record.
@@ -535,6 +604,10 @@ pub trait ShieldedStore: Send + Sync {
     /// Returns `false` when the lease is gone — already lapsed and reaped, or
     /// displaced by a destructive barrier. The caller cannot un-send a
     /// transition, so a `false` is a loud diagnostic, not an abort.
+    ///
+    /// Any [claim-key reservation](Self::reserve_one_time_claim_key) held under
+    /// the same `token` is re-stamped with it, so the key stays reserved for
+    /// exactly as long as the lease that took it.
     fn renew_claim_admission(
         &mut self,
         token: AdmissionToken,
@@ -542,8 +615,10 @@ pub trait ShieldedStore: Send + Sync {
         lease_ms: u64,
     ) -> Result<bool, Self::Error>;
 
-    /// Release the claim lease `token`. Idempotent; unknown tokens are a
-    /// no-op (a lease that already expired was reaped).
+    /// Release the claim lease `token`, together with any
+    /// [claim-key reservation](Self::reserve_one_time_claim_key) it holds.
+    /// Idempotent; unknown tokens are a no-op (a lease that already expired was
+    /// reaped).
     fn end_claim_admission(&mut self, token: AdmissionToken) -> Result<(), Self::Error>;
 
     /// Take (or refresh) destructive admission over `scope` and report how
@@ -764,6 +839,57 @@ impl LifecycleAdmission {
             (None, _) | (_, None) => true,
             (Some(mine), Some(theirs)) => mine == theirs,
         }
+    }
+}
+
+/// One durable claim-key reservation: the row
+/// [`ShieldedStore::reserve_one_time_claim_key`] competes for.
+///
+/// Separate from [`LifecycleAdmission`] because it answers a different
+/// question. A lifecycle admission asks "may a claim run against this wallet at
+/// all?" and is contended between claims and purges; this asks "which claimant
+/// owns THIS invitation?" and is contended between claims of the same
+/// invitation. A claim needs both, and they expire together — the reservation
+/// carries its owner's `token` precisely so the lease's renew/release path can
+/// keep it in lockstep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClaimKeyLease {
+    /// The wallet the claim runs under.
+    pub wallet_id: WalletId,
+    /// The invitation's deterministic claim-record key (derived from its
+    /// one-time full viewing key).
+    pub claim_record_key: [u8; 32],
+    /// The claim lease that owns this reservation.
+    pub token: AdmissionToken,
+    /// Unix millis after which this reservation is dead and reapable.
+    pub expires_at: u64,
+}
+
+/// The outcome of [`ShieldedStore::reserve_one_time_claim_key`], read back from
+/// the durable row after the insert-if-absent attempt.
+///
+/// Exactly one of any set of concurrent callers can observe
+/// [`Self::Acquired`]; every other one observes [`Self::Held`] naming the
+/// winner. That asymmetry is the whole point — a losing claimant must RESUME
+/// the winner's durable pending-claim record or refuse, never replace it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClaimKeyReservation {
+    /// The requesting token owns the key. Also returned on idempotent
+    /// re-entry by the token that already owned it.
+    Acquired,
+    /// A different, still-live claimant owns the key.
+    Held {
+        /// The claim lease named on the durable row.
+        holder: AdmissionToken,
+        /// When that claimant's hold lapses, if it never releases.
+        expires_at: u64,
+    },
+}
+
+impl ClaimKeyReservation {
+    /// Whether the requesting token came away owning the key.
+    pub fn is_acquired(&self) -> bool {
+        matches!(self, Self::Acquired)
     }
 }
 
@@ -1081,12 +1207,29 @@ pub struct InMemoryShieldedStore {
     /// here gives the same total order between a claim lease and a destructive
     /// barrier that the file store gets from SQLite's single-writer rule.
     admissions: Vec<LifecycleAdmission>,
+    /// Live one-time claim-key reservations — see [`ClaimKeyReservation`].
+    /// The same total-order argument as `admissions` applies: the `&mut self`
+    /// step under the shared `RwLock` is the atomicity the protocol needs.
+    claim_key_reservations: Vec<ClaimKeyLease>,
 }
 
 impl InMemoryShieldedStore {
     /// Create a new empty in-memory store.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Push every claim-key reservation owned by `token` out to `expires_at`.
+    /// Free function over the field so it can run while a `&mut` borrow of
+    /// `admissions` is live.
+    fn restamp_claim_key_reservations(
+        reservations: &mut [ClaimKeyLease],
+        token: AdmissionToken,
+        expires_at: u64,
+    ) {
+        for reservation in reservations.iter_mut().filter(|r| r.token == token) {
+            reservation.expires_at = expires_at;
+        }
     }
 }
 
@@ -1379,6 +1522,18 @@ impl ShieldedStore for InMemoryShieldedStore {
         now_ms: u64,
         lease_ms: u64,
     ) -> Result<bool, Self::Error> {
+        // The claim-key gate, checked BEFORE the lease so a claimant that lost
+        // the key can never reach the `arm_redrive` overwrite below — see the
+        // trait docs. A live row under a different token means someone else
+        // owns this invitation.
+        if self.claim_key_reservations.iter().any(|r| {
+            r.wallet_id == id.wallet_id
+                && r.claim_record_key == redrive.activity_id
+                && r.expires_at > now_ms
+                && r.token != token
+        }) {
+            return Ok(false);
+        }
         let Some(lease) = self
             .admissions
             .iter_mut()
@@ -1387,8 +1542,55 @@ impl ShieldedStore for InMemoryShieldedStore {
             return Ok(false);
         };
         lease.expires_at = now_ms.saturating_add(lease_ms);
+        Self::restamp_claim_key_reservations(
+            &mut self.claim_key_reservations,
+            token,
+            now_ms.saturating_add(lease_ms),
+        );
         self.subwallets.entry(id).or_default().arm_redrive(redrive);
         Ok(true)
+    }
+
+    fn reserve_one_time_claim_key(
+        &mut self,
+        wallet_id: WalletId,
+        claim_record_key: [u8; 32],
+        token: AdmissionToken,
+        now_ms: u64,
+        lease_ms: u64,
+    ) -> Result<ClaimKeyReservation, Self::Error> {
+        // Reap first, so a dead claimant's row cannot hold an invitation
+        // hostage past its lease. One `&mut self` step covers reap, insert and
+        // read-back, which is the atomicity the trait requires.
+        self.claim_key_reservations
+            .retain(|r| r.expires_at > now_ms);
+        let expires_at = now_ms.saturating_add(lease_ms);
+        match self
+            .claim_key_reservations
+            .iter_mut()
+            .find(|r| r.wallet_id == wallet_id && r.claim_record_key == claim_record_key)
+        {
+            // Someone else's live row: read it back and report the holder. The
+            // row is NOT touched — that is the whole guarantee.
+            Some(existing) if existing.token != token => Ok(ClaimKeyReservation::Held {
+                holder: existing.token,
+                expires_at: existing.expires_at,
+            }),
+            // Our own row: idempotent re-entry, re-stamped.
+            Some(existing) => {
+                existing.expires_at = expires_at;
+                Ok(ClaimKeyReservation::Acquired)
+            }
+            None => {
+                self.claim_key_reservations.push(ClaimKeyLease {
+                    wallet_id,
+                    claim_record_key,
+                    token,
+                    expires_at,
+                });
+                Ok(ClaimKeyReservation::Acquired)
+            }
+        }
     }
 
     fn renew_claim_admission(
@@ -1409,12 +1611,21 @@ impl ShieldedStore for InMemoryShieldedStore {
             return Ok(false);
         };
         lease.expires_at = now_ms.saturating_add(lease_ms);
+        // Keep the claim-key reservation in lockstep with the lease that owns
+        // it, so a long claim does not lose its invitation to expiry while its
+        // lease is being kept alive.
+        Self::restamp_claim_key_reservations(
+            &mut self.claim_key_reservations,
+            token,
+            now_ms.saturating_add(lease_ms),
+        );
         Ok(true)
     }
 
     fn end_claim_admission(&mut self, token: AdmissionToken) -> Result<(), Self::Error> {
         self.admissions
             .retain(|a| a.destructive || a.token != token);
+        self.claim_key_reservations.retain(|r| r.token != token);
         Ok(())
     }
 
@@ -1922,5 +2133,76 @@ mod tests {
         assert!(!store
             .renew_claim_admission(claim_token(0x04), 1_000_000, CLAIM_LEASE_MS)
             .unwrap());
+    }
+
+    /// The in-memory store must give the SAME answer the file store's
+    /// `INSERT ... ON CONFLICT DO NOTHING` gives — the wallet layer branches on
+    /// this outcome and cannot tell the two backends apart (#4313
+    /// cr-9d0e1a44).
+    #[test]
+    fn only_one_claimant_acquires_an_invitations_claim_key() {
+        let mut store = InMemoryShieldedStore::new();
+        let wallet: WalletId = [0xAA; 32];
+        let key = [0xC1; 32];
+        let winner = claim_token(0x11);
+        let loser = claim_token(0x12);
+        let t0 = 1_000_000u64;
+
+        // Both hold a per-wallet lease — that is not, and never was, mutual
+        // exclusion between two claimants of one invitation.
+        assert!(store
+            .begin_claim_admission(wallet, winner, t0, CLAIM_LEASE_MS)
+            .unwrap());
+        assert!(store
+            .begin_claim_admission(wallet, loser, t0, CLAIM_LEASE_MS)
+            .unwrap());
+
+        assert_eq!(
+            store
+                .reserve_one_time_claim_key(wallet, key, winner, t0, CLAIM_LEASE_MS)
+                .unwrap(),
+            ClaimKeyReservation::Acquired
+        );
+        assert_eq!(
+            store
+                .reserve_one_time_claim_key(wallet, key, loser, t0, CLAIM_LEASE_MS)
+                .unwrap(),
+            ClaimKeyReservation::Held {
+                holder: winner,
+                expires_at: t0 + CLAIM_LEASE_MS,
+            }
+        );
+
+        // The gate refuses the loser's record write, so the winner's row cannot
+        // be replaced.
+        let id = SubwalletId::new(wallet, u32::MAX);
+        let record = |b: u8| PendingRedrive {
+            activity_id: key,
+            anchor: [b; 32],
+            nullifiers: vec![[b; 32]],
+            st_bytes: vec![b; 8],
+            attempts: 0,
+        };
+        assert!(store
+            .arm_redrive_under_claim(id, record(0xAA), winner, t0, CLAIM_LEASE_MS)
+            .unwrap());
+        assert!(
+            !store
+                .arm_redrive_under_claim(id, record(0xBB), loser, t0, CLAIM_LEASE_MS)
+                .unwrap(),
+            "a claimant without the key must not be able to write this record"
+        );
+        let records = store.pending_redrives(id).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].st_bytes, vec![0xAA; 8]);
+
+        // Release hands the invitation straight over; no lease-length wait.
+        store.end_claim_admission(winner).unwrap();
+        assert_eq!(
+            store
+                .reserve_one_time_claim_key(wallet, key, loser, t0, CLAIM_LEASE_MS)
+                .unwrap(),
+            ClaimKeyReservation::Acquired
+        );
     }
 }
