@@ -95,27 +95,67 @@ const DEFAULT_REQUEST_SETTINGS: RequestSettings = RequestSettings {
 /// Malformed upstream entries are silently skipped rather than panicking;
 /// the DAPI client handles retry/rotation across the remaining addresses.
 ///
+/// Seeds whose recorded Platform TLS probe shows a certificate that this
+/// client's rustls stack would deterministically reject (`Expired`,
+/// `SelfSigned`, `Untrusted`, `NoHandshake`) are skipped: every connect to
+/// them fails the handshake, so keeping them in rotation only costs
+/// retry/ban churn. `Valid` and `Unknown` (not probed) are kept. If the
+/// filter would empty the list (e.g. a seed file with all-stale probes),
+/// it falls back to the unfiltered set so the client can still bootstrap
+/// and let runtime banning sort it out.
+///
 /// ## Panics
 ///
 /// Panics on networks other than `Mainnet` and `Testnet` — no upstream
 /// seed list exists for devnet/regtest.
 fn default_address_list_for_network(network: Network) -> AddressList {
+    use dash_network_seeds::SslStatus;
+
     if !matches!(network, Network::Mainnet | Network::Testnet) {
         panic!("default address list is only available for mainnet and testnet");
     }
-    let mut list = AddressList::new();
-    for seed in dash_network_seeds::evo_seeds(network) {
-        let Some(port) = seed.platform_http_port else {
-            continue;
-        };
-        let url = format!("https://{}:{}", seed.address.ip(), port);
-        if let Ok(uri) = url.parse::<Uri>() {
-            if let Ok(address) = Address::try_from(uri) {
-                list.add(address);
+
+    let seeds = dash_network_seeds::evo_seeds(network);
+
+    let build = |skip_bad_tls: bool| -> AddressList {
+        let mut list = AddressList::new();
+        for seed in &seeds {
+            let Some(port) = seed.platform_http_port else {
+                continue;
+            };
+            if skip_bad_tls {
+                let ssl = seed.platform.as_ref().map(|p| p.ssl);
+                if matches!(
+                    ssl,
+                    Some(
+                        SslStatus::Expired
+                            | SslStatus::SelfSigned
+                            | SslStatus::Untrusted
+                            | SslStatus::NoHandshake
+                    )
+                ) {
+                    continue;
+                }
+            }
+            let url = format!("https://{}:{}", seed.address.ip(), port);
+            if let Ok(uri) = url.parse::<Uri>() {
+                if let Ok(address) = Address::try_from(uri) {
+                    list.add(address);
+                }
             }
         }
+        list
+    };
+
+    let filtered = build(true);
+    if filtered.is_empty() {
+        tracing::warn!(
+            ?network,
+            "all seed entries have failing TLS probes; falling back to unfiltered seed list"
+        );
+        return build(false);
     }
-    list
+    filtered
 }
 
 /// Dash Platform SDK
