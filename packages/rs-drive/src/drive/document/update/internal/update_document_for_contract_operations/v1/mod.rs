@@ -42,6 +42,21 @@ use grovedb::{Element, EstimatedLayerInformation, MaybeTree, TransactionArg, Tre
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
+/// Whether an old-document indexed-field value read back from storage is
+/// null/absent — the counterpart of `document_top_field.is_empty()` on the
+/// new-document side (a null or missing indexed property reads back as an
+/// empty key). `KeySize` never reaches the stateful update path (worst-case
+/// cost estimation is redirected to the insert walker at the top of
+/// `update_document_for_contract_operations_v1`), so it is treated as
+/// non-null.
+fn drive_key_info_is_empty(key_info: &DriveKeyInfo) -> bool {
+    match key_info {
+        Key(key) => key.is_empty(),
+        KeyRef(key_ref) => key_ref.is_empty(),
+        KeySize(_) => false,
+    }
+}
+
 /// `[0]`-key reference-bucket `TreeType` dispatch for the
 /// terminator level. Mirrors the dispatch in
 /// `add_reference_for_index_level_for_contract_operations_v0` —
@@ -104,7 +119,24 @@ impl Drive {
     /// reproduce that layout exactly. `ranked_axes` is empty for every
     /// pre-v14 contract.
     ///
-    /// The `[0]` reference-bucket dispatch and everything else match v0.
+    /// v1 also fixes the terminator layout dispatch to agree with the
+    /// insert and delete walkers on null-bearing entries. v0
+    /// dispatched unique vs
+    /// non-unique layout on `all_fields_null` (AND across indexed
+    /// fields) — and its old-entry delete on `!index.unique` alone —
+    /// while the insert walker's
+    /// `add_reference_for_index_level_for_contract_operations_v0` uses
+    /// `!is_unique || any_fields_null` plus an all-null skip for
+    /// `nullSearchable: false` indexes. Under v0, updating a document
+    /// holding a unique index with SOME null fields moved its entry
+    /// into the unique layout (bare reference at key `[0]`) where no
+    /// query or delete would find it, and deleted the old entry with
+    /// the wrong key. v1 uses the insert walker's dispatch on both
+    /// sides, computing the old entry's layout from the old document's
+    /// nullness and the new entry's from the new document's.
+    ///
+    /// The `[0]` reference-bucket tree-type dispatch and everything
+    /// else match v0.
     pub(in crate::drive::document::update) fn update_document_for_contract_operations_v1(
         &self,
         document_and_contract_info: DocumentAndContractInfo,
@@ -400,7 +432,27 @@ impl Drive {
                 }
             }
 
+            // Null accumulators for the terminator dispatch, tracked
+            // separately for the new and the old document: the entry
+            // being written lives in the layout the NEW document's
+            // nullness selects, while the entry being deleted lives in
+            // the layout the insert walker chose from the OLD
+            // document's nullness — and the two can differ within one
+            // update (e.g. a null field acquiring a value). `any` (OR)
+            // picks unique vs non-unique layout, `all` (AND) drives
+            // the `nullSearchable: false` skip; both mirror
+            // `add_reference_for_index_level_for_contract_operations_v0`
+            // exactly. v0 of this walker AND-accumulated a single
+            // `all_fields_null` and used it for both sides — so for a
+            // unique index with SOME null fields it wrote/deleted the
+            // unique layout while the insert walker had used the
+            // non-unique one, stranding the entry where no query (and
+            // no later delete) would look.
+            let old_document_top_field_is_empty = drive_key_info_is_empty(&old_document_top_field);
+            let mut any_fields_null = document_top_field.is_empty();
             let mut all_fields_null = document_top_field.is_empty();
+            let mut old_any_fields_null = old_document_top_field_is_empty;
+            let mut old_all_fields_null = old_document_top_field_is_empty;
 
             let mut old_index_path: Vec<DriveKeyInfo> = index_path
                 .iter()
@@ -563,7 +615,12 @@ impl Drive {
                     }
                 }
 
+                any_fields_null |= document_index_field.is_empty();
                 all_fields_null &= document_index_field.is_empty();
+                let old_document_index_field_is_empty =
+                    drive_key_info_is_empty(&old_document_index_field);
+                old_any_fields_null |= old_document_index_field_is_empty;
+                old_all_fields_null &= old_document_index_field_is_empty;
 
                 // The next-deeper continuation (if any) hangs inside
                 // this level's value tree.
@@ -580,53 +637,73 @@ impl Drive {
                 // we first need to delete the old values
                 // unique indexes will be stored under key "0"
                 // non unique indices should have a tree at key "0" that has all elements based off of primary key
-
-                let mut key_info_path = KeyInfoPath::from_vec(
-                    old_index_path
-                        .into_iter()
-                        .map(|key_info| match key_info {
-                            Key(key) => KnownKey(key),
-                            KeyRef(key_ref) => KnownKey(key_ref.to_vec()),
-                            KeySize(key_info) => key_info,
-                        })
-                        .collect::<Vec<KeyInfo>>(),
-                );
-
-                if !index.unique {
-                    key_info_path.push(KnownKey(vec![0]));
-
-                    // here we should return an error if the element already exists
-                    self.batch_delete_up_tree_while_empty(
-                        key_info_path,
-                        document.id().as_slice(),
-                        Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
-                        BatchDeleteUpTreeApplyType::StatefulBatchDelete {
-                            is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
-                        },
-                        transaction,
-                        previous_batch_operations,
-                        &mut batch_operations,
-                        drive_version,
-                    )?;
+                //
+                // The old entry lives in the layout the insert walker
+                // chose from the OLD document's nullness (see the
+                // accumulators above): no entry at all when every
+                // indexed field was null on a `nullSearchable: false`
+                // index, the doc-id-keyed `[0]` bucket when the index
+                // is non-unique OR any old field was null, and the
+                // bare reference at key `[0]` only for a unique index
+                // with no old nulls. Same dispatch as
+                // `remove_reference_for_index_level_for_contract_operations_v0`.
+                if old_all_fields_null && !index.null_searchable {
+                    // the insert walker wrote no entry for the old
+                    // document — nothing to delete
                 } else {
-                    // here we should return an error if the element already exists
-                    self.batch_delete_up_tree_while_empty(
-                        key_info_path,
-                        &[0],
-                        Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
-                        BatchDeleteUpTreeApplyType::StatefulBatchDelete {
-                            is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
-                        },
-                        transaction,
-                        previous_batch_operations,
-                        &mut batch_operations,
-                        drive_version,
-                    )?;
+                    let mut key_info_path = KeyInfoPath::from_vec(
+                        old_index_path
+                            .into_iter()
+                            .map(|key_info| match key_info {
+                                Key(key) => KnownKey(key),
+                                KeyRef(key_ref) => KnownKey(key_ref.to_vec()),
+                                KeySize(key_info) => key_info,
+                            })
+                            .collect::<Vec<KeyInfo>>(),
+                    );
+
+                    if !index.unique || old_any_fields_null {
+                        key_info_path.push(KnownKey(vec![0]));
+
+                        // here we should return an error if the element already exists
+                        self.batch_delete_up_tree_while_empty(
+                            key_info_path,
+                            document.id().as_slice(),
+                            Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
+                            BatchDeleteUpTreeApplyType::StatefulBatchDelete {
+                                is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
+                            },
+                            transaction,
+                            previous_batch_operations,
+                            &mut batch_operations,
+                            drive_version,
+                        )?;
+                    } else {
+                        // here we should return an error if the element already exists
+                        self.batch_delete_up_tree_while_empty(
+                            key_info_path,
+                            &[0],
+                            Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
+                            BatchDeleteUpTreeApplyType::StatefulBatchDelete {
+                                is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
+                            },
+                            transaction,
+                            previous_batch_operations,
+                            &mut batch_operations,
+                            drive_version,
+                        )?;
+                    }
                 }
 
                 // unique indexes will be stored under key "0"
                 // non unique indices should have a tree at key "0" that has all elements based off of primary key
-                if !index.unique || all_fields_null {
+                if all_fields_null && !index.null_searchable {
+                    // The insert walker writes no entry when every
+                    // indexed field is null on a `nullSearchable: false`
+                    // index — write nothing here either, or the update
+                    // would create an entry that insert/delete walkers
+                    // never expect to exist.
+                } else if !index.unique || any_fields_null {
                     // here we are inserting an empty tree that will have a subtree of all other index properties
                     //
                     // Terminator `[0]` reference bucket: same
@@ -699,7 +776,14 @@ impl Drive {
 
                 // unique indexes will be stored under key "0"
                 // non unique indices should have a tree at key "0" that has all elements based off of primary key
-                if !index.unique || all_fields_null {
+                //
+                // No change occurred on this index, so the old and new
+                // nullness are identical and the new-document
+                // accumulators describe the stored entry's layout.
+                if all_fields_null && !index.null_searchable {
+                    // nothing is stored for this document under this
+                    // index — nothing to refresh
+                } else if !index.unique || any_fields_null {
                     index_path.push(vec![0]);
 
                     // here we should return an error if the element already exists

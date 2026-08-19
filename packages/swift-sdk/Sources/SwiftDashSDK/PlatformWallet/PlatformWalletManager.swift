@@ -671,17 +671,10 @@ public class PlatformWalletManager: ObservableObject {
     /// through the Keychain-backed resolver per-operation. This unlock does
     /// two things, both through a resolver (the seed never becomes resident):
     ///
-    /// 1. **Verify** the resolved seed binds to this wallet —
-    ///    `platform_wallet_verify_seed_binds_to_wallet_cached` derives the
-    ///    BIP44 account-0 xpub through the resolver and compares it to the
-    ///    persisted one. A mis-mapped Keychain slot derives a different xpub
-    ///    and the call throws, so a wrong seed never signs for this wallet.
-    ///    The outcome is launch-invariant while the mnemonic Keychain item
-    ///    is untouched, so the first success persists a marker (the xpub
-    ///    bound to the item's identity stamp) on the wallet row and later
-    ///    launches skip the resolver. Rust re-runs the full check when the
-    ///    marker no longer matches — wallet re-import, or any rewrite of
-    ///    the mnemonic Keychain item (which changes the stamp).
+    /// 1. **Verify** the resolved seed binds to this wallet — delegated in
+    ///    full to [`verifySeedBinding`](Self/verifySeedBinding(_:)), which is
+    ///    also the entry point for callers that need the gate WITHOUT the
+    ///    drain below.
     /// 2. **Drain** (in the background) any contact-crypto deferred while
     ///    the wallet was seedless — `platform_wallet_drain_pending_contact_crypto`.
     ///    The drain re-fetches + decrypts over the network, so it runs in a
@@ -701,8 +694,62 @@ public class PlatformWalletManager: ObservableObject {
     ///   throwing.
     /// - Throws: `PlatformWalletError` if the verify FFI fails (e.g. the
     ///   resolved seed does not bind — a mis-mapped Keychain slot).
+    /// Whether a wallet has a Keychain seed at all, once the binding holds.
+    public enum SeedBindingCheck: Sendable, Equatable {
+        /// A mnemonic is stored for this wallet and it derives the wallet's
+        /// persisted BIP44 account-0 xpub. Signing for this wallet is sound.
+        case verified
+        /// No mnemonic is stored — a genuine watch-only wallet, imported by
+        /// xpub. Nothing to contradict and nothing that can sign.
+        case watchOnly
+    }
+
+    /// Verify that the Keychain seed for `wallet` actually owns it — and do
+    /// nothing else.
+    ///
+    /// This is step 1 of [`unlockWalletFromKeychain`](Self/unlockWalletFromKeychain(_:))
+    /// on its own. It exists because that method is not a verification
+    /// primitive: it also schedules a background drain of the deferred
+    /// contact crypto. A caller that needs the gate and not the drain — one
+    /// about to run its own mnemonic-derived work, such as
+    /// [`startWalletSubsystems`](Self/startWalletSubsystems(wallet:budget:gapLimit:storage:))
+    /// — would otherwise have to launch a competing drain to ask the
+    /// question. Two drains over two snapshots duplicate the network and
+    /// ECDH work and race each other's channel-broken and auto-accept
+    /// writes, which is why the unlock path already refuses to stack them.
+    ///
+    /// Marker-cached exactly as the unlock is: the outcome is a pure function
+    /// of (mnemonic, network) against a fixed persisted xpub, so a match
+    /// costs a string comparison and never touches the Keychain. A rewritten
+    /// mnemonic item changes its stamp and forces the full check again.
+    ///
+    /// Publishes `dashPayUnlockStatus[walletId].seedMismatch` from the
+    /// result, so a caller may read it afterwards — but callers that must not
+    /// race the publisher should use the return value, which is ordered with
+    /// respect to the work it guards.
+    ///
+    /// - Returns: `.verified` when the stored seed binds, `.watchOnly` when
+    ///   there is no stored mnemonic to bind.
+    /// - Throws: `PlatformWalletError` when the seed does not bind (a
+    ///   mis-mapped Keychain slot) or the verify FFI otherwise fails.
     @discardableResult
-    public func unlockWalletFromKeychain(_ wallet: ManagedPlatformWallet) throws -> Bool {
+    public func verifySeedBinding(_ wallet: ManagedPlatformWallet) throws -> SeedBindingCheck {
+        try verifySeedBinding(wallet, storage: WalletStorage())
+    }
+
+    /// [`verifySeedBinding`](Self/verifySeedBinding(_:)) against a specific
+    /// `WalletStorage`.
+    ///
+    /// A caller that resolves the mnemonic from one store must be verified
+    /// against that same store, or the check answers a question about a
+    /// different Keychain than the one the work will read — approving one
+    /// mnemonic while the derivation uses another. `startWalletSubsystems`
+    /// takes a `storage` parameter for exactly this reason and passes it here.
+    @discardableResult
+    func verifySeedBinding(
+        _ wallet: ManagedPlatformWallet,
+        storage walletStorage: WalletStorage
+    ) throws -> SeedBindingCheck {
         try ensureConfigured()
         let walletId = wallet.walletId
         guard walletId.count == 32 else {
@@ -714,15 +761,19 @@ public class PlatformWalletManager: ObservableObject {
         // A genuine watch-only wallet (imported by xpub, never holding a
         // seed) has no Keychain mnemonic — stays watch-only. Existence-only
         // check; the plaintext is never materialized in Swift.
-        let walletStorage = WalletStorage()
         guard walletStorage.hasMnemonic(for: walletId) else {
-            return false
+            // No mnemonic is no longer a mismatch: a wallet whose seed failed
+            // to bind and whose Keychain item was then removed must not keep
+            // publishing the banner for a seed that is no longer there.
+            setDashPaySeedMismatch(walletId, false)
+            return .watchOnly
         }
 
         let walletHandle = wallet.handle
-        // Resolver-backed signer: the mnemonic is fetched from the Keychain
-        // inside the resolver vtable Rust-side; no resident seed.
-        let coreSigner = MnemonicResolver()
+        // Resolver-backed signer, over the SAME store the check above read and
+        // the caller's work will read: the mnemonic is fetched from the
+        // Keychain inside the resolver vtable Rust-side; no resident seed.
+        let coreSigner = MnemonicResolver(storage: walletStorage)
 
         // Wrong-seed / wrong-wallet gate, marker-cached: the check is a pure
         // function of (mnemonic, network) against the wallet's persisted
@@ -807,6 +858,21 @@ public class PlatformWalletManager: ObservableObject {
             }
             throw error
         }
+
+        return .verified
+    }
+
+    @discardableResult
+    public func unlockWalletFromKeychain(_ wallet: ManagedPlatformWallet) throws -> Bool {
+        // Step 1 in full, side-effect-free. A watch-only wallet has nothing
+        // to unlock and nothing to drain for.
+        guard try verifySeedBinding(wallet) == .verified else { return false }
+
+        let walletId = wallet.walletId
+        let walletHandle = wallet.handle
+        // Resolver-backed signer for the drain: the mnemonic is fetched from
+        // the Keychain inside the resolver vtable Rust-side; no resident seed.
+        let coreSigner = MnemonicResolver()
 
         // Heal pre-breadcrumb identity keys so they sign via the resolver
         // (derive-sign-destroy) rather than the stored scalar. Idempotent and

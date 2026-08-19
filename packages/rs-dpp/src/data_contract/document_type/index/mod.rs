@@ -1181,22 +1181,21 @@ impl Index {
             ));
         }
 
-        // Ranked aggregates are restricted to single-property indexes in
-        // this protocol version. Two reasons: a compound index whose prefix
-        // level also terminates an aggregating index would need its ranked
-        // terminal tree wrapped in a NonCounted/NotSummed shell, which the
-        // storage layer structurally rejects for indexed trees (the wrapper
-        // would neutralize the very aggregates the ranking indexes); and the
-        // ranked query surface deliberately has no equality-prefix routing
-        // yet. Both are relaxable at a future protocol version.
-        if (ranked_countable || ranked_summable || ranked_averageable) && index_properties.len() > 1
-        {
-            return Err(DataContractError::InvalidContractStructure(
-                "ranked aggregates are only supported on single-property \
-                 indexes in this protocol version"
-                    .to_string(),
-            ));
-        }
+        // Ranked aggregates are allowed on compound indexes, with
+        // **per-prefix** semantics: the ranked flags land on the index's
+        // TERMINAL property-name level (see `IndexLevelTypeInfo`), so a
+        // ranked `[identityId, class]` maintains one ordered secondary per
+        // `identityId` value — each ordering that identity's `class` groups
+        // by the group aggregate. There is deliberately no global
+        // cross-prefix ordering; the query surfaces require every leading
+        // property to be pinned by an equality `where` clause.
+        //
+        // One compound shape stays structurally impossible and is rejected
+        // per document type (all indexes are needed to see it): a compound
+        // ranked index whose full leading prefix also terminates a separate
+        // countable/summable index. That check lives with the document
+        // type's index collection — see `validate_no_ranked_prefix_overlap`
+        // in `try_from_schema::common`.
 
         // `nullSearchable: false` suppresses the terminal reference for a
         // document that leaves the indexed property out — but the document
@@ -2263,12 +2262,17 @@ mod tests {
         assert!(!index.ranked_averageable);
     }
 
-    /// Ranked flags on compound indexes are a v1 scope restriction (wrapper
-    /// conflict under aggregating prefixes + no equality-prefix query
-    /// routing), rejected at parse time so the limitation is visible at
-    /// registration rather than at document-insert or query time.
+    /// Ranked flags on compound indexes are accepted with per-prefix
+    /// semantics: the ranking axes attach to the terminal property-name
+    /// level, one ordered secondary per prefix value. The flag-dependency
+    /// rules (`ranked*` requires the matching `range*`) apply exactly as
+    /// on single-property indexes; the one structurally impossible shape
+    /// (a countable/summable index terminating at the compound's full
+    /// leading prefix) is a cross-index condition rejected where all the
+    /// document type's indexes are known — see
+    /// `validate_no_ranked_prefix_overlap` in `try_from_schema::common`.
     #[test]
-    fn test_index_try_from_ranked_on_compound_index_rejected() {
+    fn test_index_try_from_ranked_on_compound_index_accepted() {
         let mut index_map = ranked_index_map(vec![
             ("averageable", Value::Text("score".to_string())),
             ("rangeAverageable", Value::Bool(true)),
@@ -2285,15 +2289,37 @@ mod tests {
                 Value::Text("asc".to_string()),
             )]),
         ]);
+        let index = Index::try_from_value_map(index_map.as_slice(), true)
+            .expect("ranked flags on a compound index must be accepted");
+        assert!(index.ranked_averageable);
+        assert_eq!(index.properties.len(), 2);
+        assert_eq!(index.properties[1].name, "score");
+    }
+
+    /// The `ranked* requires range*` dependency is enforced on compound
+    /// indexes exactly as on single-property ones.
+    #[test]
+    fn test_index_try_from_compound_ranked_without_range_flags_rejected() {
+        let mut index_map = ranked_index_map(vec![("rankedCountable", Value::Bool(true))]);
+        index_map[0].1 = Value::Array(vec![
+            Value::Map(vec![(
+                Value::Text("region".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+            Value::Map(vec![(
+                Value::Text("score".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+        ]);
         let result = Index::try_from_value_map(index_map.as_slice(), true);
         assert!(
             result.is_err(),
-            "ranked flags on a compound index must be rejected"
+            "rankedCountable without rangeCountable must be rejected on a compound index too"
         );
         let msg = format!("{:?}", result.unwrap_err());
         assert!(
-            msg.contains("single-property"),
-            "error must explain the single-property restriction; got {msg}"
+            msg.contains("rankedCountable") && msg.contains("rangeCountable"),
+            "error must name both flags; got {msg}"
         );
     }
 

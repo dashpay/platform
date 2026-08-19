@@ -16,6 +16,9 @@ pub mod identity_top_up;
 /// Module for updating an existing identity entity.
 pub mod identity_update;
 
+/// Validation shared by the data contract create and update transitions.
+pub mod data_contract_common;
+
 /// Module for creating a data contract entity.
 pub mod data_contract_create;
 

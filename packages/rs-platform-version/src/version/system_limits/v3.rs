@@ -13,6 +13,8 @@ pub const SYSTEM_LIMITS_V3: SystemLimits = SystemLimits {
     // instance budget, bounding pre-schema work well above known document requirements.
     max_document_value_depth: Some(256),
     max_state_transition_size: 20480, //20 KiB
+    // Load-bearing for state correctness, not just for throughput — see
+    // SystemLimits::max_transitions_in_documents_batch and SYSTEM_LIMITS_V1.
     max_transitions_in_documents_batch: 1,
     withdrawal_transactions_per_block_limit: 4,
     retry_signing_expired_withdrawal_documents_per_block_limit: 1,
