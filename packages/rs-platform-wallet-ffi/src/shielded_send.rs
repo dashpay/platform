@@ -44,6 +44,7 @@ use std::os::raw::c_char;
 
 use dashcore::hashes::Hash;
 use dpp::address_funds::{OrchardAddress, PlatformAddress};
+use dpp::prelude::Identifier;
 use dpp::shielded::{
     compute_minimum_shielded_fee, compute_shielded_unshield_fee, compute_shielded_withdrawal_fee,
     ShieldedMemo,
@@ -999,42 +1000,80 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_o
         r
     });
 
+    let (identity_id_to_write, ffi_result) = map_one_time_claim_result(result);
+    if let Some(identity_id) = identity_id_to_write {
+        *out_identity_id = identity_id.to_buffer();
+    }
+    ffi_result
+}
+
+/// Classify a one-time-key claim outcome into its FFI result, plus the identity
+/// id (if any) the entry point must write to `out_identity_id`.
+///
+/// Split out of
+/// [`platform_wallet_manager_shielded_identity_create_from_one_time_key`] so the
+/// code split below is reachable from a unit test without a live manager handle
+/// — the same shape `map_spend_result` uses for the spend entry points. The
+/// `Some(id)` return is the ONLY channel that writes `out_identity_id`, so the
+/// "written on Success and on `ErrorShieldedBroadcastUnconfirmed` only" contract
+/// in that function's safety docs is decided here and nowhere else.
+fn map_one_time_claim_result(
+    result: Result<Identifier, PlatformWalletError>,
+) -> (Option<Identifier>, PlatformWalletFFIResult) {
     match result {
-        Ok(identity_id) => {
-            *out_identity_id = identity_id.to_buffer();
-            PlatformWalletFFIResult::ok()
-        }
+        Ok(identity_id) => (Some(identity_id), PlatformWalletFFIResult::ok()),
         Err(PlatformWalletError::ShieldedBroadcastUnconfirmed {
             identity_id,
             ref reason,
-        }) => {
-            *out_identity_id = identity_id.to_buffer();
+        }) => (
+            Some(identity_id),
             PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed,
                 format!(
                     "shielded identity-create-from-one-time-key broadcast unconfirmed (identity {identity_id} may exist on chain): {reason}"
                 ),
-            )
-        }
-        Err(e @ PlatformWalletError::ShieldedNoRecordedAnchor(_)) => PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor,
-            format!("Wallet is still syncing to a confirmed state — try again shortly. ({e})"),
+            ),
         ),
-        Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_)) => PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
-            format!("shielded identity-create-from-one-time-key failed: {e}"),
+        Err(e @ PlatformWalletError::ShieldedNoRecordedAnchor(_)) => (
+            None,
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor,
+                format!("Wallet is still syncing to a confirmed state — try again shortly. ({e})"),
+            ),
         ),
-        // TERMINAL consumed-invitation verdict: route through the blanket
-        // `From<PlatformWalletError>` conversion so the typed code
-        // (`ErrorShieldedInviteAlreadyClaimed`, 43) survives to the host —
-        // the catch-all below would flatten it to the generic
-        // `ErrorWalletOperation` (6), hiding the one discriminator that
-        // tells a claimer the invitation can never be claimed again
-        // (#4204 review finding 7be05fde0d09).
-        Err(e @ PlatformWalletError::ShieldedInviteAlreadyClaimed { .. }) => e.into(),
-        Err(e) => PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("shielded identity-create-from-one-time-key failed: {e}"),
+        Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_)) => (
+            None,
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
+                format!("shielded identity-create-from-one-time-key failed: {e}"),
+            ),
+        ),
+        // Every variant that owns a typed code goes through the blanket
+        // `From<PlatformWalletError>` conversion, because the catch-all below
+        // would flatten it to the generic `ErrorWalletOperation` (6) and destroy
+        // the retry-semantics discriminator the host classifies on:
+        //
+        // * `ShieldedInviteAlreadyClaimed` → 43, TERMINAL — the one signal that
+        //   tells a claimer the invitation can never be claimed again
+        //   (#4204 review finding 7be05fde0d09).
+        // * `ShieldedForeignScanBudgetExhausted` → 44, RETRYABLE and cheap —
+        //   the scan simply paused at its per-attempt budget with progress
+        //   checkpointed. Flattened to 6 it reads as a hard failure, which
+        //   strands a genuinely funded claim whose note sits deep in the tree
+        //   (#4313 review finding, this entry point).
+        //
+        // The blanket conversion is the single source of truth for both; this
+        // arm only keeps them from reaching the catch-all.
+        Err(
+            e @ (PlatformWalletError::ShieldedInviteAlreadyClaimed { .. }
+            | PlatformWalletError::ShieldedForeignScanBudgetExhausted { .. }),
+        ) => (None, e.into()),
+        Err(e) => (
+            None,
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                format!("shielded identity-create-from-one-time-key failed: {e}"),
+            ),
         ),
     }
 }
@@ -2190,6 +2229,83 @@ mod tests {
         assert_eq!(
             map_asset_lock_funding_result(Ok(()), "shielded fund-from-asset-lock").code,
             PlatformWalletFFIResultCode::Success
+        );
+    }
+
+    /// The one-time-key claim entry point must let every typed retry-semantics
+    /// code through — not just the terminal one.
+    ///
+    /// `ShieldedForeignScanBudgetExhausted` has a blanket conversion to code 44
+    /// (`ErrorShieldedScanBudgetExhausted`), which Kotlin maps to the RETRYABLE
+    /// `ShieldedScanBudgetExhausted`. This entry point used to reach it only via
+    /// the catch-all, flattening it to `ErrorWalletOperation` (6) — a
+    /// non-retryable generic — so the host rendered a paused scan as a failed
+    /// claim and stranded a funded invitation whose note sits deep in the tree.
+    /// The polarity is the whole contract, so it is pinned here at the boundary
+    /// the host actually calls, not only at the blanket conversion.
+    #[test]
+    fn map_one_time_claim_result_pins_the_retryable_scan_budget_code() {
+        let (identity_id, result) = map_one_time_claim_result(Err(
+            PlatformWalletError::ShieldedForeignScanBudgetExhausted {
+                scanned_through: 262_144,
+            },
+        ));
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedScanBudgetExhausted,
+            "a budget-paused claim scan must reach the host as 44, never as the \
+             generic ErrorWalletOperation (6)"
+        );
+        assert!(
+            identity_id.is_none(),
+            "nothing was built or broadcast, so no identity id may be written"
+        );
+        assert!(
+            message_of(&result).contains("262144"),
+            "the checkpointed scan position must survive in the message"
+        );
+    }
+
+    /// The neighbours of the arm above, pinned in the same test so a future
+    /// edit cannot silently re-flatten one of them.
+    #[test]
+    fn map_one_time_claim_result_pins_the_terminal_and_unconfirmed_codes() {
+        let claimed =
+            map_one_time_claim_result(Err(PlatformWalletError::ShieldedInviteAlreadyClaimed {
+                reason: "nullifier already spent".to_string(),
+            }));
+        assert_eq!(
+            claimed.1.code,
+            PlatformWalletFFIResultCode::ErrorShieldedInviteAlreadyClaimed
+        );
+        assert!(
+            claimed.0.is_none(),
+            "a consumed invitation must NOT write an identity id — that is the \
+             false-ownership claim code 43 exists to prevent"
+        );
+
+        // The one code that DOES write `out_identity_id`.
+        let expected = Identifier::from([7u8; 32]);
+        let unconfirmed =
+            map_one_time_claim_result(Err(PlatformWalletError::ShieldedBroadcastUnconfirmed {
+                identity_id: expected,
+                reason: "result proof fetch failed".to_string(),
+            }));
+        assert_eq!(
+            unconfirmed.1.code,
+            PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed
+        );
+        assert_eq!(
+            unconfirmed.0,
+            Some(expected),
+            "the unconfirmed code must hand back the derived id so the host can hold the slot"
+        );
+
+        // Anything without a typed code still flattens, deliberately.
+        let generic = map_one_time_claim_result(Err(PlatformWalletError::ShieldedNoUnspentNotes)).1;
+        assert_eq!(
+            generic.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
         );
     }
 }
