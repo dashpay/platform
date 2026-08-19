@@ -519,10 +519,13 @@ pub struct UnresolvedAssetLockTxRecordFFI {
 /// One outpoint an unresolved asset lock spends, together with the
 /// transaction the persistence mirror recorded as having spent it.
 ///
-/// Emitted only when that spender is a *different* transaction from the lock
-/// itself: the lock spending its own input is the normal case and carries no
-/// information. A spender that reached a block can never be undone, which is
-/// what makes the lock provably dead rather than merely unlucky.
+/// The host emits whatever spender the mirror linked — INCLUDING the lock's
+/// own transaction (the normal broadcast case) — because at emission time it
+/// holds a flat outpoint set with no per-lock association. Consumers filter
+/// out the lock's own txid themselves; a row is a conflict only relative to
+/// a particular lock. The iOS host additionally emits only spends its mirror
+/// marked settled (in-block), so `spender_context` values `0` / `1` are
+/// decoded defensively but do not occur from that host today.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct AssetLockInputSpendFFI {
@@ -649,21 +652,6 @@ pub struct WalletRestoreEntryFFI {
     /// unresolved asset locks.
     pub unresolved_asset_lock_tx_records: *const UnresolvedAssetLockTxRecordFFI,
     pub unresolved_asset_lock_tx_records_count: usize,
-    /// Outpoints an unresolved asset lock spends that the persisted state
-    /// already knows were taken by a *different* transaction.
-    ///
-    /// The double-spend screen in `resume_asset_lock` reads the in-memory
-    /// transaction history, which this load path deliberately leaves empty
-    /// apart from the unresolved locks themselves — so at app-launch
-    /// catch-up it scans nothing and cannot fire, however dead the lock is.
-    /// The persistence mirror does know: the funding outpoint's row carries
-    /// the txid that spent it. Handing those few outpoints over is what lets
-    /// the screen work at the only moment it matters.
-    ///
-    /// Only conflicts are listed — an outpoint spent by the lock's own
-    /// transaction is not one. `null` / `0` when there are none.
-    pub asset_lock_input_spends: *const AssetLockInputSpendFFI,
-    pub asset_lock_input_spends_count: usize,
     /// Persisted provider special transactions (ProRegTx / ProUpServTx /
     /// ProUpRegTx / ProUpRevTx) re-staged onto the wallet's provider-key
     /// accounts so rust-dashcore #876 retention keeps them resident and
@@ -690,6 +678,29 @@ pub struct WalletRestoreEntryFFI {
     /// re-apply a fresh chainlock.
     pub last_applied_chain_lock_bytes: *const u8,
     pub last_applied_chain_lock_bytes_len: usize,
+    /// The spenders the persisted state records for the outpoints the
+    /// unresolved asset locks spend — the lock's own spend included, see
+    /// [`AssetLockInputSpendFFI`].
+    ///
+    /// The double-spend screen in `resume_asset_lock` reads the in-memory
+    /// transaction history, which this load path deliberately leaves empty
+    /// apart from the unresolved locks themselves — so at app-launch
+    /// catch-up it scans nothing and cannot fire, however dead the lock is.
+    /// The persistence mirror does know: the funding outpoint's row carries
+    /// the txid that spent it. Handing those few outpoints over is what lets
+    /// the screen work at the only moment it matters. `null` / `0` when
+    /// there are none.
+    ///
+    /// ABI note: these two fields sit at the TAIL of the struct on purpose,
+    /// and any future addition must go below them. This struct crosses the
+    /// boundary as a bare pointer with no size or version tag, so appending
+    /// is the only layout change that keeps every earlier field at its old
+    /// offset; inserting mid-struct would shift the fields after it and turn
+    /// a stale host/library pairing into silently misread memory. (In-tree
+    /// builds regenerate the header in lockstep; this discipline is for the
+    /// pairing nobody planned.)
+    pub asset_lock_input_spends: *const AssetLockInputSpendFFI,
+    pub asset_lock_input_spends_count: usize,
 }
 
 // SAFETY: Pointers are Swift-owned and lifetime-scoped to the callback.
