@@ -31,6 +31,28 @@ fn classify_broadcast_result(
 /// (removed, or re-created under the same id) is refused with `NotFound` (98)
 /// **before** the network is touched; the handle is consumed and its reservation
 /// reconciled. This mirrors the deferred-token path's `WalletRemoved` → 98.
+///
+/// # `ErrorStaleReservationToken` (34) is TERMINAL
+///
+/// A handle held past `RESERVATION_MAX_AGE_BLOCKS` — the wallet's
+/// `last_processed_height` advanced that far beyond the funding reservation's
+/// stamp — is refused with `ErrorStaleReservationToken` (34) and no txid, again
+/// **before** the network is touched. Nothing was sent.
+///
+/// There is no retry and no abandon from that outcome: the handle was already
+/// consumed at the top of this call, so a second
+/// `core_wallet_broadcast_signed_transaction` with it returns `NotFound` (98)
+/// rather than resending, and `core_wallet_abandon_signed_transaction` likewise
+/// finds nothing to free. The refusal path performs the reconciliation itself —
+/// it releases the funding reservation owner-guarded, so the inputs are free
+/// while this build still owned them and untouched once a TTL sweep or
+/// re-reservation transferred ownership.
+///
+/// **The caller must REBUILD the transaction.** That is the whole recovery: the
+/// released inputs are immediately reselectable by a fresh
+/// `core_wallet_tx_builder_*` → `finalize` sequence, and no cleanup call is
+/// needed (or possible) in between. See
+/// `aged_broadcast_refuses_and_releases_for_rebuild`.
 #[no_mangle]
 pub unsafe extern "C" fn core_wallet_broadcast_signed_transaction(
     handle: Handle,
