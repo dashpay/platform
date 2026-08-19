@@ -1433,7 +1433,11 @@ mod test {
                 Reachability::Error,
             ];
             for reachable in reachabilities {
-                for ssl in [SslStatus::Expired, SslStatus::SelfSigned, SslStatus::Untrusted] {
+                for ssl in [
+                    SslStatus::Expired,
+                    SslStatus::SelfSigned,
+                    SslStatus::Untrusted,
+                ] {
                     assert!(
                         seed_tls_deterministically_bad(Some(&status(ssl, reachable))),
                         "{ssl:?} must be rejected regardless of {reachable:?}"
@@ -1465,7 +1469,10 @@ mod test {
             let seeds = vec![
                 seed(1, Some(status(SslStatus::Valid, Reachability::Ok))),
                 seed(2, Some(status(SslStatus::Expired, Reachability::Ok))),
-                seed(3, Some(status(SslStatus::NoHandshake, Reachability::Timeout))),
+                seed(
+                    3,
+                    Some(status(SslStatus::NoHandshake, Reachability::Timeout)),
+                ),
                 seed(4, Some(status(SslStatus::NoHandshake, Reachability::Ok))),
                 seed(5, None),
             ];
