@@ -92,16 +92,24 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
           task: () => task(config, taskOptions),
         },
         {
-          // Writing the certificate files does not change what the gateway serves. Without
-          // this it keeps presenting the previous certificate until the node is restarted,
-          // so the command reports success while nothing changes for clients.
+          // Envoy reads the certificate files once at startup, so a gateway that
+          // is already up keeps serving the previous certificate until it is
+          // told to reload. Without this the command reports success while
+          // nothing changes on the wire.
+          //
+          // This runs whenever the gateway is up, including when the obtain
+          // wrote no new files: providers install the pair by different routes,
+          // and nothing on disk reveals which certificate Envoy currently
+          // holds, so an obtain that skipped the write is also how an operator
+          // retries a reload that failed earlier.
+          //
+          // The gateway is signalled without asking first whether it is running.
+          // execCommand makes that check itself, and asking separately leaves a
+          // gap in which the answer can change - the certificate has already
+          // been obtained by then, so failing there would report the whole
+          // command as failed and send the operator back to a provider that may
+          // have nothing left to issue.
           title: 'Reload gateway',
-          enabled: () => config.get('platform.enable'),
-          // Asking whether the gateway is running before signalling it would answer a question
-          // that can stop being true before the signal is sent, and the certificate has already
-          // been obtained by this point - failing here would send the operator back to a
-          // provider that has nothing left to give. execCommand makes the same check itself,
-          // so a gateway that is down is taken as nothing to reload.
           task: async (ctx, listrTask) => {
             try {
               await dockerCompose.execCommand(config, 'gateway', 'kill -SIGHUP 1');
@@ -110,7 +118,7 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
                 throw e;
               }
 
-              listrTask.skip('Gateway is not running, the certificate will be used when it starts');
+              listrTask.skip('Gateway is not running');
             }
           },
         },
