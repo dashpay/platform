@@ -1044,7 +1044,15 @@ public class PlatformWalletManager: ObservableObject {
                 PlatformWalletManager.decodeOutPointForCatchUp($0.outPointHex)
             }
             guard !outpoints.isEmpty else { continue }
-            Task.detached(priority: .background) { [weak self] in
+            // A `@MainActor` closure is the only piece of `self` the
+            // detached task needs: it hops back to the main actor to
+            // publish, and capturing it (rather than `self`) keeps the
+            // task's captures Sendable under strict concurrency.
+            let publishConflict: @MainActor @Sendable (PlatformWalletError) -> Void = {
+                [weak self] verdict in
+                self?.lastError = verdict
+            }
+            Task.detached(priority: .background) {
                 await withTaskGroup(of: PlatformWalletError?.self) { group in
                     let maxConcurrent = 4
                     var nextIndex = 0
@@ -1075,7 +1083,7 @@ public class PlatformWalletManager: ObservableObject {
                     while let outcome = await group.next() {
                         if !published, let verdict = outcome {
                             published = true
-                            await MainActor.run { self?.lastError = verdict }
+                            await publishConflict(verdict)
                         }
                         if nextIndex < outpoints.count {
                             let (txid, vout) = outpoints[nextIndex]
