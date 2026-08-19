@@ -39,7 +39,6 @@ async function fetchTextOrError(url) {
  * @param {HomeDir} homeDir
  * @param {validateZeroSslCertificate} validateZeroSslCertificate
  * @param {validateLetsEncryptCertificate} validateLetsEncryptCertificate
- * @param {boolean} isHelper
  * @return {collectSamplesTask}
  */
 export default function collectSamplesTaskFactory(
@@ -52,7 +51,6 @@ export default function collectSamplesTaskFactory(
   homeDir,
   validateZeroSslCertificate,
   validateLetsEncryptCertificate,
-  isHelper,
 ) {
   /**
    * @typedef {function} collectSamplesTask
@@ -198,36 +196,12 @@ export default function collectSamplesTaskFactory(
                 // Every other certificate check reads a file or the provider's API, so a
                 // certificate that was renewed on disk but never reached the gateway looks
                 // healthy to all of them. This connects to the gateway and records what it
-                // actually serves.
-                enabled: () => config.get('platform.enable'),
+                // actually serves. Doctor is run by an operator on the node, so the gateway's
+                // listener is reached at the address it is published on.
+                enabled: () => config.get('platform.enable')
+                  && config.get('platform.gateway.ssl.provider') !== 'self-signed',
                 title: 'Gateway served certificate',
                 task: async () => {
-                  // dashmate is installed in the helper image, so the CLI can be run there as
-                  // well as on the host. The gateway's listener is published to the host, and
-                  // inside the helper the same address is that container's own, so probing it
-                  // would report a healthy gateway as unreachable. Recorded rather than
-                  // silently dropped, so it reads as unknown instead of as a healthy node.
-                  if (isHelper) {
-                    ctx.samples.setServiceInfo('gateway', 'servedCertificate', {
-                      state: PROBE_STATE.SKIPPED,
-                      reason: 'helper-context',
-                    });
-
-                    return;
-                  }
-
-                  // A self-signed certificate is not trusted by design, so what it serves says
-                  // nothing a check could act on. It is already reported by the configuration
-                  // analysis when it is used on a network where it does not belong.
-                  if (config.get('platform.gateway.ssl.provider') === 'self-signed') {
-                    ctx.samples.setServiceInfo('gateway', 'servedCertificate', {
-                      state: PROBE_STATE.SKIPPED,
-                      reason: 'self-signed',
-                    });
-
-                    return;
-                  }
-
                   const listenerHost = config.get('platform.gateway.listeners.dapiAndDrive.host');
                   const port = config.get('platform.gateway.listeners.dapiAndDrive.port');
 
