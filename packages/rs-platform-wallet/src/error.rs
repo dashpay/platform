@@ -494,6 +494,26 @@ pub enum PlatformWalletError {
     #[error("Platform shield capacity exceeded: available {available}, required {required}")]
     PlatformShieldCapacityExceeded { available: u64, required: u64 },
 
+    /// A shield's pre-broadcast per-input hard balance check found ONE input
+    /// address short: its live on-chain balance dropped below what the cached
+    /// planner snapshot assumed (a stale-snapshot race), so the fetched claim
+    /// cannot be funded. STRICTLY per-input — `available`/`required` are that
+    /// single address's live figures, NOT an account-capacity total. Distinct
+    /// from [`PlatformShieldCapacityExceeded`](Self::PlatformShieldCapacityExceeded)
+    /// (an account-wide deterministic-selection limit) precisely so a host never
+    /// misreads this per-address `available` as the account maximum (it would
+    /// understate capacity by up to the versioned max input count). The
+    /// offending `address` (bech32m) is preserved in the message rather than
+    /// dropped. Nothing was built or broadcast; refresh preflight and retry.
+    #[error(
+        "Shield input address {address} is short: has {available}, requires at least {required}"
+    )]
+    PlatformShieldInputShortfall {
+        address: String,
+        available: u64,
+        required: u64,
+    },
+
     #[error("Shielded build error: {0}")]
     ShieldedBuildError(String),
 

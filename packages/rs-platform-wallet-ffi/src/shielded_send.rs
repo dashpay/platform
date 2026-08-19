@@ -597,15 +597,19 @@ fn map_spend_result(
             format!("{operation} failed: {e}"),
         ),
         // The cached Platform Payment-account set no longer covers the
-        // requested claim plus input-0's fee reserve. Keep this distinct from
-        // generic wallet-operation failures so hosts can refresh preflight and
-        // re-confirm a smaller amount instead of retrying unchanged.
-        Err(e @ PlatformWalletError::PlatformShieldCapacityExceeded { .. }) => {
-            PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance,
-                format!("{operation} failed: {e}"),
-            )
-        }
+        // requested claim plus input-0's fee reserve (account-wide), or a live
+        // per-input hard balance check found one input short (a stale-snapshot
+        // race). Both share this code — the host's corrective action is the same
+        // (refresh preflight, retry) — and both stay distinct from generic
+        // wallet-operation failures so a host never retries the stale amount
+        // unchanged. The per-input variant's message names the short address.
+        Err(
+            e @ (PlatformWalletError::PlatformShieldCapacityExceeded { .. }
+            | PlatformWalletError::PlatformShieldInputShortfall { .. }),
+        ) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance,
+            format!("{operation} failed: {e}"),
+        ),
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("{operation} failed: {e}"),
@@ -1850,6 +1854,35 @@ mod tests {
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             "the dedicated code is a Platform-to-shielded contract only"
         );
+    }
+
+    #[test]
+    fn map_spend_result_maps_per_input_shortfall_to_same_code_with_address() {
+        // The per-input shortfall (a live stale-snapshot race) must ride the
+        // same code as the account-capacity variant — not regress to the
+        // generic ErrorWalletOperation — and keep the offending address in the
+        // message so a host never misreads the single input's balance as the
+        // account maximum.
+        let result = map_spend_result(
+            Err(PlatformWalletError::PlatformShieldInputShortfall {
+                address: "yShieldInputAddrExample".to_string(),
+                available: 3_623_849_220,
+                required: 3_623_849_221,
+            }),
+            "shielded shield",
+        );
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance
+        );
+        let message = message_of(&result);
+        assert!(
+            message.contains("yShieldInputAddrExample"),
+            "message: {message}"
+        );
+        assert!(message.contains("3623849220"));
+        assert!(message.contains("3623849221"));
     }
 
     #[test]

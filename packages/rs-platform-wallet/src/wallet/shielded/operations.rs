@@ -55,6 +55,7 @@ use dpp::shielded::builder::{
     build_unshield_transition, OrchardProver, SpendableNote,
 };
 use dpp::shielded::compute_minimum_shielded_fee;
+use dpp::shielded::SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::StateTransition;
@@ -76,39 +77,90 @@ use tracing::{debug, info, trace, warn};
 /// count, so the wallet's fee reservation must use the same count.
 const SHIELD_NUM_ACTIONS: usize = 2;
 
-/// Multiplier applied to the versioned minimum shield fee when sizing the
-/// planner's input-0 reserve.
-///
-/// Execution deducts the ACTUAL fee — the GroveDB-metered storage/processing
-/// of the note/nullifier writes plus `compute_shielded_verification_fee` —
-/// from input 0's post-reallocation residue, and rejects the shield when the
-/// residue can't cover it. `compute_minimum_shielded_fee` estimates that
-/// actual fee with a flat per-action storage term the client cannot meter
-/// itself, so the reserve keeps one extra fee of headroom for metering
-/// variance. The reserve is NOT what satisfies the structure gate
-/// (`Σ claims ≥ amount + fee`) — `reserve_shield_fee_on_input_0` loads the
-/// claimed fee for that — so it needs no allowance beyond metering variance.
-const SHIELD_FEE_RESERVE_MULTIPLIER: u64 = 2;
+/// Extra metering-variance headroom the shield planner keeps on input 0 BEYOND
+/// the input-count-scaled modeled fee, expressed as a count of base
+/// structure-gate fees `F`. `1` = one extra `F`, preserving the pre-input-
+/// scaling "one extra fee of headroom" semantics on top of the now
+/// input-count-scaled modeled fee.
+const SHIELD_FEE_RESERVE_HEADROOM_FEES: u64 = 1;
 
 /// Versioned balance the shield planner keeps unclaimed on the
-/// lexicographically first (fee-paying) input.
+/// lexicographically first (fee-paying) input, SCALED by the number of address
+/// inputs the transition will admit.
 ///
 /// The preflight and the execution path both derive capacity from this one
 /// value, so it directly sets three host-visible numbers: the viability
 /// threshold an address must exceed to serve as input 0, the account's
 /// `max_shieldable_credits`, and the residue a Max shield leaves transparent
 /// (`reserve − actual fee`). Deriving it from the versioned fee formula keeps
-/// all three tracking fee-constant bumps instead of freezing a magic number
-/// that overstates the fee and understates capacity.
+/// all three tracking fee-constant bumps instead of freezing a magic number.
+///
+/// The whole transition fee is deducted from input 0's post-reallocation
+/// residue (`DeductFromInput(0)`), so input 0 must retain at least the actual
+/// metered fee. For a transparent Shield that fee is:
+///
+///   * the flat Orchard-bundle fee `F = compute_minimum_shielded_fee(2)` — the
+///     ZK compute plus the two output-bundle actions' note storage, which is
+///     also the amount the consensus structure check requires
+///     (`Σ claims ≥ amount + F`); PLUS
+///   * one `SetBalanceToAddress` address-balance write PER INPUT that drive
+///     meters as storage. `compute_minimum_shielded_fee` prices NONE of these
+///     per-input writes, so a FLAT reserve thins as inputs grow (blind to input
+///     count): a large Max shield can land in the estimate-vs-actual band that
+///     risks the `InternalError`/`TxAction::Removed` app-hash-divergence class
+///     (the family of the mainnet shield-halt). Scaling the reserve by input
+///     count keeps the headroom from thinning.
+///
+/// The per-input write is priced off the SAME versioned per-byte storage rate
+/// the executor reads (never a hardcoded credit figure), using the reviewed
+/// [`SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES`] address-write model. That
+/// constant sizes a NEW-address `AddBalanceToAddress`; a shield's
+/// `SetBalanceToAddress` reduces an EXISTING address balance (a value
+/// replacement), which meters no more than a fresh subtree write — so pricing
+/// every input at the new-address figure is a deliberate, conservative UPPER
+/// BOUND on the true per-input cost.
+///
+/// `reserve = F + input_count × per_input_write + headroom`, with
+/// `headroom = SHIELD_FEE_RESERVE_HEADROOM_FEES × F`. At `input_count == 0`
+/// this equals the pre-scaling flat `2 × F`.
+///
+/// SAFETY / RESIDUAL FLAGGED FOR REVIEW: the per-input term is an upper bound
+/// derived from an existing calibrated constant, NOT a re-derivation of drive's
+/// exact `SetBalanceToAddress` metering. It stays conservative for the
+/// protocol-max input count (16), but a reviewer should confirm drive never
+/// charges MORE than a new-address write per input; if it can, raise the
+/// per-input byte model or `SHIELD_FEE_RESERVE_HEADROOM_FEES`.
 pub fn shield_fee_reserve_credits(
     platform_version: &PlatformVersion,
+    input_count: usize,
 ) -> Result<Credits, PlatformWalletError> {
-    let fee = compute_minimum_shielded_fee(SHIELD_NUM_ACTIONS, platform_version)
+    let overflow =
+        || PlatformWalletError::ShieldedBuildError("shield fee reserve overflows u64".to_string());
+
+    let base_fee = compute_minimum_shielded_fee(SHIELD_NUM_ACTIONS, platform_version)
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
-    fee.checked_mul(SHIELD_FEE_RESERVE_MULTIPLIER)
-        .ok_or_else(|| {
-            PlatformWalletError::ShieldedBuildError("shield fee reserve overflows u64".to_string())
-        })
+
+    // Per-input `SetBalanceToAddress` storage, priced off the versioned rate the
+    // executor reads (disk + processing credits/byte), so it tracks fee-constant
+    // bumps rather than freezing a magic number.
+    let storage = &platform_version.fee_version.storage;
+    let per_byte_rate = storage
+        .storage_disk_usage_credit_per_byte
+        .checked_add(storage.storage_processing_credit_per_byte)
+        .ok_or_else(overflow)?;
+    let per_input_write = SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES
+        .checked_mul(per_byte_rate)
+        .ok_or_else(overflow)?;
+    let inputs_cost = (input_count as u64)
+        .checked_mul(per_input_write)
+        .ok_or_else(overflow)?;
+
+    // modeled_fee = F + Σ per-input writes; reserve adds one extra F of headroom.
+    let modeled_fee = base_fee.checked_add(inputs_cost).ok_or_else(overflow)?;
+    let headroom = base_fee
+        .checked_mul(SHIELD_FEE_RESERVE_HEADROOM_FEES)
+        .ok_or_else(overflow)?;
+    modeled_fee.checked_add(headroom).ok_or_else(overflow)
 }
 
 /// Try to extract a structured `AddressesNotEnoughFundsError` from
@@ -157,16 +209,27 @@ fn address_not_enough_funds(
     }
 }
 
-/// Promote the shield pre-broadcast hard balance check into the typed capacity
+/// Promote the shield pre-broadcast per-input hard balance check into the typed
 /// error the FFI and Swift layers recognize.
 ///
 /// The values are Platform's live per-input view, not the cached planner
-/// snapshot. Their `Display` rendering therefore preserves the actionable
-/// available/required diagnostic while the typed variant lets the host refresh
-/// preflight instead of retrying the stale amount unchanged.
-fn map_shield_input_fetch_error(e: &dash_sdk::Error) -> PlatformWalletError {
+/// snapshot. `AddressNotEnoughFundsError` is STRICTLY per-address: `balance()` /
+/// `required_balance()` describe the ONE short input, not the account. Mapping
+/// them onto the account-wide `PlatformShieldCapacityExceeded` (as the pre-fix
+/// code did) let a host misread that single address's `available` as the
+/// account maximum — understating capacity by up to the versioned input-count
+/// cap — and DROPPED the offending address entirely. We map instead to the
+/// distinct [`PlatformShieldInputShortfall`](PlatformWalletError::PlatformShieldInputShortfall)
+/// variant, which restores the bech32m address in the message and keeps the
+/// per-input figures typed as per-input. Both variants ride the same FFI code
+/// (the host's corrective action — refresh preflight, retry — is identical).
+fn map_shield_input_fetch_error(
+    e: &dash_sdk::Error,
+    network: key_wallet::Network,
+) -> PlatformWalletError {
     match address_not_enough_funds(e) {
-        Some(short) => PlatformWalletError::PlatformShieldCapacityExceeded {
+        Some(short) => PlatformWalletError::PlatformShieldInputShortfall {
+            address: short.address().to_bech32m_string(network),
             available: short.balance(),
             required: short.required_balance(),
         },
@@ -499,7 +562,7 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
 
     let fetched = fetch_inputs_with_nonce(sdk, &inputs)
         .await
-        .map_err(|error| map_shield_input_fetch_error(&error))?;
+        .map_err(|error| map_shield_input_fetch_error(&error, sdk.network))?;
 
     let mut inputs_with_nonce: BTreeMap<PlatformAddress, (u32, Credits)> = BTreeMap::new();
     for (addr, (nonce, credits)) in fetched {
@@ -2928,22 +2991,36 @@ mod shield_input_fetch_error_tests {
     use dpp::consensus::state::address_funds::AddressNotEnoughFundsError;
 
     #[test]
-    fn live_address_shortfall_maps_to_typed_shield_capacity_error() {
+    fn live_per_input_shortfall_maps_to_typed_input_shortfall_with_address() {
+        let network = key_wallet::Network::Mainnet;
+        let short_addr = PlatformAddress::P2pkh([7; 20]);
         let sdk_error = dash_sdk::Error::from(AddressNotEnoughFundsError::new(
-            PlatformAddress::P2pkh([7; 20]),
+            short_addr,
             3_623_849_220,
             3_623_849_221,
         ));
 
-        let mapped = map_shield_input_fetch_error(&sdk_error);
-        assert!(matches!(
-            &mapped,
-            PlatformWalletError::PlatformShieldCapacityExceeded { available, required }
-                if *available == 3_623_849_220 && *required == 3_623_849_221
-        ));
-        assert_eq!(
-            mapped.to_string(),
-            "Platform shield capacity exceeded: available 3623849220, required 3623849221"
+        let mapped = map_shield_input_fetch_error(&sdk_error, network);
+        // A per-input shortfall must map to the DISTINCT per-input variant, not
+        // the account-capacity one — so a host never misreads this single
+        // input's balance as the account maximum.
+        let expected_address = short_addr.to_bech32m_string(network);
+        match &mapped {
+            PlatformWalletError::PlatformShieldInputShortfall {
+                address,
+                available,
+                required,
+            } => {
+                assert_eq!(address, &expected_address);
+                assert_eq!(*available, 3_623_849_220);
+                assert_eq!(*required, 3_623_849_221);
+            }
+            other => panic!("expected PlatformShieldInputShortfall, got {other:?}"),
+        }
+        // The offending address is restored in the message (dropped pre-fix).
+        assert!(
+            mapped.to_string().contains(&expected_address),
+            "message must name the short address: {mapped}"
         );
     }
 }
@@ -2985,10 +3062,14 @@ mod reserve_shield_fee_tests {
             .state_transitions
             .address_funds
             .min_input_amount;
+        let max_inputs = usize::from(
+            LATEST_PLATFORM_VERSION
+                .dpp
+                .state_transitions
+                .max_address_inputs,
+        );
         let shield_fee = compute_minimum_shielded_fee(SHIELD_NUM_ACTIONS, LATEST_PLATFORM_VERSION)
             .expect("latest shield fee must be computable");
-        let reserve = shield_fee_reserve_credits(LATEST_PLATFORM_VERSION)
-            .expect("latest shield fee reserve must be computable");
         let smallest_fee_inclusive_claim = shield_fee
             .checked_add(1)
             .expect("latest shield fee plus one credit must fit");
@@ -2997,15 +3078,83 @@ mod reserve_shield_fee_tests {
             smallest_fee_inclusive_claim >= min_input_amount,
             "adding the fee must lift even input 0's smallest positive base claim above the protocol minimum"
         );
+
+        // `input_count == 0` reproduces the pre-scaling flat 2×F, so the change
+        // is a superset of the old behavior at the base.
+        let reserve_flat = shield_fee_reserve_credits(LATEST_PLATFORM_VERSION, 0)
+            .expect("zero-input reserve must be computable");
+        assert_eq!(
+            reserve_flat,
+            shield_fee.saturating_mul(2),
+            "the zero-input reserve must equal the pre-scaling flat 2×F"
+        );
+
+        let reserve_max = shield_fee_reserve_credits(LATEST_PLATFORM_VERSION, max_inputs)
+            .expect("max-input reserve must be computable");
         assert!(
-            reserve >= shield_fee,
+            reserve_max >= shield_fee,
             "the retained input-0 headroom must cover the versioned shield fee"
         );
         assert!(
-            reserve <= shield_fee.saturating_mul(4),
-            "the reserve must stay a small multiple of the versioned fee — an oversized \
-             reserve silently understates preflight capacity and strands the excess \
-             below the input-0 viability threshold after a Max shield"
+            reserve_max > reserve_flat,
+            "a Max shield at the protocol-max input count must reserve strictly more than the flat base"
+        );
+        // Even scaled to the protocol-max input count the reserve stays a small
+        // multiple of the versioned fee (~2.6×F at latest constants), so it does
+        // not silently understate preflight capacity: the old 4×F ceiling still
+        // holds and is deliberately kept.
+        assert!(
+            reserve_max <= shield_fee.saturating_mul(4),
+            "even at the max input count the reserve must stay within 4×F — an \
+             oversized reserve silently understates preflight capacity and strands \
+             the excess below the input-0 viability threshold after a Max shield"
+        );
+    }
+
+    #[test]
+    fn reserve_scales_with_admitted_input_count() {
+        let max_inputs = usize::from(
+            LATEST_PLATFORM_VERSION
+                .dpp
+                .state_transitions
+                .max_address_inputs,
+        );
+
+        // Strictly monotonic in input count: every extra input prices in one
+        // more metered `SetBalanceToAddress` write, so the headroom cannot thin
+        // as inputs grow.
+        let mut previous =
+            shield_fee_reserve_credits(LATEST_PLATFORM_VERSION, 0).expect("reserve at 0 inputs");
+        for n in 1..=max_inputs {
+            let reserve =
+                shield_fee_reserve_credits(LATEST_PLATFORM_VERSION, n).expect("reserve computable");
+            assert!(
+                reserve > previous,
+                "reserve must strictly increase with input count (n={n})"
+            );
+            previous = reserve;
+        }
+
+        // At the 16-input boundary the reserve must equal the modeled worst-case
+        // fee (F + 16 × per-input SetBalanceToAddress write) plus one extra F of
+        // metering-variance headroom, all derived from the versioned constants.
+        let shield_fee = compute_minimum_shielded_fee(SHIELD_NUM_ACTIONS, LATEST_PLATFORM_VERSION)
+            .expect("shield fee computable");
+        let storage = &LATEST_PLATFORM_VERSION.fee_version.storage;
+        let per_byte_rate =
+            storage.storage_disk_usage_credit_per_byte + storage.storage_processing_credit_per_byte;
+        let per_input = SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES * per_byte_rate;
+        let modeled_fee_16 = shield_fee + (max_inputs as u64) * per_input;
+        let reserve_16 = shield_fee_reserve_credits(LATEST_PLATFORM_VERSION, max_inputs)
+            .expect("reserve at 16 inputs");
+        assert_eq!(
+            reserve_16,
+            modeled_fee_16 + shield_fee,
+            "reserve(16) must equal modeled_fee(16) + one F of headroom"
+        );
+        assert!(
+            reserve_16 > modeled_fee_16,
+            "the reserve must exceed the modeled worst-case 16-input fee"
         );
     }
 
