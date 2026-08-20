@@ -174,7 +174,10 @@ fn kv_reads_are_allowed_in_recovery() {
     let (persister, _tmp, _path) =
         fresh_recovery_persister(|strict| strict.put(&ObjectId::Global, "k", b"v").expect("seed"));
     assert_eq!(
-        persister.get(&ObjectId::Global, "k").expect("get").as_deref(),
+        persister
+            .get(&ObjectId::Global, "k")
+            .expect("get")
+            .as_deref(),
         Some(&b"v"[..])
     );
     assert_eq!(

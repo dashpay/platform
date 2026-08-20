@@ -20,6 +20,7 @@ use platform_wallet::changeset::{
     CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet_storage::sqlite::schema::core_state;
+use platform_wallet_storage::LoadCtx;
 use platform_wallet_storage::WalletStorageError;
 
 /// Keyless account manifest the rehydration path resolves xpubs from.
@@ -106,7 +107,8 @@ fn rt2_nonzero_balance_survives_reopen() {
     let conn = p2.lock_conn_for_test();
     #[cfg_attr(not(feature = "rehydration-apply"), allow(unused_variables))]
     let (core, utxo_accounts) =
-        core_state::load_state(&conn, &w, key_wallet::Network::Testnet).expect("load_state");
+        core_state::load_state(&conn, &w, key_wallet::Network::Testnet, &LoadCtx::strict())
+            .expect("load_state");
     drop(conn);
 
     // The persisted UTXO round-trips by outpoint + value.
@@ -130,6 +132,7 @@ fn rt2_nonzero_balance_survives_reopen() {
             &core,
             &utxo_accounts,
             &Default::default(),
+            &LoadCtx::strict(),
         )
         .expect("BIP44 reconstruction must not error");
         let bal = WalletInfoInterface::balance(&info);
@@ -174,7 +177,8 @@ fn b2_spent_utxo_excluded() {
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
     let (core, _utxo_accounts) =
-        core_state::load_state(&conn, &w, key_wallet::Network::Testnet).unwrap();
+        core_state::load_state(&conn, &w, key_wallet::Network::Testnet, &LoadCtx::strict())
+            .unwrap();
     drop(conn);
     let ops: Vec<_> = core.new_utxos.iter().map(|u| u.outpoint).collect();
     assert!(ops.contains(&u_unspent.outpoint));
@@ -203,7 +207,8 @@ fn b3_corrupt_record_blob_is_hard_error() {
     drop(persister);
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let result = core_state::load_state(&conn, &w, key_wallet::Network::Testnet);
+    let result =
+        core_state::load_state(&conn, &w, key_wallet::Network::Testnet, &LoadCtx::strict());
     drop(conn);
     assert!(
         matches!(result, Err(WalletStorageError::BincodeDecode { .. })),
@@ -288,7 +293,8 @@ fn f2_no_bip44_wallet_nonzero_balance_survives_reopen() {
     let conn = p2.lock_conn_for_test();
     #[cfg_attr(not(feature = "rehydration-apply"), allow(unused_variables))]
     let (core, utxo_accounts) =
-        core_state::load_state(&conn, &w, key_wallet::Network::Testnet).unwrap();
+        core_state::load_state(&conn, &w, key_wallet::Network::Testnet, &LoadCtx::strict())
+            .unwrap();
     drop(conn);
     assert_eq!(core.new_utxos.len(), 1);
 
@@ -304,6 +310,7 @@ fn f2_no_bip44_wallet_nonzero_balance_survives_reopen() {
             &core,
             &utxo_accounts,
             &Default::default(),
+            &LoadCtx::strict(),
         )
         .expect("CoinJoin-only reconstruction must not error");
         let bal = WalletInfoInterface::balance(&info);
@@ -326,7 +333,8 @@ fn b4_empty_core_state_is_ok() {
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
     let (core, _utxo_accounts) =
-        core_state::load_state(&conn, &w, key_wallet::Network::Testnet).unwrap();
+        core_state::load_state(&conn, &w, key_wallet::Network::Testnet, &LoadCtx::strict())
+            .unwrap();
     drop(conn);
     assert!(core.new_utxos.is_empty());
     assert!(core.records.is_empty());
@@ -374,7 +382,7 @@ fn b5_last_applied_chain_lock_round_trips() {
     {
         let conn = p2.lock_conn_for_test();
         let (loaded, _utxo_accounts) =
-            core_state::load_state(&conn, &w, key_wallet::Network::Testnet)
+            core_state::load_state(&conn, &w, key_wallet::Network::Testnet, &LoadCtx::strict())
                 .expect("load_state must succeed");
         assert_eq!(
             loaded.last_applied_chain_lock.as_ref(),
@@ -447,8 +455,9 @@ fn chain_lock_does_not_regress_on_lower_height_update() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let (loaded, _utxo_accounts) = core_state::load_state(&conn, &w, key_wallet::Network::Testnet)
-        .expect("load_state must succeed");
+    let (loaded, _utxo_accounts) =
+        core_state::load_state(&conn, &w, key_wallet::Network::Testnet, &LoadCtx::strict())
+            .expect("load_state must succeed");
     assert_eq!(
         loaded.last_applied_chain_lock.as_ref(),
         Some(&high),
@@ -582,7 +591,8 @@ fn rehydration_routes_via_real_sql_resolver() {
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
     let (core, utxo_accounts) =
-        core_state::load_state(&conn, &w, key_wallet::Network::Testnet).expect("load_state");
+        core_state::load_state(&conn, &w, key_wallet::Network::Testnet, &LoadCtx::strict())
+            .expect("load_state");
     drop(conn);
 
     // The real resolver populated the side channel from `core_address_pool`.
@@ -599,6 +609,7 @@ fn rehydration_routes_via_real_sql_resolver() {
         &core,
         &utxo_accounts,
         &Default::default(),
+        &LoadCtx::strict(),
     )
     .expect("apply must not error");
 
@@ -709,7 +720,8 @@ fn rehydration_routes_used_addresses_to_owning_account() {
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
     let (core, utxo_accounts) =
-        core_state::load_state(&conn, &w, key_wallet::Network::Testnet).expect("load_state");
+        core_state::load_state(&conn, &w, key_wallet::Network::Testnet, &LoadCtx::strict())
+            .expect("load_state");
 
     // Union the two used-address sources exactly as the persister does — the
     // pool source carries the known owner (CoinJoin), authoritative on conflict.
@@ -749,6 +761,7 @@ fn rehydration_routes_used_addresses_to_owning_account() {
         &core,
         &utxo_accounts,
         &used,
+        &LoadCtx::strict(),
     )
     .expect("apply must not error");
 

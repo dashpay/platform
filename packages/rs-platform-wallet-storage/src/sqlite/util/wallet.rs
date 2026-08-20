@@ -19,6 +19,7 @@ use platform_wallet::wallet::provider_key_at_index::{
     insert_platform_node_pool_entry, PlatformNodePoolError,
 };
 
+use crate::sqlite::load_ctx::LoadCtx;
 use crate::sqlite::schema::accounts::{self, AccountManifest};
 use crate::sqlite::schema::core_pool::{self, OwningAccount};
 use crate::WalletStorageError;
@@ -239,6 +240,7 @@ pub fn apply_persisted_core_state(
     core: &CoreChangeSet,
     utxo_accounts: &std::collections::HashMap<dashcore::OutPoint, OwningAccount>,
     used_pool_addresses: &std::collections::HashMap<key_wallet::Address, Option<OwningAccount>>,
+    ctx: &LoadCtx,
 ) -> Result<(), WalletStorageError> {
     use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
@@ -351,6 +353,7 @@ pub fn apply_persisted_core_state(
                     manifest,
                     &per_account_addrs[i],
                     wallet_id,
+                    ctx,
                 )?;
             }
         }
@@ -459,6 +462,7 @@ fn extend_pools_for_restored_addresses(
     manifest: &[AccountRegistrationEntry],
     restored_addresses: &[key_wallet::Address],
     wallet_id: [u8; 32],
+    _ctx: &LoadCtx,
 ) -> Result<(), WalletStorageError> {
     use key_wallet::managed_account::address_pool::{AddressPool, KeySource};
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
@@ -869,6 +873,7 @@ mod tests {
             &core,
             &Default::default(),
             &Default::default(),
+            &LoadCtx::strict(),
         )
         .unwrap();
 
@@ -1036,6 +1041,7 @@ mod tests {
             &core,
             &utxo_accounts,
             &Default::default(),
+            &LoadCtx::strict(),
         )
         .unwrap();
 
@@ -1152,6 +1158,7 @@ mod tests {
             &core,
             &Default::default(),
             &used,
+            &LoadCtx::strict(),
         )
         .unwrap();
 
@@ -1304,6 +1311,7 @@ mod tests {
             &core,
             &Default::default(),
             &Default::default(),
+            &LoadCtx::strict(),
         )
         .unwrap();
 
@@ -1450,6 +1458,7 @@ mod tests {
             &core,
             &Default::default(),
             &Default::default(),
+            &LoadCtx::strict(),
         )
         .unwrap();
 
@@ -1560,6 +1569,7 @@ mod tests {
             &core,
             &Default::default(),
             &Default::default(),
+            &LoadCtx::strict(),
         )
         .unwrap();
 
@@ -1692,6 +1702,7 @@ mod tests {
                 &core,
                 &Default::default(),
                 &Default::default(),
+                &LoadCtx::strict(),
             )
             .unwrap();
             let funds = baseline
@@ -1720,6 +1731,7 @@ mod tests {
             &core,
             &Default::default(),
             &used_core_addresses,
+            &LoadCtx::strict(),
         )
         .unwrap();
 
@@ -1839,6 +1851,7 @@ mod tests {
             &core,
             &Default::default(),
             &used,
+            &LoadCtx::strict(),
         )
         .unwrap();
 
@@ -1963,6 +1976,7 @@ mod tests {
             &core,
             &Default::default(),
             &Default::default(),
+            &LoadCtx::strict(),
         )
         .unwrap();
 
@@ -2065,6 +2079,7 @@ mod tests {
             &core,
             &Default::default(),
             &Default::default(),
+            &LoadCtx::strict(),
         )
         .expect_err("must fail closed when no funds account can hold the UTXOs");
         match err {
@@ -2111,6 +2126,7 @@ mod tests {
             &core,
             &Default::default(),
             &Default::default(),
+            &LoadCtx::strict(),
         )
         .expect("empty UTXO set must be Ok even with no funds account");
     }
@@ -2157,6 +2173,7 @@ mod tests {
             &core,
             &Default::default(),
             &Default::default(),
+            &LoadCtx::strict(),
         )
         .unwrap();
 

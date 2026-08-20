@@ -19,6 +19,7 @@ use platform_wallet::changeset::{
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet_storage::sqlite::schema::core_state;
+use platform_wallet_storage::LoadCtx;
 
 #[cfg(feature = "rehydration-apply")]
 fn manifest_for(wallet: &Wallet) -> Vec<AccountRegistrationEntry> {
@@ -120,7 +121,8 @@ fn utxo_on_fresh_gap_limit_address_rehydrates_under_first_funds_account() {
     .expect("reopen persister");
     let conn = reopened.lock_conn_for_test();
     let (core, utxo_accounts) =
-        core_state::load_state(&conn, &w, key_wallet::Network::Testnet).expect("load state");
+        core_state::load_state(&conn, &w, key_wallet::Network::Testnet, &LoadCtx::strict())
+            .expect("load state");
     drop(conn);
 
     assert!(
@@ -135,6 +137,7 @@ fn utxo_on_fresh_gap_limit_address_rehydrates_under_first_funds_account() {
         &core,
         &utxo_accounts,
         &Default::default(),
+        &LoadCtx::strict(),
     )
     .expect("rehydration must apply the unattributed UTXO");
 

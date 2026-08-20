@@ -9,6 +9,7 @@ use platform_wallet::wallet::shielded::SubwalletId;
 use rusqlite::{params, Connection, Transaction};
 
 use crate::sqlite::error::WalletStorageError;
+use crate::sqlite::load_ctx::LoadCtx;
 use crate::sqlite::schema::{blob, id32};
 
 const VIEWING_KEY_WIDTH: usize = 96;
@@ -67,6 +68,7 @@ pub(crate) fn apply(
 
 pub(crate) fn load_all(
     conn: &Connection,
+    _ctx: &LoadCtx,
 ) -> Result<BTreeMap<SubwalletId, Vec<u8>>, WalletStorageError> {
     let mut statement = conn.prepare_cached(
         "SELECT wallet_id, account_index, length(viewing_key), viewing_key \

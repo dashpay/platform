@@ -247,6 +247,21 @@ fn samples() -> Vec<WalletStorageError> {
                 Some("busy".into()),
             ),
         },
+        WalletStorageError::ReadOnlyRecoveryMode { operation: "store" },
+        WalletStorageError::RehydrationDerivationFailed {
+            stage: "maintain_gap_limit",
+            index: 7,
+            cause: "watch-only".into(),
+        },
+        WalletStorageError::UsedAddressOwnerConflict {
+            address: "yaddr".into(),
+            pool_owner: "Standard[0]".into(),
+            utxo_owner: "CoinJoin[0]".into(),
+        },
+        WalletStorageError::UnownedIdentityHasRegistrationIndex {
+            identity_id: [0xEF; 32],
+            identity_index: 3,
+        },
     ]
 }
 
@@ -346,6 +361,16 @@ fn tc_p2_005_is_transient_table() {
             }
             WalletStorageError::RehydrationPoolTypeMismatch { .. } => {
                 (false, "rehydration_pool_type_mismatch")
+            }
+            WalletStorageError::ReadOnlyRecoveryMode { .. } => (false, "read_only_recovery_mode"),
+            WalletStorageError::RehydrationDerivationFailed { .. } => {
+                (false, "rehydration_derivation_failed")
+            }
+            WalletStorageError::UsedAddressOwnerConflict { .. } => {
+                (false, "used_address_owner_conflict")
+            }
+            WalletStorageError::UnownedIdentityHasRegistrationIndex { .. } => {
+                (false, "unowned_identity_has_registration_index")
             }
         }
     }

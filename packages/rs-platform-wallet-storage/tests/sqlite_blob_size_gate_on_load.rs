@@ -16,7 +16,7 @@ use rusqlite::params;
 use platform_wallet_storage::sqlite::schema::{
     accounts, core_pool, core_state, identities, identity_keys,
 };
-use platform_wallet_storage::WalletStorageError;
+use platform_wallet_storage::{LoadCtx, WalletStorageError};
 
 /// Blob larger than the 16 MiB cap: one byte over the limit is enough to
 /// trigger the pre-read gate without wasting more memory than necessary.
@@ -76,7 +76,7 @@ fn blob_gate_core_utxos_load_state_rejects_oversize_script() {
     )
     .expect("insert oversize script row");
 
-    let err = core_state::load_state(&conn, &w, dashcore::Network::Testnet)
+    let err = core_state::load_state(&conn, &w, dashcore::Network::Testnet, &LoadCtx::strict())
         .expect_err("load_state must reject an oversize script blob");
     assert!(
         matches!(err, WalletStorageError::BlobTooLarge { .. }),
@@ -105,7 +105,7 @@ fn blob_gate_core_state_load_state_rejects_oversize_chain_lock() {
     )
     .expect("insert oversize chain_lock row");
 
-    let err = core_state::load_state(&conn, &w, dashcore::Network::Testnet)
+    let err = core_state::load_state(&conn, &w, dashcore::Network::Testnet, &LoadCtx::strict())
         .expect_err("load_state must reject an oversize last_applied_chain_lock blob");
     assert!(
         matches!(err, WalletStorageError::BlobTooLarge { .. }),

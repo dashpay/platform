@@ -18,7 +18,7 @@ use crate::sqlite::backup::{self, BackupKind};
 use crate::sqlite::buffer::Buffer;
 use crate::sqlite::config::{FlushMode, LoadPolicy, SqlitePersisterConfig, Synchronous};
 use crate::sqlite::error::{AutoBackupOperation, WalletStorageError};
-use crate::sqlite::load_ctx::LoadDegradation;
+use crate::sqlite::load_ctx::{LoadCtx, LoadDegradation};
 use crate::sqlite::reports::{CommitReport, DeleteWalletReport};
 use crate::sqlite::schema;
 use crate::sqlite::util::permissions::{apply_secure_permissions, precreate_secure};
@@ -322,7 +322,10 @@ impl SqlitePersister {
     /// # Errors
     ///
     /// [`WalletStorageError::ReadOnlyRecoveryMode`] naming `operation`.
-    pub(crate) fn ensure_writable(&self, operation: &'static str) -> Result<(), WalletStorageError> {
+    pub(crate) fn ensure_writable(
+        &self,
+        operation: &'static str,
+    ) -> Result<(), WalletStorageError> {
         if self.config.load_policy == LoadPolicy::Recovery {
             return Err(WalletStorageError::ReadOnlyRecoveryMode { operation });
         }
@@ -532,9 +535,10 @@ impl SqlitePersister {
         &self,
     ) -> Result<BTreeMap<Identifier, ManagedIdentity>, WalletStorageError> {
         let conn = self.conn()?;
+        let ctx = LoadCtx::new(self.config.load_policy);
         // The all-zero sentinel is the unowned scope: every reader it
         // reaches maps it to a NULL `wallet_id` match.
-        let state = schema::identities::load_prekeyed(&conn, &UNOWNED_SCOPE)?;
+        let state = schema::identities::load_prekeyed(&conn, &UNOWNED_SCOPE, &ctx)?;
         // An unowned identity carries no registration index, so it lands
         // in `out_of_wallet_identities`. A row that somehow holds one is
         // self-contradictory (an index is a position WITHIN a wallet);
@@ -1156,12 +1160,13 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// ```
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
         let conn = self.conn().map_err(PersistenceError::from)?;
+        let ctx = LoadCtx::new(self.config.load_policy);
         let mut state = ClientStartState::default();
 
         #[cfg(feature = "shielded")]
         {
-            state.shielded.viewing_keys =
-                schema::shielded_viewing_keys::load_all(&conn).map_err(PersistenceError::from)?;
+            state.shielded.viewing_keys = schema::shielded_viewing_keys::load_all(&conn, &ctx)
+                .map_err(PersistenceError::from)?;
         }
 
         let addrs_all = schema::platform_addrs::load_all(&conn).map_err(PersistenceError::from)?;
@@ -1204,14 +1209,14 @@ impl PlatformWalletPersistence for SqlitePersister {
             let account_manifest =
                 schema::accounts::load_state(&conn, &wallet_id).map_err(PersistenceError::from)?;
             let (core_state, utxo_accounts) =
-                schema::core_state::load_state(&conn, &wallet_id, network)
+                schema::core_state::load_state(&conn, &wallet_id, network, &ctx)
                     .map_err(PersistenceError::from)?;
             // Pre-keyed rehydration: each `ManagedIdentity` leaves the loader
             // already carrying its own public keys + contact state (matching
             // the FFI persister), so signing works immediately post-load
             // without a key sync. `ClientWalletStartState.contacts` /
             // `.identity_keys` stay empty — nothing is layered on afterwards.
-            let identity_manager = schema::identities::load_prekeyed(&conn, &wallet_id)
+            let identity_manager = schema::identities::load_prekeyed(&conn, &wallet_id, &ctx)
                 .map_err(PersistenceError::from)?;
             let unused_asset_locks = schema::asset_locks::load_unconsumed(&conn, &wallet_id)
                 .map_err(PersistenceError::from)?;
@@ -1324,6 +1329,7 @@ impl PlatformWalletPersistence for SqlitePersister {
                 &core_state,
                 &utxo_accounts,
                 &used_core_addresses,
+                &ctx,
             )
             .map_err(|e| {
                 PersistenceError::backend(format!(
@@ -1380,7 +1386,9 @@ impl PlatformWalletPersistence for SqlitePersister {
         PersistenceError,
     > {
         let conn = self.conn().map_err(PersistenceError::from)?;
-        schema::core_state::get_tx_record(&conn, &wallet_id, txid).map_err(PersistenceError::from)
+        let ctx = LoadCtx::new(self.config.load_policy);
+        schema::core_state::get_tx_record(&conn, &wallet_id, txid, &ctx)
+            .map_err(PersistenceError::from)
     }
 }
 

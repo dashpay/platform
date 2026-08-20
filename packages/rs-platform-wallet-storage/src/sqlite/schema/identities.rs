@@ -14,6 +14,7 @@ use {platform_wallet::changeset::IdentityEntry, rusqlite::Connection};
 
 use super::wallet_id_to_param;
 use crate::sqlite::error::WalletStorageError;
+use crate::sqlite::load_ctx::LoadCtx;
 use crate::sqlite::schema::blob;
 use crate::sqlite::schema::blob::impl_persistable_blob;
 
@@ -208,6 +209,7 @@ pub fn load_state(
 pub fn load_prekeyed(
     conn: &Connection,
     wallet_id: &WalletId,
+    ctx: &LoadCtx,
 ) -> Result<platform_wallet::changeset::IdentityManagerStartState, WalletStorageError> {
     let mut state = load_state(conn, wallet_id)?;
     let identity_keys = crate::sqlite::schema::identity_keys::load_state(conn, wallet_id)?;
@@ -222,7 +224,7 @@ pub fn load_prekeyed(
         ..Default::default()
     };
     let tombstoned = load_tombstoned_ids(conn, wallet_id)?;
-    merge_contacts_and_keys(&mut state, contacts, identity_keys, &tombstoned)?;
+    merge_contacts_and_keys(&mut state, contacts, identity_keys, &tombstoned, ctx)?;
     Ok(state)
 }
 
@@ -374,6 +376,7 @@ pub fn merge_contacts_and_keys(
     contacts: ContactChangeSet,
     identity_keys: IdentityKeysChangeSet,
     tombstoned: &HashSet<Identifier>,
+    _ctx: &LoadCtx,
 ) -> Result<(), WalletStorageError> {
     // One transient id → &mut ManagedIdentity view over both buckets so
     // routing is O(1) per entry rather than a per-entry bucket scan. The
@@ -641,7 +644,7 @@ mod tests {
         crate::sqlite::schema::identity_keys::apply(&tx, &w, &keys).unwrap();
         tx.commit().unwrap();
 
-        let state = load_prekeyed(&conn, &w).unwrap();
+        let state = load_prekeyed(&conn, &w, &LoadCtx::strict()).unwrap();
         let wo = &state.wallet_identities[&w][&0];
         assert_eq!(
             wo.identity.public_keys()[&0].data().as_slice(),
@@ -720,7 +723,8 @@ mod tests {
         }
 
         // Nothing was written: A's load is clean rather than fatally orphaned.
-        let state = load_prekeyed(&conn, &a).expect("no orphan row was ever created");
+        let state =
+            load_prekeyed(&conn, &a, &LoadCtx::strict()).expect("no orphan row was ever created");
         assert!(state
             .wallet_identities
             .get(&a)
@@ -773,7 +777,8 @@ mod tests {
         }
 
         // Both wallets still load; the owner keeps its key.
-        let owner_state = load_prekeyed(&conn, &owner).expect("owner wallet still loads");
+        let owner_state =
+            load_prekeyed(&conn, &owner, &LoadCtx::strict()).expect("owner wallet still loads");
         assert_eq!(
             owner_state.wallet_identities[&owner][&0]
                 .identity
@@ -782,7 +787,7 @@ mod tests {
                 .as_slice(),
             &[0x11; 33]
         );
-        load_prekeyed(&conn, &payer).expect("payer wallet still loads");
+        load_prekeyed(&conn, &payer, &LoadCtx::strict()).expect("payer wallet still loads");
     }
 
     /// The cross-wallet write refused above must stay refused on the
@@ -841,7 +846,8 @@ mod tests {
 
         // Distinct material on each side, so this assertion catches a
         // silent overwrite as well as a missing error.
-        let owner_state = load_prekeyed(&conn, &owner).expect("owner wallet still loads");
+        let owner_state =
+            load_prekeyed(&conn, &owner, &LoadCtx::strict()).expect("owner wallet still loads");
         assert_eq!(
             owner_state.wallet_identities[&owner][&0]
                 .identity
@@ -1071,8 +1077,8 @@ mod tests {
         removed.removed.insert(y);
         apply_in_tx(&mut conn, &a, &removed);
 
-        let state =
-            load_prekeyed(&conn, &a).expect("tombstoned-owner orphan must be skipped, not fatal");
+        let state = load_prekeyed(&conn, &a, &LoadCtx::strict())
+            .expect("tombstoned-owner orphan must be skipped, not fatal");
         assert!(
             state
                 .wallet_identities
@@ -1130,7 +1136,7 @@ mod tests {
             "the orphaned key row must actually exist, or this test proves nothing"
         );
 
-        let state = load_prekeyed(&conn, &unowned)
+        let state = load_prekeyed(&conn, &unowned, &LoadCtx::strict())
             .expect("a tombstoned UNOWNED owner's orphan key must be skipped, not fatal");
         assert!(
             state.out_of_wallet_identities.is_empty(),

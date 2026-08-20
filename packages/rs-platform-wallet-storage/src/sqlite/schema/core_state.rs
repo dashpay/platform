@@ -13,6 +13,7 @@ use platform_wallet::changeset::CoreChangeSet;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
+use crate::sqlite::load_ctx::LoadCtx;
 use crate::sqlite::schema::blob;
 use crate::sqlite::schema::blob::impl_persistable_blob;
 use crate::sqlite::schema::core_pool::{owning_account_for_script, OwningAccount};
@@ -317,6 +318,7 @@ pub fn load_state(
     conn: &Connection,
     wallet_id: &WalletId,
     network: dashcore::Network,
+    _ctx: &LoadCtx,
 ) -> Result<
     (
         CoreChangeSet,
@@ -551,6 +553,7 @@ pub fn get_tx_record(
     conn: &Connection,
     wallet_id: &WalletId,
     txid: &dashcore::Txid,
+    _ctx: &LoadCtx,
 ) -> Result<Option<TransactionRecord>, WalletStorageError> {
     // Pre-read `length()` gate before materializing, consistent with the
     // bulk load_state path above.
@@ -785,7 +788,7 @@ mod tests {
         )
         .unwrap();
 
-        let err = load_state(&conn, &w, dashcore::Network::Testnet)
+        let err = load_state(&conn, &w, dashcore::Network::Testnet, &LoadCtx::strict())
             .expect_err("load_state must reject an oversize instant-lock txid");
         assert!(
             matches!(err, WalletStorageError::BlobTooLarge { .. }),
@@ -845,7 +848,13 @@ mod tests {
             tx.commit().unwrap();
         }
 
-        let (state, _) = load_state(&conn, &wallet_id, dashcore::Network::Testnet).unwrap();
+        let (state, _) = load_state(
+            &conn,
+            &wallet_id,
+            dashcore::Network::Testnet,
+            &LoadCtx::strict(),
+        )
+        .unwrap();
         let loaded = state
             .new_utxos
             .iter()
@@ -882,12 +891,20 @@ mod tests {
             tx.commit().unwrap();
         }
 
-        let (state, _) = load_state(&conn, &wallet_id, dashcore::Network::Testnet).unwrap();
+        let (state, _) = load_state(
+            &conn,
+            &wallet_id,
+            dashcore::Network::Testnet,
+            &LoadCtx::strict(),
+        )
+        .unwrap();
         let loaded = state.new_utxos.first().expect("recordless UTXO must load");
         assert_eq!(loaded.height, 456);
         assert!(loaded.is_confirmed);
         assert!(state.records.is_empty());
-        assert!(get_tx_record(&conn, &wallet_id, &txid).unwrap().is_none());
+        assert!(get_tx_record(&conn, &wallet_id, &txid, &LoadCtx::strict())
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -929,7 +946,13 @@ mod tests {
             tx.commit().unwrap();
         }
 
-        let (state, _) = load_state(&conn, &wallet_id, dashcore::Network::Testnet).unwrap();
+        let (state, _) = load_state(
+            &conn,
+            &wallet_id,
+            dashcore::Network::Testnet,
+            &LoadCtx::strict(),
+        )
+        .unwrap();
         assert_eq!(state.new_utxos[0].height, 500);
         assert!(state.new_utxos[0].is_confirmed);
     }
@@ -958,7 +981,13 @@ mod tests {
         .unwrap();
         tx.commit().unwrap();
 
-        let (state, _) = load_state(&conn, &wallet_id, dashcore::Network::Testnet).unwrap();
+        let (state, _) = load_state(
+            &conn,
+            &wallet_id,
+            dashcore::Network::Testnet,
+            &LoadCtx::strict(),
+        )
+        .unwrap();
         assert_eq!(state.new_utxos[0].height, 0);
         assert!(state.new_utxos[0].is_confirmed);
     }
@@ -1019,7 +1048,13 @@ mod tests {
             tx.commit().unwrap();
         }
 
-        let (state, _) = load_state(&conn, &wallet_id, dashcore::Network::Testnet).unwrap();
+        let (state, _) = load_state(
+            &conn,
+            &wallet_id,
+            dashcore::Network::Testnet,
+            &LoadCtx::strict(),
+        )
+        .unwrap();
         assert_eq!(state.new_utxos[0].height, 0);
         assert!(!state.new_utxos[0].is_confirmed);
         assert_eq!(state.records.len(), 1);
@@ -1046,7 +1081,13 @@ mod tests {
             tx.commit().unwrap();
         }
 
-        let (state, _) = load_state(&conn, &wallet_id, dashcore::Network::Testnet).unwrap();
+        let (state, _) = load_state(
+            &conn,
+            &wallet_id,
+            dashcore::Network::Testnet,
+            &LoadCtx::strict(),
+        )
+        .unwrap();
         assert_eq!(state.new_utxos[0].height, confirmed_height);
         assert!(state.new_utxos[0].is_confirmed);
     }
@@ -1093,7 +1134,13 @@ mod tests {
             tx.commit().unwrap();
         }
 
-        let (state, _) = load_state(&conn, &wallet_id, dashcore::Network::Testnet).unwrap();
+        let (state, _) = load_state(
+            &conn,
+            &wallet_id,
+            dashcore::Network::Testnet,
+            &LoadCtx::strict(),
+        )
+        .unwrap();
         let loaded = state
             .new_utxos
             .iter()
@@ -1135,8 +1182,13 @@ mod tests {
         )
         .unwrap();
 
-        let (state, _) = load_state(&conn, &wallet_id, dashcore::Network::Testnet)
-            .expect("a reconstructible typed txid mismatch must not abort wallet loading");
+        let (state, _) = load_state(
+            &conn,
+            &wallet_id,
+            dashcore::Network::Testnet,
+            &LoadCtx::strict(),
+        )
+        .expect("a reconstructible typed txid mismatch must not abort wallet loading");
         assert_eq!(state.records[0].txid, blob_txid);
         let repaired: Vec<u8> = conn
             .query_row(
@@ -1203,8 +1255,13 @@ mod tests {
             .unwrap();
             tx.commit().unwrap();
 
-            let (state, _) = load_state(&conn, &wallet_id, dashcore::Network::Testnet)
-                .expect("a blocked repair must still reconstruct blob-authoritative state");
+            let (state, _) = load_state(
+                &conn,
+                &wallet_id,
+                dashcore::Network::Testnet,
+                &LoadCtx::strict(),
+            )
+            .expect("a blocked repair must still reconstruct blob-authoritative state");
             let loaded = state.new_utxos.first().expect("UTXO must load");
             assert_eq!(loaded.height, 500, "failed scan-order case {case}");
             assert!(loaded.is_confirmed);
@@ -1249,8 +1306,13 @@ mod tests {
         )
         .unwrap();
 
-        let (state, _) = load_state(&conn, &wallet_id, dashcore::Network::Testnet)
-            .expect("a reconstructible typed height mismatch must not abort wallet loading");
+        let (state, _) = load_state(
+            &conn,
+            &wallet_id,
+            dashcore::Network::Testnet,
+            &LoadCtx::strict(),
+        )
+        .expect("a reconstructible typed height mismatch must not abort wallet loading");
         assert_eq!(state.records[0].height(), Some(500));
         let repaired: Option<i64> = conn
             .query_row(
@@ -1292,13 +1354,15 @@ mod tests {
         )
         .unwrap();
 
-        let record = get_tx_record(&conn, &wallet_id, &typed_txid)
+        let record = get_tx_record(&conn, &wallet_id, &typed_txid, &LoadCtx::strict())
             .expect("a reconstructible typed txid mismatch must not abort point reads")
             .expect("blob-bearing row must return its record");
         assert_eq!(record.txid, blob_txid);
-        assert!(get_tx_record(&conn, &wallet_id, &blob_txid)
-            .unwrap()
-            .is_some());
+        assert!(
+            get_tx_record(&conn, &wallet_id, &blob_txid, &LoadCtx::strict())
+                .unwrap()
+                .is_some()
+        );
     }
 
     #[test]
@@ -1337,7 +1401,7 @@ mod tests {
         )
         .unwrap();
 
-        let record = get_tx_record(&conn, &wallet_id, &txid)
+        let record = get_tx_record(&conn, &wallet_id, &txid, &LoadCtx::strict())
             .expect("a reconstructible typed height mismatch must not abort point reads")
             .expect("blob-bearing row must return its record");
         assert_eq!(record.height(), Some(600));
