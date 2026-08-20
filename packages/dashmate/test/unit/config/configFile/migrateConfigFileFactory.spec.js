@@ -172,6 +172,44 @@ describe('migrateConfigFileFactory', () => {
     }
   });
 
+  it('should apply both the 4.1.1 and 4.2.0 migrations to a 4.1.0 config', async () => {
+    // Two release lines added migrations above 4.1.0 independently: the Tenderdash
+    // pin and the ACME directory default. A node upgrading from 4.1.0 crosses both,
+    // and the runner orders them by version rather than by their position in the
+    // table, where the Tenderdash pin sits last.
+    const FROM_VERSION = '4.1.0';
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+
+    const baseConfig = container.resolve('defaultConfigs').get('base');
+    const expectedTenderdashImage = baseConfig.get('platform.drive.tenderdash.docker.image');
+
+    const configFileData = createConfigFile().toObject();
+    configFileData.configFormatVersion = FROM_VERSION;
+    for (const options of Object.values(configFileData.configs)) {
+      // The shapes a config stamped 4.1.0 carries, before either migration ran.
+      options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1.6.0';
+      options.platform.drive.tenderdash.consensus.unsafeOverride.commit = { timeout: '1s' };
+      delete options.platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl;
+    }
+
+    const migrated = migrateConfigFile(configFileData, FROM_VERSION, version);
+
+    for (const [name, options] of Object.entries(migrated.configs)) {
+      expect(options.platform.drive.tenderdash.docker.image).to.equal(
+        expectedTenderdashImage,
+        `4.1.1 did not pin the Tenderdash image for ${name}`,
+      );
+      expect(options.platform.drive.tenderdash.consensus.unsafeOverride.commit).to.equal(
+        undefined,
+        `4.1.1 did not drop the removed Commit timeout override for ${name}`,
+      );
+      expect(options.platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl).to.equal(
+        baseConfig.get('platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl'),
+        `4.2.0 did not set the ACME directory for ${name}`,
+      );
+    }
+  });
+
   it('should keep an operator image that predates the 4.0.0 re-pin', async () => {
     // Every config older than 4.0.0 crosses the unconditional re-pin in that
     // migration, so it is the first place operator intent can be respected. It
