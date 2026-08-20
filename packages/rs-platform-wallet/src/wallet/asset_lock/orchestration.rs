@@ -482,6 +482,22 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     // (an IS-locked lock consumed seconds after broadcast has
                     // no ChainLock yet). Record nothing, keep the code-24
                     // signal, let the caller retry.
+                    //
+                    // Deliberately a catch-all, not `FinalityTimeout`-only.
+                    // The code-24 classification above came from Platform's
+                    // outpoint-matched consensus error, not from this local
+                    // lookup, so a `WalletNotFound` / `AssetLockProofWait`
+                    // (lock untracked after a restore, persister failure,
+                    // record-map mismatch) does not invalidate it — the
+                    // promotion is best-effort evidence-attachment either
+                    // way. Propagating those errors instead would swap the
+                    // host's actionable already-consumed branch for a
+                    // generic local error in exactly the degraded-state
+                    // scenarios where that branch is the only path that can
+                    // still resolve the operation from Platform-side
+                    // evidence. Failures on the RECORDING path below do
+                    // propagate (`mark_asset_lock_consumption_unknown` keeps
+                    // its `?`).
                     Err(e) => {
                         tracing::warn!(
                             outpoint = %out_point,
