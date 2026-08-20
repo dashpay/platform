@@ -76,43 +76,6 @@ fn shielded_viewing_key_wallet_mismatch_is_rejected() {
 }
 
 #[test]
-fn corrupt_shielded_viewing_key_row_is_skipped_without_blocking_other_wallets() {
-    let (persister, _tmp, _path) = fresh_persister();
-    let valid_wallet = wid(0x51);
-    let corrupt_wallet = wid(0x52);
-    let valid_subwallet = SubwalletId::new(valid_wallet, 1);
-    let corrupt_subwallet = SubwalletId::new(corrupt_wallet, 2);
-    ensure_wallet_meta(&persister, &valid_wallet);
-    ensure_wallet_meta(&persister, &corrupt_wallet);
-    {
-        let conn = persister.lock_conn_for_test();
-        conn.execute(
-            "INSERT INTO shielded_viewing_keys (wallet_id, account_index, viewing_key) \
-             VALUES (?1, ?2, ?3)",
-            rusqlite::params![valid_wallet.as_slice(), 1_i64, &[0xE5_u8; 96]],
-        )
-        .expect("insert valid viewing key");
-        conn.execute(
-            "INSERT INTO shielded_viewing_keys (wallet_id, account_index, viewing_key) \
-             VALUES (?1, ?2, ?3)",
-            rusqlite::params![corrupt_wallet.as_slice(), 2_i64, &[0xF6_u8; 95]],
-        )
-        .expect("insert corrupt viewing key");
-    }
-
-    let state = persister
-        .load()
-        .expect("one corrupt viewing key must not fail whole-client load");
-    assert!(state.wallets.contains_key(&valid_wallet));
-    assert!(state.wallets.contains_key(&corrupt_wallet));
-    assert_eq!(
-        state.shielded.viewing_keys.get(&valid_subwallet),
-        Some(&vec![0xE5; 96])
-    );
-    assert!(!state.shielded.viewing_keys.contains_key(&corrupt_subwallet));
-}
-
-#[test]
 fn sqlite_advertises_shielded_viewing_key_capability() {
     let (persister, _tmp, _path) = fresh_persister();
     assert!(persister

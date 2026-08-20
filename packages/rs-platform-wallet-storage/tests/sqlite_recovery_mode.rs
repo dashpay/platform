@@ -270,6 +270,83 @@ fn transaction_row(
     .expect("transaction row must exist")
 }
 
+// ── (b) shielded viewing-key row ────────────────────────────────────────
+
+/// One valid viewing key plus one whose blob is a byte short of the fixed
+/// 96-byte width.
+#[cfg(feature = "shielded")]
+fn seed_corrupt_viewing_key(
+    persister: &SqlitePersister,
+    valid_wallet: &WalletId,
+    corrupt_wallet: &WalletId,
+) {
+    ensure_wallet_meta(persister, valid_wallet);
+    ensure_wallet_meta(persister, corrupt_wallet);
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "INSERT INTO shielded_viewing_keys (wallet_id, account_index, viewing_key) \
+         VALUES (?1, ?2, ?3)",
+        params![valid_wallet.as_slice(), 1_i64, &[0xE5_u8; 96]],
+    )
+    .expect("insert valid viewing key");
+    conn.execute(
+        "INSERT INTO shielded_viewing_keys (wallet_id, account_index, viewing_key) \
+         VALUES (?1, ?2, ?3)",
+        params![corrupt_wallet.as_slice(), 2_i64, &[0xF6_u8; 95]],
+    )
+    .expect("insert corrupt viewing key");
+}
+
+#[cfg(feature = "shielded")]
+#[test]
+fn corrupt_shielded_viewing_key_row_is_fatal_under_strict() {
+    let valid_wallet = wid(0x28);
+    let corrupt_wallet = wid(0x29);
+    let (persister, _tmp, _path) = fresh_persister();
+    seed_corrupt_viewing_key(&persister, &valid_wallet, &corrupt_wallet);
+
+    let err = typed(
+        persister
+            .load()
+            .expect_err("a corrupt viewing-key row must abort a strict load"),
+    );
+    assert!(
+        matches!(err, WalletStorageError::BlobDecode { .. }),
+        "expected BlobDecode for the short viewing key, got {err:?}"
+    );
+}
+
+/// Relocated from `sqlite_shielded_viewing_keys.rs`: skipping one corrupt
+/// row is now recovery-only behaviour, not the default.
+#[cfg(feature = "shielded")]
+#[test]
+fn corrupt_shielded_viewing_key_row_is_skipped_in_recovery() {
+    use platform_wallet::wallet::shielded::SubwalletId;
+    let valid_wallet = wid(0x2A);
+    let corrupt_wallet = wid(0x2B);
+    let (persister, _tmp, _path) = fresh_recovery_persister(|strict| {
+        seed_corrupt_viewing_key(strict, &valid_wallet, &corrupt_wallet)
+    });
+
+    let state = persister
+        .load()
+        .expect("one corrupt viewing key must not fail a recovery load");
+    assert!(state.wallets.contains_key(&valid_wallet));
+    assert!(state.wallets.contains_key(&corrupt_wallet));
+    assert_eq!(
+        state
+            .shielded
+            .viewing_keys
+            .get(&SubwalletId::new(valid_wallet, 1)),
+        Some(&vec![0xE5; 96])
+    );
+    assert!(!state
+        .shielded
+        .viewing_keys
+        .contains_key(&SubwalletId::new(corrupt_wallet, 2)));
+    assert_only_site(&persister, LoadSite::ShieldedViewingKeyRow, 1);
+}
+
 // ── flag semantics ──────────────────────────────────────────────────────
 
 #[test]

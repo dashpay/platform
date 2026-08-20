@@ -1,7 +1,6 @@
 //! Native persistence for per-subwallet Orchard full viewing keys.
 
 use std::collections::BTreeMap;
-use std::fmt::Display;
 
 use platform_wallet::changeset::ShieldedChangeSet;
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -9,17 +8,15 @@ use platform_wallet::wallet::shielded::SubwalletId;
 use rusqlite::{params, Connection, Transaction};
 
 use crate::sqlite::error::WalletStorageError;
-use crate::sqlite::load_ctx::LoadCtx;
+use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
 use crate::sqlite::schema::{blob, id32};
 
 const VIEWING_KEY_WIDTH: usize = 96;
 
-fn warn_corrupt_row(
-    row_number: usize,
-    wallet_id: Option<&[u8]>,
-    account_index: Option<i64>,
-    error: &impl Display,
-) {
+/// Log which row was skipped. The failure itself is already logged by
+/// [`LoadCtx::tolerate`], so this adds only the coordinates needed to find
+/// the row — and therefore fires only when the policy tolerated it.
+fn warn_skipped_row(row_number: usize, wallet_id: Option<&[u8]>, account_index: Option<i64>) {
     let wallet_id = wallet_id
         .map(hex::encode)
         .unwrap_or_else(|| "<unreadable>".to_string());
@@ -27,8 +24,7 @@ fn warn_corrupt_row(
         row_number,
         wallet_id = %wallet_id,
         account_index = ?account_index,
-        error = %error,
-        "skipping corrupt shielded viewing-key row during rehydration"
+        "skipped shielded viewing-key row located here during rehydration"
     );
 }
 
@@ -66,9 +62,16 @@ pub(crate) fn apply(
     Ok(())
 }
 
+/// Read every persisted subwallet viewing key.
+///
+/// # Errors
+///
+/// Under [`LoadPolicy::Strict`](crate::LoadPolicy) a row that will not
+/// decode aborts the read. Under `Recovery` it is counted and skipped, and
+/// that subwallet loads without its viewing key.
 pub(crate) fn load_all(
     conn: &Connection,
-    _ctx: &LoadCtx,
+    ctx: &LoadCtx,
 ) -> Result<BTreeMap<SubwalletId, Vec<u8>>, WalletStorageError> {
     let mut statement = conn.prepare_cached(
         "SELECT wallet_id, account_index, length(viewing_key), viewing_key \
@@ -83,26 +86,24 @@ pub(crate) fn load_all(
         let wallet_id_bytes = match row.get::<_, Vec<u8>>(0) {
             Ok(value) => value,
             Err(error) => {
-                warn_corrupt_row(row_number, None, None, &error);
+                ctx.tolerate(LoadSite::ShieldedViewingKeyRow, error.into())?;
+                warn_skipped_row(row_number, None, None);
                 continue;
             }
         };
         let account_index = match row.get::<_, i64>(1) {
             Ok(value) => value,
             Err(error) => {
-                warn_corrupt_row(row_number, Some(&wallet_id_bytes), None, &error);
+                ctx.tolerate(LoadSite::ShieldedViewingKeyRow, error.into())?;
+                warn_skipped_row(row_number, Some(&wallet_id_bytes), None);
                 continue;
             }
         };
         let viewing_key_length = match row.get::<_, i64>(2) {
             Ok(value) => value,
             Err(error) => {
-                warn_corrupt_row(
-                    row_number,
-                    Some(&wallet_id_bytes),
-                    Some(account_index),
-                    &error,
-                );
+                ctx.tolerate(LoadSite::ShieldedViewingKeyRow, error.into())?;
+                warn_skipped_row(row_number, Some(&wallet_id_bytes), Some(account_index));
                 continue;
             }
         };
@@ -130,12 +131,10 @@ pub(crate) fn load_all(
             Ok((subwallet_id, viewing_key)) => {
                 viewing_keys.insert(subwallet_id, viewing_key);
             }
-            Err(error) => warn_corrupt_row(
-                row_number,
-                Some(&wallet_id_bytes),
-                Some(account_index),
-                &error,
-            ),
+            Err(error) => {
+                ctx.tolerate(LoadSite::ShieldedViewingKeyRow, error)?;
+                warn_skipped_row(row_number, Some(&wallet_id_bytes), Some(account_index));
+            }
         }
     }
 
