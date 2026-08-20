@@ -6,6 +6,7 @@ import Config from '../../src/config/Config.js';
 import {
   NETWORK_MAINNET,
   PACKAGE_ROOT_DIR,
+  LETSENCRYPT_ACME_DIRECTORY_URL,
 } from '../../src/constants.js';
 
 const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
@@ -255,6 +256,7 @@ export default function getBaseConfigFactory() {
               },
               letsencrypt: {
                 email: null,
+                acmeDirectoryUrl: LETSENCRYPT_ACME_DIRECTORY_URL,
               },
             },
           },
@@ -262,7 +264,7 @@ export default function getBaseConfigFactory() {
         dapi: {
           rsDapi: {
             docker: {
-              image: `dashpay/rs-dapi:${dockerImageVersion}`,
+              image: null,
               deploy: {
                 replicas: 1,
               },
@@ -291,7 +293,7 @@ export default function getBaseConfigFactory() {
         drive: {
           abci: {
             docker: {
-              image: `dashpay/drive:${dockerImageVersion}`,
+              image: null,
               build: {
                 enabled: false,
                 context: path.join(PACKAGE_ROOT_DIR, '..', '..'),
@@ -358,7 +360,7 @@ export default function getBaseConfigFactory() {
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:1.6.0',
+              image: 'dashpay/tenderdash:1.7',
             },
             p2p: {
               host: '0.0.0.0',
@@ -415,10 +417,6 @@ export default function getBaseConfigFactory() {
                 vote: {
                   timeout: null,
                   delta: null,
-                },
-                commit: {
-                  timeout: null,
-                  bypass: null,
                 },
               },
             },

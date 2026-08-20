@@ -165,25 +165,6 @@ fn bind_known_contract(
     Ok((embedded_id, Arc::new(contract)))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use dpp::tests::fixtures::get_data_contract_fixture;
-
-    #[test]
-    fn rejects_known_contract_under_an_alias_identifier() {
-        let platform_version = PlatformVersion::latest();
-        let contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
-            .data_contract_owned();
-        let alias = Identifier::new([0x5a; 32]);
-        assert_ne!(alias, contract.id());
-
-        let error = bind_known_contract(alias, contract).expect_err("alias must be rejected");
-
-        assert!(error.contains("does not match embedded contract ID"));
-    }
-}
-
 fn convert_proof_result_to_js(
     proof_result: &StateTransitionProofResult,
 ) -> Result<JsValue, JsValue> {
@@ -268,4 +249,23 @@ fn convert_proof_result_to_js(
     }
 
     Ok(obj.into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::tests::fixtures::get_data_contract_fixture;
+
+    #[test]
+    fn rejects_known_contract_under_an_alias_identifier() {
+        let platform_version = PlatformVersion::latest();
+        let contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        let alias = Identifier::new([0x5a; 32]);
+        assert_ne!(alias, contract.id());
+
+        let error = bind_known_contract(alias, contract).expect_err("alias must be rejected");
+
+        assert!(error.contains("does not match embedded contract ID"));
+    }
 }

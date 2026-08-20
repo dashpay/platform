@@ -1,6 +1,7 @@
 mod address_tests;
 mod basic_tests;
 mod chain_lock_update_tests;
+mod comprehensive_tests;
 mod core_height_increase;
 mod core_update_tests;
 mod data_contract_history_tests;

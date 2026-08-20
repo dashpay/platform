@@ -127,7 +127,6 @@ GPBObjCClassDeclaration(GetDocumentsRequest_GetDocumentsRequestV1);
 GPBObjCClassDeclaration(GetDocumentsRequest_GetDocumentsRequestV1_Select);
 GPBObjCClassDeclaration(GetDocumentsRequest_HavingAggregate);
 GPBObjCClassDeclaration(GetDocumentsRequest_HavingClause);
-GPBObjCClassDeclaration(GetDocumentsRequest_HavingRanking);
 GPBObjCClassDeclaration(GetDocumentsRequest_OrderClause);
 GPBObjCClassDeclaration(GetDocumentsRequest_WhereClause);
 GPBObjCClassDeclaration(GetDocumentsResponse);
@@ -142,6 +141,8 @@ GPBObjCClassDeclaration(GetDocumentsResponse_GetDocumentsResponseV1_CountEntries
 GPBObjCClassDeclaration(GetDocumentsResponse_GetDocumentsResponseV1_CountEntry);
 GPBObjCClassDeclaration(GetDocumentsResponse_GetDocumentsResponseV1_CountResults);
 GPBObjCClassDeclaration(GetDocumentsResponse_GetDocumentsResponseV1_Documents);
+GPBObjCClassDeclaration(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries);
+GPBObjCClassDeclaration(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry);
 GPBObjCClassDeclaration(GetDocumentsResponse_GetDocumentsResponseV1_ResultData);
 GPBObjCClassDeclaration(GetDocumentsResponse_GetDocumentsResponseV1_SumEntries);
 GPBObjCClassDeclaration(GetDocumentsResponse_GetDocumentsResponseV1_SumEntry);
@@ -5566,114 +5567,6 @@ BOOL GetDocumentsRequest_HavingAggregate_Function_IsValidValue(int32_t value__) 
   }
 }
 
-#pragma mark - GetDocumentsRequest_HavingRanking
-
-@implementation GetDocumentsRequest_HavingRanking
-
-@dynamic kind;
-@dynamic hasN, n;
-
-typedef struct GetDocumentsRequest_HavingRanking__storage_ {
-  uint32_t _has_storage_[1];
-  GetDocumentsRequest_HavingRanking_Kind kind;
-  uint64_t n;
-} GetDocumentsRequest_HavingRanking__storage_;
-
-// This method is threadsafe because it is initially called
-// in +initialize for each subclass.
-+ (GPBDescriptor *)descriptor {
-  static GPBDescriptor *descriptor = nil;
-  if (!descriptor) {
-    static GPBMessageFieldDescription fields[] = {
-      {
-        .name = "kind",
-        .dataTypeSpecific.enumDescFunc = GetDocumentsRequest_HavingRanking_Kind_EnumDescriptor,
-        .number = GetDocumentsRequest_HavingRanking_FieldNumber_Kind,
-        .hasIndex = 0,
-        .offset = (uint32_t)offsetof(GetDocumentsRequest_HavingRanking__storage_, kind),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeEnum,
-      },
-      {
-        .name = "n",
-        .dataTypeSpecific.clazz = Nil,
-        .number = GetDocumentsRequest_HavingRanking_FieldNumber_N,
-        .hasIndex = 1,
-        .offset = (uint32_t)offsetof(GetDocumentsRequest_HavingRanking__storage_, n),
-        .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeUInt64,
-      },
-    };
-    GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetDocumentsRequest_HavingRanking class]
-                                     rootClass:[PlatformRoot class]
-                                          file:PlatformRoot_FileDescriptor()
-                                        fields:fields
-                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetDocumentsRequest_HavingRanking__storage_)
-                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
-    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentsRequest)];
-    #if defined(DEBUG) && DEBUG
-      NSAssert(descriptor == nil, @"Startup recursed!");
-    #endif  // DEBUG
-    descriptor = localDescriptor;
-  }
-  return descriptor;
-}
-
-@end
-
-int32_t GetDocumentsRequest_HavingRanking_Kind_RawValue(GetDocumentsRequest_HavingRanking *message) {
-  GPBDescriptor *descriptor = [GetDocumentsRequest_HavingRanking descriptor];
-  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetDocumentsRequest_HavingRanking_FieldNumber_Kind];
-  return GPBGetMessageRawEnumField(message, field);
-}
-
-void SetGetDocumentsRequest_HavingRanking_Kind_RawValue(GetDocumentsRequest_HavingRanking *message, int32_t value) {
-  GPBDescriptor *descriptor = [GetDocumentsRequest_HavingRanking descriptor];
-  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetDocumentsRequest_HavingRanking_FieldNumber_Kind];
-  GPBSetMessageRawEnumField(message, field, value);
-}
-
-#pragma mark - Enum GetDocumentsRequest_HavingRanking_Kind
-
-GPBEnumDescriptor *GetDocumentsRequest_HavingRanking_Kind_EnumDescriptor(void) {
-  static _Atomic(GPBEnumDescriptor*) descriptor = nil;
-  if (!descriptor) {
-    static const char *valueNames =
-        "Min\000Max\000Top\000Bottom\000";
-    static const int32_t values[] = {
-        GetDocumentsRequest_HavingRanking_Kind_Min,
-        GetDocumentsRequest_HavingRanking_Kind_Max,
-        GetDocumentsRequest_HavingRanking_Kind_Top,
-        GetDocumentsRequest_HavingRanking_Kind_Bottom,
-    };
-    GPBEnumDescriptor *worker =
-        [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetDocumentsRequest_HavingRanking_Kind)
-                                       valueNames:valueNames
-                                           values:values
-                                            count:(uint32_t)(sizeof(values) / sizeof(int32_t))
-                                     enumVerifier:GetDocumentsRequest_HavingRanking_Kind_IsValidValue];
-    GPBEnumDescriptor *expected = nil;
-    if (!atomic_compare_exchange_strong(&descriptor, &expected, worker)) {
-      [worker release];
-    }
-  }
-  return descriptor;
-}
-
-BOOL GetDocumentsRequest_HavingRanking_Kind_IsValidValue(int32_t value__) {
-  switch (value__) {
-    case GetDocumentsRequest_HavingRanking_Kind_Min:
-    case GetDocumentsRequest_HavingRanking_Kind_Max:
-    case GetDocumentsRequest_HavingRanking_Kind_Top:
-    case GetDocumentsRequest_HavingRanking_Kind_Bottom:
-      return YES;
-    default:
-      return NO;
-  }
-}
-
 #pragma mark - GetDocumentsRequest_HavingClause
 
 @implementation GetDocumentsRequest_HavingClause
@@ -5682,14 +5575,12 @@ BOOL GetDocumentsRequest_HavingRanking_Kind_IsValidValue(int32_t value__) {
 @dynamic hasAggregate, aggregate;
 @dynamic operator_p;
 @dynamic value;
-@dynamic ranking;
 
 typedef struct GetDocumentsRequest_HavingClause__storage_ {
   uint32_t _has_storage_[2];
   GetDocumentsRequest_HavingClause_Operator operator_p;
   GetDocumentsRequest_HavingAggregate *aggregate;
   GetDocumentsRequest_DocumentFieldValue *value;
-  GetDocumentsRequest_HavingRanking *ranking;
 } GetDocumentsRequest_HavingClause__storage_;
 
 // This method is threadsafe because it is initially called
@@ -5722,15 +5613,6 @@ typedef struct GetDocumentsRequest_HavingClause__storage_ {
         .number = GetDocumentsRequest_HavingClause_FieldNumber_Value,
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(GetDocumentsRequest_HavingClause__storage_, value),
-        .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeMessage,
-      },
-      {
-        .name = "ranking",
-        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsRequest_HavingRanking),
-        .number = GetDocumentsRequest_HavingClause_FieldNumber_Ranking,
-        .hasIndex = -1,
-        .offset = (uint32_t)offsetof(GetDocumentsRequest_HavingClause__storage_, ranking),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
@@ -7273,6 +7155,154 @@ void GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_ClearVariantOneO
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry
+
+@implementation GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry
+
+@dynamic valueOneOfCase;
+@dynamic key;
+@dynamic count;
+@dynamic sum;
+@dynamic avg;
+
+typedef struct GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry__storage_ {
+  uint32_t _has_storage_[2];
+  NSData *key;
+  uint64_t count;
+  int64_t sum;
+  double avg;
+} GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "key",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_Key,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry__storage_, key),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "count",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_Count,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry__storage_, count),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "sum",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_Sum,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry__storage_, sum),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeSInt64,
+      },
+      {
+        .name = "avg",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_Avg,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry__storage_, avg),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeDouble,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "value",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentsResponse_GetDocumentsResponseV1)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_ClearValueOneOfCase(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry *message) {
+  GPBDescriptor *descriptor = [GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries
+
+@implementation GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries
+
+@dynamic entriesArray, entriesArray_Count;
+@dynamic hasSkipped, skipped;
+
+typedef struct GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *entriesArray;
+  uint64_t skipped;
+} GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "entriesArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry),
+        .number = GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries_FieldNumber_EntriesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries__storage_, entriesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "skipped",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries_FieldNumber_Skipped,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries__storage_, skipped),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt64,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentsResponse_GetDocumentsResponseV1)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
 #pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_ResultData
 
 @implementation GetDocumentsResponse_GetDocumentsResponseV1_ResultData
@@ -7282,6 +7312,7 @@ void GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_ClearVariantOneO
 @dynamic counts;
 @dynamic sums;
 @dynamic averages;
+@dynamic ranked;
 
 typedef struct GetDocumentsResponse_GetDocumentsResponseV1_ResultData__storage_ {
   uint32_t _has_storage_[2];
@@ -7289,6 +7320,7 @@ typedef struct GetDocumentsResponse_GetDocumentsResponseV1_ResultData__storage_ 
   GetDocumentsResponse_GetDocumentsResponseV1_CountResults *counts;
   GetDocumentsResponse_GetDocumentsResponseV1_SumResults *sums;
   GetDocumentsResponse_GetDocumentsResponseV1_AverageResults *averages;
+  GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries *ranked;
 } GetDocumentsResponse_GetDocumentsResponseV1_ResultData__storage_;
 
 // This method is threadsafe because it is initially called
@@ -7330,6 +7362,15 @@ typedef struct GetDocumentsResponse_GetDocumentsResponseV1_ResultData__storage_ 
         .number = GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Averages,
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_ResultData__storage_, averages),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "ranked",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries),
+        .number = GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Ranked,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_ResultData__storage_, ranked),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },

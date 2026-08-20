@@ -15,7 +15,10 @@ if (dotenvResult.error) {
 }
 
 // TODO: Fix test to be running in Browser
-const testFilesPattern = './test/**/!(proofs|waitForStateTransitionResult).spec.js';
+// Only the suites that drive a network belong in the browser batches. Unit
+// tests run under `test:unit`; sweeping them in here would let a unit failure
+// abort a whole batch through `bail`.
+const testFilesPattern = './test/@(e2e|functional)/**/!(proofs|waitForStateTransitionResult).spec.js';
 const processors = ['webpack', 'sourcemap'];
 let testFiles = [
   testFilesPattern,

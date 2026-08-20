@@ -66,6 +66,8 @@
 - [Document Sum Trees](drive/document-sum-trees.md)
 - [Sum Index Examples](drive/sum-index-examples.md)
 - [Average Index Examples](drive/average-index-examples.md)
+- [Document Ranked Trees](drive/document-ranked-trees.md)
+- [Ranked Index Examples](drive/ranked-index-examples.md)
 
 # Testing
 

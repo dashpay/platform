@@ -16,6 +16,7 @@ import org.dashfoundation.dashsdk.persistence.dao.DataContractDao
 import org.dashfoundation.dashsdk.persistence.dao.DocumentDao
 import org.dashfoundation.dashsdk.persistence.dao.DpnsNameDao
 import org.dashfoundation.dashsdk.persistence.dao.IdentityDao
+import org.dashfoundation.dashsdk.persistence.dao.InvitationDao
 import org.dashfoundation.dashsdk.persistence.dao.PlatformAddressDao
 import org.dashfoundation.dashsdk.persistence.dao.PublicKeyDao
 import org.dashfoundation.dashsdk.persistence.dao.ShieldedDao
@@ -39,6 +40,7 @@ import org.dashfoundation.dashsdk.persistence.entities.DocumentTypeEntity
 import org.dashfoundation.dashsdk.persistence.entities.DpnsNameEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.IndexEntity
+import org.dashfoundation.dashsdk.persistence.entities.InvitationEntity
 import org.dashfoundation.dashsdk.persistence.entities.KeywordEntity
 import org.dashfoundation.dashsdk.persistence.entities.PendingInputEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
@@ -99,9 +101,27 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * Version 7 (provider restore): adds transaction block position and an
  * explicit transaction↔typed-account involvement table for payload-only
  * provider transactions.
+ *
+ * Version 8 (durable repair signal, dashpay/platform#4060): adds the
+ * nullable `public_keys.derivationIdentityIndex` / `derivationKeyIndex`
+ * derivation-breadcrumb columns, so identity keys whose private half is
+ * missing or undecryptable can re-seed the pending-repair state after a
+ * process restart. Room is the durability substrate deliberately: the
+ * wallet-deletion cascade removes these rows, so pending entries die with
+ * their wallet automatically (a DataStore side-table would leak).
+ *
+ * Version 9 (DIP-13 invitations): adds the `invitations` table (mirror of
+ * the Swift `PersistentInvitation` model — push-persisted by the
+ * `on_persist_invitations_fn` callback, no Rust rehydrate, no secret
+ * column; the "Sent invitations" list reads it via a Room `Flow`).
+ *
+ * Version 10 (DPNS marketplace): enriches `dpns_names` with the stable
+ * document id, ownership/sale state, counterparty, document timestamps and
+ * marketplace reconciliation watermark. Defaults keep every legacy label an
+ * owned, unlisted row until the first native marketplace sync refreshes it.
  */
 @Database(
-    version = 7,
+    version = 10,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -111,6 +131,7 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
         TxoEntity::class,
         CoreAddressEntity::class,
         AssetLockEntity::class,
+        InvitationEntity::class,
         IdentityEntity::class,
         PublicKeyEntity::class,
         DpnsNameEntity::class,
@@ -148,6 +169,7 @@ abstract class DashDatabase : RoomDatabase() {
     abstract fun txoDao(): TxoDao
     abstract fun coreAddressDao(): CoreAddressDao
     abstract fun assetLockDao(): AssetLockDao
+    abstract fun invitationDao(): InvitationDao
     abstract fun identityDao(): IdentityDao
     abstract fun publicKeyDao(): PublicKeyDao
     abstract fun dpnsNameDao(): DpnsNameDao
@@ -450,6 +472,91 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v7 → v8: additive nullable derivation-breadcrumb columns on
+         * `public_keys` (dashpay/platform#4060 finding 5). NULL for every
+         * pre-existing row — correct, because a legacy row's breadcrumbs are
+         * unknown; the persist callback back-fills them on the next upsert of
+         * each key, after which the pending-repair reconstruction can see it.
+         */
+        val MIGRATION_7_8: Migration = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `public_keys` ADD COLUMN `derivationIdentityIndex` INTEGER",
+                )
+                db.execSQL(
+                    "ALTER TABLE `public_keys` ADD COLUMN `derivationKeyIndex` INTEGER",
+                )
+            }
+        }
+
+        /**
+         * v8 → v9: add the DIP-13 `invitations` table. Purely additive. SQL
+         * mirrors the exported `schemas/.../9.json` `createSql` exactly
+         * (column order = entity field order).
+         */
+        val MIGRATION_8_9: Migration = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `invitations` (" +
+                        "`outPointHex` TEXT NOT NULL, " +
+                        "`rawOutPoint` BLOB NOT NULL, " +
+                        "`walletId` BLOB NOT NULL, " +
+                        "`fundingIndexRaw` INTEGER NOT NULL, " +
+                        "`amountDuffs` INTEGER NOT NULL, " +
+                        "`expiryUnix` INTEGER NOT NULL, " +
+                        "`createdAtSecs` INTEGER NOT NULL, " +
+                        "`hasInviter` INTEGER NOT NULL, " +
+                        "`statusRaw` INTEGER NOT NULL, " +
+                        "`reclaimInFlight` INTEGER NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`outPointHex`))",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_invitations_walletId` " +
+                        "ON `invitations` (`walletId`)",
+                )
+            }
+        }
+
+        /** v9 → v10: additive DPNS marketplace state on legacy label rows. */
+        val MIGRATION_9_10: Migration = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `dpns_names` ADD COLUMN `documentId` BLOB")
+                db.execSQL(
+                    "ALTER TABLE `dpns_names` ADD COLUMN `isOwned` " +
+                        "INTEGER NOT NULL DEFAULT 1",
+                )
+                db.execSQL("ALTER TABLE `dpns_names` ADD COLUMN `priceCredits` INTEGER")
+                db.execSQL(
+                    "ALTER TABLE `dpns_names` ADD COLUMN `saleStatusRaw` " +
+                        "INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL("ALTER TABLE `dpns_names` ADD COLUMN `counterpartyIdentityId` BLOB")
+                db.execSQL(
+                    "ALTER TABLE `dpns_names` ADD COLUMN `documentCreatedAtMs` " +
+                        "INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE `dpns_names` ADD COLUMN `documentUpdatedAtMs` " +
+                        "INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE `dpns_names` ADD COLUMN `documentTransferredAtMs` " +
+                        "INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE `dpns_names` ADD COLUMN `marketplaceUpdatedAt` " +
+                        "INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_dpns_names_documentId` " +
+                        "ON `dpns_names` (`documentId`)",
+                )
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -464,6 +571,9 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_4_5,
                     MIGRATION_5_6,
                     MIGRATION_6_7,
+                    MIGRATION_7_8,
+                    MIGRATION_8_9,
+                    MIGRATION_9_10,
                 )
                 .build()
 

@@ -35,8 +35,10 @@ use platform_wallet::{DashPayProfile, IdentityStatus};
 /// [`IdentityKeyEntryFFI`] alongside their derivation breadcrumb via
 /// a separate callback. Fields that don't map onto the Swift schema
 /// (block times, contested DPNS names, DashPay payments) are skipped;
-/// DashPay payment overlays already ride on the dedicated
-/// `dashpay_payments_overlay` surface on the parent changeset.
+/// DashPay payment rows travel on the dedicated
+/// `on_persist_dashpay_payments_fn` callback (which flattens the
+/// entry's `dashpay_payments` map together with any
+/// `dashpay_payments_overlay` on the parent changeset).
 ///
 /// User-visible label is no longer carried — `ManagedIdentity` doesn't
 /// have one, and Swift owns the `PersistentIdentity.alias` column

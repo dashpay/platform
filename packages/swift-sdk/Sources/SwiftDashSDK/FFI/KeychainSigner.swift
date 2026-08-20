@@ -180,6 +180,13 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     /// swift-sdk/CLAUDE.md "no mnemonic round-tripping".
     private let mnemonicResolver: MnemonicResolver
 
+    /// The same `WalletStorage` handed to `mnemonicResolver`. The
+    /// `canSign` preflights consult it for `hasMnemonic` so preflight
+    /// and sign always answer from the same store — constructing a
+    /// fresh `WalletStorage()` there would desync the two when an
+    /// alternative storage is injected.
+    private let mnemonicStorage: WalletStorage
+
     /// Raw pointer to the FFI signer handle. Boxed by Rust and freed
     /// in `deinit`.
     private var handlePtr: OpaquePointer!
@@ -194,10 +201,14 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     ///   - network: forwarded to `dash_sdk_signer_create_from_private_key`
     ///     for WIF address derivation; does not affect signature output.
     ///   - keychain: defaults to `KeychainManager.shared`.
+    ///   - storage: mnemonic source for the resolver-based signing
+    ///     paths. Defaults to a fresh `WalletStorage()` — overridable
+    ///     for tests.
     public init(
         modelContainer: ModelContainer,
         network: Network = .testnet,
-        keychain: KeychainManager = .shared
+        keychain: KeychainManager = .shared,
+        storage: WalletStorage = WalletStorage()
     ) {
         self.modelContainer = modelContainer
         self.network = network
@@ -206,7 +217,8 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         // One resolver per signer instance. Cheap to keep around —
         // it's just an opaque handle + a Swift-side `WalletStorage`
         // reference. Used by the platform-address signing branch.
-        self.mnemonicResolver = MnemonicResolver()
+        self.mnemonicStorage = storage
+        self.mnemonicResolver = MnemonicResolver(storage: storage)
 
         // Hand Rust an opaque NON-owning pointer to self. The
         // Swift owner is responsible for keeping `self` alive
@@ -376,7 +388,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
             }
             // Existence check only — do NOT materialize the mnemonic
             // bytes on the preflight path.
-            return WalletStorage().hasMnemonic(for: resolved.walletId)
+            return mnemonicStorage.hasMnemonic(for: resolved.walletId)
         }
 
         var found = false
@@ -407,7 +419,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
                     wid.count == 32,
                     let path = row.identityDerivationPath,
                     !path.isEmpty,
-                    WalletStorage().hasMnemonic(for: wid)
+                    self.mnemonicStorage.hasMnemonic(for: wid)
                 {
                     found = true
                     return
@@ -775,18 +787,19 @@ private func keychainSignerSignAsyncTrampoline(
         dataToSign = Data()
     }
 
-    func reportError(_ message: String) {
+    func reportError(_ message: String, code: Int32 = KeychainSignerCompletionErrorCode.generic) {
         // C strings have to outlive the call. `withCString` does this
-        // for us.
+        // for us. `code` is the structured DashSDKSignerErrorCode
+        // discriminator (dashpay/platform#4060 finding 7).
         message.withCString { errPtr in
-            completion(completionCtx, nil, 0, errPtr)
+            completion(completionCtx, nil, 0, code, errPtr)
         }
     }
 
     func reportSuccess(_ sig: Data) {
         sig.withUnsafeBytes { sigBuf in
             let base = sigBuf.bindMemory(to: UInt8.self).baseAddress
-            completion(completionCtx, base, UInt(sigBuf.count), nil)
+            completion(completionCtx, base, UInt(sigBuf.count), 0, nil)
         }
     }
 
@@ -845,7 +858,14 @@ private func keychainSignerSignAsyncTrampoline(
     let privateKey: Data
     switch signer.lookupIdentityPrivateKey(publicKey: pubkeyData) {
     case .failure(let err):
-        reportError(err.localizedDescription)
+        // "No stored key" outcomes carry the structured
+        // SigningKeyUnavailable code so hosts get the typed
+        // PlatformWalletError.signingKeyUnavailable without message
+        // sniffing (dashpay/platform#4060 finding 7).
+        reportError(
+            err.localizedDescription,
+            code: keychainSignerCompletionErrorCode(for: err)
+        )
         return
     case .success(let priv):
         privateKey = priv
@@ -883,3 +903,24 @@ private func keychainSignerCanSignTrampoline(
 /// `dash_sdk_signer_destroy` runs from `deinit`. Kept around so
 /// the Rust vtable's `destroy` slot is always non-null.
 private func keychainSignerDestroyTrampoline(_: UnsafeMutableRawPointer?) {}
+
+/// Mirror of `rs-sdk-ffi`'s `DashSDKSignerErrorCode` — the structured
+/// completion-failure discriminator (dashpay/platform#4060 finding 7).
+/// Only `generic` and `signingKeyUnavailable` are emitted today.
+enum KeychainSignerCompletionErrorCode {
+    static let generic: Int32 = 0
+    static let signingKeyUnavailable: Int32 = 1
+}
+
+/// Classify a `KeychainSigner.Error` for the completion's structured
+/// `error_code`: the "no stored key" outcomes — missing row/scalar or a
+/// keychain entry the identifier no longer resolves — are
+/// `signingKeyUnavailable`; everything else stays `generic`.
+func keychainSignerCompletionErrorCode(for error: KeychainSigner.Error) -> Int32 {
+    switch error {
+    case .publicKeyNotFound, .privateKeyMissingFromKeychain:
+        return KeychainSignerCompletionErrorCode.signingKeyUnavailable
+    default:
+        return KeychainSignerCompletionErrorCode.generic
+    }
+}

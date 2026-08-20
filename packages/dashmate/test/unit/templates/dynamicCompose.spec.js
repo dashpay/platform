@@ -1,5 +1,6 @@
 import { expect } from 'chai';
 import yaml from 'js-yaml';
+import Config from '../../../src/config/Config.js';
 import HomeDir from '../../../src/config/HomeDir.js';
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
 import renderTemplateFactory from '../../../src/templates/renderTemplateFactory.js';
@@ -66,8 +67,11 @@ describe('dynamic compose template', () => {
   });
 
   it('serializes host log mounts as scalar values even after a schema bypass', () => {
-    const config = getBaseConfig();
-    const options = config.getOptions();
+    // Build the options first and construct the config with validation skipped,
+    // rather than writing through a read accessor: ordinary reads hand back a
+    // frozen snapshot, and skipValidation is how a config legitimately arrives
+    // carrying values the schema would have rejected.
+    const options = getBaseConfig().getStoredOptions();
 
     options.core.log.filePath = '/tmp/core\nprivileged: true';
     options.platform.drive.abci.logs.stdout.destination = '/tmp/drive\nprivileged: true';
@@ -78,6 +82,8 @@ describe('dynamic compose template', () => {
       path: '/tmp/gateway\nprivileged: true',
       template: null,
     }];
+
+    const config = new Config('base', options, true);
 
     const renderedConfigs = renderServiceTemplates(config);
     const parsed = yaml.load(renderedConfigs['dynamic-compose.yml']);

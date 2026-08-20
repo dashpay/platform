@@ -184,6 +184,16 @@ impl IdentityWallet {
     {
         use dash_sdk::platform::dpns_usernames::RegisterDpnsNameInput;
 
+        // Ensure the on-chain DPNS contract is fetched and registered
+        // with the SDK's context provider BEFORE broadcasting: the
+        // post-broadcast proof of the preorder/domain documents needs it,
+        // `Sdk::register_dpns_name` never registers it back, and a host
+        // that doesn't pre-seed known contracts (e.g. a headless
+        // consumer) would otherwise fail proof verification with
+        // "unknown contract ... in document verification" even though
+        // the registration landed on-chain.
+        self.dpns_contract().await?;
+
         let (identity, auth_key) = {
             let wm = self.wallet_manager.read().await;
             let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
@@ -234,10 +244,16 @@ impl IdentityWallet {
         };
 
         let result = self.sdk.register_dpns_name(input).await.map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to register DPNS name '{}': {}",
-                name, e
-            ))
+            // Preserve a structured key-unavailable signer failure so the FFI
+            // boundary can still restore code 31; only genuine operation
+            // failures get stringified into `InvalidIdentityData`
+            // (dashpay/platform#4183 review).
+            crate::error::preserve_signer_key_unavailable_or(e, |e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to register DPNS name '{}': {}",
+                    name, e
+                ))
+            })
         })?;
 
         // Same book-keeping as `register_name`: append the just-

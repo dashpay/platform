@@ -44,14 +44,6 @@ pub fn net_from_ord(ord: i32) -> FFINetwork {
     }
 }
 
-/// Android's generic crash-recovery APIs must never authorize consumption of
-/// a bearer invitation voucher. That authority belongs exclusively to the
-/// separate invitation-reclaim flow, even if a caller bypasses the Kotlin
-/// wrapper and invokes JNI directly.
-pub(crate) fn generic_asset_lock_recovery_allowed(consume_invitation: bool) -> bool {
-    !consume_invitation
-}
-
 /// If `result` carries a non-`Success` code: throw `DashSDKException`,
 /// free its message, and return `true` (the caller bails with its
 /// default). On `Success` frees nothing (message is null) and returns
@@ -134,14 +126,8 @@ pub fn guard<T>(env: &mut JNIEnv, default: T, f: impl FnOnce(&mut JNIEnv) -> T) 
 
 #[cfg(test)]
 mod tests {
-    use super::{generic_asset_lock_recovery_allowed, net_from_ord};
+    use super::net_from_ord;
     use dash_network::ffi::FFINetwork;
-
-    #[test]
-    fn generic_asset_lock_recovery_rejects_invitation_authority() {
-        assert!(generic_asset_lock_recovery_allowed(false));
-        assert!(!generic_asset_lock_recovery_allowed(true));
-    }
 
     #[test]
     fn net_from_ord_matches_kotlin_ffi_values() {

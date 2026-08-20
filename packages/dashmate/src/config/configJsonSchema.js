@@ -54,7 +54,9 @@ export default {
       type: 'object',
       properties: {
         image: {
-          type: 'string',
+          // null means "use the image line this dashmate build ships"; an
+          // explicit string is an operator override. See config/derivedDefaults.js
+          type: ['string', 'null'],
           minLength: 1,
         },
         build: {
@@ -744,8 +746,17 @@ export default {
                         email: {
                           type: ['string', 'null'],
                         },
+                        acmeDirectoryUrl: {
+                          type: 'string',
+                          format: 'uri',
+                          // The response decides what certificate this node
+                          // will serve, so it has to be authenticated. Every
+                          // real ACME directory is HTTPS; a plaintext one lets
+                          // anyone on the path choose the certificate.
+                          pattern: '^https://',
+                        },
                       },
-                      required: ['email'],
+                      required: ['email', 'acmeDirectoryUrl'],
                       additionalProperties: false,
                     },
                   },
@@ -895,7 +906,7 @@ export default {
                   type: 'object',
                   properties: {
                     image: {
-                      type: 'string',
+                      type: ['string', 'null'],
                       minLength: 1,
                     },
                     deploy: {
@@ -1238,22 +1249,9 @@ export default {
                           additionalProperties: false,
                           required: ['timeout', 'delta'],
                         },
-                        commit: {
-                          type: 'object',
-                          properties: {
-                            timeout: {
-                              $ref: '#/definitions/optionalDuration',
-                            },
-                            bypass: {
-                              type: ['boolean', 'null'],
-                            },
-                          },
-                          additionalProperties: false,
-                          required: ['timeout', 'bypass'],
-                        },
                       },
                       additionalProperties: false,
-                      required: ['propose', 'vote', 'commit'],
+                      required: ['propose', 'vote'],
                     },
                   },
                   additionalProperties: false,

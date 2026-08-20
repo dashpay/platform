@@ -266,7 +266,8 @@ mod tests {
     use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
     use crate::util::batch::GroveDbOpBatch;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::block::epoch::Epoch;
+    use dpp::block::epoch::{Epoch, MAX_EPOCH};
+    use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
 
     #[test]
     fn should_prove_and_verify_epoch_infos_ascending() {
@@ -441,6 +442,119 @@ mod tests {
                 protocol_version: platform_version.protocol_version,
             }
             .into()
+        );
+
+        // Descending with a start above the current epoch does NOT skip forward to
+        // the newest started epoch: the initial state structure pre-creates empty
+        // epoch trees ahead of the current one, and the query limit is consumed by
+        // those empty trees, so the proof verifiably contains no epochs at all.
+        // This is why "fetch the current epoch" cannot be expressed as a single
+        // descending query from MAX_EPOCH — the SDK's `fetch_current` must first
+        // learn the current epoch index and use it as an explicit start (as the
+        // in-range `Some(1)` queries above do).
+        let max_start_proof = drive
+            .prove_epochs_infos(MAX_EPOCH, 1, false, None, platform_version)
+            .expect("should prove epoch infos from MAX_EPOCH");
+
+        let (_root_hash, far_future_start_infos) = Drive::verify_epoch_infos(
+            &max_start_proof,
+            1,
+            Some(MAX_EPOCH),
+            1,
+            false,
+            platform_version,
+        )
+        .expect("should verify epoch infos descending from MAX_EPOCH");
+
+        assert_eq!(
+            far_future_start_infos.len(),
+            0,
+            "descending from inside the pre-created empty epoch window must \
+             provably return no epochs, not the newest started epoch"
+        );
+    }
+
+    /// An ascending query starting at epoch `n` with `count = 2` proves whether
+    /// `n` is the newest started epoch: the pre-created empty tree at `n + 1`
+    /// consumes query limit without contributing elements, so a single-element
+    /// result is proof that `n + 1` has not started.
+    ///
+    /// The SDK's `ExtendedEpochInfo::fetch_current` relies on this to turn the
+    /// unsigned current-epoch hint in response metadata into an authenticated
+    /// selection: a hint below the real current epoch yields two epochs here and
+    /// is rejected, a hint above it yields none.
+    #[test]
+    fn should_prove_that_no_epoch_started_above_the_current_one() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let transaction = drive.grove.start_transaction();
+
+        for (index, start_time, start_block_height, start_core_height, fee_multiplier) in [
+            (0u16, 1_000_000u64, 100u64, 50u32, 1000u64),
+            (1, 2_000_000, 200, 100, 2000),
+        ] {
+            let epoch = Epoch::new(index).unwrap();
+            let mut batch = GroveDbOpBatch::new();
+            epoch.add_init_current_operations(
+                fee_multiplier,
+                start_block_height,
+                start_core_height,
+                start_time,
+                platform_version.protocol_version,
+                &mut batch,
+            );
+            drive
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
+                .expect("should apply batch");
+        }
+
+        drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("should commit transaction");
+
+        // Epoch 1 is current: asking for two epochs from 1 returns only epoch 1,
+        // which proves epoch 2 has not started.
+        let proof = drive
+            .prove_epochs_infos(1, 2, true, None, platform_version)
+            .expect("should prove epoch infos");
+        let (_root_hash, at_current) =
+            Drive::verify_epoch_infos(&proof, 1, Some(1), 2, true, platform_version)
+                .expect("should verify epoch infos ascending from the current epoch");
+        assert_eq!(
+            at_current.len(),
+            1,
+            "the epoch above the current one must provably be unstarted"
+        );
+        assert_eq!(at_current[0].index(), 1);
+
+        // A hint one epoch below the current one returns both, which is how the
+        // SDK detects a deflated (stale or malicious) hint.
+        let proof = drive
+            .prove_epochs_infos(0, 2, true, None, platform_version)
+            .expect("should prove epoch infos");
+        let (_root_hash, below_current) =
+            Drive::verify_epoch_infos(&proof, 1, Some(0), 2, true, platform_version)
+                .expect("should verify epoch infos ascending from below the current epoch");
+        assert_eq!(
+            below_current.len(),
+            2,
+            "a start below the current epoch must provably return a newer epoch too"
+        );
+
+        // A hint above the current epoch lands in the pre-created empty window
+        // and returns nothing at all.
+        let proof = drive
+            .prove_epochs_infos(2, 2, true, None, platform_version)
+            .expect("should prove epoch infos");
+        let (_root_hash, above_current) =
+            Drive::verify_epoch_infos(&proof, 1, Some(2), 2, true, platform_version)
+                .expect("should verify epoch infos ascending from above the current epoch");
+        assert_eq!(
+            above_current.len(),
+            0,
+            "a start above the current epoch must provably return no epochs"
         );
     }
 }

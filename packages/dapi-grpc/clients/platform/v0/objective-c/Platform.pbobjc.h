@@ -98,7 +98,6 @@ CF_EXTERN_C_BEGIN
 @class GetDocumentsRequest_GetDocumentsRequestV1_Select;
 @class GetDocumentsRequest_HavingAggregate;
 @class GetDocumentsRequest_HavingClause;
-@class GetDocumentsRequest_HavingRanking;
 @class GetDocumentsRequest_OrderClause;
 @class GetDocumentsRequest_WhereClause;
 @class GetDocumentsResponse_GetDocumentsResponseV0;
@@ -112,6 +111,8 @@ CF_EXTERN_C_BEGIN
 @class GetDocumentsResponse_GetDocumentsResponseV1_CountEntry;
 @class GetDocumentsResponse_GetDocumentsResponseV1_CountResults;
 @class GetDocumentsResponse_GetDocumentsResponseV1_Documents;
+@class GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries;
+@class GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry;
 @class GetDocumentsResponse_GetDocumentsResponseV1_ResultData;
 @class GetDocumentsResponse_GetDocumentsResponseV1_SumEntries;
 @class GetDocumentsResponse_GetDocumentsResponseV1_SumEntry;
@@ -416,29 +417,6 @@ GPBEnumDescriptor *GetDocumentsRequest_HavingAggregate_Function_EnumDescriptor(v
  **/
 BOOL GetDocumentsRequest_HavingAggregate_Function_IsValidValue(int32_t value);
 
-#pragma mark - Enum GetDocumentsRequest_HavingRanking_Kind
-
-typedef GPB_ENUM(GetDocumentsRequest_HavingRanking_Kind) {
-  /**
-   * Value used if any message's field encounters a value that is not defined
-   * by this enum. The message will also have C functions to get/set the rawValue
-   * of the field.
-   **/
-  GetDocumentsRequest_HavingRanking_Kind_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
-  GetDocumentsRequest_HavingRanking_Kind_Min = 0,
-  GetDocumentsRequest_HavingRanking_Kind_Max = 1,
-  GetDocumentsRequest_HavingRanking_Kind_Top = 2,
-  GetDocumentsRequest_HavingRanking_Kind_Bottom = 3,
-};
-
-GPBEnumDescriptor *GetDocumentsRequest_HavingRanking_Kind_EnumDescriptor(void);
-
-/**
- * Checks to see if the given value is defined by the enum or was not known at
- * the time this source was generated.
- **/
-BOOL GetDocumentsRequest_HavingRanking_Kind_IsValidValue(int32_t value);
-
 #pragma mark - Enum GetDocumentsRequest_HavingClause_Operator
 
 typedef GPB_ENUM(GetDocumentsRequest_HavingClause_Operator) {
@@ -486,11 +464,11 @@ typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Select_Function) {
   /**
    * Per-group MIN / MAX — `SELECT MIN(field) GROUP BY
    * category` returns the smallest `field` value in each
-   * category. Semantically distinct from
-   * `HavingRanking::Min` / `Max` (which are cross-group
-   * meta-aggregates over group results). MIN/MAX here
-   * operate over the row values within each group, the
-   * same way `SUM` and `AVG` do.
+   * category. These operate over the row values *within*
+   * each group, the same way `SUM` and `AVG` do; they are
+   * not a cross-group ranking. To pick out the extreme
+   * *group*, order by the aggregate instead:
+   * `ORDER BY <agg> ASC|DESC LIMIT 1` (see `order_by`).
    **/
   GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Min = 4,
   GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Max = 5,
@@ -2601,9 +2579,13 @@ typedef GPB_ENUM(GetDocumentsRequest_HavingAggregate_FieldNumber) {
 
 /**
  * Per-group aggregate operand for the left side of a
- * `HavingClause`. Only the per-group aggregates live here:
- * `MIN` / `MAX` / `TOP` / `BOTTOM` are **cross-group** ranking
- * primitives and appear on the right side via `HavingRanking`.
+ * `HavingClause`, and the aggregate-function target of an
+ * `OrderClause`. Only the per-group aggregates live here —
+ * `HAVING` is a boolean predicate over one group's own aggregate,
+ * and nothing on this message reaches across groups. Cross-group
+ * ranking ("which groups score highest?") is expressed with SQL's
+ * ordering surface instead: `ORDER BY <the selected aggregate>
+ * DESC LIMIT n [OFFSET m]`. See `GetDocumentsRequestV1.order_by`.
  *
  * **Field semantics by function**:
  * - `COUNT`: empty `field` means `COUNT(*)` (group cardinality);
@@ -2635,82 +2617,52 @@ int32_t GetDocumentsRequest_HavingAggregate_Function_RawValue(GetDocumentsReques
  **/
 void SetGetDocumentsRequest_HavingAggregate_Function_RawValue(GetDocumentsRequest_HavingAggregate *message, int32_t value);
 
-#pragma mark - GetDocumentsRequest_HavingRanking
-
-typedef GPB_ENUM(GetDocumentsRequest_HavingRanking_FieldNumber) {
-  GetDocumentsRequest_HavingRanking_FieldNumber_Kind = 1,
-  GetDocumentsRequest_HavingRanking_FieldNumber_N = 2,
-};
-
-/**
- * Cross-group ranking primitive on the right side of a
- * `HavingClause`. The ranking is computed over the set of
- * group-aggregate results (one per `GROUP BY` row), so
- * `HAVING COUNT(*) EQ MAX` selects groups whose count equals
- * the maximum count across all groups, and
- * `HAVING COUNT(*) IN TOP(5)` selects groups whose count is
- * among the five largest. Concise way to express top-N /
- * bottom-N selection without window functions or
- * `ORDER BY` + `LIMIT`.
- *
- * **Operator compatibility**:
- * - Scalar operators (`=`, `!=`, `<`, `<=`, `>`, `>=`) work
- *   with `MIN` / `MAX`. `TOP` / `BOTTOM` with scalar operators
- *   only make sense when `n=1` (the single largest / smallest);
- *   evaluation rejects other combinations as ambiguous.
- * - `IN` works with `TOP(n)` / `BOTTOM(n)` for set membership.
- * - `BETWEEN*` doesn't compose meaningfully with rankings and
- *   is rejected at evaluation time.
- **/
-GPB_FINAL @interface GetDocumentsRequest_HavingRanking : GPBMessage
-
-@property(nonatomic, readwrite) GetDocumentsRequest_HavingRanking_Kind kind;
-
-/**
- * N-th rank for `TOP` / `BOTTOM` (1-indexed: `n=1` is the
- * single largest / smallest). Required for those two kinds;
- * must be unset for `MIN` / `MAX`. The wire allows setting
- * it on `MIN` / `MAX` for forward compatibility, but
- * evaluation rejects it as a malformed ranking.
- **/
-@property(nonatomic, readwrite) uint64_t n;
-
-@property(nonatomic, readwrite) BOOL hasN;
-@end
-
-/**
- * Fetches the raw value of a @c GetDocumentsRequest_HavingRanking's @c kind property, even
- * if the value was not defined by the enum at the time the code was generated.
- **/
-int32_t GetDocumentsRequest_HavingRanking_Kind_RawValue(GetDocumentsRequest_HavingRanking *message);
-/**
- * Sets the raw value of an @c GetDocumentsRequest_HavingRanking's @c kind property, allowing
- * it to be set to a value that was not defined by the enum at the time the code
- * was generated.
- **/
-void SetGetDocumentsRequest_HavingRanking_Kind_RawValue(GetDocumentsRequest_HavingRanking *message, int32_t value);
-
 #pragma mark - GetDocumentsRequest_HavingClause
 
 typedef GPB_ENUM(GetDocumentsRequest_HavingClause_FieldNumber) {
   GetDocumentsRequest_HavingClause_FieldNumber_Aggregate = 1,
   GetDocumentsRequest_HavingClause_FieldNumber_Operator_p = 2,
   GetDocumentsRequest_HavingClause_FieldNumber_Value = 3,
-  GetDocumentsRequest_HavingClause_FieldNumber_Ranking = 4,
 };
 
 typedef GPB_ENUM(GetDocumentsRequest_HavingClause_Right_OneOfCase) {
   GetDocumentsRequest_HavingClause_Right_OneOfCase_GPBUnsetOneOfCase = 0,
   GetDocumentsRequest_HavingClause_Right_OneOfCase_Value = 3,
-  GetDocumentsRequest_HavingClause_Right_OneOfCase_Ranking = 4,
 };
 
 /**
- * Single `HAVING <aggregate> <op> <right>` clause. Multiple
+ * Single `HAVING <aggregate> <op> <value>` clause. Multiple
  * entries in `GetDocumentsRequestV1.having` combine with
  * implicit AND — same semantics as multiple `where_clauses`
  * entries. `HAVING COUNT(*) > 5 AND SUM(amount) > 100` is two
  * `HavingClause` rows, not a tree.
+ *
+ * **`HAVING` is a boolean per-group predicate and nothing else.**
+ * Its right operand is always a literal `DocumentFieldValue`; it
+ * never names another group or the set of groups. Cross-group
+ * ranking — "the 5 highest-scoring groups" — is `ORDER BY <the
+ * selected aggregate> DESC LIMIT 5`, exactly as in SQL, and is
+ * served by the ranked executor (protocol v14+). An earlier draft
+ * of this surface carried the ranking on the right of a `HAVING`
+ * (`HAVING AVG(grade) IN TOP(5)`); that spelling was removed
+ * before release rather than deprecated, because it invented
+ * non-SQL grammar for something SQL already expresses.
+ *
+ * **From protocol v14 a single `HAVING` clause is served as a
+ * bounded range read** (having-range mode): `SELECT <agg> GROUP BY
+ * p HAVING <agg> <op> <value> [ORDER BY <order-key> ASC|DESC]
+ * LIMIT n` answers from the same per-axis secondary as ranked
+ * mode, on an index declaring the matching ranked axis. The
+ * clause's aggregate must be the selected aggregate, the operator
+ * must describe one contiguous range (`NOT_EQUAL` / `IN` are
+ * rejected), and the optional `ORDER BY` picks the walk direction
+ * using the same order-key spelling as ranked mode: `f` for
+ * `SUM(f)` / `AVG(f)`, the `$count` sentinel for `COUNT(*)` —
+ * never an explicit `OrderClause.aggregate` target, which is
+ * rejected. See the supported-shape table on
+ * `GetDocumentsRequestV1`. On protocol v13 and earlier every
+ * non-empty `having` stays rejected with `Unsupported`, exactly as
+ * before.
  *
  * The operator set mirrors `WhereOperator` minus `STARTS_WITH`
  * (prefix matching has no natural meaning against a scalar
@@ -2718,12 +2670,12 @@ typedef GPB_ENUM(GetDocumentsRequest_HavingClause_Right_OneOfCase) {
  * `IN` operand semantics match `WhereOperator`: `BETWEEN*`
  * expects a 2-element `DocumentFieldValue.list` carrying
  * `[lower, upper]`, and `IN` expects a `list` of candidate
- * values (or a ranking set via `right.ranking`).
+ * values.
  *
- * The `right` oneof carries either a concrete
- * `DocumentFieldValue` (literal comparison target) or a
- * `HavingRanking` (cross-group reference). Exactly one is set;
- * the wire rejects an unset `right`.
+ * The `right` oneof exists (rather than a bare
+ * `DocumentFieldValue` field) so the "unset right operand" case
+ * stays distinguishable from "the literal null value"; the wire
+ * rejects an unset `right`.
  **/
 GPB_FINAL @interface GetDocumentsRequest_HavingClause : GPBMessage
 
@@ -2736,8 +2688,6 @@ GPB_FINAL @interface GetDocumentsRequest_HavingClause : GPBMessage
 @property(nonatomic, readonly) GetDocumentsRequest_HavingClause_Right_OneOfCase rightOneOfCase;
 
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_DocumentFieldValue *value;
-
-@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_HavingRanking *ranking;
 
 @end
 
@@ -2773,32 +2723,67 @@ typedef GPB_ENUM(GetDocumentsRequest_OrderClause_Target_OneOfCase) {
 };
 
 /**
- * Single `ORDER BY field <direction>` clause. Multi-field
+ * Single `ORDER BY <target> <direction>` clause. Multi-field
  * ordering is expressed by repeating this message at the
  * request level (`repeated OrderClause order_by = 4`), matching
  * SQL's `ORDER BY a ASC, b DESC` shape.
- * Single ORDER BY entry. Multi-entry ordering is expressed by
- * repeating this message at the request level.
  *
  * The `target` oneof carries either a plain field name
  * (`ORDER BY field`) or an aggregate function applied to a
- * field (`ORDER BY COUNT(*)`, `ORDER BY SUM(amount)`) — the
- * latter sorts per-group result rows produced by `GROUP BY`,
- * useful with `LIMIT` for top-N / bottom-N selection at the
- * routing layer (overlapping `HavingRanking::Top` / `Bottom`
- * but more general because the ranking field can be any
- * aggregate, not just count).
+ * field (`ORDER BY COUNT(*)`, `ORDER BY SUM(amount)`).
  *
- * **Aggregate target currently rejected** with
- * `Unsupported("ORDER BY on aggregate is not yet implemented")`.
- * The wire surface is shipped now so callers can encode the
- * shape ahead of server support landing.
+ * **Two distinct roles ride the `field` target.**
+ *
+ * 1. *Row ordering* — `select = DOCUMENTS`. `field` names a
+ *    document property and the matched rows come back in that
+ *    order. This is v0's behaviour, unchanged.
+ *
+ * 2. *Aggregate ordering* — the **ranked** surface (protocol
+ *    v14+). With a `GROUP BY` and a single aggregate `select`,
+ *    exactly one `order_by` clause naming that select's
+ *    aggregate orders the *groups* by their aggregate value and
+ *    routes the request to the ranked executor:
+ *
+ *    ```text
+ *    SELECT AVG(grade) GROUP BY restaurantId
+ *      ORDER BY grade DESC LIMIT 3          -- 3 best restaurants
+ *    SELECT COUNT(*)   GROUP BY restaurantId
+ *      ORDER BY $count DESC LIMIT 10 OFFSET 10  -- busiest, page 2
+ *    ```
+ *
+ *    `SUM(f)` / `AVG(f)` are named by `f` — the same property the
+ *    projection aggregates, which is how `ORDER BY avg(grade)`
+ *    reads once `SELECT` has already fixed the function.
+ *    `COUNT(*)` aggregates no property, so it is named by the
+ *    reserved sentinel **`$count`**. The `$` prefix is what keeps
+ *    the sentinel from colliding with a real document property:
+ *    document properties cannot start with `$` (that namespace is
+ *    the system fields' `$id` / `$ownerId` / …), so `$count` can
+ *    never be mistaken for a column. `DESC` is the "top n"
+ *    reading, `ASC` the "bottom n" reading.
+ *
+ *    An `order_by` naming anything other than the selected
+ *    aggregate — a second clause, the `GROUP BY` property, an
+ *    unrelated field — is rejected rather than normalized: it
+ *    asks for an ordering the ranked secondary cannot produce.
+ *
+ * **Aggregate target still rejected** with
+ * `Unsupported("ORDER BY on aggregate keys is not yet
+ * implemented")`. It is the *explicit* spelling of role 2
+ * (`ORDER BY AVG(grade)` rather than `ORDER BY grade` under a
+ * `SELECT AVG(grade)`) and is wire-stable so it can start being
+ * evaluated without another version bump; today the field-target
+ * spelling above is the one the ranked executor reads.
  **/
 GPB_FINAL @interface GetDocumentsRequest_OrderClause : GPBMessage
 
 @property(nonatomic, readonly) GetDocumentsRequest_OrderClause_Target_OneOfCase targetOneOfCase;
 
-/** Plain field name. Today's evaluated form. */
+/**
+ * Plain field name. Today's evaluated form — a document
+ * property for row ordering, or the selected aggregate's
+ * property (`$count` for `COUNT(*)`) for aggregate ordering.
+ **/
 @property(nonatomic, readwrite, copy, null_resettable) NSString *field;
 
 /**
@@ -2915,12 +2900,22 @@ typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase) {
  *   other shapes return `Unsupported` (see supported-shape table
  *   below).
  *
- * `having` is wire-reserved for a future server capability. Any
- * non-empty `having` list currently returns
- * `Unsupported("HAVING clause is not yet implemented")`
- * regardless of `select` / `group_by`. The wire shape is
- * `repeated WhereClause` so when execution lands the surface is
- * already typed end-to-end and callers don't need to re-encode.
+ * **Ranked mode** is served from protocol v14 and is selected by
+ * `group_by` + a single `order_by` naming the selected aggregate —
+ * SQL's own top-n spelling, `ORDER BY <agg> DESC LIMIT n OFFSET m`.
+ * It returns `ResultData.ranked`. See `order_by` and the
+ * supported-shape table below.
+ *
+ * **Having-range mode** is served from protocol v14: a single
+ * `having` clause whose aggregate is the selected aggregate turns
+ * the request into a bounded range read over the same per-axis
+ * secondary ranked mode walks, answered in `ResultData.ranked`.
+ * On protocol v13 and earlier every non-empty `having` is rejected
+ * (`"HAVING clause is not yet implemented"`). `having` carries no
+ * ranking spelling: an earlier draft put cross-group ranking on the
+ * right of a `HAVING` (`HAVING AVG(grade) IN TOP(5)`) and that
+ * grammar was removed before release in favour of `ORDER BY` +
+ * `LIMIT`. See the supported-shape table below.
  *
  * **Supported shapes** (everything else rejects with a typed
  * `QuerySyntaxError::Unsupported` so callers can detect un-wired
@@ -2945,8 +2940,17 @@ typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase) {
  * `select=COUNT, group_by=[a, b]`:
  * - a is the In field AND b is the range field, in that order → existing compound distinct shape; entries carry both `in_key` (= a's value) and `key` (= b's value).
  *
+ * `select=<COUNT(*)|SUM(f)|AVG(f)>, group_by=[p], order_by=[<the selected aggregate>]` (protocol v14+) — **ranked mode**:
+ * - exactly one `group_by` property, exactly one `order_by` clause naming the select's aggregate (`f` for `SUM(f)` / `AVG(f)`, the `$count` sentinel for `COUNT(*)`), a `limit` in `1 ..= 100`, an optional `offset`, and no `having` / `start_at`, on an index declaring the matching `rankedCountable` / `rankedSummable` / `rankedAverageable` axis → ranked executor, answered in `ResultData.ranked`. On a single-property ranked index no `where` is accepted; on a compound ranked index every leading index property must be pinned with an `EQUAL` where clause (one per property, `group_by` names the trailing property), selecting which prefix's ranking is read.
+ * - `DESC` is the "top n" reading (walk the axis from the largest aggregate down), `ASC` the "bottom n" reading. Worked example: `SELECT AVG(grade) GROUP BY restaurantId ORDER BY grade DESC LIMIT 1 OFFSET 4` is the 5th-best restaurant.
+ *
+ * `select=<COUNT(*)|SUM(f)|AVG(f)>, group_by=[p], having=[<the selected aggregate> <op> <value>]` (protocol v14+) — **having-range mode**:
+ * - exactly one `group_by` property, exactly one `having` clause whose aggregate is the select's aggregate, an operator describing one contiguous range (`EQUAL`, `GREATER_THAN[_OR_EQUALS]`, `LESS_THAN[_OR_EQUALS]`, `BETWEEN*`; `NOT_EQUAL` / `IN` rejected), a `limit` in `1 ..= 100`, an optional `order_by` naming the same aggregate (walk direction; ascending by default), and no `offset` / `start_at` / `start_after`, on an index declaring the matching ranked axis → having-range executor, answered in `ResultData.ranked`. `where` follows the same rule as ranked mode: none on a single-property ranked index; exactly one `EQUAL` pin per leading index property on a compound ranked index.
+ * - no offset or cursor pagination: a page cut at `limit` continues only by tightening the bound past the last *distinct* aggregate value seen; a cut inside a tie (several groups sharing the boundary aggregate) cannot be continued, so size `limit` above the widest expected tie.
+ *
  * **Rejected shapes** (return `Unsupported`):
- * - any non-empty `having` (always — pending future server capability).
+ * - any non-empty `having` on protocol v13 and earlier; at v14+, any `having` shape outside having-range mode above (multiple clauses, an aggregate other than the select's, `NOT_EQUAL` / `IN`, a `where` shape other than the compound-index equality pins above, or a carried `offset` / cursor).
+ * - at v14+: a ranked-shaped request carrying a `where` shape other than the compound-index equality pins above (a non-`EQUAL` operator, a repeated or non-leading property, or a missing pin), a `start_at` / `start_after` cursor, more than one `order_by`, or an `order_by` naming anything but the selected aggregate.
  * - `select=DOCUMENTS` with non-empty `group_by`.
  * - `select=COUNT` with `group_by` on a field that is not constrained by an `In` or range where clause.
  * - `select=COUNT` with `group_by.len() > 2`.
@@ -3114,22 +3118,29 @@ GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1 : GPBMessage
 @property(nonatomic, readonly) NSUInteger groupByArray_Count;
 
 /**
- * SQL `HAVING` clauses — aggregate filters that apply to the
- * grouped rows produced by `select=COUNT, group_by=[…]`. The
- * wire shape is `HavingClause`, not `WhereClause`, because
- * HAVING evaluates against per-group aggregates
- * (`COUNT`/`SUM`/`AVG`/`MIN`/`MAX`/`TOP`/`BOTTOM`) rather than
- * row field values. Multiple entries combine with implicit
- * AND. See `HavingClause` / `HavingAggregate` for the
- * operator and aggregate-function catalogs.
+ * SQL `HAVING` clauses — **boolean** aggregate filters that
+ * apply to the grouped rows produced by `select=<COUNT|SUM|AVG>,
+ * group_by=[…]`. The wire shape is `HavingClause`, not
+ * `WhereClause`, because HAVING evaluates against per-group
+ * aggregates (`COUNT` / `SUM` / `AVG`) rather than row field
+ * values. Multiple entries combine with implicit AND. See
+ * `HavingClause` / `HavingAggregate` for the operator and
+ * aggregate-function catalogs.
  *
- * **Always rejected when non-empty** today with
- * `Unsupported("HAVING clause is not yet implemented")`. The
- * wire shape is shipped now so the future server capability
- * can land without another version bump — and so callers can
- * construct full `HAVING COUNT(*) > 5 AND SUM(amount) > 100`
- * requests in their builders even before the server evaluates
- * them.
+ * **From protocol v14 a single clause is served** as a bounded
+ * range read — having-range mode; see the message-level
+ * supported-shape table. On v13 and earlier every non-empty
+ * `having` is rejected with `Unsupported("HAVING clause is not
+ * yet implemented")`. Multi-clause `HAVING COUNT(*) > 5 AND
+ * SUM(amount) > 100` requests can still be constructed on the
+ * wire, but stay rejected until a multi-clause evaluator lands.
+ *
+ * **`having` does not express ranking.** "The n highest-scoring
+ * groups" is `ORDER BY <the selected aggregate> DESC LIMIT n`
+ * (see `order_by`), which *is* served, from protocol v14. An
+ * earlier draft of this surface spelled it
+ * `HAVING AVG(grade) IN TOP(5)`; that grammar was removed
+ * before release rather than deprecated.
  **/
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsRequest_HavingClause*> *havingArray;
 /** The number of items in @c havingArray without causing the array to be created. */
@@ -3138,13 +3149,28 @@ GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1 : GPBMessage
 /**
  * Row-based pagination offset, on top of the cursor-based
  * `start_after` / `start_at` pagination. `OFFSET N` skips the
- * first `N` matching rows before applying `limit`. Currently
- * **always rejected when non-`None`** with
- * `Unsupported("OFFSET pagination is not yet implemented")`
- * — the wire surface is shipped now so callers can encode it
- * ahead of server support landing without another version
- * bump. Cursor pagination via `start_after` / `start_at`
- * remains the supported way to page through results.
+ * first `N` result rows before applying `limit`.
+ *
+ * **Consumed in ranked mode** (protocol v14+): on a request that
+ * routes to the ranked executor (`group_by` + a single `order_by`
+ * naming the selected aggregate), `offset` skips that many ranks
+ * before the returned page, so `ORDER BY avg(grade) DESC LIMIT 1
+ * OFFSET 4` is the 5th-best group. The skip is **count-attested**,
+ * not walked: grovedb proves it from the counted subtree
+ * commitments, so the proof stays `O(log n + k)` at any offset and
+ * the response echoes the attested number in
+ * `RankedEntries.skipped`. There is deliberately no ceiling — an
+ * offset of 4 and an offset of four billion cost the same, so
+ * there is no denial-of-service lever a cap would close. An offset
+ * past the end of the ranking is a provable answer rather than an
+ * error: `entries` comes back empty and `skipped` is the ranking's
+ * whole population.
+ *
+ * **Rejected everywhere else** with
+ * `Unsupported("OFFSET pagination is not yet implemented")` —
+ * including on every path at protocol v13 and earlier, which has
+ * no ranked executor. Cursor pagination via `start_after` /
+ * `start_at` remains the supported way to page through documents.
  **/
 @property(nonatomic, readwrite) uint32_t offset;
 
@@ -3680,6 +3706,162 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_AverageResults 
  **/
 void GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_ClearVariantOneOfCase(GetDocumentsResponse_GetDocumentsResponseV1_AverageResults *message);
 
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_Key = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_Count = 2,
+  GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_Sum = 3,
+  GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_Avg = 4,
+};
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_Value_OneOfCase) {
+  GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_Value_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_Value_OneOfCase_Count = 2,
+  GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_Value_OneOfCase_Sum = 3,
+  GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_Value_OneOfCase_Avg = 4,
+};
+
+/**
+ * One group in a ranked (`GROUP BY … ORDER BY <agg> LIMIT n`)
+ * result: the group's index key plus the aggregate it was ranked
+ * by.
+ *
+ * `key` is the raw index-key bytes of the GROUP BY property's
+ * value — the same bytes that name the group's value tree under
+ * the index (for a `string` property, its UTF-8 bytes). Clients
+ * that want the typed value decode it with the document type's
+ * key deserialization; the wire carries bytes so prover and
+ * verifier agree without a schema round-trip.
+ *
+ * Exactly one `value` variant is set, determined by the
+ * request's SELECT function:
+ *   * `count`  — `SELECT COUNT(*)`, ranked on the index's
+ *     `rankedCountable` axis.
+ *   * `sum`    — `SELECT SUM(field)`, `rankedSummable` axis.
+ *     Signed for the same reason `SumEntry.sum` is.
+ *   * `avg`    — `SELECT AVG(field)`,
+ *     `rankedAverageable` axis.
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *key;
+
+@property(nonatomic, readonly) GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_Value_OneOfCase valueOneOfCase;
+
+/**
+ * `jstype = JS_STRING` so JS/Web clients receive a string
+ * and don't round counts > 2^53−1 to the nearest
+ * representable Number — same choice as `CountEntry.count`.
+ **/
+@property(nonatomic, readwrite) uint64_t count;
+
+/**
+ * `jstype = JS_STRING` for the same precision reason as
+ * `SumEntry.sum`.
+ **/
+@property(nonatomic, readwrite) int64_t sum;
+
+/**
+ * The group's average, as a **`double` approximation** of the
+ * exact value the Avg axis is ordered by.
+ *
+ * What grovedb actually commits to and sorts by is an `i128`
+ * fixed-point integer: `floor(sum * SCALE / count)` with
+ * euclidean (toward −∞) division, where SCALE is grovedb's
+ * `AVG_FIXED_POINT_SCALE` (currently 10^19). This field is
+ * that integer divided by SCALE in `f64`, i.e.
+ * `fixed_point as f64 / SCALE as f64`.
+ *
+ * A `double` is honest here because `RankedEntry` is only ever
+ * populated on the **no-proof ("quick answer") path**, where
+ * the client has already chosen to trust the server's reply.
+ * A proof-verifying client never reads this field: it
+ * reconstructs each entry from the grovedb proof itself, where
+ * the exact fixed-point `i128` lives, so nothing about proof
+ * verification depends on this number's precision.
+ *
+ * Precision bound: `f64` carries ~15–16 significant decimal
+ * digits, so two groups whose exact fixed-point averages differ
+ * only beyond that can compare equal here. Do not use this
+ * value for equality checks, tie-breaking, or any
+ * reconstruction of the committed integer — request the proof
+ * and read the fixed point from it instead. Entry *order* is
+ * still exact: the server ranks on the i128 before converting.
+ *
+ * SCALE is a grovedb constant, not a wire constant: it moved
+ * from 10^15 to 10^19 before release. Clients that need it
+ * (e.g. to go back to fixed point on the proof path) should
+ * read it from the SDK's re-export (`RANKED_AVG_SCALE`) rather
+ * than hardcoding the literal.
+ **/
+@property(nonatomic, readwrite) double avg;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'value'.
+ **/
+void GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_ClearValueOneOfCase(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry *message);
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries_FieldNumber_EntriesArray = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries_FieldNumber_Skipped = 2,
+};
+
+/**
+ * Ranked result entries. **Entry order IS the ranking order** —
+ * best-first for `ORDER BY <agg> DESC`, worst-first for `ASC`.
+ * Clients must not re-sort; ties (equal aggregates) come back in
+ * group-key order in the direction of the walk, which is
+ * descending group-key order for `DESC`.
+ *
+ * Fewer than `limit` entries is normal — the index simply has
+ * fewer groups than requested — and is not an error.
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry*> *entriesArray;
+/** The number of items in @c entriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger entriesArray_Count;
+
+/**
+ * How many groups were skipped before the first entry — the
+ * page's **starting rank base**. Entry `i` of `entries` is the
+ * group at rank `skipped + i` (0-based).
+ *
+ * `0` for an `OFFSET 0` (or offset-less) query, which is what
+ * makes this field additive: a caller that never paginates sees
+ * the value it would have assumed. For `OFFSET m` it is
+ * normally `m`, and it is what turns a page back into a
+ * *ranking* — without it, a caller who asked for
+ * `ORDER BY avg(grade) DESC LIMIT 1 OFFSET 4` receives one
+ * entry with no way to tell that it really is the 5th-best
+ * group rather than the best.
+ *
+ * **When a requested offset exceeds the population**, `entries`
+ * is empty and `skipped` is the ranking's attested *total*
+ * population — a positive, useful answer ("there are only 12
+ * groups") rather than a bare empty list.
+ *
+ * On the proved path the number is grovedb's cryptographically
+ * attested count, re-derived by the verifier from the counted
+ * subtree commitments in the proof bytes rather than trusted
+ * from this field; a proving client should use the verified
+ * value. On the unproven read there is nothing to attest and
+ * grovedb's read API does not report a short walk, so the server
+ * echoes the requested offset. The two therefore disagree in
+ * exactly one case — an offset past the end, where the unproven
+ * read reports the request and the proved one reports the truth.
+ * Callers who need the population must prove.
+ **/
+@property(nonatomic, readwrite) uint64_t skipped;
+
+@property(nonatomic, readwrite) BOOL hasSkipped;
+@end
+
 #pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_ResultData
 
 typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber) {
@@ -3687,6 +3869,7 @@ typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNum
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Counts = 2,
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Sums = 3,
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Averages = 4,
+  GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Ranked = 5,
 };
 
 typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase) {
@@ -3695,12 +3878,13 @@ typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Counts = 2,
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Sums = 3,
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Averages = 4,
+  GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Ranked = 5,
 };
 
 /**
  * Non-proof result wrapper. The outer `oneof result` switches
  * between this and `proof`; this inner oneof switches between
- * the four non-proof shapes the v1 surface can return.
+ * the non-proof shapes the v1 surface can return.
  **/
 GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_ResultData : GPBMessage
 
@@ -3730,6 +3914,21 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_ResultData : GP
  * and the grades-contract worked example.
  **/
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_AverageResults *averages;
+
+/**
+ * Ranked-aggregate result. Routed when the request pairs a
+ * single-property `group_by` with a single `order_by` clause
+ * naming the single aggregate `select` (the `$count` sentinel
+ * for `COUNT(*)`) and a `limit` — SQL's `ORDER BY <agg>
+ * DESC LIMIT n [OFFSET m]`. Answered from the per-axis
+ * secondary of an indexed tree, so the index must declare the
+ * matching `rankedCountable` / `rankedSummable` /
+ * `rankedAverageable` keyword (meta-schema v3, protocol
+ * version 14+). Entry order is the ranking order, and
+ * `skipped` carries the page's starting rank — see
+ * `RankedEntries`.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries *ranked;
 
 @end
 

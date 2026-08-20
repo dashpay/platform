@@ -218,6 +218,7 @@ class AppContainer(private val context: Context) {
                     manager.stopShieldedSync()
                 }
                 manager.stopDashPaySync()
+                manager.stopDpnsSync()
             } catch (e: Exception) {
                 android.util.Log.w(TAG, "Failed to stop sync coordinators", e)
             }
@@ -286,6 +287,9 @@ class AppContainer(private val context: Context) {
                 // address/shielded loops on the wallet-present branch).
                 if (!manager.isDashPaySyncRunning()) {
                     manager.startDashPaySync()
+                }
+                if (!manager.isDpnsSyncRunning()) {
+                    manager.startDpnsSync()
                 }
             } catch (e: Exception) {
                 android.util.Log.e(TAG, "Failed to bind wallet-scoped services", e)

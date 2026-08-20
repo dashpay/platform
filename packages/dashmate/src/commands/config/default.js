@@ -30,12 +30,17 @@ Shows default config name or sets another config as default
     },
     flags,
     configFile,
+    configFileRepository,
   ) {
     if (configName === null) {
       // eslint-disable-next-line no-console
       console.log(configFile.getDefaultConfigName());
     } else {
-      configFile.setDefaultConfigName(configName);
+      // Read, change and save in one locked step, so pointing the default at a
+      // config cannot revert a change another command saved in the meantime.
+      configFileRepository.update((freshConfigFile) => {
+        freshConfigFile.setDefaultConfigName(configName);
+      });
 
       // eslint-disable-next-line no-console
       console.log(`${configName} config set as default`);
