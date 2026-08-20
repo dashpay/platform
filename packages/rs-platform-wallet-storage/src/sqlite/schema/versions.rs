@@ -36,6 +36,7 @@ pub enum Domain {
     AccountAddressPools,
     PendingContactCrypto,
     Invitations,
+    DpnsNameStates,
     #[cfg(feature = "shielded")]
     ShieldedViewingKeys,
 }
@@ -59,6 +60,7 @@ impl Domain {
             Domain::AccountAddressPools => "account_address_pools",
             Domain::PendingContactCrypto => "pending_contact_crypto",
             Domain::Invitations => "invitations",
+            Domain::DpnsNameStates => "dpns_name_states",
             #[cfg(feature = "shielded")]
             Domain::ShieldedViewingKeys => "shielded_viewing_keys",
         }
@@ -67,6 +69,27 @@ impl Domain {
     /// Every domain, for coverage tests.
     #[cfg(any(test, feature = "__test-helpers"))]
     #[cfg(feature = "shielded")]
+    pub const ALL: [Domain; 16] = [
+        Domain::Core,
+        Domain::Identities,
+        Domain::IdentityKeys,
+        Domain::Contacts,
+        Domain::PlatformAddresses,
+        Domain::AssetLocks,
+        Domain::TokenBalances,
+        Domain::DashpayProfiles,
+        Domain::DashpayPaymentsOverlay,
+        Domain::WalletMetadata,
+        Domain::AccountRegistrations,
+        Domain::AccountAddressPools,
+        Domain::PendingContactCrypto,
+        Domain::Invitations,
+        Domain::DpnsNameStates,
+        Domain::ShieldedViewingKeys,
+    ];
+
+    /// Every domain, for coverage tests without shielded persistence.
+    #[cfg(all(any(test, feature = "__test-helpers"), not(feature = "shielded")))]
     pub const ALL: [Domain; 15] = [
         Domain::Core,
         Domain::Identities,
@@ -82,26 +105,7 @@ impl Domain {
         Domain::AccountAddressPools,
         Domain::PendingContactCrypto,
         Domain::Invitations,
-        Domain::ShieldedViewingKeys,
-    ];
-
-    /// Every domain, for coverage tests without shielded persistence.
-    #[cfg(all(any(test, feature = "__test-helpers"), not(feature = "shielded")))]
-    pub const ALL: [Domain; 14] = [
-        Domain::Core,
-        Domain::Identities,
-        Domain::IdentityKeys,
-        Domain::Contacts,
-        Domain::PlatformAddresses,
-        Domain::AssetLocks,
-        Domain::TokenBalances,
-        Domain::DashpayProfiles,
-        Domain::DashpayPaymentsOverlay,
-        Domain::WalletMetadata,
-        Domain::AccountRegistrations,
-        Domain::AccountAddressPools,
-        Domain::PendingContactCrypto,
-        Domain::Invitations,
+        Domain::DpnsNameStates,
     ];
 }
 
@@ -132,6 +136,7 @@ pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
         pending_contact_crypto_added,
         pending_contact_crypto_cleared,
         invitations,
+        dpns_name_states,
         #[cfg(feature = "shielded")]
         shielded,
     } = cs;
@@ -187,6 +192,9 @@ pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
     }
     if present(invitations) {
         out.push(Domain::Invitations);
+    }
+    if present(dpns_name_states) {
+        out.push(Domain::DpnsNameStates);
     }
     #[cfg(feature = "shielded")]
     if shielded

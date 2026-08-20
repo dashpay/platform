@@ -10,6 +10,7 @@ pub(crate) mod broadcast_identity;
 pub mod broadcast_request;
 #[cfg(feature = "shielded")]
 pub mod identity_create_from_shielded_pool;
+pub mod masternode_vote_keys;
 pub mod purchase_document;
 pub mod put_contract;
 pub mod put_document;

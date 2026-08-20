@@ -71,6 +71,12 @@ pub struct ShieldedNote {
     /// Stamped per-batch — the SAME height OVK-recovered outgoing notes
     /// from that chunk get — so the activity deriver can cluster one
     /// bundle's incoming change and outgoing send together by height.
+    ///
+    /// This is an *observed at-or-before* bound (the tip the fetch was
+    /// proven at), NOT the note's inclusion height, which the proof
+    /// doesn't carry. It is a grouping key only — never surface it as
+    /// when the note was mined (scan-derived activity entries carry
+    /// `block_height: None` for exactly this reason).
     pub block_height: u64,
     /// Whether the nullifier was seen on-chain (spent).
     pub is_spent: bool,
@@ -112,7 +118,10 @@ pub struct ShieldedOutgoingNote {
     /// rather than `[u8; 36]` so the persisted shape stays flexible if
     /// the memo size ever changes; always 36 bytes for a recovered note.
     pub memo: Vec<u8>,
-    /// Block height at which the sent note appeared on-chain.
+    /// Proven platform height of the chunk fetch that recovered the
+    /// note — the same per-batch *observed at-or-before* bound (and
+    /// grouping key) as [`ShieldedNote::block_height`]; NOT the height
+    /// the send was mined at.
     pub block_height: u64,
 }
 
@@ -1181,6 +1190,7 @@ mod tests {
                 block_height: height,
                 status,
                 created_at_ms: 0,
+                min_note_position: None,
                 note_cmxs: vec![[id; 32]],
                 spent_nullifiers: vec![],
             }

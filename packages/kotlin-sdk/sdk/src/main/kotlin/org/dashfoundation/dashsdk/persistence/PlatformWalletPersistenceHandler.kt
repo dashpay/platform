@@ -5,10 +5,15 @@ import androidx.room.withTransaction
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExecutorCoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.ffi.AccountSpecData
 import org.dashfoundation.dashsdk.ffi.ContactProfileRestoreData
 import org.dashfoundation.dashsdk.ffi.ContactRequestRestoreData
@@ -39,6 +44,7 @@ import org.dashfoundation.dashsdk.persistence.entities.DashpayIgnoredSenderEntit
 import org.dashfoundation.dashsdk.persistence.entities.DashpayProfileEntity
 import org.dashfoundation.dashsdk.persistence.entities.DpnsNameEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
+import org.dashfoundation.dashsdk.persistence.entities.InvitationEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressesSyncStateEntity
 import org.dashfoundation.dashsdk.persistence.entities.PublicKeyEntity
@@ -122,11 +128,14 @@ class PlatformWalletPersistenceHandler(
 
     override fun persistenceCapabilitiesBits(): Long =
         CAPABILITY_ATOMIC_CHANGESETS or
+            CAPABILITY_INVITATIONS or
             CAPABILITY_ASSET_LOCK_FUNDING_INDICES or
             CAPABILITY_SHIELDED_VIEWING_KEYS or
             CAPABILITY_PROVIDER_TRANSACTIONS or
             CAPABILITY_UNSIGNED_TOKEN_STORAGE or
-            CAPABILITY_WALLET_RESTORE
+            CAPABILITY_WALLET_RESTORE or
+            CAPABILITY_DPNS_NAME_STATES or
+            CAPABILITY_TRACKED_ASSET_LOCKS
 
     /**
      * The single-thread executor created when no [dispatcher] is injected.
@@ -147,9 +156,14 @@ class PlatformWalletPersistenceHandler(
 
     /**
      * Shut down the owned executor (no-op for an injected dispatcher).
-     * Callers must quiesce native callbacks first — the manager invokes
-     * this only after `nativeDestroy` has freed the callback contexts, so
-     * nothing can dispatch onto the executor afterwards.
+     * The manager invokes this after `nativeDestroy`'s bounded shutdown
+     * has quiesced the callback-firing tasks. A native worker that
+     * straggled past that shutdown holds its own strong reference to the
+     * bridge (Rust owns the callback context and frees it when the worker
+     * exits), so a late callback is memory-safe; if it dispatches onto
+     * the already-closed executor it is rejected and dropped, which is
+     * fine — every persistence hook is reconciliation-based and re-runs
+     * on the next launch.
      */
     override fun close() {
         ownedDispatcher?.close()
@@ -162,6 +176,25 @@ class PlatformWalletPersistenceHandler(
      */
     private class ChangesetBuffer {
         val ops: MutableList<suspend (DashDatabase) -> Unit> = mutableListOf()
+
+        /**
+         * [pendingIdentityKeys] map deltas staged by
+         * [onPersistIdentityKeyUpsert] during this round. The matching
+         * `PublicKeyEntity` row is only BUFFERED until [onChangesetEnd], so
+         * the pending-state change it describes is not true until that row
+         * commits: publishing a record early would flag a key whose
+         * watch-only row may be discarded by rollback, and publishing a
+         * clear early would drop the repair signal for an old watch-only
+         * row whose successful re-derive then rolls back (alias cleanup
+         * deletes the newly stored scalar). Applied in order, in ONE atomic
+         * [MutableStateFlow.update], only after the Room transaction
+         * commits; discarded with the buffer on rollback/abort so an
+         * aborted round leaves the pre-round map untouched
+         * (dashpay/platform#4060, finding de3cf44a71fc).
+         */
+        val pendingKeyDeltas:
+            MutableList<(Map<String, PendingIdentityKey>) -> Map<String, PendingIdentityKey>> =
+                mutableListOf()
     }
 
     /** Open rounds keyed by walletId hex (a round is per-walletId). */
@@ -291,6 +324,52 @@ class PlatformWalletPersistenceHandler(
         callbackExclusion.withLock { block() }
 
     /**
+     * An identity key whose private-half derivation/storage failed — the
+     * key was persisted **watch-only** and cannot sign until re-derived
+     * (e.g. via `PlatformWalletManager.repairIdentityKey`).
+     */
+    data class PendingIdentityKey(
+        /** Hex of the wallet the key belongs to. */
+        val walletIdHex: String,
+        /** Base58 of the owning identity id. */
+        val identityIdBase58: String,
+        /** On-identity key id. */
+        val keyId: Int,
+        /** Lowercase hex of the compressed public key (the storage key). */
+        val publicKeyHex: String,
+        /** Derivation breadcrumb: identity index. */
+        val identityIndex: Int,
+        /** Derivation breadcrumb: key index. */
+        val keyIndex: Int,
+        /** Human-readable failure reason (exception message or contract miss). */
+        val reason: String,
+        /** Epoch millis of the (latest) failure. */
+        val failedAtMs: Long,
+    )
+
+    private val _pendingIdentityKeys =
+        MutableStateFlow<Map<String, PendingIdentityKey>>(emptyMap())
+
+    /**
+     * Queryable "keys pending" state: identity keys whose private half
+     * could not be derived/stored by [onPersistIdentityKeyUpsert] (keyed by
+     * public-key hex). Such keys are persisted watch-only — signing with
+     * them fails — so hosts should watch this flow and surface a repair
+     * path. An entry clears automatically when a later persist round (or an
+     * explicit re-derive that replays the upsert) stores the key.
+     *
+     * Transactional with the round it belongs to: while a store round is
+     * open, record/clear mutations are staged in the round's
+     * [ChangesetBuffer] and published only after the Room transaction
+     * commits — a rolled-back or aborted round leaves this map exactly as
+     * it was before the round (see [ChangesetBuffer.pendingKeyDeltas]).
+     * Standalone (non-bracketed) upserts and [markIdentityKeyRepaired]
+     * publish immediately.
+     */
+    val pendingIdentityKeys: StateFlow<Map<String, PendingIdentityKey>> =
+        _pendingIdentityKeys.asStateFlow()
+
+    /**
      * Stage a write. If a round is open for [walletId] the op is buffered
      * for the round's single transaction; otherwise it runs immediately
      * in its own transaction (the standalone-callback path).
@@ -314,7 +393,8 @@ class PlatformWalletPersistenceHandler(
         // A pending leftover here means the previous round never reached
         // its end callback (abandoned mid-round) — its rows never
         // committed, so its aliases are orphans; scrub them like a
-        // rolled-back round. Then retry any earlier failed cleanup.
+        // rolled-back round (its staged pending-key deltas vanish with the
+        // replaced buffer). Then retry any earlier failed cleanup.
         scrubPendingAliases(key)
         retryOrphanedAliases(key)
         buffers[key] = ChangesetBuffer()
@@ -329,7 +409,9 @@ class PlatformWalletPersistenceHandler(
             // `backgroundContext.rollback()` — and delete the aliases the
             // deriver already wrote for this round: their rows will never
             // commit, so leaving them would strand undiscoverable
-            // identity-key ciphertext in the DataStore forever.
+            // identity-key ciphertext in the DataStore forever. The round's
+            // staged pending-key deltas are discarded with the buffer, so
+            // the pre-round [pendingIdentityKeys] map survives untouched.
             scrubPendingAliases(key)
             return@guarded 0
         }
@@ -341,11 +423,14 @@ class PlatformWalletPersistenceHandler(
                     }
                 }
             }
-            // Rows committed — the aliases are discoverable the normal way.
+            // Rows committed — the aliases are discoverable the normal way,
+            // and the round's pending-key state changes are now true.
             pendingRoundAliases.remove(key)
+            publishPendingKeyDeltas(buffer)
         } catch (t: Throwable) {
             // Commit failed: the staged rows never landed, so the round's
-            // aliases are orphans exactly like the !success branch.
+            // aliases are orphans exactly like the !success branch — and its
+            // pending-key deltas are equally void (discarded with the buffer).
             scrubPendingAliases(key)
             throw t
         }
@@ -506,7 +591,34 @@ class PlatformWalletPersistenceHandler(
                 db, walletId, accountTypeTag.toInt() and 0xFF, accountIndex,
                 accountStandardTag.toInt() and 0xFF, accountRegistrationIndex,
                 accountKeyClass, accountUserIdentityId, accountFriendIdentityId,
-            ) ?: return@stage
+            ) ?: run {
+                // The IdentityInvitation pool write is load-bearing: Rust's
+                // pre-broadcast gate treats this round's success as "voucher
+                // funding index durably recorded" and only then broadcasts.
+                // Silently skipping on a missing parent account row would let
+                // the funding index reset on restart and re-export the same
+                // one-time bearer key. Create the account row (mirroring
+                // onWalletChangesetAccountBegin's upsert-on-missing); if it
+                // still can't be resolved (e.g. no wallet row), fail the
+                // round so create aborts before any funds move.
+                if ((accountTypeTag.toInt() and 0xFF) != ACCOUNT_TYPE_IDENTITY_INVITATION) {
+                    return@stage
+                }
+                upsertAccount(
+                    db, walletId, accountTypeTag.toInt() and 0xFF, accountIndex,
+                    accountStandardTag.toInt() and 0xFF, accountRegistrationIndex,
+                    accountKeyClass, accountUserIdentityId, accountFriendIdentityId,
+                    xpub = null,
+                )
+                fetchAccount(
+                    db, walletId, accountTypeTag.toInt() and 0xFF, accountIndex,
+                    accountStandardTag.toInt() and 0xFF, accountRegistrationIndex,
+                    accountKeyClass, accountUserIdentityId, accountFriendIdentityId,
+                ) ?: error(
+                    "invitation funding account row unresolvable; " +
+                        "failing round to keep the funding index durable",
+                )
+            }
             if ((accountTypeTag.toInt() and 0xFF) == ACCOUNT_TYPE_PLATFORM_PAYMENT) {
                 // DIP-17 PlatformPayment pool → PlatformAddressEntity
                 // (mirror of Swift `persistPlatformPaymentAddresses`). Rust
@@ -917,7 +1029,22 @@ class PlatformWalletPersistenceHandler(
             )
             db.identityDao().upsert(row)
 
-            // DPNS labels (append-only; upsert by the unique triple).
+            // IdentityEntryFFI carries the complete canonical label set. Drop
+            // owned labels that are no longer present; a marketplace state
+            // callback in the same changeset re-inserts departed rows with
+            // their sold/transferred status and counterparty.
+            val canonicalLabels = dpnsNames
+                .asSequence()
+                .filter { it.isNotEmpty() }
+                .map(::normalizeDpnsLabel)
+                .toSet()
+            for (persisted in db.dpnsNameDao().getAllByIdentity(identityId)) {
+                if (persisted.isOwned && persisted.normalizedLabel !in canonicalLabels) {
+                    db.dpnsNameDao().delete(persisted)
+                }
+            }
+
+            // DPNS labels (last-write-wins; upsert by the unique triple).
             for (i in dpnsNames.indices) {
                 val label = dpnsNames[i]
                 if (label.isEmpty()) continue
@@ -932,6 +1059,15 @@ class PlatformWalletPersistenceHandler(
                         acquiredAt = if (acquiredAt != 0L) acquiredAt
                         else existingName?.acquiredAt ?: 0L,
                         identityId = identityId,
+                        documentId = existingName?.documentId,
+                        isOwned = true,
+                        priceCredits = existingName?.priceCredits,
+                        saleStatusRaw = 0,
+                        counterpartyIdentityId = null,
+                        documentCreatedAtMs = existingName?.documentCreatedAtMs ?: 0L,
+                        documentUpdatedAtMs = existingName?.documentUpdatedAtMs ?: 0L,
+                        documentTransferredAtMs = existingName?.documentTransferredAtMs ?: 0L,
+                        marketplaceUpdatedAt = existingName?.marketplaceUpdatedAt ?: 0L,
                         createdAt = existingName?.createdAt ?: java.util.Date(),
                         lastUpdated = now(),
                     ),
@@ -961,7 +1097,86 @@ class PlatformWalletPersistenceHandler(
     }
 
     override fun onPersistIdentityRemoval(walletId: ByteArray, identityId: ByteArray): Int = guarded {
+        val identityBase58 = identityId.toBase58String()
         stage(walletId) { db -> db.identityDao().deleteByIdentityId(identityId) }
+        // The identity delete cascades away all of its public-key rows, so
+        // every pending-repair entry for this identity is now a phantom —
+        // the key can never be re-derived/repaired into an identity that no
+        // longer exists (dashpay/platform#4183 review). Drop them all from
+        // [pendingIdentityKeys]. Staged with the round (mirroring
+        // [onPersistIdentityKeyRemoval]): published only if the deletion
+        // commits and discarded on rollback, so a rolled-back removal keeps
+        // the pre-round map intact.
+        stagePendingKeyDelta(
+            walletId.toHex(),
+            clearPendingKeyByIdentityDelta(identityBase58),
+        )
+        0
+    }
+
+    @Suppress("LongParameterList")
+    override fun onPersistDpnsNameState(
+        walletId: ByteArray,
+        documentId: ByteArray,
+        walletIdentityId: ByteArray,
+        hasCounterparty: Boolean,
+        counterpartyId: ByteArray,
+        label: String,
+        normalizedLabel: String,
+        normalizedParentDomainName: String,
+        hasPrice: Boolean,
+        priceCredits: Long,
+        status: Byte,
+        createdAtMs: Long,
+        updatedAtMs: Long,
+        transferredAtMs: Long,
+        lastSyncedAtMs: Long,
+    ): Int = guarded {
+        require(status.toInt() in 0..2) { "unknown DPNS sale status $status" }
+        stage(walletId) { db ->
+            // The relationship is non-optional. A marketplace sweep can race
+            // the first identity snapshot, so skip this row and let the next
+            // sync re-emit it instead of rolling back the complete changeset.
+            if (db.identityDao().getByIdentityId(walletIdentityId) == null) {
+                return@stage
+            }
+            val networkRaw = db.walletDao().getByWalletId(walletId)?.networkRaw ?: NETWORK_TESTNET
+            val existing = db.dpnsNameDao().getByDocumentId(documentId)
+                ?: db.dpnsNameDao().getByUniqueKey(
+                    networkRaw,
+                    normalizedParentDomainName,
+                    normalizedLabel,
+                )
+            db.dpnsNameDao().upsert(
+                DpnsNameEntity(
+                    networkRaw = networkRaw,
+                    label = label,
+                    normalizedLabel = normalizedLabel,
+                    parentDomainName = normalizedParentDomainName,
+                    normalizedParentDomainName = normalizedParentDomainName,
+                    acquiredAt = existing?.acquiredAt ?: createdAtMs,
+                    identityId = walletIdentityId,
+                    documentId = documentId,
+                    isOwned = status.toInt() == 0,
+                    priceCredits = if (hasPrice) priceCredits else null,
+                    saleStatusRaw = status.toInt(),
+                    counterpartyIdentityId = if (hasCounterparty) counterpartyId else null,
+                    documentCreatedAtMs = createdAtMs,
+                    documentUpdatedAtMs = updatedAtMs,
+                    documentTransferredAtMs = transferredAtMs,
+                    marketplaceUpdatedAt = lastSyncedAtMs,
+                    createdAt = existing?.createdAt ?: now(),
+                    lastUpdated = now(),
+                ),
+            )
+        }
+        0
+    }
+
+    override fun onRemoveDpnsNameState(walletId: ByteArray, documentId: ByteArray): Int = guarded {
+        stage(walletId) { db ->
+            db.dpnsNameDao().clearMarketplaceByDocumentId(documentId, now())
+        }
         0
     }
 
@@ -1029,17 +1244,62 @@ class PlatformWalletPersistenceHandler(
         // wallet-deletion sweep still reaches it through the committed row).
         val deriveResult: DerivedKeyStoreResult? =
             if (derivationIndicesIsSome && deriver != null && !readOnly && walletStillPersisted) {
-                runCatching {
+                val keyOwnerWalletId = if (walletIdIsSome) keyWalletId else walletId
+                val outcome = runCatching {
                     deriver.deriveAndStore(
-                        walletId = if (walletIdIsSome) keyWalletId else walletId,
+                        walletId = keyOwnerWalletId,
                         publicKeyData = publicKeyData,
                         identityIndex = identityIndex,
                         keyIndex = keyIndex,
+                        keyType = keyType.toInt() and 0xFF,
                     )
-                }.getOrElse { t ->
-                    Log.w(TAG, "identity private-key derive/store failed; key stays watch-only", t)
-                    null
                 }
+                val id = outcome.getOrNull()
+                if (id != null) {
+                    // Stored — clear any earlier failure for this pubkey.
+                    // Staged with the round (when one is open): if this
+                    // round rolls back, alias cleanup deletes the newly
+                    // stored scalar, so the old watch-only row must keep
+                    // its repair signal (finding de3cf44a71fc).
+                    stagePendingKeyDelta(roundKey, clearPendingKeyDelta(publicKeyData.toHex()))
+                } else {
+                    // NOT silent (dashpay/platform#4053): the key is being
+                    // persisted watch-only, so every signature with it will
+                    // fail until it is re-derived. Log loudly and record a
+                    // queryable pending entry (see [pendingIdentityKeys]).
+                    val reason = outcome.exceptionOrNull()?.let { t ->
+                        t.message ?: t.javaClass.simpleName
+                    } ?: "deriver returned no storage identifier"
+                    Log.e(
+                        TAG,
+                        "identity private-key derive/store FAILED — key " +
+                            "${publicKeyData.toHex()} (identity ${identityId.toBase58String()}, " +
+                            "keyId $keyId, slot $identityIndex/$keyIndex) is persisted " +
+                            "WATCH-ONLY and cannot sign until re-derived " +
+                            "(see PlatformWalletPersistenceHandler.pendingIdentityKeys): $reason",
+                        outcome.exceptionOrNull(),
+                    )
+                    // Staged with the round (when one is open): the row is
+                    // being persisted watch-only INSIDE the round's buffer,
+                    // so if the round aborts that row never commits and the
+                    // pending entry would be a phantom (finding de3cf44a71fc).
+                    stagePendingKeyDelta(
+                        roundKey,
+                        recordPendingKeyDelta(
+                            PendingIdentityKey(
+                                walletIdHex = keyOwnerWalletId.toHex(),
+                                identityIdBase58 = identityId.toBase58String(),
+                                keyId = keyId,
+                                publicKeyHex = publicKeyData.toHex(),
+                                identityIndex = identityIndex,
+                                keyIndex = keyIndex,
+                                reason = reason,
+                                failedAtMs = System.currentTimeMillis(),
+                            ),
+                        ),
+                    )
+                }
+                id
             } else {
                 null
             }
@@ -1078,6 +1338,15 @@ class PlatformWalletPersistenceHandler(
                 // watch-only wallets / no-deriver builds.
                 privateKeyKeychainIdentifier =
                     derivedKeychainId ?: existing?.privateKeyKeychainIdentifier,
+                // Derivation breadcrumbs are recorded whenever Rust supplied
+                // them — success AND failure paths (the breadcrumb is not a
+                // failure marker; the null identifier is). They make the
+                // pending-repair state reconstructible after restart
+                // (dashpay/platform#4060 finding 5).
+                derivationIdentityIndex =
+                    if (derivationIndicesIsSome) identityIndex else existing?.derivationIdentityIndex,
+                derivationKeyIndex =
+                    if (derivationIndicesIsSome) keyIndex else existing?.derivationKeyIndex,
                 identityId = identityBase58,
                 identityIdData = identityId,
                 createdAt = existing?.createdAt ?: java.util.Date(),
@@ -1093,9 +1362,20 @@ class PlatformWalletPersistenceHandler(
         identityId: ByteArray,
         keyId: Int,
     ): Int = guarded {
+        val identityBase58 = identityId.toBase58String()
         stage(walletId) { db ->
-            db.publicKeyDao().deleteByIdentityAndKeyId(identityId.toBase58String(), keyId)
+            db.publicKeyDao().deleteByIdentityAndKeyId(identityBase58, keyId)
         }
+        // The row is gone, so a pending-repair entry for it is now a phantom:
+        // the key can never be re-derived/repaired into an identity that no
+        // longer carries it (dashpay/platform#4183 review). Drop it from
+        // [pendingIdentityKeys]. Staged with the round (mirroring the upsert
+        // path): published only if the deletion commits and discarded on
+        // rollback, so a rolled-back removal keeps the pre-round map intact.
+        stagePendingKeyDelta(
+            walletId.toHex(),
+            clearPendingKeyByIdentityKeyDelta(identityBase58, keyId),
+        )
         0
     }
 
@@ -1341,6 +1621,50 @@ class PlatformWalletPersistenceHandler(
 
     override fun onPersistAssetLockRemoval(walletId: ByteArray, outPoint: ByteArray): Int = guarded {
         stage(walletId) { db -> db.assetLockDao().deleteByOutPointHex(encodeOutPointHex(outPoint)) }
+        0
+    }
+
+    // ── Invitations (DIP-13) ──────────────────────────────────────────
+
+    override fun onPersistInvitationUpsert(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        fundingIndex: Int,
+        amountDuffs: Long,
+        expiryUnix: Int,
+        createdAtSecs: Int,
+        hasInviter: Boolean,
+        status: Int,
+    ): Int = guarded {
+        stage(walletId) { db ->
+            val outPointHex = encodeOutPointHex(outPoint)
+            val existing = db.invitationDao().getByOutPointHex(outPointHex)
+            db.invitationDao().upsert(
+                InvitationEntity(
+                    outPointHex = outPointHex,
+                    rawOutPoint = outPoint,
+                    walletId = walletId,
+                    fundingIndexRaw = fundingIndex,
+                    amountDuffs = amountDuffs,
+                    expiryUnix = expiryUnix,
+                    createdAtSecs = createdAtSecs,
+                    hasInviter = hasInviter,
+                    // Claimed/Reclaimed and the reclaim marker are written
+                    // locally by the app (Rust emits only Created), so an
+                    // existing row keeps them — a Rust re-emit of the same
+                    // outpoint must never reset local status.
+                    statusRaw = existing?.statusRaw ?: status,
+                    reclaimInFlight = existing?.reclaimInFlight ?: false,
+                    createdAt = existing?.createdAt ?: java.util.Date(),
+                    updatedAt = now(),
+                ),
+            )
+        }
+        0
+    }
+
+    override fun onPersistInvitationRemoval(walletId: ByteArray, outPoint: ByteArray): Int = guarded {
+        stage(walletId) { db -> db.invitationDao().deleteByOutPointHex(encodeOutPointHex(outPoint)) }
         0
     }
 
@@ -2349,8 +2673,8 @@ class PlatformWalletPersistenceHandler(
      *  - identities (SET_NULL from wallet, Swift `.nullify`) + their
      *    SET_NULL `token_balances`;
      *  - the walletId-keyed tables with no wallet FK: txos, pending
-     *    inputs, asset locks, platform addresses + sync state, and the
-     *    five shielded (Orchard) tables.
+     *    inputs, asset locks, invitations, platform addresses + sync
+     *    state, and the five shielded (Orchard) tables.
      *
      * The platform-addresses network sync-state row is shared across a
      * network's wallets (keyed by [syncStateScopeId]); it is dropped only
@@ -2398,6 +2722,7 @@ class PlatformWalletPersistenceHandler(
             database.txoDao().deleteByWallet(walletId)
             database.documentDao().deletePendingInputsByWallet(walletId)
             database.assetLockDao().deleteByWallet(walletId)
+            database.invitationDao().deleteByWallet(walletId)
             database.platformAddressDao().deleteByWallet(walletId)
             database.shieldedDao().deleteNotesByWallet(walletId)
             database.shieldedDao().deleteOutgoingNotesByWallet(walletId)
@@ -2421,6 +2746,384 @@ class PlatformWalletPersistenceHandler(
                 if (siblings == 0) {
                     database.platformAddressDao().deleteSyncState(syncStateScopeId(walletNetwork))
                 }
+            }
+        }
+        // Only AFTER the delete transaction commits: prune every pending
+        // repair entry scoped to this wallet. The cascade above removed all
+        // of the wallet's identities and their public-key rows, so those
+        // entries are now phantoms whose rows and derivation breadcrumbs no
+        // longer exist — leaving them would keep signalling hosts to repair
+        // keys that can never be re-derived (dashpay/platform#4183 review).
+        // Placed past the transaction (not staged with a round) so a throw
+        // that rolls the delete back skips this line and preserves the valid
+        // signals (Room's cascade cannot mutate this process-local StateFlow).
+        _pendingIdentityKeys.update(clearPendingKeyByWalletDelta(walletId.toHex()))
+    }
+
+    // ── Pending identity-key bookkeeping (#4053) ──────────────────────
+
+    // Every publish to the map goes through `MutableStateFlow.update`
+    // (atomic compare-and-set) rather than a plain read-modify-write on
+    // `.value`: the persistence callback publishes on the Rust caller
+    // thread while `markIdentityKeyRepaired` can clear from an arbitrary
+    // host thread (via PlatformWalletManager.repairIdentityKey). A
+    // non-atomic read-then-write could interleave and drop one of the two
+    // mutations — losing a record leaves a watch-only key with no queryable
+    // pending state, losing a clear leaves a repaired key stale.
+    //
+    // The mutations themselves are expressed as pure map deltas so the
+    // upsert callback can STAGE them with the round's [ChangesetBuffer]
+    // instead of publishing mid-round (finding de3cf44a71fc): the pending
+    // state a delta describes only becomes true when the round's Room
+    // transaction commits, and an aborted round must leave no trace.
+
+    private fun recordPendingKeyDelta(
+        entry: PendingIdentityKey,
+    ): (Map<String, PendingIdentityKey>) -> Map<String, PendingIdentityKey> =
+        { it + (entry.publicKeyHex to entry) }
+
+    private fun clearPendingKeyDelta(
+        publicKeyHex: String,
+    ): (Map<String, PendingIdentityKey>) -> Map<String, PendingIdentityKey> =
+        { if (publicKeyHex in it) it - publicKeyHex else it }
+
+    /**
+     * Delta that drops any pending entry for the identity key
+     * ([identityIdBase58], [keyId]) — the shape [onPersistIdentityKeyRemoval]
+     * has (the map is keyed by public-key hex, which a removal callback does
+     * not carry, so it matches on the entry's identity + keyId instead).
+     * No-op (returns the same map instance) when nothing matches, mirroring
+     * [clearPendingKeyDelta] so an unrelated removal publishes no map update.
+     */
+    private fun clearPendingKeyByIdentityKeyDelta(
+        identityIdBase58: String,
+        keyId: Int,
+    ): (Map<String, PendingIdentityKey>) -> Map<String, PendingIdentityKey> =
+        { map ->
+            if (map.values.any { it.identityIdBase58 == identityIdBase58 && it.keyId == keyId }) {
+                map.filterValues {
+                    !(it.identityIdBase58 == identityIdBase58 && it.keyId == keyId)
+                }
+            } else {
+                map
+            }
+        }
+
+    /**
+     * Delta that drops EVERY pending entry belonging to identity
+     * [identityIdBase58] (all of its key ids) — the shape
+     * [onPersistIdentityRemoval] has. When an identity is removed Room
+     * cascades away all of its `public_keys` rows, so each of its pending
+     * repair entries is now a phantom (the key can never be re-derived into
+     * an identity that no longer exists). No-op (returns the same map
+     * instance) when nothing matches, mirroring [clearPendingKeyDelta] so an
+     * unrelated removal publishes no map update.
+     */
+    private fun clearPendingKeyByIdentityDelta(
+        identityIdBase58: String,
+    ): (Map<String, PendingIdentityKey>) -> Map<String, PendingIdentityKey> =
+        { map ->
+            if (map.values.any { it.identityIdBase58 == identityIdBase58 }) {
+                map.filterValues { it.identityIdBase58 != identityIdBase58 }
+            } else {
+                map
+            }
+        }
+
+    /**
+     * Delta that drops EVERY pending entry belonging to wallet
+     * [walletIdHex] — the shape [deleteWalletDataLocked] has. A wallet wipe
+     * cascades away all of its identities and their `public_keys` rows, so
+     * every pending repair entry scoped to it is a phantom afterwards.
+     * No-op (returns the same map instance) when nothing matches.
+     */
+    private fun clearPendingKeyByWalletDelta(
+        walletIdHex: String,
+    ): (Map<String, PendingIdentityKey>) -> Map<String, PendingIdentityKey> =
+        { map ->
+            if (map.values.any { it.walletIdHex == walletIdHex }) {
+                map.filterValues { it.walletIdHex != walletIdHex }
+            } else {
+                map
+            }
+        }
+
+    /**
+     * Stage [delta] with the wallet's open round (published atomically by
+     * [publishPendingKeyDeltas] after the round's transaction commits,
+     * discarded on rollback/abort), or publish immediately when no round is
+     * open — the standalone-callback path, whose Room write also commits
+     * immediately. Caller must hold [callbackExclusion] (every persist
+     * callback does), which also guards [buffers].
+     */
+    private fun stagePendingKeyDelta(
+        walletIdHex: String,
+        delta: (Map<String, PendingIdentityKey>) -> Map<String, PendingIdentityKey>,
+    ) {
+        val buffer = buffers[walletIdHex]
+        if (buffer != null) {
+            buffer.pendingKeyDeltas.add(delta)
+        } else {
+            _pendingIdentityKeys.update(delta)
+        }
+    }
+
+    /** Publish a committed round's staged deltas in ONE atomic map update. */
+    private fun publishPendingKeyDeltas(buffer: ChangesetBuffer) {
+        if (buffer.pendingKeyDeltas.isEmpty()) return
+        _pendingIdentityKeys.update { map ->
+            buffer.pendingKeyDeltas.fold(map) { acc, delta -> delta(acc) }
+        }
+    }
+
+    /**
+     * Drop [publicKeyHex] from [pendingIdentityKeys] after a successful
+     * out-of-band repair.
+     *
+     * [onPersistIdentityKeyUpsert] is the only *persist-callback* path that
+     * clears a pending entry, but [org.dashfoundation.dashsdk.wallet.PlatformWalletManager.repairIdentityKey]
+     * re-derives and stores the private key directly through the deriver,
+     * bypassing that callback — so it must call this on success or a repaired
+     * key would linger in [pendingIdentityKeys] until an unrelated re-persist
+     * happens to fire for the same key. Idempotent: clearing an absent key is a
+     * no-op. Publishes immediately (never staged with a round): the repair's
+     * scalar store already happened out-of-band, not inside any changeset.
+     */
+    internal fun markIdentityKeyRepaired(publicKeyHex: String) {
+        _pendingIdentityKeys.update(clearPendingKeyDelta(publicKeyHex))
+    }
+
+    /**
+     * Re-derive, verify, and durably repair the identity key identified by
+     * [publicKeyData] — the orchestration behind
+     * `PlatformWalletManager.repairIdentityKey`, hoisted here so it is
+     * unit-testable (the manager cannot be constructed on the JVM) and so it
+     * shares this handler's authoritative [pendingIdentityKeys] state.
+     *
+     * ## Derivation source (dashpay/platform#4060 blocker 1)
+     *
+     * The derivation indices are read from the PERSISTED `public_keys` row's
+     * derivation breadcrumbs ([PublicKeyEntity.derivationIdentityIndex] /
+     * [PublicKeyEntity.derivationKeyIndex]) — NEVER from a caller-supplied
+     * key id. A caller-supplied index (e.g. the DPP key id) can derive a
+     * DIFFERENT valid scalar that round-trips through encrypt/decrypt fine;
+     * the deriver's [PrivateKeyDeriver.deriveAndStore] `force` path then
+     * proves the derived PUBLIC key equals [publicKeyData] BEFORE persisting
+     * and throws [org.dashfoundation.dashsdk.security.IdentityKeyDerivationMismatchException]
+     * on mismatch (nothing persisted, pending state untouched). A row with no
+     * breadcrumbs cannot be safely repaired, so the repair fails without
+     * clearing pending.
+     *
+     * ## Durability (dashpay/platform#4060 blocker 3)
+     *
+     * The durable Room write (recording the storage identifier so the restart
+     * reconstruction does not resurrect the key) fails CLOSED: if it throws,
+     * the pending state is NOT cleared and the failure propagates, so the live
+     * session and a subsequent restart agree the repair is still pending. A
+     * swallowed durable-write failure that still cleared live pending state
+     * would let the session believe the repair was done while a restart's
+     * reconstruction resurrected it. Only after the blob is verified
+     * recoverable AND the durable write commits is the key dropped from
+     * [pendingIdentityKeys].
+     *
+     * @param verifyRecoverable the real-decrypt probe
+     *   (`WalletStorage.probeIdentityKeyRecoverability`) proving the just-written
+     *   blob actually opens; injected by the manager (this handler holds no
+     *   `WalletStorage`).
+     * @param persistDurableIdentifier the durable Room update (default: the
+     *   production `public_keys` write); a seam so a failed durable write —
+     *   which must NOT clear pending — is exercisable in tests.
+     * @return the recorded storage identifier, or null when the deriver
+     *   declined to store (pending left intact). Throws (pending left intact)
+     *   on a derivation/verification/durable-write failure.
+     */
+    internal suspend fun repairIdentityKeyDurably(
+        walletId: ByteArray,
+        publicKeyData: ByteArray,
+        verifyRecoverable: suspend (pubkeyHex: String) -> Boolean,
+        persistDurableIdentifier: suspend (storageIdentifier: String) -> Unit = { storageIdentifier ->
+            database.publicKeyDao().getByPublicKeyData(publicKeyData).forEach { row ->
+                if (row.privateKeyKeychainIdentifier != storageIdentifier) {
+                    database.publicKeyDao()
+                        .update(row.copy(privateKeyKeychainIdentifier = storageIdentifier))
+                }
+            }
+        },
+    ): String? {
+        val pubkeyHex = publicKeyData.toHex()
+        val deriver = privateKeyDeriver
+            ?: throw DashSdkError.PlatformWallet.SigningKeyUnavailable(
+                "identity-key repair for $pubkeyHex has no private-key deriver wired; " +
+                    "the key remains unusable and pending state is left intact",
+            )
+
+        // BLOCKER 1: read the derivation indices (and the DPP key type, so the
+        // deriver's ownership check interprets publicKeyData correctly for
+        // HASH160-typed keys — dashpay/platform#4183 review) from the persisted
+        // row, never from the caller. A row lacking breadcrumbs cannot be
+        // safely repaired (we would have to guess the slot), so fail WITHOUT
+        // clearing pending.
+        val breadcrumbs = database.publicKeyDao().getByPublicKeyData(publicKeyData)
+            .firstNotNullOfOrNull { row ->
+                val identityIndex = row.derivationIdentityIndex
+                val keyIndex = row.derivationKeyIndex
+                if (identityIndex != null && keyIndex != null) {
+                    Triple(identityIndex, keyIndex, row.keyType.toIntOrNull() ?: 0)
+                } else {
+                    null
+                }
+            } ?: throw DashSdkError.PlatformWallet.SigningKeyUnavailable(
+                "cannot repair identity key $pubkeyHex: no derivation breadcrumbs are " +
+                    "persisted for it (derivationIdentityIndex/derivationKeyIndex are " +
+                    "null) — the correct slot is unknown; pending state left intact",
+            )
+        val (identityIndex, keyIndex, keyType) = breadcrumbs
+
+        // force = true routes through WalletStorage.replacePrivateKey and, in
+        // the production deriver, derives the KEYPAIR and verifies the derived
+        // public key equals publicKeyData (HASH160-hashed first for HASH160 key
+        // types) BEFORE any store — a mismatch throws
+        // IdentityKeyDerivationMismatchException here, so nothing below runs
+        // and pending is never cleared (BLOCKER 1).
+        val storageIdentifier = deriver.deriveAndStore(
+            walletId = walletId,
+            publicKeyData = publicKeyData,
+            identityIndex = identityIndex,
+            keyIndex = keyIndex,
+            keyType = keyType,
+            force = true,
+        )?.identifier ?: return null
+
+        // Independent confirmation the stored blob actually decrypts.
+        if (!verifyRecoverable(pubkeyHex)) {
+            throw DashSdkError.PlatformWallet.SigningKeyUnavailable(
+                "identity-key repair stored a blob that does not decrypt for pubkey " +
+                    "$pubkeyHex (slot $identityIndex/$keyIndex) — the key remains " +
+                    "unusable; pending state left intact",
+            )
+        }
+
+        // BLOCKER 3: the durable write fails CLOSED. Record the identifier on
+        // the Room rows so the restart reconstruction does not resurrect this
+        // key — but if that write throws, DO NOT clear pending. A swallowed
+        // failure that still cleared live state would resurrect the repair
+        // after restart while the session believed it was done. Let it
+        // propagate; pending stays intact and the repair is retryable.
+        persistDurableIdentifier(storageIdentifier)
+
+        // Durable write committed and blob verified — now it is safe to drop
+        // the pending-repair signal.
+        markIdentityKeyRepaired(pubkeyHex)
+        return storageIdentifier
+    }
+
+    /**
+     * Durable bookkeeping for a sign-time
+     * `KeyPermanentlyInvalidatedException` (#4060 round-2 finding 3): null
+     * out `privateKeyKeychainIdentifier` on every `public_keys` row carrying
+     * [pubkeyHex], then re-run the pending-repair reconstruction so
+     * [pendingIdentityKeys] seeds NOW — not just after the next restart.
+     *
+     * Load-bearing for LEGACY-alias-backed keys: the legacy Keystore aliases
+     * are read-only (no deletion boundary), so after a KPIE the CHEAP
+     * capability check keeps reporting the blob signable forever
+     * (`hasLegacyKeysKey()` stays true) — the null identifier is the only
+     * durable signal the reconstruction's usability filter can see. Harmless
+     * for policy-alias keys (their generation-checked deletion already flips
+     * the fingerprint gate; this merely accelerates the in-process seed).
+     * Wired from `KeystoreSigner.onSigningKeyInvalidated` via
+     * `PlatformWalletManager`. Rows without derivation breadcrumbs
+     * (pre-v8 legacy rows not yet re-persisted) cannot seed a repair slot —
+     * the identifier null-out still lands, so they seed as soon as the next
+     * persist round back-fills the breadcrumbs.
+     */
+    internal suspend fun recordSigningKeyInvalidated(
+        pubkeyHex: String,
+        isPrivateKeyDecryptable: suspend (pubkeyHex: String) -> Boolean,
+    ) {
+        val publicKeyData = pubkeyHex.hexToByteArray()
+        for (row in database.publicKeyDao().getByPublicKeyData(publicKeyData)) {
+            if (row.privateKeyKeychainIdentifier != null) {
+                database.publicKeyDao().update(row.copy(privateKeyKeychainIdentifier = null))
+            }
+        }
+        reconstructPendingIdentityKeysFromPersistence(
+            isPrivateKeyDecryptable = isPrivateKeyDecryptable,
+            reason = "signing key permanently invalidated",
+        )
+    }
+
+    /**
+     * Rebuild [pendingIdentityKeys] from persistence after a process restart
+     * (dashpay/platform#4060 finding 5) — the in-memory map is process-
+     * lifetime only, but the durable `public_keys` rows carry the derivation
+     * breadcrumbs. A row is (re-)seeded when it has breadcrumbs AND its
+     * private half is unusable: either no keychain identifier was ever
+     * recorded (the derive failed at persist time), or the identifier exists
+     * but [isPrivateKeyDecryptable] (the CHEAP capability check — no
+     * decrypt, no prompt, no key generation) rejects the stored blob — the
+     * second disjunct resurrects the repair slot for blobs stranded by a
+     * Keystore keypair replacement, not just never-derived ones. Read-only
+     * keys are never seeded (they are not ours to derive).
+     *
+     * Seeding is ONE atomic [MutableStateFlow.update]; live entries (from
+     * callbacks that already fired this process) are never overwritten —
+     * their reason/timestamp are fresher. Publishes immediately: no round is
+     * open at load time, same as [markIdentityKeyRepaired].
+     *
+     * Called by `PlatformWalletManager.loadPersistedWallets` after the Room
+     * rows are loaded, before the manager is handed to the host; the wallet
+     * scoping comes from each row's identity (network + wallet id), matching
+     * this handler's [network] when set.
+     */
+    internal suspend fun reconstructPendingIdentityKeysFromPersistence(
+        isPrivateKeyDecryptable: suspend (pubkeyHex: String) -> Boolean,
+        nowMs: Long = System.currentTimeMillis(),
+        reason: String = "reconstructed from persistence after restart",
+    ) {
+        val rows = database.publicKeyDao().getWithDerivationBreadcrumbs()
+        if (rows.isEmpty()) return
+        val entries = mutableListOf<PendingIdentityKey>()
+        for (row in rows) {
+            if (row.readOnly) continue
+            val identityIndex = row.derivationIdentityIndex ?: continue
+            val keyIndex = row.derivationKeyIndex ?: continue
+            val identityIdData = row.identityIdData ?: continue
+            val identity = database.identityDao().getByIdentityId(identityIdData) ?: continue
+            val networkRaw = network?.ffiValue
+            if (networkRaw != null && identity.networkRaw != networkRaw) continue
+            val walletId = identity.walletId ?: continue
+            val pubkeyHex = row.publicKeyData.toHex()
+            val usable = row.privateKeyKeychainIdentifier != null &&
+                try {
+                    isPrivateKeyDecryptable(pubkeyHex)
+                } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
+                    // The probe is suspend; runCatching turned its cancellation
+                    // into `false`, marking the row pending and returning
+                    // normally so callers (loadPersistedWallets, invalidation
+                    // bookkeeping) never observed the cancellation. Rethrow to
+                    // preserve structured concurrency; only genuine probe
+                    // failures become an unusable result (dashpay/platform#4183).
+                    throw cancellation
+                } catch (_: Throwable) {
+                    false
+                }
+            if (usable) continue
+            entries += PendingIdentityKey(
+                walletIdHex = walletId.toHex(),
+                identityIdBase58 = row.identityId,
+                keyId = row.keyId,
+                publicKeyHex = pubkeyHex,
+                identityIndex = identityIndex,
+                keyIndex = keyIndex,
+                reason = reason,
+                failedAtMs = nowMs,
+            )
+        }
+        if (entries.isEmpty()) return
+        _pendingIdentityKeys.update { map ->
+            entries.fold(map) { acc, entry ->
+                if (entry.publicKeyHex in acc) acc else acc + (entry.publicKeyHex to entry)
             }
         }
     }
@@ -2467,11 +3170,14 @@ class PlatformWalletPersistenceHandler(
     companion object {
         internal const val PERSISTENCE_CAPABILITIES_VERSION: Int = 1
         internal const val CAPABILITY_ATOMIC_CHANGESETS: Long = 0x01
+        internal const val CAPABILITY_INVITATIONS: Long = 0x02
         internal const val CAPABILITY_ASSET_LOCK_FUNDING_INDICES: Long = 0x04
         internal const val CAPABILITY_SHIELDED_VIEWING_KEYS: Long = 0x08
         internal const val CAPABILITY_PROVIDER_TRANSACTIONS: Long = 0x10
         internal const val CAPABILITY_UNSIGNED_TOKEN_STORAGE: Long = 0x20
         internal const val CAPABILITY_WALLET_RESTORE: Long = 0x80
+        internal const val CAPABILITY_DPNS_NAME_STATES: Long = 0x100
+        internal const val CAPABILITY_TRACKED_ASSET_LOCKS: Long = 0x200
 
         private const val TAG = "DashPersistence"
 
@@ -2483,6 +3189,9 @@ class PlatformWalletPersistenceHandler(
 
         /** DIP-17 PlatformPayment account type tag (`accountTypeName` 14). */
         private const val ACCOUNT_TYPE_PLATFORM_PAYMENT = 14
+
+        /** DIP-13 IdentityInvitation account type tag (`AccountTypeTagFFI` 5). */
+        private const val ACCOUNT_TYPE_IDENTITY_INVITATION = 5
 
         private val HEX = "0123456789abcdef".toCharArray()
     }
@@ -2513,14 +3222,31 @@ interface PrivateKeyDeriver {
      * Returns `null` if the key could not be derived/stored (leaving it
      * watch-only).
      *
-     * @param publicKeyData the compressed public-key bytes — used as the
+     * @param publicKeyData the on-chain public-key data — the compressed
+     *   pubkey, or the 20-byte HASH160 for a HASH160 key type — used as the
      *   storage key so the signer can locate the scalar.
+     * @param keyType the DPP `KeyType` discriminant of this key. Only the
+     *   [force] repair path consults it: it tells the pubkey-ownership check
+     *   whether [publicKeyData] is the raw derived pubkey or its HASH160, so a
+     *   HASH160-type key (`ECDSA_HASH160` = 2, `EDDSA_25519_HASH160` = 4) is
+     *   verified by hashing the derived pubkey rather than comparing raw bytes
+     *   that can never match (dashpay/platform#4183 review). Defaults to
+     *   `ECDSA_SECP256K1` (0) for the non-repair store path, which does no
+     *   pubkey comparison.
+     * @param force when true, skip the "already usable" short-circuit and
+     *   REPLACE the stored entry unconditionally — the repair path
+     *   (dashpay/platform#4060 finding 6), where a shape+fingerprint-valid
+     *   but undecryptable blob must not suppress the re-derive. The
+     *   persistence-callback call site keeps the default `false` (idempotent
+     *   upserts must not re-derive on every sync).
      */
     fun deriveAndStore(
         walletId: ByteArray,
         publicKeyData: ByteArray,
         identityIndex: Int,
         keyIndex: Int,
+        keyType: Int = 0,
+        force: Boolean = false,
     ): DerivedKeyStoreResult?
 
     /**

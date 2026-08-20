@@ -52,19 +52,14 @@ members = [
 ]
 
 [workspace.dependencies]
-# TODO(pin): tracks dashpay/rust-dashcore `dash-evo-tool` branch,
-# a dev-evo-tool integration branch combining PR #909 and #919 — the two
-# PRs are sibling forks off `dev` and neither is a superset of the other, so
-# neither can be pinned alone without dropping the other's fix. Re-pin to
-# `dev` directly once both PRs land there.
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", branch = "dash-evo-tool" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", branch = "dash-evo-tool" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", branch = "dash-evo-tool" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", branch = "dash-evo-tool" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", branch = "dash-evo-tool" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", branch = "dash-evo-tool" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", branch = "dash-evo-tool" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", branch = "dash-evo-tool" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "173ffac0fdc0c73dda0626cf385bbcfcf2437aeb" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "173ffac0fdc0c73dda0626cf385bbcfcf2437aeb" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "173ffac0fdc0c73dda0626cf385bbcfcf2437aeb" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "173ffac0fdc0c73dda0626cf385bbcfcf2437aeb" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "173ffac0fdc0c73dda0626cf385bbcfcf2437aeb" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "173ffac0fdc0c73dda0626cf385bbcfcf2437aeb" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "173ffac0fdc0c73dda0626cf385bbcfcf2437aeb" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "173ffac0fdc0c73dda0626cf385bbcfcf2437aeb" }
 
 tokio-metrics = "0.5"
 
@@ -142,5 +137,5 @@ opt-level = 3
 
 [workspace.package]
 
-version = "4.1.0"
+version = "4.2.0-dev.1"
 rust-version = "1.92"

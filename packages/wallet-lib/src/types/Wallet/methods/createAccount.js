@@ -1,5 +1,6 @@
 const { WALLET_TYPES } = require('../../../CONSTANTS');
 const EVENTS = require('../../../EVENTS');
+const deriveBlockHeadersResumeContext = require('../../ChainStore/deriveBlockHeadersResumeContext');
 /**
  * Will derivate to a new account.
  * @param {object} accountOpts - options to pass, will autopopulate some
@@ -27,6 +28,44 @@ async function createAccount(accountOpts) {
   if (this.walletType === WALLET_TYPES.SINGLE_ADDRESS) { baseOpts.privateKey = this.privateKey; }
   const opts = Object.assign(baseOpts, accountOpts);
 
+  if (!this.offlineMode) {
+    const chainStore = this.storage.getDefaultChainStore();
+    const blockHeadersProvider = this.transport?.client?.blockHeadersProvider;
+
+    if (blockHeadersProvider && !this.blockHeadersProviderInitializationPromise) {
+      this.blockHeadersProviderInitializationPromise = (async () => {
+        const resumeContext = deriveBlockHeadersResumeContext(chainStore.state);
+
+        if (resumeContext.requiresHeaderStateReset) {
+          chainStore.resetBlockHeaders();
+
+          const hasPersistentAutosave = this.storage.autosave
+            && this.storage.adapter
+            && typeof this.storage.adapter.setItem === 'function';
+
+          if (hasPersistentAutosave) {
+            await this.storage.saveState();
+          }
+        }
+
+        await blockHeadersProvider.initializeChainWith(
+          resumeContext.blockHeaders,
+          resumeContext.firstHeaderHeight,
+        );
+      })().catch((error) => {
+        // Forget a failed attempt so the next account creation retries. Keeping
+        // the rejected promise would replay the same failure for the lifetime
+        // of the wallet.
+        this.blockHeadersProviderInitializationPromise = null;
+        throw error;
+      });
+    }
+
+    if (this.blockHeadersProviderInitializationPromise) {
+      await this.blockHeadersProviderInitializationPromise;
+    }
+  }
+
   const account = new Account(this, opts);
 
   // Add default derivation paths
@@ -35,14 +74,6 @@ async function createAccount(accountOpts) {
   // Issue additional derivation paths in case we have transactions in the store
   // at the moment of initialization (from persistent storage)
   account.createPathsForTransactions();
-
-  // Add block headers from storage into the SPV chain if there are any
-  const chainStore = this.storage.getDefaultChainStore();
-  const { blockHeaders, lastSyncedHeaderHeight } = chainStore.state;
-  if (!this.offlineMode && blockHeaders.length > 0) {
-    const { blockHeadersProvider } = this.transport.client;
-    blockHeadersProvider.initializeChainWith(blockHeaders, lastSyncedHeaderHeight);
-  }
 
   this.accounts.push(account);
 

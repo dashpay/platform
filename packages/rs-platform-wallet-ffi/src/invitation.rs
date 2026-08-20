@@ -29,10 +29,14 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 
 use dpp::identity::accessors::IdentityGettersV0;
-use platform_wallet::wallet::identity::crypto::{parse_invitation_uri, InviterInfo};
+use platform_wallet::wallet::identity::crypto::{
+    parse_invitation_uri, wif_network_matches, InviterInfo,
+};
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
 
-use platform_wallet::wallet::identity::network::MAX_INVITATION_TTL_SECS;
+use platform_wallet::wallet::identity::network::{
+    MAX_INVITATION_DUFFS, MAX_INVITATION_TTL_SECS, MIN_INVITATION_DUFFS,
+};
 
 use crate::core_wallet_types::OutPointFFI;
 use crate::dashpay::resolver_contact_crypto_provider;
@@ -41,6 +45,28 @@ use crate::handle::*;
 use crate::identity_registration_with_signer::{decode_identity_pubkeys, IdentityPubkeyFFI};
 use crate::runtime::block_on_worker;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
+
+/// The maximum amount (duffs) an invitation voucher may lock.
+///
+/// The cap is enforced Rust-side by [`platform_wallet_create_invitation`] — it
+/// bounds the blast radius of a leaked bearer link. Clients read it through
+/// this getter to pre-validate and label the amount field; mirroring the value
+/// client-side lets the UI reject amounts Rust accepts the moment the constant
+/// moves.
+#[no_mangle]
+pub extern "C" fn platform_wallet_invitation_max_duffs() -> u64 {
+    MAX_INVITATION_DUFFS
+}
+
+/// The minimum amount (duffs) an invitation voucher may lock.
+///
+/// A voucher below this floor can fund neither a claim nor a register-reclaim,
+/// so [`platform_wallet_create_invitation`] rejects it Rust-side. Read through
+/// this getter for the same reason as the cap: no client-side mirror to drift.
+#[no_mangle]
+pub extern "C" fn platform_wallet_invitation_min_duffs() -> u64 {
+    MIN_INVITATION_DUFFS
+}
 
 /// Create a DashPay invitation: fund a one-time asset-lock voucher at the
 /// DIP-13 invitation path and return a shareable `dashpay://invite` link.
@@ -310,6 +336,113 @@ pub unsafe extern "C" fn platform_wallet_claim_invitation(
     let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
     unsafe {
         *out_identity_handle = handle;
+    }
+    PlatformWalletFFIResult::ok()
+}
+
+/// The identity id this invitation WOULD create — a read-only probe that lets
+/// the UI reject an already-claimed voucher up front.
+///
+/// Platform derives a created identity's id from the asset-lock outpoint, so
+/// the caller can ask "does an identity already exist under this id?" (a plain
+/// identity fetch) and answer "has this invitation been used?" without
+/// attempting the claim. Without it, a spent voucher only surfaces at the very
+/// end of registration as a raw "asset lock … already completely used", after
+/// the invitee has chosen a username and entered their PIN.
+///
+/// Unlike [`platform_wallet_parse_invitation`] this DOES hit the network: the
+/// funding transaction has to be refetched to locate the credit output the
+/// voucher controls (it need not be output 0). It still claims nothing and
+/// mutates no wallet state.
+///
+/// # What an identity id does and does not tell you
+///
+/// An identity existing under the returned id means the voucher was
+/// **definitely** claimed. Its absence does **not** mean it is usable: the same
+/// lock can be consumed by `IdentityTopUp` (the reclaim path behind
+/// [`platform_wallet_topup_identity_with_existing_asset_lock_signer`] with
+/// `consume_invitation_voucher: true`), which credits an existing identity
+/// instead of creating this one. Platform exposes no client query for spent
+/// asset locks, so that case is undetectable here. Reject on "identity exists";
+/// otherwise proceed without concluding the voucher is good.
+///
+/// # Errors are NOT uniformly undetermined
+///
+/// Two failures are definitive and mean the link can never be claimed by this
+/// wallet — the caller should surface them, not proceed:
+///
+/// * `ErrorInvalidParameter` — the URI is malformed, so there is no invitation.
+/// * `ErrorInvalidNetwork` — the voucher key belongs to the other network;
+///   [`platform_wallet_claim_invitation`] applies the same guard and will
+///   refuse it too.
+///
+/// Every other failure (funding-tx not yet propagated, transport error) leaves
+/// usability genuinely undetermined, and only those should be treated as
+/// "proceed".
+///
+/// # Safety
+/// - `uri` must be a valid NUL-terminated UTF-8 C string.
+/// - `out_identity_id` must be a valid `*mut [u8; 32]`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_invitation_prospective_identity_id(
+    wallet_handle: Handle,
+    uri: *const c_char,
+    out_identity_id: *mut [u8; 32],
+) -> PlatformWalletFFIResult {
+    check_ptr!(uri);
+    check_ptr!(out_identity_id);
+    // Sentinel before any fallible work, matching the claim/parse siblings.
+    unsafe {
+        *out_identity_id = [0u8; 32];
+    }
+
+    let uri = unwrap_result_or_return!(unsafe { CStr::from_ptr(uri) }.to_str());
+    // A malformed link is definitive, not undetermined: there is no invitation
+    // to claim. Surfaced as its own code so the caller can say so instead of
+    // falling through the generic arm into "proceed anyway".
+    let invitation = match parse_invitation_uri(uri) {
+        Ok(invitation) => invitation,
+        Err(e) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                format!("invitation link is malformed and cannot be claimed: {e}"),
+            );
+        }
+    };
+
+    let option = PLATFORM_WALLET_STORAGE.with_item(
+        wallet_handle,
+        |wallet| -> Result<dash_sdk::platform::Identifier, PlatformWalletFFIResult> {
+            // Also definitive: the claim applies the same guard, so a link for the
+            // other network can never be claimed through this wallet. Checked here
+            // (as the withdrawal FFI does) to give it a distinguishable code rather
+            // than flattening into the catch-all the library error maps to.
+            if !wif_network_matches(invitation.voucher_key_network, wallet.network()) {
+                return Err(PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorInvalidNetwork,
+                    format!(
+                        "invitation is for the {:?} network but this wallet is on {:?}",
+                        invitation.voucher_key_network,
+                        wallet.network()
+                    ),
+                ));
+            }
+            let identity_wallet = wallet.identity().clone();
+            block_on_worker(async move {
+                identity_wallet
+                    .invitation_prospective_identity_id(&invitation)
+                    .await
+            })
+            .map_err(PlatformWalletFFIResult::from)
+        },
+    );
+    let result = unwrap_option_or_return!(option);
+    let identifier = match result {
+        Ok(identifier) => identifier,
+        Err(e) => return e,
+    };
+    unsafe {
+        *out_identity_id = identifier.to_buffer();
     }
     PlatformWalletFFIResult::ok()
 }
@@ -683,5 +816,15 @@ mod tests {
         assert_eq!(r.code, PlatformWalletFFIResultCode::Success);
         assert!(!preview.structurally_valid);
         assert!(preview.inviter_username.is_null());
+    }
+
+    /// The amount-bound getters hand back the library constants verbatim. This
+    /// bridge exists precisely so clients stop mirroring the values, so a drift
+    /// here would silently reinstate the mirror it replaced.
+    #[test]
+    fn invitation_amount_bound_getters_match_library_constants() {
+        assert_eq!(platform_wallet_invitation_max_duffs(), MAX_INVITATION_DUFFS);
+        assert_eq!(platform_wallet_invitation_min_duffs(), MIN_INVITATION_DUFFS);
+        assert!(platform_wallet_invitation_min_duffs() < platform_wallet_invitation_max_duffs());
     }
 }

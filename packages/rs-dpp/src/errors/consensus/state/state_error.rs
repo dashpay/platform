@@ -37,8 +37,16 @@ use crate::consensus::state::data_contract::document_type_update_error::Document
 use crate::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
 use crate::consensus::state::document::document_contest_document_with_same_id_already_present_error::DocumentContestDocumentWithSameIdAlreadyPresentError;
 use crate::consensus::state::document::document_contest_identity_already_contestant::DocumentContestIdentityAlreadyContestantError;
+use crate::consensus::state::document::document_contest_index_mismatch_error::DocumentContestIndexMismatchError;
 use crate::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
 use crate::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
+use crate::consensus::state::document::document_contest_not_required_error::DocumentContestNotRequiredError;
+use crate::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
+use crate::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
+use crate::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
+use crate::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
+use crate::consensus::state::document::referenced_identity_key_not_found_error::ReferencedIdentityKeyNotFoundError;
+use crate::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
 use crate::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use crate::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use crate::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionAlreadySignedByIdentityError, GroupActionDoesNotExistError, IdentityMemberOfGroupNotFoundError, IdentityNotMemberOfGroupError, ModificationOfGroupActionMainParametersNotPermittedError};
@@ -354,10 +362,155 @@ pub enum StateError {
 
     #[error(transparent)]
     InsufficientShieldedFeeError(InsufficientShieldedFeeError),
+
+    #[error(transparent)]
+    DocumentContestIndexMismatchError(DocumentContestIndexMismatchError),
+
+    #[error(transparent)]
+    DocumentContestNotRequiredError(DocumentContestNotRequiredError),
+
+    #[error(transparent)]
+    ReferencedEntityNotFoundError(ReferencedEntityNotFoundError),
+
+    #[error(transparent)]
+    ReferencedDocumentTypeNotFoundError(ReferencedDocumentTypeNotFoundError),
+
+    #[error(transparent)]
+    ReferencedDocumentTypeDeletableError(ReferencedDocumentTypeDeletableError),
+
+    #[error(transparent)]
+    ReferencedIdentityKeyNotFoundError(ReferencedIdentityKeyNotFoundError),
+
+    #[error(transparent)]
+    ReferencedIdentityKeyDisabledError(ReferencedIdentityKeyDisabledError),
+
+    #[error(transparent)]
+    ReferencedKeyIdPropertyInvalidError(ReferencedKeyIdPropertyInvalidError),
 }
 
 impl From<StateError> for ConsensusError {
     fn from(error: StateError) -> Self {
         Self::StateError(error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use platform_value::Identifier;
+
+    /// `StateError` is encoded by variant position, so inserting a variant
+    /// anywhere but the end silently reassigns the discriminant of every
+    /// variant after it — consensus errors travel to WASM and JavaScript
+    /// clients, which would then decode an existing error as a different one.
+    /// These are the frozen discriminants of the first variant, of the variant
+    /// that follows the document contest block (the one an insertion there
+    /// would shift first), and of the last two.
+    fn discriminant_of(error: StateError) -> u8 {
+        let bytes = bincode::encode_to_vec(error, bincode::config::standard())
+            .expect("expected to encode the state error");
+        // Discriminants below 251 are a single byte under bincode's varint.
+        bytes[0]
+    }
+
+    #[test]
+    fn state_error_discriminants_are_frozen() {
+        assert_eq!(
+            discriminant_of(StateError::DataContractAlreadyPresentError(
+                DataContractAlreadyPresentError::new(Identifier::from([1; 32]))
+            )),
+            0
+        );
+        assert_eq!(
+            discriminant_of(StateError::DocumentNotFoundError(
+                DocumentNotFoundError::new(Identifier::from([1; 32]))
+            )),
+            8
+        );
+        assert_eq!(
+            discriminant_of(StateError::InsufficientShieldedFeeError(
+                InsufficientShieldedFeeError::new("fee".to_string())
+            )),
+            90
+        );
+        assert_eq!(
+            discriminant_of(StateError::DocumentContestIndexMismatchError(
+                DocumentContestIndexMismatchError::new(
+                    Identifier::from([1; 32]),
+                    "expected".to_string(),
+                    "provided".to_string(),
+                )
+            )),
+            91
+        );
+        assert_eq!(
+            discriminant_of(StateError::DocumentContestNotRequiredError(
+                DocumentContestNotRequiredError::new(
+                    Identifier::from([1; 32]),
+                    "provided".to_string(),
+                )
+            )),
+            92
+        );
+        assert_eq!(
+            discriminant_of(StateError::ReferencedEntityNotFoundError(
+                ReferencedEntityNotFoundError::new(
+                    Identifier::from([1; 32]),
+                    crate::data_contract::document_type::DocumentPropertyReferenceTarget::Identity,
+                    "toUserId".to_string(),
+                )
+            )),
+            93
+        );
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentTypeNotFoundError(
+                ReferencedDocumentTypeNotFoundError::new(
+                    Identifier::from([1; 32]),
+                    "note".to_string(),
+                    "parentNoteId".to_string(),
+                )
+            )),
+            94
+        );
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentTypeDeletableError(
+                ReferencedDocumentTypeDeletableError::new(
+                    Identifier::from([1; 32]),
+                    "note".to_string(),
+                    "parentNoteId".to_string(),
+                )
+            )),
+            95
+        );
+        assert_eq!(
+            discriminant_of(StateError::ReferencedIdentityKeyNotFoundError(
+                ReferencedIdentityKeyNotFoundError::new(
+                    Identifier::from([1; 32]),
+                    2,
+                    "toUserId".to_string(),
+                )
+            )),
+            96
+        );
+        assert_eq!(
+            discriminant_of(StateError::ReferencedIdentityKeyDisabledError(
+                ReferencedIdentityKeyDisabledError::new(
+                    Identifier::from([1; 32]),
+                    2,
+                    "toUserId".to_string(),
+                )
+            )),
+            97
+        );
+        assert_eq!(
+            discriminant_of(StateError::ReferencedKeyIdPropertyInvalidError(
+                ReferencedKeyIdPropertyInvalidError::new(
+                    "recipientKeyIndex".to_string(),
+                    "toUserId".to_string(),
+                    "missing".to_string(),
+                )
+            )),
+            98
+        );
     }
 }

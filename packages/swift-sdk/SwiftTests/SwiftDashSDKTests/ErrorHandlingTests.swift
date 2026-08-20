@@ -34,8 +34,8 @@ final class ErrorHandlingTests: XCTestCase {
     }
 
     func testPersisterFFIResultMappingsRemainDistinguishable() {
-        XCTAssertEqual(PlatformWalletResultCode.errorPersisterTransient.rawValue, 26)
-        XCTAssertEqual(PlatformWalletResultCode.errorPersisterFatal.rawValue, 27)
+        XCTAssertEqual(PlatformWalletResultCode.errorPersisterTransient.rawValue, 42)
+        XCTAssertEqual(PlatformWalletResultCode.errorPersisterFatal.rawValue, 43)
         XCTAssertEqual(
             PlatformWalletResultCode(
                 ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_TRANSIENT
@@ -68,6 +68,86 @@ final class ErrorHandlingTests: XCTestCase {
         guard case .persisterFatal = PlatformWalletError(result: fatalResult) else {
             return XCTFail("fatal persister code must map to persisterFatal")
         }
+    }
+
+    func testPlatformWalletNotFoundFFIResultMapping() {
+        // Code 98 (the blanket Option→result miss) stays typed inside the
+        // wallet-error family — the mapping Kotlin now converges on
+        // (DashSdkError.PlatformWallet.NotFound), dashpay/platform#4060.
+        XCTAssertEqual(
+            PlatformWalletResultCode(ffi: PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND),
+            .notFound
+        )
+    }
+
+    func testSigningKeyUnavailableFFIResultMapping() {
+        // The structured signer discriminator (dashpay/platform#4060
+        // finding 7): PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
+        // (31) surfaces as the typed .errorSigningKeyUnavailable /
+        // PlatformWalletError.signingKeyUnavailable — no message sniffing.
+        XCTAssertEqual(
+            PlatformWalletResultCode(
+                ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SIGNING_KEY_UNAVAILABLE
+            ),
+            .errorSigningKeyUnavailable
+        )
+    }
+
+    func testShieldedInsufficientBalanceFFIResultMapping() {
+        XCTAssertEqual(
+            PlatformWalletResultCode(
+                ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_INSUFFICIENT_BALANCE
+            ),
+            .errorShieldedInsufficientBalance
+        )
+        XCTAssertEqual(
+            PlatformWalletResultCode.errorShieldedInsufficientBalance.rawValue,
+            41
+        )
+
+        let error = PlatformWalletError(
+            code: .errorShieldedInsufficientBalance,
+            message: "available 3623849220, required 3623849221"
+        )
+        guard case .shieldedInsufficientBalance(let message) = error else {
+            return XCTFail("expected typed shieldedInsufficientBalance error")
+        }
+        XCTAssertEqual(message, "available 3623849220, required 3623849221")
+    }
+
+    @MainActor
+    func testShieldedShieldPreflightRejectsUnconfiguredManager() async {
+        let manager = PlatformWalletManager()
+        do {
+            _ = try await manager.shieldedShieldPreflight(
+                walletId: Data(repeating: 0, count: 32)
+            )
+            XCTFail("Expected invalidHandle")
+        } catch PlatformWalletError.invalidHandle {
+            // Expected.
+        } catch {
+            XCTFail("Expected invalidHandle, got \(error)")
+        }
+    }
+
+    func testKeychainSignerMissingKeyErrorsClassifyAsSigningKeyUnavailable() {
+        // The trampoline's structured completion code: "no stored key"
+        // outcomes carry SigningKeyUnavailable (1); operational failures
+        // stay Generic (0).
+        XCTAssertEqual(
+            keychainSignerCompletionErrorCode(for: .publicKeyNotFound),
+            KeychainSignerCompletionErrorCode.signingKeyUnavailable
+        )
+        XCTAssertEqual(
+            keychainSignerCompletionErrorCode(
+                for: .privateKeyMissingFromKeychain(account: "acct")
+            ),
+            KeychainSignerCompletionErrorCode.signingKeyUnavailable
+        )
+        XCTAssertEqual(
+            keychainSignerCompletionErrorCode(for: .ffiSignFailed(message: "boom")),
+            KeychainSignerCompletionErrorCode.generic
+        )
     }
 
     // MARK: - ErrorCategory Tests
@@ -446,7 +526,7 @@ final class ErrorHandlingTests: XCTestCase {
     // MARK: - Core broadcast outcome mapping
 
     func testCoreBroadcastOutcomeMapping() throws {
-        XCTAssertEqual(PlatformWalletResultCode.errorTransactionBroadcastRejected.rawValue, 28)
+        XCTAssertEqual(PlatformWalletResultCode.errorTransactionBroadcastRejected.rawValue, 26)
         XCTAssertEqual(
             PlatformWalletResultCode(
                 ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_TRANSACTION_BROADCAST_REJECTED

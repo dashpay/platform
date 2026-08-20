@@ -433,6 +433,7 @@ impl Sdk {
             having: vec![],
             order_by_clauses: vec![],
             limit: 1,
+            offset: None,
             start: None,
         };
 
@@ -491,6 +492,7 @@ impl Sdk {
             having: vec![],
             order_by_clauses: vec![],
             limit: 1,
+            offset: None,
             start: None,
         };
 

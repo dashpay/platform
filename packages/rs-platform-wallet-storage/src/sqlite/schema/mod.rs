@@ -13,6 +13,7 @@ pub mod contacts;
 pub mod core_pool;
 pub mod core_state;
 pub mod dashpay;
+pub mod dpns_name_states;
 pub mod identities;
 pub mod identity_keys;
 pub mod invitations;

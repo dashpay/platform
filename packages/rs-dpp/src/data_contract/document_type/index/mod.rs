@@ -19,13 +19,33 @@ use crate::data_contract::document_type::ContestedIndexResolution::MasternodeVot
 #[cfg(feature = "validation")]
 use crate::data_contract::errors::DataContractError::RegexError;
 use platform_value::{Value, ValueMap};
-use rand::distributions::{Alphanumeric, DistString};
 use regex::Regex;
 use std::cmp::Ordering;
 use std::sync::OnceLock;
 use std::{collections::BTreeMap, convert::TryFrom};
 
 pub mod random_index;
+
+/// Index-level keyword opting the index's terminal property-name tree into the
+/// **Count** ranking axis: an ordered secondary tree keyed by each group's
+/// document count, so "top / bottom K groups by count" is O(log n + k) with a
+/// proof. Requires `rangeCountable: true` on the same index. Only recognized
+/// from document meta-schema v3 (protocol version 14); see
+/// [`Index::try_from_value_map`].
+pub const RANKED_COUNTABLE: &str = "rankedCountable";
+/// Index-level keyword opting the index's terminal property-name tree into the
+/// **Sum** ranking axis (ordered by each group's sum of the `summable`
+/// property). Requires `rangeSummable` on the same index. Meta-schema v3+.
+pub const RANKED_SUMMABLE: &str = "rankedSummable";
+/// Index-level keyword opting the index's terminal property-name tree into the
+/// **Avg** ranking axis (ordered by each group's average of the `averageable`
+/// property). Requires `rangeAverageable` semantics — i.e. both range axes.
+/// Meta-schema v3+.
+///
+/// Deliberately *not* sugar for the other two ranked flags: each ranking axis
+/// costs its own secondary tree, so `rankedAverageable` adds the Avg axis and
+/// nothing else.
+pub const RANKED_AVERAGEABLE: &str = "rankedAverageable";
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd)]
@@ -402,6 +422,60 @@ pub struct Index {
     /// picks the appropriate variant.
     #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub range_summable: bool,
+    /// When `true`, this index's **terminal property-name tree** (the level
+    /// whose children are the last index property's value trees — i.e. one
+    /// child per group) is upgraded from its `Provable*` form to the matching
+    /// *indexed* tree, gaining an ordered secondary tree on the **Count** axis.
+    /// That secondary tree is keyed by each group's document count, so
+    /// "top / bottom K groups by count" is answerable in O(log n + k) with a
+    /// proof instead of enumerating every group.
+    ///
+    /// The indexed primary is a byte-compatible mirror of the tree it replaces,
+    /// so every existing range aggregate (`AggregateCountOnRange` &co.) keeps
+    /// working against it unchanged.
+    ///
+    /// `ranked_countable: true` requires [`Index::range_countable`] (which in
+    /// turn requires [`Index::countable`]): the ranking secondary is built from
+    /// the per-group counts the range-count layout already maintains.
+    ///
+    /// See `book/src/drive/document-ranked-trees.md` and
+    /// `book/src/drive/ranked-index-examples.md` for the worked example.
+    //
+    // `serde(default)`: added after the struct's serde shape was in the wild
+    // (see the note on `countable` above), so pre-existing JSON must still
+    // deserialize.
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
+    pub ranked_countable: bool,
+    /// Sum-axis counterpart of [`Index::ranked_countable`]: the terminal
+    /// property-name tree gains an ordered secondary keyed by each group's sum
+    /// of the [`Index::summable`] property, making "top / bottom K groups by
+    /// sum" O(log n + k) with a proof.
+    ///
+    /// Requires [`Index::range_summable`] (which in turn requires
+    /// [`Index::summable`]).
+    ///
+    /// See `book/src/drive/document-ranked-trees.md` and
+    /// `book/src/drive/ranked-index-examples.md` for the worked example.
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
+    pub ranked_summable: bool,
+    /// Average-axis counterpart of [`Index::ranked_countable`]: the terminal
+    /// property-name tree gains an ordered secondary keyed by each group's
+    /// average — stored as the (count, sum) pair the client divides, same
+    /// no-server-division rule the average query surface already follows.
+    ///
+    /// Requires `rangeAverageable` *semantics*: both [`Index::range_countable`]
+    /// and [`Index::range_summable`], however they were declared (via the
+    /// `rangeAverageable` / `averageable` sugar or the explicit
+    /// `countable` + `summable` + `rangeCountable` + `rangeSummable` longhand).
+    ///
+    /// The three ranking axes are **independent**: `ranked_averageable` does
+    /// NOT imply `ranked_countable` or `ranked_summable`. Each axis costs its
+    /// own ordered secondary tree, so each is opted into explicitly.
+    ///
+    /// See `book/src/drive/document-ranked-trees.md` and
+    /// `book/src/drive/ranked-index-examples.md` for the worked example.
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
+    pub ranked_averageable: bool,
 }
 
 impl Index {
@@ -562,7 +636,37 @@ impl Index {
 impl TryFrom<&[(Value, Value)]> for Index {
     type Error = DataContractError;
 
+    /// Parses an index definition **without** the ranked-aggregate grammar.
+    ///
+    /// This is the pre-meta-schema-v3 (pre protocol version 14) surface: the
+    /// three `ranked*` keywords are unknown property names here and are
+    /// rejected as such. Call sites that know the contract's
+    /// `document_type_schema` version must go through
+    /// [`Index::try_from_value_map`] instead so PV14+ contracts can use them.
     fn try_from(index_type_value_map: &[(Value, Value)]) -> Result<Self, Self::Error> {
+        Index::try_from_value_map(index_type_value_map, false)
+    }
+}
+
+impl Index {
+    /// Parses an index definition from its `(key, value)` map form.
+    ///
+    /// `ranked_aggregates_allowed` mirrors `document_type_schema >= 3` (i.e.
+    /// document meta-schema v3, protocol version 14 and later). When it is
+    /// `false` the three ranked keywords (`rankedCountable`, `rankedSummable`,
+    /// `rankedAverageable`) are not part of the grammar at all: they fall
+    /// through to the unknown-key arm and are rejected with exactly the error a
+    /// pre-v14 node produced for them, so a non-validating parse (check_tx,
+    /// cache warm-up, restore) cannot smuggle a ranked index past a node whose
+    /// protocol version does not know how to lay one out on disk.
+    ///
+    /// The meta-schema is the other half of this gate — v2 rejects the keys via
+    /// `additionalProperties: false` — but it only runs under
+    /// `full_validation`, which is why the grammar itself is version-gated too.
+    pub fn try_from_value_map(
+        index_type_value_map: &[(Value, Value)],
+        ranked_aggregates_allowed: bool,
+    ) -> Result<Self, DataContractError> {
         // Decouple the map
         // It contains properties and a unique key
         // If the unique key is absent, then unique is false
@@ -607,6 +711,14 @@ impl TryFrom<&[(Value, Value)]> for Index {
         // alongside `summable: "y"`) before the merge.
         let mut averageable: Option<String> = None;
         let mut range_averageable = false;
+        // Ranking axes (meta-schema v3 / PV14+). Each one is an independent
+        // opt-in that adds one ordered secondary tree to the terminal
+        // property-name tree; unlike `averageable` / `rangeAverageable` there
+        // is no sugar relationship between them, so no explicit-vs-default
+        // tracking is needed — nothing ever promotes them.
+        let mut ranked_countable = false;
+        let mut ranked_summable = false;
+        let mut ranked_averageable = false;
 
         for (key_value, value_value) in index_type_value_map {
             let key = key_value.to_str()?;
@@ -832,6 +944,36 @@ impl TryFrom<&[(Value, Value)]> for Index {
                                 "rangeAverageable value must be a boolean".to_string(),
                             ))?;
                 }
+                // The three ranking keywords are guarded on
+                // `ranked_aggregates_allowed`: when the contract's
+                // `document_type_schema` version predates v3 the guard fails,
+                // the arm doesn't match, and the key falls through to the
+                // unknown-property arm below — byte-identical to how a node
+                // without this feature rejects it.
+                RANKED_COUNTABLE if ranked_aggregates_allowed => {
+                    ranked_countable =
+                        value_value
+                            .as_bool()
+                            .ok_or(DataContractError::ValueWrongType(
+                                "rankedCountable value must be a boolean".to_string(),
+                            ))?;
+                }
+                RANKED_SUMMABLE if ranked_aggregates_allowed => {
+                    ranked_summable =
+                        value_value
+                            .as_bool()
+                            .ok_or(DataContractError::ValueWrongType(
+                                "rankedSummable value must be a boolean".to_string(),
+                            ))?;
+                }
+                RANKED_AVERAGEABLE if ranked_aggregates_allowed => {
+                    ranked_averageable =
+                        value_value
+                            .as_bool()
+                            .ok_or(DataContractError::ValueWrongType(
+                                "rankedAverageable value must be a boolean".to_string(),
+                            ))?;
+                }
                 "properties" => {
                     let properties =
                         value_value
@@ -981,8 +1123,134 @@ impl TryFrom<&[(Value, Value)]> for Index {
             ));
         }
 
-        // if the index didn't have a name let's make one
-        let name = name.unwrap_or_else(|| Alphanumeric.sample_string(&mut rand::thread_rng(), 24));
+        // The ranking axes are checked after the `averageable` /
+        // `rangeAverageable` desugar above, so they see the *resolved* range
+        // flags: both the sugar form (`averageable` + `rangeAverageable`) and
+        // the explicit longhand (`countable` + `summable` + `rangeCountable` +
+        // `rangeSummable`) satisfy them identically.
+        //
+        // Each ranked flag adds one ordered secondary tree keyed by the
+        // aggregate the corresponding range axis already maintains per group,
+        // so the range axis is a hard prerequisite: without it the terminal
+        // property-name tree carries no per-group aggregate to rank by.
+        if ranked_countable && !range_countable {
+            return Err(DataContractError::InvalidContractStructure(
+                "rankedCountable requires rangeCountable: true; ranking groups by \
+                 count needs the per-group counts the range-count layout \
+                 maintains"
+                    .to_string(),
+            ));
+        }
+
+        if ranked_summable && !range_summable {
+            return Err(DataContractError::InvalidContractStructure(
+                "rankedSummable requires rangeSummable: true; ranking groups by \
+                 sum needs the per-group sums the range-sum layout maintains"
+                    .to_string(),
+            ));
+        }
+
+        // `rangeAverageable` semantics = both range axes (that is exactly what
+        // the sugar desugars into), which transitively pulls in `countable`
+        // and `summable` through the two checks above.
+        if ranked_averageable && !(range_countable && range_summable) {
+            return Err(DataContractError::InvalidContractStructure(
+                "rankedAverageable requires rangeAverageable semantics — both \
+                 rangeCountable and rangeSummable must be in effect (declare \
+                 `averageable` + `rangeAverageable`, or the explicit `countable` \
+                 + `summable` + `rangeCountable` + `rangeSummable` longhand); \
+                 ranking groups by average needs both the per-group counts and \
+                 the per-group sums"
+                    .to_string(),
+            ));
+        }
+
+        // Ranking orders groups (the distinct values of the index's last
+        // property) by a per-group aggregate. On a unique index every group
+        // holds at most one document, so every ranked ordering degenerates to
+        // a constant-per-group ordering that a plain range query already
+        // serves — while still paying for an indexed tree and its secondary
+        // maintenance on every write. Contested indexes are unique by
+        // construction (checked above).
+        if (ranked_countable || ranked_summable || ranked_averageable) && unique {
+            return Err(DataContractError::InvalidContractStructure(
+                "ranked aggregates are not supported on unique indexes: each \
+                 group of a unique index contains at most one document, so \
+                 there is nothing meaningful to rank"
+                    .to_string(),
+            ));
+        }
+
+        // Ranked aggregates are allowed on compound indexes, with
+        // **per-prefix** semantics: the ranked flags land on the index's
+        // TERMINAL property-name level (see `IndexLevelTypeInfo`), so a
+        // ranked `[identityId, class]` maintains one ordered secondary per
+        // `identityId` value — each ordering that identity's `class` groups
+        // by the group aggregate. There is deliberately no global
+        // cross-prefix ordering; the query surfaces require every leading
+        // property to be pinned by an equality `where` clause.
+        //
+        // One compound shape stays structurally impossible and is rejected
+        // per document type (all indexes are needed to see it): a compound
+        // ranked index whose full leading prefix also terminates a separate
+        // countable/summable index. That check lives with the document
+        // type's index collection — see `validate_no_ranked_prefix_overlap`
+        // in `try_from_schema::common`.
+
+        // `nullSearchable: false` suppresses the terminal reference for a
+        // document that leaves the indexed property out — but the document
+        // index walker has already created that document's value tree by the
+        // time the terminal handler declines. Under a ranked index that value
+        // tree is an entry of a grovedb indexed primary, so the secondary
+        // mirrors it as a group whose aggregates are all zero: an
+        // authenticated TOP/BOTTOM answer would contain a group the index is
+        // supposed to exclude, with no document behind it. `nullSearchable`
+        // is only ever `false` when the contract says so explicitly — the
+        // default is `true` — and under `true` the null documents get their
+        // real reference and form a legitimate rankable group, which is the
+        // combination authors actually want.
+        if (ranked_countable || ranked_summable || ranked_averageable) && !null_searchable {
+            return Err(DataContractError::InvalidContractStructure(
+                "ranked aggregates are not supported with nullSearchable: false: a \
+                 document missing the indexed property still creates the null group's \
+                 value tree, but its reference is suppressed, so the ranking would \
+                 expose a phantom group with zero aggregates and no documents behind \
+                 it. Leave nullSearchable at its default (true), where documents with \
+                 a null value form a real, rankable group"
+                    .to_string(),
+            ));
+        }
+
+        // If the index didn't have a name, derive one deterministically from
+        // its properties and their directions. Every document meta-schema
+        // (v0/v1/v2) requires `name`, so an unnamed index can only reach this
+        // point when schema validation is skipped (check_tx, legacy fixtures,
+        // client-side parses of contracts that could never register); a random
+        // name here would make two parses of the same contract disagree on the
+        // index name and on the iteration order of the name-keyed indices map.
+        // Properties are joined with `|`, which cannot appear in a validated
+        // property path (path segments match `^[a-zA-Z0-9-_]{1,64}$`, joined
+        // by `.`, plus `$`-prefixed system properties), so two distinct index
+        // declarations can never derive the same name; only true duplicate
+        // declarations collide and collapse to one entry in the name-keyed
+        // map, which is the right outcome for a duplicate index.
+        let name = name.unwrap_or_else(|| {
+            if index_properties.is_empty() {
+                "index".to_string()
+            } else {
+                index_properties
+                    .iter()
+                    .map(|property| {
+                        format!(
+                            "{}_{}",
+                            property.name,
+                            if property.ascending { "asc" } else { "desc" }
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("|")
+            }
+        });
 
         Ok(Index {
             name,
@@ -994,6 +1262,9 @@ impl TryFrom<&[(Value, Value)]> for Index {
             range_countable,
             summable,
             range_summable,
+            ranked_countable,
+            ranked_summable,
+            ranked_averageable,
         })
     }
 }
@@ -1061,6 +1332,9 @@ mod tests {
             range_countable: false,
             summable: None,
             range_summable: false,
+            ranked_countable: false,
+            ranked_summable: false,
+            ranked_averageable: false,
         }
     }
 
@@ -1547,7 +1821,7 @@ mod tests {
     }
 
     #[test]
-    fn test_index_try_from_without_name_generates_random() {
+    fn test_index_try_from_without_name_derives_deterministic_name() {
         let index_map: Vec<(Value, Value)> = vec![(
             Value::Text("properties".to_string()),
             Value::Array(vec![Value::Map(vec![(
@@ -1556,8 +1830,70 @@ mod tests {
             )])]),
         )];
         let index = Index::try_from(index_map.as_slice()).unwrap();
-        assert!(!index.name.is_empty());
-        assert_eq!(index.name.len(), 24); // Alphanumeric.sample_string with len 24
+        assert_eq!(index.name, "fieldA_asc");
+
+        // Parsing the same definition again must produce the same name
+        let again = Index::try_from(index_map.as_slice()).unwrap();
+        assert_eq!(again.name, index.name);
+    }
+
+    #[test]
+    fn test_index_try_from_without_name_multi_property_directions() {
+        let index_map: Vec<(Value, Value)> = vec![(
+            Value::Text("properties".to_string()),
+            Value::Array(vec![
+                Value::Map(vec![(
+                    Value::Text("ownerId".to_string()),
+                    Value::Text("asc".to_string()),
+                )]),
+                Value::Map(vec![(
+                    Value::Text("createdAt".to_string()),
+                    Value::Text("desc".to_string()),
+                )]),
+            ]),
+        )];
+        let index = Index::try_from(index_map.as_slice()).unwrap();
+        assert_eq!(index.name, "ownerId_asc|createdAt_desc");
+    }
+
+    #[test]
+    fn test_index_try_from_without_name_empty_properties_falls_back() {
+        let index_map: Vec<(Value, Value)> =
+            vec![(Value::Text("properties".to_string()), Value::Array(vec![]))];
+        let index = Index::try_from(index_map.as_slice()).unwrap();
+        assert_eq!(index.name, "index");
+    }
+
+    #[test]
+    fn test_index_try_from_derived_names_distinct_for_distinct_definitions() {
+        // A single property literally named "a_asc_b" (desc) must not derive
+        // the same name as a compound index over "a" (asc) + "b" (desc):
+        // the `|` joiner cannot appear in a validated property path.
+        let single: Vec<(Value, Value)> = vec![(
+            Value::Text("properties".to_string()),
+            Value::Array(vec![Value::Map(vec![(
+                Value::Text("a_asc_b".to_string()),
+                Value::Text("desc".to_string()),
+            )])]),
+        )];
+        let compound: Vec<(Value, Value)> = vec![(
+            Value::Text("properties".to_string()),
+            Value::Array(vec![
+                Value::Map(vec![(
+                    Value::Text("a".to_string()),
+                    Value::Text("asc".to_string()),
+                )]),
+                Value::Map(vec![(
+                    Value::Text("b".to_string()),
+                    Value::Text("desc".to_string()),
+                )]),
+            ]),
+        )];
+        let single_index = Index::try_from(single.as_slice()).unwrap();
+        let compound_index = Index::try_from(compound.as_slice()).unwrap();
+        assert_eq!(single_index.name, "a_asc_b_desc");
+        assert_eq!(compound_index.name, "a_asc|b_desc");
+        assert_ne!(single_index.name, compound_index.name);
     }
 
     #[test]
@@ -1865,6 +2201,445 @@ mod tests {
         assert!(index.range_summable);
         assert!(index.countable.is_countable());
         assert_eq!(index.summable.as_deref(), Some("score"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Ranked aggregate index tests (meta-schema v3 / PV14 grammar)
+    // -----------------------------------------------------------------------
+
+    /// Helper: an index map on `score` with the supplied extra entries.
+    /// `properties` is always `[{score: asc}]` so the terminator — the level
+    /// the ranking axes attach to — is unambiguous.
+    fn ranked_index_map(extra: Vec<(&str, Value)>) -> Vec<(Value, Value)> {
+        let mut map: Vec<(Value, Value)> = vec![(
+            Value::Text("properties".to_string()),
+            Value::Array(vec![Value::Map(vec![(
+                Value::Text("score".to_string()),
+                Value::Text("asc".to_string()),
+            )])]),
+        )];
+        map.extend(
+            extra
+                .into_iter()
+                .map(|(k, v)| (Value::Text(k.to_string()), v)),
+        );
+        map
+    }
+
+    /// All three ranking keywords parse as booleans on top of a fully
+    /// range-averageable index.
+    #[test]
+    fn test_index_try_from_all_three_ranked_keywords_parse() {
+        let index_map = ranked_index_map(vec![
+            ("averageable", Value::Text("score".to_string())),
+            ("rangeAverageable", Value::Bool(true)),
+            ("rankedCountable", Value::Bool(true)),
+            ("rankedSummable", Value::Bool(true)),
+            ("rankedAverageable", Value::Bool(true)),
+        ]);
+        let index = Index::try_from_value_map(index_map.as_slice(), true)
+            .expect("all three ranked keywords must parse when the grammar allows them");
+        assert!(index.ranked_countable);
+        assert!(index.ranked_summable);
+        assert!(index.ranked_averageable);
+        // The underlying range axes are still what the sugar desugared into.
+        assert!(index.range_countable);
+        assert!(index.range_summable);
+    }
+
+    /// Omitting the ranking keywords leaves all three axes off — the parser's
+    /// default matches the `serde(default)` on the struct fields.
+    #[test]
+    fn test_index_try_from_ranked_flags_default_false() {
+        let index_map = ranked_index_map(vec![
+            ("averageable", Value::Text("score".to_string())),
+            ("rangeAverageable", Value::Bool(true)),
+        ]);
+        let index = Index::try_from_value_map(index_map.as_slice(), true)
+            .expect("index without ranked keywords must parse");
+        assert!(!index.ranked_countable);
+        assert!(!index.ranked_summable);
+        assert!(!index.ranked_averageable);
+    }
+
+    /// Ranked flags on compound indexes are accepted with per-prefix
+    /// semantics: the ranking axes attach to the terminal property-name
+    /// level, one ordered secondary per prefix value. The flag-dependency
+    /// rules (`ranked*` requires the matching `range*`) apply exactly as
+    /// on single-property indexes; the one structurally impossible shape
+    /// (a countable/summable index terminating at the compound's full
+    /// leading prefix) is a cross-index condition rejected where all the
+    /// document type's indexes are known — see
+    /// `validate_no_ranked_prefix_overlap` in `try_from_schema::common`.
+    #[test]
+    fn test_index_try_from_ranked_on_compound_index_accepted() {
+        let mut index_map = ranked_index_map(vec![
+            ("averageable", Value::Text("score".to_string())),
+            ("rangeAverageable", Value::Bool(true)),
+            ("rankedAverageable", Value::Bool(true)),
+        ]);
+        // Turn the single-property fixture into a compound [region, score].
+        index_map[0].1 = Value::Array(vec![
+            Value::Map(vec![(
+                Value::Text("region".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+            Value::Map(vec![(
+                Value::Text("score".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+        ]);
+        let index = Index::try_from_value_map(index_map.as_slice(), true)
+            .expect("ranked flags on a compound index must be accepted");
+        assert!(index.ranked_averageable);
+        assert_eq!(index.properties.len(), 2);
+        assert_eq!(index.properties[1].name, "score");
+    }
+
+    /// The `ranked* requires range*` dependency is enforced on compound
+    /// indexes exactly as on single-property ones.
+    #[test]
+    fn test_index_try_from_compound_ranked_without_range_flags_rejected() {
+        let mut index_map = ranked_index_map(vec![("rankedCountable", Value::Bool(true))]);
+        index_map[0].1 = Value::Array(vec![
+            Value::Map(vec![(
+                Value::Text("region".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+            Value::Map(vec![(
+                Value::Text("score".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+        ]);
+        let result = Index::try_from_value_map(index_map.as_slice(), true);
+        assert!(
+            result.is_err(),
+            "rankedCountable without rangeCountable must be rejected on a compound index too"
+        );
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("rankedCountable") && msg.contains("rangeCountable"),
+            "error must name both flags; got {msg}"
+        );
+    }
+
+    /// Ranking is meaningless on a unique index: every group holds at most
+    /// one document, so ranked flags there are an authoring mistake and are
+    /// rejected rather than silently laying out an indexed tree.
+    #[test]
+    fn test_index_try_from_ranked_on_unique_index_rejected() {
+        let index_map = ranked_index_map(vec![
+            ("unique", Value::Bool(true)),
+            ("averageable", Value::Text("score".to_string())),
+            ("rangeAverageable", Value::Bool(true)),
+            ("rankedAverageable", Value::Bool(true)),
+        ]);
+        let result = Index::try_from_value_map(index_map.as_slice(), true);
+        assert!(
+            result.is_err(),
+            "ranked flags on a unique index must be rejected"
+        );
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("unique"),
+            "error must explain the unique-index restriction; got {msg}"
+        );
+    }
+
+    /// A ranking axis needs the matching range axis: the ordered secondary is
+    /// built from the per-group aggregate only the range layout maintains.
+    #[test]
+    fn test_index_try_from_ranked_countable_without_range_countable_rejected() {
+        // `countable` alone (no `rangeCountable`) is not enough.
+        let index_map = ranked_index_map(vec![
+            ("countable", Value::Text("countable".to_string())),
+            ("rankedCountable", Value::Bool(true)),
+        ]);
+        let result = Index::try_from_value_map(index_map.as_slice(), true);
+        assert!(
+            result.is_err(),
+            "rankedCountable without rangeCountable must be rejected"
+        );
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("rankedCountable") && msg.contains("rangeCountable"),
+            "error must name both flags; got {msg}"
+        );
+    }
+
+    #[test]
+    fn test_index_try_from_ranked_summable_without_range_summable_rejected() {
+        let index_map = ranked_index_map(vec![
+            ("summable", Value::Text("score".to_string())),
+            ("rankedSummable", Value::Bool(true)),
+        ]);
+        let result = Index::try_from_value_map(index_map.as_slice(), true);
+        assert!(
+            result.is_err(),
+            "rankedSummable without rangeSummable must be rejected"
+        );
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("rankedSummable") && msg.contains("rangeSummable"),
+            "error must name both flags; got {msg}"
+        );
+    }
+
+    /// `rankedAverageable` needs BOTH range axes. Only the count half here.
+    #[test]
+    fn test_index_try_from_ranked_averageable_without_range_summable_rejected() {
+        let index_map = ranked_index_map(vec![
+            ("countable", Value::Text("countable".to_string())),
+            ("rangeCountable", Value::Bool(true)),
+            ("rankedAverageable", Value::Bool(true)),
+        ]);
+        let result = Index::try_from_value_map(index_map.as_slice(), true);
+        assert!(
+            result.is_err(),
+            "rankedAverageable with only the count range axis must be rejected"
+        );
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("rankedAverageable"),
+            "error must name rankedAverageable; got {msg}"
+        );
+    }
+
+    /// Only the sum half — symmetric rejection.
+    #[test]
+    fn test_index_try_from_ranked_averageable_without_range_countable_rejected() {
+        let index_map = ranked_index_map(vec![
+            ("summable", Value::Text("score".to_string())),
+            ("rangeSummable", Value::Bool(true)),
+            ("rankedAverageable", Value::Bool(true)),
+        ]);
+        let result = Index::try_from_value_map(index_map.as_slice(), true);
+        assert!(
+            result.is_err(),
+            "rankedAverageable with only the sum range axis must be rejected"
+        );
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("rankedAverageable"),
+            "error must name rankedAverageable; got {msg}"
+        );
+    }
+
+    /// `rankedAverageable` accepted through the sugar form — `averageable` +
+    /// `rangeAverageable` desugar into both range axes before the ranking
+    /// checks run.
+    #[test]
+    fn test_index_try_from_ranked_averageable_with_sugar_form() {
+        let index_map = ranked_index_map(vec![
+            ("averageable", Value::Text("score".to_string())),
+            ("rangeAverageable", Value::Bool(true)),
+            ("rankedAverageable", Value::Bool(true)),
+        ]);
+        let index = Index::try_from_value_map(index_map.as_slice(), true)
+            .expect("rankedAverageable on the averageable sugar form must parse");
+        assert!(index.ranked_averageable);
+        assert!(index.countable.is_countable());
+        assert_eq!(index.summable.as_deref(), Some("score"));
+        assert!(index.range_countable);
+        assert!(index.range_summable);
+        // Ranking axes are independent: the Avg opt-in adds no other axis.
+        assert!(
+            !index.ranked_countable && !index.ranked_summable,
+            "rankedAverageable must not imply rankedCountable / rankedSummable — each \
+             ranking axis costs its own ordered secondary tree"
+        );
+    }
+
+    /// Same acceptance through the explicit longhand — `countable`, `summable`
+    /// and both range flags spelled out, no sugar keyword anywhere. The
+    /// structural rule is stated in terms of the resolved range axes, so both
+    /// spellings pass.
+    #[test]
+    fn test_index_try_from_ranked_averageable_with_explicit_longhand_form() {
+        let index_map = ranked_index_map(vec![
+            ("countable", Value::Text("countable".to_string())),
+            ("summable", Value::Text("score".to_string())),
+            ("rangeCountable", Value::Bool(true)),
+            ("rangeSummable", Value::Bool(true)),
+            ("rankedAverageable", Value::Bool(true)),
+        ]);
+        let index = Index::try_from_value_map(index_map.as_slice(), true)
+            .expect("rankedAverageable on the explicit longhand form must parse");
+        assert!(index.ranked_averageable);
+        assert!(index.range_countable);
+        assert!(index.range_summable);
+        assert!(!index.ranked_countable);
+        assert!(!index.ranked_summable);
+    }
+
+    /// The keywords only accept booleans.
+    #[test]
+    fn test_index_try_from_ranked_non_boolean_rejected() {
+        for key in ["rankedCountable", "rankedSummable", "rankedAverageable"] {
+            let index_map = ranked_index_map(vec![
+                ("averageable", Value::Text("score".to_string())),
+                ("rangeAverageable", Value::Bool(true)),
+                (key, Value::Text("yes".to_string())),
+            ]);
+            let result = Index::try_from_value_map(index_map.as_slice(), true);
+            assert!(result.is_err(), "{key} must reject a non-boolean value");
+            let msg = format!("{:?}", result.unwrap_err());
+            assert!(
+                msg.contains(key) && msg.contains("boolean"),
+                "error must name {key} and the boolean requirement; got {msg}"
+            );
+        }
+    }
+
+    /// With the pre-v3 grammar (`ranked_aggregates_allowed: false`, i.e.
+    /// `document_type_schema < 3`) the ranked keywords are not keywords at
+    /// all — they hit the unknown-property arm and produce exactly the error a
+    /// node without this feature produces. This is the gate that stops a
+    /// non-validating parse from smuggling a ranked index onto a pre-PV14 node.
+    #[test]
+    fn test_index_try_from_ranked_keys_rejected_when_grammar_disallows() {
+        for key in ["rankedCountable", "rankedSummable", "rankedAverageable"] {
+            for value in [Value::Bool(true), Value::Bool(false)] {
+                let index_map = ranked_index_map(vec![
+                    ("averageable", Value::Text("score".to_string())),
+                    ("rangeAverageable", Value::Bool(true)),
+                    (key, value.clone()),
+                ]);
+                let result = Index::try_from_value_map(index_map.as_slice(), false);
+                assert!(
+                    result.is_err(),
+                    "{key}: {value:?} must be rejected when the ranked grammar is off"
+                );
+                let msg = format!("{:?}", result.unwrap_err());
+                assert!(
+                    msg.contains("unexpected property name"),
+                    "pre-v3 rejection must be the unknown-key error (byte-identical to a \
+                     node without the feature); got {msg}"
+                );
+            }
+        }
+    }
+
+    /// The `TryFrom` impl is the pre-v3 surface, so it rejects ranked keys.
+    #[test]
+    fn test_index_try_from_trait_impl_rejects_ranked_keys() {
+        let index_map = ranked_index_map(vec![
+            ("averageable", Value::Text("score".to_string())),
+            ("rangeAverageable", Value::Bool(true)),
+            ("rankedCountable", Value::Bool(true)),
+        ]);
+        let result = Index::try_from(index_map.as_slice());
+        assert!(
+            result.is_err(),
+            "TryFrom is the pre-meta-schema-v3 grammar and must reject ranked keys"
+        );
+    }
+
+    /// The three range/ranked flag pairs that make a single-property index
+    /// legally rankable, one per axis. Used by the `nullSearchable` tests so
+    /// each axis is checked on its own rather than through the Avg superset.
+    fn ranked_axis_fixtures() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
+        vec![
+            (
+                "rankedCountable",
+                vec![
+                    ("countable", Value::Text("countable".to_string())),
+                    ("rangeCountable", Value::Bool(true)),
+                    ("rankedCountable", Value::Bool(true)),
+                ],
+            ),
+            (
+                "rankedSummable",
+                vec![
+                    ("summable", Value::Text("score".to_string())),
+                    ("rangeSummable", Value::Bool(true)),
+                    ("rankedSummable", Value::Bool(true)),
+                ],
+            ),
+            (
+                "rankedAverageable",
+                vec![
+                    ("averageable", Value::Text("score".to_string())),
+                    ("rangeAverageable", Value::Bool(true)),
+                    ("rankedAverageable", Value::Bool(true)),
+                ],
+            ),
+        ]
+    }
+
+    /// `nullSearchable: false` next to any ranking axis is refused at parse
+    /// time. The write path would still create the null group's value tree —
+    /// that happens in the index walker, before the terminal handler decides
+    /// to suppress the reference — so grovedb's secondary would carry a group
+    /// with zero aggregates and no documents behind it, and an authenticated
+    /// TOP/BOTTOM answer would include a group the index excludes.
+    #[test]
+    fn test_index_try_from_ranked_with_explicit_null_searchable_false_rejected() {
+        for (axis, mut extra) in ranked_axis_fixtures() {
+            extra.push(("nullSearchable", Value::Bool(false)));
+            let index_map = ranked_index_map(extra);
+            let result = Index::try_from_value_map(index_map.as_slice(), true);
+            assert!(
+                result.is_err(),
+                "{axis} with nullSearchable: false must be rejected"
+            );
+            let msg = format!("{:?}", result.unwrap_err());
+            assert!(
+                msg.contains("nullSearchable") && msg.contains("phantom"),
+                "error must name nullSearchable and explain the phantom group; got {msg}"
+            );
+        }
+    }
+
+    /// Omitting the key leaves the default (`true`), which is the shape the
+    /// rule permits: null documents get their real reference and form a
+    /// legitimate rankable group.
+    #[test]
+    fn test_index_try_from_ranked_without_null_searchable_key_accepted() {
+        for (axis, extra) in ranked_axis_fixtures() {
+            let index_map = ranked_index_map(extra);
+            let index = Index::try_from_value_map(index_map.as_slice(), true)
+                .unwrap_or_else(|e| panic!("{axis} with no nullSearchable key must parse: {e:?}"));
+            assert!(
+                index.null_searchable,
+                "{axis}: the absent key must still default to true"
+            );
+        }
+    }
+
+    /// Spelling out the default explicitly is equally fine — the rule is
+    /// about the resolved value, and `true` is the safe one.
+    #[test]
+    fn test_index_try_from_ranked_with_explicit_null_searchable_true_accepted() {
+        for (axis, mut extra) in ranked_axis_fixtures() {
+            extra.push(("nullSearchable", Value::Bool(true)));
+            let index_map = ranked_index_map(extra);
+            let index = Index::try_from_value_map(index_map.as_slice(), true).unwrap_or_else(|e| {
+                panic!("{axis} with an explicit nullSearchable: true must parse: {e:?}")
+            });
+            assert!(index.null_searchable);
+        }
+    }
+
+    /// The restriction is scoped to ranked indexes: `nullSearchable: false`
+    /// on an index without a ranking axis keeps working exactly as before,
+    /// including on the aggregating (range) layouts the ranking axes extend.
+    #[test]
+    fn test_index_try_from_non_ranked_with_null_searchable_false_still_accepted() {
+        let plain = ranked_index_map(vec![("nullSearchable", Value::Bool(false))]);
+        let index = Index::try_from_value_map(plain.as_slice(), true)
+            .expect("nullSearchable: false on a plain index must still parse");
+        assert!(!index.null_searchable);
+
+        let aggregating = ranked_index_map(vec![
+            ("averageable", Value::Text("score".to_string())),
+            ("rangeAverageable", Value::Bool(true)),
+            ("nullSearchable", Value::Bool(false)),
+        ]);
+        let index = Index::try_from_value_map(aggregating.as_slice(), true)
+            .expect("nullSearchable: false on a range-averageable index must still parse");
+        assert!(!index.null_searchable);
+        assert!(!index.ranked_averageable);
     }
 
     #[test]
@@ -2338,6 +3113,12 @@ mod json_convertible_tests {
             range_countable: true,
             summable: Some("price".to_string()),
             range_summable: true,
+            // Ranking axes set asymmetrically on purpose: the round-trip has to
+            // prove each flag survives independently, which a uniform
+            // all-true / all-false fixture cannot.
+            ranked_countable: true,
+            ranked_summable: false,
+            ranked_averageable: true,
         }
     }
 
@@ -2364,6 +3145,9 @@ mod json_convertible_tests {
                 "range_countable": true,
                 "summable": "price",
                 "range_summable": true,
+                "ranked_countable": true,
+                "ranked_summable": false,
+                "ranked_averageable": true,
             })
         );
         let recovered = Index::from_json(json).expect("from_json");
@@ -2382,7 +3166,8 @@ mod json_convertible_tests {
     /// JSON serialized before the count (#3623) and sum (#3661) fields existed
     /// must still deserialize — the four new fields default (NotCountable /
     /// false / None / false). Without `serde(default)` this fails with
-    /// "missing field `countable`".
+    /// "missing field `countable`". The three ranking flags (added later still,
+    /// for the PV14 ranked-aggregate grammar) default the same way.
     #[test]
     fn index_deserializes_pre_count_sum_json() {
         use crate::serialization::JsonConvertible;
@@ -2398,6 +3183,37 @@ mod json_convertible_tests {
         assert!(!recovered.range_countable);
         assert_eq!(recovered.summable, None);
         assert!(!recovered.range_summable);
+        assert!(!recovered.ranked_countable);
+        assert!(!recovered.ranked_summable);
+        assert!(!recovered.ranked_averageable);
+    }
+
+    /// JSON that predates only the *ranking* flags (it already carries the
+    /// count and sum fields) must also deserialize, with all three ranking
+    /// axes defaulting to `false`. This is the shape any `Index` serialized
+    /// between the sum work and the PV14 ranked grammar has.
+    #[test]
+    fn index_deserializes_pre_ranked_json() {
+        use crate::serialization::JsonConvertible;
+        let old_json = serde_json::json!({
+            "name": "byOwnerAndPrice",
+            "properties": [{"name": "ownerId", "ascending": true}],
+            "unique": false,
+            "null_searchable": true,
+            "contested_index": serde_json::Value::Null,
+            "countable": "countable",
+            "range_countable": true,
+            "summable": "price",
+            "range_summable": true,
+        });
+        let recovered = Index::from_json(old_json).expect("pre-ranked JSON must deserialize");
+        assert_eq!(recovered.countable, IndexCountability::Countable);
+        assert!(recovered.range_countable);
+        assert_eq!(recovered.summable.as_deref(), Some("price"));
+        assert!(recovered.range_summable);
+        assert!(!recovered.ranked_countable);
+        assert!(!recovered.ranked_summable);
+        assert!(!recovered.ranked_averageable);
     }
 
     #[test]

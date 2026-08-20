@@ -27,6 +27,35 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE txid = :txid")
     suspend fun getByTxid(txid: ByteArray): TransactionEntity?
 
+    /**
+     * Transaction-label resolver probe for the withdraw/unshield case,
+     * which has NO `asset_locks` row and is identified solely by
+     * `transactionTypeKind == 7` (AssetUnlock).
+     *
+     * [txidWire] is the raw little-endian WIRE txid — the exact
+     * [TransactionEntity.txid] PK form (a BLOB), i.e. the explorer display
+     * hex reversed then hex-decoded. When the caller holds the display hex
+     * (as the resolver does), prefer [transactionKindForDisplayTxid], which
+     * does the reversal. Returns null when no such tx is stored;
+     * `transactionTypeKind == 0xFF` (255) means "not yet populated".
+     */
+    @Query("SELECT transactionTypeKind FROM transactions WHERE txid = :txidWire LIMIT 1")
+    suspend fun transactionKindForTxid(txidWire: ByteArray): Int?
+
+    /**
+     * Convenience over [transactionKindForTxid] keyed by the explorer
+     * DISPLAY txid hex (64 lowercase chars, wire order reversed) the
+     * resolver already holds — the same display form used by
+     * [AssetLockDao.fundingTypeForTxid]. Reverses to wire order before the
+     * BLOB PK match. Returns null for malformed hex (not 64 hex chars) or
+     * when no such tx is stored. Not a Room query — a plain default method
+     * delegating to [transactionKindForTxid].
+     */
+    suspend fun transactionKindForDisplayTxid(txidDisplayHex: String): Int? {
+        val wire = displayHexToWireTxid(txidDisplayHex) ?: return null
+        return transactionKindForTxid(wire)
+    }
+
     /** Timeline join helper — parents of a wallet's TXO set. */
     @Query("SELECT * FROM transactions WHERE txid IN (:txids) ORDER BY firstSeen DESC")
     fun observeByTxids(txids: List<ByteArray>): Flow<List<TransactionEntity>>
@@ -89,4 +118,26 @@ interface TransactionDao {
     /** StorageExplorer row count. */
     @Query("SELECT COUNT(*) FROM transactions")
     fun count(): Flow<Long>
+
+    companion object {
+        /**
+         * Explorer DISPLAY txid hex (wire order reversed, 64 lowercase
+         * chars) → raw little-endian WIRE txid, the [TransactionEntity.txid]
+         * PK form. Mirrors the txid half of [decodeOutPointHex]. Returns
+         * null for any non-64-char or non-hex input.
+         */
+        private fun displayHexToWireTxid(displayHex: String): ByteArray? {
+            if (displayHex.length != 64) return null
+            val display = ByteArray(32)
+            for (i in 0 until 32) {
+                val hi = Character.digit(displayHex[i * 2], 16)
+                val lo = Character.digit(displayHex[i * 2 + 1], 16)
+                if (hi < 0 || lo < 0) return null
+                display[i] = ((hi shl 4) or lo).toByte()
+            }
+            val wire = ByteArray(32)
+            for (i in 0 until 32) wire[i] = display[31 - i]
+            return wire
+        }
+    }
 }

@@ -21,6 +21,21 @@ use super::provider::PlatformPaymentAddressProvider;
 
 use dash_sdk::query_types::AddressInfos;
 
+/// Merge transient derived addresses with persisted, hydrated balance keys.
+///
+/// A `BTreeSet` deduplicates addresses present in both sources and gives every
+/// payment-address operation the same deterministic post-relaunch candidate
+/// set.
+pub(crate) fn merge_platform_payment_candidate_addresses(
+    derived_addresses: impl IntoIterator<Item = PlatformP2PKHAddress>,
+    hydrated_addresses: impl IntoIterator<Item = PlatformP2PKHAddress>,
+) -> BTreeSet<PlatformP2PKHAddress> {
+    derived_addresses
+        .into_iter()
+        .chain(hydrated_addresses)
+        .collect()
+}
+
 /// Platform address wallet providing DIP-17 platform payment address functionality.
 #[derive(Clone)]
 pub struct PlatformAddressWallet {
@@ -106,14 +121,19 @@ impl PlatformAddressWallet {
                 ))
             })?;
 
-        Ok(account
-            .addresses
-            .addresses
-            .values()
-            .filter_map(|addr_info| PlatformP2PKHAddress::from_address(&addr_info.address).ok())
-            .chain(account.address_balances.keys().copied())
-            .map(|p2pkh| PlatformAddress::P2pkh(p2pkh.to_bytes()))
-            .collect())
+        Ok(merge_platform_payment_candidate_addresses(
+            account
+                .addresses
+                .addresses
+                .values()
+                .filter_map(|addr_info| {
+                    PlatformP2PKHAddress::from_address(&addr_info.address).ok()
+                }),
+            account.address_balances.keys().copied(),
+        )
+        .into_iter()
+        .map(|p2pkh| PlatformAddress::P2pkh(p2pkh.to_bytes()))
+        .collect())
     }
 
     /// Build (or rebuild) the unified address provider covering every
@@ -752,7 +772,29 @@ impl std::fmt::Debug for PlatformAddressWallet {
 
 #[cfg(test)]
 mod tests {
-    use super::PlatformAddressWallet;
+    use super::{merge_platform_payment_candidate_addresses, PlatformAddressWallet};
+    use key_wallet::PlatformP2PKHAddress;
+
+    #[test]
+    fn candidate_union_keeps_hydrated_balance_only_address_and_deduplicates_overlap() {
+        let derived_only = PlatformP2PKHAddress::new([1; 20]);
+        let present_in_both = PlatformP2PKHAddress::new([2; 20]);
+        let hydrated_balance_only = PlatformP2PKHAddress::new([3; 20]);
+
+        let merged = merge_platform_payment_candidate_addresses(
+            [derived_only, present_in_both],
+            [present_in_both, hydrated_balance_only],
+        );
+
+        assert_eq!(
+            merged,
+            std::collections::BTreeSet::from([
+                derived_only,
+                present_in_both,
+                hydrated_balance_only,
+            ])
+        );
+    }
 
     /// Build a `PlatformAddressWallet` on a mock SDK for getter tests that
     /// touch no I/O. Mirrors `transfer::tests::build_short_circuit_wallet`,

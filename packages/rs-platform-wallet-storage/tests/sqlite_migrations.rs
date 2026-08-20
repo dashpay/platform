@@ -277,3 +277,123 @@ fn tc044_load_empty_is_empty() {
     let state = platform_wallet::changeset::PlatformWalletPersistence::load(&persister).unwrap();
     assert!(state.is_empty());
 }
+
+/// V009 → V010 upgrade path: a database created at the prior release
+/// schema (through V009) upgrades in place — the asset_locks rebuild
+/// keeps existing rows byte-for-byte and widens the status CHECK to
+/// admit `recovered_from_chain`, which the V009 schema rejects.
+///
+/// This is the regression test for the review finding that V001's
+/// generated CHECK must never change (Refinery `abort_divergent` would
+/// brick every already-migrated database): the domain widens by
+/// APPENDING V010, and this test drives exactly the sequence an
+/// existing install experiences.
+#[test]
+fn tc045_v010_widens_asset_lock_status_on_existing_db() {
+    use rusqlite::params;
+
+    let mut conn = rusqlite::Connection::open_in_memory().expect("open in-memory db");
+    conn.pragma_update(None, "foreign_keys", true)
+        .expect("enable foreign keys");
+
+    // 1. Stand the database up at the PRIOR release schema (V009).
+    let to_v009 = mig::runner().set_target(refinery::Target::Version(9));
+    to_v009.run(&mut conn).expect("migrate to V009");
+
+    // 2. Populate it the way a live wallet would have.
+    let wallet_id = [42u8; 32];
+    conn.execute(
+        "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+        params![wallet_id.as_slice()],
+    )
+    .expect("insert wallet");
+    let outpoint_a = [1u8; 36];
+    conn.execute(
+        "INSERT INTO asset_locks (wallet_id, outpoint, status, account_index, identity_index, \
+         amount_duffs, lifecycle_blob) VALUES (?1, ?2, 'chain_locked', 0, 4, 1000000, X'01')",
+        params![wallet_id.as_slice(), outpoint_a.as_slice()],
+    )
+    .expect("insert pre-upgrade asset lock");
+
+    // 3. The V009 CHECK must reject the new label — that's the schema
+    //    gap V010 exists to close.
+    let outpoint_b = [2u8; 36];
+    let rejected = conn.execute(
+        "INSERT INTO asset_locks (wallet_id, outpoint, status, account_index, identity_index, \
+         amount_duffs, lifecycle_blob) VALUES (?1, ?2, 'recovered_from_chain', 0, 0, 500, X'02')",
+        params![wallet_id.as_slice(), outpoint_b.as_slice()],
+    );
+    assert!(
+        rejected.is_err(),
+        "the V009 CHECK domain must reject recovered_from_chain"
+    );
+
+    // 3b. Plant a legacy orphan row the way an old connection with FK
+    //     enforcement off could have: its wallet row is gone, so copying
+    //     it into the FK-declared twin would abort the rebuild. V010's
+    //     explicit orphan policy must drop it instead.
+    conn.pragma_update(None, "foreign_keys", false)
+        .expect("disable foreign keys");
+    let ghost_wallet = [9u8; 32];
+    conn.execute(
+        "INSERT INTO asset_locks (wallet_id, outpoint, status, account_index, identity_index, \
+         amount_duffs, lifecycle_blob) VALUES (?1, X'04', 'built', 0, 0, 1, X'04')",
+        params![ghost_wallet.as_slice()],
+    )
+    .expect("insert orphan row with FK enforcement off");
+    conn.pragma_update(None, "foreign_keys", true)
+        .expect("re-enable foreign keys");
+
+    // 4. Upgrade to the latest schema (applies V010's table rebuild).
+    mig::run(&mut conn).expect("migrate to latest despite the orphan row");
+
+    // 4b. The orphan is gone (same outcome the declared cascade would
+    //     have produced), the real row below is untouched.
+    let orphans: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM asset_locks WHERE wallet_id = ?1",
+            params![ghost_wallet.as_slice()],
+            |row| row.get(0),
+        )
+        .expect("count orphans");
+    assert_eq!(orphans, 0, "V010 must drop legacy orphan rows, not abort");
+
+    // 5. The pre-upgrade row survived the rebuild intact...
+    let (status, identity_index, amount): (String, i64, i64) = conn
+        .query_row(
+            "SELECT status, identity_index, amount_duffs FROM asset_locks WHERE outpoint = ?1",
+            params![outpoint_a.as_slice()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("pre-upgrade row survives");
+    assert_eq!(
+        (status.as_str(), identity_index, amount),
+        ("chain_locked", 4, 1_000_000)
+    );
+
+    // 6. ...the widened domain admits the new label...
+    conn.execute(
+        "INSERT INTO asset_locks (wallet_id, outpoint, status, account_index, identity_index, \
+         amount_duffs, lifecycle_blob) VALUES (?1, ?2, 'recovered_from_chain', 0, 0, 500, X'02')",
+        params![wallet_id.as_slice(), outpoint_b.as_slice()],
+    )
+    .expect("recovered_from_chain must insert after V010");
+
+    // 7. ...garbage labels stay rejected, and the rebuilt table kept its
+    //    FK: deleting the wallet cascades to both rows.
+    let garbage = conn.execute(
+        "INSERT INTO asset_locks (wallet_id, outpoint, status, account_index, identity_index, \
+         amount_duffs, lifecycle_blob) VALUES (?1, X'03', 'bogus', 0, 0, 1, X'03')",
+        params![wallet_id.as_slice()],
+    );
+    assert!(garbage.is_err(), "unknown labels must still be rejected");
+    conn.execute(
+        "DELETE FROM wallets WHERE wallet_id = ?1",
+        params![wallet_id.as_slice()],
+    )
+    .expect("delete wallet");
+    let remaining: i64 = conn
+        .query_row("SELECT COUNT(*) FROM asset_locks", [], |row| row.get(0))
+        .expect("count");
+    assert_eq!(remaining, 0, "ON DELETE CASCADE must survive the rebuild");
+}

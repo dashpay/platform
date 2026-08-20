@@ -4,6 +4,8 @@ use std::convert::TryInto;
 use std::io::{BufReader, Cursor, Read};
 
 use crate::data_contract::errors::DataContractError;
+use bincode::{Decode, Encode};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 use crate::consensus::basic::decode::DecodingError;
 use crate::data_contract::config::v1::DataContractConfigGettersV1;
@@ -51,6 +53,68 @@ pub struct ByteArrayPropertySizes {
     pub max_size: Option<u16>,
 }
 
+// This enum is embedded in consensus errors, so it is consensus-serialized.
+// @append_only
+#[derive(
+    Debug, PartialEq, Eq, Clone, Serialize, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum DocumentPropertyReferenceTarget {
+    Identity,
+    Contract,
+    Token,
+    /// A document of a document type whose documents can never be deleted
+    /// (`canBeDeleted: false`). Only such document types may be referenced:
+    /// together with document types being non-removable and the
+    /// `canBeDeleted` flag being immutable on contract updates, this
+    /// guarantees a validated reference can never dangle.
+    #[serde(rename = "permanentDocument")]
+    PermanentDocument {
+        /// The contract the referenced document type lives in; `None` means
+        /// the declaring contract itself
+        contract_id: Option<Identifier>,
+        document_type_name: String,
+    },
+    /// A specific public key of an identity: the property value holds the
+    /// identity id and the named sibling property of the same document type
+    /// holds the key id. Identity keys can be disabled but never removed, so
+    /// an existing reference can never dangle; at write time the key must
+    /// exist and must not be disabled.
+    #[serde(rename = "identityPublicKey")]
+    IdentityPublicKey {
+        /// The property of the same document type whose value carries the
+        /// referenced key id
+        key_id_property: String,
+    },
+}
+
+impl std::fmt::Display for DocumentPropertyReferenceTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DocumentPropertyReferenceTarget::Identity => write!(f, "identity"),
+            DocumentPropertyReferenceTarget::Contract => write!(f, "contract"),
+            DocumentPropertyReferenceTarget::Token => write!(f, "token"),
+            DocumentPropertyReferenceTarget::PermanentDocument {
+                contract_id: Some(contract_id),
+                document_type_name,
+            } => write!(
+                f,
+                "permanent document (contract {contract_id}, document type {document_type_name})"
+            ),
+            DocumentPropertyReferenceTarget::PermanentDocument {
+                contract_id: None,
+                document_type_name,
+            } => write!(
+                f,
+                "permanent document (own contract, document type {document_type_name})"
+            ),
+            DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } => {
+                write!(f, "identity public key (key id property {key_id_property})")
+            }
+        }
+    }
+}
+
 // @append_only
 #[derive(Debug, PartialEq, Clone, Serialize)]
 pub enum DocumentPropertyType {
@@ -73,6 +137,7 @@ pub enum DocumentPropertyType {
     Object(IndexMap<String, DocumentProperty>),
     Array(ArrayItemType),
     VariableTypeArray(Vec<ArrayItemType>),
+    IdentifierWithReference(DocumentPropertyReferenceTarget),
 }
 
 impl DocumentPropertyType {
@@ -128,7 +193,9 @@ impl DocumentPropertyType {
             DocumentPropertyType::F64 => "f64".to_string(),
             DocumentPropertyType::String(_) => "string".to_string(),
             DocumentPropertyType::ByteArray(_) => "byteArray".to_string(),
-            DocumentPropertyType::Identifier => "identifier".to_string(),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                "identifier".to_string()
+            }
             DocumentPropertyType::Boolean => "boolean".to_string(),
             DocumentPropertyType::Date => "date".to_string(),
             DocumentPropertyType::Object(_) => "object".to_string(),
@@ -166,7 +233,9 @@ impl DocumentPropertyType {
                 .sum(),
             DocumentPropertyType::Array(_) => None,
             DocumentPropertyType::VariableTypeArray(_) => None,
-            DocumentPropertyType::Identifier => Some(32),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Some(32)
+            }
         }
     }
 
@@ -211,7 +280,9 @@ impl DocumentPropertyType {
                 .sum(),
             DocumentPropertyType::Array(_) => Ok(None),
             DocumentPropertyType::VariableTypeArray(_) => Ok(None),
-            DocumentPropertyType::Identifier => Ok(Some(32)),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Ok(Some(32))
+            }
         }
     }
 
@@ -256,7 +327,9 @@ impl DocumentPropertyType {
                 .sum(),
             DocumentPropertyType::Array(_) => Ok(None),
             DocumentPropertyType::VariableTypeArray(_) => Ok(None),
-            DocumentPropertyType::Identifier => Ok(Some(32)),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Ok(Some(32))
+            }
         }
     }
 
@@ -289,7 +362,9 @@ impl DocumentPropertyType {
                 .sum(),
             DocumentPropertyType::Array(_) => None,
             DocumentPropertyType::VariableTypeArray(_) => None,
-            DocumentPropertyType::Identifier => Some(32),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Some(32)
+            }
         }
     }
 
@@ -423,7 +498,9 @@ impl DocumentPropertyType {
             }
             DocumentPropertyType::Array(_) => Value::Null,
             DocumentPropertyType::VariableTypeArray(_) => Value::Null,
-            DocumentPropertyType::Identifier => Value::Identifier(rng.gen()),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Value::Identifier(rng.gen())
+            }
         }
     }
 
@@ -472,7 +549,9 @@ impl DocumentPropertyType {
             }
             DocumentPropertyType::Array(_) => Value::Null,
             DocumentPropertyType::VariableTypeArray(_) => Value::Null,
-            DocumentPropertyType::Identifier => Value::Identifier(rng.gen()),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Value::Identifier(rng.gen())
+            }
         }
     }
 
@@ -521,7 +600,9 @@ impl DocumentPropertyType {
             }
             DocumentPropertyType::Array(_) => Value::Null,
             DocumentPropertyType::VariableTypeArray(_) => Value::Null,
-            DocumentPropertyType::Identifier => Value::Identifier(rng.gen()),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Value::Identifier(rng.gen())
+            }
         }
     }
 
@@ -697,7 +778,7 @@ impl DocumentPropertyType {
                     }
                 }
             }
-            DocumentPropertyType::Identifier => {
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                 let mut id = [0; 32];
                 buf.read_exact(&mut id).map_err(|_| {
                     DataContractError::DecodingContractError(DecodingError::new(
@@ -916,7 +997,7 @@ impl DocumentPropertyType {
                 r_vec.append(&mut bytes);
                 Ok(r_vec)
             }
-            DocumentPropertyType::Identifier => {
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                 let mut bytes = value.into_identifier_bytes()?;
 
                 let mut r_vec = bytes.len().encode_var_vec();
@@ -1074,7 +1155,9 @@ impl DocumentPropertyType {
                     Ok(r_vec)
                 }
             },
-            DocumentPropertyType::Identifier => Ok(value.to_identifier_bytes()?),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Ok(value.to_identifier_bytes()?)
+            }
             DocumentPropertyType::Boolean => {
                 let value_as_boolean = value
                     .as_bool()
@@ -1209,9 +1292,11 @@ impl DocumentPropertyType {
             DocumentPropertyType::ByteArray(_) => {
                 value.to_binary_bytes().map_err(ProtocolError::ValueError)
             }
-            DocumentPropertyType::Identifier => value
-                .to_identifier_bytes()
-                .map_err(ProtocolError::ValueError),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                value
+                    .to_identifier_bytes()
+                    .map_err(ProtocolError::ValueError)
+            }
             DocumentPropertyType::Boolean => {
                 let value_as_boolean = value
                     .as_bool()
@@ -1330,7 +1415,7 @@ impl DocumentPropertyType {
                 Ok(Value::Float(float))
             }
             DocumentPropertyType::ByteArray(_) => Ok(Value::Bytes(value.to_vec())),
-            DocumentPropertyType::Identifier => {
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
                 let identifier = Identifier::from_bytes(value)?;
                 Ok(identifier.into())
             }
@@ -1456,12 +1541,14 @@ impl DocumentPropertyType {
                     DataContractError::ValueDecodingError("could not parse hex bytes".to_string())
                 })?))
             }
-            DocumentPropertyType::Identifier => Ok(Value::Identifier(
-                Value::Text(str.to_owned())
-                    .to_identifier()
-                    .map_err(|e| DataContractError::ValueDecodingError(format!("{:?}", e)))?
-                    .into_buffer(),
-            )),
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Ok(Value::Identifier(
+                    Value::Text(str.to_owned())
+                        .to_identifier()
+                        .map_err(|e| DataContractError::ValueDecodingError(format!("{:?}", e)))?
+                        .into_buffer(),
+                ))
+            }
             DocumentPropertyType::Boolean => {
                 if str.to_lowercase().as_str() == "true" {
                     Ok(Value::Bool(true))
@@ -2140,7 +2227,10 @@ impl DocumentPropertyType {
             }
 
             // Convert hex or base58 strings to identifiers for Identifier fields
-            (DocumentPropertyType::Identifier, Value::Text(str_value)) => {
+            (
+                DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_),
+                Value::Text(str_value),
+            ) => {
                 // First try base58 decoding (most common for identifiers)
                 if let Ok(id) = Identifier::from_string_unknown_encoding(&str_value) {
                     *value = Value::Identifier(id.into_buffer());
@@ -7065,5 +7155,56 @@ mod tests {
         for window in encoded.windows(2) {
             assert!(window[0] < window[1]);
         }
+    }
+
+    #[test]
+    fn should_serialize_reference_metadata() {
+        let property = DocumentProperty {
+            property_type: DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::Identity,
+            ),
+            required: false,
+            transient: false,
+        };
+
+        let value = serde_json::to_value(&property).expect("serialization should succeed");
+
+        assert_eq!(
+            value.get("property_type"),
+            Some(&serde_json::json!({
+                "IdentifierWithReference": "identity"
+            }))
+        );
+    }
+
+    #[test]
+    fn should_display_reference_targets() {
+        let contract_id = Identifier::from([7u8; 32]);
+
+        assert_eq!(
+            DocumentPropertyReferenceTarget::Identity.to_string(),
+            "identity"
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::Contract.to_string(),
+            "contract"
+        );
+        assert_eq!(DocumentPropertyReferenceTarget::Token.to_string(), "token");
+        assert_eq!(
+            DocumentPropertyReferenceTarget::PermanentDocument {
+                contract_id: Some(contract_id),
+                document_type_name: "note".to_string(),
+            }
+            .to_string(),
+            format!("permanent document (contract {contract_id}, document type note)")
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::PermanentDocument {
+                contract_id: None,
+                document_type_name: "note".to_string(),
+            }
+            .to_string(),
+            "permanent document (own contract, document type note)"
+        );
     }
 }

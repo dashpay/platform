@@ -242,6 +242,33 @@ fn single_domain_changeset(domain: Domain) -> PlatformWalletChangeSet {
                 removed: Default::default(),
             });
         }
+        Domain::DpnsNameStates => {
+            use platform_wallet::changeset::{
+                DpnsNameSaleStatus, DpnsNameStateChangeSet, DpnsNameStateEntry,
+            };
+            let document_id = Identifier::from([0x0F; 32]);
+            let mut names = BTreeMap::new();
+            names.insert(
+                document_id,
+                DpnsNameStateEntry {
+                    document_id,
+                    wallet_identity_id: Identifier::from([0x10; 32]),
+                    label: "Alice".to_string(),
+                    normalized_label: "a11ce".to_string(),
+                    normalized_parent_domain_name: "dash".to_string(),
+                    price: None,
+                    status: DpnsNameSaleStatus::Owned,
+                    created_at_ms: None,
+                    updated_at_ms: None,
+                    transferred_at_ms: None,
+                    last_synced_at_ms: 0,
+                },
+            );
+            cs.dpns_name_states = Some(DpnsNameStateChangeSet {
+                names,
+                removed: Default::default(),
+            });
+        }
         #[cfg(feature = "shielded")]
         Domain::ShieldedViewingKeys => {
             let mut shielded = ShieldedChangeSet::default();
@@ -353,7 +380,7 @@ fn tc_b_013_every_domain_maps_and_isolates() {
     use std::collections::BTreeSet;
     assert_eq!(
         Domain::ALL.len(),
-        if cfg!(feature = "shielded") { 15 } else { 14 },
+        if cfg!(feature = "shielded") { 16 } else { 15 },
         "every compiled persistence domain must be covered"
     );
     let mut covered = BTreeSet::new();

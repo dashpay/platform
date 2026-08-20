@@ -1,0 +1,32 @@
+{
+  "$formatVersion": "1",
+  "id": "4Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVd",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "message": {
+      "type": "object",
+      "properties": {
+        "toUserId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0,
+          "refersTo": {
+            "type": "identityPublicKey",
+            "keyIdProperty": "ghostKeyIndex"
+          }
+        },
+        "toKeyIndex": {
+          "type": "integer",
+          "position": 1,
+          "minimum": 0
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  }
+}

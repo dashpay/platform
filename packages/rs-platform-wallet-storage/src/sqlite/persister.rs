@@ -946,10 +946,15 @@ impl Drop for SqlitePersister {
 }
 
 impl PlatformWalletPersistence for SqlitePersister {
+    fn store_commits_inline(&self) -> bool {
+        self.config.flush_mode == FlushMode::Immediate
+    }
+
     fn persistence_capabilities(&self) -> PersistenceCapabilities {
         // Every `flush_inner` applies the complete changeset in one SQLite
         // transaction. The current schema also has lossless token balances,
-        // invitations, account pools, and deferred-contact-crypto queue rows.
+        // invitations, account pools, tracked asset locks, and
+        // deferred-contact-crypto queue rows.
         // Do NOT attest WALLET_RESTORE (and therefore not provider restore):
         // token balances and the DashPay overlay have no load readers, so a
         // full restore remains lossy. Shielded viewing keys are native when
@@ -958,7 +963,9 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::INVITATIONS)
             .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
             .union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE)
-            .union(PersistenceCapabilities::PENDING_CONTACT_CRYPTO);
+            .union(PersistenceCapabilities::PENDING_CONTACT_CRYPTO)
+            .union(PersistenceCapabilities::DPNS_NAME_STATES)
+            .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS);
         #[cfg(feature = "shielded")]
         {
             capabilities.union(PersistenceCapabilities::SHIELDED_VIEWING_KEYS)
@@ -1431,6 +1438,9 @@ fn apply_changeset_to_tx(
     }
     if let Some(invitations) = cs.invitations.as_ref() {
         schema::invitations::apply(tx, wallet_id, invitations)?;
+    }
+    if let Some(dpns_name_states) = cs.dpns_name_states.as_ref() {
+        schema::dpns_name_states::apply(tx, wallet_id, dpns_name_states)?;
     }
     if let Some(balances) = cs.token_balances.as_ref() {
         schema::token_balances::apply(tx, wallet_id, balances)?;
