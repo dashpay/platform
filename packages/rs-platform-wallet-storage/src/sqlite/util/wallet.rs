@@ -435,6 +435,16 @@ const MAX_REHYDRATION_DERIVATION_INDEX: u32 = 10_000;
 /// [`MAX_REHYDRATION_DERIVATION_INDEX`] ceiling — both worth surfacing.
 const REHYDRATION_DEEP_SCAN_WARN_INDEX: u32 = 1_000;
 
+/// Upper bound on the addresses one gap-limit refill may generate during
+/// load. A generated address costs roughly 500 bytes — an `AddressInfo`
+/// plus its three pool index entries, two of which clone the
+/// `Address` / `ScriptBuf` — so this holds a single refill near 100 MB.
+/// Legitimate refills span one gap window (tens of addresses); reaching
+/// this cap needs `highest_used` far past `highest_generated`, which
+/// `mark_used` — the only writer today — cannot produce. Defense in depth
+/// against a future upstream invariant break, not a currently reachable path.
+const MAX_REHYDRATION_GAP_REFILL: u32 = 250_000;
+
 /// Extend `account`'s address pools so every resolved address (a
 /// still-unspent UTXO address or a persisted pool used-address) is derived
 /// at its exact `(chain, index)` slot and marked used, then refill the gap
@@ -688,14 +698,41 @@ fn extend_pools_for_restored_addresses(
             let Some(key_source) = key_source.as_ref() else {
                 break;
             };
-            // TODO(recovery-mode): the second defensive site with no
-            // reachable seed from the storage layer, and the reason is this
-            // site's own: the `key_source` reached here is the one whose
-            // xpub already derived this pool, so a refill failure needs a
-            // key source that derives some indices and not others — not a
-            // state any persisted row can produce. Kept fail-closed for the
-            // same reason as `ensure_derived` above: a short window means a
-            // previously-used address can be re-issued as fresh.
+            // Bound the refill before it runs: mirror the target
+            // `maintain_gap_limit` computes internally (key-wallet rev
+            // 173ffac) — a private formula, so an upstream change would
+            // silently mis-estimate here until `AddressPool` exposes a
+            // read-only `refill_target()` (upstream work, out of scope).
+            // Saturating where upstream adds raw: over-estimating fails closed.
+            let refill_target = match pool.highest_used {
+                None => pool.gap_limit.saturating_sub(1),
+                Some(highest) => highest.saturating_add(pool.gap_limit),
+            };
+            let generated = pool.highest_generated.unwrap_or(0);
+            let implied = refill_target.saturating_sub(generated);
+            if implied > MAX_REHYDRATION_GAP_REFILL {
+                ctx.tolerate(
+                    LoadSite::RehydrationGapLimit,
+                    WalletStorageError::RehydrationDerivationFailed {
+                        stage: "maintain_gap_limit",
+                        index: None,
+                        cause: format!(
+                            "refilling to index {refill_target} from {generated} implies \
+                             {implied} new addresses, over the {MAX_REHYDRATION_GAP_REFILL} cap"
+                        ),
+                    },
+                )?;
+                warn_deferred_pool(wallet_id, &account_type, pool.pool_type);
+                break;
+            }
+
+            // TODO(recovery-mode): the `Err(e)` branch below has no reachable
+            // seed from a persisted row — the `key_source` here already derived
+            // this pool, so a refill failure needs a key source that derives
+            // some indices and not others. Kept fail-closed like
+            // `ensure_derived` above: a short window means a previously-used
+            // address can be re-issued as fresh. (The size cap above it is a
+            // live, tested guard — see MAX_REHYDRATION_GAP_REFILL.)
             if let Err(e) = pool.maintain_gap_limit(key_source) {
                 ctx.tolerate(
                     LoadSite::RehydrationGapLimit,
@@ -2331,6 +2368,157 @@ mod tests {
             wallet_info.metadata.last_applied_chain_lock.as_ref(),
             Some(&cl),
             "persisted last_applied_chain_lock must be restored onto wallet metadata"
+        );
+    }
+
+    /// A `Default` watch-only wallet with its first funds account's external
+    /// pool high-water marks overwritten (both fields are `pub` upstream), as
+    /// a pool whose persisted state implies an oversized refill would look.
+    struct GapRefillFixture {
+        wallet_info: key_wallet::wallet::managed_wallet_info::ManagedWalletInfo,
+        manifest: Vec<AccountRegistrationEntry>,
+        /// External index 0 — inside the eager window, so it marks used
+        /// without any discovery derivation and drives the mark/refill
+        /// fixpoint straight into the guard.
+        marked: key_wallet::Address,
+        generated_before: Option<u32>,
+        gap_limit: u32,
+    }
+
+    fn gap_refill_fixture(
+        seed: u8,
+        highest_used: u32,
+        highest_generated: Option<u32>,
+    ) -> GapRefillFixture {
+        use key_wallet::managed_account::address_pool::AddressPool;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
+        let wallet = Wallet::from_seed_bytes(
+            [seed; 64],
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let manifest = manifest_for(&wallet);
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
+        let marked = first_external_address(&wallet_info, &manifest);
+
+        let (generated_before, gap_limit) = {
+            let mut funding = wallet_info.accounts.all_funding_accounts_mut();
+            let account = funding.first_mut().expect("a funds account");
+            let mut pools = account.managed_account_type_mut().address_pools_mut();
+            let pool: &mut AddressPool = pools
+                .iter_mut()
+                .find(|p| p.is_external())
+                .expect("an external pool");
+            pool.highest_used = Some(highest_used);
+            if let Some(generated) = highest_generated {
+                pool.highest_generated = Some(generated);
+            }
+            (pool.highest_generated, pool.gap_limit)
+        };
+
+        GapRefillFixture {
+            wallet_info,
+            manifest,
+            marked,
+            generated_before,
+            gap_limit,
+        }
+    }
+
+    /// The first funds account's external pool.
+    fn external_pool_state(
+        wallet_info: &key_wallet::wallet::managed_wallet_info::ManagedWalletInfo,
+    ) -> Option<u32> {
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        wallet_info
+            .accounts
+            .all_funding_accounts()
+            .into_iter()
+            .next()
+            .expect("a funds account")
+            .managed_account_type()
+            .address_pools()
+            .into_iter()
+            .find(|p| p.is_external())
+            .expect("an external pool")
+            .highest_generated
+    }
+
+    fn rehydrate_fixture(
+        fixture: &mut GapRefillFixture,
+        ctx: &LoadCtx,
+    ) -> Result<(), WalletStorageError> {
+        let wallet_id = fixture.wallet_info.wallet_id;
+        let restored = std::slice::from_ref(&fixture.marked);
+        let manifest = fixture.manifest.clone();
+        let mut funding = fixture.wallet_info.accounts.all_funding_accounts_mut();
+        extend_pools_for_restored_addresses(funding[0], &manifest, restored, wallet_id, ctx)
+    }
+
+    /// A pool whose `highest_used` sits far past `highest_generated` implies a
+    /// refill of that whole span. Rehydration must reject it on arithmetic
+    /// alone rather than let `maintain_gap_limit` allocate its way to an OOM.
+    #[test]
+    fn gap_refill_over_cap_is_fatal_under_strict() {
+        let mut fixture = gap_refill_fixture(21, MAX_REHYDRATION_GAP_REFILL + 1_000, None);
+        let err = rehydrate_fixture(&mut fixture, &LoadCtx::strict())
+            .expect_err("an over-cap refill must fail a strict load");
+
+        assert!(
+            matches!(
+                err,
+                WalletStorageError::RehydrationDerivationFailed {
+                    stage: "maintain_gap_limit",
+                    index: None,
+                    ..
+                }
+            ),
+            "the cap must report the gap-limit stage: {err:?}"
+        );
+    }
+
+    /// Recovery defers the same pool instead of failing — and, the point of
+    /// the pre-flight placement, generates nothing at all on the way out.
+    #[test]
+    fn gap_refill_over_cap_is_deferred_under_recovery() {
+        let mut fixture = gap_refill_fixture(22, MAX_REHYDRATION_GAP_REFILL + 1_000, None);
+        let generated_before = fixture.generated_before;
+        let ctx = LoadCtx::recovery();
+        rehydrate_fixture(&mut fixture, &ctx).expect("recovery must defer, not fail");
+
+        let degradation = ctx.degradation();
+        assert!(degradation.degraded);
+        assert_eq!(
+            degradation.by_site.get(&LoadSite::RehydrationGapLimit),
+            Some(&1),
+            "the deferred refill must be counted at its own site: {:?}",
+            degradation.by_site
+        );
+        assert_eq!(
+            external_pool_state(&fixture.wallet_info),
+            generated_before,
+            "a rejected refill must derive nothing"
+        );
+    }
+
+    /// The cap bounds the refill's *span*, not the depth it starts from: a
+    /// legitimately deep pool that is already generated up to its used index
+    /// implies one gap window of work and must refill normally.
+    #[test]
+    fn deep_but_shallow_span_gap_refill_is_not_capped() {
+        let mut fixture = gap_refill_fixture(23, 50_000, Some(49_990));
+        let expected = 50_000 + fixture.gap_limit;
+        let ctx = LoadCtx::strict();
+        rehydrate_fixture(&mut fixture, &ctx).expect("a one-window refill must not be capped");
+
+        assert!(!ctx.degradation().degraded);
+        assert_eq!(
+            external_pool_state(&fixture.wallet_info),
+            Some(expected),
+            "the refill must reach one gap window past the used index"
         );
     }
 }
