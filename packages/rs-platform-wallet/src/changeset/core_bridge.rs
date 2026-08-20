@@ -1081,10 +1081,11 @@ fn derive_new_utxos(record: &TransactionRecord) -> Vec<Utxo> {
 /// The script is an exact reconstruction, not a guess. `InputDetail.address`
 /// is cloned from the wallet's own `Utxo.address`, which key-wallet derived
 /// from the spent output's `script_pubkey` via `Address::from_script`; that
-/// decoder accepts only canonical P2PKH/P2SH forms, so re-encoding the
-/// address reproduces the original bytes. Note the pairing is a caller
-/// convention rather than a type invariant — `Utxo::new` takes the script
-/// and the address as independent parameters and validates neither.
+/// decoder accepts canonical P2PKH, P2SH, and witness-program forms, so
+/// re-encoding the address reproduces the original bytes. Note the pairing
+/// is a caller convention rather than a type invariant — `Utxo::new` takes
+/// the script and the address as independent parameters and validates
+/// neither.
 ///
 /// Height and the confirmation flags describe the *previous* transaction and
 /// genuinely aren't recoverable here, so they stay defaulted (height 0, all
@@ -1775,6 +1776,61 @@ mod usage_delta_tests {
                 .expect("account touched via input details")
                 .external,
             Some(0)
+        );
+    }
+
+    /// `derive_spent_utxos`' script reconstruction must hold on the real
+    /// funding-then-spend path, not just on a hand-built `InputDetail`:
+    /// fund a receive address via `check_core_transaction`, spend that
+    /// UTXO, and check the derived spent UTXO's script against the
+    /// *original funding output's* script — the one `InputDetail.address`
+    /// was independently derived from via `Address::from_script`.
+    #[tokio::test]
+    async fn spent_utxo_script_matches_the_real_funding_output() {
+        let TestWalletContext {
+            mut managed_wallet,
+            mut wallet,
+            receive_address,
+            ..
+        } = TestWalletContext::new_random();
+        let funding_script = receive_address.script_pubkey();
+
+        let funding_outpoint = OutPoint {
+            txid: Txid::from_slice(&[2u8; 32]).expect("valid txid"),
+            vout: 0,
+        };
+        let fund_tx = spend_to(funding_outpoint, funding_script.clone(), 75_000);
+        let fund_result = managed_wallet
+            .check_core_transaction(&fund_tx, in_block(100_000), &mut wallet, true, true)
+            .await;
+        assert!(fund_result.is_relevant);
+
+        let spent_outpoint = OutPoint {
+            txid: fund_tx.txid(),
+            vout: 0,
+        };
+        let spend_tx = spend_to(spent_outpoint, foreign_script(), 74_000);
+        let spend_result = managed_wallet
+            .check_core_transaction(&spend_tx, in_block(100_001), &mut wallet, true, true)
+            .await;
+        assert!(spend_result.is_relevant, "spend of our UTXO must match");
+
+        let record = spend_result
+            .new_records
+            .iter()
+            .chain(spend_result.updated_records.iter())
+            .find(|r| !r.input_details.is_empty())
+            .expect("spend must produce a record carrying the spent input's details");
+
+        let spent = derive_spent_utxos(record);
+        let spent_utxo = spent
+            .iter()
+            .find(|u| u.outpoint == spent_outpoint)
+            .expect("derived spent UTXOs must include the funding outpoint");
+        assert_eq!(
+            spent_utxo.txout.script_pubkey, funding_script,
+            "the derived script must match the real funding output's script, \
+             not just round-trip through the address"
         );
     }
 }
