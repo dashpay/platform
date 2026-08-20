@@ -265,8 +265,12 @@ fun ShieldedFundScreen(
                     // Resume mode dispatches to a different FFI than a fresh
                     // shield, so resolve the whole body up front — including
                     // the outpoint parse, which must not fail after the
-                    // coordinator has already claimed the slot.
-                    val submitBody: suspend () -> Unit = if (isResume) {
+                    // coordinator has already claimed the slot. The operation
+                    // id carries the resumed lock's outpoint: resumable locks
+                    // default to the same wallet-owned shielded recipient, so
+                    // the coordinator's slot key alone cannot tell two locks
+                    // apart and would silently reuse the first controller.
+                    val (operationId, submitBody) = if (isResume) {
                         val lock = resumeLock ?: return@SubmitButton
                         val parsed = parseOutPoint(lock.outPointHex)
                         if (parsed == null) {
@@ -274,7 +278,7 @@ fun ShieldedFundScreen(
                             return@SubmitButton
                         }
                         val (txid, vout) = parsed
-                        {
+                        val body: suspend () -> Unit = {
                             m.shieldedResumeFundFromAssetLock(
                                 walletId = walletId,
                                 outPointTxid = txid,
@@ -282,15 +286,17 @@ fun ShieldedFundScreen(
                                 recipientRaw43 = recipientBytes,
                             )
                         }
+                        "resume:${lock.outPointHex}" to body
                     } else {
                         val amountDuffs = amount ?: return@SubmitButton
-                        {
+                        val body: suspend () -> Unit = {
                             m.shieldedFundFromAssetLock(
                                 walletId = walletId,
                                 recipientRaw43 = recipientBytes,
                                 amountDuffs = amountDuffs,
                             )
                         }
+                        "shield" to body
                     }
 
                     isSubmitting = true
@@ -303,6 +309,7 @@ fun ShieldedFundScreen(
                     val result = container.shieldedFundCoordinator.startFunding(
                         walletId = walletId,
                         recipientRaw43 = recipientBytes,
+                        operationId = operationId,
                         body = submitBody,
                     )
                     when (result) {
