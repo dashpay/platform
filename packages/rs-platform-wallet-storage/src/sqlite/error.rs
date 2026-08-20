@@ -444,7 +444,10 @@ pub enum WalletStorageError {
     /// good data with the tolerated view of it. Reopen with
     /// [`LoadPolicy::Strict`](crate::LoadPolicy) once the database is
     /// repaired. `operation` names the blocked entry point.
-    #[error("`{operation}` is blocked: the persister is open in recovery mode (read-only)")]
+    #[error(
+        "`{operation}` is blocked: the persister is open in recovery mode (read-only) — \
+         repair the database, then reopen it under the strict load policy to write again"
+    )]
     ReadOnlyRecoveryMode { operation: &'static str },
 
     /// A restored address could not be derived into its pool at the
@@ -492,7 +495,8 @@ pub enum WalletStorageError {
     /// rather than letting one source silently win.
     #[error(
         "used address {address} resolves to different owning accounts \
-         (core_address_pool={pool_owner}, core_utxos={utxo_owner})"
+         (core_address_pool={pool_owner}, core_utxos={utxo_owner}) — neither is trusted, so \
+         repair whichever row is wrong before loading again"
     )]
     UsedAddressOwnerConflict {
         address: String,
@@ -503,7 +507,8 @@ pub enum WalletStorageError {
     /// An identity owned by no wallet carries a registration index — a
     /// position WITHIN a wallet, so the row contradicts itself.
     #[error(
-        "unowned identity {} carries wallet registration index {identity_index}",
+        "unowned identity {} carries wallet registration index {identity_index}, a position \
+         within a wallet it belongs to none of — clear the stale index to load it strictly",
         hex::encode(identity_id)
     )]
     UnownedIdentityHasRegistrationIndex {

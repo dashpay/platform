@@ -77,6 +77,20 @@ fn sqlite_oom() -> WalletStorageError {
     ))
 }
 
+/// A blocked write is only actionable if the message names the way out of
+/// recovery mode; both stores refuse writes and both must say it.
+#[test]
+fn read_only_recovery_display_names_the_way_out() {
+    let persister = WalletStorageError::ReadOnlyRecoveryMode { operation: "store" }.to_string();
+    assert!(persister.contains("`store`"), "{persister}");
+    assert!(persister.contains("strict load policy"), "{persister}");
+
+    let kv =
+        platform_wallet_storage::KvError::ReadOnlyRecoveryMode { operation: "put" }.to_string();
+    assert!(kv.contains("`put`"), "{kv}");
+    assert!(kv.contains("strict load policy"), "{kv}");
+}
+
 /// A derivation failure is read by whoever has to rescue the wallet, so
 /// each variant's `Display` must state the consequence — an address that
 /// can be handed out again — and not just the step that failed.

@@ -110,7 +110,10 @@ pub enum KvError {
     /// A `put` / `delete` was attempted while the backing store is open
     /// read-only for recovery. Reads stay available. `operation` names the
     /// blocked entry point.
-    #[error("`{operation}` is blocked: the backing store is open in recovery mode (read-only)")]
+    #[error(
+        "`{operation}` is blocked: the backing store is open in recovery mode (read-only) — \
+         repair the database, then reopen it under the strict load policy to write again"
+    )]
     ReadOnlyRecoveryMode { operation: &'static str },
 }
 
