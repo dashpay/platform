@@ -10,7 +10,7 @@ use platform_wallet::changeset::PlatformWalletPersistence;
 use platform_wallet::wallet::platform_wallet::WalletId;
 use rusqlite::Connection;
 
-pub use platform_wallet_storage::{FlushMode, SqlitePersister, SqlitePersisterConfig};
+pub use platform_wallet_storage::{FlushMode, LoadPolicy, SqlitePersister, SqlitePersisterConfig};
 
 /// Open an empty temp directory + persister for one test. Returns the
 /// persister, the keep-alive `tempfile::TempDir`, and the DB path.
@@ -23,6 +23,24 @@ pub fn fresh_persister_with_mode(mode: FlushMode) -> (SqlitePersister, tempfile:
     let path = tmp.path().join("wallet.db");
     let cfg = SqlitePersisterConfig::new(&path).with_flush_mode(mode);
     let p = SqlitePersister::open(cfg).expect("open persister");
+    (p, tmp, path)
+}
+
+/// Seed a database through a strict persister, then reopen it in
+/// [`LoadPolicy::Recovery`].
+///
+/// The strict handle is dropped before the reopen: the process-wide
+/// open-path registry refuses a second live persister on one path.
+pub fn fresh_recovery_persister(
+    seed: impl FnOnce(&SqlitePersister),
+) -> (SqlitePersister, tempfile::TempDir, PathBuf) {
+    let tmp = secure_tempdir().expect("tempdir");
+    let path = tmp.path().join("wallet.db");
+    let strict = SqlitePersister::open(SqlitePersisterConfig::new(&path)).expect("open strict");
+    seed(&strict);
+    drop(strict);
+    let cfg = SqlitePersisterConfig::new(&path).with_load_policy(LoadPolicy::Recovery);
+    let p = SqlitePersister::open(cfg).expect("open recovery");
     (p, tmp, path)
 }
 

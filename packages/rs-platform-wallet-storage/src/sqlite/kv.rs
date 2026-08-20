@@ -122,6 +122,12 @@ impl From<WalletStorageError> for KvError {
         match err {
             WalletStorageError::LockPoisoned => KvError::LockPoisoned,
             WalletStorageError::Sqlite(e) => KvError::Sqlite(e),
+            // Mapped explicitly: the catch-all below would bury a
+            // recovery-mode refusal inside a `ToSqlConversionFailure`,
+            // where no caller would think to match on it.
+            WalletStorageError::ReadOnlyRecoveryMode { operation } => {
+                KvError::ReadOnlyRecoveryMode { operation }
+            }
             other => {
                 // `conn()` only ever yields `LockPoisoned` or the guard,
                 // so other variants are unreachable here; preserve the
@@ -170,6 +176,7 @@ impl KvStore for SqlitePersister {
     }
 
     fn put(&self, scope: &ObjectId, key: &str, value: &[u8]) -> Result<(), KvError> {
+        self.ensure_writable("kv_put").map_err(KvError::from)?;
         validate_key(key)?;
         // Cap before SQL so a `put` can't plant a row a later `get` would
         // refuse to materialise (same `MAX_VALUE_LEN` on both paths).
@@ -208,6 +215,7 @@ impl KvStore for SqlitePersister {
     }
 
     fn delete(&self, scope: &ObjectId, key: &str) -> Result<(), KvError> {
+        self.ensure_writable("kv_delete").map_err(KvError::from)?;
         validate_key(key)?;
         let sql = ScopeSql::resolve(scope);
         let conn = self.conn().map_err(KvError::from)?;

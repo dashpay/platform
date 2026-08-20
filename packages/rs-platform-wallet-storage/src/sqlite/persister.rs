@@ -16,8 +16,9 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::backup::{self, BackupKind};
 use crate::sqlite::buffer::Buffer;
-use crate::sqlite::config::{FlushMode, SqlitePersisterConfig, Synchronous};
+use crate::sqlite::config::{FlushMode, LoadPolicy, SqlitePersisterConfig, Synchronous};
 use crate::sqlite::error::{AutoBackupOperation, WalletStorageError};
+use crate::sqlite::load_ctx::LoadDegradation;
 use crate::sqlite::reports::{CommitReport, DeleteWalletReport};
 use crate::sqlite::schema;
 use crate::sqlite::util::permissions::{apply_secure_permissions, precreate_secure};
@@ -136,6 +137,9 @@ pub struct SqlitePersister {
     // the planned follow-up if read contention becomes measurable.
     conn: Arc<Mutex<Connection>>,
     buffer: Buffer,
+    /// What the most recent `load()` tolerated. Replaced per `load()`, so
+    /// a repaired database that reloads clean reports clean.
+    last_load_degradation: Mutex<LoadDegradation>,
     /// Test-only one-shot injector for `flush_inner`.
     #[cfg(any(test, feature = "__test-helpers"))]
     primed_flush_error: Mutex<Option<WalletStorageError>>,
@@ -298,6 +302,7 @@ impl SqlitePersister {
             registered_path,
             conn: Arc::new(Mutex::new(conn)),
             buffer: Buffer::new(),
+            last_load_degradation: Mutex::new(LoadDegradation::default()),
             #[cfg(any(test, feature = "__test-helpers"))]
             primed_flush_error: Mutex::new(None),
             #[cfg(any(test, feature = "__test-helpers"))]
@@ -305,8 +310,62 @@ impl SqlitePersister {
         })
     }
 
+    /// Refuse a mutating `operation` while this persister is in
+    /// [`LoadPolicy::Recovery`].
+    ///
+    /// Recovery serves a degraded projection of the persisted rows, so
+    /// every write would risk committing the tolerated view over the good
+    /// data. The exit from recovery mode is
+    /// [`restore_from`](Self::restore_from) followed by a reopen under
+    /// [`LoadPolicy::Strict`], not a write from inside it.
+    ///
+    /// # Errors
+    ///
+    /// [`WalletStorageError::ReadOnlyRecoveryMode`] naming `operation`.
+    pub(crate) fn ensure_writable(&self, operation: &'static str) -> Result<(), WalletStorageError> {
+        if self.config.load_policy == LoadPolicy::Recovery {
+            return Err(WalletStorageError::ReadOnlyRecoveryMode { operation });
+        }
+        Ok(())
+    }
+
+    /// What the most recent [`load`](PlatformWalletPersistence::load)
+    /// tolerated instead of returning as an error.
+    ///
+    /// Per-load, not cumulative: each `load()` replaces the snapshot, so a
+    /// database restored from a backup and reloaded clean reports clean.
+    /// [`load_unowned_identities`](Self::load_unowned_identities) *adds*
+    /// into the current snapshot, so its counts read as "since the last
+    /// `load()`". Reading does not clear.
+    ///
+    /// Under [`LoadPolicy::Strict`] a non-empty snapshot means only the
+    /// never-fatal sites fired — anything else would have failed the load.
+    ///
+    /// Reachable on the concrete type only: a caller holding
+    /// `Arc<dyn PlatformWalletPersistence>` cannot get here, since the
+    /// degradation surface is deliberately storage-specific rather than
+    /// part of the persistence trait.
+    pub fn last_load_degradation(&self) -> LoadDegradation {
+        self.last_load_degradation
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+    }
+
+    /// `true` when the last `load()` tolerated at least one inconsistency.
+    pub fn is_degraded(&self) -> bool {
+        self.last_load_degradation
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .degraded
+    }
+
     /// Take a manual online backup. `dest` may be a directory (auto-
     /// named `wallet-<ts>.db`) or a full file path (must not pre-exist).
+    ///
+    /// Allowed in [`LoadPolicy::Recovery`]: it only reads the source
+    /// database, and snapshotting before touching anything is the most
+    /// valuable thing a recovery-mode user can do.
     pub fn backup_to(&self, dest: &Path) -> Result<PathBuf, WalletStorageError> {
         let resolved = if dest.is_dir() {
             dest.join(backup::manual_backup_filename())
@@ -430,11 +489,15 @@ impl SqlitePersister {
 
     /// Apply retention to a directory of `wallet-*.db` (and/or
     /// `pre-*-*.db`) files.
+    ///
+    /// Blocked in [`LoadPolicy::Recovery`]: a user rescuing a damaged
+    /// database must not be shrinking their rollback set.
     pub fn prune_backups(
         &self,
         dir: &Path,
         policy: RetentionPolicy,
     ) -> Result<PruneReport, WalletStorageError> {
+        self.ensure_writable("prune_backups")?;
         backup::prune(dir, policy)
     }
 
@@ -539,6 +602,7 @@ impl SqlitePersister {
         wallet_id: WalletId,
         skip_backup: bool,
     ) -> Result<DeleteWalletReport, WalletStorageError> {
+        self.ensure_writable("delete_wallet")?;
         // Take the conn mutex first so in-process `store()` blocks;
         // cross-process peers are excluded by `BEGIN EXCLUSIVE` below.
         let mut conn = self.conn()?;
@@ -683,6 +747,10 @@ impl SqlitePersister {
     }
 
     fn commit_writes_inner(&self) -> Result<CommitReport, PersistenceError> {
+        // Before the report is built: a blocked commit is an `Err`, never a
+        // `CommitReport` a caller could mistake for "nothing to do".
+        self.ensure_writable("commit_writes")
+            .map_err(PersistenceError::from)?;
         self.ensure_connection_usable()
             .map_err(PersistenceError::from)?;
         let mut report = CommitReport {
@@ -752,6 +820,8 @@ impl SqlitePersister {
     }
 
     fn flush_inner(&self, wallet_id: &WalletId) -> Result<(), PersistenceError> {
+        self.ensure_writable("flush")
+            .map_err(PersistenceError::from)?;
         self.ensure_connection_usable()
             .map_err(PersistenceError::from)?;
         let cs = self
@@ -992,6 +1062,11 @@ impl PlatformWalletPersistence for SqlitePersister {
         wallet_id: WalletId,
         changeset: PlatformWalletChangeSet,
     ) -> Result<(), PersistenceError> {
+        // Refused at the door, ahead of `buffer.store`, so a recovery-mode
+        // changeset can never sit in the buffer waiting to leak out through
+        // some later write path.
+        self.ensure_writable("store")
+            .map_err(PersistenceError::from)?;
         self.ensure_connection_usable()
             .map_err(PersistenceError::from)?;
         self.buffer
@@ -1339,6 +1414,15 @@ fn validate_config(config: &SqlitePersisterConfig) -> Result<(), WalletStorageEr
             });
         }
         _ => {}
+    }
+    // Recovery mode is for damaged databases, and `open()` still migrates.
+    // Without a pre-migration auto-backup there is nothing to roll back to
+    // when the migration makes the damage worse, so refuse the combination
+    // instead of letting the rescue attempt burn the only copy.
+    if config.load_policy == LoadPolicy::Recovery && config.auto_backup_dir.is_none() {
+        return Err(WalletStorageError::AutoBackupDisabled {
+            operation: AutoBackupOperation::OpenMigration,
+        });
     }
     // `busy_timeout=0` makes contended writers fail-fast with BUSY;
     // warn (not reject) since a few tests legitimately want that.

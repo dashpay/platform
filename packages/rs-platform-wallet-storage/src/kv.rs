@@ -106,6 +106,12 @@ pub enum KvError {
     /// Mirrors [`crate::sqlite::error::WalletStorageError::LockPoisoned`].
     #[error("persister lock poisoned")]
     LockPoisoned,
+
+    /// A `put` / `delete` was attempted while the backing store is open
+    /// read-only for recovery. Reads stay available. `operation` names the
+    /// blocked entry point.
+    #[error("`{operation}` is blocked: the backing store is open in recovery mode (read-only)")]
+    ReadOnlyRecoveryMode { operation: &'static str },
 }
 
 /// Per-object-type key/value metadata store.
