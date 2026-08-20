@@ -601,7 +601,7 @@ impl SqlitePersister {
         if let Some(indexed) = state.wallet_identities.get(&UNOWNED_SCOPE) {
             for (identity_index, managed) in indexed {
                 ctx.tolerate(
-                    LoadSite::UnownedIdentityRegistrationIndex,
+                    LoadSite::UnownedIdentityHasRegistrationIndex,
                     WalletStorageError::UnownedIdentityHasRegistrationIndex {
                         identity_id: managed.identity.id().to_buffer(),
                         identity_index: *identity_index,

@@ -40,7 +40,7 @@ pub enum LoadSite {
     /// after its walk, so one log line can carry many counts.
     TombstonedIdentityOrphan,
     /// An identity owned by no wallet carries a registration index.
-    UnownedIdentityRegistrationIndex,
+    UnownedIdentityHasRegistrationIndex,
 }
 
 impl LoadSite {
@@ -56,7 +56,7 @@ impl LoadSite {
             Self::UnresolvedUtxoAddress => "unresolved_utxo_address",
             Self::UsedAddressOwnerConflict => "used_address_owner_conflict",
             Self::TombstonedIdentityOrphan => "tombstoned_identity_orphan",
-            Self::UnownedIdentityRegistrationIndex => "unowned_identity_registration_index",
+            Self::UnownedIdentityHasRegistrationIndex => "unowned_identity_has_registration_index",
         }
     }
 }

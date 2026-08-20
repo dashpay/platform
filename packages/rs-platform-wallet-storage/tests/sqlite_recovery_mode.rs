@@ -486,7 +486,7 @@ fn unowned_identity_with_registration_index_is_tolerated_in_recovery() {
         unowned.contains_key(&dpp::prelude::Identifier::from(identity_id)),
         "the identity must still be reachable for rescue"
     );
-    assert_only_site(&persister, LoadSite::UnownedIdentityRegistrationIndex, 1);
+    assert_only_site(&persister, LoadSite::UnownedIdentityHasRegistrationIndex, 1);
 }
 
 #[test]
@@ -513,7 +513,7 @@ fn load_unowned_identities_adds_to_the_load_snapshot_instead_of_replacing_it() {
     assert_eq!(
         degradation
             .by_site
-            .get(&LoadSite::UnownedIdentityRegistrationIndex)
+            .get(&LoadSite::UnownedIdentityHasRegistrationIndex)
             .copied(),
         Some(1),
         "the unowned read must fold in: {:?}",
