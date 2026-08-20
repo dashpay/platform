@@ -13,7 +13,7 @@ use platform_wallet::changeset::CoreChangeSet;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
-use crate::sqlite::load_ctx::LoadCtx;
+use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
 use crate::sqlite::schema::blob;
 use crate::sqlite::schema::blob::impl_persistable_blob;
 use crate::sqlite::schema::core_pool::{owning_account_for_script, OwningAccount};
@@ -28,30 +28,35 @@ fn encode_chain_lock(cl: &ChainLock) -> Result<Vec<u8>, WalletStorageError> {
 }
 
 /// Decode a `ChainLock` from `core_sync_state.last_applied_chain_lock`.
-/// Returns `None` + emits a `tracing::warn` on any decode failure so a
-/// single corrupt byte cannot prevent the wallet from loading (the next
-/// ChainLock event will repopulate the column).
-fn decode_chain_lock_soft(bytes: &[u8]) -> Option<ChainLock> {
-    match bincode::decode_from_slice::<ChainLock, _>(bytes, blob::bounded_config()) {
-        // Reject a valid-prefix + trailing-garbage payload (bincode stops
-        // after the typed length) the same way the BLOB decoders do.
-        Ok((cl, consumed)) if consumed == bytes.len() => Some(cl),
-        Ok(_) => {
-            tracing::warn!(
-                "core_sync_state.last_applied_chain_lock: trailing bytes after \
-                 ChainLock; field left None — the next ChainLock sync will repopulate"
-            );
-            None
+///
+/// Error mapping mirrors [`blob::decode`]: an over-cap payload is
+/// [`WalletStorageError::BlobTooLarge`], trailing bytes after the typed
+/// length are a `BlobDecode`, and anything else keeps the upstream bincode
+/// error as its source.
+///
+/// # Errors
+///
+/// Under [`LoadPolicy::Strict`](crate::LoadPolicy) any of the above aborts
+/// the load. Under `Recovery` they are counted and the field is left
+/// `None`, which the next ChainLock sync repopulates. `BlobTooLarge` is
+/// fatal in both — recovery tolerates inconsistent rows, not oversize
+/// allocations.
+fn decode_chain_lock(bytes: &[u8], ctx: &LoadCtx) -> Result<Option<ChainLock>, WalletStorageError> {
+    let failure = match bincode::decode_from_slice::<ChainLock, _>(bytes, blob::bounded_config()) {
+        Ok((cl, consumed)) if consumed == bytes.len() => return Ok(Some(cl)),
+        Ok(_) => WalletStorageError::blob_decode(
+            "unexpected trailing bytes in core_sync_state.last_applied_chain_lock",
+        ),
+        Err(bincode::error::DecodeError::LimitExceeded) => {
+            return Err(WalletStorageError::BlobTooLarge {
+                len_bytes: bytes.len(),
+                limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
+            })
         }
-        Err(e) => {
-            tracing::warn!(
-                error = %e,
-                "core_sync_state.last_applied_chain_lock: decode failed; \
-                 field left None — the next ChainLock sync will repopulate"
-            );
-            None
-        }
-    }
+        Err(other) => WalletStorageError::from(other),
+    };
+    ctx.tolerate(LoadSite::ChainLockBlob, failure)?;
+    Ok(None)
 }
 
 /// Block height of an encoded `last_applied_chain_lock` blob, or `None` if it
@@ -59,7 +64,7 @@ fn decode_chain_lock_soft(bytes: &[u8]) -> Option<ChainLock> {
 /// out-of-order lower-height update never regresses the finalized checkpoint.
 fn chain_lock_height(bytes: &[u8]) -> Option<u32> {
     match bincode::decode_from_slice::<ChainLock, _>(bytes, blob::bounded_config()) {
-        // Require full consumption (like `decode_chain_lock_soft`) so a corrupt
+        // Require full consumption (like `decode_chain_lock`) so a corrupt
         // stored blob can't out-rank a later valid update and stay stuck.
         Ok((cl, consumed)) if consumed == bytes.len() => Some(cl.block_height),
         _ => None,
@@ -318,7 +323,7 @@ pub fn load_state(
     conn: &Connection,
     wallet_id: &WalletId,
     network: dashcore::Network,
-    _ctx: &LoadCtx,
+    ctx: &LoadCtx,
 ) -> Result<
     (
         CoreChangeSet,
@@ -331,7 +336,6 @@ pub fn load_state(
 
     let mut transaction_heights: HashMap<dashcore::Txid, Option<u32>> = HashMap::new();
     let mut blob_backed_transaction_heights = HashSet::new();
-    let mut transaction_repairs = Vec::new();
     {
         use dashcore::hashes::Hash;
 
@@ -359,8 +363,9 @@ pub fn load_state(
                 if let Err(mismatch) =
                     ensure_transaction_record_matches_columns(&txid, height, &record)
                 {
-                    warn_transaction_record_mismatch(&txid, height, &record, &mismatch);
-                    transaction_repairs.push((txid, effective_txid, effective_height));
+                    // The blob is authoritative, so the projection keeps
+                    // using it; the typed columns are left exactly as found.
+                    ctx.tolerate(LoadSite::CoreTransactionColumnDrift, mismatch)?;
                 }
                 cs.records.push(record);
                 transaction_heights.insert(effective_txid, effective_height);
@@ -370,11 +375,6 @@ pub fn load_state(
                     .entry(effective_txid)
                     .or_insert(effective_height);
             }
-        }
-        drop(rows);
-        drop(stmt);
-        for (typed_txid, blob_txid, blob_height) in transaction_repairs {
-            repair_transaction_columns_soft(conn, wallet_id, &typed_txid, &blob_txid, blob_height);
         }
     }
 
@@ -467,10 +467,10 @@ pub fn load_state(
             cs.last_processed_height =
                 height_column_u32("core_sync_state.last_processed_height", lp)?;
             cs.synced_height = height_column_u32("core_sync_state.synced_height", sy)?;
-            // Soft-fail on a corrupt chain-lock blob — a single bad byte must
-            // not prevent loading; the next ChainLock event repopulates.
+            // Policy decides: strict aborts on a corrupt chain-lock blob,
+            // recovery leaves the field None for the next ChainLock event.
             if let Some(bytes) = cl_bytes {
-                cs.last_applied_chain_lock = decode_chain_lock_soft(&bytes);
+                cs.last_applied_chain_lock = decode_chain_lock(&bytes, ctx)?;
             }
         }
     }
@@ -553,7 +553,7 @@ pub fn get_tx_record(
     conn: &Connection,
     wallet_id: &WalletId,
     txid: &dashcore::Txid,
-    _ctx: &LoadCtx,
+    ctx: &LoadCtx,
 ) -> Result<Option<TransactionRecord>, WalletStorageError> {
     // Pre-read `length()` gate before materializing, consistent with the
     // bulk load_state path above.
@@ -575,8 +575,7 @@ pub fn get_tx_record(
     drop(rows);
     drop(stmt);
     if let Err(mismatch) = ensure_transaction_record_matches_columns(txid, height, &record) {
-        warn_transaction_record_mismatch(txid, height, &record, &mismatch);
-        repair_transaction_columns_soft(conn, wallet_id, txid, &record.txid, record.height());
+        ctx.tolerate(LoadSite::CoreTransactionColumnDrift, mismatch)?;
     }
     Ok(Some(record))
 }
@@ -597,59 +596,6 @@ fn ensure_transaction_record_matches_columns(
         });
     }
     Ok(())
-}
-
-fn warn_transaction_record_mismatch(
-    typed_txid: &dashcore::Txid,
-    typed_height: Option<u32>,
-    record: &TransactionRecord,
-    mismatch: &WalletStorageError,
-) {
-    let blob_height = record.block_info().map(|block_info| block_info.height());
-    tracing::warn!(
-        typed_txid = %typed_txid,
-        blob_txid = %record.txid,
-        typed_height = ?typed_height,
-        blob_height = ?blob_height,
-        error = %mismatch,
-        "core transaction typed columns disagree with its record; \
-         using the blob and repairing the derived columns"
-    );
-}
-
-fn repair_transaction_columns_soft(
-    conn: &Connection,
-    wallet_id: &WalletId,
-    typed_txid: &dashcore::Txid,
-    blob_txid: &dashcore::Txid,
-    blob_height: Option<u32>,
-) {
-    let result = conn.execute(
-        "UPDATE core_transactions SET txid = ?1, height = ?2 \
-         WHERE wallet_id = ?3 AND txid = ?4",
-        params![
-            AsRef::<[u8]>::as_ref(blob_txid),
-            blob_height.map(i64::from),
-            wallet_id.as_slice(),
-            AsRef::<[u8]>::as_ref(typed_txid),
-        ],
-    );
-    match result {
-        Ok(1) => {}
-        Ok(affected) => tracing::warn!(
-            typed_txid = %typed_txid,
-            blob_txid = %blob_txid,
-            affected,
-            "core transaction typed-column repair did not update one row; \
-             continuing with blob values"
-        ),
-        Err(error) => tracing::warn!(
-            typed_txid = %typed_txid,
-            blob_txid = %blob_txid,
-            error = %error,
-            "core transaction typed-column repair failed; continuing with blob values"
-        ),
-    }
 }
 
 /// Row representing one unspent UTXO. Used by tests that probe the
@@ -1151,7 +1097,7 @@ mod tests {
     }
 
     #[test]
-    fn load_state_soft_fails_and_repairs_transaction_blob_txid_mismatch() {
+    fn load_state_tolerates_transaction_blob_txid_drift_in_recovery_without_repairing() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
         let wallet_id = [0x46u8; 32];
@@ -1186,22 +1132,26 @@ mod tests {
             &conn,
             &wallet_id,
             dashcore::Network::Testnet,
-            &LoadCtx::strict(),
+            &LoadCtx::recovery(),
         )
-        .expect("a reconstructible typed txid mismatch must not abort wallet loading");
+        .expect("recovery mode must reconstruct from the authoritative blob");
         assert_eq!(state.records[0].txid, blob_txid);
-        let repaired: Vec<u8> = conn
+        let on_disk: Vec<u8> = conn
             .query_row(
                 "SELECT txid FROM core_transactions WHERE wallet_id = ?1",
                 params![wallet_id.as_slice()],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(repaired, AsRef::<[u8]>::as_ref(&blob_txid));
+        assert_eq!(
+            on_disk,
+            AsRef::<[u8]>::as_ref(&typed_txid),
+            "a read must never rewrite the row it read"
+        );
     }
 
     #[test]
-    fn load_state_blob_height_wins_when_typed_repair_collides_in_either_scan_order() {
+    fn load_state_blob_height_wins_over_drifted_typed_column_in_either_scan_order() {
         for (case, typed_byte) in [0x10, 0xF0].into_iter().enumerate() {
             let mut conn = rusqlite::Connection::open_in_memory().unwrap();
             crate::sqlite::migrations::run(&mut conn).unwrap();
@@ -1259,9 +1209,9 @@ mod tests {
                 &conn,
                 &wallet_id,
                 dashcore::Network::Testnet,
-                &LoadCtx::strict(),
+                &LoadCtx::recovery(),
             )
-            .expect("a blocked repair must still reconstruct blob-authoritative state");
+            .expect("recovery mode must still reconstruct blob-authoritative state");
             let loaded = state.new_utxos.first().expect("UTXO must load");
             assert_eq!(loaded.height, 500, "failed scan-order case {case}");
             assert!(loaded.is_confirmed);
@@ -1269,7 +1219,7 @@ mod tests {
     }
 
     #[test]
-    fn load_state_soft_fails_and_repairs_transaction_blob_height_mismatch() {
+    fn load_state_tolerates_transaction_blob_height_drift_in_recovery_without_repairing() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
         let wallet_id = [0x47u8; 32];
@@ -1310,22 +1260,26 @@ mod tests {
             &conn,
             &wallet_id,
             dashcore::Network::Testnet,
-            &LoadCtx::strict(),
+            &LoadCtx::recovery(),
         )
-        .expect("a reconstructible typed height mismatch must not abort wallet loading");
+        .expect("recovery mode must reconstruct from the authoritative blob");
         assert_eq!(state.records[0].height(), Some(500));
-        let repaired: Option<i64> = conn
+        let on_disk: Option<i64> = conn
             .query_row(
                 "SELECT height FROM core_transactions WHERE wallet_id = ?1",
                 params![wallet_id.as_slice()],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(repaired, Some(500));
+        assert_eq!(
+            on_disk,
+            Some(501),
+            "a read must never rewrite the row it read"
+        );
     }
 
     #[test]
-    fn get_tx_record_soft_fails_and_repairs_blob_txid_mismatch() {
+    fn get_tx_record_tolerates_blob_txid_drift_in_recovery_without_repairing() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
         let wallet_id = [0x4Bu8; 32];
@@ -1354,19 +1308,21 @@ mod tests {
         )
         .unwrap();
 
-        let record = get_tx_record(&conn, &wallet_id, &typed_txid, &LoadCtx::strict())
-            .expect("a reconstructible typed txid mismatch must not abort point reads")
+        let record = get_tx_record(&conn, &wallet_id, &typed_txid, &LoadCtx::recovery())
+            .expect("recovery mode must still serve the point read")
             .expect("blob-bearing row must return its record");
         assert_eq!(record.txid, blob_txid);
+        // The row was NOT repaired, so the blob txid still matches no row.
         assert!(
-            get_tx_record(&conn, &wallet_id, &blob_txid, &LoadCtx::strict())
+            get_tx_record(&conn, &wallet_id, &blob_txid, &LoadCtx::recovery())
                 .unwrap()
-                .is_some()
+                .is_none(),
+            "a read must never rewrite the row it read"
         );
     }
 
     #[test]
-    fn get_tx_record_soft_fails_and_repairs_blob_height_mismatch() {
+    fn get_tx_record_tolerates_blob_height_drift_in_recovery_without_repairing() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
         let wallet_id = [0x4Cu8; 32];
@@ -1401,18 +1357,22 @@ mod tests {
         )
         .unwrap();
 
-        let record = get_tx_record(&conn, &wallet_id, &txid, &LoadCtx::strict())
-            .expect("a reconstructible typed height mismatch must not abort point reads")
+        let record = get_tx_record(&conn, &wallet_id, &txid, &LoadCtx::recovery())
+            .expect("recovery mode must still serve the point read")
             .expect("blob-bearing row must return its record");
         assert_eq!(record.height(), Some(600));
-        let repaired: Option<i64> = conn
+        let on_disk: Option<i64> = conn
             .query_row(
                 "SELECT height FROM core_transactions WHERE wallet_id = ?1",
                 params![wallet_id.as_slice()],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(repaired, Some(600));
+        assert_eq!(
+            on_disk,
+            Some(601),
+            "a read must never rewrite the row it read"
+        );
     }
 
     /// `load_used_addresses` (the address-reuse-guard rehydration path called

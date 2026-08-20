@@ -336,7 +336,9 @@ impl SqlitePersister {
     /// tolerated instead of returning as an error.
     ///
     /// Per-load, not cumulative: each `load()` replaces the snapshot, so a
-    /// database restored from a backup and reloaded clean reports clean.
+    /// database restored from a backup and reloaded clean reports clean. A
+    /// `load()` that returns `Err` leaves it empty — the error is the
+    /// verdict there, not a partial tally.
     /// [`load_unowned_identities`](Self::load_unowned_identities) *adds*
     /// into the current snapshot, so its counts read as "since the last
     /// `load()`". Reading does not clear.
@@ -353,6 +355,15 @@ impl SqlitePersister {
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .clone()
+    }
+
+    /// Overwrite the degradation snapshot. `load()` calls this twice: once
+    /// to clear at entry, once with the finished tally.
+    fn replace_load_degradation(&self, degradation: LoadDegradation) {
+        *self
+            .last_load_degradation
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = degradation;
     }
 
     /// `true` when the last `load()` tolerated at least one inconsistency.
@@ -1161,6 +1172,9 @@ impl PlatformWalletPersistence for SqlitePersister {
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
         let conn = self.conn().map_err(PersistenceError::from)?;
         let ctx = LoadCtx::new(self.config.load_policy);
+        // Cleared up front so a failed load never leaves the previous load's
+        // snapshot behind, masquerading as this one's verdict.
+        self.replace_load_degradation(LoadDegradation::default());
         let mut state = ClientStartState::default();
 
         #[cfg(feature = "shielded")]
@@ -1365,15 +1379,19 @@ impl PlatformWalletPersistence for SqlitePersister {
         #[cfg(not(feature = "shielded"))]
         let shielded_viewing_keys_loaded = 0usize;
 
+        let degradation = ctx.degradation();
         tracing::info!(
             wallets_seen,
             addresses_loaded,
             wallets_rehydrated,
             shielded_viewing_keys_loaded,
             wallets_pending_rehydration = 0usize,
+            degraded = degradation.degraded,
+            degraded_total = degradation.total,
             unimplemented = ?LOAD_UNIMPLEMENTED,
             "load() summary"
         );
+        self.replace_load_degradation(degradation);
         Ok(state)
     }
 
