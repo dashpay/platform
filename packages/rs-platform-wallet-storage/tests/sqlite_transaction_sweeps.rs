@@ -2288,7 +2288,10 @@ fn a_repointed_tombstone_is_restamped_to_the_later_sweep() {
         "sanity: stamped at the first sweep's height"
     );
 
-    apply_heights(&mut conn, &w, 105);
+    // One block of progress — within the collection margin, so the
+    // tombstone survives to be re-pointed (through the UPDATE's re-stamp
+    // CASE) rather than collected and re-created by the insert path.
+    apply_heights(&mut conn, &w, 101);
     // The first winner is itself swept, still holding the unfunded input.
     {
         let tx = conn.transaction().unwrap();
@@ -2314,7 +2317,7 @@ fn a_repointed_tombstone_is_restamped_to_the_later_sweep() {
     }
     assert_eq!(
         utxo_row_state(&conn, &w, &p),
-        Some((true, None, Some(105))),
+        Some((true, None, Some(101))),
         "the re-pointed claim is re-stamped to the later sweep's height"
     );
 }
