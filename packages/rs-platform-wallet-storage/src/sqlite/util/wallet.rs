@@ -646,7 +646,7 @@ fn extend_pools_for_restored_addresses(
 
         // Derive up to the deepest discovered index so its address exists in
         // the real pool before we mark it used.
-        // TODO(recovery-mode): defensive site with no reachable seed from
+        // NOTE(recovery-mode): defensive site with no reachable seed from
         // the storage layer — the probe resolved this index from the same
         // xpub, so the real pool derives it too. Kept fail-closed because a
         // deferred address is an address that can be re-issued as fresh.
@@ -730,7 +730,7 @@ fn extend_pools_for_restored_addresses(
                 break;
             }
 
-            // TODO(recovery-mode): the `Err(e)` branch below has no reachable
+            // NOTE(recovery-mode): the `Err(e)` branch below has no reachable
             // seed from a persisted row — the `key_source` here already derived
             // this pool, so a refill failure needs a key source that derives
             // some indices and not others. Kept fail-closed like
