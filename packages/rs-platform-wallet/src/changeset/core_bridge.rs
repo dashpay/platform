@@ -1650,6 +1650,83 @@ mod contact_watch_only_projection_tests {
         assert_eq!(cs.records[0].direction, TransactionDirection::Outgoing);
     }
 
+    /// A cross-account spend (CoinJoin-funded send with BIP44 change)
+    /// emits one record per matched account, and the two slices DISAGREE
+    /// on the change output's role: the funding account's slice carries it
+    /// as `Sent` (its account-local view cannot attribute the sibling
+    /// account's address), the change account's slice as `Change`. The
+    /// fold seeds its output union from the FUNDING record, so keeping the
+    /// base entry on index collision let `Sent` win — and every UTXO
+    /// projection over the folded record (record_new_utxos_ffi,
+    /// derive_new_utxos) then dropped the wallet's own change while the
+    /// folded net stayed correct. 2026-08-19 device run: corrected record
+    /// rows landed, TXOs never arrived, the reconcile tripwire healed 4.
+    /// On collision the owned role must win.
+    #[tokio::test]
+    async fn fold_prefers_owned_output_role_on_index_collision() {
+        const CHANGE_BACK: u64 = FUNDING - PAID_TO_CONTACT - 227;
+        let tx = tx_with(&[
+            (&contact_address(), PAID_TO_CONTACT),
+            (&our_change_address(), CHANGE_BACK),
+        ]);
+        // Funding account's slice: knows the input; sees BOTH outputs as
+        // counterparty payments.
+        let funding_slice = record(
+            &tx,
+            AccountType::CoinJoin {
+                index: 0,
+            },
+            TransactionDirection::Outgoing,
+            vec![our_input()],
+            vec![
+                output(0, OutputRole::Sent, &contact_address(), PAID_TO_CONTACT),
+                output(1, OutputRole::Sent, &our_change_address(), CHANGE_BACK),
+            ],
+            -(FUNDING as i64),
+        );
+        // Change account's slice: no inputs of its own; owns output 1.
+        let change_slice = record(
+            &tx,
+            bip44_account_0(),
+            TransactionDirection::Incoming,
+            vec![],
+            vec![output(1, OutputRole::Change, &our_change_address(), CHANGE_BACK)],
+            CHANGE_BACK as i64,
+        );
+
+        let event = WalletEvent::BlockProcessed {
+            wallet_id: WALLET_ID,
+            height: 1_001,
+            chain_lock: None,
+            inserted: vec![funding_slice, change_slice],
+            updated: vec![],
+            matured: vec![],
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+            addresses_derived: vec![],
+        };
+        let cs = build_core_changeset(&test_manager(), &event).await;
+
+        assert_eq!(cs.records.len(), 1, "same-txid slices fold to one row");
+        let folded = &cs.records[0];
+        assert_eq!(
+            folded.net_amount,
+            CHANGE_BACK as i64 - FUNDING as i64,
+            "net is the sum of the slices"
+        );
+        let change_detail = folded
+            .output_details
+            .iter()
+            .find(|o| o.index == 1)
+            .expect("folded record keeps output 1");
+        assert_eq!(
+            change_detail.role,
+            OutputRole::Change,
+            "the owned role must win the index collision — a lingering Sent role \
+             makes every UTXO projection drop the wallet's own change"
+        );
+    }
+
     /// A contact spending an output that a *pre-fix* build already
     /// persisted must still clear that stale row, so `derive_spent_utxos`
     /// stays deliberately unfiltered. Only the transaction row and the

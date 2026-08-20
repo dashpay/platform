@@ -264,7 +264,7 @@ impl HighestUsedIndexes {
 /// position. Contact-watch-only records never reach here (filtered at
 /// projection — see `core_bridge::is_contact_watch_only`).
 pub(crate) fn fold_same_txid_records(records: &mut Vec<TransactionRecord>) {
-    use key_wallet::managed_account::transaction_record::TransactionDirection;
+    use key_wallet::managed_account::transaction_record::{OutputRole, TransactionDirection};
 
     if records.len() < 2 {
         return;
@@ -306,6 +306,34 @@ pub(crate) fn fold_same_txid_records(records: &mut Vec<TransactionRecord>) {
                 for d in &r.output_details {
                     if seen_outputs.insert(d.index) {
                         merged.output_details.push(d.clone());
+                    } else if matches!(d.role, OutputRole::Received | OutputRole::Change) {
+                        // Index collision across account slices: the slices
+                        // are only detail-disjoint for details the accounts
+                        // AGREE on. An output owned by account B appears in
+                        // funding account A's slice too — as `Sent`, because
+                        // A's account-local view cannot attribute B's
+                        // address. Keeping the base's entry on collision let
+                        // that `Sent` win, and every consumer deriving UTXOs
+                        // from the folded record (record_new_utxos_ffi,
+                        // derive_new_utxos filter on Received|Change) then
+                        // silently dropped the owned output — the store lost
+                        // the wallet's own change while the folded net_amount
+                        // stayed correct (2026-08-19 device run: records
+                        // landed corrected, TXOs never arrived, the reconcile
+                        // tripwire healed 4). Ownership is account-scoped
+                        // knowledge: exactly one slice can carry
+                        // Received/Change for an index, so on collision the
+                        // owned role wins unconditionally.
+                        if let Some(existing) =
+                            merged.output_details.iter_mut().find(|o| o.index == d.index)
+                        {
+                            if !matches!(
+                                existing.role,
+                                OutputRole::Received | OutputRole::Change
+                            ) {
+                                *existing = d.clone();
+                            }
+                        }
                     }
                 }
                 drop_idx.insert(i);
