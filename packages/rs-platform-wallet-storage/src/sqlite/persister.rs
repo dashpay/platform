@@ -351,7 +351,11 @@ impl SqlitePersister {
     /// verdict there, not a partial tally.
     /// [`load_unowned_identities`](Self::load_unowned_identities) *adds*
     /// into the current snapshot, so its counts read as "since the last
-    /// `load()`". Reading does not clear.
+    /// `load()`". Reading does not clear. The point read
+    /// [`get_core_tx_record`](PlatformWalletPersistence::get_core_tx_record)
+    /// is the exception: its tolerated drift is logged and never tallied,
+    /// because one read per transaction folded into a per-load snapshot
+    /// would grow without bound and say nothing about the load.
     ///
     /// Under [`LoadPolicy::Strict`] a non-empty snapshot means only the
     /// never-fatal sites fired — anything else would have failed the load.
@@ -1460,6 +1464,9 @@ impl PlatformWalletPersistence for SqlitePersister {
         PersistenceError,
     > {
         let conn = self.conn().map_err(PersistenceError::from)?;
+        // Tally deliberately dropped — see `last_load_degradation`. The
+        // policy still decides whether drift is fatal, and `tolerate` still
+        // logs it.
         let ctx = LoadCtx::new(self.config.load_policy);
         schema::core_state::get_tx_record(&conn, &wallet_id, txid, &ctx)
             .map_err(PersistenceError::from)
