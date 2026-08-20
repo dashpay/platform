@@ -48,7 +48,9 @@ use dash_sdk::platform::{DocumentQuery, FetchMany};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
-use crate::changeset::{DpnsNameSaleStatus, DpnsNameStateChangeSet, DpnsNameStateEntry};
+use crate::changeset::{
+    DpnsNameSaleStatus, DpnsNameStateChangeSet, DpnsNameStateEntry, PersistenceError,
+};
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::types::key_storage::DpnsNameInfo;
 
@@ -413,17 +415,24 @@ fn insert_sync_row(rows: &mut BTreeMap<Identifier, DpnsNameStateEntry>, entry: D
 /// owned/listed row that no later pass will ever revisit, because the
 /// label that triggers departure detection is gone.
 ///
-/// A persister failure degrades to `None` (logged): a marketplace
-/// departure must still be classified and reported when the local
-/// mirror cannot be read. That reproduces today's behaviour for this
-/// one name — the row is orphaned rather than the sync pass aborting —
-/// and the next departure is unaffected.
+/// This function reports the lookup, it does not decide policy. Notably
+/// it does NOT flatten `Err` into `Ok(None)`: those two outcomes call
+/// for opposite handling and the caller
+/// ([`IdentityWallet::resolve_departed_name`]) is the one placed to
+/// tell them apart.
+///
+/// - `Ok(None)` — the backend answered, and either does not index DPNS
+///   rows by label or holds no row. Nothing better is coming; proceed.
+/// - `Err(_)` — a read was attempted and failed. Whether a row exists
+///   is UNKNOWN, so treating it as `Ok(None)` would let a confirmed
+///   Platform absence remove the label with no removal delta behind it,
+///   orphaning the durable row for good.
 fn previous_document_id_for(
     persister: &crate::wallet::persister::WalletPersister,
     identity_id: &Identifier,
     label: &str,
     previous_rows: &BTreeMap<Identifier, DpnsNameStateEntry>,
-) -> Option<Identifier> {
+) -> Result<Option<Identifier>, PersistenceError> {
     let normalized_label = convert_to_homograph_safe_chars(label);
     let in_memory = previous_rows
         .values()
@@ -432,19 +441,46 @@ fn previous_document_id_for(
         })
         .map(|entry| entry.document_id);
     if in_memory.is_some() {
-        return in_memory;
+        return Ok(in_memory);
     }
-    match persister.get_dpns_name_state(identity_id, &normalized_label) {
-        Ok(row) => row.map(|entry| entry.document_id),
-        Err(error) => {
-            tracing::warn!(
-                identity = %identity_id,
-                name = label,
-                "persisted DPNS row lookup failed for a departed name; the host mirror may \
-                 keep a stale row for it until the name is re-acquired: {error}"
-            );
-            None
-        }
+    Ok(persister
+        .get_dpns_name_state(identity_id, &normalized_label)?
+        .map(|entry| entry.document_id))
+}
+
+/// The exact-match domain query behind [`IdentityWallet::dpns_name_state`]:
+/// one document, keyed on the parent domain plus the normalized label.
+///
+/// A named builder rather than an inline literal so a test can construct
+/// the identical query when priming a mock SDK — an expectation is keyed
+/// by the encoded request, so a hand-copied duplicate that drifted would
+/// silently stop matching and leave the test asserting nothing.
+fn domain_by_normalized_label_query(
+    contract: Arc<DataContract>,
+    normalized_label: String,
+) -> DocumentQuery {
+    DocumentQuery {
+        select: SelectProjection::documents(),
+        data_contract: contract,
+        document_type_name: DPNS_DOCUMENT_TYPE.to_string(),
+        where_clauses: vec![
+            WhereClause {
+                field: "normalizedParentDomainName".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text(DPNS_PARENT_DOMAIN.to_string()),
+            },
+            WhereClause {
+                field: "normalizedLabel".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text(normalized_label),
+            },
+        ],
+        group_by: vec![],
+        having: vec![],
+        order_by_clauses: vec![],
+        limit: 1,
+        offset: None,
+        start: None,
     }
 }
 
@@ -536,30 +572,11 @@ impl IdentityWallet {
                 "DPNS name must not be empty".to_string(),
             ));
         }
-        let query = DocumentQuery {
-            select: SelectProjection::documents(),
-            data_contract: contract,
-            document_type_name: DPNS_DOCUMENT_TYPE.to_string(),
-            where_clauses: vec![
-                WhereClause {
-                    field: "normalizedParentDomainName".to_string(),
-                    operator: WhereOperator::Equal,
-                    value: Value::Text(DPNS_PARENT_DOMAIN.to_string()),
-                },
-                WhereClause {
-                    field: "normalizedLabel".to_string(),
-                    operator: WhereOperator::Equal,
-                    value: Value::Text(normalized),
-                },
-            ],
-            group_by: vec![],
-            having: vec![],
-            order_by_clauses: vec![],
-            limit: 1,
-            offset: None,
-            start: None,
-        };
-        Ok(self.fetch_domain_states(query).await?.into_iter().next())
+        Ok(self
+            .fetch_domain_states(domain_by_normalized_label_query(contract, normalized))
+            .await?
+            .into_iter()
+            .next())
     }
 
     /// Fetch the domain documents associated with `identity_id` via the
@@ -1162,28 +1179,7 @@ impl IdentityWallet {
                 "identity {purchaser_identity_id} already owns DPNS name {name:?}"
             )));
         }
-        let listed_price = state.price.ok_or(PlatformWalletError::DocumentNotForSale {
-            document_id: state.document_id,
-        })?;
-        // A `$price` of 0 is not a listing this wallet will act on — see
-        // `set_dpns_name_price`, which refuses to create one. Rejected
-        // ahead of the `expected_price` comparison so the caller is told
-        // the listing itself is not purchasable rather than that the
-        // price moved. Only `== 0` is affected; every `> 0` listing
-        // follows the unchanged price-match path below.
-        if listed_price == 0 {
-            return Err(PlatformWalletError::InvalidParameter(format!(
-                "DPNS name {name:?} carries a listed price of 0 credits, which is not a \
-                 valid sale listing and will not be purchased by this wallet"
-            )));
-        }
-        if listed_price != expected_price {
-            return Err(PlatformWalletError::DocumentPriceChanged {
-                document_id: state.document_id,
-                expected: expected_price,
-                actual: listed_price,
-            });
-        }
+        preflight_purchase_price(&state, name, expected_price)?;
         // Credit pre-flight against the local balance snapshot: Platform
         // deducts the price as principal first, then the processing fee
         // must fit in the remainder. The consensus-side
@@ -1629,6 +1625,23 @@ impl IdentityWallet {
     /// a process start — from the persister, on backends that implement
     /// the lookup (SQLite today; FFI hosts have no read slot yet and
     /// still resolve nothing — see [`previous_document_id_for`]).
+    ///
+    /// A FAILED persistence read is treated like a failed network read,
+    /// not like "no row": a transient error requests a retry and leaves
+    /// the label, the pending departure and the durable row untouched.
+    /// The alternative — carrying on with no id — is the worst of the
+    /// available outcomes, because the very next step can be a confirmed
+    /// Platform absence, which removes the label with no removal delta
+    /// behind it; the label is what triggers departure detection, so
+    /// nothing ever revisits that row and the mirror keeps an
+    /// owned/listed row for a name the wallet no longer holds, forever.
+    /// Retrying costs one more pass; getting it wrong costs the row.
+    ///
+    /// A NON-transient persistence error (`Fatal` / `Constraint` /
+    /// `LockPoisoned`) cannot be retried into success, so it degrades to
+    /// `None` with a warning — exactly the pre-fallback behaviour for
+    /// that one name — rather than wedging this identity's departure
+    /// queue for the life of the process.
     async fn resolve_departed_name(
         &self,
         identity_id: &Identifier,
@@ -1637,7 +1650,39 @@ impl IdentityWallet {
         now: u64,
     ) -> ResolvedDepartedName {
         let previous_document_id =
-            previous_document_id_for(&self.persister, identity_id, label, previous_rows);
+            match previous_document_id_for(&self.persister, identity_id, label, previous_rows) {
+                Ok(document_id) => document_id,
+                Err(error) if error.is_transient() => {
+                    tracing::warn!(
+                        identity = %identity_id,
+                        name = label,
+                        "persisted DPNS row lookup failed transiently for a departed name; \
+                         retaining the departure for the next sync pass rather than \
+                         resolving it without a removal delta: {error}"
+                    );
+                    return ResolvedDepartedName {
+                        summary: DepartedDpnsName {
+                            identity_id: *identity_id,
+                            label: label.to_string(),
+                            document_id: None,
+                            status: None,
+                        },
+                        entry: None,
+                        remove_document_id: None,
+                        retry: true,
+                    };
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        identity = %identity_id,
+                        name = label,
+                        "persisted DPNS row lookup failed unrecoverably for a departed name; \
+                         the host mirror may keep a stale row for it until the name is \
+                         re-acquired: {error}"
+                    );
+                    None
+                }
+            };
         let state = match self.dpns_name_state(label).await {
             Ok(Some(state)) => state,
             Ok(None) => {
@@ -1813,6 +1858,51 @@ fn history_event_from_document(
     })
 }
 
+/// The listing-side pre-flight of [`IdentityWallet::purchase_dpns_name`],
+/// as a pure decision over the freshly fetched domain state.
+///
+/// Three typed rejections, and the ORDER is part of the contract the
+/// method's API documentation promises:
+///
+/// 1. no `$price` at all → [`PlatformWalletError::DocumentNotForSale`];
+/// 2. a `$price` of exactly 0 →
+///    [`PlatformWalletError::InvalidParameter`]. Not a listing this
+///    wallet will act on — see [`IdentityWallet::set_dpns_name_price`],
+///    which refuses to create one. Checked BEFORE the `expected_price`
+///    comparison so the caller is told the listing itself is not
+///    purchasable, rather than being told the price moved (which would
+///    invite a retry at 0 that can never succeed);
+/// 3. anything else that differs from `expected_price` →
+///    [`PlatformWalletError::DocumentPriceChanged`].
+///
+/// Only `== 0` is special-cased; every `> 0` listing takes the unchanged
+/// price-match path. Extracted from the `async` method so the ordering
+/// can be pinned directly, without a live Platform to serve the domain
+/// fetch that precedes it.
+fn preflight_purchase_price(
+    state: &DpnsDomainState,
+    name: &str,
+    expected_price: Credits,
+) -> Result<(), PlatformWalletError> {
+    let listed_price = state.price.ok_or(PlatformWalletError::DocumentNotForSale {
+        document_id: state.document_id,
+    })?;
+    if listed_price == 0 {
+        return Err(PlatformWalletError::InvalidParameter(format!(
+            "DPNS name {name:?} carries a listed price of 0 credits, which is not a \
+             valid sale listing and will not be purchased by this wallet"
+        )));
+    }
+    if listed_price != expected_price {
+        return Err(PlatformWalletError::DocumentPriceChanged {
+            document_id: state.document_id,
+            expected: expected_price,
+            actual: listed_price,
+        });
+    }
+    Ok(())
+}
+
 fn required_purchase_credits(expected_price: Credits) -> Result<Credits, PlatformWalletError> {
     expected_price
         .checked_add(DOCUMENT_TRANSITION_FEE_RESERVE_CREDITS)
@@ -1944,7 +2034,7 @@ mod tests {
     // -----------------------------------------------------------------
 
     use crate::changeset::{
-        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+        ClientStartState, PersistenceErrorKind, PlatformWalletChangeSet, PlatformWalletPersistence,
     };
     use crate::wallet::persister::WalletPersister;
     use crate::wallet::platform_wallet::WalletId;
@@ -1967,7 +2057,11 @@ mod tests {
     struct MirrorPersister {
         rows: BTreeMap<(Identifier, String), DpnsNameStateEntry>,
         lookups: std::sync::Mutex<Vec<(WalletId, Identifier, String)>>,
-        fail: bool,
+        /// `Some(kind)` makes every read fail with that retry
+        /// classification; [`Self::heal`] clears it so a later pass sees
+        /// a working backend, which is how the retry arm is proven to
+        /// actually make progress rather than merely defer forever.
+        fail: std::sync::Mutex<Option<PersistenceErrorKind>>,
     }
 
     impl MirrorPersister {
@@ -1983,16 +2077,25 @@ mod tests {
                     })
                     .collect(),
                 lookups: std::sync::Mutex::new(Vec::new()),
-                fail: false,
+                fail: std::sync::Mutex::new(None),
             }
         }
 
-        fn failing() -> Self {
-            Self {
-                rows: BTreeMap::new(),
-                lookups: std::sync::Mutex::new(Vec::new()),
-                fail: true,
-            }
+        /// Holds `rows`, but every read fails with `kind` until
+        /// [`Self::heal`] is called.
+        fn hydrated_but_failing(rows: Vec<DpnsNameStateEntry>, kind: PersistenceErrorKind) -> Self {
+            let mirror = Self::hydrated(rows);
+            *mirror.fail.lock().expect("fail switch") = Some(kind);
+            mirror
+        }
+
+        fn failing_with(kind: PersistenceErrorKind) -> Self {
+            Self::hydrated_but_failing(Vec::new(), kind)
+        }
+
+        /// The backend recovers: subsequent reads answer from `rows`.
+        fn heal(&self) {
+            *self.fail.lock().expect("fail switch") = None;
         }
 
         fn lookups(&self) -> Vec<(WalletId, Identifier, String)> {
@@ -2028,8 +2131,11 @@ mod tests {
                 *wallet_identity_id,
                 normalized_label.to_string(),
             ));
-            if self.fail {
-                return Err(PersistenceError::backend("simulated mirror read failure"));
+            if let Some(kind) = *self.fail.lock().expect("fail switch") {
+                return Err(PersistenceError::backend_with_kind(
+                    kind,
+                    "simulated mirror read failure",
+                ));
             }
             Ok(self
                 .rows
@@ -2084,7 +2190,8 @@ mod tests {
         previous_rows.insert(document_id, row);
 
         assert_eq!(
-            previous_document_id_for(&persister, &identity_id, DEPARTED_LABEL, &previous_rows),
+            previous_document_id_for(&persister, &identity_id, DEPARTED_LABEL, &previous_rows)
+                .expect("the in-memory hit must not consult the persister at all"),
             Some(document_id)
         );
         assert!(
@@ -2113,7 +2220,8 @@ mod tests {
         let previous_rows = BTreeMap::new();
 
         assert_eq!(
-            previous_document_id_for(&persister, &identity_id, DEPARTED_LABEL, &previous_rows),
+            previous_document_id_for(&persister, &identity_id, DEPARTED_LABEL, &previous_rows)
+                .expect("a healthy mirror read must succeed"),
             Some(document_id),
             "an empty in-memory snapshot must fall back to the durable mirror"
         );
@@ -2144,7 +2252,8 @@ mod tests {
         let persister = mirror_wallet_persister(Arc::clone(&mirror));
 
         assert_eq!(
-            previous_document_id_for(&persister, &identity_id, DEPARTED_LABEL, &BTreeMap::new()),
+            previous_document_id_for(&persister, &identity_id, DEPARTED_LABEL, &BTreeMap::new())
+                .expect("a healthy mirror read must succeed"),
             None
         );
         assert_eq!(
@@ -2169,28 +2278,35 @@ mod tests {
                 &Identifier::from([0x88; 32]),
                 DEPARTED_LABEL,
                 &BTreeMap::new()
-            ),
+            )
+            .expect("the Ok(None) default is not an error"),
             None
         );
     }
 
-    /// A persistence read FAILURE must not abort departure resolution:
-    /// the name still departs and is still classified, we simply lose the
-    /// removal delta for it (today's behaviour) instead of panicking or
-    /// propagating.
+    /// A persistence read FAILURE must stay distinguishable from
+    /// `Ok(None)`. `Ok(None)` means "the backend answered and has no
+    /// better id"; `Err` means "we do not know". Flattening the two here
+    /// is what let a failed read reach the departure path as a confirmed
+    /// absence — see
+    /// [`resolve_departed_name_retains_the_departure_when_the_persister_read_fails`].
     #[test]
-    fn departed_document_id_degrades_to_none_when_the_persister_errors() {
-        let mirror = Arc::new(MirrorPersister::failing());
+    fn departed_document_id_surfaces_the_error_instead_of_flattening_it_to_none() {
+        let mirror = Arc::new(MirrorPersister::failing_with(
+            PersistenceErrorKind::Transient,
+        ));
         let persister = mirror_wallet_persister(Arc::clone(&mirror));
 
-        assert_eq!(
-            previous_document_id_for(
-                &persister,
-                &Identifier::from([0x99; 32]),
-                DEPARTED_LABEL,
-                &BTreeMap::new()
-            ),
-            None
+        let error = previous_document_id_for(
+            &persister,
+            &Identifier::from([0x99; 32]),
+            DEPARTED_LABEL,
+            &BTreeMap::new(),
+        )
+        .expect_err("a failed read must not read as an empty mirror");
+        assert!(
+            error.is_transient(),
+            "the backend's retry classification must survive the hop: {error}"
         );
         assert_eq!(
             mirror.lookups().len(),
@@ -2245,16 +2361,194 @@ mod tests {
         );
     }
 
-    /// A live `IdentityWallet` over a mock SDK whose persister is
-    /// `mirror`. Mirrors `PlatformWallet::new`'s wiring; only the
-    /// persister and the SDK are substituted.
+    /// THE ROUND-3 REGRESSION for the departure path. Platform CONFIRMS
+    /// the name is gone (the mock answers the domain query with an empty
+    /// document set), which is the branch that resolves the departure,
+    /// drops the identity's label, and emits the removal delta. When the
+    /// persistence lookup for the `document_id` FAILED rather than
+    /// answering "no row", the old code could not tell the two apart:
+    /// resolution carried on with no id, the label — the only trigger
+    /// for future departure detection — was removed, and the durable row
+    /// was orphaned for good.
+    ///
+    /// The first assertion block establishes that this mock really does
+    /// take the confirmed-absent branch, so the retention assertion that
+    /// follows cannot pass by accident.
+    #[tokio::test]
+    async fn resolve_departed_name_retains_the_departure_when_the_persistence_read_fails() {
+        let document_id = Identifier::from([0xA1; 32]);
+        let identity_id = Identifier::from([0xA2; 32]);
+
+        // Control: healthy mirror, Platform confirms absence. The
+        // departure RESOLVES and carries its removal delta.
+        let healthy = Arc::new(MirrorPersister::hydrated(vec![mirrored_row(
+            document_id,
+            identity_id,
+        )]));
+        let control = mirror_backed_identity_wallet_with_sdk(
+            Arc::clone(&healthy),
+            sdk_with_absent_dpns_domain(DEPARTED_LABEL).await,
+        );
+        let resolved = control
+            .resolve_departed_name(&identity_id, DEPARTED_LABEL, &BTreeMap::new(), 1_000)
+            .await;
+        assert!(
+            !resolved.retry,
+            "test precondition: with the mock answering 'no such document', the \
+             departure must take the confirmed-absent branch, not a retry arm"
+        );
+        assert_eq!(
+            resolved.remove_document_id,
+            Some(document_id),
+            "test precondition: the confirmed-absent branch emits the removal delta"
+        );
+
+        // Same Platform answer, but the mirror read fails transiently.
+        // The departure must be RETAINED instead of resolved: `retry`
+        // makes the sync loop push it back on the queue and break before
+        // it can call `remove_dpns_label`, so the label, the queue entry
+        // and the durable row all survive to the next pass.
+        let failing = Arc::new(MirrorPersister::hydrated_but_failing(
+            vec![mirrored_row(document_id, identity_id)],
+            PersistenceErrorKind::Transient,
+        ));
+        let wallet = mirror_backed_identity_wallet_with_sdk(
+            Arc::clone(&failing),
+            sdk_with_absent_dpns_domain(DEPARTED_LABEL).await,
+        );
+        let retained = wallet
+            .resolve_departed_name(&identity_id, DEPARTED_LABEL, &BTreeMap::new(), 1_000)
+            .await;
+        assert!(
+            retained.retry,
+            "a failed persistence read must retain the departure for the next pass"
+        );
+        assert_eq!(
+            retained.remove_document_id, None,
+            "nothing may be removed while the document id is UNKNOWN"
+        );
+        assert!(retained.entry.is_none());
+        assert_eq!(retained.summary.status, None);
+        assert_eq!(
+            retained.summary.document_id, None,
+            "the summary must not claim an id the lookup never produced"
+        );
+
+        // Next pass, backend recovered: the retained departure resolves
+        // normally and finally carries its removal delta.
+        failing.heal();
+        let healed = wallet
+            .resolve_departed_name(&identity_id, DEPARTED_LABEL, &BTreeMap::new(), 1_000)
+            .await;
+        assert!(
+            !healed.retry,
+            "a healed backend must let the departure resolve"
+        );
+        assert_eq!(healed.remove_document_id, Some(document_id));
+        assert_eq!(healed.summary.document_id, Some(document_id));
+    }
+
+    /// A NON-retryable persistence error (`Fatal` / `Constraint` /
+    /// `LockPoisoned`) cannot be retried into success, so retaining it
+    /// would wedge this identity's whole departure queue for the life of
+    /// the process — the loop breaks on `retry`. It degrades to the
+    /// pre-fallback behaviour for this one name instead: the departure
+    /// still resolves, just without a removal delta.
+    #[tokio::test]
+    async fn resolve_departed_name_degrades_when_the_persistence_error_is_not_retryable() {
+        let identity_id = Identifier::from([0xA3; 32]);
+        let mirror = Arc::new(MirrorPersister::hydrated_but_failing(
+            vec![mirrored_row(Identifier::from([0xA4; 32]), identity_id)],
+            PersistenceErrorKind::Fatal,
+        ));
+        let wallet = mirror_backed_identity_wallet_with_sdk(
+            Arc::clone(&mirror),
+            sdk_with_absent_dpns_domain(DEPARTED_LABEL).await,
+        );
+
+        let resolved = wallet
+            .resolve_departed_name(&identity_id, DEPARTED_LABEL, &BTreeMap::new(), 1_000)
+            .await;
+
+        assert!(
+            !resolved.retry,
+            "an unrecoverable read must not park the departure queue forever"
+        );
+        assert_eq!(resolved.remove_document_id, None);
+        assert_eq!(resolved.summary.document_id, None);
+    }
+
+    /// A live `IdentityWallet` over a bare mock SDK (no expectations, so
+    /// every network read fails) whose persister is `mirror`.
     fn mirror_backed_identity_wallet(mirror: Arc<MirrorPersister>) -> IdentityWallet {
+        mirror_backed_identity_wallet_with_sdk(
+            mirror,
+            Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk")),
+        )
+    }
+
+    /// A mock SDK primed so the departed-name domain lookup for `label`
+    /// answers "no such document" — Platform CONFIRMING the name is
+    /// gone, which is the branch that resolves a departure and emits its
+    /// removal delta. Without this the mock has no expectations, every
+    /// fetch errors, and resolution can only ever take its retry arm —
+    /// which would make a "retained on persistence failure" assertion
+    /// vacuous, since the network failure alone already retains.
+    async fn sdk_with_absent_dpns_domain(label: &str) -> Arc<dash_sdk::Sdk> {
+        sdk_answering_dpns_domain_query(label, dash_sdk::query_types::Documents::new()).await
+    }
+
+    /// A mock SDK primed to answer the DPNS contract fetch and the
+    /// exact-match domain query for `label` with `documents`.
+    async fn sdk_answering_dpns_domain_query(
+        label: &str,
+        documents: dash_sdk::query_types::Documents,
+    ) -> Arc<dash_sdk::Sdk> {
+        // Pin the protocol version. Expectations are keyed by the ENCODED
+        // request, and an unpinned SDK seeds at the network minimum and
+        // ratchets up on the first response it sees — so the contract
+        // fetch would silently re-encode every later query into a
+        // different version than the one these expectations were
+        // registered against, and none of them would match.
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(dpp::version::PlatformVersion::latest())
+            .build()
+            .expect("mock sdk");
+        let contract = dpp::system_data_contracts::load_system_data_contract(
+            dpp::data_contracts::SystemDataContract::DPNS,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .expect("bundled DPNS contract");
+        sdk.mock()
+            .expect_fetch(dpns_contract_id(), Some(contract.clone()))
+            .await
+            .expect("DPNS contract expectation");
+        let query = domain_by_normalized_label_query(
+            Arc::new(contract),
+            convert_to_homograph_safe_chars(dpns_label(label)),
+        );
+        sdk.mock()
+            .expect_fetch_many::<Identifier, Document, _, dash_sdk::query_types::Documents>(
+                query,
+                Some(documents),
+            )
+            .await
+            .expect("domain-document expectation");
+        Arc::new(sdk)
+    }
+
+    /// A live `IdentityWallet` over `sdk` whose persister is `mirror`.
+    /// Mirrors `PlatformWallet::new`'s wiring; only the persister and the
+    /// SDK are substituted.
+    fn mirror_backed_identity_wallet_with_sdk(
+        mirror: Arc<MirrorPersister>,
+        sdk: Arc<dash_sdk::Sdk>,
+    ) -> IdentityWallet {
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
         use key_wallet::Network;
         use key_wallet_manager::WalletManager;
         use tokio::sync::RwLock;
 
-        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let mut wm = WalletManager::<crate::wallet::platform_wallet::PlatformWalletInfo>::new(
             Network::Testnet,
         );
@@ -2291,8 +2585,178 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Zero-price listing guard
+    // Zero-price guards (listing side and purchase side)
     // -----------------------------------------------------------------
+
+    /// A DPNS `domain` document for [`DEPARTED_LABEL`] owned by `owner`,
+    /// carrying `price` as `$price` when listed. Only the fields
+    /// [`DpnsDomainState::from_document`] reads are populated.
+    fn listed_domain_document(
+        document_id: Identifier,
+        owner: Identifier,
+        price: Option<Credits>,
+    ) -> Document {
+        let mut properties = BTreeMap::new();
+        properties.insert("label".to_string(), Value::Text(DEPARTED_LABEL.to_string()));
+        properties.insert(
+            "normalizedLabel".to_string(),
+            Value::Text(convert_to_homograph_safe_chars(DEPARTED_LABEL)),
+        );
+        properties.insert(
+            "normalizedParentDomainName".to_string(),
+            Value::Text(DPNS_PARENT_DOMAIN.to_string()),
+        );
+        if let Some(price) = price {
+            properties.insert(PRICE.to_string(), Value::U64(price));
+        }
+        Document::V0(dpp::document::DocumentV0 {
+            id: document_id,
+            owner_id: owner,
+            properties,
+            revision: Some(1),
+            created_at: Some(1_700_000_000_000),
+            ..Default::default()
+        })
+    }
+
+    /// A wallet whose Platform answers the domain query for
+    /// [`DEPARTED_LABEL`] with a single document listed at `price`.
+    async fn wallet_seeing_listing(
+        document_id: Identifier,
+        owner: Identifier,
+        price: Option<Credits>,
+    ) -> IdentityWallet {
+        let mut documents = dash_sdk::query_types::Documents::new();
+        documents.insert(
+            document_id,
+            Some(listed_domain_document(document_id, owner, price)),
+        );
+        mirror_backed_identity_wallet_with_sdk(
+            Arc::new(MirrorPersister::hydrated(Vec::new())),
+            sdk_answering_dpns_domain_query(DEPARTED_LABEL, documents).await,
+        )
+    }
+
+    /// The purchase pre-flight's rejection ORDER, as a pure decision.
+    /// `$price` absent outranks everything; a `$price` of 0 is rejected
+    /// as an invalid listing BEFORE the `expected_price` comparison, so
+    /// the caller is told the listing is not purchasable rather than
+    /// that the price moved.
+    #[test]
+    fn purchase_preflight_rejects_a_zero_price_ahead_of_the_price_comparison() {
+        let document_id = Identifier::from([0xB0; 32]);
+        let owner = Identifier::from([0xB9; 32]);
+        let state = |price: Option<Credits>| {
+            DpnsDomainState::from_document(&listed_domain_document(document_id, owner, price))
+                .expect("fixture document must decode")
+        };
+
+        assert!(matches!(
+            preflight_purchase_price(&state(None), DEPARTED_LABEL, 5_000),
+            Err(PlatformWalletError::DocumentNotForSale { document_id: got }) if got == document_id
+        ));
+
+        match preflight_purchase_price(&state(Some(0)), DEPARTED_LABEL, 5_000) {
+            Err(PlatformWalletError::InvalidParameter(message)) => assert!(
+                message.contains("0 credits"),
+                "the rejection must name the zero price: {message}"
+            ),
+            other => panic!(
+                "a zero listing must be InvalidParameter, never DocumentPriceChanged: {other:?}"
+            ),
+        }
+
+        assert!(matches!(
+            preflight_purchase_price(&state(Some(7_000)), DEPARTED_LABEL, 5_000),
+            Err(PlatformWalletError::DocumentPriceChanged {
+                expected: 5_000,
+                actual: 7_000,
+                ..
+            })
+        ));
+        assert!(preflight_purchase_price(&state(Some(5_000)), DEPARTED_LABEL, 5_000).is_ok());
+    }
+
+    /// End-to-end through the real `purchase_dpns_name` against a mock
+    /// Platform that serves a domain document listed at `$price = 0`.
+    ///
+    /// The purchaser is deliberately NOT one of this wallet's identities,
+    /// so every step after the price pre-flight — the credit check, the
+    /// signing-key selection, the broadcast — fails with a DIFFERENT,
+    /// clearly identifiable error. A typed `InvalidParameter` back from
+    /// the call is therefore proof that the guard fired and that nothing
+    /// downstream of it ran.
+    #[tokio::test]
+    async fn purchase_dpns_name_rejects_a_zero_listed_price_before_signing() {
+        let document_id = Identifier::from([0xB1; 32]);
+        let seller = Identifier::from([0xB2; 32]);
+        let purchaser = Identifier::from([0xB3; 32]);
+        let wallet = wallet_seeing_listing(document_id, seller, Some(0)).await;
+        let signer = simple_signer::signer::SimpleSigner::default();
+
+        // Non-zero expectation: without the zero guard this is a plain
+        // 0-vs-5000 mismatch and would surface as DocumentPriceChanged,
+        // inviting a "refresh the price and retry" loop that can never
+        // succeed.
+        match wallet
+            .purchase_dpns_name(&purchaser, DEPARTED_LABEL, 5_000, &signer)
+            .await
+            .expect_err("a zero-credit listing must not be purchasable")
+        {
+            PlatformWalletError::InvalidParameter(message) => assert!(
+                message.contains("0 credits"),
+                "the rejection must name the zero price: {message}"
+            ),
+            other => panic!(
+                "expected the zero-price guard to reject ahead of the price \
+                 comparison and ahead of signing, got {other:?}"
+            ),
+        }
+
+        // Zero expectation: the prices MATCH, so without the guard the
+        // pre-flight would pass and the call would run on into signing
+        // and broadcast. Reaching an identity/signing error here instead
+        // of InvalidParameter is exactly the regression.
+        match wallet
+            .purchase_dpns_name(&purchaser, DEPARTED_LABEL, 0, &signer)
+            .await
+            .expect_err("a zero-credit listing must not be purchasable at any price")
+        {
+            PlatformWalletError::InvalidParameter(message) => assert!(
+                message.contains("0 credits"),
+                "the rejection must name the zero price: {message}"
+            ),
+            other => {
+                panic!("a matching zero price must still be refused BEFORE signing, got {other:?}")
+            }
+        }
+    }
+
+    /// The positive control: a non-zero listing that matches
+    /// `expected_price` passes the price pre-flight and fails at the NEXT
+    /// step (the buyer is not a wallet identity, so the credit check
+    /// cannot find its balance). Pins that the guard rejects only zero,
+    /// and that the pre-flight really does sit ahead of the credit /
+    /// signing stages rather than replacing them.
+    #[tokio::test]
+    async fn purchase_dpns_name_lets_a_matching_non_zero_price_past_the_guard() {
+        let document_id = Identifier::from([0xB4; 32]);
+        let seller = Identifier::from([0xB5; 32]);
+        let purchaser = Identifier::from([0xB6; 32]);
+        let wallet = wallet_seeing_listing(document_id, seller, Some(5_000)).await;
+        let signer = simple_signer::signer::SimpleSigner::default();
+
+        let error = wallet
+            .purchase_dpns_name(&purchaser, DEPARTED_LABEL, 5_000, &signer)
+            .await
+            .expect_err("the buyer is not a wallet identity, so the credit check must fail");
+
+        assert!(
+            matches!(error, PlatformWalletError::IdentityNotFound(id) if id == purchaser),
+            "a matching non-zero price must pass the price pre-flight and fail at the \
+             credit check: {error:?}"
+        );
+    }
 
     /// A zero-credit listing is refused BEFORE any network work, so the
     /// mock SDK (which has no expectations and would fail every fetch)
