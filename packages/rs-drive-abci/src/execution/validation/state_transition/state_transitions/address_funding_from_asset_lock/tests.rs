@@ -3202,11 +3202,15 @@ mod tests {
 
         /// Wallet-side Core→Platform funding reserve (credits) — mirrors
         /// `CoreToPlatformAmountPolicy.fundingReserveDuffs × 1000` in the
-        /// iOS wallet. A wallet-CHOSEN conservative reserve (equal to the
-        /// admission floor), NOT a proven fee maximum — these tests pin its
-        /// adequacy against real execution so a protocol change that grows
-        /// the fee past it fails loudly here instead of shrinking user
-        /// topups silently.
+        /// iOS wallet. A TEMPORARY, wallet-CHOSEN conservative reserve
+        /// (equal to the admission floor), NOT a proven fee maximum. The
+        /// wallet credits `lock − actual fee`; the tests referencing this
+        /// constant are regression SAMPLES confirming the reserve covers
+        /// the fee for the current protocol versions and these specific
+        /// scenarios — they do NOT prove an upper bound of the fee on
+        /// arbitrary live GroveDB state. Their value is tripwiring: a
+        /// protocol change that grows the fee past the reserve fails
+        /// loudly here instead of shrinking user topups silently.
         const WALLET_FUNDING_RESERVE_CREDITS: u64 = 56_000_000;
 
         /// Highest `user_fee_increase` the SDK's stuck-ST retry loop can
@@ -3379,14 +3383,16 @@ mod tests {
         }
 
         /// The wallet's minimal lock (admission floor + 1 duff) must be
-        /// ACCEPTED end-to-end. This exercises both admission gates the
-        /// wallet's lock sizing has to clear: the `calculate_min_required_fee`
-        /// floor in `transform_into_action` AND the average-case estimated
-        /// fee that `validate_fees_of_event` requires the fee strategy to
-        /// cover before execution. If this ever fails with
-        /// `AddressesNotEnoughFundsError`, the estimated gate has outgrown
-        /// the floor and the wallet-side funding reserve must be raised —
-        /// the error carries the required balance to size it by.
+        /// ACCEPTED end-to-end ON THIS GENESIS FIXTURE. This exercises both
+        /// admission gates the wallet's lock sizing has to clear: the
+        /// `calculate_min_required_fee` floor in `transform_into_action`
+        /// AND the average-case estimated fee that `validate_fees_of_event`
+        /// requires the fee strategy to cover before execution. A
+        /// regression sample, not a proof for arbitrary live state. If this
+        /// ever fails with `AddressesNotEnoughFundsError`, the estimated
+        /// gate has outgrown the floor and the wallet-side funding reserve
+        /// must be raised — the error carries the required balance to size
+        /// it by.
         #[tokio::test]
         async fn test_minimal_admissible_lock_is_accepted() {
             let platform_config = PlatformConfig {
@@ -3451,10 +3457,12 @@ mod tests {
             );
         }
 
-        /// The wallet funding reserve must cover the actual charged fee
-        /// even at the HIGHEST `user_fee_increase` the SDK's stuck-ST
-        /// retry loop can reach — otherwise a retried topup could eat into
-        /// the user's confirmed amount via `ReduceOutput(0)`.
+        /// Regression sample on GENESIS state: the wallet funding reserve
+        /// covers the actual charged fee at the HIGHEST `user_fee_increase`
+        /// the SDK's stuck-ST retry loop can reach — otherwise a retried
+        /// topup could eat into the user's confirmed amount via
+        /// `ReduceOutput(0)`. Confirms this scenario for the current
+        /// protocol version; not a proof for arbitrary live state.
         #[tokio::test]
         async fn test_max_retry_fee_increase_stays_within_the_wallet_reserve() {
             let platform_config = PlatformConfig {
@@ -3520,6 +3528,129 @@ mod tests {
                 "actual fee {actual} at max retry fee increase exceeds the wallet \
                  funding reserve {WALLET_FUNDING_RESERVE_CREDITS}: raise the reserve \
                  (CoreToPlatformAmountPolicy.fundingReserveDuffs)"
+            );
+        }
+
+        /// Regression sample on state POPULATED by prior committed
+        /// fundings (deeper address/balance trees than genesis), at the
+        /// max retry `user_fee_increase`. Still a sample for one concrete
+        /// state shape and the current protocol version — not a proof
+        /// that the reserve bounds the fee on arbitrary live state.
+        #[tokio::test]
+        async fn test_max_retry_fee_increase_within_reserve_on_state_populated_by_prior_fundings() {
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let signer = TestAddressSigner::new();
+            let platform_state = platform.state.load();
+
+            // Populate: eight committed fundings to distinct remainder
+            // addresses, deepening the trees the probe's ops are metered
+            // against.
+            for i in 0..8u64 {
+                let mut rng = StdRng::seed_from_u64(710 + i);
+                let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+
+                let mut outputs = BTreeMap::new();
+                outputs.insert(create_platform_address(10 + u8::try_from(i).unwrap()), None);
+
+                let state_transition = create_signed_address_funding_from_asset_lock_transition(
+                    asset_lock_proof,
+                    &asset_lock_pk,
+                    &signer,
+                    BTreeMap::new(),
+                    outputs,
+                    vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+                )
+                .await;
+
+                let result = state_transition
+                    .serialize_to_bytes()
+                    .expect("should serialize");
+
+                let transaction = platform.drive.grove.start_transaction();
+                let processing_result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &[result],
+                        &platform_state,
+                        &BlockInfo::default(),
+                        &transaction,
+                        PlatformVersion::latest(),
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+                );
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit");
+            }
+
+            // Probe on the populated state at the max retry fee increase.
+            let mut rng = StdRng::seed_from_u64(720);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+
+            let mut outputs = BTreeMap::new();
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
+
+            let state_transition =
+                create_signed_address_funding_from_asset_lock_transition_with_fee_increase(
+                    asset_lock_proof,
+                    &asset_lock_pk,
+                    &signer,
+                    BTreeMap::new(),
+                    outputs,
+                    vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+                    MAX_RETRY_USER_FEE_INCREASE,
+                )
+                .await;
+
+            let result = state_transition
+                .serialize_to_bytes()
+                .expect("should serialize");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    PlatformVersion::latest(),
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            let fee_result = assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. }] =>
+                    fee_result.clone()
+            );
+            let actual = fee_result.total_base_fee();
+            assert!(
+                actual <= WALLET_FUNDING_RESERVE_CREDITS,
+                "actual fee {actual} on populated state at max retry fee increase \
+                 exceeds the wallet funding reserve {WALLET_FUNDING_RESERVE_CREDITS}: \
+                 raise the reserve (CoreToPlatformAmountPolicy.fundingReserveDuffs)"
             );
         }
 
