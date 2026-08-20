@@ -546,6 +546,111 @@ fn unimplemented_rows_are_counted_without_setting_degraded() {
     assert_eq!(degradation.total, 0);
 }
 
+/// The point read `get_core_tx_record` tolerates drift without tallying it
+/// — one context per transaction folded into a per-load snapshot would grow
+/// without bound. Pinned so the limitation stays a decision instead of
+/// becoming a regression someone "fixes" in either direction.
+#[test]
+fn get_core_tx_record_drift_leaves_the_load_snapshot_alone() {
+    let wallet = wid(0x2E);
+    let (persister, _tmp, _path) =
+        fresh_recovery_persister(|strict| seed_drifted_transaction(strict, &wallet));
+
+    persister
+        .get_core_tx_record(wallet, &drifted_txid())
+        .expect("recovery must serve the point read")
+        .expect("blob-bearing row must return its record");
+    assert!(
+        !persister.is_degraded(),
+        "a point read must not degrade a persister that never loaded: {:?}",
+        persister.last_load_degradation()
+    );
+
+    persister.load().expect("recovery load");
+    let after_load = persister.last_load_degradation();
+    persister
+        .get_core_tx_record(wallet, &drifted_txid())
+        .expect("recovery must serve the point read")
+        .expect("blob-bearing row must return its record");
+    assert_eq!(
+        persister.last_load_degradation(),
+        after_load,
+        "a point read must not move the snapshot the last load left"
+    );
+}
+
+/// The snapshot rustdoc promises "a database restored from a backup and
+/// reloaded clean reports clean". Loading the same dirty database twice
+/// cannot tell replacement apart from "keep whichever was worse"; only the
+/// dirty → repaired transition can.
+#[test]
+fn a_repaired_database_reloads_clean() {
+    let wallet = wid(0x2F);
+    let (persister, _tmp, _path) =
+        fresh_recovery_persister(|strict| seed_corrupt_chain_lock(strict, &wallet));
+
+    persister.load().expect("first recovery load");
+    assert_only_site(&persister, LoadSite::ChainLockBlob, 1);
+
+    {
+        let conn = persister.lock_conn_for_test();
+        conn.execute(
+            "UPDATE core_sync_state SET last_applied_chain_lock = NULL WHERE wallet_id = ?1",
+            params![wallet.as_slice()],
+        )
+        .expect("repair the undecodable chain lock");
+    }
+
+    persister.load().expect("reload after repair");
+    let degradation = persister.last_load_degradation();
+    assert!(
+        !persister.is_degraded(),
+        "a repaired database must report clean: {degradation:?}"
+    );
+    assert!(degradation.by_site.is_empty());
+    assert_eq!(degradation.total, 0);
+}
+
+/// A load that returns `Err` leaves the snapshot empty — the error is the
+/// verdict, not a partial tally. `BlobTooLarge` is the one inconsistency
+/// recovery mode still refuses (an allocation guard cannot be waived), so
+/// it is what proves the sites tolerated on the way there are discarded.
+#[test]
+fn a_fatal_blob_in_recovery_discards_the_sites_tolerated_before_it() {
+    // `load()` walks wallets in `ORDER BY wallet_id`, so the tolerable
+    // wallet is reached first and its site is counted before the fatal one.
+    let tolerated = wid(0x01);
+    let fatal = wid(0xF0);
+    let (persister, _tmp, _path) = fresh_recovery_persister(|strict| {
+        seed_corrupt_chain_lock(strict, &tolerated);
+        seed_corrupt_chain_lock(strict, &fatal);
+        let conn = strict.lock_conn_for_test();
+        conn.execute(
+            "UPDATE core_sync_state SET last_applied_chain_lock = ?1 WHERE wallet_id = ?2",
+            params![
+                vec![0u8; platform_wallet_storage::SIZE_LIMIT_BYTES + 1].as_slice(),
+                fatal.as_slice()
+            ],
+        )
+        .expect("plant an oversize chain lock");
+    });
+
+    let err = typed(
+        persister
+            .load()
+            .expect_err("an oversize blob stays fatal in recovery mode"),
+    );
+    assert!(
+        matches!(err, WalletStorageError::BlobTooLarge { .. }),
+        "expected BlobTooLarge, got {err:?}"
+    );
+    assert_eq!(
+        persister.last_load_degradation(),
+        platform_wallet_storage::LoadDegradation::default(),
+        "a failed load must leave no partial tally behind"
+    );
+}
+
 // ── flag semantics ──────────────────────────────────────────────────────
 
 #[test]
