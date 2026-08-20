@@ -556,8 +556,7 @@ fn tc9_tombstoned_identity_orphan_rows_load_only_in_recovery() {
             .by_site
             .get(&platform_wallet_storage::LoadSite::TombstonedIdentityOrphan)
             .copied(),
-        // One per affected collection: the leftover key row and the
-        // leftover established-contact row.
+        // One per leftover row: the key row and the established-contact row.
         Some(2),
         "both leftover collections must be counted"
     );
@@ -571,6 +570,63 @@ fn tc9_tombstoned_identity_orphan_rows_load_only_in_recovery() {
     assert!(
         !present,
         "tombstoned identity must be absent from both buckets"
+    );
+}
+
+/// Several leftover rows of one tombstoned owner in one collection must
+/// count several times: every other `LoadSite` counts occurrences, so a
+/// rescue operator reading `by_site` would otherwise be unable to tell
+/// three lost keys from three lost collections.
+#[test]
+fn tombstoned_identity_orphan_rows_are_counted_per_row() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xCA);
+    ensure_wallet_meta(&persister, &w);
+    let id = Identifier::from([0x9A; 32]);
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                identities: Some(id_changeset([wallet_identity_entry(id, w, 0)])),
+                identity_keys: Some(keys_changeset([
+                    key_entry(id, 0, 0x91, SecurityLevel::HIGH),
+                    key_entry(id, 1, 0x92, SecurityLevel::HIGH),
+                    key_entry(id, 2, 0x93, SecurityLevel::HIGH),
+                ])),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    // Tombstone the owner; its three key rows are left behind.
+    let mut removed = IdentityChangeSet::default();
+    removed.removed.insert(id);
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                identities: Some(removed),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let recovery = platform_wallet_storage::SqlitePersister::open(
+        platform_wallet_storage::SqlitePersisterConfig::new(&path)
+            .with_load_policy(platform_wallet_storage::LoadPolicy::Recovery),
+    )
+    .expect("reopen in recovery mode");
+    recovery
+        .load()
+        .expect("recovery must complete the load despite orphan rows");
+    assert_eq!(
+        recovery
+            .last_load_degradation()
+            .by_site
+            .get(&platform_wallet_storage::LoadSite::TombstonedIdentityOrphan)
+            .copied(),
+        Some(3),
+        "each leftover key row must be counted"
     );
 }
 

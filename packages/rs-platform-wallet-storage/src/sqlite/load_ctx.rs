@@ -36,6 +36,8 @@ pub enum LoadSite {
     /// One used address resolves to two different owning accounts.
     UsedAddressOwnerConflict,
     /// An `identity_keys` / `contacts` row's owner identity is tombstoned.
+    /// Counted per row, though `route_by_owner` decides once per collection
+    /// after its walk, so one log line can carry many counts.
     TombstonedIdentityOrphan,
     /// An identity owned by no wallet carries a registration index.
     UnownedIdentityRegistrationIndex,
@@ -77,7 +79,9 @@ pub struct LoadDegradation {
     pub degraded: bool,
     /// Sum of `by_site`'s values.
     pub total: u32,
-    /// Per-site tolerated counts. Absent sites had nothing to tolerate.
+    /// Per-site tolerated counts, one per occurrence — a row, an entry, a
+    /// blob — never one per decision the reader took. Absent sites had
+    /// nothing to tolerate.
     pub by_site: BTreeMap<LoadSite, u32>,
     /// Rows present in tables `load()` has no reader for. Informational:
     /// the data is intact, merely not rehydrated, so it never sets
@@ -133,12 +137,27 @@ impl LoadCtx {
         site: LoadSite,
         err: WalletStorageError,
     ) -> Result<(), WalletStorageError> {
+        self.tolerate_many(site, 1, err)
+    }
+
+    /// [`tolerate`](Self::tolerate) for `occurrences` incidents at once.
+    ///
+    /// For the walks that count as they go and decide afterwards, so one
+    /// log record covers a whole collection while `by_site` still counts
+    /// occurrences like every other site.
+    pub(crate) fn tolerate_many(
+        &self,
+        site: LoadSite,
+        occurrences: u32,
+        err: WalletStorageError,
+    ) -> Result<(), WalletStorageError> {
         if self.policy == LoadPolicy::Strict {
             return Err(err);
         }
-        self.count(site);
+        self.count(site, occurrences);
         tracing::warn!(
             site = site.as_str(),
+            occurrences,
             error_kind = err.error_kind_str(),
             error = %err,
             "recovery mode: tolerating a persisted inconsistency instead of failing the load"
@@ -151,7 +170,7 @@ impl LoadCtx {
     /// For sites whose signal cannot distinguish corruption from a healthy
     /// wallet, so failing the load would brick legitimate wallets.
     pub(crate) fn note_degraded(&self, site: LoadSite, cause: &dyn Display) {
-        self.count(site);
+        self.count(site, 1);
         tracing::warn!(
             site = site.as_str(),
             cause = %cause,
@@ -177,10 +196,10 @@ impl LoadCtx {
         }
     }
 
-    fn count(&self, site: LoadSite) {
+    fn count(&self, site: LoadSite, occurrences: u32) {
         let mut counts = self.counts.borrow_mut();
         let slot = counts.entry(site).or_insert(0);
-        *slot = slot.saturating_add(1);
+        *slot = slot.saturating_add(occurrences);
     }
 }
 
@@ -218,6 +237,23 @@ mod tests {
         assert!(snapshot.degraded);
         assert_eq!(snapshot.total, 2);
         assert_eq!(snapshot.by_site.get(&LoadSite::ChainLockBlob), Some(&2));
+    }
+
+    #[test]
+    fn tolerate_many_counts_every_occurrence_from_one_record() {
+        let ctx = LoadCtx::recovery();
+        ctx.tolerate_many(
+            LoadSite::TombstonedIdentityOrphan,
+            5,
+            WalletStorageError::blob_decode("five leftover rows"),
+        )
+        .expect("recovery must tolerate");
+        let snapshot = ctx.degradation();
+        assert_eq!(snapshot.total, 5);
+        assert_eq!(
+            snapshot.by_site.get(&LoadSite::TombstonedIdentityOrphan),
+            Some(&5)
+        );
     }
 
     #[test]

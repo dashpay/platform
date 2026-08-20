@@ -447,8 +447,9 @@ pub fn merge_contacts_and_keys(
 /// An entry whose owner is loaded is applied. An entry whose owner is
 /// tombstoned is counted and, if the policy allows it, skipped — decided
 /// once after the walk rather than per entry, so a wallet with thousands of
-/// leftovers produces one log line, not thousands. Any other missing owner
-/// is fatal in both policies.
+/// leftovers produces one log line, not thousands, while the per-site tally
+/// still counts every skipped row. Any other missing owner is fatal in both
+/// policies.
 fn route_by_owner<T>(
     entries: impl IntoIterator<Item = (Identifier, T)>,
     by_id: &mut HashMap<Identifier, &mut ManagedIdentity>,
@@ -474,8 +475,12 @@ fn route_by_owner<T>(
         }
     }
     if let Some(owner) = first_skipped_owner {
-        ctx.tolerate(
+        // Saturating, not fallible: a tally must never fail a load it is
+        // only describing.
+        let skipped = u32::try_from(skipped).unwrap_or(u32::MAX);
+        ctx.tolerate_many(
             LoadSite::TombstonedIdentityOrphan,
+            skipped,
             WalletStorageError::OrphanedIdentityEntry {
                 owner: owner.to_buffer(),
             },
