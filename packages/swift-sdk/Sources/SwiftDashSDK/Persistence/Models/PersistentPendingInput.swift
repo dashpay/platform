@@ -93,6 +93,24 @@ public final class PersistentPendingInput {
     /// existing rows migrate as ordinary pending entries.
     public var isSweptTombstone: Bool = false
 
+    /// Creation stamp of a swept tombstone: the wallet's `syncedHeight` at
+    /// the round that flagged (or re-pointed) this row. A tombstone whose
+    /// outpoint is a foreign input of a swept incoming payment never
+    /// drains — no funding TXO ever arrives — so without a bound it is
+    /// permanent junk an attacker grows one row per input by repeatedly
+    /// double-spending payments at this wallet. The changeset-header
+    /// collector (`collectFinalizedSweptTombstones`) deletes tombstones
+    /// once `syncedHeight` clears this stamp by the sweep margin — the
+    /// storage mirror of key-wallet's `prune_finalized_observed_spends`
+    /// doctrine; a genuine claim drains into its TXO on funding arrival
+    /// and leaves the collectible set with the row. `nil` means "flagged
+    /// before this property existed, or with no synced height on record"
+    /// — the collector back-fills it with the current height rather than
+    /// guessing, so such rows wait a full margin from first sight.
+    /// Optional, so existing stores lightweight-migrate with the rows
+    /// reading unstamped.
+    public var heldSinceHeight: UInt32?
+
     public init(
         outpoint: Data,
         inputIndex: UInt32,

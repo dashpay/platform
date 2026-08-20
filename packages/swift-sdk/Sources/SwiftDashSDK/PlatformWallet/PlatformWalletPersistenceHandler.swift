@@ -924,6 +924,29 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 wallet.lastUpdated = Date()
             }
 
+            // Bounded tombstone lifetime (the SwiftData mirror of the SQLite
+            // store's `collect_finalized_tombstones`): once the synced
+            // height clears a swept tombstone's stamp by the margin, the
+            // row has provably never drained — a genuine claim's rows are
+            // deleted by the drain in `upsertUtxo` when its funding TXO
+            // lands — so what remains is junk from foreign inputs of swept
+            // incoming payments, previously permanent and attacker-growable.
+            // Gated on a chainlock having been applied at some point,
+            // mirroring upstream's "no-op until a chainlock has been
+            // applied"; the chainlock's own height is bincode-opaque on
+            // this side of the FFI, so the boundary is the synced height
+            // alone — the winner's finality never depended on it (a sweep
+            // only fires for a chainlocked or InstantSend-locked winner),
+            // and synced height is the half of the upstream boundary that
+            // certifies filter coverage.
+            if cs.has_chain, cs.chain.has_synced_height, cs.chain.synced_height > 0,
+               wallet.lastAppliedChainLockBytes?.isEmpty == false {
+                collectFinalizedSweptTombstones(
+                    walletId: walletId,
+                    syncedHeight: cs.chain.synced_height
+                )
+            }
+
             // Balance delta — Rust still emits per-round deltas, but the
             // PersistentWallet `balance*` fields they used to update were
             // removed (canonical source is now the in-memory account
@@ -952,6 +975,61 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
             // No save() — bracketed by changesetBegin/End.
             return true
+        }
+    }
+
+    /// Blocks the synced height must clear past a swept tombstone's
+    /// `heldSinceHeight` stamp before `collectFinalizedSweptTombstones`
+    /// deletes it. Mirrors the SQLite store's `TOMBSTONE_COLLECT_MARGIN`:
+    /// the stamp is taken when the sweep is observed — on the InstantSend
+    /// path before the winner mines, customarily in the very next block —
+    /// so the margin's first block covers the winner's own confirmation
+    /// and the second is slack. Past the margin, convergence carries the
+    /// claim instead: BIP158 filters match input prevout scripts, so any
+    /// delivery path that ever classifies the funding output also delivers
+    /// the winner's spend.
+    private static let sweptTombstoneCollectMargin: UInt32 = 2
+
+    /// Delete this wallet's swept tombstones whose stamp `syncedHeight`
+    /// has cleared by [`sweptTombstoneCollectMargin`], back-filling
+    /// unstamped rows (written before `heldSinceHeight` existed, or while
+    /// no height was on record) with the current height so they wait a
+    /// full margin from first sight. See the property doc on
+    /// `PersistentPendingInput.heldSinceHeight` for why the bound exists.
+    ///
+    /// Housekeeping, not correctness: a pass that cannot run self-heals on
+    /// the next height-carrying round, so a fetch failure logs and returns
+    /// instead of failing the round the way the sweep path must.
+    private func collectFinalizedSweptTombstones(walletId: Data, syncedHeight: UInt32) {
+        var descriptor = FetchDescriptor<PersistentPendingInput>(
+            predicate: #Predicate { $0.walletId == walletId }
+        )
+        // Same pending-changes + in-memory-filter pattern as the sweep
+        // path's tombstone scan: rows tombstoned earlier in this round
+        // exist only as staged state, and `isSweptTombstone` is mutable, so
+        // a store-side predicate on it would test stale saved values.
+        descriptor.includePendingChanges = true
+        let rows: [PersistentPendingInput]
+        do {
+            rows = try backgroundContext.fetch(descriptor)
+        } catch {
+            print(
+                "⚠️ collectFinalizedSweptTombstones: scan failed: "
+                    + "\(error.localizedDescription); skipping this pass"
+            )
+            return
+        }
+        let cut = syncedHeight > Self.sweptTombstoneCollectMargin
+            ? syncedHeight - Self.sweptTombstoneCollectMargin
+            : nil
+        for pending in rows where pending.isSweptTombstone && !pending.isDeleted {
+            guard let stamp = pending.heldSinceHeight else {
+                pending.heldSinceHeight = syncedHeight
+                continue
+            }
+            if let cut, stamp <= cut {
+                backgroundContext.delete(pending)
+            }
         }
     }
 
@@ -989,8 +1067,15 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 )
                 return false
             }
-            guard wallet != nil else { return true }
+            guard let wallet else { return true }
             guard count > 0, let sweepsPtr = sweeps else { return true }
+
+            // Creation stamp for any tombstone this round flags or
+            // re-points: the wallet's best-known synced height, `nil`
+            // while none has been recorded (the collector back-fills
+            // rather than guesses). `collectFinalizedSweptTombstones`
+            // measures the tombstone's bounded lifetime from this.
+            let tombstoneStamp: UInt32? = wallet.syncedHeight > 0 ? wallet.syncedHeight : nil
 
             // The funding txids this round removes, across every batch —
             // the same changeset-wide set the SQLite co-swept rule keys
@@ -1099,7 +1184,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                             released: released,
                             coSwept: coSwept,
                             row: row,
-                            priorTombstones: tombstonesBySpender[txid] ?? []
+                            priorTombstones: tombstonesBySpender[txid] ?? [],
+                            stamp: tombstoneStamp
                         )
                     }
                 }
@@ -1283,7 +1369,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         released: Set<Data>,
         coSwept: Set<Data>,
         row: PersistentTransaction?,
-        priorTombstones: [PersistentPendingInput]
+        priorTombstones: [PersistentPendingInput],
+        stamp: UInt32?
     ) {
         if let row {
             // The global half, done every time this function runs regardless
@@ -1353,6 +1440,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 pending.spendingTransaction = nil
                 pending.spendingTxid = supersededBy
                 pending.isSweptTombstone = true
+                pending.heldSinceHeight = stamp
             }
 
             // Whatever is still attached to `row` after the scoping above
@@ -1411,7 +1499,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             {
                 backgroundContext.delete(pending)
             } else {
+                // Re-pointed to a new winner ⇒ re-stamped: the claim now
+                // belongs to a winner whose confirmation is measured from
+                // this round, not the original sweep's.
                 pending.spendingTxid = supersededBy
+                pending.heldSinceHeight = stamp ?? pending.heldSinceHeight
             }
         }
     }
