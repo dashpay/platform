@@ -1368,10 +1368,75 @@ mod tests {
         );
     }
 
+    /// Two unroutable owners are two incidents. Every existing test at this
+    /// site seeds exactly one address, which cannot tell "count the rows"
+    /// apart from "count the times the reader decided to tolerate them" —
+    /// and a rescue operator sizing the damage needs the former.
+    #[test]
+    fn rehydration_orphaned_used_address_owners_are_counted_per_address() {
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+        use key_wallet::Address;
+        use std::collections::HashMap;
+
+        let wallet = Wallet::from_seed_bytes(
+            [14u8; 64],
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let manifest = manifest_for(&wallet);
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
+
+        let orphan_owner = OwningAccount {
+            account_type: "provider_platform".to_string(),
+            account_index: 0,
+            user_identity_id: [0u8; 32],
+            friend_identity_id: [0u8; 32],
+        };
+        let mut used: HashMap<Address, Option<OwningAccount>> = HashMap::new();
+        for index in 0..2 {
+            used.insert(
+                external_address_at(&wallet_info, &manifest, index),
+                Some(orphan_owner.clone()),
+            );
+        }
+
+        let core = platform_wallet::changeset::CoreChangeSet {
+            last_processed_height: Some(1),
+            synced_height: Some(1),
+            ..Default::default()
+        };
+        let ctx = LoadCtx::strict();
+        apply_persisted_core_state(
+            &mut wallet_info,
+            &manifest,
+            &core,
+            &Default::default(),
+            &used,
+            &ctx,
+        )
+        .expect("unroutable owners must never brick a strict load");
+
+        assert_eq!(
+            ctx.degradation().by_site.get(&LoadSite::OrphanedUtxoOwner),
+            Some(&2),
+            "both unroutable addresses must be counted"
+        );
+    }
+
     /// External index-0 address of the wallet's first funds account.
     fn first_external_address(
         wallet_info: &key_wallet::wallet::managed_wallet_info::ManagedWalletInfo,
         manifest: &[AccountRegistrationEntry],
+    ) -> key_wallet::Address {
+        external_address_at(wallet_info, manifest, 0)
+    }
+
+    /// External address at `index` of the wallet's first funds account.
+    fn external_address_at(
+        wallet_info: &key_wallet::wallet::managed_wallet_info::ManagedWalletInfo,
+        manifest: &[AccountRegistrationEntry],
+        index: u32,
     ) -> key_wallet::Address {
         use key_wallet::bip32::DerivationPath;
         use key_wallet::gap_limit::DEFAULT_EXTERNAL_GAP_LIMIT;
@@ -1397,9 +1462,9 @@ mod tests {
             DEFAULT_EXTERNAL_GAP_LIMIT,
             Network::Testnet,
         );
-        pool.generate_addresses(1, &KeySource::Public(xpub), true)
+        pool.generate_addresses(index + 1, &KeySource::Public(xpub), true)
             .unwrap();
-        pool.address_at_index(0).unwrap()
+        pool.address_at_index(index).unwrap()
     }
 
     /// A UTXO whose address is not derivable from this account's

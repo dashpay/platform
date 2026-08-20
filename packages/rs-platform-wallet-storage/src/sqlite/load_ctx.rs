@@ -30,8 +30,10 @@ pub enum LoadSite {
     /// Rehydration's gap-limit refill failed for an address pool.
     RehydrationGapLimit,
     /// A restored UTXO or used address names an account this wallet lacks.
+    /// Counted per address, though one record covers a whole account's.
     OrphanedUtxoOwner,
     /// A restored address did not resolve against its account's xpub.
+    /// Counted per address, though one record covers a whole account's.
     UnresolvedUtxoAddress,
     /// One used address resolves to two different owning accounts.
     UsedAddressOwnerConflict,
@@ -210,9 +212,15 @@ impl LoadCtx {
     /// For sites whose signal cannot distinguish corruption from a healthy
     /// wallet, so failing the load would brick legitimate wallets.
     /// `coords` and `cause` land as fields of one record, so nothing has to
-    /// be joined against a neighbouring line to know where it happened.
+    /// be joined against a neighbouring line to know where it happened, and
+    /// `coords.affected` is what the site counts — one incident covering
+    /// nine hundred addresses is nine hundred, like every other site.
     pub(crate) fn note_degraded(&self, site: LoadSite, coords: SiteCoords<'_>, cause: &str) {
-        self.count(site, 1);
+        // Floored at one: a caller that reports nothing affected still met
+        // an inconsistency, and a zero would leave a site keyed with no
+        // count behind it.
+        let occurrences = u32::try_from(coords.affected).unwrap_or(u32::MAX).max(1);
+        self.count(site, occurrences);
         tracing::warn!(
             site = site.as_str(),
             wallet_id = %hex::encode(coords.wallet_id),
@@ -292,6 +300,26 @@ mod tests {
         assert_eq!(
             snapshot.by_site.get(&LoadSite::TombstonedIdentityOrphan),
             Some(&5)
+        );
+    }
+
+    #[test]
+    fn note_degraded_counts_every_affected_row() {
+        let ctx = LoadCtx::strict();
+        ctx.note_degraded(
+            LoadSite::UnresolvedUtxoAddress,
+            SiteCoords {
+                wallet_id: [7u8; 32],
+                account_type: &"Standard[0]",
+                affected: 900,
+            },
+            "nine hundred addresses did not resolve",
+        );
+        assert_eq!(
+            ctx.degradation()
+                .by_site
+                .get(&LoadSite::UnresolvedUtxoAddress),
+            Some(&900)
         );
     }
 
