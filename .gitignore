@@ -102,6 +102,3 @@ __pycache__/
 
 # Security audit reports (local-only, not committed)
 audits/
-
-# Review scratch (grumpy-review / triage output, local-only)
-.review-*/
