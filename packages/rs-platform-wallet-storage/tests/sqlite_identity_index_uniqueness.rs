@@ -115,6 +115,22 @@ fn row_tombstoned(p: &SqlitePersister, id: &Identifier) -> Option<bool> {
     .map(|t| t != 0)
 }
 
+/// Claim a slot by writing an `identities` row straight to the DB —
+/// stands in for a cross-process peer (a sibling `SqlitePersister` on
+/// the same file) taking the slot after a changeset was already
+/// buffered against a free one. That is the only way disk state moves
+/// under a buffered changeset now that in-process stores check the
+/// buffer too.
+fn peer_claims_slot(p: &SqlitePersister, wallet_id: &WalletId, id: &Identifier, index: u32) {
+    let conn = p.lock_conn_for_test();
+    conn.execute(
+        "INSERT INTO identities (identity_id, wallet_id, wallet_index, entry_blob, tombstoned) \
+         VALUES (?1, ?2, ?3, X'00', 0)",
+        params![id.as_slice(), wallet_id.as_slice(), i64::from(index)],
+    )
+    .expect("peer claims slot");
+}
+
 fn assert_index_conflict(err: &PersistenceError) {
     let typed = typed(err);
     assert!(
@@ -377,38 +393,87 @@ fn walletless_identity_without_an_index_is_accepted() {
     assert_eq!(row_tombstoned(&p, &iid(0x01)), Some(false));
 }
 
-/// Two stores that are each valid against a clean disk still merge into
-/// one contradictory changeset in the buffer. The flush applies the
-/// merged result, so the check runs there too — otherwise manual mode
-/// writes the duplicate the store-time check exists to prevent.
+/// A store checks disk and buffer as they are at that instant. A
+/// cross-process peer can claim the slot afterwards, so the flush
+/// re-runs the check against what is actually about to land —
+/// otherwise manual mode writes the duplicate the store-time check
+/// exists to prevent.
 #[test]
-fn manual_flush_rejects_a_duplicate_assembled_by_the_buffer() {
+fn flush_rejects_a_duplicate_that_a_peer_created_under_the_buffer() {
     let (p, _tmp, _path) = fresh_persister_with_mode(FlushMode::Manual);
     let w = wid(0xB7);
     ensure_wallet_meta(&p, &w);
-    p.store(w, identity_cs([identity_entry(0x01, Some(1))], []))
-        .expect("valid against a clean disk");
     p.store(w, identity_cs([identity_entry(0x02, Some(1))], []))
-        .expect("also valid against a clean disk — nothing is flushed yet");
+        .expect("valid against a clean disk");
+    peer_claims_slot(&p, &w, &iid(0x01), 1);
 
-    let err = p
-        .flush(w)
-        .expect_err("the merged changeset is contradictory");
+    let err = p.flush(w).expect_err("the slot is no longer free");
 
     assert_index_conflict(&err);
     assert_eq!(
         live_occupant(&p, &w, 1),
-        None,
-        "the whole transaction rolls back — no half-applied slot"
+        Some([0x01; 32]),
+        "the whole transaction rolls back — the peer's row stands"
     );
-    assert_eq!(row_tombstoned(&p, &iid(0x01)), None);
     assert_eq!(row_tombstoned(&p, &iid(0x02)), None);
 
     // A fatal flush failure drops that wallet's buffer rather than
     // restoring an unflushable changeset, so the retry is a no-op
     // instead of the same failure forever.
     p.flush(w).expect("the poisoned changeset is not retried");
-    assert_eq!(live_occupant(&p, &w, 1), None);
+    assert_eq!(live_occupant(&p, &w, 1), Some([0x01; 32]));
+}
+
+/// The slot check runs against the buffer as well as the disk, and both
+/// run inside the buffer's own critical section. A second claimant is
+/// therefore refused at store time — while the error can still be
+/// attributed to the caller that caused it — instead of merging into a
+/// contradictory changeset the flush later drops whole.
+#[test]
+fn a_slot_held_by_a_buffered_write_refuses_a_second_claimant() {
+    let (p, _tmp, _path) = fresh_persister_with_mode(FlushMode::Manual);
+    let w = wid(0xB8);
+    ensure_wallet_meta(&p, &w);
+    p.store(w, identity_cs([identity_entry(0x01, Some(1))], []))
+        .expect("first claim on a free slot");
+
+    let err = p
+        .store(w, identity_cs([identity_entry(0x02, Some(1))], []))
+        .expect_err("the slot is held by a buffered write");
+
+    assert_index_conflict(&err);
+    p.flush(w)
+        .expect("the buffered changeset is still flushable");
+    assert_eq!(
+        live_occupant(&p, &w, 1),
+        Some([0x01; 32]),
+        "the first caller's write is untouched by the rejection"
+    );
+    assert_eq!(
+        row_tombstoned(&p, &iid(0x02)),
+        None,
+        "the rejected changeset never reached the buffer"
+    );
+}
+
+/// A buffered removal frees the slot it names: the check reads the
+/// merged view exactly as the flush will apply it, and `apply` inserts
+/// before it tombstones. Reclaiming the slot in a later store is
+/// legitimate reuse, not a collision.
+#[test]
+fn a_buffered_removal_frees_its_slot_for_a_later_store() {
+    let (p, _tmp, _path) = fresh_persister_with_mode(FlushMode::Manual);
+    let w = wid(0xB9);
+    ensure_wallet_meta(&p, &w);
+    p.store(w, identity_cs([identity_entry(0x01, Some(1))], []))
+        .expect("first claim on a free slot");
+
+    p.store(w, identity_cs([identity_entry(0x02, Some(1))], [iid(0x01)]))
+        .expect("the occupant is removed by the same buffered changeset");
+
+    p.flush(w).expect("the merged changeset is consistent");
+    assert_eq!(live_occupant(&p, &w, 1), Some([0x02; 32]));
+    assert_eq!(row_tombstoned(&p, &iid(0x01)), Some(true));
 }
 
 /// One wallet's rejected flush is one wallet's problem: `commit_writes`
@@ -421,10 +486,9 @@ fn flush_rejection_leaves_other_wallets_untouched() {
     let healthy = wid(0xD7);
     ensure_wallet_meta(&p, &poisoned);
     ensure_wallet_meta(&p, &healthy);
-    p.store(poisoned, identity_cs([identity_entry(0x01, Some(1))], []))
-        .expect("store");
     p.store(poisoned, identity_cs([identity_entry(0x02, Some(1))], []))
         .expect("store");
+    peer_claims_slot(&p, &poisoned, &iid(0x01), 1);
     p.store(healthy, identity_cs([identity_entry(0x11, Some(1))], []))
         .expect("store");
 
@@ -444,7 +508,7 @@ fn flush_rejection_leaves_other_wallets_untouched() {
         Some([0x11; 32]),
         "the neighbour's write is not collateral"
     );
-    assert_eq!(live_occupant(&p, &poisoned, 1), None);
+    assert_eq!(live_occupant(&p, &poisoned, 1), Some([0x01; 32]));
 }
 
 /// Pending writes that can never be persisted must not make a wallet
@@ -457,16 +521,19 @@ fn delete_wallet_proceeds_despite_unpersistable_pending_writes() {
     ensure_wallet_meta(&p, &w);
     p.store(w, identity_cs([identity_entry(0x01, Some(1))], []))
         .expect("store");
-    p.store(w, identity_cs([identity_entry(0x02, Some(1))], []))
-        .expect("store");
+    peer_claims_slot(&p, &w, &iid(0x02), 1);
 
     let report = p
         .delete_wallet_skip_backup(w)
-        .expect("a contradictory buffer must not block the delete");
+        .expect("an unflushable buffer must not block the delete");
 
     assert_eq!(report.wallet_id, w);
     assert_eq!(row_tombstoned(&p, &iid(0x01)), None);
-    assert_eq!(row_tombstoned(&p, &iid(0x02)), None);
+    assert_eq!(
+        row_tombstoned(&p, &iid(0x02)),
+        None,
+        "the peer's row went with the wallet's cascade"
+    );
     let conn = p.lock_conn_for_test();
     let wallets: i64 = conn
         .query_row(

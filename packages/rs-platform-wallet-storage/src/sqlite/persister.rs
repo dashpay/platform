@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use rusqlite::{Connection, OptionalExtension};
 
 use platform_wallet::changeset::{
-    ClientStartState, Merge, PersistenceCapabilities, PersistenceError, PlatformWalletChangeSet,
-    PlatformWalletPersistence,
+    ClientStartState, IdentityChangeSet, Merge, PersistenceCapabilities, PersistenceError,
+    PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 
@@ -644,6 +644,13 @@ impl SqlitePersister {
     }
 
     fn flush_inner(&self, wallet_id: &WalletId) -> Result<(), PersistenceError> {
+        // Hold the connection across the take, the write AND the
+        // restore-on-failure. In between, the changeset is in neither
+        // the buffer nor the database, and a `store` probing that window
+        // would read a free slot that is not free. Taking the connection
+        // first denies it the window: `store` needs the same lock to
+        // check an identity write.
+        let mut conn = self.conn().map_err(PersistenceError::from)?;
         let cs = self
             .buffer
             .take_for_flush(wallet_id)
@@ -657,25 +664,10 @@ impl SqlitePersister {
             return self.handle_flush_error(wallet_id, cs, injected);
         }
 
-        match self.write_changeset_in_one_tx(wallet_id, &cs) {
+        match write_changeset_in_one_tx(&mut conn, wallet_id, &cs) {
             Ok(()) => Ok(()),
             Err(e) => self.handle_flush_error(wallet_id, cs, e),
         }
-    }
-
-    /// Apply every populated sub-changeset under one transaction and
-    /// commit. Returned `Err` is the per-area / commit failure verbatim
-    /// — classification + buffer restore happen one level up.
-    fn write_changeset_in_one_tx(
-        &self,
-        wallet_id: &WalletId,
-        cs: &PlatformWalletChangeSet,
-    ) -> Result<(), WalletStorageError> {
-        let mut conn = self.conn()?;
-        let tx = conn.transaction()?;
-        apply_changeset_to_tx(&tx, wallet_id, cs)?;
-        tx.commit()?;
-        Ok(())
     }
 
     /// Classify the failure: transient errors restore the buffer and
@@ -898,8 +890,9 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// [`WalletStorageError::IdentityIndexConflict`] /
     /// [`WalletStorageError::WalletlessIdentityIndex`] (kind
     /// `Constraint`) when the identities sub-changeset would put two
-    /// identities in one wallet's derivation slot. The changeset is
-    /// rejected whole and never reaches the buffer.
+    /// identities in one wallet's derivation slot — whether the sitting
+    /// occupant is on disk or still buffered. The changeset is rejected
+    /// whole and never reaches the buffer.
     fn store(
         &self,
         wallet_id: WalletId,
@@ -909,14 +902,29 @@ impl PlatformWalletPersistence for SqlitePersister {
         // buffer: the error then names the write that caused it, and a
         // changeset another caller staged for the same wallet cannot be
         // dropped as collateral of this one's rejection.
-        if let Some(identities) = changeset.identities.as_ref() {
+        //
+        // The check runs against the merged view — buffered plus
+        // incoming, exactly what a flush would write — from inside the
+        // buffer's critical section, with the connection held. Two
+        // callers racing the same slot are therefore serialized: the
+        // second one sees the first as the occupant and is refused here
+        // rather than merging into a contradictory changeset that the
+        // flush drops whole.
+        if changeset.identities.is_some() {
             let conn = self.conn().map_err(PersistenceError::from)?;
-            schema::identities::check_index_conflicts(&conn, &wallet_id, identities)
+            self.buffer
+                .store_checked(wallet_id, changeset, |buffered, incoming| {
+                    let Some(merged) = merged_identities(buffered, incoming) else {
+                        return Ok(());
+                    };
+                    schema::identities::check_index_conflicts(&conn, &wallet_id, &merged)
+                })
+                .map_err(PersistenceError::from)?;
+        } else {
+            self.buffer
+                .store(wallet_id, changeset)
                 .map_err(PersistenceError::from)?;
         }
-        self.buffer
-            .store(wallet_id, changeset)
-            .map_err(PersistenceError::from)?;
         match self.config.flush_mode {
             FlushMode::Immediate => self.flush_inner(&wallet_id),
             FlushMode::Manual => Ok(()),
@@ -1118,6 +1126,40 @@ fn apply_pragmas(
         u64::try_from(config.busy_timeout.as_millis()).unwrap_or(i64::MAX as u64),
     )?;
     conn.pragma_update(None, "busy_timeout", ms)?;
+    Ok(())
+}
+
+/// The identity view a flush would write once `incoming` merges into
+/// `buffered` — the state the slot check has to judge.
+///
+/// Built with the same `Merge` impl the buffer uses, so the check sees
+/// what `apply` will see and not an approximation of it. `None` when
+/// `incoming` carries no identities.
+fn merged_identities(
+    buffered: Option<&PlatformWalletChangeSet>,
+    incoming: &PlatformWalletChangeSet,
+) -> Option<IdentityChangeSet> {
+    let incoming = incoming.identities.clone()?;
+    let Some(mut merged) = buffered.and_then(|cs| cs.identities.clone()) else {
+        return Some(incoming);
+    };
+    merged.merge(incoming);
+    Some(merged)
+}
+
+/// Apply every populated sub-changeset under one transaction and
+/// commit. Returned `Err` is the per-area / commit failure verbatim —
+/// classification + buffer restore happen one level up. Takes the
+/// already-locked connection so the caller can span the take/write
+/// window with a single lock.
+fn write_changeset_in_one_tx(
+    conn: &mut Connection,
+    wallet_id: &WalletId,
+    cs: &PlatformWalletChangeSet,
+) -> Result<(), WalletStorageError> {
+    let tx = conn.transaction()?;
+    apply_changeset_to_tx(&tx, wallet_id, cs)?;
+    tx.commit()?;
     Ok(())
 }
 

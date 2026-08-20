@@ -1,36 +1,27 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! QA (Marvin) — probes whether `SqlitePersister::store`'s pre-buffer
-//! `check_index_conflicts` probe and `Buffer::store`'s merge are governed
-//! by the SAME lock. They are not: `check_index_conflicts` runs under
-//! `self.conn()` (the SQLite connection mutex) and is dropped BEFORE
-//! `self.buffer.store(...)` acquires the buffer's own, separate mutex.
-//! Two threads racing `store()` for the SAME wallet + SAME index can
-//! both pass the disk-state probe (neither has landed yet), then both
-//! merge into one contradictory buffered changeset. The flush-time
-//! backstop (`check_index_conflicts` re-run inside `identities::apply`)
-//! still keeps the on-disk invariant intact — no duplicate ever commits
-//! — but only ONE of the two racing `store()` calls actually drains and
-//! flushes the merged buffer; the other's `take_for_flush` finds nothing
-//! and returns `Ok(())`, even though ITS identity never reached disk.
-//! That contradicts the documented `store()` durability contract
-//! ("In `FlushMode::Immediate` the call is durable on `Ok`") and R3's
-//! design requirement ("a rejection inside the flush ... can swallow a
-//! concurrent ... `store()` ... AND return it `Ok(())`" — the very thing
-//! the pre-buffer probe was supposed to rule out).
+//! `store()` never reports `Ok` for an identity it did not persist,
+//! however two threads interleave.
 //!
-//! Reproduction is probabilistic (the unguarded window is a handful of
-//! instructions) and RARE even with jammer threads — observed once in
-//! ~500-2000 attempts across several runs on this host, e.g.:
-//!   r1=Ok(()) r2=Err(Backend { kind: Constraint, source:
-//!   IdentityIndexConflict { .. } }) occupant=None
-//! i.e. thread 1's `store()` reported success while identity 0x01 never
-//! reached disk. Rarity here is a property of this host's scheduler, not
-//! evidence the bug is hard to hit in production (slower disk fsync
-//! during flush, more concurrent wallets, or heavier changesets all
-//! widen the window). Treat a pass as "not reproduced this run", not as
-//! "absent" — this file is a QA probe, not a CI-grade regression gate.
-//! Not modified to "fix" anything — this is a QA-only regression probe.
+//! The slot check and the buffer merge share one critical section: the
+//! check runs inside `Buffer::store_checked`, under the buffer lock,
+//! with the connection held, and against the merged (buffered plus
+//! incoming) view. Two threads racing the same wallet + same slot are
+//! therefore serialized — the loser sees the winner as the occupant and
+//! is refused at store time, before its changeset can join a
+//! contradictory merge that a later flush would drop whole while the
+//! caller walks away holding an `Ok(())`.
+//!
+//! `flush_inner` takes the connection BEFORE draining the buffer and
+//! holds it through the write, which closes the matching window on the
+//! other side: mid-flush the changeset is in neither the buffer nor the
+//! database, and a probe that ran there would read a slot as free that
+//! is not.
+//!
+//! The loop is a stress harness, not the proof — the property holds by
+//! lock structure. It exists because the original defect's window was a
+//! handful of instructions wide (Marvin reproduced it once in ~500-2000
+//! jammer-assisted attempts) and a regression would be just as quiet.
 
 mod common;
 
@@ -95,13 +86,12 @@ fn live_occupant(p: &SqlitePersister, wallet_id: &WalletId, index: u32) -> Optio
     .map(|raw| raw.try_into().expect("32-byte identity_id"))
 }
 
-/// QA finding: a `store()` caller can receive `Ok(())` in
-/// `FlushMode::Immediate` while its identity never reaches disk, because
-/// the store-time probe and the buffer merge race under two different
-/// mutexes. Fails deterministically once reproduced (any reproduction is
-/// a confirmed instance of the bug); loops because the window is racy.
+/// Exactly one of two racing claims on a slot may succeed, and the
+/// identity it named must be on disk when `store()` returns `Ok` in
+/// `FlushMode::Immediate`. Any single attempt that breaks either half is
+/// a confirmed regression; the loop just keeps shaking the interleaving.
 #[test]
-fn concurrent_store_can_return_ok_while_losing_data() {
+fn racing_stores_never_report_ok_for_an_identity_that_was_dropped() {
     for attempt in 0..500 {
         let (p, _tmp, _path) = fresh_persister();
         let p = Arc::new(p);
@@ -166,8 +156,11 @@ fn concurrent_store_can_return_ok_while_losing_data() {
                  reached disk — r1={r1:?} r2={r2:?} occupant={occupant:?}"
             );
         }
-        // Neither branch fired this attempt: either both stores were
-        // serialized cleanly (one Err before ever touching the buffer)
-        // or the race didn't land this time. Keep trying.
+        if r1.is_err() && r2.is_err() {
+            panic!(
+                "attempt {attempt}: the slot was free and uncontested by anyone else — \
+                 one of the two claims had to win: r1={r1:?} r2={r2:?}"
+            );
+        }
     }
 }
