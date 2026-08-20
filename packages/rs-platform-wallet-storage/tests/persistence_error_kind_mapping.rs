@@ -227,6 +227,33 @@ fn tc_code_004_b_fatal_variants_map_to_fatal_kind() {
                 path: PathBuf::from("/tmp/x"),
             },
         ),
+        (
+            "ReadOnlyRecoveryMode",
+            WalletStorageError::ReadOnlyRecoveryMode { operation: "store" },
+        ),
+        (
+            "RehydrationDerivationFailed",
+            WalletStorageError::RehydrationDerivationFailed {
+                stage: "ensure_derived",
+                index: 42,
+                cause: "no address at index".into(),
+            },
+        ),
+        (
+            "UsedAddressOwnerConflict",
+            WalletStorageError::UsedAddressOwnerConflict {
+                address: "yaddr".into(),
+                pool_owner: "Standard[0]".into(),
+                utxo_owner: "CoinJoin[0]".into(),
+            },
+        ),
+        (
+            "UnownedIdentityHasRegistrationIndex",
+            WalletStorageError::UnownedIdentityHasRegistrationIndex {
+                identity_id: [0xEF; 32],
+                identity_index: 3,
+            },
+        ),
     ];
 
     for (label, err) in fatal_cases {

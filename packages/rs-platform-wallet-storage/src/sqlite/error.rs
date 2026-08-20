@@ -437,6 +437,54 @@ pub enum WalletStorageError {
         expected: key_wallet::managed_account::address_pool::AddressPoolType,
         found: key_wallet::managed_account::address_pool::AddressPoolType,
     },
+
+    /// A write was attempted on a persister opened with
+    /// [`LoadPolicy::Recovery`](crate::LoadPolicy). Recovery mode serves a
+    /// degraded projection of the rows, so writing it back would overwrite
+    /// good data with the tolerated view of it. Reopen with
+    /// [`LoadPolicy::Strict`](crate::LoadPolicy) once the database is
+    /// repaired. `operation` names the blocked entry point.
+    #[error("`{operation}` is blocked: the persister is open in recovery mode (read-only)")]
+    ReadOnlyRecoveryMode { operation: &'static str },
+
+    /// Rehydration could not put a restored address back into its pool at
+    /// the right derivation slot, so that address stays unmarked and could
+    /// be re-issued as a fresh receive address (address-reuse privacy leak).
+    /// `stage` names the failing step, `index` the derivation index in play.
+    /// `cause` is rendered rather than kept as a `#[source]` because the two
+    /// stages differ: `maintain_gap_limit` carries an upstream `key_wallet`
+    /// error while `ensure_derived` reports only "no address at this index".
+    #[error("rehydration derivation failed at {stage} (index {index}): {cause}")]
+    RehydrationDerivationFailed {
+        stage: &'static str,
+        index: u32,
+        cause: String,
+    },
+
+    /// One used address resolves to two different owning accounts —
+    /// `core_address_pool` says one, `core_utxos` another. The store cannot
+    /// tell which account may re-issue the address, so it fails closed
+    /// rather than letting one source silently win.
+    #[error(
+        "used address {address} resolves to different owning accounts \
+         (core_address_pool={pool_owner}, core_utxos={utxo_owner})"
+    )]
+    UsedAddressOwnerConflict {
+        address: String,
+        pool_owner: String,
+        utxo_owner: String,
+    },
+
+    /// An identity owned by no wallet carries a registration index — a
+    /// position WITHIN a wallet, so the row contradicts itself.
+    #[error(
+        "unowned identity {} carries wallet registration index {identity_index}",
+        hex::encode(identity_id)
+    )]
+    UnownedIdentityHasRegistrationIndex {
+        identity_id: [u8; 32],
+        identity_index: u32,
+    },
 }
 
 impl From<WalletStorageError> for PersistenceError {
@@ -528,7 +576,11 @@ impl WalletStorageError {
             | Self::BlobTooLarge { .. }
             | Self::IntegerOverflow { .. }
             | Self::RehydrationPoolMismatch { .. }
-            | Self::RehydrationPoolTypeMismatch { .. } => false,
+            | Self::RehydrationPoolTypeMismatch { .. }
+            | Self::ReadOnlyRecoveryMode { .. }
+            | Self::RehydrationDerivationFailed { .. }
+            | Self::UsedAddressOwnerConflict { .. }
+            | Self::UnownedIdentityHasRegistrationIndex { .. } => false,
         }
     }
 
@@ -622,6 +674,12 @@ impl WalletStorageError {
             Self::IntegerOverflow { .. } => "integer_overflow",
             Self::RehydrationPoolMismatch { .. } => "rehydration_pool_mismatch",
             Self::RehydrationPoolTypeMismatch { .. } => "rehydration_pool_type_mismatch",
+            Self::ReadOnlyRecoveryMode { .. } => "read_only_recovery_mode",
+            Self::RehydrationDerivationFailed { .. } => "rehydration_derivation_failed",
+            Self::UsedAddressOwnerConflict { .. } => "used_address_owner_conflict",
+            Self::UnownedIdentityHasRegistrationIndex { .. } => {
+                "unowned_identity_has_registration_index"
+            }
         }
     }
 }
