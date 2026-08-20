@@ -13,6 +13,7 @@ use platform_wallet::changeset::{DpnsNameSaleStatus, DpnsNameStateChangeSet, Dpn
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
+use crate::sqlite::util::safe_cast::i64_to_u64;
 
 // Import used only by the test-gated whole-table reader below.
 #[cfg(any(test, feature = "__test-helpers"))]
@@ -179,10 +180,17 @@ fn row_columns(row: &rusqlite::Row<'_>) -> rusqlite::Result<RowColumns> {
 
 /// Rebuild a [`DpnsNameStateEntry`] from one [`ROW_PROJECTION`] row.
 ///
-/// The `as u64` casts are sound against this schema: the timestamp columns
-/// are written through `u64_to_i64` and `price` additionally carries a
-/// `CHECK (price IS NULL OR price >= 0)`, so no negative can be stored.
-/// A malformed identifier blob is rejected rather than truncated.
+/// Every signed column crosses back to `u64` through [`i64_to_u64`]
+/// rather than `as`. Only `price` is barred from holding a negative by a
+/// column `CHECK`; the four timestamp columns are unconstrained, so an
+/// externally modified or corrupted `-1` would otherwise decode as
+/// `u64::MAX` — a year-584-million timestamp that reads as valid
+/// marketplace state. Checked, it surfaces as the typed
+/// [`WalletStorageError::IntegerOverflow`] naming the offending column.
+/// This matters more than it did: the decoder now backs a production
+/// read ([`get_by_identity_and_label`]), not only the test-gated
+/// whole-table helper. A malformed identifier blob is likewise rejected
+/// rather than truncated.
 fn entry_from_columns(columns: RowColumns) -> Result<DpnsNameStateEntry, WalletStorageError> {
     let (
         doc_bytes,
@@ -208,12 +216,20 @@ fn entry_from_columns(columns: RowColumns) -> Result<DpnsNameStateEntry, WalletS
         label,
         normalized_label,
         normalized_parent_domain_name: normalized_parent,
-        price: price.map(|p| p as u64),
+        price: price
+            .map(|value| i64_to_u64("dpns_name_states.price", value))
+            .transpose()?,
         status: status_from_columns(&status, counterparty)?,
-        created_at_ms: created_at.map(|v| v as u64),
-        updated_at_ms: updated_at.map(|v| v as u64),
-        transferred_at_ms: transferred_at.map(|v| v as u64),
-        last_synced_at_ms: last_synced as u64,
+        created_at_ms: created_at
+            .map(|value| i64_to_u64("dpns_name_states.created_at_ms", value))
+            .transpose()?,
+        updated_at_ms: updated_at
+            .map(|value| i64_to_u64("dpns_name_states.updated_at_ms", value))
+            .transpose()?,
+        transferred_at_ms: transferred_at
+            .map(|value| i64_to_u64("dpns_name_states.transferred_at_ms", value))
+            .transpose()?,
+        last_synced_at_ms: i64_to_u64("dpns_name_states.last_synced_at_ms", last_synced)?,
     })
 }
 
@@ -230,16 +246,30 @@ fn entry_from_columns(columns: RowColumns) -> Result<DpnsNameStateEntry, WalletS
 /// Filtered on all three of `wallet_id`, `identity_id` and
 /// `normalized_label`: `sold` / `transferred` rows are retained here, so
 /// dropping the identity predicate could return a row that belongs to a
-/// different identity and remove the wrong document. `LIMIT 1` makes the
-/// "at most one match" contract explicit — the triple is unique in
-/// practice (one DPNS `domain` document per identity per normalized
-/// label), but the schema's PK is `(wallet_id, document_id)` and does not
-/// enforce it.
+/// different identity and remove the wrong document.
+///
+/// **Which of several matches wins.** The triple is NOT unique. The
+/// schema's primary key is `(wallet_id, document_id)`; a DPNS name can be
+/// deleted and re-registered under a fresh document id, and this table
+/// deliberately retains the earlier `sold` / `transferred` row. One
+/// identity can therefore hold a historical row AND the current row for
+/// the same normalized label. The `ORDER BY` picks the CURRENT one
+/// deterministically — `owned` ahead of any retained historical status,
+/// then the most recently synced row, then the highest document id as a
+/// final tie-break — and matches the preference
+/// `PlatformWalletPersistence::get_dpns_name_state` documents for every
+/// backend. An unordered `LIMIT 1` instead follows primary-key scan
+/// order, which is document-id order and carries no relation to
+/// recency: it can hand back the historical row, whose removal delta
+/// then deletes that row and drops the identity's label, leaving the
+/// CURRENT row orphaned with nothing left to ever trigger its removal.
 ///
 /// **Query cost.** No dedicated index exists for this predicate; SQLite
 /// serves it from the `(wallet_id, document_id)` primary-key index,
 /// scanning only the rows of this one wallet — bounded by the wallet's
 /// DPNS name count, and hit at most once per departed name per sync pass.
+/// The `ORDER BY` sorts only the rows that already satisfied the
+/// three-way filter (normally one), so it adds no scan.
 pub fn get_by_identity_and_label(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -248,7 +278,10 @@ pub fn get_by_identity_and_label(
 ) -> Result<Option<DpnsNameStateEntry>, WalletStorageError> {
     let sql = format!(
         "SELECT {ROW_PROJECTION} FROM dpns_name_states \
-         WHERE wallet_id = ?1 AND identity_id = ?2 AND normalized_label = ?3 LIMIT 1"
+         WHERE wallet_id = ?1 AND identity_id = ?2 AND normalized_label = ?3 \
+         ORDER BY CASE status WHEN 'owned' THEN 0 ELSE 1 END, \
+                  last_synced_at_ms DESC, document_id DESC \
+         LIMIT 1"
     );
     let columns = conn
         .prepare_cached(&sql)?
@@ -506,6 +539,212 @@ mod tests {
             get_by_identity_and_label(&conn, &wallet_id, &ours.wallet_identity_id, "nope").unwrap(),
             None,
         );
+    }
+
+    /// THE ROUND-3 REGRESSION. `(wallet_id, identity_id,
+    /// normalized_label)` is not unique — a name can be deleted and
+    /// re-registered under a fresh document id while this table retains
+    /// the earlier `sold` row — so one identity can hold BOTH a
+    /// historical row and the current one for the same label. An
+    /// unordered `LIMIT 1` follows primary-key (document-id) scan order,
+    /// which is unrelated to recency; when it hands back the historical
+    /// row the caller removes THAT row plus the identity's label, and the
+    /// current row is orphaned with nothing left to trigger its removal.
+    ///
+    /// The historical row is given the LOWER document id here precisely
+    /// so scan order favours it: the raw unordered query is asserted
+    /// first, so this test cannot pass vacuously.
+    #[test]
+    fn get_by_identity_and_label_prefers_the_current_owned_row_over_a_retained_one() {
+        let wallet_id: WalletId = [0x88; 32];
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        conn.execute(
+            "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+
+        // Same identity, same normalized label, two documents.
+        let mut historical = entry(0x01, DpnsNameSaleStatus::Owned, None);
+        historical.status = DpnsNameSaleStatus::Sold {
+            to: Identifier::from([0xBB; 32]),
+        };
+        historical.transferred_at_ms = Some(1_500_000_000_000);
+        historical.last_synced_at_ms = 1_500_000_000_000;
+        let mut current = entry(0x02, DpnsNameSaleStatus::Owned, Some(9_000));
+        current.label = historical.label.clone();
+        current.normalized_label = historical.normalized_label.clone();
+        current.last_synced_at_ms = 1_900_000_000_000;
+        assert!(
+            historical.document_id < current.document_id,
+            "fixture: the historical row must sort FIRST in primary-key order"
+        );
+
+        let mut cs = DpnsNameStateChangeSet::default();
+        cs.names.insert(historical.document_id, historical.clone());
+        cs.names.insert(current.document_id, current.clone());
+        {
+            let tx = conn.transaction().unwrap();
+            apply(&tx, &wallet_id, &cs).unwrap();
+            tx.commit().unwrap();
+        }
+
+        // Precondition: the pre-fix query really does pick the wrong row.
+        let unordered: Vec<u8> = conn
+            .query_row(
+                "SELECT document_id FROM dpns_name_states \
+                 WHERE wallet_id = ?1 AND identity_id = ?2 AND normalized_label = ?3 LIMIT 1",
+                params![
+                    &wallet_id[..],
+                    current.wallet_identity_id.as_slice(),
+                    &current.normalized_label
+                ],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            unordered,
+            historical.document_id.to_vec(),
+            "test precondition: an unordered LIMIT 1 selects the historical row, \
+             which is the orphaning bug this ORDER BY closes"
+        );
+
+        assert_eq!(
+            get_by_identity_and_label(
+                &conn,
+                &wallet_id,
+                &current.wallet_identity_id,
+                &current.normalized_label,
+            )
+            .unwrap(),
+            Some(current),
+            "the CURRENT owned row must win over the retained historical one"
+        );
+    }
+
+    /// With no `owned` row left — the name departed and was later
+    /// re-acquired and sold again — recency decides. The tie-break order
+    /// is `last_synced_at_ms DESC` BEFORE `document_id DESC`, so the
+    /// fixture gives the fresher row the LOWER document id: a reader that
+    /// ordered by document id alone would pick the stale one.
+    #[test]
+    fn get_by_identity_and_label_breaks_ties_on_last_synced_before_document_id() {
+        let wallet_id: WalletId = [0x99; 32];
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        conn.execute(
+            "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+
+        let buyer = Identifier::from([0xBB; 32]);
+        let mut fresher = entry(0x03, DpnsNameSaleStatus::Sold { to: buyer }, None);
+        fresher.transferred_at_ms = Some(1_900_000_000_000);
+        fresher.last_synced_at_ms = 1_900_000_000_000;
+        let mut staler = entry(0x04, DpnsNameSaleStatus::Transferred { to: buyer }, None);
+        staler.label = fresher.label.clone();
+        staler.normalized_label = fresher.normalized_label.clone();
+        staler.transferred_at_ms = Some(1_400_000_000_000);
+        staler.last_synced_at_ms = 1_400_000_000_000;
+        assert!(
+            fresher.document_id < staler.document_id,
+            "fixture: document-id order must DISAGREE with recency order"
+        );
+
+        let mut cs = DpnsNameStateChangeSet::default();
+        cs.names.insert(fresher.document_id, fresher.clone());
+        cs.names.insert(staler.document_id, staler.clone());
+        {
+            let tx = conn.transaction().unwrap();
+            apply(&tx, &wallet_id, &cs).unwrap();
+            tx.commit().unwrap();
+        }
+
+        assert_eq!(
+            get_by_identity_and_label(
+                &conn,
+                &wallet_id,
+                &fresher.wallet_identity_id,
+                &fresher.normalized_label,
+            )
+            .unwrap()
+            .map(|e| e.document_id),
+            Some(fresher.document_id),
+        );
+    }
+
+    /// The timestamp columns carry no `CHECK`, so a hand-edited or
+    /// corrupted row can hold a negative. `as u64` turned `-1` into
+    /// `u64::MAX`, which reads back as a perfectly valid (year
+    /// 584-million) timestamp; the checked decode surfaces the typed
+    /// [`WalletStorageError::IntegerOverflow`] naming the column instead.
+    #[test]
+    fn negative_timestamps_are_rejected_by_the_decoder() {
+        use crate::sqlite::util::safe_cast::SafeCastTarget;
+
+        let wallet_id: WalletId = [0xAB; 32];
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        conn.execute(
+            "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+
+        // One row per timestamp column, each with exactly that column
+        // negative, so the error must name the right one. The row is
+        // inserted valid and then corrupted with an UPDATE: that is also
+        // the only way `last_synced_at_ms` (NOT NULL) can be reached.
+        let columns = [
+            (0xC1u8, "created_at_ms", "dpns_name_states.created_at_ms"),
+            (0xC2u8, "updated_at_ms", "dpns_name_states.updated_at_ms"),
+            (
+                0xC3u8,
+                "transferred_at_ms",
+                "dpns_name_states.transferred_at_ms",
+            ),
+            (
+                0xC4u8,
+                "last_synced_at_ms",
+                "dpns_name_states.last_synced_at_ms",
+            ),
+        ];
+        for (tag, column, field) in columns {
+            let doc = [tag; 32];
+            let label = format!("a11ce{tag}");
+            conn.execute(
+                "INSERT INTO dpns_name_states \
+                    (wallet_id, document_id, identity_id, label, normalized_label, \
+                     normalized_parent_domain, price, status, counterparty_id, \
+                     created_at_ms, updated_at_ms, transferred_at_ms, last_synced_at_ms) \
+                 VALUES (?1, ?2, ?3, 'Alice', ?4, 'dash', NULL, 'owned', NULL, 1, 1, 1, 1)",
+                params![&wallet_id[..], &doc[..], &[0xAAu8; 32][..], &label],
+            )
+            .unwrap();
+            conn.execute(
+                &format!(
+                    "UPDATE dpns_name_states SET {column} = -1 \
+                     WHERE wallet_id = ?1 AND document_id = ?2"
+                ),
+                params![&wallet_id[..], &doc[..]],
+            )
+            .unwrap();
+
+            let error =
+                get_by_identity_and_label(&conn, &wallet_id, &Identifier::from([0xAA; 32]), &label)
+                    .expect_err("a negative timestamp must not decode");
+            match error {
+                WalletStorageError::IntegerOverflow {
+                    field: got, target, ..
+                } => {
+                    assert_eq!(got, field, "the error must name the offending column");
+                    assert_eq!(target, SafeCastTarget::U64);
+                }
+                other => panic!("expected a typed IntegerOverflow, got {other:?}"),
+            }
+        }
     }
 
     /// A retained `Sold` row — the exact shape a departed name leaves

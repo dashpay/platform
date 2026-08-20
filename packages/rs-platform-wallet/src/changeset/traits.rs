@@ -451,10 +451,27 @@ pub trait PlatformWalletPersistence: Send + Sync {
     ///   `Transferred`), so an implementation that dropped the identity
     ///   filter could hand back another identity's row and remove the
     ///   wrong document.
-    /// - At most one row can match: an `(identity, normalized_label)`
-    ///   pair maps to a single DPNS `domain` document. Should a backend
-    ///   somehow hold several, returning any one of them is acceptable;
-    ///   returning `Ok(None)` is not — that reintroduces the orphan.
+    /// - Several rows CAN match, and WHICH one is returned matters. A
+    ///   name can be deleted and re-registered under a fresh
+    ///   `document_id`, while rows for names that already left are
+    ///   retained, so one identity may hold a historical row and the
+    ///   current row under the same normalized label. Implementations
+    ///   MUST return the CURRENT row, chosen deterministically:
+    ///   [`Owned`](crate::changeset::DpnsNameSaleStatus::Owned) ahead of
+    ///   any retained
+    ///   [`Sold`](crate::changeset::DpnsNameSaleStatus::Sold) /
+    ///   [`Transferred`](crate::changeset::DpnsNameSaleStatus::Transferred)
+    ///   row, then the greatest
+    ///   [`DpnsNameStateEntry::last_synced_at_ms`], then the
+    ///   greatest `document_id` as a final tie-break. Returning an
+    ///   arbitrary match is NOT acceptable: a historical row makes the
+    ///   caller delete that row and drop the identity's label, leaving
+    ///   the current row permanently orphaned — the very failure this
+    ///   lookup exists to prevent, just aimed at the wrong row. The
+    ///   SQLite backend implements exactly this order; see
+    ///   `schema::dpns_name_states::get_by_identity_and_label`.
+    /// - Returning `Ok(None)` while a matching row exists is likewise
+    ///   not acceptable — that reintroduces the orphan.
     ///
     /// ## Default
     ///
