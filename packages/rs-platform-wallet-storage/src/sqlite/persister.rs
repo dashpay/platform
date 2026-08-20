@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use rusqlite::{Connection, OptionalExtension};
 
 use platform_wallet::changeset::{
-    ClientStartState, Merge, PersistenceCapabilities, PersistenceError, PersistenceErrorKind,
-    PlatformWalletChangeSet, PlatformWalletPersistence,
+    ClientStartState, Merge, PersistenceCapabilities, PersistenceError, PlatformWalletChangeSet,
+    PlatformWalletPersistence,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 
@@ -469,12 +469,18 @@ impl SqlitePersister {
                             return Err(WalletStorageError::Sqlite(e));
                         }
                     }
-                    // A constraint failure means these pending writes can
-                    // never be persisted, so keeping them would make the
-                    // wallet undeletable — the one state a user most wants
-                    // gone. Drop them and delete; they name only this
-                    // wallet, whose rows are about to go.
-                    Err(e) if e.persistence_kind() == PersistenceErrorKind::Constraint => {
+                    // An identity-slot collision means these pending
+                    // writes can never be persisted, so keeping them
+                    // would make the wallet undeletable — the one state
+                    // a user most wants gone. Drop them and delete; they
+                    // name only this wallet, whose rows are about to go.
+                    // Every other constraint failure (FK, CHECK, UNIQUE,
+                    // NOT NULL) describes corruption elsewhere in the
+                    // schema and aborts the delete below.
+                    Err(
+                        e @ (WalletStorageError::IdentityIndexConflict { .. }
+                        | WalletStorageError::WalletlessIdentityIndex { .. }),
+                    ) => {
                         let _ = pre_flush_tx.rollback();
                         tracing::warn!(
                             wallet_id = %hex::encode(wallet_id),

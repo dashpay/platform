@@ -1,43 +1,38 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! QA (Marvin) — `delete_wallet`'s pre-flush carve-out
-//! (`persister.rs`, `Err(e) if e.persistence_kind() == PersistenceErrorKind::Constraint`)
-//! is scoped to the `Constraint` *kind*, not to the two new
-//! `IdentityIndexConflict` / `WalletlessIdentityIndex` variants it was
-//! introduced for. Any native SQLite `ConstraintViolation` (FK, CHECK,
-//! UNIQUE, NOT NULL — see `WalletStorageError::persistence_kind`) in a
-//! wallet's drained pre-flush buffer is classified `Constraint` too, so
-//! it is ALSO silently dropped-with-a-warn-log and the delete proceeds,
-//! not just an identity-index collision. Before this PR any such failure
-//! hard-aborted `delete_wallet` (buffer restored, error returned).
+//! Boundary of `delete_wallet`'s pre-flush constraint carve-out.
 //!
-//! This test reaches that carve-out via an ordinary FK violation on
-//! `identity_keys.identity_id -> identities.identity_id` that has
-//! nothing to do with identity-index uniqueness, to show the carve-out's
-//! blast radius is broader than the requirement it was written for.
+//! The carve-out exists for one state: pending identity writes that can
+//! never be persisted must not make a wallet undeletable. It names the
+//! two variants that describe that state
+//! (`IdentityIndexConflict` / `WalletlessIdentityIndex`). Every OTHER
+//! constraint failure in the drained pre-flush — a native SQLite FK,
+//! CHECK, UNIQUE or NOT NULL violation — is a corruption signal that
+//! must abort the delete with the buffer intact, not be swallowed at the
+//! one moment an operator is removing state.
 
 mod common;
 
-use common::{ensure_wallet_meta, fresh_persister_with_mode};
+use common::{ensure_identity, ensure_wallet_meta, fresh_persister_with_mode};
 
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::{
-    IdentityKeyEntry, IdentityKeysChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
+    IdentityKeyEntry, IdentityKeysChangeSet, PersistenceErrorKind, PlatformWalletChangeSet,
+    PlatformWalletPersistence,
 };
-use platform_wallet_storage::FlushMode;
+use platform_wallet_storage::{FlushMode, WalletStorageError};
 use rusqlite::{params, OptionalExtension};
 
-/// A buffered `identity_keys` upsert whose `identity_id` has NO
-/// `identities` row (never `ensure_exists`-ed, never stored) is a plain
-/// FK violation — nothing to do with `(wallet_id, identity_index)`
-/// uniqueness. `delete_wallet`'s Constraint-kind carve-out swallows it
-/// exactly like it swallows an identity-index conflict, and the wallet
-/// is deleted with NO error surfaced to the caller.
+/// A buffered `identity_keys` upsert whose `identity_id` has no
+/// `identities` row is a plain FK violation — nothing to do with
+/// `(wallet_id, identity_index)` uniqueness. It is `Constraint`-KIND all
+/// the same, so a kind-scoped carve-out would swallow it; the delete
+/// must instead fail loudly and keep the pending write.
 #[test]
-fn delete_wallet_silently_drops_an_unrelated_fk_violation_too() {
+fn delete_wallet_aborts_on_a_constraint_failure_outside_the_carve_out() {
     let (p, _tmp, _path) = fresh_persister_with_mode(FlushMode::Manual);
     let w = common::wid(0x5B);
     ensure_wallet_meta(&p, &w);
@@ -74,27 +69,37 @@ fn delete_wallet_silently_drops_an_unrelated_fk_violation_too() {
     )
     .expect("Manual mode only buffers — no FK check happens here");
 
-    // If this FK violation instead hard-aborted `delete_wallet` (the
-    // pre-PR behavior for ANY apply failure), this `expect` would panic.
-    // It doesn't: the carve-out treats it exactly like an identity-index
-    // conflict and silently drops it.
-    let report = p
+    let err = p
         .delete_wallet_skip_backup(w)
-        .expect("QA: FK violation unrelated to identity-index is ALSO silently swallowed");
+        .expect_err("an FK violation is not the state the carve-out covers");
 
-    assert_eq!(report.wallet_id, w);
-    let conn = p.lock_conn_for_test();
-    let wallets: i64 = conn
-        .query_row(
+    assert!(
+        matches!(err, WalletStorageError::Sqlite(_)),
+        "expected the native SQLite constraint failure verbatim, got `{err:?}`"
+    );
+    assert_eq!(
+        err.persistence_kind(),
+        PersistenceErrorKind::Constraint,
+        "the kind is Constraint — which is exactly why kind-scoped tolerance was too wide"
+    );
+
+    let wallets: i64 = {
+        let conn = p.lock_conn_for_test();
+        conn.query_row(
             "SELECT COUNT(*) FROM wallet_metadata WHERE wallet_id = ?1",
             params![w.as_slice()],
             |row| row.get(0),
         )
-        .unwrap();
-    assert_eq!(
-        wallets, 0,
-        "the wallet is gone — no trace of the dropped write, no error"
-    );
+        .expect("count wallets")
+    };
+    assert_eq!(wallets, 1, "the delete aborted — the wallet is still here");
+
+    // The pending write was restored, not dropped: give the FK its
+    // target and the same buffered changeset flushes cleanly.
+    ensure_identity(&p, &[0xAB; 32], Some(&w));
+    p.flush(w)
+        .expect("the restored changeset is still flushable");
+    let conn = p.lock_conn_for_test();
     let key_row: Option<i64> = conn
         .query_row(
             "SELECT 1 FROM identity_keys WHERE identity_id = ?1",
@@ -102,9 +107,6 @@ fn delete_wallet_silently_drops_an_unrelated_fk_violation_too() {
             |row| row.get(0),
         )
         .optional()
-        .unwrap();
-    assert_eq!(
-        key_row, None,
-        "the FK-violating row never landed, as expected"
-    );
+        .expect("query identity_keys");
+    assert_eq!(key_row, Some(1), "the buffered write survived the abort");
 }
