@@ -17,7 +17,6 @@ use key_wallet::wallet::managed_wallet_info::asset_lock_builder::{
 };
 use key_wallet::wallet::managed_wallet_info::managed_account_operations::ManagedAccountOperations;
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
-use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 
@@ -234,10 +233,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // owner-guarded like the drain-floor abandon below. The consumed
         // funding key index is the same residue any discarded build leaves,
         // reclaimed by the gap-limit scan.
-        if let Some(pinned) = info.generation.in_broadcast_conflict(
-            &result.transaction,
-            info.core_wallet.last_processed_height(),
-        ) {
+        if let Some(outpoint) = info.generation.in_broadcast_conflict(&result.transaction) {
             // The pooled build reserves in EVERY contributing account's own
             // set under the one owner token, so the release must sweep
             // `result.funding_accounts` — the same per-account idiom as
@@ -253,10 +249,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     }
                 }
             }
-            return Err(PlatformWalletError::AssetLockTransaction(format!(
-                "selected input {pinned} is mid-broadcast by an in-flight dispatch; \
-                 retry after it completes"
-            )));
+            // Typed and shared with the other two choke points rather than an
+            // `AssetLockTransaction` string — the condition and the correct
+            // caller response are identical on all three
+            // (`PlatformWalletError::InputMidBroadcast`).
+            return Err(PlatformWalletError::InputMidBroadcast { outpoint });
         }
 
         // 4. Pull the (pubkey, path) for our single credit output.

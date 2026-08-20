@@ -16,6 +16,8 @@
 //! `Built` row first); those call the broadcaster directly and then
 //! [`release_reservation_after_rejected_broadcast`].
 
+use std::time::Duration;
+
 use dashcore::{Transaction, Txid};
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::account::AccountType;
@@ -50,19 +52,39 @@ use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 /// for `last_processed_height` to lag a few blocks behind the true tip.
 pub(crate) const RESERVATION_MAX_AGE_BLOCKS: u32 = 20;
 
-/// How long, in `last_processed_height` blocks past **dispatch**, a transaction
-/// that reached the network keeps its inputs fenced against re-selection by
-/// [`WalletGeneration::pin_in_broadcast`](crate::wallet::core::WalletGeneration::pin_in_broadcast)'s
-/// pending-spend phase.
+/// The ORPHAN BACKSTOP for a broadcast input fence
+/// ([`WalletGeneration::pin_in_broadcast`](crate::wallet::core::WalletGeneration::pin_in_broadcast)'s
+/// pending-spend phase): how long an outpoint the wallet has *never observed
+/// spent* stays fenced after its dispatch returned.
 ///
-/// "Past dispatch" means past a `last_processed_height` sampled once the
-/// broadcaster has RETURNED, not the one the pre-send freshness check consumed.
-/// A broadcast await can suspend for minutes mid-catch-up, and anchoring this
-/// interval before it means the fence can arrive already lapsed — which is the
-/// same as never installing it (`dashpay/platform#4309`). A dispatch that stops
-/// without that sample fences unbounded until the next coin selection stamps it
-/// from its own height. See `CoreWallet::dispatch_unexpired` and
-/// `WalletGeneration::in_broadcast_conflict`.
+/// This is **not** the mechanism that makes the fence safe, and it carries no
+/// evidence about the dispatched transaction. The fence is released by
+/// [`WalletGeneration::observe_spent`](crate::wallet::core::WalletGeneration::observe_spent)
+/// when the wallet actually observes the outpoint spent — by the dispatch's own
+/// transaction or by a competing one. This constant only stops a fence whose
+/// transaction is never observed at all from stranding those inputs for the
+/// life of the process.
+///
+/// # Why a wall clock, and why `Instant`
+///
+/// Every height-anchored form of this bound is unsound, and the reason is not
+/// where the anchor is sampled (`dashpay/platform#4309`, rounds 2-4 all moved
+/// the sample and all failed). It is that `last_processed_height` is not a
+/// clock at all during catch-up: the wallet can advance it by thousands of
+/// blocks in seconds, and those blocks were **mined before the transaction was
+/// submitted**. Elapsed height is therefore evidence about the chain's past,
+/// never about whether a transaction submitted *now* has been seen or dropped —
+/// so no `installed_height + N` bound, however carefully sampled or however
+/// atomically installed, can survive an ordinary historical sync.
+///
+/// [`Instant`] is the only clock in this crate with no chain input whatsoever.
+/// It is monotonic, cannot be moved by catch-up, by a re-org, by a peer feeding
+/// historical headers, or by a system clock adjustment. That is exactly the
+/// "expiry clock that historical catch-up cannot fast-forward" the fix requires,
+/// and it is *readable from a synchronous `Drop`* — which is what lets the
+/// bound be stamped at the instant the pending-spend phase begins, on every exit
+/// path including cancellation and unwind, with no manager lock, no height
+/// sample and therefore no sample-to-install window to make atomic.
 ///
 /// # Why a fence past dispatch is needed at all
 ///
@@ -76,37 +98,25 @@ pub(crate) const RESERVATION_MAX_AGE_BLOCKS: u32 = 20;
 /// therefore reopens the sweep + re-select race on that path
 /// (`dashpay/platform#4309`): key-wallet's `ReservationSet` TTL is stamped at
 /// *build* time, so a handle that sat between `finalize` and broadcast can be
-/// swept the instant the next selection runs.
+/// swept the instant the next selection runs. On BOTH paths the release is now
+/// the same observation, so the DAPI path is no longer the odd one out — it
+/// simply reaches the observation later, when SPV relays the transaction back
+/// or a block carries it.
 ///
-/// # Why exactly key-wallet's TTL, re-anchored at dispatch
+/// # Why one hour
 ///
-/// The correct fix would be to renew the underlying reservation at dispatch so
-/// its TTL runs from the moment the transaction actually went to the network;
-/// key-wallet exposes no such primitive at the pinned revision (`ReservationSet`
-/// and its `RESERVATION_TTL_BLOCKS` are private). This constant is that renewal
-/// implemented one layer up: **24, key-wallet's own `RESERVATION_TTL_BLOCKS`**
-/// (~1 h at the mainnet block target), measured from the broadcaster's return
-/// instead of from the build. The inputs are then continuously protected — by
-/// the reservation until its build-anchored TTL, then by this fence — for a full
-/// TTL past the moment they were actually committed to the network, which is the
-/// point the TTL was always meant to be measured from. Sampling the anchor
-/// *after* the send is what makes that literally true rather than approximately:
-/// an anchor taken before a long await measures from a moment the transaction
-/// had not yet gone anywhere. Coupled by convention, exactly as
-/// [`RESERVATION_MAX_AGE_BLOCKS`] above is: if key-wallet's TTL changes, change
-/// this in lockstep.
-///
-/// # Why it must lapse
-///
-/// A fenced outpoint that the wallet has already observed as spent never
-/// reaches a selection in the first place, so in the common case this bound is
-/// never consulted — the fence goes inert on its own. The bound exists for the
-/// transaction that is *never* observed (dropped from mempool for fee or
-/// conflict): its reservation is already gone at TTL, and a non-expiring fence
-/// would strand those funds permanently with nothing able to clear it. Lapsing
-/// at the same TTL leaves the residual exposure identical to the one
-/// key-wallet's reservation TTL already accepts, and no larger.
-pub(crate) const IN_BROADCAST_FENCE_BLOCKS: u32 = 24;
+/// The real-time analogue of the bound this replaces: key-wallet's
+/// `RESERVATION_TTL_BLOCKS` is 24 blocks, ~1 h at the 2.5-minute mainnet block
+/// target. Keeping the same magnitude means the residual exposure of an
+/// *unobserved* transaction is the one key-wallet's reservation TTL already
+/// accepts, and no larger — only the clock changed, not the budget. It is also
+/// long enough that the observation path wins in every healthy flow (an
+/// accepted transaction is relayed back in seconds), and short enough that a
+/// genuinely dropped transaction's inputs come back inside one session rather
+/// than only at process exit — the fence is in-memory and never persisted, so a
+/// bound much longer than a session would make process restart the real
+/// recovery path.
+pub(crate) const IN_BROADCAST_FENCE_ORPHAN_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 
 /// Whether a reservation stamped at `registered_height` is too old to act on at
 /// `current_height` (see [`RESERVATION_MAX_AGE_BLOCKS`]). The registration

@@ -431,15 +431,15 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // (`WalletGeneration::pin_in_broadcast`). Still under the write
             // guard, so the check is atomic with our reservation and the
             // release is exact.
-            if let Some(pinned) = info
-                .generation
-                .in_broadcast_conflict(&unsigned, info.core_wallet.last_processed_height())
-            {
+            //
+            // The refusal is TYPED (`InputMidBroadcast`, carrying the
+            // conflicting outpoint) rather than a build-failure string: this is
+            // the one build error that is safely retryable unchanged once the
+            // dispatch settles, and callers should not have to substring-match
+            // prose to tell it apart (`dashpay/platform#4309`).
+            if let Some(outpoint) = info.generation.in_broadcast_conflict(&unsigned) {
                 release_all!(offered_accounts, info.core_wallet.accounts, &unsigned);
-                return Err(PlatformWalletError::TransactionBuild(format!(
-                    "selected input {pinned} is mid-broadcast by an in-flight dispatch; \
-                     retry after it completes"
-                )));
+                return Err(PlatformWalletError::InputMidBroadcast { outpoint });
             }
 
             // Map every selected input back to the account that owns it. That

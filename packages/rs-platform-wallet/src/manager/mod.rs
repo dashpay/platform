@@ -31,7 +31,7 @@ use crate::manager::platform_address_sync::PlatformAddressSyncManager;
 use crate::manager::shielded_sync::ShieldedSyncManager;
 use crate::spv::SpvRuntime;
 use crate::wallet::asset_lock::LockNotifyHandler;
-use crate::wallet::core::BalanceUpdateHandler;
+use crate::wallet::core::{BalanceUpdateHandler, SpendObservationHandler};
 use crate::wallet::identity::network::DashPayPaymentHandler;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
@@ -467,6 +467,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // with SPV's write lock.
         let lock_handler = Arc::new(LockNotifyHandler::new(Arc::clone(&lock_notify)));
         let balance_handler = Arc::new(BalanceUpdateHandler::new(Arc::clone(&wallets)));
+        // SpendObservationHandler releases in-broadcast input fences when the
+        // wallet observes the fenced outpoints spent — the evidence that ends
+        // the fence a dispatch installs (`dashpay/platform#4309`). It takes the
+        // same `wallets` map, and for the same lock reason as the balance
+        // handler: the event fires inside SPV's block-processing write section,
+        // so the generation cannot be resolved through the wallet-manager lock.
+        let spend_observation_handler =
+            Arc::new(SpendObservationHandler::new(Arc::clone(&wallets)));
         // DashPayPaymentHandler records incoming DashPay payments and
         // confirms sent ones off the wallet-event fan-out, keeping that
         // domain logic out of the generic core-changeset bridge. It holds
@@ -480,6 +488,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             app_handler,
             lock_handler,
             balance_handler,
+            spend_observation_handler,
             Arc::clone(&dashpay_payment_handler) as Arc<dyn PlatformEventHandler>,
         ]));
 

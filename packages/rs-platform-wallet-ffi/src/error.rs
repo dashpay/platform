@@ -620,6 +620,25 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::StaleReservation => {
                 PlatformWalletFFIResultCode::ErrorStaleReservationToken
             }
+            // A coin selection that picked an input still held by an in-flight
+            // broadcast dispatch. Typed on the Rust side (it carries the
+            // conflicting `OutPoint`, and is the one build refusal that is
+            // safely retryable unchanged), but DELIBERATELY mapped to the same
+            // numeric code it produced before that variant existed: all three
+            // choke points previously returned it as
+            // `TransactionBuild` / `AssetLockTransaction`, neither of which is
+            // matched here, so both fell to `ErrorUnknown`.
+            //
+            // Minting a dedicated code is a separate, coordinated change — the
+            // numeric space is a cross-PR registry (see the claim table on
+            // `ErrorStaleReservationToken` above) and every new value has to be
+            // mirrored into the Swift and Kotlin result enums. This arm exists
+            // so the mapping is an explicit, reviewable decision in one place
+            // rather than an accident of the catch-all, and so it is a one-line
+            // change when a code is claimed (`dashpay/platform#4309`).
+            PlatformWalletError::InputMidBroadcast { .. } => {
+                PlatformWalletFFIResultCode::ErrorUnknown
+            }
             // A definitively-failed address-nonce race (reaches the blanket impl
             // via identity `top_up_from_addresses` → `?`/`.into()`). Exposing
             // provided/expected nonce as structured out-fields is INTENTIONALLY

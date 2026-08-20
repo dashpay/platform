@@ -148,6 +148,38 @@ pub enum PlatformWalletError {
     #[error("Transaction building failed: {0}")]
     TransactionBuild(String),
 
+    /// Coin selection picked an outpoint that a broadcast dispatch is still
+    /// holding — the transaction spending it is in flight, or has reached the
+    /// network and has not yet been observed spent by this wallet
+    /// ([`WalletGeneration::in_broadcast_conflict`](crate::wallet::core::WalletGeneration::in_broadcast_conflict)).
+    /// Completing the build would race that transaction on the wire, so it is
+    /// refused and its own fresh reservation released. NOTHING was built,
+    /// signed or broadcast.
+    ///
+    /// A TRANSIENT, EXPECTED condition, and the reason it is a variant of its
+    /// own rather than a [`Self::TransactionBuild`] /
+    /// [`Self::AssetLockTransaction`] string: it is the one build failure a
+    /// caller may safely retry UNCHANGED once the in-flight dispatch settles,
+    /// and telling it apart from a genuine build failure previously meant
+    /// substring-matching prose (`message.contains("mid-broadcast")`, which the
+    /// tests did too). All three selection choke points — the
+    /// finalized-transaction build, the contact-payment build and the
+    /// asset-lock build — now return this one variant.
+    ///
+    /// `outpoint` is the first conflicting input, carried structurally so
+    /// callers and diagnostics need not parse it back out of a message.
+    ///
+    /// Reaching a caller at all is the uncommon path: a fenced input is
+    /// normally still reserved and never offered to selection. This fires only
+    /// in the window after key-wallet's reservation TTL swept that dispatch's
+    /// reservation, which is exactly what the fence exists to cover
+    /// (`dashpay/platform#4309`).
+    #[error(
+        "selected input {outpoint} is mid-broadcast by an in-flight dispatch; \
+         retry after it completes"
+    )]
+    InputMidBroadcast { outpoint: dashcore::OutPoint },
+
     /// The address handed to [`CoreWallet::sign_message`] cannot be a signing
     /// target at all: unparseable, encoded for a different network than the
     /// wallet's, or not P2PKH. A caller-input error — the classic Dash
