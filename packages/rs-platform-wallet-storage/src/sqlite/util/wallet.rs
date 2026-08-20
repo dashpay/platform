@@ -19,7 +19,7 @@ use platform_wallet::wallet::provider_key_at_index::{
     insert_platform_node_pool_entry, PlatformNodePoolError,
 };
 
-use crate::sqlite::load_ctx::LoadCtx;
+use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
 use crate::sqlite::schema::accounts::{self, AccountManifest};
 use crate::sqlite::schema::core_pool::{self, OwningAccount};
 use crate::WalletStorageError;
@@ -462,7 +462,7 @@ fn extend_pools_for_restored_addresses(
     manifest: &[AccountRegistrationEntry],
     restored_addresses: &[key_wallet::Address],
     wallet_id: [u8; 32],
-    _ctx: &LoadCtx,
+    ctx: &LoadCtx,
 ) -> Result<(), WalletStorageError> {
     use key_wallet::managed_account::address_pool::{AddressPool, KeySource};
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
@@ -619,17 +619,22 @@ fn extend_pools_for_restored_addresses(
 
         // Derive up to the deepest discovered index so its address exists in
         // the real pool before we mark it used.
+        // TODO(recovery-mode): defensive site with no reachable seed from
+        // the storage layer — the probe resolved this index from the same
+        // xpub, so the real pool derives it too. Kept fail-closed because a
+        // deferred address is an address that can be re-issued as fresh.
         if let Some(deepest) = *deepest_resolved {
             if let Some(key_source) = key_source.as_ref() {
                 if ensure_derived(pool, key_source, deepest).is_none() {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(wallet_id),
-                        account_type = ?account_type,
-                        pool_type = ?pool.pool_type,
-                        index = deepest,
-                        "rehydration: failed to derive resolved index into pool; \
-                         deferring its address to the next sync"
-                    );
+                    ctx.tolerate(
+                        LoadSite::RehydrationEnsureDerived,
+                        WalletStorageError::RehydrationDerivationFailed {
+                            stage: "ensure_derived",
+                            index: deepest,
+                            cause: "the pool produced no address at this index".to_owned(),
+                        },
+                    )?;
+                    warn_deferred_pool(wallet_id, &account_type, pool.pool_type);
                 }
             }
         }
@@ -667,19 +672,36 @@ fn extend_pools_for_restored_addresses(
                 break;
             };
             if let Err(e) = pool.maintain_gap_limit(key_source) {
-                tracing::warn!(
-                    wallet_id = %hex::encode(wallet_id),
-                    account_type = ?account_type,
-                    pool_type = ?pool.pool_type,
-                    error = %e,
-                    "rehydration: gap-limit maintenance failed; pool window \
-                     may be short until the next sync"
-                );
+                ctx.tolerate(
+                    LoadSite::RehydrationGapLimit,
+                    WalletStorageError::RehydrationDerivationFailed {
+                        stage: "maintain_gap_limit",
+                        index: pool.highest_used.unwrap_or(0),
+                        cause: e.to_string(),
+                    },
+                )?;
+                warn_deferred_pool(wallet_id, &account_type, pool.pool_type);
                 break;
             }
         }
     }
     Ok(())
+}
+
+/// Locate a pool whose window a tolerated derivation failure left short.
+/// The failure itself is logged by [`LoadCtx::tolerate`]; this adds only
+/// the coordinates, and so fires only when the policy tolerated it.
+fn warn_deferred_pool(
+    wallet_id: [u8; 32],
+    account_type: &AccountType,
+    pool_type: key_wallet::managed_account::address_pool::AddressPoolType,
+) {
+    tracing::warn!(
+        wallet_id = %hex::encode(wallet_id),
+        account_type = ?account_type,
+        pool_type = ?pool_type,
+        "rehydration: this address pool's window is short until the next sync"
+    );
 }
 
 /// Ensure `pool` has derived through `index` (generating only the missing

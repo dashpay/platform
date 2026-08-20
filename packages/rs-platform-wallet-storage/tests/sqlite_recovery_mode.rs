@@ -347,6 +347,70 @@ fn corrupt_shielded_viewing_key_row_is_skipped_in_recovery() {
     assert_only_site(&persister, LoadSite::ShieldedViewingKeyRow, 1);
 }
 
+// ── (e) used address with two owning accounts ───────────────────────────
+
+/// One script under two `core_address_pool` rows: the used one at account
+/// index 1, an unused one at index 0. The pool reader sees only `used = 1`
+/// (index 1); the per-script resolver the UTXO reader uses tie-breaks on
+/// `account_index ASC` (index 0). Two sources, two answers, same address.
+fn seed_conflicting_used_address_owner(persister: &SqlitePersister, wallet: &WalletId) {
+    ensure_wallet_meta(persister, wallet);
+    // A P2PKH script, so both readers can turn it back into an address.
+    let script = {
+        let address = dashcore::Address::new(
+            dashcore::Network::Testnet,
+            dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array(
+                [0x3Cu8; 20],
+            )),
+        );
+        address.script_pubkey().to_bytes()
+    };
+    let conn = persister.lock_conn_for_test();
+    for (account_index, used) in [(0_i64, 0_i64), (1, 1)] {
+        conn.execute(
+            "INSERT INTO core_address_pool \
+                (wallet_id, account_type, account_index, key_class, pool_type, \
+                 address_index, script, used) \
+             VALUES (?1, 'standard_bip44', ?2, 0, 0, 0, ?3, ?4)",
+            params![wallet.as_slice(), account_index, script.as_slice(), used],
+        )
+        .expect("seed pool row");
+    }
+    conn.execute(
+        "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) \
+         VALUES (?1, ?2, 1000, ?3, 1)",
+        params![wallet.as_slice(), &[0x11u8; 36][..], script.as_slice()],
+    )
+    .expect("seed spent utxo carrying the same script");
+}
+
+#[test]
+fn used_address_owner_conflict_is_fatal_under_strict() {
+    let wallet = wid(0x30);
+    let (persister, _tmp, _path) = fresh_persister();
+    seed_conflicting_used_address_owner(&persister, &wallet);
+
+    let err = typed(
+        persister
+            .load()
+            .expect_err("two owners for one used address must abort a strict load"),
+    );
+    assert!(
+        matches!(err, WalletStorageError::UsedAddressOwnerConflict { .. }),
+        "expected UsedAddressOwnerConflict, got {err:?}"
+    );
+}
+
+#[test]
+fn used_address_owner_conflict_is_tolerated_in_recovery() {
+    let wallet = wid(0x31);
+    let (persister, _tmp, _path) =
+        fresh_recovery_persister(|strict| seed_conflicting_used_address_owner(strict, &wallet));
+
+    persister.load().expect("recovery must complete the load");
+    assert_only_site(&persister, LoadSite::UsedAddressOwnerConflict, 1);
+}
+
 // ── (g) unowned identity carrying a registration index ──────────────────
 
 /// Plant an identity with no owning wallet that nonetheless claims a

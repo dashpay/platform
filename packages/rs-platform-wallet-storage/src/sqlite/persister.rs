@@ -1282,8 +1282,9 @@ impl PlatformWalletPersistence for SqlitePersister {
             // both; neither source may shadow the other. Keyed by address; the
             // pool source is authoritative on owner, so a `None` from the
             // `core_utxos` source never overrides a resolved pool owner. Two
-            // resolved-but-disagreeing owners for one script means DB drift —
-            // keep the pool owner and warn rather than crash rehydration.
+            // resolved-but-disagreeing owners for one script means the store
+            // cannot say which account may re-issue the address, so the
+            // policy decides: strict aborts, recovery keeps the pool owner.
             let used_core_addresses = {
                 let mut union: std::collections::HashMap<
                     dashcore::Address,
@@ -1301,20 +1302,19 @@ impl PlatformWalletPersistence for SqlitePersister {
                         std::collections::hash_map::Entry::Occupied(existing) => {
                             if let (Some(pool_owner), Some(utxo_owner)) = (existing.get(), &owner) {
                                 if pool_owner != utxo_owner {
-                                    tracing::warn!(
-                                        wallet_id = %hex::encode(wallet_id),
-                                        pool_owner = %format!(
+                                    let conflict = WalletStorageError::UsedAddressOwnerConflict {
+                                        address: existing.key().to_string(),
+                                        pool_owner: format!(
                                             "{}[{}]",
                                             pool_owner.account_type, pool_owner.account_index
                                         ),
-                                        utxo_owner = %format!(
+                                        utxo_owner: format!(
                                             "{}[{}]",
                                             utxo_owner.account_type, utxo_owner.account_index
                                         ),
-                                        "rehydration: used address resolves to different owning \
-                                         accounts in core_address_pool vs core_utxos — keeping the \
-                                         pool owner (authoritative); likely store drift"
-                                    );
+                                    };
+                                    ctx.tolerate(LoadSite::UsedAddressOwnerConflict, conflict)
+                                        .map_err(PersistenceError::from)?;
                                 }
                             }
                         }
