@@ -18,11 +18,12 @@ use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::{
     ContactChangeSet, ContactRequestEntry, IdentityChangeSet, IdentityEntry, IdentityKeyEntry,
-    IdentityKeysChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
+    IdentityKeysChangeSet, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
     ReceivedContactRequestKey, SentContactRequestKey,
 };
 use platform_wallet::wallet::identity::{ContactRequest, EstablishedContact, IdentityStatus};
 use platform_wallet::wallet::platform_wallet::WalletId;
+use platform_wallet_storage::WalletStorageError;
 
 fn reopen(path: &std::path::Path) -> platform_wallet_storage::SqlitePersister {
     platform_wallet_storage::SqlitePersister::open(
@@ -474,10 +475,12 @@ fn tc8_out_of_wallet_identity_loads_empty() {
     assert!(managed.dashpay().incoming_contact_requests().is_empty());
 }
 
-/// TC-9 — a tombstoned identity's orphaned key/contact rows don't crash
-/// the join; the identity is absent and its rows are silently unattributed.
+/// TC-9 — a tombstoned identity's orphaned key/contact rows are the one
+/// orphan class recovery mode forgives. Strict refuses them: "the owner is
+/// gone" is exactly the state that silently discards live key material, so
+/// only an operator who asked for a best-effort load gets the old skip.
 #[test]
-fn tc9_tombstoned_identity_orphan_rows_dont_crash_load() {
+fn tc9_tombstoned_identity_orphan_rows_load_only_in_recovery() {
     let (persister, _tmp, path) = fresh_persister();
     let w = wid(0xC9);
     ensure_wallet_meta(&persister, &w);
@@ -525,9 +528,39 @@ fn tc9_tombstoned_identity_orphan_rows_dont_crash_load() {
         .unwrap();
     drop(persister);
 
-    let state = reopen(&path)
+    let strict = reopen(&path)
         .load()
-        .expect("load must succeed despite orphan rows");
+        .expect_err("orphan rows of a tombstoned owner must abort a strict load");
+    let PersistenceError::Backend { source, .. } = strict else {
+        panic!("expected a typed backend error, got {strict:?}");
+    };
+    assert!(
+        matches!(
+            source.downcast_ref::<WalletStorageError>(),
+            Some(WalletStorageError::OrphanedIdentityEntry { .. })
+        ),
+        "expected OrphanedIdentityEntry, got {source:?}"
+    );
+
+    let recovery = platform_wallet_storage::SqlitePersister::open(
+        platform_wallet_storage::SqlitePersisterConfig::new(&path)
+            .with_load_policy(platform_wallet_storage::LoadPolicy::Recovery),
+    )
+    .expect("reopen in recovery mode");
+    let state = recovery
+        .load()
+        .expect("recovery must complete the load despite orphan rows");
+    assert_eq!(
+        recovery
+            .last_load_degradation()
+            .by_site
+            .get(&platform_wallet_storage::LoadSite::TombstonedIdentityOrphan)
+            .copied(),
+        // One per affected collection: the leftover key row and the
+        // leftover established-contact row.
+        Some(2),
+        "both leftover collections must be counted"
+    );
     let im = &state.wallets[&w].identity_manager;
     let present = im
         .wallet_identities

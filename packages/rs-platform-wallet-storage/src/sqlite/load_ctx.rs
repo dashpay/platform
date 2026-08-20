@@ -1,9 +1,10 @@
 //! Load-time policy context — the one place [`LoadPolicy`] is branched on.
 //!
 //! Every reader that meets a recoverable inconsistency routes it through
-//! [`LoadCtx::tolerate`] (fatal under [`LoadPolicy::Strict`]) or
-//! [`LoadCtx::note_degraded`] (never fatal). No site open-codes the
-//! branch, so strictness cannot drift apart between readers.
+//! `LoadCtx::tolerate` (fatal under [`LoadPolicy::Strict`]) or
+//! `LoadCtx::note_degraded` (never fatal). No site open-codes the branch,
+//! so strictness cannot drift apart between readers. Both are crate-private:
+//! the policy decision belongs to the readers, not to callers.
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;

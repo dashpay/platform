@@ -53,6 +53,43 @@ component. The persister is `Send + Sync` and usable behind
 ([`SqlitePersister::commit_writes`]) are inherent methods on the persister,
 not part of the trait.
 
+### Strict loading and recovery mode
+
+`load()` is **strict by default**: any persisted row that fails to decode,
+contradicts its typed columns, or cannot be routed back to its account
+aborts the load. A corrupted wallet is never handed back half-formed —
+which matters most in the address pools, where a swallowed failure leaves a
+previously-used address unmarked and lets it be handed out again as a fresh
+receive address.
+
+`SqlitePersisterConfig::with_load_policy(LoadPolicy::Recovery)` opts into a
+best-effort load for diagnosis and rescue: those failures are logged and
+counted on `SqlitePersister::last_load_degradation()` instead of returned.
+Recovery makes the persister **read-only** — `store`, `flush`,
+`commit_writes`, `delete_wallet`, `prune_backups`, and the KV `put` /
+`delete` all return `ReadOnlyRecoveryMode` — so a degraded projection can
+never be written back over good rows. `backup_to` stays available, and
+snapshot → `restore_from` → reopen strict is the intended way out.
+
+Recovery introduces no new tolerance: anything fatal today (an oversize
+blob, an unusable schema version, a failed `PRAGMA integrity_check`) stays
+fatal. The open-time gates in particular are unconditional, because `open()`
+runs migrations and migrating a structurally corrupt file only deepens the
+damage. Recovery also refuses `auto_backup_dir = None`, so the rescue
+attempt always keeps a rollback point.
+
+Two sites degrade under *both* policies, because their signal cannot
+distinguish corruption from a healthy wallet: a used address whose owner is
+not one of the wallet's funds accounts (what a masternode-operator wallet
+looks like — provider accounts are not funds accounts), and a restored
+address that does not resolve against its account xpub (foreign, or
+legitimately sparse past the bounded-work cap). Both re-warm on the next
+sync; the balance total is exact regardless.
+
+`LoadDegradation` also reports `unimplemented_rows`: rows sitting in tables
+`load()` has no reader for. Those are intact, merely unread, so they never
+set the `degraded` flag.
+
 ### KV / ObjectId metadata
 
 The `kv` feature adds a per-object key/value store ([`KvStore`](src/kv.rs))

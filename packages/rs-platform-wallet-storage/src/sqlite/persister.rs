@@ -1118,6 +1118,12 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// - [`FlushMode::Manual`]: only merges into the buffer; durability
     ///   needs [`flush`](Self::flush) or
     ///   [`commit_writes`](Self::commit_writes).
+    ///
+    /// # Errors
+    ///
+    /// [`WalletStorageError::ReadOnlyRecoveryMode`] under
+    /// [`LoadPolicy::Recovery`](crate::LoadPolicy), raised before the
+    /// changeset is buffered so it cannot reach disk through a later flush.
     fn store(
         &self,
         wallet_id: WalletId,
@@ -1158,9 +1164,21 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// signs later on demand.
     /// The `tracing::info!` summary reports `wallets_rehydrated`.
     ///
-    /// Fail-hard: any row that fails to decode (or has a malformed
-    /// `wallet_id`) aborts the whole load, except a corrupt shielded
-    /// viewing-key row, which is skipped for that one subwallet.
+    /// # Load policy
+    ///
+    /// Under [`LoadPolicy::Strict`](crate::LoadPolicy) — the default — any
+    /// row that fails to decode, contradicts its typed columns, or cannot be
+    /// routed back to its account aborts the whole load: a corrupted wallet
+    /// is never handed back half-formed. Under
+    /// [`LoadPolicy::Recovery`](crate::LoadPolicy) those failures are logged
+    /// and counted on [`last_load_degradation`](Self::last_load_degradation)
+    /// instead, and the persister is read-only for the rest of its life.
+    ///
+    /// Two sites degrade in **both** policies because their signal cannot
+    /// distinguish corruption from a healthy wallet: a used address whose
+    /// owner is not one of this wallet's funds accounts, and a restored
+    /// address that does not resolve against its account xpub. Both re-warm
+    /// on the next sync and the balance total is exact regardless.
     ///
     /// **Query budget.** Platform addresses load via grouped bulk scans
     /// (constant), but the keyless per-wallet payload is a fan-out: one
@@ -1475,15 +1493,16 @@ fn populated_field_count(cs: &PlatformWalletChangeSet) -> usize {
 ///
 /// Informational, not a degradation: the data is intact and a future
 /// reader can pick it up — it simply is not in this `ClientStartState`.
+/// One statement, not one per table: `tc_p4_012` holds `load()`'s
+/// wallet-count-independent statement count to a small constant.
 fn count_unimplemented_rows(conn: &Connection) -> Result<u32, WalletStorageError> {
-    let mut total: u32 = 0;
-    for table in LOAD_UNIMPLEMENTED_TABLES {
-        let rows: i64 = conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
-            row.get(0)
-        })?;
-        total = total.saturating_add(u32::try_from(rows).unwrap_or(u32::MAX));
-    }
-    Ok(total)
+    let sum = LOAD_UNIMPLEMENTED_TABLES
+        .iter()
+        .map(|table| format!("(SELECT COUNT(*) FROM {table})"))
+        .collect::<Vec<_>>()
+        .join(" + ");
+    let rows: i64 = conn.query_row(&format!("SELECT {sum}"), [], |row| row.get(0))?;
+    Ok(u32::try_from(rows).unwrap_or(u32::MAX))
 }
 
 fn validate_config(config: &SqlitePersisterConfig) -> Result<(), WalletStorageError> {
