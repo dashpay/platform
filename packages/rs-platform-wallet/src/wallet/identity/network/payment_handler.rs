@@ -256,9 +256,10 @@ fn dashpay_payment_records(event: &WalletEvent) -> Vec<&TransactionRecord> {
         // — failing the matching `Pending` sent payments, since a swept
         // transaction can never confirm — is NOT this handler's to apply:
         // a sweep never re-emits once its round is durable, so the flip
-        // must ride the sweep's own atomic store round, which belongs to
-        // the wallet-event adapter. Routing it here would persist the
-        // flip on a separate round with no replay if that round fails.
+        // must ride the sweep's own atomic store round, and the
+        // wallet-event adapter owns that (see
+        // `payments::SweptPaymentFlips`). Routing it here as well would
+        // race a second, separately persisted write against that round.
         WalletEvent::TransactionInstantLocked { .. }
         | WalletEvent::TransactionsSwept { .. }
         | WalletEvent::SyncHeightAdvanced { .. }
@@ -285,8 +286,8 @@ fn drives_payment_hooks(event: &WalletEvent) -> bool {
         } => !inserted.is_empty() || !updated.is_empty(),
         // No records to route (see `dashpay_payment_records`), so a task
         // here would take and release the wallet-manager write lock for
-        // nothing. The sweep's payment consequence belongs on the
-        // wallet-event adapter's own store round — see `dashpay_payment_records`.
+        // nothing. The sweep's payment consequence rides the wallet-event
+        // adapter's own store round instead — see `dashpay_payment_records`.
         WalletEvent::TransactionsSwept { .. }
         | WalletEvent::SyncHeightAdvanced { .. }
         | WalletEvent::ChainLockProcessed { .. } => false,
@@ -294,14 +295,15 @@ fn drives_payment_hooks(event: &WalletEvent) -> bool {
 }
 
 /// Run the DashPay payment hooks for `event`: record any incoming DashPay
-/// payment, then advance a matching sent payment from `Pending` to
-/// `Confirmed` once its transaction reaches finality (mined or
-/// InstantSend-locked). The opposite terminal — `Failed`, when a sweep
-/// proves the transaction never can confirm — is deliberately not applied
-/// here: it belongs on the sweep's own atomic store round in the
-/// wallet-event adapter (see `dashpay_payment_records`). All paths are
-/// idempotent per txid, so re-detections and repeated block-processing
-/// rounds converge without duplicating entries.
+/// payment, then advance a matching sent payment from `Pending` (or a
+/// sweep-written `Failed` — the reinstatement correction) to `Confirmed`
+/// once its transaction reaches finality (mined or InstantSend-locked).
+/// The opposite terminal — `Failed`, when a sweep proves the transaction
+/// never can confirm — is applied by the wallet-event adapter on the
+/// sweep's own atomic store round, not here (see
+/// `payments::SweptPaymentFlips`). All paths are idempotent per txid, so
+/// re-detections and repeated block-processing rounds converge without
+/// duplicating entries.
 pub(crate) async fn run_dashpay_payment_hooks(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     wallet_id: &WalletId,
@@ -477,12 +479,12 @@ mod tests {
     }
 
     /// `TransactionsSwept` must NOT drive the payment hooks: its payment
-    /// consequence — failing the losers' `Pending` sent payments — belongs
-    /// on the wallet-event adapter's own atomic store round, because a
-    /// sweep never re-emits once its round is durable and a separately
-    /// persisted flip that failed its store would be lost for good.
-    /// Spawning a hook task here would race a second write against that
-    /// round.
+    /// consequence — failing the losers' `Pending` sent payments — rides
+    /// the wallet-event adapter's own atomic store round (see
+    /// `payments::SweptPaymentFlips`), because a sweep never re-emits once
+    /// its round is durable and a separately persisted flip that failed
+    /// its store would be lost for good. Spawning a hook task here would
+    /// race a second write against that round.
     #[test]
     fn transactions_swept_does_not_drive_payment_hooks() {
         let event = WalletEvent::TransactionsSwept {
