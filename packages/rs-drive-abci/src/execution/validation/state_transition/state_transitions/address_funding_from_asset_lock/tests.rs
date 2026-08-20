@@ -3200,6 +3200,41 @@ mod tests {
     mod expected_fee_calibration {
         use super::*;
 
+        /// Wallet-side Core→Platform funding reserve (credits) — mirrors
+        /// `CoreToPlatformAmountPolicy.fundingReserveDuffs × 1000` in the
+        /// iOS wallet. A wallet-CHOSEN conservative reserve (equal to the
+        /// admission floor), NOT a proven fee maximum — these tests pin its
+        /// adequacy against real execution so a protocol change that grows
+        /// the fee past it fails loudly here instead of shrinking user
+        /// topups silently.
+        const WALLET_FUNDING_RESERVE_CREDITS: u64 = 56_000_000;
+
+        /// Highest `user_fee_increase` the SDK's stuck-ST retry loop can
+        /// reach: `submit_with_cl_height_retry` bumps it by 1 per attempt,
+        /// and `CL_HEIGHT_RETRY_BUDGET / CL_HEIGHT_RETRY_DELAY` (210s/15s)
+        /// bounds the attempts at 14.
+        const MAX_RETRY_USER_FEE_INCREASE: u16 = 14;
+
+        /// Asset-lock proof with an explicit lock value, for admission
+        /// boundary probes (`create_asset_lock_proof_with_key` hardcodes
+        /// the fixture default).
+        fn create_asset_lock_proof_with_key_and_amount(
+            rng: &mut StdRng,
+            amount_duffs: u64,
+        ) -> (AssetLockProof, Vec<u8>) {
+            let platform_version = PlatformVersion::latest();
+            let (_, pk) = ECDSA_SECP256K1
+                .random_public_and_private_key_data(rng, platform_version)
+                .unwrap();
+
+            let asset_lock_proof = instant_asset_lock_proof_fixture(
+                Some(PrivateKey::from_byte_array(&pk, Network::Testnet).unwrap()),
+                Some(amount_duffs),
+            );
+
+            (asset_lock_proof, pk.to_vec())
+        }
+
         /// Execute one funding transition on genesis state and return the
         /// actual charged fee (`total_base_fee`).
         async fn execute_and_get_actual_fee(
@@ -3298,6 +3333,12 @@ mod tests {
             .expect("should estimate expected fee");
 
             assert_within_band(actual, expected);
+            assert!(
+                actual <= WALLET_FUNDING_RESERVE_CREDITS,
+                "actual fee {actual} exceeds the wallet funding reserve \
+                 {WALLET_FUNDING_RESERVE_CREDITS}: raise the reserve \
+                 (CoreToPlatformAmountPolicy.fundingReserveDuffs)"
+            );
         }
 
         #[tokio::test]
@@ -3335,6 +3376,178 @@ mod tests {
             .expect("should estimate expected fee");
 
             assert_within_band(actual, expected);
+        }
+
+        /// The wallet's minimal lock (admission floor + 1 duff) must be
+        /// ACCEPTED end-to-end. This exercises both admission gates the
+        /// wallet's lock sizing has to clear: the `calculate_min_required_fee`
+        /// floor in `transform_into_action` AND the average-case estimated
+        /// fee that `validate_fees_of_event` requires the fee strategy to
+        /// cover before execution. If this ever fails with
+        /// `AddressesNotEnoughFundsError`, the estimated gate has outgrown
+        /// the floor and the wallet-side funding reserve must be raised —
+        /// the error carries the required balance to size it by.
+        #[tokio::test]
+        async fn test_minimal_admissible_lock_is_accepted() {
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let signer = TestAddressSigner::new();
+            let mut rng = StdRng::seed_from_u64(702);
+            // Floor is 56,000 duffs; 56,001 is the smallest strictly-above
+            // lock the wallet can produce (amount 1 duff + 56k reserve).
+            let (asset_lock_proof, asset_lock_pk) =
+                create_asset_lock_proof_with_key_and_amount(&mut rng, 56_001);
+
+            let mut outputs = BTreeMap::new();
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
+
+            let state_transition = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                &signer,
+                BTreeMap::new(),
+                outputs,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+            )
+            .await;
+
+            let result = state_transition
+                .serialize_to_bytes()
+                .expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    PlatformVersion::latest(),
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "a minimal wallet lock (floor + 1 duff) must clear BOTH \
+                 admission gates; if this fails the wallet funding reserve \
+                 must be raised above the estimated-fee gate"
+            );
+        }
+
+        /// The wallet funding reserve must cover the actual charged fee
+        /// even at the HIGHEST `user_fee_increase` the SDK's stuck-ST
+        /// retry loop can reach — otherwise a retried topup could eat into
+        /// the user's confirmed amount via `ReduceOutput(0)`.
+        #[tokio::test]
+        async fn test_max_retry_fee_increase_stays_within_the_wallet_reserve() {
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let signer = TestAddressSigner::new();
+            let mut rng = StdRng::seed_from_u64(703);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+
+            let mut outputs = BTreeMap::new();
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
+
+            let state_transition =
+                create_signed_address_funding_from_asset_lock_transition_with_fee_increase(
+                    asset_lock_proof,
+                    &asset_lock_pk,
+                    &signer,
+                    BTreeMap::new(),
+                    outputs,
+                    vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+                    MAX_RETRY_USER_FEE_INCREASE,
+                )
+                .await;
+
+            let result = state_transition
+                .serialize_to_bytes()
+                .expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    PlatformVersion::latest(),
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            let fee_result = assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. }] =>
+                    fee_result.clone()
+            );
+            let actual = fee_result.total_base_fee();
+            assert!(
+                actual <= WALLET_FUNDING_RESERVE_CREDITS,
+                "actual fee {actual} at max retry fee increase exceeds the wallet \
+                 funding reserve {WALLET_FUNDING_RESERVE_CREDITS}: raise the reserve \
+                 (CoreToPlatformAmountPolicy.fundingReserveDuffs)"
+            );
+        }
+
+        /// The estimate must not depend on which platform version the
+        /// caller resolves (the FFI estimator pins `latest()` while the
+        /// builder resolves the network-floored `sdk.version()`): every
+        /// shipped fee version shares the same fee table today, and this
+        /// pins that assumption.
+        #[tokio::test]
+        async fn test_expected_fee_is_stable_across_shipped_platform_versions() {
+            let latest = AddressFundingFromAssetLockTransition::estimate_expected_fee(
+                0,
+                1,
+                PlatformVersion::latest(),
+            )
+            .expect("should estimate under latest");
+            let first = AddressFundingFromAssetLockTransition::estimate_expected_fee(
+                0,
+                1,
+                PlatformVersion::first(),
+            )
+            .expect("should estimate under first");
+            assert_eq!(
+                latest, first,
+                "expected-fee constants diverged across platform versions — the \
+                 FFI estimator's latest() pin no longer matches builders resolving \
+                 sdk.version(); thread the version through instead"
+            );
         }
     }
 

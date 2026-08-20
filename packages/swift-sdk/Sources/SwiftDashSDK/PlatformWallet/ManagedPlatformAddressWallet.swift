@@ -648,15 +648,17 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         }
     }
 
-    /// Expected fee (in credits) the network will actually charge for an
-    /// `AddressFundingFromAssetLockTransition` with the given input and
-    /// output counts — a display/planning estimate of the metered
-    /// execution fee, NOT the (several-times-larger) consensus minimum
-    /// the locked value must cover. Pure computation on the Rust side
-    /// (no handle, no network); the constants are pinned against real
-    /// execution by the drive-abci calibration tests. The canonical
-    /// wallet topup is `(inputCount: 0, outputCount: 1)` — the single
-    /// remainder recipient.
+    /// DISPLAY-ONLY estimate (in credits) of the fee the network charges
+    /// for an `AddressFundingFromAssetLockTransition` with the given input
+    /// and output counts. NOT an upper bound and NOT the consensus
+    /// minimum the locked value must cover — the charged fee is metered on
+    /// live state and grows with the retry loop's `user_fee_increase`, so
+    /// callers MUST NOT size funding locks (or any execution budget) from
+    /// this number; locks carry a conservative wallet funding reserve
+    /// instead. Pure computation on the Rust side (no handle, no network);
+    /// the constants are pinned against real execution by the drive-abci
+    /// calibration tests. The canonical wallet topup is
+    /// `(inputCount: 0, outputCount: 1)` — the single remainder recipient.
     public static func estimateAddressFundingFee(
         inputCount: Int = 0,
         outputCount: Int = 1

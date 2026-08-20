@@ -274,20 +274,25 @@ pub(super) unsafe fn decode_funding_addresses(
 /// charge for an `AddressFundingFromAssetLockTransition` with the given
 /// input and output counts.
 ///
-/// This is a display/planning estimate of the GroveDB-metered execution
-/// fee — deliberately DISTINCT from the consensus minimum the locked value
-/// must cover (`calculate_min_required_fee`, ~56k duffs for a one-output
-/// funding), which is several times larger than the metered charge. The
-/// constants are pinned against real execution by the drive-abci
-/// `expected_fee_calibration` tests.
+/// DISPLAY-ONLY: this is an informational estimate of the GroveDB-metered
+/// execution fee — deliberately DISTINCT from the consensus minimum the
+/// locked value must cover (`calculate_min_required_fee`, ~56k duffs for a
+/// one-output funding). It is NOT an upper bound: the charged fee is
+/// metered on live state, grows with `user_fee_increase` (the stuck-ST
+/// retry bumps it), and the pre-execution `validate_fees_of_event` gate
+/// requires the fee strategy to cover an average-case estimate that can
+/// exceed this number. Callers MUST NOT size funding locks from it — locks
+/// carry a conservative wallet reserve instead. The constants are pinned
+/// against real execution by the drive-abci `expected_fee_calibration`
+/// tests.
 ///
-/// The version is pinned to [`PlatformVersion::latest()`]. The funding
-/// builder resolves `sdk.version()` (network-floored), which can lag
-/// `latest()` — but every shipped fee version shares the same
-/// `state_transition_min_fees` table today, so the estimate cannot drift
-/// in practice. If a future fee version diverges, add an optional
-/// `protocol_version` parameter (0 = latest) rather than changing this
-/// default.
+/// The version is pinned to [`PlatformVersion::latest()`], while the
+/// funding builder resolves the network-floored `sdk.version()` — an
+/// acceptable mismatch ONLY because the value is display-only and every
+/// shipped fee version shares the same `state_transition_min_fees` table
+/// (pinned by `test_expected_fee_is_stable_across_shipped_platform_versions`).
+/// If a future fee version diverges, thread the protocol version through
+/// rather than changing this default.
 ///
 /// Pure computation: no wallet handle, no network. Writes the fee to
 /// `out_fee` and returns `ok()`; a formula overflow returns

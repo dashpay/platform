@@ -10,13 +10,20 @@ impl AddressFundingFromAssetLockTransition {
     /// address funding, given input and output counts, without needing a
     /// constructed transition.
     ///
-    /// This is a client-side display/planning estimate of the
+    /// This is a client-side DISPLAY/PLANNING estimate of the
     /// GroveDB-metered execution fee — deliberately DISTINCT from
     /// [`calculate_min_required_fee`], which is the consensus floor the
     /// locked value must cover before processing starts (the floor is
     /// several times larger than the metered charge). No consensus path
-    /// reads this estimate; a miss shows a slightly-off display number,
-    /// never a failed transition.
+    /// reads this estimate.
+    ///
+    /// NOT an upper bound — callers MUST NOT size funding locks (or any
+    /// execution budget) from it. The charged fee is metered on live
+    /// state, grows with `user_fee_increase` (the SDK's stuck-ST retry
+    /// bumps it), and `validate_fees_of_event` additionally requires the
+    /// fee strategy to cover an average-case estimate that can exceed
+    /// this number. Locks must carry a conservative reserve instead; a
+    /// miss here shows a slightly-off display number, nothing more.
     ///
     /// The constants live in the versioned fee tables
     /// (`state_transition_min_fees`) and are pinned against real
