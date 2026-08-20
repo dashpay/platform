@@ -60,7 +60,11 @@ pub struct ShieldedShieldPreflight {
     /// versioned maximum address-input count.
     pub usable_balance_credits: Credits,
     /// Balance retained on input 0 for the transition fee — the versioned
-    /// [`shield_fee_reserve_credits`] value the plan was computed with.
+    /// [`shield_fee_reserve_credits`] value the plan was computed with, scaled
+    /// to the input count the plan actually ADMITS rather than to the raw
+    /// funded-address count (see `resolve_shield_fee_reserve`). Addresses the
+    /// planner excludes — the leading ones that cannot be input 0, and the
+    /// later ones below the versioned minimum input amount — never inflate it.
     pub fee_reserve_credits: Credits,
     /// Maximum claim accepted by the wallet's deterministic selector:
     /// `usable_balance_credits - fee_reserve_credits`, floored at zero.
@@ -163,6 +167,125 @@ fn checked_credit_sum<'a>(
     })
 }
 
+/// The candidate set [`plan_shield_inputs`] admits at one fee reserve.
+///
+/// This is the SINGLE definition of the admission rule. The fee-reserve
+/// resolver below counts inputs through this same function, so the reserve can
+/// never be priced off a candidate count the planner would not actually admit
+/// — the defect this helper was extracted to close.
+///
+/// `candidates` must already be sorted by Platform address: that order is what
+/// the BTreeMap and the network use to identify input 0.
+#[cfg(feature = "shielded")]
+fn admit_shield_inputs(
+    candidates: &[(PlatformAddress, Credits)],
+    fee_reserve: Credits,
+    min_input_amount: Credits,
+    max_address_inputs: usize,
+) -> Vec<(PlatformAddress, Credits)> {
+    let Some(index) = candidates
+        .iter()
+        .position(|(_, balance)| *balance > fee_reserve)
+    else {
+        return Vec::new();
+    };
+
+    // Keep the fee-bearing input 0 regardless of its post-reserve base
+    // capacity: the shield fee is added to its requested claim before
+    // structure validation. Later addresses get no fee addition, so a
+    // full balance below `min_input_amount` can never form a valid
+    // input and must not inflate preflight capacity. Finally, truncate
+    // the deterministic sequence before deriving capacity so Max can
+    // always be represented by a protocol-valid input count.
+    std::iter::once(candidates[index])
+        .chain(
+            candidates[index + 1..]
+                .iter()
+                .copied()
+                .filter(|(_, balance)| *balance >= min_input_amount),
+        )
+        .take(max_address_inputs)
+        .collect()
+}
+
+/// Resolve the mutually dependent (fee reserve, admitted input set) pair.
+///
+/// Write `A(R)` for the cardinality of [`admit_shield_inputs`] at reserve `R`,
+/// and `R(n)` for `fee_reserve_for_inputs(n)`. The two are circular: the
+/// reserve decides which address can be input 0, and the admitted input count
+/// decides how many per-input `SetBalanceToAddress` writes the reserve must
+/// price. Call a count SOUND when `A(R(n)) <= n` — the reserve prices at least
+/// as many writes as the plan built with it can contain inputs. That is the
+/// property the reserve needs for EVERY requested amount, because
+/// [`ShieldedShieldInputPlan::select_inputs`] never uses more than the admitted
+/// candidates, whatever the amount. This returns the SMALLEST sound count, i.e.
+/// the least post-fixed point of `R |-> R(A(R))`.
+///
+/// Why it is well defined, minimal, and terminating:
+///
+/// * `A` is non-increasing in `R`. Raising `R` can only move the `balance > R`
+///   search for input 0 later (weakly) in the address-sorted list, and a later
+///   input 0 leaves a shorter suffix to draw the `balance >= min_input_amount`
+///   tail from. Neither the tail filter nor the `max_address_inputs` cap
+///   depends on `R`.
+/// * `R` is non-decreasing in `n`: each priced input adds one write.
+/// * So soundness is UPWARD CLOSED in `n` — if `A(R(n)) <= n` and `n' >= n`
+///   then `A(R(n')) <= A(R(n)) <= n <= n'`. The sound counts form an up-set, so
+///   the first hit of an upward scan is the minimum.
+/// * `min(candidates.len(), max_address_inputs)` is always sound, because
+///   `admit_shield_inputs` returns a subsequence of `candidates` truncated to
+///   `max_address_inputs`. That bounds the scan at `max_address_inputs + 1`
+///   evaluations (17 at the current protocol maximum) and makes the
+///   fallthrough below total — there is no unreachable branch and no panic.
+///
+/// A single descent from that upper bound (take `n1 = A(R(n_max))`, then use
+/// `R(n1)`) would be UNSOUND, which is why this scans upward instead. Because
+/// `A` is antitone, iterating it can settle into a two-cycle rather than a
+/// fixed point: an address holding exactly `R(n_max)` is not viable at
+/// `R(n_max)` (the viability test is a strict `>`) but becomes viable at the
+/// lower `R(n1)`, pulling itself and its whole suffix back in, so
+/// `A(R(n1)) > n1` and `R(n1)` under-prices its own plan.
+/// `reserve_fixed_point_does_not_descend_into_an_unsound_cycle` pins that
+/// shape. For the same reason an EXACT fixed point need not exist; the least
+/// sound count is the correct target and over-prices by at most `n - A(R(n))`
+/// writes, which is the conservative direction.
+#[cfg(feature = "shielded")]
+fn resolve_shield_fee_reserve<F>(
+    candidates: &[(PlatformAddress, Credits)],
+    fee_reserve_for_inputs: F,
+    min_input_amount: Credits,
+    max_address_inputs: usize,
+) -> Result<(Credits, Vec<(PlatformAddress, Credits)>), PlatformWalletError>
+where
+    F: Fn(usize) -> Result<Credits, PlatformWalletError>,
+{
+    let upper_bound = candidates.len().min(max_address_inputs);
+
+    for priced_inputs in 0..upper_bound {
+        let fee_reserve = fee_reserve_for_inputs(priced_inputs)?;
+        let admitted = admit_shield_inputs(
+            candidates,
+            fee_reserve,
+            min_input_amount,
+            max_address_inputs,
+        );
+        if admitted.len() <= priced_inputs {
+            return Ok((fee_reserve, admitted));
+        }
+    }
+
+    // `upper_bound` is sound by construction (see the doc comment), so this is
+    // the scan's guaranteed terminal case rather than an error path.
+    let fee_reserve = fee_reserve_for_inputs(upper_bound)?;
+    let admitted = admit_shield_inputs(
+        candidates,
+        fee_reserve,
+        min_input_amount,
+        max_address_inputs,
+    );
+    Ok((fee_reserve, admitted))
+}
+
 /// Analyze funded Platform addresses once for both preflight and execution.
 ///
 /// The representable set is the lexicographically earliest usable prefix,
@@ -171,43 +294,35 @@ fn checked_credit_sum<'a>(
 /// larger balances; consequently preflight Max means the maximum accepted by
 /// this deterministic policy, not a globally balance-optimized subset.
 ///
-/// `fee_reserve` is the versioned [`shield_fee_reserve_credits`] value; it is
-/// the balance input 0 must retain unclaimed so execution can deduct the
-/// actual metered fee from that input's residue (`DeductFromInput(0)`).
+/// `fee_reserve_for_inputs` maps an input count to the versioned
+/// [`shield_fee_reserve_credits`] value — a FUNCTION, not a fixed figure,
+/// because the reserve and the admitted set are mutually dependent.
+/// [`resolve_shield_fee_reserve`] settles that circularity here, inside the
+/// planner, so no caller can price a reserve off a candidate count the planner
+/// would not admit. The resolved value is the balance input 0 must retain
+/// unclaimed so execution can deduct the actual metered fee from that input's
+/// residue (`DeductFromInput(0)`), and it is reported on the preflight snapshot
+/// as `fee_reserve_credits`.
 #[cfg(feature = "shielded")]
-fn plan_shield_inputs(
+fn plan_shield_inputs<F>(
     mut candidates: Vec<(PlatformAddress, Credits)>,
-    fee_reserve: Credits,
+    fee_reserve_for_inputs: F,
     min_input_amount: Credits,
     max_address_inputs: usize,
-) -> Result<ShieldedShieldInputPlan, PlatformWalletError> {
+) -> Result<ShieldedShieldInputPlan, PlatformWalletError>
+where
+    F: Fn(usize) -> Result<Credits, PlatformWalletError>,
+{
     candidates.sort_by_key(|(address, _)| *address);
 
     let account_balance_credits =
         checked_credit_sum(candidates.iter().map(|(_, balance)| balance))?;
-    let viable_input_0 = candidates
-        .iter()
-        .position(|(_, balance)| *balance > fee_reserve);
-    let usable_candidates: Vec<(PlatformAddress, Credits)> = viable_input_0
-        .map(|index| {
-            // Keep the fee-bearing input 0 regardless of its post-reserve base
-            // capacity: the shield fee is added to its requested claim before
-            // structure validation. Later addresses get no fee addition, so a
-            // full balance below `min_input_amount` can never form a valid
-            // input and must not inflate preflight capacity. Finally, truncate
-            // the deterministic sequence before deriving capacity so Max can
-            // always be represented by a protocol-valid input count.
-            std::iter::once(candidates[index])
-                .chain(
-                    candidates[index + 1..]
-                        .iter()
-                        .copied()
-                        .filter(|(_, balance)| *balance >= min_input_amount),
-                )
-                .take(max_address_inputs)
-                .collect()
-        })
-        .unwrap_or_default();
+    let (fee_reserve, usable_candidates) = resolve_shield_fee_reserve(
+        &candidates,
+        fee_reserve_for_inputs,
+        min_input_amount,
+        max_address_inputs,
+    )?;
     let usable_balance_credits =
         checked_credit_sum(usable_candidates.iter().map(|(_, balance)| balance))?;
     let max_shieldable_credits = usable_balance_credits.saturating_sub(fee_reserve);
@@ -1591,17 +1706,22 @@ impl PlatformWallet {
         let state_transition_version = &platform_version.dpp.state_transitions;
         let max_address_inputs = usize::from(state_transition_version.max_address_inputs);
         // The reserve retained on input 0 must cover the per-input
-        // `SetBalanceToAddress` writes of every input a Max shield can admit
-        // from this account: the funded-candidate count, capped at the protocol
-        // maximum. That is an upper bound on the inputs any shield from this
-        // account uses, so the reserve is sufficient for every requested amount
-        // (`shielded_shield_from_account` re-plans through this same helper, so
-        // preflight and execution stay consistent) while staying tight — no
-        // always-16 over-reservation for accounts with few funded addresses.
-        let reserve_input_count = candidates.len().min(max_address_inputs);
+        // `SetBalanceToAddress` writes of every input a Max shield from this
+        // account can admit. Pricing it off the raw funded-candidate count
+        // OVER-charges, because the planner then drops the leading addresses
+        // that cannot be input 0 and the later addresses below the versioned
+        // minimum: one viable address behind fifteen dust addresses would pay a
+        // 16-input reserve for a transition that can only ever hold one input,
+        // and the inflated reserve rejects a shield that transition could fund.
+        // So hand the planner the versioned reserve FUNCTION and let it resolve
+        // the reserve against its own admitted set (`resolve_shield_fee_reserve`
+        // — least sound input count, derivation in its doc comment). The
+        // admitted count bounds the inputs of every requested amount, and
+        // `shielded_shield_from_account` re-plans through this same helper, so
+        // the reserve stays sufficient while preflight and execution agree.
         plan_shield_inputs(
             candidates,
-            shield_fee_reserve_credits(platform_version, reserve_input_count)?,
+            |input_count| shield_fee_reserve_credits(platform_version, input_count),
             state_transition_version.address_funds.min_input_amount,
             max_address_inputs,
         )
@@ -2106,15 +2226,44 @@ mod shield_input_selection_tests {
         )
     }
 
-    fn plan(
+    fn plan_with_reserve<F>(
         candidates: Vec<(PlatformAddress, Credits)>,
-    ) -> Result<ShieldedShieldInputPlan, PlatformWalletError> {
+        fee_reserve_for_inputs: F,
+    ) -> Result<ShieldedShieldInputPlan, PlatformWalletError>
+    where
+        F: Fn(usize) -> Result<Credits, PlatformWalletError>,
+    {
         plan_shield_inputs(
             candidates,
-            reserve(),
+            fee_reserve_for_inputs,
             min_input_amount(),
             max_address_inputs(),
         )
+    }
+
+    /// Plan against a FIXED reserve. The selection tests below hold the reserve
+    /// constant so they exercise ordering, viability and greedy-claim rules in
+    /// isolation; a constant reserve function is trivially its own fixed point,
+    /// so the resolver returns exactly [`reserve`] for them.
+    fn plan(
+        candidates: Vec<(PlatformAddress, Credits)>,
+    ) -> Result<ShieldedShieldInputPlan, PlatformWalletError> {
+        plan_with_reserve(candidates, |_| Ok(reserve()))
+    }
+
+    /// Plan against the real versioned, input-count-scaled reserve — the shape
+    /// the fee-reserve fixed point actually has to resolve.
+    fn plan_versioned(
+        candidates: Vec<(PlatformAddress, Credits)>,
+    ) -> Result<ShieldedShieldInputPlan, PlatformWalletError> {
+        plan_with_reserve(candidates, |input_count| {
+            shield_fee_reserve_credits(LATEST_PLATFORM_VERSION, input_count)
+        })
+    }
+
+    fn versioned_reserve(input_count: usize) -> Credits {
+        shield_fee_reserve_credits(LATEST_PLATFORM_VERSION, input_count)
+            .expect("versioned shield fee reserve must be computable")
     }
 
     #[test]
@@ -2377,6 +2526,185 @@ mod shield_input_selection_tests {
             PlatformWalletError::PlatformShieldCapacityExceeded { available, required }
                 if available == 2 * reserve() && required == 2 * reserve() + 1
         ));
+    }
+
+    #[test]
+    fn one_viable_address_behind_dust_reserves_for_one_input_not_the_input_cap() {
+        // Regression, CodeRabbit on #4429: the reserve used to be priced off
+        // every positive-balance address, but the planner excludes the leading
+        // addresses that cannot be input 0 and the later addresses below the
+        // versioned minimum. One viable address trailed by enough dust to reach
+        // the input cap therefore paid a 16-input reserve for a transition that
+        // can only ever contain ONE input, and the inflated reserve rejected a
+        // shield that one-input transition could fund.
+        let max_inputs = max_address_inputs();
+        assert!(
+            max_inputs > 1,
+            "latest protocol must permit more than one shield input"
+        );
+
+        let reserve_one = versioned_reserve(1);
+        let reserve_capped = versioned_reserve(max_inputs);
+        assert!(
+            reserve_capped > reserve_one,
+            "the reserve must scale with input count for this regression to bite"
+        );
+
+        // Dust sits below the versioned minimum input amount, so every one of
+        // these is dropped from the admitted set — none can ever be an input.
+        let dust = min_input_amount() - 1;
+        // Input 0 holds exactly the inflated cap-priced reserve: strictly above
+        // the correct one-input reserve, but NOT above the cap-priced one (the
+        // viability test is a strict `>`), so the old pricing zeroed capacity.
+        let viable_balance = reserve_capped;
+
+        let mut candidates = vec![(indexed_addr(1), viable_balance)];
+        candidates.extend((2..=max_inputs).map(|index| (indexed_addr(index), dust)));
+        assert_eq!(
+            candidates.len(),
+            max_inputs,
+            "the funded-candidate count must reach the cap the old pricing keyed off"
+        );
+
+        let plan = plan_versioned(candidates.clone()).unwrap();
+
+        assert_eq!(
+            plan.usable_candidates.len(),
+            1,
+            "only the one viable address can be an input"
+        );
+        assert_eq!(
+            plan.preflight.fee_reserve_credits, reserve_one,
+            "the reserve must price the ONE admitted input, not the funded-candidate count"
+        );
+        assert_eq!(plan.preflight.usable_balance_credits, viable_balance);
+
+        let amount = reserve_capped - reserve_one;
+        assert!(amount > 0);
+        assert!(plan.preflight.can_shield);
+        assert_eq!(plan.preflight.max_shieldable_credits, amount);
+
+        let chosen = plan.select_inputs(amount).unwrap();
+        assert_eq!(
+            chosen.len(),
+            1,
+            "the funded shield is a one-input transition"
+        );
+        assert_eq!(chosen.get(&indexed_addr(1)), Some(&amount));
+
+        // The same candidates under the pre-fix cap-priced reserve: no address
+        // can retain it, so the shield above is rejected outright.
+        let inflated = plan_with_reserve(candidates, |_| Ok(reserve_capped)).unwrap();
+        assert!(
+            !inflated.preflight.can_shield,
+            "the pre-fix reserve must be the thing that rejected this shield"
+        );
+        assert_eq!(inflated.preflight.max_shieldable_credits, 0);
+        assert!(matches!(
+            inflated.select_inputs(amount).unwrap_err(),
+            PlatformWalletError::PlatformShieldCapacityExceeded { .. }
+        ));
+    }
+
+    #[test]
+    fn reserve_fixed_point_does_not_descend_into_an_unsound_cycle() {
+        // The resolver scans UPWARD for the least sound input count instead of
+        // taking a single descent from the all-candidates upper bound. The
+        // admitted count is antitone in the reserve, so one descent can land on
+        // a count that under-prices its own plan.
+        //
+        // Shape: `head` holds exactly `R(4)`, so it is not viable at `R(4)`
+        // (strict `>`) but is viable at the lower `R(3)`, dragging itself and
+        // its whole suffix back into the admitted set:
+        //   n = 4 -> input 0 is the second address, admits 3 -> 3 <= 4, sound
+        //   n = 3 -> input 0 is `head`,             admits 4 -> 4 >  3, UNSOUND
+        //   n < 3 -> the reserve only drops,        admits 4 -> unsound
+        // so the least sound count is the upper bound 4, and the naive one-step
+        // descent to 3 would have priced three writes for a four-input plan.
+        let max_inputs = max_address_inputs();
+        assert!(max_inputs >= 4, "this shape needs at least four inputs");
+
+        let head = versioned_reserve(4);
+        let funded = 2 * versioned_reserve(max_inputs);
+        let candidates = vec![
+            (indexed_addr(1), head),
+            (indexed_addr(2), funded),
+            (indexed_addr(3), funded),
+            (indexed_addr(4), funded),
+        ];
+
+        // What the unsound one-step descent would have produced: at `R(3)` the
+        // head becomes viable and the plan holds four inputs on a three-input
+        // reserve.
+        let descended =
+            plan_with_reserve(candidates.clone(), |_| Ok(versioned_reserve(3))).unwrap();
+        assert_eq!(
+            descended.usable_candidates.len(),
+            4,
+            "the descent's own plan must admit more inputs than the descent priced"
+        );
+
+        let plan = plan_versioned(candidates).unwrap();
+        assert_eq!(
+            plan.preflight.fee_reserve_credits,
+            versioned_reserve(4),
+            "the resolver must settle on the least SOUND count, here the upper bound"
+        );
+        assert_eq!(plan.usable_candidates.len(), 3);
+        assert!(
+            !plan
+                .usable_candidates
+                .iter()
+                .any(|(address, _)| *address == indexed_addr(1)),
+            "the head cannot retain the settled reserve, so it is not an input"
+        );
+        assert!(
+            plan.preflight.fee_reserve_credits >= versioned_reserve(plan.usable_candidates.len()),
+            "the settled reserve must price at least the inputs it admits"
+        );
+    }
+
+    #[test]
+    fn resolved_reserve_always_prices_at_least_the_inputs_it_admits() {
+        // The soundness invariant the fixed point exists to guarantee, swept
+        // over every rung of the reserve ladder crossed with tail shapes that
+        // are admitted (funded) or dropped (dust). The reserve is non-decreasing
+        // in the input count, so `R_used >= R(|admitted|)` is exactly
+        // "the reserve prices at least as many per-input writes as the plan it
+        // produced contains inputs" — and that bounds every amount, because
+        // `select_inputs` never uses more than the admitted candidates.
+        let max_inputs = max_address_inputs();
+        let funded = 2 * versioned_reserve(max_inputs);
+        let dust = min_input_amount() - 1;
+
+        for head_rung in 0..=max_inputs {
+            for tail_len in 0..=max_inputs {
+                for dusty_tail in [false, true] {
+                    let mut candidates = vec![(indexed_addr(1), versioned_reserve(head_rung))];
+                    candidates.extend((0..tail_len).map(|offset| {
+                        (
+                            indexed_addr(offset + 2),
+                            if dusty_tail { dust } else { funded },
+                        )
+                    }));
+
+                    let plan = plan_versioned(candidates).expect("plan must be computable");
+                    let admitted = plan.usable_candidates.len();
+
+                    assert!(
+                        admitted <= max_inputs,
+                        "admitted {admitted} exceeds the protocol input cap \
+                         (head_rung={head_rung}, tail_len={tail_len}, dusty_tail={dusty_tail})"
+                    );
+                    assert!(
+                        plan.preflight.fee_reserve_credits >= versioned_reserve(admitted),
+                        "reserve {} under-prices its own {admitted}-input plan \
+                         (head_rung={head_rung}, tail_len={tail_len}, dusty_tail={dusty_tail})",
+                        plan.preflight.fee_reserve_credits
+                    );
+                }
+            }
+        }
     }
 
     #[test]
