@@ -1088,9 +1088,8 @@ fn derive_new_utxos(record: &TransactionRecord) -> Vec<Utxo> {
 /// neither.
 ///
 /// Height and the confirmation flags describe the *previous* transaction and
-/// genuinely aren't recoverable here, so they stay defaulted (height 0, all
-/// flags false); unlike `script_pubkey`, those fields are read as "not yet
-/// known" and re-warm on the next sync.
+/// aren't carried in `InputDetail`, so they remain defaulted on this synthetic
+/// spent record (height 0, all flags false).
 fn derive_spent_utxos(record: &TransactionRecord) -> Vec<Utxo> {
     record
         .input_details
