@@ -647,7 +647,7 @@ fn extend_pools_for_restored_addresses(
                         LoadSite::RehydrationEnsureDerived,
                         WalletStorageError::RehydrationDerivationFailed {
                             stage: "ensure_derived",
-                            index: deepest,
+                            index: Some(deepest),
                             cause: "the pool produced no address at this index".to_owned(),
                         },
                     )?;
@@ -693,7 +693,8 @@ fn extend_pools_for_restored_addresses(
                     LoadSite::RehydrationGapLimit,
                     WalletStorageError::RehydrationDerivationFailed {
                         stage: "maintain_gap_limit",
-                        index: pool.highest_used.unwrap_or(0),
+                        // No single slot to name: this refills a window.
+                        index: None,
                         cause: e.to_string(),
                     },
                 )?;

@@ -450,14 +450,21 @@ pub enum WalletStorageError {
     /// Rehydration could not put a restored address back into its pool at
     /// the right derivation slot, so that address stays unmarked and could
     /// be re-issued as a fresh receive address (address-reuse privacy leak).
-    /// `stage` names the failing step, `index` the derivation index in play.
-    /// `cause` is rendered rather than kept as a `#[source]` because the two
-    /// stages differ: `maintain_gap_limit` carries an upstream `key_wallet`
-    /// error while `ensure_derived` reports only "no address at this index".
-    #[error("rehydration derivation failed at {stage} (index {index}): {cause}")]
+    /// `stage` names the failing step. `index` is the derivation index in
+    /// play, and is `None` for stages that have none — `maintain_gap_limit`
+    /// refills a window rather than targeting one slot, so a number there
+    /// would be invented, and an invented index in a corruption report is
+    /// worse than no index. `cause` is rendered rather than kept as a
+    /// `#[source]` because the stages disagree on type: `maintain_gap_limit`
+    /// carries an upstream `key_wallet` error while `ensure_derived` has no
+    /// error value at all, only "no address at this index".
+    #[error(
+        "rehydration derivation failed at {stage}{}: {cause}",
+        index.map_or_else(String::new, |index| format!(" (index {index})"))
+    )]
     RehydrationDerivationFailed {
         stage: &'static str,
-        index: u32,
+        index: Option<u32>,
         cause: String,
     },
 

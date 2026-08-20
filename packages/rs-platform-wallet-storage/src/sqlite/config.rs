@@ -46,6 +46,11 @@ pub enum FlushMode {
 // TODO(recovery-mode): no FFI entry point constructs SqlitePersister today; when
 // one is added, plumb SqlitePersisterConfig::with_load_policy and expose
 // last_load_degradation across the boundary.
+// TODO(recovery-mode): Recovery has no human-facing surface. The maintenance
+// CLI deliberately has no --recovery flag — none of its subcommands call
+// load(), so the flag would be a no-op that additionally blocked migrate and
+// prune. A `verify` subcommand (open Recovery, load, print the per-site
+// counts, exit non-zero when degraded) is the shape that would fit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LoadPolicy {
     /// Any inconsistency aborts the load. A corrupted wallet is never

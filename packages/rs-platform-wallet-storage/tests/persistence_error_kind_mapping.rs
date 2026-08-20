@@ -235,7 +235,7 @@ fn tc_code_004_b_fatal_variants_map_to_fatal_kind() {
             "RehydrationDerivationFailed",
             WalletStorageError::RehydrationDerivationFailed {
                 stage: "ensure_derived",
-                index: 42,
+                index: Some(42),
                 cause: "no address at index".into(),
             },
         ),

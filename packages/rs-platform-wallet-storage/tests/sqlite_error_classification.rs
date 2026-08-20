@@ -77,6 +77,36 @@ fn sqlite_oom() -> WalletStorageError {
     ))
 }
 
+/// A stage with no derivation index must not render a placeholder — an
+/// invented index in a corruption report sends the reader to the wrong slot.
+#[test]
+fn rehydration_derivation_display_omits_a_missing_index() {
+    let windowed = WalletStorageError::RehydrationDerivationFailed {
+        stage: "maintain_gap_limit",
+        index: None,
+        cause: "watch-only".into(),
+    }
+    .to_string();
+    assert_eq!(
+        windowed,
+        "rehydration derivation failed at maintain_gap_limit: watch-only"
+    );
+    assert!(!windowed.contains("index"));
+    assert!(!windowed.contains("None"));
+
+    let targeted = WalletStorageError::RehydrationDerivationFailed {
+        stage: "ensure_derived",
+        index: Some(45),
+        cause: "no address".into(),
+    }
+    .to_string();
+    assert_eq!(
+        targeted,
+        "rehydration derivation failed at ensure_derived (index 45): no address"
+    );
+    assert!(!targeted.contains("Some("));
+}
+
 #[test]
 fn core_transaction_mismatch_display_uses_domain_height_labels() {
     let confirmed = WalletStorageError::CoreTransactionEntryMismatch {
@@ -250,7 +280,7 @@ fn samples() -> Vec<WalletStorageError> {
         WalletStorageError::ReadOnlyRecoveryMode { operation: "store" },
         WalletStorageError::RehydrationDerivationFailed {
             stage: "maintain_gap_limit",
-            index: 7,
+            index: None,
             cause: "watch-only".into(),
         },
         WalletStorageError::UsedAddressOwnerConflict {
