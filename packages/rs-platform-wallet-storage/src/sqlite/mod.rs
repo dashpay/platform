@@ -13,7 +13,6 @@ pub(crate) mod conn;
 pub mod error;
 #[cfg(feature = "kv")]
 pub mod kv;
-pub mod load_ctx;
 pub mod persister;
 pub mod reports;
 pub mod util;
@@ -31,10 +30,22 @@ pub mod schema;
 #[cfg(not(any(test, feature = "__test-helpers")))]
 pub(crate) mod schema;
 
+// `LoadCtx` is an input to those same readers, so it is public exactly
+// when a caller that can pass one is: this crate's tests, and the
+// `rehydration-apply` consumer whose `apply_persisted_core_state` takes
+// one. `LoadSite` and `LoadDegradation` stay public unconditionally —
+// `last_load_degradation()` returns them.
+#[cfg(any(test, feature = "__test-helpers", feature = "rehydration-apply"))]
+pub mod load_ctx;
+#[cfg(not(any(test, feature = "__test-helpers", feature = "rehydration-apply")))]
+pub(crate) mod load_ctx;
+
 pub use config::{
     default_auto_backup_dir, FlushMode, JournalMode, LoadPolicy, SqlitePersisterConfig, Synchronous,
 };
 pub use error::{AutoBackupOperation, WalletStorageError};
-pub use load_ctx::{LoadCtx, LoadDegradation, LoadSite};
+#[cfg(any(test, feature = "__test-helpers", feature = "rehydration-apply"))]
+pub use load_ctx::LoadCtx;
+pub use load_ctx::{LoadDegradation, LoadSite};
 pub use persister::{PruneReport, RetentionPolicy, SqlitePersister};
 pub use reports::{CommitReport, DeleteWalletReport};

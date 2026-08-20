@@ -150,19 +150,20 @@ impl LoadCtx {
         }
     }
 
-    /// Context that aborts the load on any inconsistency.
+    /// Context that aborts the load on any inconsistency. A production
+    /// load takes its policy from the config, so this exists for the
+    /// builds where the module is public.
+    #[cfg(any(test, feature = "__test-helpers", feature = "rehydration-apply"))]
     pub fn strict() -> Self {
         Self::new(LoadPolicy::Strict)
     }
 
-    /// Context that tolerates, logs, and counts recoverable inconsistencies.
+    /// Context that tolerates, logs, and counts recoverable
+    /// inconsistencies. Public on the same terms as
+    /// [`strict`](Self::strict).
+    #[cfg(any(test, feature = "__test-helpers", feature = "rehydration-apply"))]
     pub fn recovery() -> Self {
         Self::new(LoadPolicy::Recovery)
-    }
-
-    /// The policy this context enforces.
-    pub fn policy(&self) -> LoadPolicy {
-        self.policy
     }
 
     /// Fatal-or-tolerated dispatch for a recoverable inconsistency.
