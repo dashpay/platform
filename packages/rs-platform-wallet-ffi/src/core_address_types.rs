@@ -81,9 +81,11 @@ pub struct CoreAddressEntryFFI {
     ///
     /// This schema has no slot for a reservation, so an
     /// `AddressState::Reserved` entry necessarily flattens to `false`
-    /// and reloads as `Available`. Nothing in platform reserves
-    /// addresses today, so that lossy case is unreachable; adding a
-    /// reserving caller requires a schema decision here first (see
+    /// and reloads as `Available`, losing the reservation across a
+    /// restart. That case is REACHABLE:
+    /// `PlatformWallet::next_unused_receive_address` reserves via
+    /// `next_unused_and_reserve`. Widening this struct to carry a
+    /// reservation is an open ABI decision (see
     /// `persistence::build_core_address_entry_ffi`).
     pub is_used: bool,
     /// Cached balance in duffs from `AddressInfo.balance`.

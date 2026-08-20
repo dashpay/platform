@@ -508,13 +508,18 @@ mod tests {
         drop(manager);
 
         // Release is eventual: poll until the aborted task is dropped by the
-        // runtime rather than asserting immediately.
+        // runtime rather than asserting immediately. The wait must be a timed
+        // sleep, not `yield_now`: the aborted task is reclaimed by whichever
+        // worker thread owns it, and yielding this thread never forces that
+        // one to run — the whole budget can burn in microseconds while the
+        // clone is still live. Breaks on the first observation, so the 2s
+        // ceiling is only ever paid by a genuine regression.
         let mut count = Arc::strong_count(&probe);
-        for _ in 0..1_000 {
+        for _ in 0..2_000 {
             if count == 1 {
                 break;
             }
-            tokio::task::yield_now().await;
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
             count = Arc::strong_count(&probe);
         }
         assert_eq!(
