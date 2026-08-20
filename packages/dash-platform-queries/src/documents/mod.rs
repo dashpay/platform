@@ -1,3 +1,4 @@
+pub(crate) mod aggregate_limit;
 pub(crate) mod average_proof_helpers;
 pub(crate) mod count_proof_helpers;
 pub mod document_average;
