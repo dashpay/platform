@@ -41,6 +41,8 @@
 
 use std::collections::BTreeMap;
 
+use grovedb_commitment_tree::{IncomingViewingKey, PaymentAddress};
+
 use crate::wallet::shielded::store::{ShieldedNote, ShieldedOutgoingNote};
 
 /// How an entry's net direction reads relative to the wallet.
@@ -730,6 +732,54 @@ pub(crate) fn non_zero_memo(memo: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
+/// The live `transfer_multi` activity ROW: classify ONE multi-output
+/// shielded transfer's requested `(recipient, amount)` outputs into the
+/// `(kind, amount, counterparty)` the live recorder writes.
+///
+/// Partition the outputs into EXTERNAL payments vs WALLET-OWNED
+/// receipts by testing each recipient against the account's
+/// `IncomingViewingKey::diversifier_index` — Orchard addresses are
+/// diversified, so a fixed-address comparison cannot work; this is the
+/// same ownership test `coordinator::is_own_orchard_recipient` uses to
+/// build the deriver's own-address set — then derive the row from the
+/// external subset only:
+///
+/// - No external output: nothing was paid to anyone, only the fee left
+///   the pool → (`ShieldedSpend`, `fee`, no counterparty). Mirrors the
+///   deriver's all-own arm, which has no external recipient to
+///   aggregate and can never classify the cluster as `Sent`.
+/// - Otherwise → (`Sent`, sum of the external amounts, counterparty by
+///   the shared [`unanimous_bytes`] rule over the external recipients'
+///   canonical 43-byte raw encodings — the exact form the deriver
+///   recovers from the OVK-decrypted outgoing notes).
+///
+/// `operations::transfer_multi` records its live row through THIS
+/// function, and the `live_and_restored_agree_*` parity tests below run
+/// the same function against [`derive_activity_from_scan_data`] — so
+/// the parity those tests prove binds the production code path, not a
+/// test-local restatement of it (#4312 review finding 379da4cc0ad0).
+pub(crate) fn live_transfer_multi_row(
+    ivk: &IncomingViewingKey,
+    outputs: &[(PaymentAddress, u64)],
+    fee: u64,
+) -> (ShieldedActivityKind, u64, Option<Vec<u8>>) {
+    let external: Vec<&(PaymentAddress, u64)> = outputs
+        .iter()
+        .filter(|(recipient, _)| ivk.diversifier_index(recipient).is_none())
+        .collect();
+    if external.is_empty() {
+        (ShieldedActivityKind::ShieldedSpend, fee, None)
+    } else {
+        let amount = external.iter().map(|(_, amount)| *amount).sum();
+        let recipients: Vec<Vec<u8>> = external
+            .iter()
+            .map(|(recipient, _)| recipient.to_raw_address_bytes().to_vec())
+            .collect();
+        let counterparty = unanimous_bytes(recipients.iter().map(|r| r.as_slice()));
+        (ShieldedActivityKind::Sent, amount, counterparty)
+    }
+}
+
 /// Sort entries for display, in four bands. Mutates in place.
 ///
 /// 1. `Pending` STATUS rows float to the very top. Pending is a status,
@@ -984,36 +1034,24 @@ mod tests {
         unanimous_bytes(recipients.iter().map(|r| r.as_slice()))
     }
 
-    /// The live `transfer_multi` ROW, evaluated exactly as
-    /// `operations::transfer_multi` evaluates it: partition the requested
-    /// `(recipient, amount)` outputs into external vs wallet-owned, then
-    /// derive kind / amount / counterparty from the EXTERNAL subset only.
-    ///
-    /// The live recorder partitions with
-    /// `views.incoming_viewing_key.diversifier_index`, which is exactly
-    /// what `coordinator::is_own_orchard_recipient` uses to build the
-    /// `own_addresses` set this side matches against — so modelling the
-    /// partition with [`is_own_recipient`] here compares the two paths on
-    /// equal terms.
-    fn live_row(
-        outputs: &[(Vec<u8>, u64)],
-        own_addresses: &[Vec<u8>],
-        fee: u64,
-    ) -> (ShieldedActivityKind, u64, Option<Vec<u8>>) {
-        let external: Vec<&(Vec<u8>, u64)> = outputs
-            .iter()
-            .filter(|(recipient, _)| !is_own_recipient(recipient, own_addresses))
-            .collect();
-        if external.is_empty() {
-            // Nothing was paid to anyone: only the fee left the pool.
-            (ShieldedActivityKind::ShieldedSpend, fee, None)
-        } else {
-            (
-                ShieldedActivityKind::Sent,
-                external.iter().map(|(_, amount)| *amount).sum(),
-                unanimous_bytes(external.iter().map(|(r, _)| r.as_slice())),
-            )
-        }
+    /// Real Orchard key material for the live/restored parity tests. The
+    /// live row's ownership predicate is the account IVK itself
+    /// (`IncomingViewingKey::diversifier_index`, inside
+    /// [`live_transfer_multi_row`]), so exercising the production
+    /// classifier needs addresses a real IVK does and does not recognize.
+    fn parity_keys(seed_byte: u8) -> crate::wallet::shielded::keys::OrchardKeySet {
+        crate::wallet::shielded::keys::OrchardKeySet::from_seed(
+            &[seed_byte; 64],
+            dashcore::Network::Testnet,
+            0,
+        )
+        .expect("a 64-byte seed satisfies the ZIP-32 bounds")
+    }
+
+    /// Canonical 43-byte raw encoding of `addr` — the form outgoing notes
+    /// store recipients in and the deriver matches own-addresses against.
+    fn raw(addr: &PaymentAddress) -> Vec<u8> {
+        addr.to_raw_address_bytes().to_vec()
     }
 
     #[test]
@@ -1022,29 +1060,41 @@ mod tests {
         // credits to an EXTERNAL address and 20 to one of the account's
         // OWN diversified addresses (the public API accepts both).
         //
+        // The live side of this check is the PRODUCTION classifier —
+        // [`live_transfer_multi_row`], the function
+        // `operations::transfer_multi` records its row through — run with
+        // real Orchard key material, so the ownership predicate under test
+        // is the real IVK one.
+        //
         // Restoration removes the own output before aggregating, so it
         // records a 10-credit send to the external address. The live
         // recorder must reach the same verdict — before the fix it summed
         // every requested output and recorded a 30-credit send with no
         // counterparty (#4312 review finding 379da4cc0ad0).
-        let external = addr(0xAA);
-        let own = addr(0x01);
+        let ours = parity_keys(7);
+        let theirs = parity_keys(9);
+        let external = theirs.default_address;
+        // A non-default diversified address: only the IVK predicate can
+        // recognize it as ours — a fixed-address comparison against the
+        // default address could not (`coordinator::is_own_orchard_recipient`
+        // builds the deriver's own-address set from the same predicate).
+        let own = ours.address_at(5);
         let fee = 7u64;
 
         let input = ScanDeriveInput {
             notes: vec![],
             outgoing: vec![
-                outgoing(0x70, external.clone(), 800, 10, vec![0u8; 36]),
-                outgoing(0x71, own.clone(), 800, 20, vec![0u8; 36]),
+                outgoing(0x70, raw(&external), 800, 10, vec![0u8; 36]),
+                outgoing(0x71, raw(&own), 800, 20, vec![0u8; 36]),
             ],
-            own_addresses: vec![own.clone()],
+            own_addresses: vec![raw(&own)],
         };
         let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
         assert_eq!(d.len(), 1, "one transition restores as one activity row");
 
-        let (kind, amount, counterparty) = live_row(
-            &[(external.clone(), 10), (own.clone(), 20)],
-            std::slice::from_ref(&own),
+        let (kind, amount, counterparty) = live_transfer_multi_row(
+            &ours.incoming_viewing_key,
+            &[(external, 10), (own, 20)],
             fee,
         );
 
@@ -1058,7 +1108,7 @@ mod tests {
         assert_eq!(d[0].counterparty, counterparty, "counterparty must agree");
         assert_eq!(
             counterparty,
-            Some(external.clone()),
+            Some(raw(&external)),
             "one external recipient names itself"
         );
 
@@ -1070,19 +1120,18 @@ mod tests {
 
     #[test]
     fn live_and_restored_agree_that_an_all_own_output_set_is_not_a_send() {
-        // Every output lands on an address this account owns, so nothing
-        // was paid to anyone. Restoration cannot classify this as `Sent`
-        // (it has no external recipient to aggregate); the live recorder
-        // must not either.
-        let own_a = addr(0x01);
-        let own_b = addr(0x02);
+        // Every output lands on an address this account's IVK recognizes,
+        // so nothing was paid to anyone. Restoration cannot classify this
+        // as `Sent` (it has no external recipient to aggregate); the live
+        // classifier — the production [`live_transfer_multi_row`] that
+        // `operations::transfer_multi` records through — must not either.
+        let ours = parity_keys(7);
+        let own_a = ours.default_address;
+        let own_b = ours.address_at(3);
         let fee = 7u64;
 
-        let (kind, amount, counterparty) = live_row(
-            &[(own_a.clone(), 10), (own_b.clone(), 20)],
-            &[own_a.clone(), own_b.clone()],
-            fee,
-        );
+        let (kind, amount, counterparty) =
+            live_transfer_multi_row(&ours.incoming_viewing_key, &[(own_a, 10), (own_b, 20)], fee);
         assert_eq!(
             kind,
             ShieldedActivityKind::ShieldedSpend,
@@ -1097,10 +1146,10 @@ mod tests {
         let input = ScanDeriveInput {
             notes: vec![own_note(0x80, 0x81, 900, 1_000, true)],
             outgoing: vec![
-                outgoing(0x82, own_a.clone(), 900, 10, vec![0u8; 36]),
-                outgoing(0x83, own_b.clone(), 900, 20, vec![0u8; 36]),
+                outgoing(0x82, raw(&own_a), 900, 10, vec![0u8; 36]),
+                outgoing(0x83, raw(&own_b), 900, 20, vec![0u8; 36]),
             ],
-            own_addresses: vec![own_a, own_b],
+            own_addresses: vec![raw(&own_a), raw(&own_b)],
         };
         let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
         assert_eq!(d.len(), 1);

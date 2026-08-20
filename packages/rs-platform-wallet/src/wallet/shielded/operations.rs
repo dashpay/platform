@@ -20,7 +20,7 @@
 //!   funded by a fixed denomination leaving the pool (any excess re-enters as a change note)
 
 use super::activity::{
-    unanimous_bytes, ShieldedActivityKind, ShieldedActivityStatus, ShieldedDirection,
+    live_transfer_multi_row, ShieldedActivityKind, ShieldedActivityStatus, ShieldedDirection,
 };
 use super::activity_recorder::{
     build_pending_entry, changeset_for_entry, non_zero_memo, with_status, LiveEntryParams,
@@ -1161,49 +1161,35 @@ pub async fn transfer_multi<S: ShieldedStore, P: OrchardProver>(
 
         // One activity row for the whole transition.
         //
-        // Partition the requested outputs into EXTERNAL payments and WALLET-OWNED receipts
-        // first, using the same test the cold-restore deriver uses: `is_own_orchard_recipient`
-        // (coordinator.rs) runs each recipient through this account's
-        // `IncomingViewingKey::diversifier_index` — Orchard addresses are diversified, so a
-        // fixed-address comparison cannot work — and the deriver then drops the own outputs
-        // before aggregating the external payment.
-        //
-        // The public multi-transfer API accepts ANY valid Orchard address, including this
-        // account's own diversified ones. Without the split, 10 credits to an external address
-        // plus 20 to an own address recorded live as a 30-credit `Sent` with no counterparty
-        // but restored as a 10-credit `Sent` to the external address, and an all-own output set
-        // recorded live as `Sent` but restored as a shielded spend (#4312 review finding
+        // Kind / amount / counterparty come from the shared
+        // `live_transfer_multi_row` rule (activity.rs): partition the
+        // requested outputs into EXTERNAL payments vs WALLET-OWNED receipts
+        // with this account's `IncomingViewingKey::diversifier_index` — the
+        // same ownership test `coordinator::is_own_orchard_recipient` feeds
+        // the cold-restore deriver — then derive the row from the external
+        // subset only, with the counterparty through the shared
+        // `unanimous_bytes` rule over the canonical 43-byte raw address
+        // encodings. The `live_and_restored_agree_*` parity tests
+        // (activity.rs) run THIS function against the deriver, so the two
+        // paths cannot drift apart silently (#4312 review finding
         // 379da4cc0ad0).
-        let external: Vec<&(PaymentAddress, u64)> = outputs
-            .iter()
-            .filter(|(addr, _)| views.incoming_viewing_key.diversifier_index(addr).is_none())
-            .collect();
-        let external_total: u64 = external.iter().map(|(_, amount)| *amount).sum();
+        //
+        // The public multi-transfer API accepts ANY valid Orchard address,
+        // including this account's own diversified ones. Without the split,
+        // 10 credits to an external address plus 20 to an own address
+        // recorded live as a 30-credit `Sent` with no counterparty but
+        // restored as a 10-credit `Sent` to the external address, and an
+        // all-own output set recorded live as `Sent` but restored as a
+        // shielded spend.
+        let (kind, amount, counterparty) =
+            live_transfer_multi_row(&views.incoming_viewing_key, outputs, fee_used);
 
-        // `counterparty` still goes through the shared `unanimous_bytes` rule over the canonical
-        // 43-byte raw address encoding — the exact form the deriver recovers from the
-        // OVK-decrypted outgoing notes — but over the EXTERNAL subset only, which is what the
-        // deriver feeds it. Both paths call this one function, so a restored row names a
-        // recipient exactly when this live row does, for the same transition. It is `None` for
-        // an empty subset, which is also the all-own answer.
-        let external_recipients: Vec<Vec<u8>> = external
-            .iter()
-            .map(|(addr, _)| addr.to_raw_address_bytes().to_vec())
-            .collect();
-        let counterparty = unanimous_bytes(external_recipients.iter().map(|r| r.as_slice()));
-
-        // With no external output nothing was paid to anyone, so the only credits that left the
-        // pool are the fee — and no memo is claimed, because the deriver's own-only arms record
-        // none. That mirrors the deriver from the other side: an all-own cluster has no external
-        // recipient, so it classifies as `ShieldedSpend`, never `Sent`.
-        let (kind, amount, entry_memo) = if external.is_empty() {
-            (ShieldedActivityKind::ShieldedSpend, fee_used, None)
-        } else {
-            (
-                ShieldedActivityKind::Sent,
-                external_total,
-                non_zero_memo(&memo),
-            )
+        // No memo is claimed on a row that paid no one: the deriver's
+        // own-only arms record none, and the only credits that left the
+        // pool are the fee.
+        let entry_memo = match kind {
+            ShieldedActivityKind::Sent => non_zero_memo(&memo),
+            _ => None,
         };
 
         pending_entry = record_pending_activity(
