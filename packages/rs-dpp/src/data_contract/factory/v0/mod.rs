@@ -354,7 +354,7 @@ mod tests {
         );
 
         let contract_value = platform_value::to_value(
-            &DataContract::try_from_platform_versioned(
+            DataContract::try_from_platform_versioned(
                 result.data_contract().to_owned(),
                 false,
                 &mut vec![],

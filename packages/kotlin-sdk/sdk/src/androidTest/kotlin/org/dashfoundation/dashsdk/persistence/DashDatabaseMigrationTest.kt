@@ -264,27 +264,160 @@ class DashDatabaseMigrationTest {
         db.close()
     }
 
+    /**
+     * v7 → v8 adds the nullable derivation-breadcrumb columns on
+     * `public_keys` (dashpay/platform#4060 finding 5). Pre-existing rows
+     * must survive with NULL breadcrumbs (unknown — back-filled by the next
+     * persist of each key), and new rows must accept explicit values.
+     */
+    @Test
+    fun migrate7To8AddsDerivationBreadcrumbColumns() {
+        helper.createDatabase(dbName, 7).apply {
+            execSQL(
+                "INSERT INTO wallets (walletId, walletGroupId, networkRaw, name, birthHeight, " +
+                    "syncedHeight, lastSynced, isImported, createdAt, lastUpdated) " +
+                    "VALUES (x'01', x'02', 1, 'w', 0, 0, 0, 0, 0, 0)",
+            )
+            execSQL(
+                "INSERT INTO identities (identityId, balance, revision, isLocal, identityType, " +
+                    "createdAt, lastUpdated, networkRaw, identityIndex, walletId) " +
+                    "VALUES (x'0A', 0, 0, 1, 'User', 0, 0, 1, 0, x'01')",
+            )
+            execSQL(
+                "INSERT INTO public_keys (keyId, purpose, securityLevel, keyType, readOnly, " +
+                    "publicKeyData, identityId, createdAt, identityIdData) " +
+                    "VALUES (0, '0', '0', '0', 0, x'02AB', 'id-base58', 0, x'0A')",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 8, true, DashDatabase.MIGRATION_7_8)
+
+        // Pre-existing rows survive with NULL breadcrumbs.
+        db.query(
+            "SELECT derivationIdentityIndex, derivationKeyIndex FROM public_keys WHERE keyId = 0",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue(c.isNull(0))
+            assertTrue(c.isNull(1))
+        }
+        // New rows accept explicit breadcrumbs.
+        db.execSQL(
+            "INSERT INTO public_keys (keyId, purpose, securityLevel, keyType, readOnly, " +
+                "publicKeyData, identityId, createdAt, identityIdData, " +
+                "derivationIdentityIndex, derivationKeyIndex) " +
+                "VALUES (1, '0', '0', '0', 0, x'02CD', 'id-base58', 0, x'0A', 3, 5)",
+        )
+        db.query(
+            "SELECT derivationIdentityIndex, derivationKeyIndex FROM public_keys WHERE keyId = 1",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(3, c.getInt(0))
+            assertEquals(5, c.getInt(1))
+        }
+        db.close()
+    }
+
+    /**
+     * v8 → v9 adds the DIP-13 `invitations` table (additive). The new table
+     * must accept a row under its `outPointHex` primary key, reject a
+     * duplicate outpoint (upsert-in-place semantics rely on the PK), and
+     * default nothing — every column is NOT NULL by schema.
+     */
+    @Test
+    fun migrate8To9AddsInvitationsTable() {
+        helper.createDatabase(dbName, 8).close()
+
+        val db = helper.runMigrationsAndValidate(dbName, 9, true, DashDatabase.MIGRATION_8_9)
+        db.execSQL(
+            "INSERT INTO invitations (outPointHex, rawOutPoint, walletId, " +
+                "fundingIndexRaw, amountDuffs, expiryUnix, createdAtSecs, hasInviter, " +
+                "statusRaw, reclaimInFlight, createdAt, updatedAt) " +
+                "VALUES ('aa:1', x'AB', x'01', 0, 3000000, 10, 5, 1, 0, 0, 0, 0)",
+        )
+        db.query(
+            "SELECT amountDuffs, statusRaw, reclaimInFlight FROM invitations " +
+                "WHERE outPointHex = 'aa:1'",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(3_000_000L, c.getLong(0))
+            assertEquals(0, c.getInt(1))
+            assertEquals(0, c.getInt(2))
+        }
+        try {
+            db.execSQL(
+                "INSERT INTO invitations (outPointHex, rawOutPoint, walletId, " +
+                    "fundingIndexRaw, amountDuffs, expiryUnix, createdAtSecs, hasInviter, " +
+                    "statusRaw, reclaimInFlight, createdAt, updatedAt) " +
+                    "VALUES ('aa:1', x'AB', x'01', 0, 1, 1, 1, 0, 0, 0, 0, 0)",
+            )
+            org.junit.Assert.fail("expected an outPointHex PK violation")
+        } catch (_: android.database.sqlite.SQLiteConstraintException) {
+            // expected
+        }
+        db.close()
+    }
+
+    /** v9 labels remain owned/unlisted and gain nullable marketplace ids. */
+    @Test
+    fun migrate9To10AddsDpnsMarketplaceState() {
+        val legacy = helper.createDatabase(dbName, 9)
+        legacy.execSQL(
+            "INSERT INTO identities (identityId, networkRaw, balance, revision, identityIndex, " +
+                "isLocal, identityType, createdAt, lastUpdated) " +
+                "VALUES (x'01', 1, 0, 0, 0, 1, 'user', 0, 0)",
+        )
+        legacy.execSQL(
+            "INSERT INTO dpns_names (networkRaw, label, normalizedLabel, parentDomainName, " +
+                "normalizedParentDomainName, acquiredAt, identityId, createdAt, lastUpdated) " +
+                "VALUES (1, 'Alice', 'a11ce', 'dash', 'dash', 42, x'01', 0, 0)",
+        )
+        legacy.close()
+
+        val db = helper.runMigrationsAndValidate(dbName, 10, true, DashDatabase.MIGRATION_9_10)
+        db.query(
+            "SELECT documentId, isOwned, priceCredits, saleStatusRaw, " +
+                "counterpartyIdentityId, documentCreatedAtMs, documentUpdatedAtMs, " +
+                "documentTransferredAtMs, marketplaceUpdatedAt FROM dpns_names",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertTrue(cursor.isNull(0))
+            assertEquals(1, cursor.getInt(1))
+            assertTrue(cursor.isNull(2))
+            assertEquals(0, cursor.getInt(3))
+            assertTrue(cursor.isNull(4))
+            assertEquals(0L, cursor.getLong(5))
+            assertEquals(0L, cursor.getLong(6))
+            assertEquals(0L, cursor.getLong(7))
+            assertEquals(0L, cursor.getLong(8))
+        }
+        db.close()
+    }
+
     /** The requested contiguous path from the pre-u64 v4 schema to latest. */
     @Test
     fun migrate4ToLatest() {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            7,
+            10,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
             DashDatabase.MIGRATION_6_7,
+            DashDatabase.MIGRATION_7_8,
+            DashDatabase.MIGRATION_8_9,
+            DashDatabase.MIGRATION_9_10,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v7 schema. */
+    /** The full chain from v1 must also land on a valid v10 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            7,
+            10,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -292,6 +425,9 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
             DashDatabase.MIGRATION_6_7,
+            DashDatabase.MIGRATION_7_8,
+            DashDatabase.MIGRATION_8_9,
+            DashDatabase.MIGRATION_9_10,
         ).close()
     }
 }

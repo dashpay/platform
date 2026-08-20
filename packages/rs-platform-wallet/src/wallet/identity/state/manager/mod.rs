@@ -505,6 +505,15 @@ mod tests {
         assert!(observed_managed.wallet_id.is_none());
         assert_eq!(observed_managed.identity.id(), observed);
 
+        // Wallet-scoped accessors are the signing/ownership boundary: they
+        // include the owned identity and categorically exclude an observed
+        // contact or an identity queried under another wallet id.
+        assert!(manager.wallet_identity(&wallet_id, &owned).is_some());
+        assert!(manager.wallet_identity(&wallet_id, &observed).is_none());
+        assert!(manager.wallet_identity(&[43u8; 32], &owned).is_none());
+        assert_eq!(manager.wallet_identity_ids(&wallet_id), vec![owned]);
+        assert!(manager.wallet_identity_mut(&wallet_id, &observed).is_none());
+
         // Unknown ids miss cleanly.
         let unknown = Identifier::from([0xFFu8; 32]);
         assert!(manager.identity(&unknown).is_none());

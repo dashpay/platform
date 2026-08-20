@@ -50,6 +50,8 @@ class IdentityKeyPrivateKeyDeriver(
         publicKeyData: ByteArray,
         identityIndex: Int,
         keyIndex: Int,
+        keyType: Int,
+        force: Boolean,
     ): DerivedKeyStoreResult {
         val pubkeyHex = publicKeyData.toHex()
         var scalar: ByteArray? = null
@@ -62,19 +64,74 @@ class IdentityKeyPrivateKeyDeriver(
         // (the single FFI call below) ONLY when the alias doesn't already
         // have a usable stored scalar under ANY owner — a re-derive of an
         // existing key would just reproduce the same deterministic bytes.
+        //
+        // force = true (the repair path, dashpay/platform#4060 finding 6)
+        // routes through WalletStorage.replacePrivateKey instead: the
+        // usability short-circuit is exactly what must NOT run when a
+        // shape+fingerprint-valid but undecryptable blob is being repaired.
+        val deriveScalarOnly: suspend () -> ByteArray = {
+            // Single Rust FFI call — the whole derivation, deadlock-safe —
+            // runs OUTSIDE WalletStorage's private-key lock (the
+            // storeIfAbsent/replacePrivateKey contract).
+            IdentityNative.deriveIdentityPrivateKeyWithResolver(
+                networkOrd = network.ffiValue,
+                walletId = walletId,
+                resolverHandle = mnemonicResolverHandle,
+                identityIndex = identityIndex,
+                keyIndex = keyIndex,
+            ).also { scalar = it }
+        }
+        // force = true is the repair path (dashpay/platform#4060 blocker 1):
+        // it must PROVE the derived key matches [publicKeyData] before any
+        // persistence. The caller only knows an (identityIndex, keyIndex) —
+        // a WRONG pair derives a DIFFERENT valid scalar that round-trips
+        // through encrypt/decrypt perfectly (probeIdentityKeyRecoverability
+        // only proves the blob decrypts, not that it is the RIGHT key), so
+        // without this check a mis-indexed repair would clear the pending
+        // state and persist an unusable key. Derive the KEYPAIR, compare its
+        // public half to [publicKeyData], and THROW before storing on
+        // mismatch — replacePrivateKey never runs, so nothing is persisted.
+        val deriveVerifiedForRepair: suspend () -> ByteArray = {
+            val pair = IdentityNative.deriveIdentityKeyPairWithResolver(
+                networkOrd = network.ffiValue,
+                walletId = walletId,
+                resolverHandle = mnemonicResolverHandle,
+                identityIndex = identityIndex,
+                keyIndex = keyIndex,
+            )
+            check(pair.size == 2) { "keypair derive returned ${pair.size} elements" }
+            val derivedPrivate = pair[0]
+            val derivedPublic = pair[1]
+            scalar = derivedPrivate
+            if (!derivedPublicKeyMatches(derivedPublic, publicKeyData, keyType)) {
+                // Scrub the wrong scalar immediately; the finally scrubs
+                // again harmlessly (idempotent zero-fill).
+                derivedPrivate.fill(0)
+                throw IdentityKeyDerivationMismatchException(
+                    "identity-key repair derived a key whose public half does " +
+                        "not match the requested pubkey $pubkeyHex at slot " +
+                        "$identityIndex/$keyIndex — refusing to persist an " +
+                        "unusable key (the derivation breadcrumbs are wrong " +
+                        "or corrupt); pending state left intact",
+                )
+            }
+            derivedPrivate
+        }
         val wasNewlyCreated = try {
             runBlocking {
-                walletStorage.storeIfAbsent(pubkeyHex, ownerWalletId = walletId) {
-                    // Single Rust FFI call — the whole derivation,
-                    // deadlock-safe — runs OUTSIDE WalletStorage's
-                    // private-key lock (storeIfAbsent's own contract).
-                    IdentityNative.deriveIdentityPrivateKeyWithResolver(
-                        networkOrd = network.ffiValue,
-                        walletId = walletId,
-                        resolverHandle = mnemonicResolverHandle,
-                        identityIndex = identityIndex,
-                        keyIndex = keyIndex,
-                    ).also { scalar = it }
+                if (force) {
+                    walletStorage.replacePrivateKey(
+                        pubkeyHex,
+                        ownerWalletId = walletId,
+                        derive = deriveVerifiedForRepair,
+                    )
+                    true
+                } else {
+                    walletStorage.storeIfAbsent(
+                        pubkeyHex,
+                        ownerWalletId = walletId,
+                        derive = deriveScalarOnly,
+                    )
                 }
             }
         } finally {
@@ -104,8 +161,47 @@ class IdentityKeyPrivateKeyDeriver(
         // succeeds).
         runBlocking { walletStorage.deleteUnownedPrivateKeys(pubkeyHexes, excludingWalletId) }
 
-    private companion object {
+    internal companion object {
         /** Matches `WalletStorage`'s private `PRIVKEY_PREFIX`. */
         const val PRIVKEY_IDENTIFIER_PREFIX = "privkey."
+
+        /** DPP `KeyType` discriminants whose on-chain data is a HASH160. */
+        private const val KEY_TYPE_ECDSA_HASH160 = 2
+        private const val KEY_TYPE_EDDSA_25519_HASH160 = 4
+
+        /**
+         * Whether a freshly derived public key [derived] is the key [expected]
+         * a repair was asked to restore, interpreted per [keyType]. Pure and
+         * side-effect free so the repair's before-persistence identity check
+         * (dashpay/platform#4060 blocker 1) is unit-testable without the
+         * native derive.
+         *
+         * [derived] is always the compressed public-key bytes Rust emits. What
+         * [expected] holds depends on the key type (dashpay/platform#4183
+         * review):
+         * - For `ECDSA_HASH160` / `EDDSA_25519_HASH160`, DPP stores the 20-byte
+         *   HASH160 of the public key as the key's on-chain data — NOT the key
+         *   itself — so we must HASH160 the derived pubkey before comparing.
+         *   A raw byte compare (33-byte pubkey vs 20-byte hash) can never
+         *   match, which made these key types permanently un-repairable before
+         *   this fix.
+         * - For every other key type the stored data IS the public key, so a
+         *   plain content comparison is the whole check.
+         */
+        fun derivedPublicKeyMatches(derived: ByteArray, expected: ByteArray, keyType: Int): Boolean =
+            when (keyType) {
+                KEY_TYPE_ECDSA_HASH160, KEY_TYPE_EDDSA_25519_HASH160 ->
+                    Hash160.hash160(derived).contentEquals(expected)
+                else -> derived.contentEquals(expected)
+            }
     }
 }
+
+/**
+ * The repair path derived a key whose PUBLIC half does not match the pubkey
+ * it was asked to restore — the requested (identityIndex, keyIndex) do not
+ * belong to [publicKeyData]. Thrown BEFORE any Keystore write so a
+ * mis-indexed repair persists nothing and never clears the pending-repair
+ * state (dashpay/platform#4060 blocker 1).
+ */
+class IdentityKeyDerivationMismatchException(message: String) : RuntimeException(message)

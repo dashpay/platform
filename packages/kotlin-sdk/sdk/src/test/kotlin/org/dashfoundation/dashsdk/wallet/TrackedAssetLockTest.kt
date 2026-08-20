@@ -24,15 +24,20 @@ class TrackedAssetLockTest {
                 row(0, 0), row(1, 1), row(2, 3),
                 row(3, 2), // invitation: never generic
                 row(4, 2), // address top-up
-                row(0, 4), // consumed
+                row(0, 4), // consumed: terminal tombstone, never recoverable
+                row(1, 5), // recovered from chain: user-driven recovery allowed
                 row(0, 2, txidSize = 31),
             ),
         )
 
         val eligible = TrackedAssetLock.eligibleFromNative(native)
 
-        assertEquals(listOf(0, 1, 2), eligible.map { it.fundingType.raw })
-        assertEquals(listOf(0, 1, 3), eligible.map { it.status.raw })
+        assertEquals(listOf(0, 1, 2, 1), eligible.map { it.fundingType.raw })
+        assertEquals(listOf(0, 1, 3, 5), eligible.map { it.status.raw })
+        assertEquals(
+            TrackedAssetLock.Status.RECOVERED_FROM_CHAIN,
+            eligible.last().status,
+        )
         assertTrue(eligible.all { it.outpointTxid.size == 32 })
         // Mapper owns its Kotlin copy; callers can't mutate the JNI row.
         native.entries[0].outpointTxid[0] = 99

@@ -1701,6 +1701,70 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '4.2.0': (configFile) => {
+        // The ACME directory certificates are requested from became
+        // configurable. Existing configs have no value for it, and the schema
+        // requires one, so fill in the directory they were already using.
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            const providerConfigs = options.platform?.gateway?.ssl?.providerConfigs;
+
+            if (providerConfigs?.letsencrypt
+              && providerConfigs.letsencrypt.acmeDirectoryUrl === undefined) {
+              providerConfigs.letsencrypt.acmeDirectoryUrl = base.get(
+                'platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl',
+              );
+            }
+          });
+
+        return configFile;
+      },
+      '4.1.1': (configFile) => {
+        // The drive and rs-dapi tags are derived from the package version, and
+        // the migration that re-pins them no longer fires for a config already
+        // stamped at the release that set it. This release is the next one above
+        // that stamp, so it carries the re-pin forward for a config that never
+        // crossed it.
+        //
+        // Only tags a release published are moved, so a tag the operator chose
+        // in this namespace (dashpay/drive:4-local) is left alone.
+        const stockDriveImage = stockImagePattern('dashpay/drive', 4);
+        const stockRsDapiImage = stockImagePattern('dashpay/rs-dapi', 4);
+
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            // Move the Tenderdash image onto the floating minor tag the base
+            // config now pins, so a patch release published on that line is
+            // picked up without a Dashmate release. Configs written while the
+            // base config pinned an exact version hold that version, and only a
+            // migration moves them off it. Pulled from the base config so it
+            // tracks whatever is pinned there.
+            // Keyed at the next release, not the released 4.1.0: the runner
+            // skips fromVersion===toVersion, so a key equal to an operator's
+            // current version never fires.
+            if (options.platform?.drive?.tenderdash?.docker) {
+              options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            }
+
+            const driveDocker = options.platform?.drive?.abci?.docker;
+            if (driveDocker && stockDriveImage.test(driveDocker.image)) {
+              driveDocker.image = base.get('platform.drive.abci.docker.image');
+            }
+
+            const rsDapiDocker = options.platform?.dapi?.rsDapi?.docker;
+            if (rsDapiDocker && stockRsDapiImage.test(rsDapiDocker.image)) {
+              rsDapiDocker.image = base.get('platform.dapi.rsDapi.docker.image');
+            }
+
+            // The Commit timeout and BypassCommitTimeout overrides no longer
+            // exist in Tenderdash, which now only warns when they are set.
+            // Drop them: the config schema accepts no properties it does not
+            // define, so a config that kept them would fail validation.
+            delete options.platform?.drive?.tenderdash?.consensus?.unsafeOverride?.commit;
+          });
+
+        return configFile;
+      },
     };
   }
 

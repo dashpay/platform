@@ -1,8 +1,17 @@
 codecov:
   require_ci_to_pass: true
 
+# The rust-strategy and rust-shielded suites run only on push/nightly (PRs
+# skip them for speed); carryforward makes codecov reuse the base commit's
+# coverage for a flag when a PR run doesn't upload it, so PR reports don't
+# show a spurious project-coverage drop for tests that intentionally didn't
+# run.
 flags:
   rust:
+    carryforward: true
+  rust-strategy:
+    carryforward: true
+  rust-shielded:
     carryforward: true
 
 ignore:
@@ -99,6 +108,11 @@ ignore:
   - "packages/rs-dpp/src/state_transition/state_transitions/document/batch_transition/**/v1_methods.rs"
   # Platform wallet — requires Core wallet integration, not unit-testable
   - "packages/rs-platform-wallet/src/**"
+  # Platform wallet storage — its tests run in the wallet fast-path
+  # workflow (tests-rs-wallet.yml), which intentionally omits coverage
+  # upload, so codecov never receives data for this crate on
+  # wallet-scoped PRs and patch status would fail spuriously
+  - "packages/rs-platform-wallet-storage/**"
   # Proof-verifier response types and unproved handling
   - "packages/rs-drive-proof-verifier/src/types.rs"
   - "packages/rs-drive-proof-verifier/src/unproved.rs"

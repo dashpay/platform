@@ -10,6 +10,7 @@ use dpp::block::extended_epoch_info::v0::{ExtendedEpochInfoV0, ExtendedEpochInfo
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::data_contract::config::DataContractConfig;
 use dpp::{data_contract::DataContractFactory, prelude::Identifier};
+use drive_proof_verifier::types::ExtendedEpochInfos;
 use hex::ToHex;
 use rs_dapi_client::transport::TransportRequest;
 use std::collections::BTreeMap;
@@ -114,12 +115,19 @@ pub fn mock_data_contract(
 /// `ExtendedEpochInfo::fetch_current` expectation and consumes it, leaving the SDK
 /// ratcheted to `LATEST_VERSION`.
 pub(crate) async fn bootstrap_mock_sdk_to_latest(sdk: &mut Sdk) {
-    let query = LimitQuery {
-        query: EpochQuery {
-            start: None,
-            ascending: false,
-        },
+    // `fetch_current` issues two queries: a genesis probe, then a two-epoch
+    // ascending confirmation from the hinted current epoch (mock expectation
+    // metadata reports epoch 0, so the hint is 0). The confirmation answers with
+    // epoch 0 alone, which is how a real proof says "no epoch above 0 has
+    // started".
+    let probe_query = LimitQuery {
+        query: EpochQuery::genesis(),
         limit: Some(1),
+        start_info: None,
+    };
+    let confirmation_query = LimitQuery {
+        query: EpochQuery::ascending_from(0),
+        limit: Some(2),
         start_info: None,
     };
 
@@ -133,7 +141,14 @@ pub(crate) async fn bootstrap_mock_sdk_to_latest(sdk: &mut Sdk) {
     });
 
     sdk.mock()
-        .expect_fetch::<ExtendedEpochInfo, _>(query, Some(epoch.clone()))
+        .expect_fetch::<ExtendedEpochInfo, _>(probe_query, Some(epoch.clone()))
+        .await
+        .expect("register epoch probe expectation");
+    sdk.mock()
+        .expect_fetch_many::<_, ExtendedEpochInfo, _, ExtendedEpochInfos>(
+            confirmation_query,
+            Some(ExtendedEpochInfos::from_iter([(0, Some(epoch.clone()))])),
+        )
         .await
         .expect("register epoch bootstrap expectation");
 

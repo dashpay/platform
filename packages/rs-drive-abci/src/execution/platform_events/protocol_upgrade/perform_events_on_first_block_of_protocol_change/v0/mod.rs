@@ -114,6 +114,10 @@ impl<C> Platform<C> {
             self.transition_to_version_13(block_info, transaction, platform_version)?;
         }
 
+        if previous_protocol_version < 14 && platform_version.protocol_version >= 14 {
+            self.transition_to_version_14(block_info, transaction, platform_version)?;
+        }
+
         Ok(())
     }
 
@@ -686,6 +690,30 @@ impl<C> Platform<C> {
 
         Ok(())
     }
+
+    /// When transitioning to version 14 we re-store the DashPay contract whose
+    /// v2 schema adds the optional public payment address fields to the
+    /// `profile` document type (DIP-33).
+    fn transition_to_version_14(
+        &self,
+        block_info: &BlockInfo,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let dashpay_contract =
+            load_system_data_contract(SystemDataContract::Dashpay, platform_version)?;
+
+        self.drive.apply_contract(
+            &dashpay_contract,
+            *block_info,
+            true,
+            None,
+            Some(transaction),
+            platform_version,
+        )?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -1008,6 +1036,315 @@ mod tests {
         assert!(domain.documents_keep_transfer_history());
         assert!(domain.documents_keep_purchase_history());
         assert!(domain.documents_keep_pricing_history());
+    }
+
+    #[test]
+    fn test_transition_to_version_14_updates_dashpay_with_payment_address_fields() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+
+        // A chain born at protocol version 13: DashPay v1 is stored and the
+        // profile document type has no payment address fields.
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_version = PlatformVersion::get(14).expect("expected platform version 14");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        // Before the transition the stored DashPay profile must be v1: no
+        // corePaymentAddress / platformPaymentAddress properties.
+        let (_fee_result, pre_upgrade_fetch_info) = platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                *dpp::data_contracts::SystemDataContract::Dashpay
+                    .id()
+                    .as_bytes(),
+                None,
+                false,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to fetch DashPay contract");
+        let pre_profile = pre_upgrade_fetch_info
+            .expect("expected the DashPay contract to exist at genesis")
+            .contract
+            .document_type_for_name("profile")
+            .expect("expected the profile document type")
+            .properties()
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        assert!(
+            !pre_profile.iter().any(|p| p == "corePaymentAddress"),
+            "profile must not carry corePaymentAddress before transition_to_version_14"
+        );
+        assert!(
+            !pre_profile.iter().any(|p| p == "platformPaymentAddress"),
+            "profile must not carry platformPaymentAddress before transition_to_version_14"
+        );
+
+        let result = platform.transition_to_version_14(&block_info, &transaction, platform_version);
+        assert!(result.is_ok(), "transition failed: {:?}", result.err());
+
+        // After the transition the stored DashPay contract must be v2: the
+        // profile document type gains the two optional payment address fields.
+        let (_fee_result, dashpay_fetch_info) = platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                *dpp::data_contracts::SystemDataContract::Dashpay
+                    .id()
+                    .as_bytes(),
+                None,
+                false,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to fetch DashPay contract");
+
+        let profile = dashpay_fetch_info
+            .expect("expected the DashPay contract to exist")
+            .contract
+            .document_type_for_name("profile")
+            .expect("expected the profile document type")
+            .properties()
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+
+        assert!(
+            profile.iter().any(|p| p == "corePaymentAddress"),
+            "profile must carry corePaymentAddress after transition_to_version_14"
+        );
+        assert!(
+            profile.iter().any(|p| p == "platformPaymentAddress"),
+            "profile must carry platformPaymentAddress after transition_to_version_14"
+        );
+    }
+
+    /// The v13→v14 boundary through the production dispatcher
+    /// (`perform_events_on_first_block_of_protocol_change`), with a v1 profile
+    /// stored before the upgrade and the contract cache warmed: the dispatcher
+    /// must select the v14 transition, the refreshed contract must carry both
+    /// payment address fields, and the legacy profile bytes must stay readable
+    /// through normal Drive queries against the refreshed contract.
+    #[tokio::test]
+    async fn test_protocol_change_v13_to_v14_upgrades_dashpay_and_keeps_v1_profiles_readable() {
+        use crate::execution::validation::state_transition::tests::setup_identity;
+        use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
+        use assert_matches::assert_matches;
+        use dpp::dash_to_credits;
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+        use dpp::data_contract::document_type::random_document::{
+            CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
+        };
+        use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+        use dpp::identity::accessors::IdentityGettersV0;
+        use dpp::platform_value::Bytes32;
+        use dpp::serialization::PlatformSerializable;
+        use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+        use dpp::state_transition::batch_transition::BatchTransition;
+        use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
+        use drive::query::DriveDocumentQuery;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+
+        let platform_version_13 = PlatformVersion::get(13).expect("expected platform version 13");
+        let platform_version_14 = PlatformVersion::get(14).expect("expected platform version 14");
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+        // Store a v1 profile through the normal pipeline at protocol version 13
+        let dashpay_v1 = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version_13)
+            .expect("expected the dashpay system contract");
+        let profile_v1 = dashpay_v1
+            .document_type_for_name("profile")
+            .expect("expected a profile document type");
+
+        let mut rng = StdRng::seed_from_u64(438);
+        let entropy = Bytes32::random_with_rng(&mut rng);
+        let mut document = profile_v1
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version_13,
+            )
+            .expect("expected a random v1 profile document");
+        document.set("avatarUrl", "http://test.com/bob.jpg".into());
+        let stored_profile_id = document.id();
+
+        let create_transition = BatchTransition::new_document_creation_transition_from_document(
+            document,
+            profile_v1,
+            entropy.0,
+            &key,
+            2,
+            0,
+            None,
+            &signer,
+            platform_version_13,
+            None,
+        )
+        .await
+        .expect("expect to create documents batch transition");
+        let create_serialized = create_transition
+            .serialize_to_bytes()
+            .expect("expected serialized transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![create_serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version_13,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        // Warm the drive contract cache with the v1 contract and confirm the
+        // payment address fields are absent pre-upgrade
+        let transaction = platform.drive.grove.start_transaction();
+        let (_fee, pre_fetch_info) = platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                *dpp::data_contracts::SystemDataContract::Dashpay
+                    .id()
+                    .as_bytes(),
+                None,
+                true,
+                Some(&transaction),
+                platform_version_13,
+            )
+            .expect("expected to fetch DashPay contract");
+        let pre_profile_properties = pre_fetch_info
+            .expect("expected the DashPay contract pre-upgrade")
+            .contract
+            .document_type_for_name("profile")
+            .expect("expected the profile document type")
+            .properties()
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        for field in ["corePaymentAddress", "platformPaymentAddress"] {
+            assert!(
+                !pre_profile_properties.iter().any(|p| p == field),
+                "profile must not carry {field} before the upgrade"
+            );
+        }
+
+        // Run the v13→v14 boundary through the production dispatcher
+        let block_info = BlockInfo {
+            time_ms: 2_000_000,
+            height: 200,
+            core_height: 200,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+        platform
+            .perform_events_on_first_block_of_protocol_change(
+                &platform_state,
+                &block_info,
+                &transaction,
+                13,
+                platform_version_14,
+            )
+            .expect("expected the protocol change events to succeed");
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit the upgrade");
+
+        // The refreshed contract must be v2 with both payment address fields
+        let (_fee, post_fetch_info) = platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                *dpp::data_contracts::SystemDataContract::Dashpay
+                    .id()
+                    .as_bytes(),
+                None,
+                true,
+                None,
+                platform_version_14,
+            )
+            .expect("expected to fetch DashPay contract post-upgrade");
+        let dashpay_v2_fetch_info = post_fetch_info.expect("expected the DashPay contract");
+        let post_profile_properties = dashpay_v2_fetch_info
+            .contract
+            .document_type_for_name("profile")
+            .expect("expected the profile document type")
+            .properties()
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        for field in ["corePaymentAddress", "platformPaymentAddress"] {
+            assert!(
+                post_profile_properties.iter().any(|p| p == field),
+                "profile must carry {field} after the upgrade"
+            );
+        }
+
+        // The pre-upgrade profile must remain readable through normal Drive
+        // queries against the refreshed v2 contract
+        let query = DriveDocumentQuery::from_sql_expr(
+            "select * from profile",
+            &dashpay_v2_fetch_info.contract,
+            Some(&platform.config.drive),
+            PlatformVersion::get(14).expect("expected platform version 14"),
+        )
+        .expect("expected a document query");
+        let query_results = platform
+            .drive
+            .query_documents(query, None, false, None, None)
+            .expect("expected to query documents");
+        let documents = query_results.documents();
+        assert_eq!(
+            documents.len(),
+            1,
+            "the v1 profile must survive the upgrade"
+        );
+        assert_eq!(
+            documents.first().expect("expected a document").id(),
+            stored_profile_id,
+            "the surviving profile must be the pre-upgrade document"
+        );
     }
 
     // test_transition_to_version_9 removed: requires prior state from versions 4-8

@@ -1,0 +1,22 @@
+{
+  "$formatVersion": "1",
+  "id": "YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "note": {
+      "type": "object",
+      "canBeDeleted": false,
+      "properties": {
+        "content": {
+          "type": "string",
+          "position": 0,
+          "maxLength": 100
+        }
+      },
+      "required": [],
+      "indices": [],
+      "additionalProperties": false
+    }
+  }
+}

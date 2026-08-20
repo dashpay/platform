@@ -2,23 +2,23 @@
 # Kotlin/Swift executable parity summary
 
 Audit baseline: `PR #3999 @ 6dbc72a54df72d26eb9c4a014b425d2b95134e4e`
-Capabilities tracked: **18**
+Capabilities tracked: **26**
 
 ## Status counts
 
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Swift | SDK | 10 | 8 | 0 | 0 |
-| Swift | Example app | 4 | 12 | 0 | 2 |
-| Kotlin | SDK | 5 | 12 | 1 | 0 |
-| Kotlin | Example app | 4 | 11 | 1 | 2 |
+| Swift | SDK | 15 | 9 | 1 | 1 |
+| Swift | Example app | 4 | 12 | 1 | 9 |
+| Kotlin | SDK | 13 | 12 | 0 | 1 |
+| Kotlin | Example app | 5 | 12 | 0 | 9 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
-| Swift | 0 | 7 | 11 |
-| Kotlin | 2 | 6 | 10 |
+| Swift | 0 | 8 | 18 |
+| Kotlin | 4 | 6 | 16 |
 
 ## Capability status
 
@@ -26,14 +26,18 @@ Capabilities tracked: **18**
 | --- | --- | --- |
 | `persistence.platform_address_identity` | partial / not-applicable / required | supported / not-applicable / tested |
 | `core.atomic_send` | supported / supported / not_applicable | supported / supported / not_applicable |
+| `core.deferred_signed_payment` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
+| `core.maya_op_return_deposit` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
 | `tokens.full_u64_domain` | partial / partial / required | supported / supported / tested |
 | `shielded.seedless_restart` | supported / partial / required | partial / partial / required |
-| `dashpay.invitations` | supported / partial / required | unsupported / unsupported / required |
+| `dashpay.invitations` | supported / partial / required | supported / partial / required |
 | `core.provider_restore` | supported / partial / required | partial / partial / required |
 | `dashpay.deferred_contact_crypto` | partial / partial / required | partial / partial / required |
 | `identity.asset_lock_resume` | supported / partial / required | partial / partial / required |
 | `core.compact_filter_rescan` | supported / partial / not_applicable | partial / partial / not_applicable |
 | `dpns.contested_names_by_identity` | supported / partial / not_applicable | partial / partial / required |
+| `persistence.sync_fault_latch` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
+| `persistence.dashpay_payment_history` | partial / not-applicable / required | not-applicable / not-applicable / not_applicable |
 | `network.masternode_discovery` | partial / not-applicable / not_applicable | partial / not-applicable / not_applicable |
 | `identity.platform_address_auto_funding` | partial / partial / not_applicable | partial / partial / not_applicable |
 | `tokens.authorization_decisions` | partial / partial / not_applicable | partial / partial / not_applicable |
@@ -42,6 +46,10 @@ Capabilities tracked: **18**
 | `documents.create_catalog` | supported / supported / not_applicable | supported / supported / not_applicable |
 | `tokens.max_supply_proposal_discovery` | partial / partial / not_applicable | partial / partial / not_applicable |
 | `core.immature_balance_display` | supported / supported / not_applicable | supported / supported / not_applicable |
+| `security.key_security_policy_alias_split` | not-applicable / not-applicable / not_applicable | supported / supported / tested |
+| `errors.platform_wallet_not_found_typed` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
+| `persistence.pending_identity_key_repair` | unsupported / unsupported / not_applicable | supported / not-applicable / tested |
+| `errors.signing_key_unavailable_discriminator` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
 
 Source: [`docs/sdk/sdk-parity-manifest.json`](../../docs/sdk/sdk-parity-manifest.json).
 Detailed legacy view mapping remains in [`PARITY.md`](PARITY.md), but its manual totals are not authoritative.

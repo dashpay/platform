@@ -138,6 +138,11 @@ describe('DPNS', () => {
 
       const rawDocument = documents[0].toObject();
 
+      // The registering identity is recorded as the creator. The local document
+      // returned by `register` never carries it, so the comparison below drops
+      // it on both sides and it is pinned here instead.
+      expect(Buffer.from(rawDocument.$creatorId)).to.deep.equal(identity.getId().toBuffer());
+
       delete rawDocument.$createdAt;
       delete rawDocument.$createdAtCoreBlockHeight;
       delete rawDocument.$createdAtBlockHeight;
@@ -147,6 +152,7 @@ describe('DPNS', () => {
       delete rawDocument.$transferredAt;
       delete rawDocument.$transferredAtCoreBlockHeight;
       delete rawDocument.$transferredAtBlockHeight;
+      delete rawDocument.$creatorId;
       delete rawDocument.preorderSalt;
 
       const rawRegisteredDomain = registeredDomain.toObject();
@@ -160,6 +166,7 @@ describe('DPNS', () => {
       delete rawRegisteredDomain.$transferredAt;
       delete rawRegisteredDomain.$transferredAtCoreBlockHeight;
       delete rawRegisteredDomain.$transferredAtBlockHeight;
+      delete rawRegisteredDomain.$creatorId;
       delete rawRegisteredDomain.preorderSalt;
 
       expect(rawDocument).to.deep.equal(rawRegisteredDomain);
@@ -179,6 +186,7 @@ describe('DPNS', () => {
       delete rawDocument.$transferredAt;
       delete rawDocument.$transferredAtCoreBlockHeight;
       delete rawDocument.$transferredAtBlockHeight;
+      delete rawDocument.$creatorId;
       delete rawDocument.preorderSalt;
 
       const rawRegisteredDomain = registeredDomain.toObject();
@@ -192,6 +200,7 @@ describe('DPNS', () => {
       delete rawRegisteredDomain.$transferredAt;
       delete rawRegisteredDomain.$transferredAtCoreBlockHeight;
       delete rawRegisteredDomain.$transferredAtBlockHeight;
+      delete rawRegisteredDomain.$creatorId;
       delete rawRegisteredDomain.preorderSalt;
 
       expect(rawDocument).to.deep.equal(rawRegisteredDomain);
@@ -214,6 +223,7 @@ describe('DPNS', () => {
       delete rawDocument.$transferredAt;
       delete rawDocument.$transferredAtCoreBlockHeight;
       delete rawDocument.$transferredAtBlockHeight;
+      delete rawDocument.$creatorId;
       delete rawDocument.preorderSalt;
 
       const rawRegisteredDomain = registeredDomain.toObject();
@@ -227,6 +237,7 @@ describe('DPNS', () => {
       delete rawRegisteredDomain.$transferredAt;
       delete rawRegisteredDomain.$transferredAtCoreBlockHeight;
       delete rawRegisteredDomain.$transferredAtBlockHeight;
+      delete rawRegisteredDomain.$creatorId;
       delete rawRegisteredDomain.preorderSalt;
 
       expect(rawDocument).to.deep.equal(rawRegisteredDomain);

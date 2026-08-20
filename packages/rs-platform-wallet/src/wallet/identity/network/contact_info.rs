@@ -126,6 +126,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     ascending: true,
                 }],
                 limit: CONTACT_INFO_PAGE,
+                offset: None,
                 start: start.clone(),
             };
 

@@ -1,4 +1,5 @@
 pub mod v1;
+pub mod v10;
 pub mod v2;
 pub mod v3;
 pub mod v4;
@@ -114,6 +115,10 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub masternode_vote_state_transition_balance_pre_check: FeatureVersion,
     pub contract_create_state_transition: DriveAbciStateTransitionValidationVersion,
     pub contract_update_state_transition: DriveAbciStateTransitionValidationVersion,
+    /// Validation of the `refersTo` reference declarations a contract's
+    /// document types carry, run at contract create and update. Only
+    /// reachable from contract create/update state validation 1 and above.
+    pub data_contract_reference_validation: FeatureVersion,
     pub batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions,
     pub identity_create_from_addresses_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_top_up_from_addresses_state_transition: DriveAbciStateTransitionValidationVersion,
@@ -211,6 +216,7 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub document_transfer_transition_state_validation: FeatureVersion,
     pub document_purchase_transition_state_validation: FeatureVersion,
     pub document_update_price_transition_state_validation: FeatureVersion,
+    pub document_reference_validation: FeatureVersion,
     pub token_mint_transition_structure_validation: FeatureVersion,
     pub token_burn_transition_structure_validation: FeatureVersion,
     pub token_transfer_transition_structure_validation: FeatureVersion,
@@ -247,6 +253,7 @@ pub struct DriveAbciValidationDataTriggerAndBindingVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciValidationDataTriggerVersions {
     pub create_contact_request_data_trigger: FeatureVersion,
+    pub validate_profile_payment_addresses_data_trigger: FeatureVersion,
     pub create_domain_data_trigger: FeatureVersion,
     pub create_identity_data_trigger: FeatureVersion,
     pub create_feature_flag_data_trigger: FeatureVersion,

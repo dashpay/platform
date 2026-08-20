@@ -714,3 +714,102 @@ impl MockResponse for drive_proof_verifier::DocumentSplitAverages {
         drive_proof_verifier::DocumentSplitAverages(entries)
     }
 }
+
+/// Wire shape for `DocumentRankedEntries` mock round-trip: the page's
+/// `starting_rank`, then `(group key, axis tag, value)` triples in list
+/// order — **order is the ranking**, so a map-shaped encoding (as used
+/// nowhere here, but as would be the obvious alternative) would destroy
+/// the answer.
+///
+/// `starting_rank` is part of the encoding rather than reconstructed as
+/// `0` on decode, because it is exactly what an offset test needs to
+/// assert: a mock that dropped it would make every expectation look
+/// like an offset-0 query and quietly pass a round-trip that lost the
+/// rank base.
+///
+/// The value is widened to `i128` across all three axes: `Count`
+/// (`u64`) and `Sum` (`i64`) both fit losslessly, and `AvgFixedPoint`
+/// is already an `i128`. One numeric column keeps the tuple flat while
+/// the tag preserves which axis produced it, so a mock expectation
+/// can't quietly turn a count into a sum.
+type DocumentRankedPage = (u64, Vec<(Vec<u8>, u8, i128)>);
+
+const RANKED_TAG_COUNT: u8 = 0;
+const RANKED_TAG_SUM: u8 = 1;
+const RANKED_TAG_AVG: u8 = 2;
+
+impl MockResponse for drive_proof_verifier::DocumentRankedEntries {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let bincode_config = standard();
+        let triples: Vec<(Vec<u8>, u8, i128)> = self
+            .entries
+            .iter()
+            .map(|e| match e.value {
+                drive_proof_verifier::RankedEntryValue::Count(count) => {
+                    (e.key.clone(), RANKED_TAG_COUNT, count as i128)
+                }
+                drive_proof_verifier::RankedEntryValue::Sum(sum) => {
+                    (e.key.clone(), RANKED_TAG_SUM, sum as i128)
+                }
+                drive_proof_verifier::RankedEntryValue::AvgFixedPoint(avg) => {
+                    (e.key.clone(), RANKED_TAG_AVG, avg)
+                }
+            })
+            .collect();
+        let page: DocumentRankedPage = (self.starting_rank, triples);
+        bincode::encode_to_vec(page, bincode_config).expect("encode DocumentRankedEntries")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let bincode_config = standard();
+        let ((starting_rank, triples), _): (DocumentRankedPage, _) =
+            bincode::decode_from_slice(buf, bincode_config).expect("decode DocumentRankedEntries");
+        let entries: Vec<drive_proof_verifier::RankedEntry> = triples
+            .into_iter()
+            .map(|(key, tag, value)| {
+                let value = match tag {
+                    RANKED_TAG_COUNT => drive_proof_verifier::RankedEntryValue::Count(
+                        u64::try_from(value).expect("a Count entry round-trips through i128"),
+                    ),
+                    RANKED_TAG_SUM => drive_proof_verifier::RankedEntryValue::Sum(
+                        i64::try_from(value).expect("a Sum entry round-trips through i128"),
+                    ),
+                    RANKED_TAG_AVG => drive_proof_verifier::RankedEntryValue::AvgFixedPoint(value),
+                    other => panic!("unknown ranked axis tag {other} in mock expectation"),
+                };
+                drive_proof_verifier::RankedEntry { key, value }
+            })
+            .collect();
+        drive_proof_verifier::DocumentRankedEntries {
+            starting_rank,
+            entries,
+        }
+    }
+}
+
+impl MockResponse for drive_proof_verifier::DocumentHavingEntries {
+    /// Rides the ranked page encoding with a starting rank of `0`: a
+    /// having page is the same ordered `(group key, axis tag, value)`
+    /// list, just addressed by value bound instead of by rank, and it
+    /// has no rank base to preserve.
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        drive_proof_verifier::DocumentRankedEntries {
+            starting_rank: 0,
+            entries: self.entries.clone(),
+        }
+        .mock_serialize(sdk)
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let page = drive_proof_verifier::DocumentRankedEntries::mock_deserialize(sdk, buf);
+        drive_proof_verifier::DocumentHavingEntries {
+            entries: page.entries,
+        }
+    }
+}

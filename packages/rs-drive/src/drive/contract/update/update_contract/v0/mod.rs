@@ -1,4 +1,5 @@
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
+use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes;
 use crate::drive::{contract_documents_path, Drive};
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -326,16 +327,13 @@ impl Drive {
                             .sub_levels()
                             .get(index.name.as_str())
                             .and_then(|level| level.has_index_with_type());
-                        let range_countable =
-                            index_info.map(|info| info.range_countable).unwrap_or(false);
-                        let range_summable =
-                            index_info.map(|info| info.range_summable).unwrap_or(false);
-                        let target_tree_type = match (range_countable, range_summable) {
-                            (true, true) => TreeType::ProvableCountProvableSumTree,
-                            (true, false) => TreeType::ProvableCountTree,
-                            (false, true) => TreeType::ProvableSumTree,
-                            (false, false) => TreeType::NormalTree,
-                        };
+                        // Meta schema v3 (PV14) additionally upgrades the
+                        // chosen variant to its indexed mirror when the index
+                        // declares a ranking axis; `ranked_axes` is empty for
+                        // every pre-v3 contract, making this arm bit-identical
+                        // to the previous 4-way dispatch for them.
+                        let (target_tree_type, ranked_axes) =
+                            property_name_tree_type_and_ranked_axes(index_info)?;
                         let apply_type = if estimated_costs_only_with_layer_info.is_none() {
                             BatchInsertTreeApplyType::StatefulBatchInsertTree
                         } else {
@@ -348,17 +346,19 @@ impl Drive {
                                     .unwrap_or_default(),
                             }
                         };
-                        // The generic `batch_insert_empty_tree_if_not_exists`
-                        // already takes a `TreeType` arg and routes the
-                        // grovedb insert to the matching variant — same
-                        // helper count's non-summable index path uses.
-                        // No-op when the path/key already exists, which is
-                        // how this branch handles both pre-existing
+                        // The generic `batch_insert_empty_index_tree_if_not_exists`
+                        // already takes a `TreeType` (plus the ranking axes an
+                        // indexed element needs and a `TreeType` cannot carry)
+                        // and routes the grovedb insert to the matching
+                        // variant — same helper count's non-summable index
+                        // path uses. No-op when the path/key already exists,
+                        // which is how this branch handles both pre-existing
                         // indexes (unchanged on disk) and brand-new ones
                         // (materialized with the dispatch-chosen variant).
-                        self.batch_insert_empty_tree_if_not_exists(
+                        self.batch_insert_empty_index_tree_if_not_exists(
                             PathFixedSizeKeyRef((type_path, index.name.as_bytes())),
                             target_tree_type,
+                            &ranked_axes,
                             storage_flags.as_ref().map(|flags| flags.as_ref()),
                             apply_type,
                             transaction,
@@ -481,12 +481,10 @@ impl Drive {
                             .sub_levels()
                             .get(index.name.as_str())
                             .and_then(|level| level.has_index_with_type());
-                        let range_countable =
-                            index_info.map(|info| info.range_countable).unwrap_or(false);
-                        let range_summable =
-                            index_info.map(|info| info.range_summable).unwrap_or(false);
-                        match (range_countable, range_summable) {
-                            (true, true) => self
+                        let (tree_type, ranked_axes) =
+                            property_name_tree_type_and_ranked_axes(index_info)?;
+                        match tree_type {
+                            TreeType::ProvableCountProvableSumTree => self
                                 .batch_insert_empty_provable_count_provable_sum_tree(
                                     type_path,
                                     KeyRef(index_bytes),
@@ -494,21 +492,49 @@ impl Drive {
                                     &mut batch_operations,
                                     drive_version,
                                 )?,
-                            (true, false) => self.batch_insert_empty_provable_count_tree(
-                                type_path,
-                                KeyRef(index_bytes),
-                                storage_flags.as_ref().map(|flags| flags.as_ref()),
-                                &mut batch_operations,
-                                drive_version,
-                            )?,
-                            (false, true) => self.batch_insert_empty_provable_sum_tree(
-                                type_path,
-                                KeyRef(index_bytes),
-                                storage_flags.as_ref().map(|flags| flags.as_ref()),
-                                &mut batch_operations,
-                                drive_version,
-                            )?,
-                            (false, false) => self.batch_insert_empty_tree(
+                            TreeType::ProvableCountTree => self
+                                .batch_insert_empty_provable_count_tree(
+                                    type_path,
+                                    KeyRef(index_bytes),
+                                    storage_flags.as_ref().map(|flags| flags.as_ref()),
+                                    &mut batch_operations,
+                                    drive_version,
+                                )?,
+                            TreeType::ProvableSumTree => self
+                                .batch_insert_empty_provable_sum_tree(
+                                    type_path,
+                                    KeyRef(index_bytes),
+                                    storage_flags.as_ref().map(|flags| flags.as_ref()),
+                                    &mut batch_operations,
+                                    drive_version,
+                                )?,
+                            // Ranked (indexed) variants — meta schema v3 / PV14.
+                            TreeType::ProvableCountIndexedTree => self
+                                .batch_insert_empty_provable_count_indexed_tree(
+                                    type_path,
+                                    KeyRef(index_bytes),
+                                    storage_flags.as_ref().map(|flags| flags.as_ref()),
+                                    &mut batch_operations,
+                                    drive_version,
+                                )?,
+                            TreeType::ProvableSumIndexedTree => self
+                                .batch_insert_empty_provable_sum_indexed_tree(
+                                    type_path,
+                                    KeyRef(index_bytes),
+                                    storage_flags.as_ref().map(|flags| flags.as_ref()),
+                                    &mut batch_operations,
+                                    drive_version,
+                                )?,
+                            TreeType::ProvableCountProvableSumIndexedTree => self
+                                .batch_insert_empty_provable_count_provable_sum_indexed_tree(
+                                    type_path,
+                                    KeyRef(index_bytes),
+                                    &ranked_axes,
+                                    storage_flags.as_ref().map(|flags| flags.as_ref()),
+                                    &mut batch_operations,
+                                    drive_version,
+                                )?,
+                            _ => self.batch_insert_empty_tree(
                                 type_path,
                                 KeyRef(index_bytes),
                                 storage_flags.as_ref().map(|flags| flags.as_ref()),

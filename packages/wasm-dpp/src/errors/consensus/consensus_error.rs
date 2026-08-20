@@ -74,8 +74,10 @@ use dpp::consensus::state::data_contract::document_type_update_error::DocumentTy
 use dpp::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
 use dpp::consensus::state::document::document_contest_document_with_same_id_already_present_error::DocumentContestDocumentWithSameIdAlreadyPresentError;
 use dpp::consensus::state::document::document_contest_identity_already_contestant::DocumentContestIdentityAlreadyContestantError;
+use dpp::consensus::state::document::document_contest_index_mismatch_error::DocumentContestIndexMismatchError;
 use dpp::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
 use dpp::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
+use dpp::consensus::state::document::document_contest_not_required_error::DocumentContestNotRequiredError;
 use dpp::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use dpp::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use dpp::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionAlreadySignedByIdentityError, GroupActionDoesNotExistError, IdentityMemberOfGroupNotFoundError, IdentityNotMemberOfGroupError, ModificationOfGroupActionMainParametersNotPermittedError};
@@ -90,6 +92,11 @@ use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized
 use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
 use dpp::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountNotFrozenError, IdentityTokenAccountFrozenError, TokenIsPausedError, IdentityTokenAccountAlreadyFrozenError, UnauthorizedTokenActionError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, TokenMintPastMaxSupplyError, NewTokensDestinationIdentityDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, InvalidGroupPositionError, TokenAlreadyPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, TokenTransferRecipientIdentityNotExistError, PreProgrammedDistributionTimestampInPastError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale, InvalidTokenPositionStateError};
 use dpp::consensus::state::address_funds::{AddressDoesNotExistError, AddressInvalidNonceError, AddressNotEnoughFundsError, AddressesNotEnoughFundsError};
+use dpp::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
+use dpp::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
+use dpp::consensus::state::document::referenced_identity_key_not_found_error::ReferencedIdentityKeyNotFoundError;
+use dpp::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
+use dpp::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use dpp::consensus::state::shielded::insufficient_pool_notes_error::InsufficientPoolNotesError;
 use dpp::consensus::state::shielded::insufficient_shielded_fee_error::InsufficientShieldedFeeError;
 use dpp::consensus::state::shielded::invalid_anchor_error::InvalidAnchorError;
@@ -136,6 +143,7 @@ use crate::errors::consensus::state::document::{
     DocumentAlreadyPresentErrorWasm, DocumentNotFoundErrorWasm, DocumentOwnerIdMismatchErrorWasm,
     DocumentTimestampWindowViolationErrorWasm, DocumentTimestampsMismatchErrorWasm,
     DuplicateUniqueIndexErrorWasm, InvalidDocumentRevisionErrorWasm,
+    ReferencedEntityNotFoundErrorWasm,
 };
 use crate::errors::consensus::state::identity::{
     IdentityAlreadyExistsErrorWasm, IdentityPublicKeyIsDisabledErrorWasm,
@@ -325,6 +333,12 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::DocumentContestNotPaidForError(e) => {
             generic_consensus_error!(DocumentContestNotPaidForError, e).into()
         }
+        StateError::DocumentContestIndexMismatchError(e) => {
+            generic_consensus_error!(DocumentContestIndexMismatchError, e).into()
+        }
+        StateError::DocumentContestNotRequiredError(e) => {
+            generic_consensus_error!(DocumentContestNotRequiredError, e).into()
+        }
         StateError::RecipientIdentityDoesNotExistError(e) => {
             generic_consensus_error!(RecipientIdentityDoesNotExistError, e).into()
         }
@@ -462,6 +476,24 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::InsufficientShieldedFeeError(e) => {
             generic_consensus_error!(InsufficientShieldedFeeError, e).into()
+        }
+        StateError::ReferencedEntityNotFoundError(e) => {
+            ReferencedEntityNotFoundErrorWasm::from(e).into()
+        }
+        StateError::ReferencedDocumentTypeNotFoundError(e) => {
+            generic_consensus_error!(ReferencedDocumentTypeNotFoundError, e).into()
+        }
+        StateError::ReferencedDocumentTypeDeletableError(e) => {
+            generic_consensus_error!(ReferencedDocumentTypeDeletableError, e).into()
+        }
+        StateError::ReferencedIdentityKeyNotFoundError(e) => {
+            generic_consensus_error!(ReferencedIdentityKeyNotFoundError, e).into()
+        }
+        StateError::ReferencedIdentityKeyDisabledError(e) => {
+            generic_consensus_error!(ReferencedIdentityKeyDisabledError, e).into()
+        }
+        StateError::ReferencedKeyIdPropertyInvalidError(e) => {
+            generic_consensus_error!(ReferencedKeyIdPropertyInvalidError, e).into()
         }
     }
 }

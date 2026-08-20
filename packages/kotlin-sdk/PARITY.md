@@ -105,6 +105,10 @@ verbatim. Documented deviations from iOS are listed after the table.
 | IgnoredContactsView.swift | ui/dashpay/IgnoredContactsScreen.kt · `DashPayIgnored` | ported — `observeIgnoredSenders` list with Un-ignore (`unignoreContactSender`), optimistic removal + per-row in-flight/error |
 | HiddenContactsView.swift | ui/dashpay/HiddenContactsScreen.kt · `DashPayHidden` | ported — client-side hidden-established grouping with Unhide (`setContactInfo displayHidden=false`, preserving alias/note) + sync kick |
 | DashPayContactMeta.swift | ui/dashpay/DashPayContactMeta.kt (+ DashPayJson.kt) | ported — `DashPayContactMetaStore` (SharedPreferences, same key shape, `version` StateFlow), `dashPayContactDisplayName` precedence, `txidDisplayHex`, the `DashPayAvatar` composable (Coil), plus the org.json parsers for profile / DPNS-search / account-balance / payment reads |
+| InvitationsView.swift | ui/dashpay/InvitationsScreen.kt · `DashPayInvitations` | ported — Room-Flow sent-invitations list (`InvitationDao.observeAll`, filtered to loaded wallets, per-row wallet-scoped reclaim entry on `Created` rows), status badges, toolbar entries on the DashPay tab (`dashpay.openSentInvitations` / `dashpay.claimInvitation`) |
+| CreateInvitationSheet.swift | ui/dashpay/CreateInvitationSheet.kt | ported — default 0.03 DASH + 0.003–0.05 mirror copy, contact-request-back toggle (username-gated), `Dashpay.createInvitation`, in-memory QR + text-only share + sensitive/auto-cleared clipboard copy (Android has no local-only/expiring clipboard — documented gap) |
+| ClaimInvitationSheet.swift | ui/dashpay/ClaimInvitationSheet.kt | ported — paste/deep-link seed → `parseInvitation` preview → 6-key pre-persist → `claimInvitation` (fresh-invitee capable), post-claim "Add \<username\>?" → DPNS resolve → contact request. Adapted: deep links park until a wallet exists instead of iOS's walletless drop (flagged upstream) |
+| ReclaimInvitationSheet.swift | ui/dashpay/ReclaimInvitationSheet.kt (+ InvitationReclaimLogic.kt) | ported — top-up / register targets (`reclaimInvitationAsTopUp` / `reclaimInvitationAsNewIdentity`, the only `consumeInvitationVoucher = true` call sites; register = base 4-key set), `reclaimInFlight` marker discipline, verbatim outcome classifier + copy (unit-pinned matrix) |
 
 **Deviations from iOS (all intentional, K3):**
 
@@ -154,7 +158,7 @@ verbatim. Documented deviations from iOS are listed after the table.
 | QRScannerView.swift | ui/scanner/QrScannerScreen.kt · `QrScanner` | ported |
 | ReceiveAddressView.swift | ui/wallet/ReceiveAddressSheet.kt | ported |
 | SeedBackupView.swift | ui/wallet/SeedBackupScreen.kt · `SeedBackup` | ported |
-| SendTransactionView.swift | ui/wallet/SendTransactionScreen.kt · `SendTransaction` | ported — `ManagedPlatformWallet.sendToAddresses` drives the atomic V2 path (`CoreTransactionBuilder.finalizeAtomic` → `core_wallet_tx_builder_finalize` → `core_wallet_broadcast_signed_transaction_v2`); shared Rust owns selection, reservation, signing, and broadcast classification |
+| SendTransactionView.swift | ui/wallet/SendTransactionScreen.kt · `SendTransaction` | ported — `ManagedPlatformWallet.sendToAddresses` drives the atomic finalized-transaction path (`CoreTransactionBuilder.finalizeAtomic` → `core_wallet_tx_builder_finalize` → `core_wallet_broadcast_signed_transaction`); shared Rust owns selection, reservation, signing, and broadcast classification |
 | ShieldedActivityView.swift | ui/shielded/ShieldedActivityScreen.kt · `ShieldedActivity` | ported |
 | TransactionDetailView.swift | ui/wallet/TransactionDetailScreen.kt · `WalletTransactionDetail` | ported |
 | TransactionListView.swift | ui/wallet/TransactionListScreen.kt · `WalletTransactions` | ported |
