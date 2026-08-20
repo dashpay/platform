@@ -97,7 +97,7 @@ pub(super) fn verify_sum_query(
     // First gate: a limit above the server's cap is refused on every
     // server route with `InvalidLimit`, so no proof can belong to
     // such a request — reject before any proof or provider machinery.
-    super::aggregate_limit::check_within_server_cap(request.limit, "SUM")?;
+    let capped_limit = super::aggregate_limit::check_within_server_cap(request.limit, "SUM")?;
     let document_type = request
         .data_contract
         .document_type_for_name(&request.document_type_name)
@@ -239,7 +239,7 @@ pub(super) fn verify_sum_query(
             //   and the cap check at the top of this function
             //   mirrors that rejection, so the SDK never sees a
             //   clamped value to un-clamp.
-            let limit_u16 = super::aggregate_limit::distinct_walk_limit(request.limit);
+            let limit_u16 = capped_limit.distinct_walk_limit();
             let left_to_right = request
                 .order_by_clauses
                 .first()
@@ -260,7 +260,7 @@ pub(super) fn verify_sum_query(
             // `0` stays `None` (unbounded outer walk), mirroring the
             // server's carrier arm. Cap already enforced at the top
             // of this function.
-            let limit_u16 = super::aggregate_limit::carrier_walk_limit(request.limit);
+            let limit_u16 = capped_limit.carrier_walk_limit();
             let left_to_right = request
                 .order_by_clauses
                 .first()

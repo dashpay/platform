@@ -117,7 +117,7 @@ pub(super) fn verify_count_query(
     // First gate: a limit above the server's cap is refused on every
     // server route with `InvalidLimit`, so no proof can belong to
     // such a request — reject before any proof or provider machinery.
-    super::aggregate_limit::check_within_server_cap(request.limit, "COUNT")?;
+    let capped_limit = super::aggregate_limit::check_within_server_cap(request.limit, "COUNT")?;
     let document_type = request
         .data_contract
         .document_type_for_name(&request.document_type_name)
@@ -252,7 +252,7 @@ pub(super) fn verify_count_query(
             // value, which the SDK can't see), so the path-query
             // bytes match byte-for-byte across operators. Cap
             // already enforced at the top of this function.
-            let limit_u16 = super::aggregate_limit::distinct_walk_limit(request.limit);
+            let limit_u16 = capped_limit.distinct_walk_limit();
             let left_to_right = request
                 .order_by_clauses
                 .first()
@@ -271,13 +271,21 @@ pub(super) fn verify_count_query(
         }
         DocumentCountMode::RangeAggregateCarrierProof => {
             // Carrier-ACOR (grovedb #663) — one verified `u64` per
-            // present In branch. `limit` on the per-branch walk
-            // follows the same `validate-don't-clamp` contract the
-            // distinct path uses; `0` stays `None` (unbounded outer
-            // walk, mirroring the server) so the path-query bytes
-            // match the server's exactly. Cap already enforced at
-            // the top of this function.
-            let limit_u16 = super::aggregate_limit::carrier_walk_limit(request.limit);
+            // outer branch. `limit` on the outer walk follows the
+            // same `validate-don't-clamp` contract the distinct
+            // path uses, but the COUNT dispatcher's rules are
+            // shape-dependent: the range-outer (G8) shape lowers an
+            // unset limit to the compile-time carrier cap and
+            // refuses explicit limits above it, while the In-outer
+            // (G7) shape keeps `None` and refuses every explicit
+            // limit. Mirror the server's own shape test.
+            let has_outer_range = request
+                .where_clauses
+                .iter()
+                .filter(|wc| DriveDocumentCountQuery::is_range_operator(wc.operator))
+                .count()
+                == 2;
+            let limit_u16 = capped_limit.count_carrier_walk_limit(has_outer_range)?;
             let left_to_right = request
                 .order_by_clauses
                 .first()
