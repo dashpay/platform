@@ -269,3 +269,97 @@ pub(super) unsafe fn decode_funding_addresses(
     }
     Ok(address_map)
 }
+
+/// Estimate the fee (in credits) the network is EXPECTED to actually
+/// charge for an `AddressFundingFromAssetLockTransition` with the given
+/// input and output counts.
+///
+/// This is a display/planning estimate of the GroveDB-metered execution
+/// fee — deliberately DISTINCT from the consensus minimum the locked value
+/// must cover (`calculate_min_required_fee`, ~56k duffs for a one-output
+/// funding), which is several times larger than the metered charge. The
+/// constants are pinned against real execution by the drive-abci
+/// `expected_fee_calibration` tests.
+///
+/// The version is pinned to [`PlatformVersion::latest()`]. The funding
+/// builder resolves `sdk.version()` (network-floored), which can lag
+/// `latest()` — but every shipped fee version shares the same
+/// `state_transition_min_fees` table today, so the estimate cannot drift
+/// in practice. If a future fee version diverges, add an optional
+/// `protocol_version` parameter (0 = latest) rather than changing this
+/// default.
+///
+/// Pure computation: no wallet handle, no network. Writes the fee to
+/// `out_fee` and returns `ok()`; a formula overflow returns
+/// `ErrorArithmeticOverflow`.
+///
+/// # Safety
+/// `out_fee` must point to 8 writable bytes (a `u64`).
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_address_funding_estimate_fee(
+    input_count: usize,
+    output_count: usize,
+    out_fee: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_fee);
+
+    let platform_version = dpp::version::PlatformVersion::latest();
+    match dpp::state_transition::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition::estimate_expected_fee(
+        input_count,
+        output_count,
+        platform_version,
+    ) {
+        Ok(credits) => {
+            *out_fee = credits;
+            PlatformWalletFFIResult::ok()
+        }
+        Err(e) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorArithmeticOverflow,
+            format!("address funding fee estimation failed: {e}"),
+        ),
+    }
+}
+
+#[cfg(test)]
+mod estimate_fee_tests {
+    use super::*;
+
+    /// Pin the estimator's output for the canonical wallet topup shape
+    /// (0 inputs, 1 remainder output) and the per-input/per-output slopes,
+    /// so a constant change is always a conscious, reviewed bump.
+    #[test]
+    fn estimates_pinned_values() {
+        unsafe {
+            let estimate = |input_count: usize, output_count: usize| {
+                let mut fee: u64 = 0;
+                let result = platform_wallet_address_funding_estimate_fee(
+                    input_count,
+                    output_count,
+                    &mut fee,
+                );
+                assert_eq!(
+                    result.code,
+                    PlatformWalletFFIResultCode::Success,
+                    "estimate ({input_count}, {output_count}) must succeed"
+                );
+                fee
+            };
+            assert_eq!(estimate(0, 1), 17_500_000, "canonical wallet topup");
+            // output_count is clamped to at least 1.
+            assert_eq!(estimate(0, 0), 17_500_000, "zero outputs clamps to one");
+            assert_eq!(
+                estimate(1, 2),
+                10_000_000 + 2_000_000 + 2 * 7_500_000,
+                "per-input and per-output slopes"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_null_out_pointer() {
+        unsafe {
+            let result = platform_wallet_address_funding_estimate_fee(0, 1, std::ptr::null_mut());
+            assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+        }
+    }
+}

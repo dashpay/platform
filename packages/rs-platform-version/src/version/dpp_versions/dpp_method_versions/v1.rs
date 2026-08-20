@@ -5,4 +5,5 @@ pub const DPP_METHOD_VERSIONS_V1: DPPMethodVersions = DPPMethodVersions {
     deduct_fee_from_outputs_or_remaining_balance_of_inputs: 0,
     compute_minimum_shielded_fee: 0,
     shielded_extra_sighash_data: 0,
+    estimate_address_funding_expected_fee: 0,
 };

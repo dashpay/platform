@@ -3188,6 +3188,156 @@ mod tests {
         }
     }
 
+    // ==========================================
+    // EXPECTED-FEE CALIBRATION TESTS
+    // Pin `AddressFundingFromAssetLockTransition::estimate_expected_fee`
+    // (the client-side display estimate) against the REAL GroveDB-metered
+    // fee of an executed funding. A protocol change that moves the metered
+    // fee outside the band trips these tests and forces a constant bump in
+    // `state_transition_min_fees` (address_funding_expected_*).
+    // ==========================================
+
+    mod expected_fee_calibration {
+        use super::*;
+
+        /// Execute one funding transition on genesis state and return the
+        /// actual charged fee (`total_base_fee`).
+        async fn execute_and_get_actual_fee(
+            inputs: BTreeMap<PlatformAddress, (AddressNonce, u64)>,
+            outputs: BTreeMap<PlatformAddress, Option<u64>>,
+            signer: &TestAddressSigner,
+            platform: &crate::test::helpers::setup::TempPlatform<MockCoreRPCLike>,
+            seed: u64,
+        ) -> u64 {
+            let platform_version = PlatformVersion::latest();
+            let mut rng = StdRng::seed_from_u64(seed);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+
+            let state_transition = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                signer,
+                inputs,
+                outputs,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+            )
+            .await;
+
+            let result = state_transition
+                .serialize_to_bytes()
+                .expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            let fee_result = assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. }] =>
+                    fee_result.clone()
+            );
+            fee_result.total_base_fee()
+        }
+
+        /// Genesis-state metering is slightly shallower than a live
+        /// network's, so the estimate must sit ABOVE the calibrated actual
+        /// with growth headroom, but not absurdly above it. Band chosen
+        /// against observed testnet actuals (14_964_200 / 14_702_160 for
+        /// 0-in/1-out) vs the 17_500_000 estimate (+17–19%).
+        fn assert_within_band(actual: u64, expected: u64) {
+            assert!(
+                actual <= expected,
+                "actual metered fee {actual} exceeds the expected-fee constant {expected}: \
+                 bump address_funding_expected_* in state_transition_min_fees"
+            );
+            assert!(
+                actual >= expected * 50 / 100,
+                "actual metered fee {actual} fell below 50% of the expected-fee constant \
+                 {expected}: the constants overstate the fee — lower them"
+            );
+        }
+
+        #[tokio::test]
+        async fn test_expected_fee_brackets_actual_for_minimal_funding() {
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let signer = TestAddressSigner::new();
+            let mut outputs = BTreeMap::new();
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
+
+            let actual =
+                execute_and_get_actual_fee(BTreeMap::new(), outputs, &signer, &platform, 700).await;
+            let expected = AddressFundingFromAssetLockTransition::estimate_expected_fee(
+                0,
+                1,
+                PlatformVersion::latest(),
+            )
+            .expect("should estimate expected fee");
+
+            assert_within_band(actual, expected);
+        }
+
+        #[tokio::test]
+        async fn test_expected_fee_brackets_actual_with_input_and_two_outputs() {
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([7u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(0.5));
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.3)));
+
+            let mut outputs = BTreeMap::new();
+            outputs.insert(create_platform_address(2), Some(dash_to_credits!(0.5)));
+            outputs.insert(create_platform_address(3), None); // Remainder recipient
+
+            let actual = execute_and_get_actual_fee(inputs, outputs, &signer, &platform, 701).await;
+            let expected = AddressFundingFromAssetLockTransition::estimate_expected_fee(
+                1,
+                2,
+                PlatformVersion::latest(),
+            )
+            .expect("should estimate expected fee");
+
+            assert_within_band(actual, expected);
+        }
+    }
+
     mod fee_edge_cases {
         use super::*;
 

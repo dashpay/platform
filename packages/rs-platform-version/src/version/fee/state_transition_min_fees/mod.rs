@@ -19,6 +19,16 @@ pub struct StateTransitionMinFees {
     pub identity_create_base_cost: u64,
     pub identity_topup_base_cost: u64,
     pub identity_key_in_creation_cost: u64,
+    /// Expected (display) fee components for
+    /// `AddressFundingFromAssetLockTransition` — a client-side estimate of
+    /// the GroveDB-metered fee actually charged at execution, NOT a
+    /// consensus value (no consensus path reads these; the consensus floor
+    /// is `calculate_min_required_fee`). Calibrated against `apply = true`
+    /// execution in the drive-abci calibration test with headroom for
+    /// state-tree growth.
+    pub address_funding_expected_base_fee: u64,
+    pub address_funding_expected_fee_per_input: u64,
+    pub address_funding_expected_fee_per_output: u64,
 }
 
 #[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]
@@ -54,6 +64,12 @@ impl From<StateTransitionMinFeesBeforeProtocolVersion11> for StateTransitionMinF
             identity_topup_base_cost: STATE_TRANSITION_MIN_FEES_VERSION1.identity_topup_base_cost,
             identity_key_in_creation_cost: STATE_TRANSITION_MIN_FEES_VERSION1
                 .identity_key_in_creation_cost,
+            address_funding_expected_base_fee: STATE_TRANSITION_MIN_FEES_VERSION1
+                .address_funding_expected_base_fee,
+            address_funding_expected_fee_per_input: STATE_TRANSITION_MIN_FEES_VERSION1
+                .address_funding_expected_fee_per_input,
+            address_funding_expected_fee_per_output: STATE_TRANSITION_MIN_FEES_VERSION1
+                .address_funding_expected_fee_per_output,
         }
     }
 }

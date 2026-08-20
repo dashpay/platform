@@ -16,4 +16,13 @@ pub const STATE_TRANSITION_MIN_FEES_VERSION1: StateTransitionMinFees = StateTran
     identity_create_base_cost: 2_000_000,
     identity_key_in_creation_cost: 6_500_000,
     identity_topup_base_cost: 500_000,
+    // Expected (display) fee for AddressFundingFromAssetLockTransition —
+    // estimate of the GroveDB-metered charge, not a consensus value.
+    // Calibrated from apply=true execution (see the drive-abci
+    // `expected_fee_calibration` tests) with headroom for tree growth;
+    // observed testnet actuals for a 0-input/1-output funding:
+    // 14_964_200 and 14_702_160 credits.
+    address_funding_expected_base_fee: 10_000_000,
+    address_funding_expected_fee_per_input: 2_000_000,
+    address_funding_expected_fee_per_output: 7_500_000,
 };

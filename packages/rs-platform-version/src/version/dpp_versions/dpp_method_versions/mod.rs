@@ -10,4 +10,5 @@ pub struct DPPMethodVersions {
     pub deduct_fee_from_outputs_or_remaining_balance_of_inputs: FeatureVersion,
     pub compute_minimum_shielded_fee: FeatureVersion,
     pub shielded_extra_sighash_data: FeatureVersion,
+    pub estimate_address_funding_expected_fee: FeatureVersion,
 }

@@ -648,6 +648,29 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         }
     }
 
+    /// Expected fee (in credits) the network will actually charge for an
+    /// `AddressFundingFromAssetLockTransition` with the given input and
+    /// output counts — a display/planning estimate of the metered
+    /// execution fee, NOT the (several-times-larger) consensus minimum
+    /// the locked value must cover. Pure computation on the Rust side
+    /// (no handle, no network); the constants are pinned against real
+    /// execution by the drive-abci calibration tests. The canonical
+    /// wallet topup is `(inputCount: 0, outputCount: 1)` — the single
+    /// remainder recipient.
+    public static func estimateAddressFundingFee(
+        inputCount: Int = 0,
+        outputCount: Int = 1
+    ) throws -> UInt64 {
+        var fee: UInt64 = 0
+        // Counts are `usize` on the Rust side → imported as `UInt`.
+        try platform_wallet_address_funding_estimate_fee(
+            UInt(inputCount),
+            UInt(outputCount),
+            &fee
+        ).check()
+        return fee
+    }
+
     /// Fund this wallet's platform addresses from a Core L1 asset lock,
     /// orchestrated entirely on the Rust side (build asset-lock tx →
     /// wait for IS-lock or fall back to ChainLock → submit

@@ -1,4 +1,5 @@
 pub mod accessors;
+mod estimate_expected_fee;
 mod fields;
 pub mod methods;
 mod proved;
