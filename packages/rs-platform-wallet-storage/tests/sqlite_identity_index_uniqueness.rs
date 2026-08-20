@@ -11,7 +11,9 @@
 
 mod common;
 
-use common::{ensure_identity, ensure_wallet_meta, fresh_persister, wid};
+use common::{
+    ensure_identity, ensure_wallet_meta, fresh_persister, fresh_persister_with_mode, wid,
+};
 
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::{
@@ -20,7 +22,7 @@ use platform_wallet::changeset::{
 };
 use platform_wallet::wallet::identity::IdentityStatus;
 use platform_wallet::wallet::platform_wallet::WalletId;
-use platform_wallet_storage::{SqlitePersister, WalletStorageError};
+use platform_wallet_storage::{FlushMode, SqlitePersister, WalletStorageError};
 use rusqlite::{params, OptionalExtension};
 
 /// Sentinel wallet scope — "no parent wallet known", stored as a NULL
@@ -373,4 +375,105 @@ fn walletless_identity_without_an_index_is_accepted() {
         .expect("wallet-less identities are first-class");
 
     assert_eq!(row_tombstoned(&p, &iid(0x01)), Some(false));
+}
+
+/// Two stores that are each valid against a clean disk still merge into
+/// one contradictory changeset in the buffer. The flush applies the
+/// merged result, so the check runs there too — otherwise manual mode
+/// writes the duplicate the store-time check exists to prevent.
+#[test]
+fn manual_flush_rejects_a_duplicate_assembled_by_the_buffer() {
+    let (p, _tmp, _path) = fresh_persister_with_mode(FlushMode::Manual);
+    let w = wid(0xB7);
+    ensure_wallet_meta(&p, &w);
+    p.store(w, identity_cs([identity_entry(0x01, Some(1))], []))
+        .expect("valid against a clean disk");
+    p.store(w, identity_cs([identity_entry(0x02, Some(1))], []))
+        .expect("also valid against a clean disk — nothing is flushed yet");
+
+    let err = p
+        .flush(w)
+        .expect_err("the merged changeset is contradictory");
+
+    assert_index_conflict(&err);
+    assert_eq!(
+        live_occupant(&p, &w, 1),
+        None,
+        "the whole transaction rolls back — no half-applied slot"
+    );
+    assert_eq!(row_tombstoned(&p, &iid(0x01)), None);
+    assert_eq!(row_tombstoned(&p, &iid(0x02)), None);
+
+    // A fatal flush failure drops that wallet's buffer rather than
+    // restoring an unflushable changeset, so the retry is a no-op
+    // instead of the same failure forever.
+    p.flush(w).expect("the poisoned changeset is not retried");
+    assert_eq!(live_occupant(&p, &w, 1), None);
+}
+
+/// One wallet's rejected flush is one wallet's problem: `commit_writes`
+/// gives every dirty wallet its own transaction, so a neighbour's
+/// legitimate writes land in the same pass.
+#[test]
+fn flush_rejection_leaves_other_wallets_untouched() {
+    let (p, _tmp, _path) = fresh_persister_with_mode(FlushMode::Manual);
+    let poisoned = wid(0xC7);
+    let healthy = wid(0xD7);
+    ensure_wallet_meta(&p, &poisoned);
+    ensure_wallet_meta(&p, &healthy);
+    p.store(poisoned, identity_cs([identity_entry(0x01, Some(1))], []))
+        .expect("store");
+    p.store(poisoned, identity_cs([identity_entry(0x02, Some(1))], []))
+        .expect("store");
+    p.store(healthy, identity_cs([identity_entry(0x11, Some(1))], []))
+        .expect("store");
+
+    let report = p.commit_writes().expect("commit_writes enumerates fine");
+
+    assert_eq!(
+        report.succeeded,
+        vec![healthy],
+        "the healthy wallet commits"
+    );
+    assert_eq!(report.failed.len(), 1, "exactly one wallet fails");
+    assert_eq!(report.failed[0].0, poisoned);
+    assert_index_conflict(&report.failed[0].1);
+    assert!(report.still_pending.is_empty());
+    assert_eq!(
+        live_occupant(&p, &healthy, 1),
+        Some([0x11; 32]),
+        "the neighbour's write is not collateral"
+    );
+    assert_eq!(live_occupant(&p, &poisoned, 1), None);
+}
+
+/// Pending writes that can never be persisted must not make a wallet
+/// undeletable — deleting it is the remedy for exactly that state. The
+/// pre-delete flush drops them and the cascade proceeds.
+#[test]
+fn delete_wallet_proceeds_despite_unpersistable_pending_writes() {
+    let (p, _tmp, _path) = fresh_persister_with_mode(FlushMode::Manual);
+    let w = wid(0x5A);
+    ensure_wallet_meta(&p, &w);
+    p.store(w, identity_cs([identity_entry(0x01, Some(1))], []))
+        .expect("store");
+    p.store(w, identity_cs([identity_entry(0x02, Some(1))], []))
+        .expect("store");
+
+    let report = p
+        .delete_wallet_skip_backup(w)
+        .expect("a contradictory buffer must not block the delete");
+
+    assert_eq!(report.wallet_id, w);
+    assert_eq!(row_tombstoned(&p, &iid(0x01)), None);
+    assert_eq!(row_tombstoned(&p, &iid(0x02)), None);
+    let conn = p.lock_conn_for_test();
+    let wallets: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM wallet_metadata WHERE wallet_id = ?1",
+            params![w.as_slice()],
+            |row| row.get(0),
+        )
+        .expect("count wallets");
+    assert_eq!(wallets, 0, "the wallet is gone");
 }

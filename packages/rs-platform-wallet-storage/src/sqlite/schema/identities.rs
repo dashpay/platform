@@ -20,6 +20,11 @@ pub fn apply(
     wallet_id: &WalletId,
     cs: &IdentityChangeSet,
 ) -> Result<(), WalletStorageError> {
+    // `store` checks each changeset before it enters the buffer; this
+    // checks the merged one that actually reaches disk. Two writes that
+    // are individually valid can still merge into a contradiction, and
+    // `delete_wallet`'s pre-flush never passes through `store` at all.
+    check_index_conflicts(tx, wallet_id, cs)?;
     if !cs.identities.is_empty() {
         // PK is `identity_id` alone; `wallet_id` is nullable and links
         // the identity to its parent wallet for cascade. The all-zero

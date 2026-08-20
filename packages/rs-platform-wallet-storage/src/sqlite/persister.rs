@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use rusqlite::{Connection, OptionalExtension};
 
 use platform_wallet::changeset::{
-    ClientStartState, Merge, PersistenceCapabilities, PersistenceError, PlatformWalletChangeSet,
-    PlatformWalletPersistence,
+    ClientStartState, Merge, PersistenceCapabilities, PersistenceError, PersistenceErrorKind,
+    PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 
@@ -462,14 +462,32 @@ impl SqlitePersister {
                 }
                 let pre_flush_tx =
                     conn.transaction_with_behavior(rusqlite::TransactionBehavior::Exclusive)?;
-                if let Err(e) = apply_changeset_to_tx(&pre_flush_tx, &wallet_id, &cs) {
-                    let _ = pre_flush_tx.rollback();
-                    drained_slot.set(Some(cs));
-                    return Err(e);
-                }
-                if let Err(e) = pre_flush_tx.commit() {
-                    drained_slot.set(Some(cs));
-                    return Err(WalletStorageError::Sqlite(e));
+                match apply_changeset_to_tx(&pre_flush_tx, &wallet_id, &cs) {
+                    Ok(()) => {
+                        if let Err(e) = pre_flush_tx.commit() {
+                            drained_slot.set(Some(cs));
+                            return Err(WalletStorageError::Sqlite(e));
+                        }
+                    }
+                    // A constraint failure means these pending writes can
+                    // never be persisted, so keeping them would make the
+                    // wallet undeletable — the one state a user most wants
+                    // gone. Drop them and delete; they name only this
+                    // wallet, whose rows are about to go.
+                    Err(e) if e.persistence_kind() == PersistenceErrorKind::Constraint => {
+                        let _ = pre_flush_tx.rollback();
+                        tracing::warn!(
+                            wallet_id = %hex::encode(wallet_id),
+                            error_kind = e.error_kind_str(),
+                            dropped_field_count = populated_field_count(&cs),
+                            "pending writes violate a storage invariant and cannot be persisted — dropping them so the delete can proceed"
+                        );
+                    }
+                    Err(e) => {
+                        let _ = pre_flush_tx.rollback();
+                        drained_slot.set(Some(cs));
+                        return Err(e);
+                    }
                 }
             }
 
