@@ -13,7 +13,7 @@
 //! [`DocumentCount`]: drive_proof_verifier::DocumentCount
 //! [`DocumentSplitCounts`]: drive_proof_verifier::DocumentSplitCounts
 
-use crate::platform::documents::document_query::DocumentQuery;
+use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dash_context_provider::ContextProvider;

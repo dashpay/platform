@@ -12,9 +12,8 @@
 //! passes the verified entries through unchanged, mapping
 //! `SumEntry` to `SplitSumEntry`.
 
-use crate::platform::documents::document_query::DocumentQuery;
-use crate::platform::documents::sum_proof_helpers::{assert_select_is_sum, verify_sum_query};
-use crate::platform::Fetch;
+use crate::documents::document_query::DocumentQuery;
+use crate::documents::sum_proof_helpers::{assert_select_is_sum, verify_sum_query};
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dash_context_provider::ContextProvider;
 use dpp::dashcore::Network;
@@ -53,9 +52,4 @@ impl FromProof<DocumentQuery> for DocumentSplitSums {
         });
         Ok((split, mtd, proof))
     }
-}
-
-impl Fetch for DocumentSplitSums {
-    type Query = super::document_query::DocumentQuery;
-    type Request = dapi_grpc::platform::v0::GetDocumentsRequest;
 }

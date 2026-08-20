@@ -2,8 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::platform::Fetch;
-use crate::{error::Error, sdk::Sdk};
+use crate::error::Error;
 use dapi_grpc::platform::v0::get_documents_request::Version::{V0, V1};
 use dapi_grpc::platform::v0::{
     self as platform_proto,
@@ -189,25 +188,6 @@ impl DocumentQuery {
         Self::from(d)
     }
 
-    /// Create new document query for provided document type name and data contract ID.
-    ///
-    /// Note that this method will fetch data contract first.
-    pub async fn new_with_data_contract_id(
-        api: &Sdk,
-        data_contract_id: Identifier,
-        document_type_name: &str,
-    ) -> Result<Self, Error> {
-        let data_contract =
-            DataContract::fetch(api, data_contract_id)
-                .await?
-                .ok_or(Error::MissingDependency(
-                    "DataContract".to_string(),
-                    format!("data contract {} not found", data_contract_id),
-                ))?;
-
-        Self::new(data_contract, document_type_name)
-    }
-
     /// Point to a specific document ID.
     pub fn with_document_id(self, document_id: &Identifier) -> Self {
         let clause = WhereClause {
@@ -333,7 +313,7 @@ impl DocumentQuery {
     ///
     /// # The 5th-best group
     ///
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// # use dash_sdk::platform::{DataContract, DocumentQuery};
     /// # use dash_sdk::platform::documents::document_query::RankingDirection;
     /// # use dash_sdk::drive::query::SelectProjection;
@@ -1094,21 +1074,4 @@ fn value_to_proto_at_depth(value: Value, depth: u8) -> Result<ProtoDocumentField
     Ok(ProtoDocumentFieldValue {
         variant: Some(variant),
     })
-}
-
-/// Encode a [`DocumentQuery`] onto the wire using the SDK's
-/// currently-known [`PlatformVersion`] for V0 vs V1 dispatch.
-///
-/// The [`Fetch`] / [`FetchMany`] trampolines for [`Document`] (and the
-/// document aggregate views) split `Fetch::Query = DocumentQuery` (rich,
-/// what `FromProof` binds to) from `Fetch::Request = GetDocumentsRequest`
-/// (wire); this impl is the rich→wire step the trampoline invokes via
-/// `Query::query(&rich, &sdk.query_settings())`.
-impl crate::platform::Query<platform_proto::GetDocumentsRequest> for DocumentQuery {
-    fn query(
-        &self,
-        settings: &crate::platform::QuerySettings<'_>,
-    ) -> Result<platform_proto::GetDocumentsRequest, Error> {
-        GetDocumentsRequest::try_from_platform_versioned(self.clone(), settings.protocol_version)
-    }
 }
