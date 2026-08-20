@@ -250,6 +250,18 @@ impl SqlitePersister {
     /// cross-process access the rollback point may therefore miss writes
     /// a peer committed between the snapshot and the lock. Serializing
     /// restore intent across processes is the caller's responsibility.
+    ///
+    /// # Source trust
+    ///
+    /// The source is checked for structure only: it must be an openable
+    /// SQLite file, pass `PRAGMA integrity_check`, carry a
+    /// `refinery_schema_history`, and sit at a schema version this build
+    /// supports. Provenance is NOT checked, and neither are content
+    /// invariants — a source holding two identities in one wallet's
+    /// derivation slot is restored as-is, and surfaces as a failed
+    /// `load()` afterwards rather than as a failed restore. The
+    /// write-path uniqueness check in `store` cannot see these bytes;
+    /// restore replaces the file wholesale.
     pub fn restore_from(
         dest_db_path: &Path,
         src_backup: &Path,
@@ -437,6 +449,11 @@ impl SqlitePersister {
             // establish a backup whose source connection holds an
             // active write tx on its own DB — `sqlite3_backup_step`
             // would deadlock against the in-flight EXCLUSIVE.
+            //
+            // This applies a changeset outside `store()`, so the
+            // identity-slot check it passed at store time was made
+            // against disk state that may have moved since. Bounded by
+            // the delete that follows: every row here dies anyway.
             if let Some(cs) = drained_slot.take() {
                 #[cfg(any(test, feature = "__test-helpers"))]
                 if let Some(primed) = primed_pre_flush_error {
