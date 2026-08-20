@@ -10,7 +10,6 @@ use tokio::sync::RwLock;
 
 use crate::broadcaster::SpvBroadcaster;
 use crate::error::PlatformWalletError;
-use crate::util::now_secs;
 use crate::wallet::asset_lock::manager::AssetLockManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use key_wallet_manager::WalletManager;
@@ -659,7 +658,7 @@ impl PlatformAddressWallet {
     /// - `account_key.key_class` selects the key purpose (0 = clear funds)
     ///
     /// The address is derived from the wallet's public key material
-    /// via dashcore's `AddressPool::next_unused_and_reserve` — no seed access or
+    /// via dashcore's `AddressPool::next_unused` — no seed access or
     /// caller-side derivation needed.
     pub async fn next_unused_receive_address(
         &self,
@@ -702,7 +701,7 @@ impl PlatformAddressWallet {
 
         let address = managed_account
             .addresses
-            .next_unused_and_reserve(&key_source, now_secs())
+            .next_unused(&key_source, true)
             .map_err(|e| PlatformWalletError::AddressSync(e.to_string()))?;
 
         PlatformAddress::try_from(address).map_err(|e| {

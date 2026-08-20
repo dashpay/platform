@@ -3543,12 +3543,13 @@ fn build_core_address_entry_ffi(
         address_index: info.index,
         // `CoreAddressEntryFFI` carries a single `is_used` bool with no
         // slot for a reservation, so `Reserved` can only flatten to
-        // `false` and reloads as `Available` — silently returning a
-        // handed-out address to the pool. This arm IS reached:
-        // `PlatformWallet::next_unused_receive_address` reserves via
-        // `next_unused_and_reserve`. The warn below is the interim
-        // mitigation; carrying reservations across the boundary needs an
-        // ABI change to `CoreAddressEntryFFI` (dashpay/platform#3968).
+        // `false` and would reload as `Available` — silently returning a
+        // handed-out address to the pool. Nothing in platform reserves
+        // addresses (no caller of `next_receive_address_and_reserve` /
+        // `next_unused_and_reserve` in the workspace), so that arm is
+        // unreachable today. It is spelled out rather than folded into a
+        // catch-all so the first reserving caller shows up as an explicit
+        // schema decision instead of losing state on the next reload.
         is_used: match info.state {
             AddressState::Used => true,
             AddressState::Available => false,
