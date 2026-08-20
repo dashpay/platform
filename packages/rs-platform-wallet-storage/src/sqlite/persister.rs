@@ -37,6 +37,16 @@ use crate::sqlite::util::wallet::{
 ///   DashPay state rehydrates from the identities blob, not these tables.
 pub(crate) const LOAD_UNIMPLEMENTED: &[&str] = &["token_balances", "dashpay::overlay"];
 
+/// Tables backing [`LOAD_UNIMPLEMENTED`], probed for a row count so a
+/// `load()` can report how much persisted state it did not rehydrate.
+/// Compile-time constants, never caller input, so splicing them into the
+/// probe SQL is safe.
+const LOAD_UNIMPLEMENTED_TABLES: &[&str] = &[
+    "token_balances",
+    "dashpay_profiles",
+    "dashpay_payments_overlay",
+];
+
 /// The all-zero `WalletId` reserved as the storage spelling of "owned by
 /// no wallet": every scope-aware reader and writer maps it to a NULL
 /// `wallet_id`. It is never a real wallet id.
@@ -1415,6 +1425,9 @@ impl PlatformWalletPersistence for SqlitePersister {
         #[cfg(not(feature = "shielded"))]
         let shielded_viewing_keys_loaded = 0usize;
 
+        ctx.add_unimplemented_rows(
+            count_unimplemented_rows(&conn).map_err(PersistenceError::from)?,
+        );
         let degradation = ctx.degradation();
         tracing::info!(
             wallets_seen,
@@ -1424,7 +1437,9 @@ impl PlatformWalletPersistence for SqlitePersister {
             wallets_pending_rehydration = 0usize,
             degraded = degradation.degraded,
             degraded_total = degradation.total,
+            degraded_by_site = ?degradation.by_site,
             unimplemented = ?LOAD_UNIMPLEMENTED,
+            unimplemented_rows = degradation.unimplemented_rows,
             "load() summary"
         );
         self.replace_load_degradation(degradation);
@@ -1454,6 +1469,21 @@ fn populated_field_count(cs: &PlatformWalletChangeSet) -> usize {
     // Single source of truth with the version-domain mapping: each populated
     // field is exactly one touched domain.
     schema::versions::touched_domains(cs).len()
+}
+
+/// Total rows sitting in the tables `load()` has no reader for.
+///
+/// Informational, not a degradation: the data is intact and a future
+/// reader can pick it up — it simply is not in this `ClientStartState`.
+fn count_unimplemented_rows(conn: &Connection) -> Result<u32, WalletStorageError> {
+    let mut total: u32 = 0;
+    for table in LOAD_UNIMPLEMENTED_TABLES {
+        let rows: i64 = conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+            row.get(0)
+        })?;
+        total = total.saturating_add(u32::try_from(rows).unwrap_or(u32::MAX));
+    }
+    Ok(total)
 }
 
 fn validate_config(config: &SqlitePersisterConfig) -> Result<(), WalletStorageError> {

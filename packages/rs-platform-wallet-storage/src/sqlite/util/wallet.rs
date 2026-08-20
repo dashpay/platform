@@ -333,14 +333,24 @@ pub fn apply_persisted_core_state(
             per_account_addrs[target].push(addr.clone());
         }
 
+        // Degraded in BOTH policies, never fatal. An owner absent from the
+        // funds accounts is not necessarily corruption: provider accounts are
+        // first-class in the schema yet sit on a non-secp256k1 curve, so they
+        // are not `ManagedCoreFundsAccount` and a used provider-owned address
+        // has no funds account to route to. Telling that apart needs an
+        // upstream `key-wallet` enumerator over every account kind; until then,
+        // failing here would brick a masternode-operator wallet.
         if !orphaned_owners.is_empty() {
-            tracing::warn!(
-                wallet_id = %hex::encode(wallet_id),
-                orphaned_owners = ?orphaned_owners,
-                count = orphaned_owners.len(),
-                "rehydration: restored UTXO(s) or used address(es) reference a funds \
-                 account not present in this wallet — routed to the first account as \
-                 best effort; the per-account view re-warms on the next sync"
+            ctx.note_degraded(
+                LoadSite::OrphanedUtxoOwner,
+                &format!(
+                    "wallet {} routed {} restored UTXO(s) or used address(es) to its first \
+                     funds account: their owning accounts {:?} are not funds accounts of this \
+                     wallet; the per-account view re-warms on the next sync",
+                    hex::encode(wallet_id),
+                    orphaned_owners.len(),
+                    orphaned_owners
+                ),
             );
         }
 
@@ -570,13 +580,20 @@ fn extend_pools_for_restored_addresses(
         // (past the first gap window with no nearer unspent UTXO to anchor the
         // horizon). Either way they re-warm on the next full sync; the wallet
         // total is exact regardless.
+        // Degraded in BOTH policies, never fatal: the two explanations above
+        // are indistinguishable from the persisted rows alone, and no
+        // root-cause fix exists short of an unbounded scan. The wallet total
+        // is exact either way.
         if !unresolved.is_empty() {
-            tracing::warn!(
-                wallet_id = %hex::encode(wallet_id),
-                account_type = ?account_type,
-                unresolved_count = unresolved.len(),
-                "rehydration: UTXO address(es) unresolved for this account xpub \
-                 — will re-warm on next sync; balance total is exact"
+            ctx.note_degraded(
+                LoadSite::UnresolvedUtxoAddress,
+                &format!(
+                    "wallet {} left {} restored address(es) unresolved against the {:?} account \
+                     xpub; they re-warm on the next full sync and the balance total is exact",
+                    hex::encode(wallet_id),
+                    unresolved.len(),
+                    account_type
+                ),
             );
         }
     }
@@ -1113,6 +1130,97 @@ mod tests {
     /// land `used` in the CoinJoin pool and be absent from the BIP44 pool —
     /// otherwise it stays "unused" on CoinJoin and could be re-issued as a
     /// fresh receive address (the address-reuse privacy leak).
+    /// A used address whose owning account is not one of this wallet's funds
+    /// accounts — what a masternode-operator wallet looks like, since
+    /// provider accounts sit on a non-secp256k1 curve and are not funds
+    /// accounts at all. Degraded in every policy, fatal in none.
+    #[test]
+    fn rehydration_orphaned_used_address_owner_is_degraded_not_fatal() {
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+        use key_wallet::Address;
+        use std::collections::HashMap;
+
+        let wallet = Wallet::from_seed_bytes(
+            [13u8; 64],
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let manifest = manifest_for(&wallet);
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
+
+        // An owner this wallet has no funds account for.
+        let mut used: HashMap<Address, Option<OwningAccount>> = HashMap::new();
+        used.insert(
+            first_external_address(&wallet_info, &manifest),
+            Some(OwningAccount {
+                account_type: "provider_platform".to_string(),
+                account_index: 0,
+                user_identity_id: [0u8; 32],
+                friend_identity_id: [0u8; 32],
+            }),
+        );
+
+        let core = platform_wallet::changeset::CoreChangeSet {
+            last_processed_height: Some(1),
+            synced_height: Some(1),
+            ..Default::default()
+        };
+        let ctx = LoadCtx::strict();
+        apply_persisted_core_state(
+            &mut wallet_info,
+            &manifest,
+            &core,
+            &Default::default(),
+            &used,
+            &ctx,
+        )
+        .expect("an unroutable owner must never brick a strict load");
+
+        let degradation = ctx.degradation();
+        assert!(degradation.degraded);
+        assert_eq!(
+            degradation.by_site.get(&LoadSite::OrphanedUtxoOwner),
+            Some(&1),
+            "the unroutable owner must be counted: {:?}",
+            degradation.by_site
+        );
+    }
+
+    /// External index-0 address of the wallet's first funds account.
+    fn first_external_address(
+        wallet_info: &key_wallet::wallet::managed_wallet_info::ManagedWalletInfo,
+        manifest: &[AccountRegistrationEntry],
+    ) -> key_wallet::Address {
+        use key_wallet::bip32::DerivationPath;
+        use key_wallet::gap_limit::DEFAULT_EXTERNAL_GAP_LIMIT;
+        use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+        let account_type = wallet_info
+            .accounts
+            .all_funding_accounts()
+            .into_iter()
+            .next()
+            .expect("a funds account")
+            .managed_account_type()
+            .to_account_type();
+        let xpub = manifest
+            .iter()
+            .find(|e| e.account_type == account_type)
+            .map(|e| e.account_xpub)
+            .expect("funds account xpub");
+        let mut pool = AddressPool::new_without_generation(
+            DerivationPath::master(),
+            AddressPoolType::External,
+            DEFAULT_EXTERNAL_GAP_LIMIT,
+            Network::Testnet,
+        );
+        pool.generate_addresses(1, &KeySource::Public(xpub), true)
+            .unwrap();
+        pool.address_at_index(0).unwrap()
+    }
+
     #[test]
     fn rehydration_routes_used_address_to_owning_account() {
         use key_wallet::bip32::DerivationPath;
@@ -1992,15 +2100,26 @@ mod tests {
             ..Default::default()
         };
 
+        // Strict, deliberately: an unresolved address cannot be told apart
+        // from a legitimately sparse wallet, so it degrades but never fails.
+        let ctx = LoadCtx::strict();
         apply_persisted_core_state(
             &mut wallet_info,
             &manifest,
             &core,
             &Default::default(),
             &Default::default(),
-            &LoadCtx::strict(),
+            &ctx,
         )
-        .unwrap();
+        .expect("an unresolved address must never brick a strict load");
+        let degradation = ctx.degradation();
+        assert!(degradation.degraded);
+        assert_eq!(
+            degradation.by_site.get(&LoadSite::UnresolvedUtxoAddress),
+            Some(&1),
+            "the deep-sparse address must be counted: {:?}",
+            degradation.by_site
+        );
 
         // The wallet total is exact regardless (a sum over the UTXO set).
         assert_eq!(wallet_info.balance.total(), value);

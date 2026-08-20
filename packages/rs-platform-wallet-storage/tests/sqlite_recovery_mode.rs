@@ -522,6 +522,30 @@ fn load_unowned_identities_adds_to_the_load_snapshot_instead_of_replacing_it() {
     assert_eq!(degradation.total, 2);
 }
 
+// ── (h) rows in tables `load()` has no reader for ───────────────────────
+
+#[test]
+fn unimplemented_rows_are_counted_without_setting_degraded() {
+    let wallet = wid(0x33);
+    let identity_id = [0x6Au8; 32];
+    let (persister, _tmp, _path) = fresh_persister();
+    ensure_wallet_meta(&persister, &wallet);
+    common::ensure_identity(&persister, &identity_id, Some(&wallet));
+    common::ensure_token_balance(&persister, &identity_id, &[0x6Bu8; 32]);
+
+    persister.load().expect("clean load");
+    let degradation = persister.last_load_degradation();
+    assert_eq!(
+        degradation.unimplemented_rows, 1,
+        "the un-rehydrated token balance must be reported"
+    );
+    assert!(
+        !degradation.degraded,
+        "intact-but-unread rows are not a degradation"
+    );
+    assert_eq!(degradation.total, 0);
+}
+
 // ── flag semantics ──────────────────────────────────────────────────────
 
 #[test]
