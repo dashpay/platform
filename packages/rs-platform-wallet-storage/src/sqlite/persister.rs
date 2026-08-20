@@ -1489,6 +1489,8 @@ fn count_unimplemented_rows(conn: &Connection) -> Result<u32, WalletStorageError
         .collect::<Vec<_>>()
         .join(" + ");
     let rows: i64 = conn.query_row(&format!("SELECT {sum}"), [], |row| row.get(0))?;
+    // Saturating rather than `safe_cast`: a cosmetic row count must never
+    // fail the load it is only describing.
     Ok(u32::try_from(rows).unwrap_or(u32::MAX))
 }
 
@@ -1755,4 +1757,33 @@ fn current_schema_version(conn: &Connection) -> Result<Option<i32>, WalletStorag
         .optional()?
         .flatten();
     Ok(row.map(|v| v as i32))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `LOAD_UNIMPLEMENTED_TABLES` is hand-maintained beside the logical
+    /// `LOAD_UNIMPLEMENTED` list, so a table renamed in a migration would
+    /// otherwise surface as a failing probe on a user's database.
+    #[test]
+    fn every_unimplemented_table_exists_in_the_migrated_schema() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db");
+        crate::sqlite::migrations::run(&mut conn).expect("migrate");
+        for table in LOAD_UNIMPLEMENTED_TABLES {
+            let found: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    [table],
+                    |row| row.get(0),
+                )
+                .expect("probe sqlite_master");
+            assert_eq!(found, 1, "{table} is missing from the migrated schema");
+        }
+        assert_eq!(
+            count_unimplemented_rows(&conn).expect("the probe must run against the real schema"),
+            0,
+            "a freshly migrated database holds no unread rows"
+        );
+    }
 }
