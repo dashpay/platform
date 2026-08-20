@@ -20,9 +20,9 @@ pub fn apply(
     wallet_id: &WalletId,
     cs: &IdentityChangeSet,
 ) -> Result<(), WalletStorageError> {
-    // `store` checks each changeset before it enters the buffer; this
-    // checks the merged one that actually reaches disk. Two writes that
-    // are individually valid can still merge into a contradiction, and
+    // `store` checks the merged buffer before a changeset joins it; this
+    // checks what actually reaches disk. Disk state can still move under
+    // a buffered changeset — a sibling persister on the same file — and
     // `delete_wallet`'s pre-flush never passes through `store` at all.
     check_index_conflicts(tx, wallet_id, cs)?;
     if !cs.identities.is_empty() {

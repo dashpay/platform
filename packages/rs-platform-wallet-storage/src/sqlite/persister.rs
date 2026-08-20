@@ -450,10 +450,11 @@ impl SqlitePersister {
             // active write tx on its own DB — `sqlite3_backup_step`
             // would deadlock against the in-flight EXCLUSIVE.
             //
-            // This applies a changeset outside `store()`, so the
-            // identity-slot check it passed at store time was made
-            // against disk state that may have moved since. Bounded by
-            // the delete that follows: every row here dies anyway.
+            // This applies a changeset outside `store()`, but not
+            // unchecked: `identities::apply` re-runs the identity-slot
+            // check inside this very transaction, against current disk
+            // state. A collision found here is tolerated (see below) —
+            // every row it names dies with the wallet anyway.
             if let Some(cs) = drained_slot.take() {
                 #[cfg(any(test, feature = "__test-helpers"))]
                 if let Some(primed) = primed_pre_flush_error {
