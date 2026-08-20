@@ -3200,6 +3200,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
             return ptr::null_mut();
         }
         let mut rows: Vec<String> = Vec::new();
+        let mut spent_rows: Vec<String> = Vec::new();
         let mut errors: Vec<String> = Vec::new();
         if !entries.is_null() && count > 0 {
             let accounts = unsafe { std::slice::from_raw_parts(entries, count) };
@@ -3275,6 +3276,63 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                     )
                 };
             }
+            // Second inventory half: the engine's spent outpoints, so the
+            // reconcile can classify a store row still marked unspent —
+            // present here means the row lost its spend update
+            // (dashpay/platform#4425, flip it); present in neither
+            // inventory means swept/abandoned residue
+            // (pre-rust-dashcore#971 stores, log-only). Soft-fail like the
+            // UTXO loop: one bad account must not mask the rest.
+            for acc in accounts {
+                let spec = platform_wallet_ffi::AccountSpecFFI {
+                    type_tag: acc.type_tag as u8,
+                    standard_tag: acc.standard_tag as u8,
+                    index: acc.index,
+                    registration_index: acc.registration_index,
+                    key_class: acc.key_class,
+                    user_identity_id: acc.user_identity_id,
+                    friend_identity_id: acc.friend_identity_id,
+                    account_xpub_bytes: ptr::null(),
+                    account_xpub_bytes_len: 0,
+                };
+                let mut outpoints: *const platform_wallet_ffi::OutPointFFI = ptr::null();
+                let mut spent_count: usize = 0;
+                let res = unsafe {
+                    platform_wallet_ffi::platform_wallet_account_spent_outpoints(
+                        manager_handle as Handle,
+                        wid.as_ptr(),
+                        &spec,
+                        &mut outpoints,
+                        &mut spent_count,
+                    )
+                };
+                if let Some(msg) = pwffi_error_message(res) {
+                    errors.push(format!(
+                        "{{\"typeTag\":{},\"index\":{},\"message\":{}}}",
+                        acc.type_tag as u8,
+                        acc.index,
+                        json_escape(&msg),
+                    ));
+                    continue;
+                }
+                if outpoints.is_null() || spent_count == 0 {
+                    continue;
+                }
+                let items = unsafe { std::slice::from_raw_parts(outpoints, spent_count) };
+                for op in items {
+                    spent_rows.push(format!(
+                        "{{\"txid\":\"{}\",\"vout\":{}}}",
+                        hex_lower(&op.txid),
+                        op.vout,
+                    ));
+                }
+                unsafe {
+                    platform_wallet_ffi::platform_wallet_account_spent_outpoints_free(
+                        outpoints as *mut platform_wallet_ffi::OutPointFFI,
+                        spent_count,
+                    )
+                };
+            }
         }
         unsafe {
             platform_wallet_ffi::platform_wallet_manager_free_account_balances(
@@ -3283,8 +3341,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
             )
         };
         let json = format!(
-            "{{\"utxos\":[{}],\"errors\":[{}]}}",
+            "{{\"utxos\":[{}],\"spent\":[{}],\"errors\":[{}]}}",
             rows.join(","),
+            spent_rows.join(","),
             errors.join(","),
         );
         env.new_string(json)

@@ -28,8 +28,9 @@ use crate::check_ptr;
 use crate::core_wallet_types::{
     AccountAddressPoolEntryFFI, AccountMetadataFFI, AccountTransactionEntryFFI,
     AccountUtxoEntryFFI, AddressBanInfoFFI, AddressInfoFFI, CoreWalletStateFFI,
-    IdentitySyncConfigFFI, IdentityWalletStateFFI, PlatformAddressProviderStateFFI,
-    PlatformAddressSyncConfigFFI, TrackedAssetLockEntryFFI, WalletIdentityRowFFI,
+    IdentitySyncConfigFFI, IdentityWalletStateFFI, OutPointFFI,
+    PlatformAddressProviderStateFFI, PlatformAddressSyncConfigFFI,
+    TrackedAssetLockEntryFFI, WalletIdentityRowFFI,
 };
 use crate::error::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
 use crate::handle::{Handle, PLATFORM_WALLET_MANAGER_STORAGE};
@@ -608,6 +609,71 @@ pub unsafe extern "C" fn platform_wallet_account_utxos_free(
         }
     }
     let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(utxos, count));
+}
+
+/// The account's spent-outpoint inventory — the second half of the
+/// store-reconcile surface (`platform_wallet_account_utxos` is the unspent
+/// half). A persistence-mirror row still marked unspent whose outpoint
+/// appears here lost its spend update (dashpay/platform#4425); a row in
+/// NEITHER inventory is swept/abandoned residue (pre-rust-dashcore#971
+/// stores). Free with `platform_wallet_account_spent_outpoints_free`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_account_spent_outpoints(
+    manager_handle: Handle,
+    wallet_id: *const u8,
+    spec: *const AccountSpecFFI,
+    out_outpoints: *mut *const OutPointFFI,
+    out_count: *mut usize,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id);
+    check_ptr!(spec);
+    check_ptr!(out_outpoints);
+    check_ptr!(out_count);
+    *out_outpoints = std::ptr::null();
+    *out_count = 0;
+    let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
+    let target = match account_type_from_spec_ref(&*spec) {
+        Ok(at) => at,
+        Err(e) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                e,
+            );
+        }
+    };
+    let Some(rows) = PLATFORM_WALLET_MANAGER_STORAGE
+        .with_item(manager_handle, |m| m.account_spent_outpoints_blocking(&wid, &target))
+    else {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+            "Manager handle invalid".to_string(),
+        );
+    };
+    if rows.is_empty() {
+        return PlatformWalletFFIResult::ok();
+    }
+    let entries: Vec<OutPointFFI> = rows
+        .into_iter()
+        .map(|op| OutPointFFI {
+            txid: txid_to_array(&op.txid),
+            vout: op.vout,
+        })
+        .collect();
+    let count = entries.len();
+    *out_outpoints = Box::into_raw(entries.into_boxed_slice()) as *const _;
+    *out_count = count;
+    PlatformWalletFFIResult::ok()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_account_spent_outpoints_free(
+    outpoints: *mut OutPointFFI,
+    count: usize,
+) {
+    if outpoints.is_null() || count == 0 {
+        return;
+    }
+    let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(outpoints, count));
 }
 
 // ---------------------------------------------------------------------------

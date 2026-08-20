@@ -829,6 +829,35 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .collect()
     }
 
+    /// The outpoints this account knows were spent by recorded
+    /// transactions — the second half of the store-reconcile inventory
+    /// ([`Self::account_utxos_blocking`] is the unspent half). Lets a
+    /// persistence-mirror audit classify a store row marked unspent:
+    /// present here → the row lost its spend update (flip it,
+    /// dashpay/platform#4425); present in neither inventory → residue of a
+    /// swept/abandoned transaction (pre-rust-dashcore#971 stores).
+    pub fn account_spent_outpoints_blocking(
+        &self,
+        wallet_id: &WalletId,
+        target: &AccountType,
+    ) -> Vec<OutPoint> {
+        let wm = self.wallet_manager.blocking_read();
+        let Some(info) = wm.get_wallet_info(wallet_id) else {
+            return Vec::new();
+        };
+        let accounts = info.core_wallet.accounts.all_accounts();
+        let Some(account) = accounts
+            .iter()
+            .find(|a| &a.managed_account_type().to_account_type() == target)
+        else {
+            return Vec::new();
+        };
+        let Some(funds) = account.as_funds() else {
+            return Vec::new();
+        };
+        funds.spent_outpoints().iter().copied().collect()
+    }
+
     // -----------------------------------------------------------------
     // Phase 6 — Per-account transactions
     // -----------------------------------------------------------------
