@@ -305,21 +305,32 @@ async fn run_wallet_event_adapter<P>(
     // once per session rather than once per faulted batch.
     let mut freeze_logged = false;
 
-    // Whether the backend durably applies `dashpay_payments_overlay`
-    // rows. The sweep's Failed flip is staged onto the sweep's own store
-    // round ONLY when it does: a sweep never re-emits once its round is
-    // durable, so handing the overlay to a host that silently drops it
-    // (Android deliberately keeps payment recording in-memory-only, its
-    // payments slot unwired) would leave this adapter believing a flip
-    // persisted — the accepted-and-ignored shape the sweep capability's
-    // own gating exists to prevent, one channel over. A non-attesting
-    // backend still gets the in-memory flip (the truthful session state;
-    // the transaction IS dead) with nothing round-coupled — funds-safe,
-    // since payment entries are display metadata, and consistent with
-    // every other payment write on such hosts.
+    // Whether the backend can give a payment flip the round-coupled
+    // durability this staging exists to provide — which takes BOTH bits
+    // of `ROUND_COUPLED_PAYMENT_FLIPS`. `DASHPAY_PAYMENTS` proves the
+    // overlay rows are durably applied: a sweep never re-emits once its
+    // round is durable, so handing the overlay to a host that silently
+    // drops it (Android deliberately keeps payment recording
+    // in-memory-only, its payments slot unwired) would leave this
+    // adapter believing a flip persisted — the accepted-and-ignored
+    // shape the sweep capability's own gating exists to prevent, one
+    // channel over. `ATOMIC_CHANGESETS` proves the round the flip rides
+    // commits or rolls back as one unit: on a host whose callbacks
+    // commit independently, the Core record and watermark can land
+    // durably and the process stop before the payments write — and for
+    // a one-shot chainlocked reinstatement nothing ever re-emits, so
+    // the reinstatement would stay durably recorded beside a payment
+    // durably `Failed`. Payments durability without the atomic round
+    // therefore gives neither the coupling nor the fail-closed
+    // watermark backstop, and such a host is treated exactly like a
+    // payments-blind one here: it still gets the in-memory flip (the
+    // truthful session state; the transaction IS dead) with nothing
+    // round-coupled — funds-safe, since payment entries are display
+    // metadata, and consistent with every other payment write on such
+    // hosts.
     let payments_attested = persister
         .persistence_capabilities()
-        .contains(PersistenceCapabilities::DASHPAY_PAYMENTS);
+        .contains(PersistenceCapabilities::ROUND_COUPLED_PAYMENT_FLIPS);
 
     loop {
         // Block for the first event of a batch. Everything already sitting in
@@ -3683,7 +3694,8 @@ mod tests {
         let persister = Arc::new(ProbePersister::with_capabilities(
             obs_tx,
             crate::changeset::PersistenceCapabilities::CORE_SWEEP_REMOVAL
-                .union(crate::changeset::PersistenceCapabilities::DASHPAY_PAYMENTS),
+                .union(crate::changeset::PersistenceCapabilities::DASHPAY_PAYMENTS)
+                .union(crate::changeset::PersistenceCapabilities::ATOMIC_CHANGESETS),
         ));
         let (event_tx, event_rx) = unbounded_channel();
         let cancel = CancellationToken::new();
@@ -3865,6 +3877,130 @@ mod tests {
         handle.await.expect("adapter task joins");
     }
 
+    /// A backend that attests `DASHPAY_PAYMENTS` but NOT `ATOMIC_CHANGESETS`
+    /// must be treated exactly like a payments-blind one: the whole point
+    /// of staging a flip onto the triggering record's round is that the two
+    /// land or fail together, and a host whose callbacks commit
+    /// independently gives neither the coupling nor the fail-closed
+    /// watermark backstop. It can commit the Core record and watermark and
+    /// then stop before the payments write — and a one-shot chainlocked
+    /// reinstatement never re-emits, so its payment would stay durably
+    /// `Failed` beside a durably recorded reinstatement. Staging requires
+    /// the full `ROUND_COUPLED_PAYMENT_FLIPS` composite; this host keeps
+    /// the in-memory flip with nothing round-coupled.
+    #[tokio::test]
+    async fn an_atomicity_blind_backend_is_not_handed_payment_flips_on_the_round() {
+        use dpp::identity::v0::IdentityV0;
+        use dpp::identity::Identity;
+        use dpp::prelude::Identifier;
+        use key_wallet::account::account_type::StandardAccountType;
+
+        use super::spawn_wallet_event_adapter;
+        use crate::test_support::{funded_wallet_manager, NoopTestPersister};
+        use crate::wallet::identity::types::dashpay::payment::{PaymentEntry, PaymentStatus};
+        use crate::wallet::persister::WalletPersister;
+
+        let (wallet_manager, wallet_id, _generation, _signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let txid = dashcore::Txid::from([0xC9; 32]);
+        let txid_key = txid.to_string();
+
+        let noop = WalletPersister::new(
+            wallet_id,
+            Arc::new(NoopTestPersister) as Arc<dyn crate::changeset::PlatformWalletPersistence>,
+        );
+        {
+            let mut wm = wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+            info.identity_manager
+                .add_identity(
+                    Identity::V0(IdentityV0 {
+                        id: owner,
+                        public_keys: std::collections::BTreeMap::new(),
+                        balance: 0,
+                        revision: 0,
+                    }),
+                    0,
+                    wallet_id,
+                    &noop,
+                )
+                .expect("add owner");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .record_dashpay_payment(
+                    txid_key.clone(),
+                    PaymentEntry::new_sent(contact, 50_000, None),
+                    &noop,
+                )
+                .expect("record pending sent");
+        }
+
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        // Sweep-capable and payments-durable, but with no atomic round:
+        // each callback commits on its own, so the flip and the record
+        // cannot be made to land or fail together.
+        let persister = Arc::new(ProbePersister::with_capabilities(
+            obs_tx,
+            crate::changeset::PersistenceCapabilities::CORE_SWEEP_REMOVAL
+                .union(crate::changeset::PersistenceCapabilities::DASHPAY_PAYMENTS),
+        ));
+        let (event_tx, event_rx) = unbounded_channel();
+        let cancel = CancellationToken::new();
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let handle = spawn_wallet_event_adapter(
+            Arc::clone(&wallet_manager),
+            Arc::clone(&persister),
+            event_rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
+        );
+
+        event_tx
+            .send(WalletEvent::TransactionsSwept {
+                wallet_id,
+                txids: vec![txid],
+                superseded_by: dashcore::Txid::from([0xCA; 32]),
+                released_outpoints: vec![],
+                balance: WalletCoreBalance::default(),
+                account_balances: BTreeMap::new(),
+            })
+            .expect("send sweep");
+
+        let observed = obs_rx.recv().await.expect("sweep store");
+        assert!(!observed.rejected);
+        assert_eq!(
+            observed.n_payment_overlay_rows, 0,
+            "an overlay that cannot ride an atomic round must be withheld from a host \
+             whose callbacks commit independently"
+        );
+
+        {
+            let wm = wallet_manager.read().await;
+            let status = wm
+                .get_wallet_info(&wallet_id)
+                .expect("info")
+                .identity_manager
+                .managed_identity(&owner)
+                .expect("managed")
+                .dashpay()
+                .payments
+                .get(&txid_key)
+                .expect("entry")
+                .status;
+            assert_eq!(
+                status,
+                PaymentStatus::Failed,
+                "the in-memory flip still happens — the truthful session state"
+            );
+        }
+
+        cancel.cancel();
+        handle.await.expect("adapter task joins");
+    }
+
     /// The sweep's payment flip is durable BECAUSE it rides the sweep's own
     /// atomic store round: a sweep never re-emits once its round is
     /// durable, so a separately persisted flip whose store failed was lost
@@ -3953,7 +4089,8 @@ mod tests {
         let persister = Arc::new(ProbePersister::with_capabilities(
             obs_tx,
             crate::changeset::PersistenceCapabilities::CORE_SWEEP_REMOVAL
-                .union(crate::changeset::PersistenceCapabilities::DASHPAY_PAYMENTS),
+                .union(crate::changeset::PersistenceCapabilities::DASHPAY_PAYMENTS)
+                .union(crate::changeset::PersistenceCapabilities::ATOMIC_CHANGESETS),
         ));
         let (event_tx, event_rx) = unbounded_channel();
         let cancel = CancellationToken::new();
@@ -4144,7 +4281,8 @@ mod tests {
         let persister = Arc::new(ProbePersister::with_capabilities(
             obs_tx,
             crate::changeset::PersistenceCapabilities::CORE_SWEEP_REMOVAL
-                .union(crate::changeset::PersistenceCapabilities::DASHPAY_PAYMENTS),
+                .union(crate::changeset::PersistenceCapabilities::DASHPAY_PAYMENTS)
+                .union(crate::changeset::PersistenceCapabilities::ATOMIC_CHANGESETS),
         ));
         let (event_tx, event_rx) = unbounded_channel();
 
@@ -4327,7 +4465,8 @@ mod tests {
         let persister = ProbePersister::with_capabilities(
             obs_tx,
             crate::changeset::PersistenceCapabilities::CORE_SWEEP_REMOVAL
-                .union(crate::changeset::PersistenceCapabilities::DASHPAY_PAYMENTS),
+                .union(crate::changeset::PersistenceCapabilities::DASHPAY_PAYMENTS)
+                .union(crate::changeset::PersistenceCapabilities::ATOMIC_CHANGESETS),
         );
         let sync_fault = AtomicBool::new(false);
         let mut fault = AdapterFaultState::default();
@@ -4526,7 +4665,8 @@ mod tests {
         let persister = Arc::new(ProbePersister::with_capabilities(
             obs_tx,
             crate::changeset::PersistenceCapabilities::CORE_SWEEP_REMOVAL
-                .union(crate::changeset::PersistenceCapabilities::DASHPAY_PAYMENTS),
+                .union(crate::changeset::PersistenceCapabilities::DASHPAY_PAYMENTS)
+                .union(crate::changeset::PersistenceCapabilities::ATOMIC_CHANGESETS),
         ));
         let (event_tx, event_rx) = unbounded_channel();
         let cancel = CancellationToken::new();
