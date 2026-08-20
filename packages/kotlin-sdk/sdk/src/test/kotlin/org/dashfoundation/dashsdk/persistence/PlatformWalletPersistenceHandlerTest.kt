@@ -4712,4 +4712,233 @@ class PlatformWalletPersistenceHandlerTest {
         // Unchanged pre-invitation behavior: no account row conjured.
         assertTrue(db.accountDao().observeByWallet(walletId).first().isEmpty())
     }
+
+    // ── Bounded tombstone lifetime ────────────────────────────────────
+
+    /** One committed round: synced height + (optionally) chainlock bytes. */
+    private fun headerRound(
+        h: PlatformWalletPersistenceHandler,
+        synced: Int,
+        chainLockBytes: ByteArray = ByteArray(84) { 9 },
+    ) {
+        h.onChangesetBegin(walletId)
+        h.onWalletChangesetHeader(
+            walletId = walletId,
+            hasSyncedHeight = true,
+            syncedHeight = synced,
+            hasBalance = false,
+            confirmedDelta = 0,
+            unconfirmedDelta = 0,
+            immatureDelta = 0,
+            lockedDelta = 0,
+            lastAppliedChainLockBytes = chainLockBytes,
+        )
+        h.onChangesetEnd(walletId, success = true)
+    }
+
+    /** Record a loser spending [outpoint] (funding unknown), then sweep it. */
+    private fun seedSweptTombstone(outpoint: ByteArray, loser: ByteArray, winner: ByteArray) {
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, loser, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -50_000, 0, false, "", 1_700_000_090,
+            outpoint, 1,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(loser), arrayOf(winner), emptyArray(),
+        )
+        handler.onChangesetEnd(walletId, success = true)
+    }
+
+    @Test
+    fun aSweptTombstoneIsCollectedAtFinalityAndNotBefore() = runTest {
+        // The attacker-shaped row: a swept incoming payment's foreign input
+        // leaves a pending tombstone that never drains — no funding TXO ever
+        // arrives — and before the collector existed it was permanent,
+        // growable one row per input by repeatedly double-spending payments
+        // at this wallet. The header callback's collector deletes it once
+        // the synced height clears its stamp by the margin — and not one
+        // block sooner: the winner customarily mines at stamp + 1, and the
+        // margin keeps the claim through that block.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        headerRound(handler, 100)
+
+        val fundingTxid = ByteArray(32) { 71 }
+        val p = makeOutpoint(fundingTxid, 0)
+        seedSweptTombstone(p, ByteArray(32) { 72 }, ByteArray(32) { 73 })
+
+        val tombstone = db.documentDao().getPendingInputsByOutpoint(p).single()
+        assertTrue("sanity: the sweep flagged the row", tombstone.isSweptTombstone)
+        assertEquals(
+            "the tombstone is stamped with the wallet's synced height",
+            100, tombstone.heldSinceHeight,
+        )
+
+        headerRound(handler, 101)
+        assertEquals(
+            "boundary 101 has not cleared stamp 100 by the margin — the hold stays",
+            1, db.documentDao().getPendingInputsByOutpoint(p).size,
+        )
+
+        headerRound(handler, 102)
+        assertTrue(
+            "boundary 102 cleared stamp 100 by the margin — the junk row is gone",
+            db.documentDao().getPendingInputsByOutpoint(p).isEmpty(),
+        )
+    }
+
+    @Test
+    fun aSweptTombstoneOutlivesAnySyncProgressWithoutAChainLock() = runTest {
+        // Synced height alone is not finality: until a chainlock has been
+        // applied the collector must not run, mirroring upstream's (and the
+        // SQLite store's) "no-op until a chainlock has been applied". The
+        // moment one lands, the aged stamp collects.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        headerRound(handler, 100, chainLockBytes = ByteArray(0))
+
+        val fundingTxid = ByteArray(32) { 74 }
+        val p = makeOutpoint(fundingTxid, 0)
+        seedSweptTombstone(p, ByteArray(32) { 75 }, ByteArray(32) { 76 })
+
+        headerRound(handler, 500, chainLockBytes = ByteArray(0))
+        assertEquals(
+            "no chainlock has ever been applied — the hold outlasts any " +
+                "amount of synced-height progress",
+            1, db.documentDao().getPendingInputsByOutpoint(p).size,
+        )
+
+        headerRound(handler, 500)
+        assertTrue(
+            "the first applied chainlock supplies the boundary and the " +
+                "long-aged stamp collects",
+            db.documentDao().getPendingInputsByOutpoint(p).isEmpty(),
+        )
+    }
+
+    @Test
+    fun aDrainedClaimIsImmuneToTheCollector() = runTest {
+        // The genuine claim the tombstone exists for: its funding TXO
+        // arrives, the drain moves the hold onto the TXO row
+        // (supersededByTxid) and deletes the pending rows — so no amount of
+        // later sync progress may touch the materialised hold.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yFundAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+        headerRound(handler, 100)
+
+        val fundingTxid = ByteArray(32) { 77 }
+        val p = makeOutpoint(fundingTxid, 0)
+        val winner = ByteArray(32) { 79 }
+        seedSweptTombstone(p, ByteArray(32) { 78 }, winner)
+        assertEquals(
+            "sanity: held, undrained, stamped",
+            100, db.documentDao().getPendingInputsByOutpoint(p).single().heldSinceHeight,
+        )
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 50_000, "yFundAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        headerRound(handler, 10_000)
+
+        val coin = db.txoDao().getByOutpoint(p)
+        assertNotNull("the materialised claim's row survives collection", coin)
+        assertTrue("still held spent by the winner's claim", coin!!.isSpent)
+        assertTrue(winner.contentEquals(coin.supersededByTxid))
+    }
+
+    @Test
+    fun anUnstampedTombstoneIsBackfilledBeforeItCanBeCollected() = runTest {
+        // A tombstone flagged while no synced height was on record (or
+        // written before `heldSinceHeight` existed — the v12 → v13
+        // migration leaves those NULL) is back-filled with the current
+        // height on the collector's first sight of it, never collected in
+        // that same round, and then ages out like any other.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+
+        val fundingTxid = ByteArray(32) { 80 }
+        val p = makeOutpoint(fundingTxid, 0)
+        seedSweptTombstone(p, ByteArray(32) { 81 }, ByteArray(32) { 82 })
+        assertNull(
+            "sanity: no synced height existed, so the stamp is NULL",
+            db.documentDao().getPendingInputsByOutpoint(p).single().heldSinceHeight,
+        )
+
+        headerRound(handler, 1_000)
+        assertEquals(
+            "first collection pass back-fills the stamp instead of collecting",
+            1_000, db.documentDao().getPendingInputsByOutpoint(p).single().heldSinceHeight,
+        )
+
+        headerRound(handler, 1_002)
+        assertTrue(
+            "the back-filled stamp ages out like any other",
+            db.documentDao().getPendingInputsByOutpoint(p).isEmpty(),
+        )
+    }
+
+    @Test
+    fun aRepointedTombstoneIsRestampedToTheLaterSweep() = runTest {
+        // A chained sweep that re-points a still-unfunded claim to a new
+        // winner also re-stamps it: the claim now belongs to a winner whose
+        // confirmation is measured from this round, not the original
+        // sweep's.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        headerRound(handler, 100)
+
+        val fundingTxid = ByteArray(32) { 86 }
+        val p = makeOutpoint(fundingTxid, 0)
+        val firstLoser = ByteArray(32) { 87 }
+        val secondLoser = ByteArray(32) { 88 }
+        val finalWinner = ByteArray(32) { 89 }
+        seedSweptTombstone(p, firstLoser, secondLoser)
+        assertEquals(
+            "sanity: stamped at the first sweep's height",
+            100, db.documentDao().getPendingInputsByOutpoint(p).single().heldSinceHeight,
+        )
+
+        headerRound(handler, 105)
+        // The first winner's own record, then its sweep — the carry-forward
+        // path that re-points the earlier tombstone.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, secondLoser, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -40_000, 0, false, "", 1_700_000_091,
+            p, 1,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(secondLoser), arrayOf(finalWinner), emptyArray(),
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val rows = db.documentDao().getPendingInputsByOutpoint(p)
+        assertTrue("sanity: the claim survives the chained sweep", rows.isNotEmpty())
+        for (row in rows) {
+            assertTrue(row.isSweptTombstone)
+            assertTrue(finalWinner.contentEquals(row.spendingTxid))
+            assertEquals(
+                "re-pointed ⇒ re-stamped to the later sweep's height",
+                105, row.heldSinceHeight,
+            )
+        }
+    }
 }

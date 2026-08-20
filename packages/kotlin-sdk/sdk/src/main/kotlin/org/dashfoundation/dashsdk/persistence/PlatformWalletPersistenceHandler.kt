@@ -705,6 +705,32 @@ class PlatformWalletPersistenceHandler(
                     lastUpdated = now(),
                 ),
             )
+            // Bounded tombstone lifetime (the Room mirror of the SQLite
+            // store's `collect_finalized_tombstones`): once the synced
+            // height clears a swept tombstone's stamp by the margin, the
+            // row has provably never drained — a genuine claim's row is
+            // deleted by the drain in `onWalletChangesetUtxoAdded` when
+            // its funding TXO lands — so what remains is junk from foreign
+            // inputs of swept incoming payments, previously permanent and
+            // attacker-growable. Unstamped rows are back-filled first so
+            // they wait a full margin from first sight. Gated on a
+            // chainlock having been applied at some point, mirroring
+            // upstream's "no-op until a chainlock has been applied"; the
+            // chainlock's own height is bincode-opaque on this side of the
+            // FFI, so the boundary is the synced height alone — the
+            // winner's finality never depended on it (a sweep only fires
+            // for a chainlocked or InstantSend-locked winner), and synced
+            // height is the half of the upstream boundary that certifies
+            // filter coverage.
+            val chainLockApplied = lastAppliedChainLockBytes.isNotEmpty() ||
+                wallet.lastAppliedChainLockBytes?.isNotEmpty() == true
+            if (hasSyncedHeight && syncedHeight > 0 && chainLockApplied) {
+                db.documentDao().backfillSweptTombstoneStamps(walletId, syncedHeight)
+                val cut = syncedHeight - SWEPT_TOMBSTONE_COLLECT_MARGIN
+                if (cut > 0) {
+                    db.documentDao().collectFinalizedSweptTombstones(walletId, cut)
+                }
+            }
         }
         0
     }
@@ -1219,7 +1245,14 @@ class PlatformWalletPersistenceHandler(
         releasedOutpoints: Array<ByteArray>,
     ): Int = guarded {
         stage(walletId) { db ->
-            if (db.walletDao().getByWalletId(walletId) == null) return@stage
+            val wallet = db.walletDao().getByWalletId(walletId) ?: return@stage
+            // Creation stamp for any tombstone this round flags or
+            // re-points: the wallet's best-known synced height, `null`
+            // while none has been recorded (the collector back-fills
+            // rather than guesses). The collector in
+            // `onWalletChangesetHeader` measures the tombstone's bounded
+            // lifetime from this.
+            val tombstoneStamp = wallet.syncedHeight.takeIf { it > 0 }
             // Hold every input first, then free the ones upstream named: the
             // released set spans the whole round's removals, so it is
             // applied once rather than per transaction.
@@ -1296,6 +1329,7 @@ class PlatformWalletPersistenceHandler(
                                 spendingTransactionTxid = null,
                                 spendingTxid = supersededBy[i],
                                 isSweptTombstone = true,
+                                heldSinceHeight = tombstoneStamp,
                             )
                         },
                     )
@@ -1316,8 +1350,16 @@ class PlatformWalletPersistenceHandler(
                     db.documentDao().deletePendingInputs(gonePrior)
                 }
                 if (stillHeld.isNotEmpty()) {
+                    // Re-pointed to a new winner ⇒ re-stamped: the claim now
+                    // belongs to a winner whose confirmation is measured from
+                    // this round, not the original sweep's.
                     db.documentDao().updatePendingInputs(
-                        stillHeld.map { it.copy(spendingTxid = supersededBy[i]) },
+                        stillHeld.map {
+                            it.copy(
+                                spendingTxid = supersededBy[i],
+                                heldSinceHeight = tombstoneStamp ?: it.heldSinceHeight,
+                            )
+                        },
                     )
                 }
             }
@@ -3579,6 +3621,21 @@ class PlatformWalletPersistenceHandler(
 
         /** `TransactionContext::InBlock` — spends only count once in-block. */
         private const val CONTEXT_IN_BLOCK = 2
+
+        /**
+         * Blocks the synced height must clear past a swept tombstone's
+         * [PendingInputEntity.heldSinceHeight] stamp before the collector
+         * in [onWalletChangesetHeader] deletes it. Mirrors the SQLite
+         * store's `TOMBSTONE_COLLECT_MARGIN`: the stamp is taken when the
+         * sweep is observed — on the InstantSend path before the winner
+         * mines, customarily in the very next block — so the margin's
+         * first block covers the winner's own confirmation and the second
+         * is slack. Past the margin, convergence carries the claim
+         * instead: BIP158 filters match input prevout scripts, so any
+         * delivery path that ever classifies the funding output also
+         * delivers the winner's spend.
+         */
+        private const val SWEPT_TOMBSTONE_COLLECT_MARGIN = 2
 
         /** `Network.testnet` rawValue — the Swift fallback network. */
         private const val NETWORK_TESTNET = 1

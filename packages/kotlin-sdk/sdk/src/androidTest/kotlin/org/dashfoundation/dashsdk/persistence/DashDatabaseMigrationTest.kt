@@ -477,13 +477,46 @@ class DashDatabaseMigrationTest {
         db.close()
     }
 
+    /**
+     * v12 → v13 adds `pending_inputs.heldSinceHeight` (nullable, no
+     * default) — additive. Pre-existing tombstones must survive and read
+     * back unstamped (NULL — the collector back-fills them before it ever
+     * collects), and the column must accept an explicit stamp on write.
+     */
+    @Test
+    fun migrate12To13AddsTombstoneStamp() {
+        val legacy = helper.createDatabase(dbName, 12)
+        legacy.execSQL(
+            "INSERT INTO pending_inputs (outpoint, inputIndex, spendingTxid, " +
+                "walletId, createdAt, isSweptTombstone) " +
+                "VALUES (x'04', 0, x'05', x'06', 0, 1)",
+        )
+        legacy.close()
+
+        val db = helper.runMigrationsAndValidate(dbName, 13, true, DashDatabase.MIGRATION_12_13)
+        db.query("SELECT heldSinceHeight FROM pending_inputs WHERE outpoint = x'04'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue("pre-migration tombstones read back unstamped", c.isNull(0))
+        }
+        db.execSQL(
+            "INSERT INTO pending_inputs (outpoint, inputIndex, spendingTxid, " +
+                "walletId, createdAt, isSweptTombstone, heldSinceHeight) " +
+                "VALUES (x'07', 0, x'05', x'06', 0, 1, 1234)",
+        )
+        db.query("SELECT heldSinceHeight FROM pending_inputs WHERE outpoint = x'07'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(1234, c.getInt(0))
+        }
+        db.close()
+    }
+
     /** The requested contiguous path from the pre-u64 v4 schema to latest. */
     @Test
     fun migrate4ToLatest() {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            12,
+            13,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
@@ -493,16 +526,17 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_9_10,
             DashDatabase.MIGRATION_10_11,
             DashDatabase.MIGRATION_11_12,
+            DashDatabase.MIGRATION_12_13,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v12 schema. */
+    /** The full chain from v1 must also land on a valid v13 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            12,
+            13,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -515,6 +549,7 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_9_10,
             DashDatabase.MIGRATION_10_11,
             DashDatabase.MIGRATION_11_12,
+            DashDatabase.MIGRATION_12_13,
         ).close()
     }
 }

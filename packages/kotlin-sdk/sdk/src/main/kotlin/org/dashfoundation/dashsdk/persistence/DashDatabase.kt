@@ -141,9 +141,19 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * durable from the first committed callback regardless of what the others
  * do. Additive with a default, so every pre-migration row reads back as not
  * swept.
+ *
+ * Version 13 (bounded tombstone lifetime): adds
+ * `pending_inputs.heldSinceHeight`, the creation stamp the header
+ * callback's collector measures a swept tombstone's bounded lifetime
+ * from. A tombstone for a foreign input of a swept incoming payment never
+ * drains, and before this column existed it was permanent — junk an
+ * attacker could grow without limit by double-spending payments at the
+ * wallet. Nullable and additive: pre-migration rows read back unstamped,
+ * and the collector back-fills them with the current synced height before
+ * it ever collects them.
  */
 @Database(
-    version = 12,
+    version = 13,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -607,6 +617,20 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v12 → v13: adds `pending_inputs.heldSinceHeight` (additive,
+         * nullable — no default needed) — see the version-13 class doc
+         * above. Pre-migration tombstones read back unstamped and are
+         * back-filled by the collector before they can be collected.
+         */
+        val MIGRATION_12_13: Migration = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `pending_inputs` ADD COLUMN `heldSinceHeight` INTEGER",
+                )
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -626,6 +650,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_9_10,
                     MIGRATION_10_11,
                     MIGRATION_11_12,
+                    MIGRATION_12_13,
                 )
                 .build()
 
