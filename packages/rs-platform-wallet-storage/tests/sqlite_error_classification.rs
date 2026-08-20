@@ -102,7 +102,7 @@ fn rehydration_derivation_display_states_the_consequence() {
 
     let over_cap = WalletStorageError::RehydrationGapLimitRefillTooLarge {
         refill_target: 300_000,
-        generated: 20,
+        already_generated: 21,
         implied: 299_980,
         cap: 250_000,
     }
@@ -292,7 +292,7 @@ fn samples() -> Vec<WalletStorageError> {
         WalletStorageError::RehydrationEnsureDerivedFailed { index: 45 },
         WalletStorageError::RehydrationGapLimitRefillTooLarge {
             refill_target: 300_000,
-            generated: 20,
+            already_generated: 20,
             implied: 299_980,
             cap: 250_000,
         },

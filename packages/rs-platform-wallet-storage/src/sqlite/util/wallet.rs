@@ -699,25 +699,17 @@ fn extend_pools_for_restored_addresses(
             let Some(key_source) = key_source.as_ref() else {
                 break;
             };
-            // Bound the refill before it runs: mirror the target
-            // `maintain_gap_limit` computes internally (key-wallet rev
-            // 173ffac) — a private formula, so an upstream change would
-            // silently mis-estimate here until `AddressPool` exposes a
-            // read-only `refill_target()` (upstream work, out of scope).
-            // Saturating where upstream adds raw: over-estimating fails closed.
-            let refill_target = match pool.highest_used {
-                None => pool.gap_limit.saturating_sub(1),
-                Some(highest) => highest.saturating_add(pool.gap_limit),
-            };
-            let generated = pool.highest_generated.unwrap_or(0);
-            let implied = refill_target.saturating_sub(generated);
-            if implied > MAX_REHYDRATION_GAP_REFILL {
+            // Bound the refill before it runs, so nothing is allocated on
+            // the way out.
+            let refill =
+                ImpliedRefill::of(pool.highest_used, pool.highest_generated, pool.gap_limit);
+            if refill.implied > MAX_REHYDRATION_GAP_REFILL {
                 ctx.tolerate(
                     LoadSite::RehydrationGapLimit,
                     WalletStorageError::RehydrationGapLimitRefillTooLarge {
-                        refill_target,
-                        generated,
-                        implied,
+                        refill_target: refill.target,
+                        already_generated: refill.already_generated,
+                        implied: refill.implied,
                         cap: MAX_REHYDRATION_GAP_REFILL,
                     },
                 )?;
@@ -753,6 +745,42 @@ fn extend_pools_for_restored_addresses(
         }
     }
     Ok(())
+}
+
+/// What a `maintain_gap_limit` call on a pool would cost, costed before it
+/// runs.
+///
+/// Mirrors the target upstream computes internally (key-wallet rev
+/// 173ffac) — a private formula, so an upstream change would silently
+/// mis-estimate here until `AddressPool` exposes a read-only
+/// `refill_target()` (upstream work, out of scope). Saturating where
+/// upstream adds raw: over-estimating fails closed.
+struct ImpliedRefill {
+    /// Highest derivation index the refill would have to reach.
+    target: u32,
+    /// Addresses the pool already holds.
+    already_generated: u32,
+    /// Addresses the refill would derive.
+    implied: u32,
+}
+
+impl ImpliedRefill {
+    fn of(highest_used: Option<u32>, highest_generated: Option<u32>, gap_limit: u32) -> Self {
+        let target = match highest_used {
+            None => gap_limit.saturating_sub(1),
+            Some(highest) => highest.saturating_add(gap_limit),
+        };
+        // Both fields are INDICES: a pool with nothing generated holds no
+        // addresses, and one generated through index 0 holds one. Counting
+        // `None` as index 0 would under-count the work by one and report a
+        // generated address that does not exist.
+        let already_generated = highest_generated.map_or(0, |highest| highest.saturating_add(1));
+        Self {
+            target,
+            already_generated,
+            implied: target.saturating_add(1).saturating_sub(already_generated),
+        }
+    }
 }
 
 /// Locate a pool whose window a tolerated derivation failure left short.
@@ -2509,6 +2537,44 @@ mod tests {
             generated_before,
             "a rejected refill must derive nothing"
         );
+    }
+
+    /// `highest_generated` is an index, so `None` means the pool holds no
+    /// addresses at all — not one at index 0. Costing it as index 0
+    /// under-counts the work by one and names a generated address that does
+    /// not exist, in a guard whose own contract is to over-estimate.
+    #[test]
+    fn nothing_generated_costs_the_whole_window() {
+        let refill = ImpliedRefill::of(None, None, 20);
+        assert_eq!(refill.target, 19, "indices 0..=19 must exist");
+        assert_eq!(refill.already_generated, 0);
+        assert_eq!(refill.implied, 20, "twenty addresses, not nineteen");
+    }
+
+    /// The boundary the previous arithmetic blurred: a pool generated
+    /// through index 0 holds exactly one address, one more than an empty
+    /// one, and the two must cost differently.
+    #[test]
+    fn a_pool_generated_through_index_zero_holds_one_address() {
+        let empty = ImpliedRefill::of(None, None, 20);
+        let one = ImpliedRefill::of(None, Some(0), 20);
+        assert_eq!(one.already_generated, 1);
+        assert_eq!(one.implied, 19);
+        assert_eq!(
+            empty.implied,
+            one.implied + 1,
+            "an empty pool must cost exactly one address more"
+        );
+    }
+
+    /// A deep pool already generated up to its used index owes one gap
+    /// window, whatever its absolute depth.
+    #[test]
+    fn a_deep_pool_owes_only_its_gap_window() {
+        let refill = ImpliedRefill::of(Some(50_000), Some(49_990), 20);
+        assert_eq!(refill.target, 50_020);
+        assert_eq!(refill.already_generated, 49_991);
+        assert_eq!(refill.implied, 30);
     }
 
     /// The cap bounds the refill's *span*, not the depth it starts from: a

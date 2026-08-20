@@ -466,13 +466,14 @@ pub enum WalletStorageError {
     /// previously-used address inside it can be re-issued as fresh. Costed
     /// before the refill runs, so nothing is allocated on the way out.
     #[error(
-        "refilling an address pool to derivation index {refill_target} from {generated} \
-         implies {implied} new addresses, over the {cap} rehydration cap; the pool's window \
-         stays short, so a previously-used address in it may be handed out again as fresh"
+        "refilling an address pool to derivation index {refill_target}, which already holds \
+         {already_generated} address(es), implies {implied} new addresses, over the {cap} \
+         rehydration cap; the pool's window stays short, so a previously-used address in it \
+         may be handed out again as fresh"
     )]
     RehydrationGapLimitRefillTooLarge {
         refill_target: u32,
-        generated: u32,
+        already_generated: u32,
         implied: u32,
         cap: u32,
     },

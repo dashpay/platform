@@ -239,7 +239,7 @@ fn tc_code_004_b_fatal_variants_map_to_fatal_kind() {
             "RehydrationGapLimitRefillTooLarge",
             WalletStorageError::RehydrationGapLimitRefillTooLarge {
                 refill_target: 300_000,
-                generated: 20,
+                already_generated: 20,
                 implied: 299_980,
                 cap: 250_000,
             },
