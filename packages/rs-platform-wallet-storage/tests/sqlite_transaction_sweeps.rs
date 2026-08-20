@@ -866,14 +866,31 @@ fn a_chained_sweep_before_funding_still_frees_an_earlier_tombstone_on_release() 
     }
 
     assert!(
-        unspent(&conn, &w).contains(&unfunded_input),
-        "the chained sweep released this input, and its own funding TXO is \
-         still unobserved — it must read as an ordinary spendable UTXO, not \
-         stay stuck under the first sweep's placeholder"
+        !row_exists(&conn, &w, &unfunded_input),
+        "the chained sweep released this input while its funding TXO is \
+         still unobserved — the placeholder must be deleted outright, not \
+         flipped to a zero-value phantom that list_unspent would report"
     );
     assert!(
         !unspent(&conn, &w).contains(&funded_input),
         "the second sweep's winner took the other input"
+    );
+
+    // The funding output finally classifies: with the dead claim's row gone,
+    // the ordinary upsert creates the coin freshly unspent with real data.
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            new_utxos: vec![make_utxo(&addr, funding_txid, 0, 50_000)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    assert!(
+        unspent(&conn, &w).contains(&unfunded_input),
+        "the released coin arrives as an ordinary spendable UTXO once its \
+         funding output classifies"
     );
 }
 
@@ -1665,8 +1682,9 @@ fn a_release_applies_even_when_the_swept_txid_has_no_row() {
     {
         let conn = persister.lock_conn_for_test();
         assert!(
-            unspent(&conn, &w).contains(&p),
-            "the release must reach the placeholder with no loser row to walk"
+            !row_exists(&conn, &w, &p),
+            "the release must reach the placeholder with no loser row to walk \
+             — and delete it outright, since it never materialised"
         );
     }
 
@@ -1980,5 +1998,368 @@ fn a_co_swept_parent_known_only_through_the_childs_spend_is_still_removed() {
         unspent(&conn, &w).contains(&parent_output),
         "the reinstated parent's output must restore even when its pre-sweep row \
          was only ever the synthetic spent-only one"
+    );
+}
+
+// ───────────────────────── tombstone collection ─────────────────────────
+//
+// `collect_finalized_tombstones` bounds the LIFETIME of the unconditional
+// held-but-absent placeholder: attacker-created foreign-input rows live
+// until the chainlock finality boundary passes their creation stamp by
+// `TOMBSTONE_COLLECT_MARGIN`, instead of forever. These tests drive the
+// collector through ordinary `core_state::apply` rounds.
+
+fn chain_lock_at(height: u32) -> dashcore::ephemerealdata::chain_lock::ChainLock {
+    use dashcore::bls_sig_utils::BLSSignature;
+    use dashcore::BlockHash;
+    dashcore::ephemerealdata::chain_lock::ChainLock {
+        block_height: height,
+        block_hash: BlockHash::from_byte_array([0xCC; 32]),
+        signature: BLSSignature::from([0u8; 96]),
+    }
+}
+
+/// Apply a round carrying only chain progress: processed/synced watermarks
+/// and a chainlock at `height`.
+fn apply_heights(conn: &mut rusqlite::Connection, w: &WalletId, height: u32) {
+    let tx = conn.transaction().unwrap();
+    let cs = CoreChangeSet {
+        last_processed_height: Some(height),
+        synced_height: Some(height),
+        last_applied_chain_lock: Some(chain_lock_at(height)),
+        ..Default::default()
+    };
+    core_state::apply(&tx, w, &cs).unwrap();
+    tx.commit().unwrap();
+}
+
+/// `(spent, height, held_since_height)` of a `core_utxos` row, or `None`
+/// when absent.
+fn utxo_row_state(
+    conn: &rusqlite::Connection,
+    w: &WalletId,
+    op: &OutPoint,
+) -> Option<(bool, Option<i64>, Option<i64>)> {
+    let bytes = blob::encode_outpoint(op).unwrap();
+    conn.query_row(
+        "SELECT spent, height, held_since_height FROM core_utxos \
+         WHERE wallet_id = ?1 AND outpoint = ?2",
+        params![w.as_slice(), &bytes[..]],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )
+    .optional()
+    .unwrap()
+}
+
+/// Record a loser spending `input` (no funding row exists), then sweep it —
+/// leaving the held-but-absent placeholder the collection tests reason about.
+fn seed_tombstone(
+    conn: &mut rusqlite::Connection,
+    w: &WalletId,
+    input: OutPoint,
+    loser: Txid,
+    winner: Txid,
+) {
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![tx_record(loser, vec![input], vec![])],
+            ..Default::default()
+        };
+        core_state::apply(&tx, w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    let tx = conn.transaction().unwrap();
+    let cs = CoreChangeSet {
+        sweeps: vec![SweepBatch {
+            txids: vec![loser],
+            superseded_by: winner,
+            released_outpoints: vec![],
+        }],
+        ..Default::default()
+    };
+    core_state::apply(&tx, w, &cs).unwrap();
+    tx.commit().unwrap();
+}
+
+/// The attacker-shaped row: a swept incoming payment's foreign input lands
+/// a placeholder, and the collector deletes it once
+/// `min(chainlock_height, synced_height)` clears its stamp by the margin —
+/// and not one block sooner. Bounded lifetime is the whole fix: without the
+/// collector this row was permanent, growable without limit by anyone
+/// repeatedly double-spending payments at this wallet.
+#[test]
+fn a_never_materialised_tombstone_is_collected_at_finality_and_not_before() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xF1);
+    ensure_wallet_meta(&persister, &w);
+
+    let p = OutPoint::new(Txid::from_byte_array([0x50; 32]), 0);
+    let loser = Txid::from_byte_array([0x51; 32]);
+    let winner = Txid::from_byte_array([0x52; 32]);
+
+    let mut conn = persister.lock_conn_for_test();
+    apply_heights(&mut conn, &w, 100);
+    seed_tombstone(&mut conn, &w, p, loser, winner);
+
+    assert_eq!(
+        utxo_row_state(&conn, &w, &p),
+        Some((true, None, Some(100))),
+        "sanity: the sweep left a held, never-materialised row stamped with \
+         the round's best-known height"
+    );
+
+    // Boundary one short of stamp + margin: the hold must survive — the
+    // winner customarily mines at stamp + 1, and the margin keeps the claim
+    // through that block's own finality.
+    apply_heights(&mut conn, &w, 101);
+    assert!(
+        row_exists(&conn, &w, &p),
+        "boundary 101 has not cleared stamp 100 by the margin — the hold stays"
+    );
+
+    apply_heights(&mut conn, &w, 102);
+    assert!(
+        !row_exists(&conn, &w, &p),
+        "boundary 102 cleared stamp 100 by the margin — the junk row is gone"
+    );
+}
+
+/// Synced height alone is not finality: with no chainlock ever persisted
+/// the collector must not run, mirroring upstream's "no-op until a
+/// chainlock has been applied".
+#[test]
+fn a_tombstone_is_never_collected_without_a_persisted_chainlock() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xF2);
+    ensure_wallet_meta(&persister, &w);
+
+    let p = OutPoint::new(Txid::from_byte_array([0x53; 32]), 0);
+    let loser = Txid::from_byte_array([0x54; 32]);
+    let winner = Txid::from_byte_array([0x55; 32]);
+
+    let mut conn = persister.lock_conn_for_test();
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            last_processed_height: Some(100),
+            synced_height: Some(100),
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    seed_tombstone(&mut conn, &w, p, loser, winner);
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            last_processed_height: Some(500),
+            synced_height: Some(500),
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    assert!(
+        row_exists(&conn, &w, &p),
+        "without a chainlock there is no finality boundary — the hold must \
+         outlast any amount of synced-height progress"
+    );
+
+    // The moment a chainlock does land, the boundary exists and the aged
+    // stamp collects immediately.
+    apply_heights(&mut conn, &w, 500);
+    assert!(
+        !row_exists(&conn, &w, &p),
+        "the first persisted chainlock supplies the boundary and the \
+         long-aged stamp collects"
+    );
+}
+
+/// The genuine claim the tombstone exists for: its funding output
+/// classifies, the upsert's valve keeps it spent, and materialising
+/// (gaining a real `height`) takes it out of the collector's reach forever.
+#[test]
+fn a_materialised_claim_is_never_collected() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xF3);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = p2pkh(0x61);
+    let funding_txid = Txid::from_byte_array([0x56; 32]);
+    let p = OutPoint::new(funding_txid, 0);
+    let loser = Txid::from_byte_array([0x57; 32]);
+    let winner = Txid::from_byte_array([0x58; 32]);
+
+    let mut conn = persister.lock_conn_for_test();
+    derive_address(&conn, &w, 0, &addr);
+    apply_heights(&mut conn, &w, 100);
+    seed_tombstone(&mut conn, &w, p, loser, winner);
+    assert_eq!(
+        utxo_row_state(&conn, &w, &p),
+        Some((true, None, Some(100))),
+        "sanity: held, unmaterialised, stamped"
+    );
+
+    // The funding output classifies: the valve keeps the coin spent, the
+    // row gains real funding data, and the stale stamp clears.
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            new_utxos: vec![make_utxo(&addr, funding_txid, 0, 50_000)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    assert_eq!(
+        utxo_row_state(&conn, &w, &p),
+        Some((true, Some(10), None)),
+        "sanity: materialised — real height, stamp cleared, still spent"
+    );
+
+    apply_heights(&mut conn, &w, 10_000);
+    assert_eq!(
+        utxo_row_state(&conn, &w, &p),
+        Some((true, Some(10), None)),
+        "a materialised claim is the wallet's own coin held spent — no \
+         boundary may ever collect it"
+    );
+}
+
+/// A tombstone written before `held_since_height` existed (or on a wallet
+/// with no recorded heights) has a NULL stamp. The collector back-fills it
+/// with the current best-known height on first sight rather than guessing,
+/// so it waits a full margin from then — never collected in the same round
+/// that first saw it.
+#[test]
+fn an_unstamped_tombstone_is_backfilled_before_it_can_be_collected() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xF4);
+    ensure_wallet_meta(&persister, &w);
+
+    let p = OutPoint::new(Txid::from_byte_array([0x59; 32]), 0);
+    let loser = Txid::from_byte_array([0x5A; 32]);
+    let winner = Txid::from_byte_array([0x5B; 32]);
+
+    let mut conn = persister.lock_conn_for_test();
+    // No heights have ever been recorded: the sweep stamps NULL.
+    seed_tombstone(&mut conn, &w, p, loser, winner);
+    assert_eq!(
+        utxo_row_state(&conn, &w, &p),
+        Some((true, None, None)),
+        "sanity: no watermark existed, so the stamp is NULL"
+    );
+
+    apply_heights(&mut conn, &w, 1_000);
+    assert_eq!(
+        utxo_row_state(&conn, &w, &p),
+        Some((true, None, Some(1_000))),
+        "first collection pass back-fills the stamp instead of collecting"
+    );
+
+    apply_heights(&mut conn, &w, 1_002);
+    assert!(
+        !row_exists(&conn, &w, &p),
+        "the back-filled stamp ages out like any other"
+    );
+}
+
+/// A chained sweep that re-points a still-unfunded claim to a new winner
+/// also re-stamps it: the claim now belongs to a winner whose confirmation
+/// is measured from this round, not the original sweep's.
+#[test]
+fn a_repointed_tombstone_is_restamped_to_the_later_sweep() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xF5);
+    ensure_wallet_meta(&persister, &w);
+
+    let p = OutPoint::new(Txid::from_byte_array([0x5C; 32]), 0);
+    let first_loser = Txid::from_byte_array([0x5D; 32]);
+    let second_loser = Txid::from_byte_array([0x5E; 32]);
+    let final_winner = Txid::from_byte_array([0x5F; 32]);
+
+    let mut conn = persister.lock_conn_for_test();
+    apply_heights(&mut conn, &w, 100);
+    seed_tombstone(&mut conn, &w, p, first_loser, second_loser);
+    assert_eq!(
+        utxo_row_state(&conn, &w, &p).and_then(|(_, _, s)| s),
+        Some(100),
+        "sanity: stamped at the first sweep's height"
+    );
+
+    apply_heights(&mut conn, &w, 105);
+    // The first winner is itself swept, still holding the unfunded input.
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![tx_record(second_loser, vec![p], vec![])],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![second_loser],
+                superseded_by: final_winner,
+                released_outpoints: vec![],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    assert_eq!(
+        utxo_row_state(&conn, &w, &p),
+        Some((true, None, Some(105))),
+        "the re-pointed claim is re-stamped to the later sweep's height"
+    );
+}
+
+/// Legacy shape self-heal: a zero-value released placeholder written
+/// before the release path deleted them (`height` NULL, `spent = 0`) holds
+/// no claim and is swept up by the collector's first pass — chainlock or
+/// not — instead of reading as a phantom spendable coin forever.
+#[test]
+fn a_legacy_released_placeholder_is_swept_up_by_the_collector() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xF6);
+    ensure_wallet_meta(&persister, &w);
+
+    let p = OutPoint::new(Txid::from_byte_array([0x60; 32]), 0);
+    let mut conn = persister.lock_conn_for_test();
+    // Plant the pre-fix shape directly — the current release path can no
+    // longer produce it.
+    {
+        let bytes = blob::encode_outpoint(&p).unwrap();
+        conn.execute(
+            "INSERT INTO core_utxos \
+                (wallet_id, outpoint, value, script, height, account_index, spent, spent_in_txid) \
+             VALUES (?1, ?2, 0, X'', NULL, 0, 0, NULL)",
+            params![w.as_slice(), &bytes[..]],
+        )
+        .unwrap();
+    }
+    assert!(
+        unspent(&conn, &w).contains(&p),
+        "sanity: the legacy phantom"
+    );
+
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            last_processed_height: Some(100),
+            synced_height: Some(100),
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    assert!(
+        !row_exists(&conn, &w, &p),
+        "the first height-carrying round deletes the claimless leftover"
     );
 }

@@ -838,7 +838,11 @@ impl PlatformWalletPersistence for SqlitePersister {
         // directly — through the loser's decoded inputs when its row is on
         // hand, and through the batch's own released set when it is not —
         // so it repoints or releases the placeholder regardless of how many
-        // sweeps deep it is.
+        // sweeps deep it is. A placeholder that never materialises is
+        // bounded, not permanent: `core_state::collect_finalized_tombstones`
+        // evicts it once the persisted chainlock finality boundary passes
+        // its creation stamp, so foreign-input junk from swept incoming
+        // payments cannot grow the store without limit.
         PersistenceCapabilities::ATOMIC_CHANGESETS
             .union(PersistenceCapabilities::INVITATIONS)
             .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
