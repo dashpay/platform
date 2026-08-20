@@ -542,13 +542,16 @@ impl WalletGeneration {
     /// monotonic clock needs no guard at all.
     ///
     /// [`Self::settle_boundary_hook`] fires at exactly that midpoint under
-    /// `cfg(test)`, which is what makes the property testable without racing
-    /// the scheduler for it.
+    /// `cfg(test)` — after the first outpoint's dispatching hold is lifted and
+    /// before its pending phase opens, i.e. inside the torn state itself, not
+    /// merely after the lock is acquired. A hook that fired on lock
+    /// acquisition would be satisfied by the first half of a split
+    /// implementation too; fired here, only a critical section that spans
+    /// both halves keeps the boundary unobservable
+    /// (`dashpay/platform#4309`, review round 6).
     fn unpin_in_broadcast(&self, outpoints: &[OutPoint], settle: PendingSpendSettle) {
         let now = Instant::now();
         let mut pinned = self.in_broadcast_lock();
-        #[cfg(test)]
-        self.fire_settle_boundary_hook();
         for outpoint in outpoints {
             let Some(fence) = pinned.get_mut(outpoint) else {
                 // Unreachable by construction — every pin inserts before its
@@ -557,6 +560,11 @@ impl WalletGeneration {
                 continue;
             };
             fence.dispatching = fence.dispatching.saturating_sub(1);
+            // The dispatching→pending midpoint: this outpoint's dispatching
+            // hold is lifted, its pending phase is not yet open. One-shot, so
+            // in effect it fires at the first outpoint's midpoint.
+            #[cfg(test)]
+            self.fire_settle_boundary_hook();
             match settle {
                 PendingSpendSettle::Pending => fence.open_pending(now),
                 PendingSpendSettle::Released => {}
@@ -606,7 +614,8 @@ impl WalletGeneration {
 
     /// Run `hook` at the dispatching→pending midpoint of the very next
     /// [`unpin_in_broadcast`](Self::unpin_in_broadcast) on this generation:
-    /// after the `in_broadcast` lock is taken, before any fence is mutated.
+    /// after an outpoint's dispatching hold is lifted, before its pending
+    /// phase is opened — the torn state itself.
     ///
     /// The test-only synchronization hook that makes the handoff regression
     /// DETERMINISTIC (`dashpay/platform#4309`, review round 5 suggestion). The
@@ -615,6 +624,13 @@ impl WalletGeneration {
     /// green against the pre-fix code. With this hook the observer is run at
     /// the midpoint by construction, and what it can see there is the whole
     /// assertion.
+    ///
+    /// The firing point matters (round 6): fired on lock ACQUISITION, the
+    /// observation would complete before any fence was touched, so an
+    /// implementation that split the decrement and the pending install into
+    /// separate critical sections — the regression under test — would satisfy
+    /// it with its first section alone. Fired between the two operations, the
+    /// observation is protected only if one critical section spans both.
     ///
     /// One-shot: consumed by the settle that fires it, so an unrelated later
     /// settle cannot re-enter the test's handshake.
@@ -1153,9 +1169,12 @@ mod tests {
     /// pre-fix code — so it proved nothing.
     ///
     /// This one is deterministic. [`WalletGeneration::on_next_settle_boundary`]
-    /// runs the observer AT the midpoint by construction, and the settling
-    /// thread BLOCKS until the observer has published what it saw, so there is
-    /// no race to lose. The observer probes with `try_lock`
+    /// runs the observer AT the midpoint by construction — after the
+    /// dispatching hold is lifted, before the pending phase opens, so the
+    /// probe lands inside the torn state itself rather than before any fence
+    /// was touched (round 6) — and the settling thread BLOCKS until the
+    /// observer has published what it saw, so there is no race to lose. The
+    /// observer probes with `try_lock`
     /// ([`WalletGeneration::try_probe_in_broadcast`]) rather than blocking,
     /// because a blocking read cannot distinguish "held across the whole
     /// transition" — the property under test — from "granted after it".
