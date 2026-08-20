@@ -30,6 +30,7 @@ use dpp::{
     prelude::{DataContract, Identifier},
     InvalidVectorSizeError, ProtocolError,
 };
+use drive::config::DEFAULT_QUERY_LIMIT;
 use drive::query::drive_document_ranked_query::mode_detection::ranked_order_key;
 use drive::query::{
     DriveDocumentQuery, HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator,
@@ -788,10 +789,28 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
         )
         .map_err(Error::Drive)?;
 
-        let limit = if request.limit != 0 {
-            Some(request.limit as u16)
-        } else {
-            None
+        // Mirror the limit contract of the server's
+        // `DriveDocumentQuery::from_typed_clauses` exactly: `0` (this
+        // struct's "unset" sentinel — V0's `limit: 0`, V1's
+        // `limit: None`) falls back to the server default, and anything
+        // above `DEFAULT_QUERY_LIMIT` (the `config.default_query_limit`
+        // every deployed server runs with) is refused with the server's
+        // own `QuerySyntaxError::InvalidLimit` rather than truncated or
+        // passed through. A `u16::try_from` alone would not do: limits
+        // 101..=65535 fit a `u16` but the server refuses them, so a raw
+        // `DriveDocumentQuery` carrying one would verify a proof no
+        // honest server could have produced.
+        let limit = match request.limit {
+            0 => Some(DEFAULT_QUERY_LIMIT),
+            limit if limit > u32::from(DEFAULT_QUERY_LIMIT) => {
+                return Err(Error::Drive(drive::error::Error::Query(
+                    drive::error::query::QuerySyntaxError::InvalidLimit(format!(
+                        "limit {} greater than max limit {}",
+                        limit, DEFAULT_QUERY_LIMIT
+                    )),
+                )));
+            }
+            limit => Some(limit as u16),
         };
 
         let (start_at, start_at_included) = match request.start.as_ref() {
