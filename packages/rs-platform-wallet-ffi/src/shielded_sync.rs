@@ -53,10 +53,15 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_start(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        let _entered = runtime().enter();
+        // The loop's `tokio::spawn` needs a runtime in scope, so acquisition
+        // is fallible here: with no runtime there is nothing to start the
+        // shielded loop on, and that has to be reported rather than
+        // silently skipped.
+        let _entered = runtime().checked()?.enter();
         manager.shielded_sync_arc().start();
+        Ok::<(), crate::panic_guard::FfiBoundaryError>(())
     });
-    unwrap_option_or_return!(option);
+    unwrap_result_or_return!(unwrap_option_or_return!(option));
     PlatformWalletFFIResult::ok()
 }
 
@@ -301,9 +306,10 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
     // prior seed-backed bind. `Ok(false)` means at least one
     // requested account has no persisted row — only then is the
     // mnemonic resolved.
-    match runtime()
-        .block_on(wallet_arc.bind_shielded_from_persisted(accounts.as_slice(), &coordinator))
-    {
+    match unwrap_result_or_return!(crate::panic_guard::peel_boundary(
+        runtime()
+            .block_on(wallet_arc.bind_shielded_from_persisted(accounts.as_slice(), &coordinator))
+    )) {
         Ok(true) => return PlatformWalletFFIResult::ok(),
         Ok(false) => {}
         Err(e) => {
@@ -325,11 +331,11 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
         Err(result) => return result,
     };
 
-    if let Err(e) = runtime().block_on(wallet_arc.bind_shielded(
-        seed.as_ref(),
-        accounts.as_slice(),
-        &coordinator,
-    )) {
+    if let Err(e) =
+        unwrap_result_or_return!(crate::panic_guard::peel_boundary(runtime().block_on(
+            wallet_arc.bind_shielded(seed.as_ref(), accounts.as_slice(), &coordinator)
+        )))
+    {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("bind_shielded failed: {e}"),
@@ -377,7 +383,9 @@ pub unsafe extern "C" fn platform_wallet_manager_configure_shielded(
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         runtime().block_on(manager.configure_shielded(&db_path))
     });
-    let result = unwrap_option_or_return!(option);
+    let result = unwrap_result_or_return!(crate::panic_guard::peel_boundary(
+        unwrap_option_or_return!(option)
+    ));
     if let Err(e) = result {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
@@ -435,6 +443,10 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_clear(
         runtime().block_on(manager.clear_shielded())
     });
     let result = unwrap_option_or_return!(option);
+    // Peel the FFI-local outer failure off first: the generic arm below adds
+    // `clear_shielded failed: ` context, which would push a caught panic's
+    // marker off position 0.
+    let result = unwrap_result_or_return!(crate::panic_guard::peel_boundary(result));
     if let Err(e) = result {
         // A drain that did not complete is NOT an ordinary store failure:
         // it means callback-capable work may still be running, which the
@@ -559,7 +571,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_wallet(
         let mgr = manager.shielded_sync_arc();
         block_on_worker(async move { mgr.sync_wallet(&wallet_id, true).await })
     });
-    let result = unwrap_option_or_return!(option);
+    let result = unwrap_result_or_return!(crate::panic_guard::peel_boundary(
+        unwrap_option_or_return!(option)
+    ));
     match result {
         Ok(_) => PlatformWalletFFIResult::ok(),
         Err(e) => PlatformWalletFFIResult::err(

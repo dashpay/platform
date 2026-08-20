@@ -1049,6 +1049,9 @@ pub unsafe extern "C" fn platform_wallet_verify_seed_binds_to_wallet(
         block_on_worker(async move { wallet.verify_seed_binds(&provider).await })
     });
     let result = unwrap_option_or_return!(option);
+    // Peel the FFI-local outer failure off first: the domain arms below add
+    // operation context, which a caught panic must never be dressed in.
+    let result = unwrap_result_or_return!(crate::panic_guard::peel_boundary(result));
     match result {
         Ok(()) => PlatformWalletFFIResult::ok(),
         Err(e @ platform_wallet::PlatformWalletError::SeedMismatch { .. }) => {
@@ -1148,6 +1151,9 @@ pub unsafe extern "C" fn platform_wallet_verify_seed_binds_to_wallet_cached(
         })
     });
     let result = unwrap_option_or_return!(option);
+    // Peel the FFI-local outer failure off first: the domain arms below add
+    // operation context, which a caught panic must never be dressed in.
+    let result = unwrap_result_or_return!(crate::panic_guard::peel_boundary(result));
     match result {
         Ok((platform_wallet::SeedBindingVerification::MarkerMatched, _)) => {
             PlatformWalletFFIResult::ok()

@@ -1,23 +1,31 @@
 //! FFI bindings for CoreWallet transaction broadcasting.
 
+use crate::core_wallet::lifecycle::lifecycle_gate_or_release;
 use crate::error::*;
 use crate::handle::*;
+use crate::panic_guard::GuardedError;
 use crate::runtime::runtime;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 use platform_wallet::PlatformWalletError;
 use std::os::raw::c_char;
 
 fn classify_broadcast_result(
-    result: Result<dashcore::Txid, PlatformWalletError>,
+    result: Result<dashcore::Txid, GuardedError<PlatformWalletError>>,
     local_txid: dashcore::Txid,
 ) -> (Option<dashcore::Txid>, PlatformWalletFFIResult) {
     match result {
         Ok(_) => (Some(local_txid), PlatformWalletFFIResult::ok()),
-        Err(error @ PlatformWalletError::TransactionBroadcast(_))
-        | Err(error @ PlatformWalletError::TransactionBroadcastUnconfirmed(_)) => {
-            (Some(local_txid), error.into())
-        }
-        Err(error) => (None, error.into()),
+        // A boundary failure (caught panic / no runtime) carries NO outcome
+        // guarantee, so it gets the same shape as any other unclassified
+        // failure: the generic code, its own message verbatim, and no txid —
+        // it must not borrow the `Some(local_txid)` treatment that says
+        // "this reached the network, reconcile by this id".
+        Err(GuardedError::Boundary(error)) => (None, error.into()),
+        Err(GuardedError::Domain(error @ PlatformWalletError::TransactionBroadcast(_)))
+        | Err(GuardedError::Domain(
+            error @ PlatformWalletError::TransactionBroadcastUnconfirmed(_),
+        )) => (Some(local_txid), error.into()),
+        Err(GuardedError::Domain(error)) => (None, error.into()),
     }
 }
 
@@ -76,11 +84,11 @@ pub unsafe extern "C" fn core_wallet_broadcast_signed_transaction(
     // exclusive side, so it cannot interleave between the check and the send.
     // Scoped per generation, so this send — up to the broadcaster's timeout —
     // blocks only THIS wallet's teardown, never an unrelated wallet's.
-    let (_lifecycle, wallet_is_live) = unwrap_result_or_return!(runtime().try_block_on(async {
-        let gate = wallet.generation_payment_guard().await;
-        let live = wallet.is_current_generation().await;
-        (gate, live)
-    }));
+    let (_lifecycle, wallet_is_live) = unwrap_result_or_return!(lifecycle_gate_or_release(
+        &wallet,
+        &finalized.wallet,
+        &finalized.transaction
+    ));
     if !wallet_is_live {
         runtime().block_on(finalized.wallet.abandon_transaction(&finalized.transaction));
         return PlatformWalletFFIResult::err(
@@ -210,6 +218,13 @@ mod outcome_tests {
         dashcore::Txid::from_byte_array([byte; 32])
     }
 
+    /// A domain error in the guarded shape the classifier now takes.
+    fn domain(
+        error: PlatformWalletError,
+    ) -> Result<dashcore::Txid, GuardedError<PlatformWalletError>> {
+        Err(GuardedError::Domain(error))
+    }
+
     #[test]
     fn network_outcomes_all_carry_a_txid() {
         let accepted = classify_broadcast_result(Ok(txid(1)), txid(9));
@@ -217,7 +232,7 @@ mod outcome_tests {
         assert_eq!(accepted.1.code, PlatformWalletFFIResultCode::Success);
 
         let rejected = classify_broadcast_result(
-            Err(PlatformWalletError::TransactionBroadcast(
+            domain(PlatformWalletError::TransactionBroadcast(
                 "rejected".to_string(),
             )),
             txid(2),
@@ -229,7 +244,7 @@ mod outcome_tests {
         );
 
         let unknown = classify_broadcast_result(
-            Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
+            domain(PlatformWalletError::TransactionBroadcastUnconfirmed(
                 "timeout".to_string(),
             )),
             txid(3),
@@ -244,7 +259,7 @@ mod outcome_tests {
     #[test]
     fn operational_error_does_not_carry_a_txid() {
         let outcome = classify_broadcast_result(
-            Err(PlatformWalletError::TransactionBuild("invalid".to_string())),
+            domain(PlatformWalletError::TransactionBuild("invalid".to_string())),
             txid(4),
         );
         assert_eq!(outcome.0, None);
@@ -264,6 +279,7 @@ mod tests {
     use platform_wallet::{CoreWallet, SignedCoreTransaction};
 
     use super::*;
+    use crate::core_wallet::lifecycle::arm_lifecycle_gate_panic;
     use crate::core_wallet::FFICoreSignedTransaction;
 
     type TestCore = CoreWallet<platform_wallet::broadcaster::SpvBroadcaster>;
@@ -406,5 +422,97 @@ mod tests {
             unsafe { core_wallet_abandon_signed_transaction(core_handle, transaction_handle) };
         assert_eq!(retry.code, PlatformWalletFFIResultCode::NotFound);
         CORE_WALLET_STORAGE.remove(core_handle);
+    }
+
+    /// A lifecycle-gate failure must not strand the build's UTXO reservation.
+    ///
+    /// The gate is taken *after* `finalize_transaction` has reserved the
+    /// inputs, and on this path the transaction handle has already been
+    /// consumed on entry — so if the guarded acquisition fails and the entry
+    /// point just returns, the host is left holding neither handle nor token,
+    /// and nothing in the process can ever release those inputs again. The
+    /// wallet would silently lose that much spendable balance until restart
+    /// (`dashpay/platform#4424` review).
+    ///
+    /// `assert_released` is the proof: it finalizes a *second* transaction
+    /// against the same account, which can only fund if the first build's
+    /// inputs came back.
+    #[test]
+    fn a_lifecycle_gate_panic_releases_the_reservation_and_reports_the_panic() {
+        let (core, signer) = runtime()
+            .raw()
+            .block_on(funded_spv_core_wallet(StandardAccountType::BIP44Account));
+        let core_handle = CORE_WALLET_STORAGE.insert(core.clone());
+        let transaction_handle = insert(&core, finalize(&core, &signer, 50));
+        let mut out_txid: *mut c_char = std::ptr::null_mut();
+
+        arm_lifecycle_gate_panic();
+        let result = unsafe {
+            core_wallet_broadcast_signed_transaction(core_handle, transaction_handle, &mut out_txid)
+        };
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            "a caught panic must arrive as the generic code"
+        );
+        let message = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_str()
+            .expect("message is UTF-8");
+        assert_eq!(
+            message.find(crate::panic_guard::FFI_PANIC_PREFIX),
+            Some(0),
+            "the marker must be at position 0: {message}"
+        );
+        assert!(
+            message.contains("injected lifecycle-gate panic"),
+            "the payload must survive: {message}"
+        );
+        assert!(
+            out_txid.is_null(),
+            "nothing was broadcast, so no txid may be published"
+        );
+
+        // The reservation came back: a fresh build on the same account funds.
+        assert_released(&core, &signer, 51);
+
+        // The handle was consumed on entry, panic or not.
+        let retry = unsafe {
+            core_wallet_broadcast_signed_transaction(core_handle, transaction_handle, &mut out_txid)
+        };
+        assert_eq!(retry.code, PlatformWalletFFIResultCode::NotFound);
+        CORE_WALLET_STORAGE.remove(core_handle);
+    }
+
+    /// The same guarantee stated at the seam the other two entry points share
+    /// (`core_wallet_tx_builder_finalize` and
+    /// `core_wallet_signed_payment_finalize` reach it with an unpublished
+    /// handle / unregistered token respectively). Those two need a live
+    /// `MnemonicResolverHandle` vtable to drive end-to-end, so the shared
+    /// helper is pinned directly instead.
+    #[test]
+    fn lifecycle_gate_helper_releases_before_returning_the_failure() {
+        let (core, signer) = runtime()
+            .raw()
+            .block_on(funded_spv_core_wallet(StandardAccountType::BIP44Account));
+        let finalized = finalize(&core, &signer, 52);
+
+        arm_lifecycle_gate_panic();
+        let error = lifecycle_gate_or_release(&core, &core, &finalized)
+            .expect_err("the armed panic must surface as a boundary failure");
+        assert_eq!(
+            error.to_string().find(crate::panic_guard::FFI_PANIC_PREFIX),
+            Some(0)
+        );
+
+        assert_released(&core, &signer, 53);
+
+        // The happy path still hands back a held gate and a live generation.
+        let (_gate, live) = lifecycle_gate_or_release(&core, &core, &finalized)
+            .expect("acquisition must succeed when nothing is armed");
+        assert!(live, "a freshly built wallet is its own current generation");
+        runtime()
+            .raw()
+            .block_on(core.abandon_transaction(&finalized));
     }
 }

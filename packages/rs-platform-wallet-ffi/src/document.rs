@@ -14,6 +14,7 @@ use rs_sdk_ffi::{SignerHandle, VTableSigner};
 use crate::check_ptr;
 use crate::error::*;
 use crate::handle::*;
+use crate::panic_guard::GuardedError;
 use crate::runtime::block_on_worker;
 use crate::types::read_identifier;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
@@ -89,7 +90,7 @@ pub unsafe extern "C" fn platform_wallet_create_document_with_signer(
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity_wallet = wallet.identity().clone();
-        let result: Result<(Identifier, String), PlatformWalletError> =
+        let result: Result<(Identifier, String), GuardedError<PlatformWalletError>> =
             block_on_worker(async move {
                 let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
                 let confirmed: Document = identity_wallet
@@ -205,7 +206,7 @@ pub unsafe extern "C" fn platform_wallet_document_replace(
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity_wallet = wallet.identity().clone();
-        let result: Result<(Identifier, String), PlatformWalletError> =
+        let result: Result<(Identifier, String), GuardedError<PlatformWalletError>> =
             block_on_worker(async move {
                 let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
                 let confirmed: Document = identity_wallet
@@ -270,20 +271,21 @@ pub unsafe extern "C" fn platform_wallet_document_delete(
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity_wallet = wallet.identity().clone();
-        let result: Result<Identifier, PlatformWalletError> = block_on_worker(async move {
-            let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-            let deleted_id: Identifier = identity_wallet
-                .delete_document_with_signer(
-                    &owner_id,
-                    &contract_id_value,
-                    &document_type_str,
-                    &document_id_value,
-                    signing_key_id,
-                    signer,
-                )
-                .await?;
-            Ok::<_, PlatformWalletError>(deleted_id)
-        });
+        let result: Result<Identifier, GuardedError<PlatformWalletError>> =
+            block_on_worker(async move {
+                let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+                let deleted_id: Identifier = identity_wallet
+                    .delete_document_with_signer(
+                        &owner_id,
+                        &contract_id_value,
+                        &document_type_str,
+                        &document_id_value,
+                        signing_key_id,
+                        signer,
+                    )
+                    .await?;
+                Ok::<_, PlatformWalletError>(deleted_id)
+            });
         result
     });
     let result = unwrap_option_or_return!(option);
@@ -337,7 +339,7 @@ pub unsafe extern "C" fn platform_wallet_document_transfer(
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity_wallet = wallet.identity().clone();
-        let result: Result<(Identifier, String), PlatformWalletError> =
+        let result: Result<(Identifier, String), GuardedError<PlatformWalletError>> =
             block_on_worker(async move {
                 let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
                 let confirmed: Document = identity_wallet
@@ -408,7 +410,7 @@ pub unsafe extern "C" fn platform_wallet_document_set_price(
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity_wallet = wallet.identity().clone();
-        let result: Result<(Identifier, String), PlatformWalletError> =
+        let result: Result<(Identifier, String), GuardedError<PlatformWalletError>> =
             block_on_worker(async move {
                 let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
                 let confirmed: Document = identity_wallet
@@ -481,7 +483,7 @@ pub unsafe extern "C" fn platform_wallet_document_purchase(
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity_wallet = wallet.identity().clone();
-        let result: Result<(Identifier, String), PlatformWalletError> =
+        let result: Result<(Identifier, String), GuardedError<PlatformWalletError>> =
             block_on_worker(async move {
                 let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
                 let confirmed: Document = identity_wallet

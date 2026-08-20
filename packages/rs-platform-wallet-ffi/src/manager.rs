@@ -278,7 +278,7 @@ unsafe fn platform_wallet_manager_create_impl(
     // attached. Enter the FFI's shared runtime for the duration of
     // the constructor so the spawn lands on it; the guard drops on
     // return and leaves the spawned task running on that runtime.
-    let _runtime_guard = runtime().enter();
+    let _runtime_guard = unwrap_result_or_return!(runtime().checked()).enter();
 
     let manager = PlatformWalletManager::new(sdk, persister, handler);
     let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(manager);
@@ -744,6 +744,9 @@ pub unsafe extern "C" fn platform_wallet_manager_remove_wallet(
         ))
     });
     let result = unwrap_option_or_return!(option);
+    // Peel the FFI-local outer failure off first: the idempotency arm below
+    // answers `Ok()`, which a caught panic must never reach.
+    let result = unwrap_result_or_return!(crate::panic_guard::peel_boundary(result));
     match result {
         Ok(()) => PlatformWalletFFIResult::ok(),
         // Idempotency: a wallet that's already gone is the success

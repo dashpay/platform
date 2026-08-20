@@ -330,6 +330,10 @@ pub unsafe extern "C" fn platform_address_wallet_preflight_withdrawal(
     let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| wallet.clone());
     let wallet = unwrap_option_or_return!(option);
     let result = block_on_worker(async move { wallet.preflight_withdrawal(account_index).await });
+    // Peel the FFI-local outer failure off first: `classify_preflight_error`
+    // reasons about typed domain errors and would otherwise be handed a panic
+    // to classify as retryable / not-fundable.
+    let result = unwrap_result_or_return!(crate::panic_guard::peel_boundary(result));
 
     match result {
         Ok(plan) => {

@@ -233,12 +233,13 @@ pub unsafe extern "C" fn platform_wallet_manager_start_wallet_subsystems(
                 "Manager handle invalid".to_string(),
             )
         }
-        Err(e) => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                format!("failed to spawn the startup thread: {e}"),
-            )
-        }
+        // Verbatim, NOT re-wrapped: `run_on_big_stack_thread` reports a
+        // refused thread AND a caught panic through this one channel, and its
+        // message already carries the matching marker at position 0. The old
+        // `format!("failed to spawn the startup thread: {e}")` both pushed that
+        // marker off position 0 and mislabelled a panic as a spawn failure
+        // (dashpay/platform#4424 review).
+        Err(e) => return e.into(),
     };
 
     *out_outcome = WalletStartupOutcomeFFI::from(outcome);

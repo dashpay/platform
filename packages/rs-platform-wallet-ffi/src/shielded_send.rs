@@ -61,6 +61,7 @@ use crate::handle::*;
 use crate::identity_registration_with_signer::{decode_identity_pubkeys, IdentityPubkeyFFI};
 use crate::runtime::{block_on_worker, runtime};
 use crate::shielded_types::ShieldedShieldPreflightFFI;
+use crate::unwrap_result_or_return;
 
 /// A serialized `PlatformAddress` is exactly 21 bytes (1-byte variant tag + 20-byte hash).
 const PLATFORM_ADDRESS_LEN: usize = 21;
@@ -142,7 +143,15 @@ unsafe fn parse_required_platform_address(
 /// `OnceLock`.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_shielded_warm_up_prover() {
-    runtime().spawn_blocking(|| CachedOrchardProver::new().warm_up());
+    // Fire-and-forget, and the entry point returns nothing, so a runtime
+    // that will not build is logged rather than reported: the prover simply
+    // stays cold and `platform_wallet_shielded_prover_is_ready` says so.
+    match runtime().checked() {
+        Ok(rt) => {
+            rt.spawn_blocking(|| CachedOrchardProver::new().warm_up());
+        }
+        Err(error) => tracing::error!(%error, "shielded prover warm-up not scheduled"),
+    }
 }
 
 /// Whether the Halo 2 proving key has already been built.
@@ -536,7 +545,12 @@ fn poke_sync_on_unconfirmed<T>(result: &Result<T, PlatformWalletError>, handle: 
     else {
         return;
     };
-    runtime().spawn(async move {
+    let Ok(rt) = runtime().checked() else {
+        // Best-effort re-drive; with no runtime there is nothing to poke and
+        // the next pass owns it anyway.
+        return;
+    };
+    rt.spawn(async move {
         let summary = sync_manager.sync_now(true).await;
         if summary.sync_unix_seconds == 0 {
             tracing::debug!(
@@ -556,9 +570,16 @@ fn poke_sync_on_unconfirmed<T>(result: &Result<T, PlatformWalletError>, handle: 
 /// code split so hosts can tell "definitively failed, safe to retry" from
 /// "may have executed, do NOT retry".
 fn map_spend_result(
-    result: Result<(), PlatformWalletError>,
+    result: Result<(), crate::panic_guard::GuardedError<PlatformWalletError>>,
     operation: &str,
 ) -> PlatformWalletFFIResult {
+    let result = match crate::panic_guard::peel_boundary(result) {
+        Ok(result) => result,
+        // Verbatim: every arm below adds operation context, and a caught panic
+        // must keep its marker at position 0 (and must never borrow one of the
+        // typed retry/outcome codes).
+        Err(boundary) => return boundary,
+    };
     match result {
         Ok(()) => PlatformWalletFFIResult::ok(),
         // Ambiguous: the broadcast was accepted but its execution result
@@ -618,9 +639,15 @@ fn map_spend_result(
 /// error path. The wallet retains nonterminal consumption-unknown state; the
 /// host must not interpret this code as authenticated completion.
 fn map_asset_lock_funding_result(
-    result: Result<(), PlatformWalletError>,
+    result: Result<(), crate::panic_guard::GuardedError<PlatformWalletError>>,
     operation: &str,
 ) -> PlatformWalletFFIResult {
+    let result = match crate::panic_guard::peel_boundary(result) {
+        Ok(result) => result,
+        // Verbatim: the generic arm below would otherwise prefix a caught
+        // panic with `{operation} failed: `.
+        Err(boundary) => return boundary,
+    };
     match result {
         Ok(()) => PlatformWalletFFIResult::ok(),
         Err(e @ PlatformWalletError::AssetLockAlreadyConsumed(_)) => e.into(),
@@ -795,6 +822,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
         poke_sync_on_unconfirmed(&r, handle);
         r
     });
+
+    // Peel the FFI-local outer failure off first: the arms below write
+    // `out_identity_id` and reach for typed shielded codes, neither of which a
+    // caught panic may claim.
+    let result = unwrap_result_or_return!(crate::panic_guard::peel_boundary(result));
 
     match result {
         Ok(identity_id) => {
@@ -1507,6 +1539,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_seed_pool_notes(
             .await
     });
 
+    // Peel the FFI-local outer failure off first: the arm below adds context
+    // around the error, which would push a caught panic's marker off position 0.
+    let result = unwrap_result_or_return!(crate::panic_guard::peel_boundary(result));
     match result {
         Ok(_outcome) => PlatformWalletFFIResult::ok(),
         Err(e) => PlatformWalletFFIResult::err(
@@ -1591,7 +1626,55 @@ fn resolve_wallet_and_coordinator(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::panic_guard::{FfiBoundaryError, GuardedError, FFI_PANIC_PREFIX};
     use dpp::shielded::MEMO_PAYLOAD_SIZE;
+
+    /// A domain error in the guarded shape the mappers now take.
+    fn domain(error: PlatformWalletError) -> Result<(), GuardedError<PlatformWalletError>> {
+        Err(GuardedError::Domain(error))
+    }
+
+    /// A caught panic in that same shape.
+    fn caught_panic(message: &str) -> Result<(), GuardedError<PlatformWalletError>> {
+        Err(GuardedError::Boundary(FfiBoundaryError::caught_panic(
+            format!("{FFI_PANIC_PREFIX}{message}"),
+        )))
+    }
+
+    /// A panic must leave these mappers by their own door.
+    ///
+    /// Every domain arm in `map_spend_result` / `map_asset_lock_funding_result`
+    /// either reaches for a typed shielded code or wraps the payload in
+    /// `"{operation} failed: "`. Both would be wrong for a panic: the typed
+    /// codes carry retry/outcome contracts a panic cannot honour, and the
+    /// prefix pushes the machine-readable marker off position 0, which is
+    /// exactly what hosts key on (dashpay/platform#4424 review).
+    #[test]
+    fn mappers_pass_a_caught_panic_through_at_code_six_with_the_marker_first() {
+        for result in [
+            map_spend_result(caught_panic("spend boom"), "shielded transfer"),
+            map_asset_lock_funding_result(
+                caught_panic("funding boom"),
+                "shielded fund-from-asset-lock",
+            ),
+        ] {
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                "a panic must ride the generic code, never a typed shielded one"
+            );
+            let message = message_of(&result);
+            assert_eq!(
+                message.find(FFI_PANIC_PREFIX),
+                Some(0),
+                "the marker must stay at position 0, un-prefixed: {message}"
+            );
+            assert!(
+                !message.contains("failed: "),
+                "the operation context must not be prepended to a panic: {message}"
+            );
+        }
+    }
 
     #[test]
     fn encode_memo_text_none_is_empty() {
@@ -1733,11 +1816,10 @@ mod tests {
     /// every error arm so callers keep diagnostics across the boundary.
     #[test]
     fn map_spend_result_pins_retry_relevant_codes() {
-        let unconfirmed: Result<(), PlatformWalletError> =
-            Err(PlatformWalletError::ShieldedSpendUnconfirmed {
-                operation: "unshield",
-                reason: "transient proof fetch failed".to_string(),
-            });
+        let unconfirmed = domain(PlatformWalletError::ShieldedSpendUnconfirmed {
+            operation: "unshield",
+            reason: "transient proof fetch failed".to_string(),
+        });
         let result = map_spend_result(unconfirmed, "shielded unshield");
         assert_eq!(
             result.code,
@@ -1748,9 +1830,9 @@ mod tests {
             "unconfirmed message must carry the wallet Display payload"
         );
 
-        let failed: Result<(), PlatformWalletError> = Err(
-            PlatformWalletError::ShieldedBroadcastFailed("relay rejected".to_string()),
-        );
+        let failed = domain(PlatformWalletError::ShieldedBroadcastFailed(
+            "relay rejected".to_string(),
+        ));
         let result = map_spend_result(failed, "shielded transfer");
         assert_eq!(
             result.code,
@@ -1763,9 +1845,9 @@ mod tests {
 
         // No Platform-recorded anchor yet → its own retryable code, distinct
         // from the "was broadcast, do NOT retry" unconfirmed code above.
-        let no_anchor: Result<(), PlatformWalletError> = Err(
-            PlatformWalletError::ShieldedNoRecordedAnchor("mid-block".to_string()),
-        );
+        let no_anchor = domain(PlatformWalletError::ShieldedNoRecordedAnchor(
+            "mid-block".to_string(),
+        ));
         let result = map_spend_result(no_anchor, "shielded withdraw");
         assert_eq!(
             result.code,
@@ -1776,8 +1858,7 @@ mod tests {
             "no-recorded-anchor message must be the retryable guidance"
         );
 
-        let other: Result<(), PlatformWalletError> =
-            Err(PlatformWalletError::ShieldedNoUnspentNotes);
+        let other = domain(PlatformWalletError::ShieldedNoUnspentNotes);
         let result = map_spend_result(other, "shielded withdraw");
         assert_eq!(
             result.code,
@@ -1796,12 +1877,11 @@ mod tests {
     /// The submitted/expected nonce values must survive in the message.
     #[test]
     fn map_spend_result_maps_address_nonce_mismatch_to_dedicated_code() {
-        let mismatch: Result<(), PlatformWalletError> =
-            Err(PlatformWalletError::AddressNonceMismatch {
-                address: PlatformAddress::P2pkh([7u8; 20]),
-                provided_nonce: 1,
-                expected_nonce: 2,
-            });
+        let mismatch = domain(PlatformWalletError::AddressNonceMismatch {
+            address: PlatformAddress::P2pkh([7u8; 20]),
+            provided_nonce: 1,
+            expected_nonce: 2,
+        });
         let result = map_spend_result(mismatch, "shielded shield");
         assert_eq!(
             result.code,
@@ -1824,7 +1904,7 @@ mod tests {
     #[test]
     fn map_spend_result_maps_shield_capacity_race_to_dedicated_code() {
         let shield_result = map_spend_result(
-            Err(PlatformWalletError::PlatformShieldCapacityExceeded {
+            domain(PlatformWalletError::PlatformShieldCapacityExceeded {
                 available: 3_623_849_220,
                 required: 3_623_849_221,
             }),
@@ -1840,7 +1920,7 @@ mod tests {
         assert!(message.contains("required 3623849221"));
 
         let transfer_result = map_spend_result(
-            Err(PlatformWalletError::ShieldedInsufficientBalance {
+            domain(PlatformWalletError::ShieldedInsufficientBalance {
                 available: 3_623_849_220,
                 required: 3_623_849_221,
             }),
@@ -1861,7 +1941,7 @@ mod tests {
             vout: 7,
         };
         let result = map_asset_lock_funding_result(
-            Err(PlatformWalletError::AssetLockAlreadyConsumed(out_point)),
+            domain(PlatformWalletError::AssetLockAlreadyConsumed(out_point)),
             "shielded fund-from-asset-lock",
         );
         assert_eq!(
@@ -1871,7 +1951,7 @@ mod tests {
         assert!(message_of(&result).contains("Platform completion is unconfirmed"));
 
         let unrelated = map_asset_lock_funding_result(
-            Err(PlatformWalletError::ShieldedNoUnspentNotes),
+            domain(PlatformWalletError::ShieldedNoUnspentNotes),
             "shielded fund-from-asset-lock",
         );
         assert_eq!(

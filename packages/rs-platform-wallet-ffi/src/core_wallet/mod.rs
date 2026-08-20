@@ -4,6 +4,7 @@
 
 mod addresses;
 mod broadcast;
+pub(crate) mod lifecycle;
 mod sign_message;
 pub(crate) mod signed_payment;
 mod transaction_builder;

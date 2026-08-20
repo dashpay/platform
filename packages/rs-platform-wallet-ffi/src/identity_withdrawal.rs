@@ -35,33 +35,32 @@ pub unsafe extern "C" fn platform_wallet_withdraw_credits_with_signer(
 
     let signer_addr = signer_handle as usize;
 
-    let option =
-        PLATFORM_WALLET_STORAGE.with_item(
-            wallet_handle,
-            |wallet| -> Result<
-                Result<(), platform_wallet::PlatformWalletError>,
-                PlatformWalletFFIResult,
-            > {
-                let wallet_network = wallet.platform().network();
-                let to_address_parsed = to_address_unchecked
-                    .clone()
-                    .require_network(wallet_network)
-                    .map_err(PlatformWalletFFIResult::from)?;
-                let identity_wallet = wallet.identity().clone();
-                Ok(block_on_worker(async move {
-                    let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-                    identity_wallet
-                        .withdraw_credits_with_external_signer(
-                            &id,
-                            amount,
-                            &to_address_parsed,
-                            signer,
-                            None,
-                        )
-                        .await
-                }))
-            },
-        );
+    let option = PLATFORM_WALLET_STORAGE.with_item(
+        wallet_handle,
+        |wallet| -> Result<
+            Result<(), crate::panic_guard::GuardedError<platform_wallet::PlatformWalletError>>,
+            PlatformWalletFFIResult,
+        > {
+            let wallet_network = wallet.platform().network();
+            let to_address_parsed = to_address_unchecked
+                .clone()
+                .require_network(wallet_network)
+                .map_err(PlatformWalletFFIResult::from)?;
+            let identity_wallet = wallet.identity().clone();
+            Ok(block_on_worker(async move {
+                let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+                identity_wallet
+                    .withdraw_credits_with_external_signer(
+                        &id,
+                        amount,
+                        &to_address_parsed,
+                        signer,
+                        None,
+                    )
+                    .await
+            }))
+        },
+    );
     let inner = unwrap_option_or_return!(option);
     let result = unwrap_result_or_return!(inner);
     unwrap_result_or_return!(result);

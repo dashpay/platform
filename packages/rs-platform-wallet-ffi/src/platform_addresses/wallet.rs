@@ -138,7 +138,7 @@ pub unsafe extern "C" fn platform_address_wallet_addresses_with_balances(
 
     let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| {
         let balances = runtime().try_block_on(wallet.addresses_with_balances())?;
-        Ok::<_, platform_wallet::PlatformWalletError>(
+        Ok::<_, crate::panic_guard::FfiBoundaryError>(
             balances
                 .into_iter()
                 .map(|(address, balance)| AddressBalanceEntryFFI {

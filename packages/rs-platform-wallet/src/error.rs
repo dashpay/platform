@@ -579,30 +579,6 @@ pub enum PlatformWalletError {
 
     #[error("Shielded sub-wallet not bound: call bind_shielded first")]
     ShieldedNotBound,
-
-    /// A Rust panic that was caught at the FFI boundary and converted into an
-    /// error instead of being allowed to abort the host process.
-    ///
-    /// **Not a domain failure.** It means an internal invariant broke — an
-    /// `unwrap` on `None`, an index out of bounds, an overflow check on
-    /// network-supplied data in a debug profile — somewhere under a
-    /// `platform-wallet-ffi` entry point. Unlike the typed broadcast variants
-    /// it carries **no outcome guarantee**: it says nothing about whether a
-    /// transition reached the network, so hosts must treat it as "unknown
-    /// outcome" and reconcile against chain state rather than retrying
-    /// blindly. `0` is the panic payload plus the guarded call site.
-    ///
-    /// Constructed only by `platform-wallet-ffi`'s panic guard
-    /// (`panic_guard::FromCaughtPanicError`); nothing in this crate returns
-    /// it, and nothing should match on it to make a retry decision.
-    ///
-    /// Rendered as the bare payload: the guard composes the whole message,
-    /// starting with its machine-readable marker
-    /// (`panic_guard::FFI_PANIC_PREFIX`). Adding a `thiserror` prefix here
-    /// would push that marker off position 0 and duplicate the text on every
-    /// path that renders through `Display`.
-    #[error("{0}")]
-    InternalPanic(String),
 }
 
 /// Check whether an SDK error indicates that an InstantSend lock proof was

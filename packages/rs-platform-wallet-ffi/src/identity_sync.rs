@@ -66,10 +66,15 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_start(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        let _entered = runtime().enter();
+        // The loop's `tokio::spawn` needs a runtime in scope, so acquisition
+        // is fallible here: with no runtime there is nothing to start the
+        // identity-token loop on, and that has to be reported rather than
+        // silently skipped.
+        let _entered = runtime().checked()?.enter();
         manager.identity_sync_arc().start();
+        Ok::<(), crate::panic_guard::FfiBoundaryError>(())
     });
-    unwrap_option_or_return!(option);
+    unwrap_result_or_return!(unwrap_option_or_return!(option));
     PlatformWalletFFIResult::ok()
 }
 

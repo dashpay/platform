@@ -9,7 +9,7 @@ use crate::error::*;
 use crate::handle::*;
 use crate::platform_address_types::AddressSyncConfigFFI;
 use crate::runtime::{run_on_big_stack_thread, runtime};
-use crate::{check_ptr, unwrap_option_or_return};
+use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 
 /// Flattened sync metrics for one wallet result in a platform-address sync pass.
 #[repr(C)]
@@ -82,10 +82,15 @@ pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_start(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        let _entered = runtime().enter();
+        // The loop's `tokio::spawn` needs a runtime in scope, so acquisition
+        // is fallible here: with no runtime there is nothing to start the
+        // platform-address loop on, and that has to be reported rather than
+        // silently skipped.
+        let _entered = runtime().checked()?.enter();
         manager.platform_address_sync_arc().start();
+        Ok::<(), crate::panic_guard::FfiBoundaryError>(())
     });
-    unwrap_option_or_return!(option);
+    unwrap_result_or_return!(unwrap_option_or_return!(option));
     PlatformWalletFFIResult::ok()
 }
 
@@ -199,21 +204,23 @@ pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_sync_now(
         // limitation (rust-lang/rust issue #100013) against
         // `block_on_worker`'s `Send + 'static` bounds.
         run_on_big_stack_thread(|| {
-            // `raw()`: a panic in this pass is already converted into an
-            // `io::Error` by `run_on_big_stack_thread`'s join, which the
-            // `Err` arm below turns into ErrorWalletOperation.
-            runtime()
-                .raw()
-                .block_on(manager.platform_address_sync().sync_now());
+            // Guarded on the big-stack thread's own side: a panic in this pass
+            // is converted by `run_on_big_stack_thread`'s join, and a runtime
+            // that will not build is reported by the inner `block_on`.
+            // `try_block_on`, not `block_on`: `PlatformWalletFFIResult` owns a
+            // raw `*mut c_char` and so is not `Send`, and this value has to
+            // cross back off the big-stack thread. `FfiBoundaryError` is.
+            runtime().try_block_on(manager.platform_address_sync().sync_now())
         })
     });
-    let spawn_result = unwrap_option_or_return!(option);
-    if let Err(e) = spawn_result {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("failed to spawn big-stack thread for address sync: {e}"),
-        );
-    }
+    let pass_result = unwrap_option_or_return!(option);
+    // Two boundary-only layers: the outer is the thread (refused spawn / caught
+    // panic), the inner is runtime acquisition. Both are returned verbatim —
+    // their messages already carry the matching marker at position 0. The old
+    // `format!("failed to spawn big-stack thread for address sync: {e}")` here
+    // pushed that marker off position 0 on the panic path, which is exactly the
+    // classification hosts are told to key on (dashpay/platform#4424 review).
+    unwrap_result_or_return!(unwrap_result_or_return!(pass_result));
     PlatformWalletFFIResult::ok()
 }
 
@@ -234,6 +241,10 @@ pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_reset(
         runtime().block_on(manager.reset_platform_address_sync_state())
     });
     let result = unwrap_option_or_return!(option);
+    // Peel the FFI-local outer failure off first: the generic arm below adds
+    // `reset_platform_address_sync_state failed: ` context, which would push a
+    // caught panic's marker off position 0.
+    let result = unwrap_result_or_return!(crate::panic_guard::peel_boundary(result));
     if let Err(e) = result {
         // Mirrors `platform_wallet_manager_shielded_clear`: an incomplete
         // drain is surfaced with its own code so the host can distinguish

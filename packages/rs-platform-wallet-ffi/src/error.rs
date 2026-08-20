@@ -690,17 +690,19 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // rides `NotFound` rather than spending a fifth marketplace
             // code hosts would handle identically.
             PlatformWalletError::DpnsNameNotFound { .. } => PlatformWalletFFIResultCode::NotFound,
-            // A panic caught below an entry point by `crate::panic_guard` and
-            // converted into a value instead of being allowed to abort the
-            // host. It rides the crate's GENERIC code deliberately: a panic
-            // proves nothing about whether the operation reached the network,
-            // so it must not borrow any of the codes above that carry a
-            // retry/outcome contract. The message keeps
-            // `panic_guard::FFI_PANIC_PREFIX` at position 0, so a host (or a
-            // log grep) can still separate it from an ordinary code-6 failure.
-            PlatformWalletError::InternalPanic(..) => {
-                PlatformWalletFFIResultCode::ErrorWalletOperation
-            }
+            // NOTE: a panic caught below an entry point is deliberately NOT a
+            // variant of this enum, so it never reaches this match at all. It
+            // rides `crate::panic_guard::FfiBoundaryError` — an FFI-LOCAL OUTER
+            // result — which every entry point intercepts before reaching here,
+            // and which converts straight to `ErrorWalletOperation` with its
+            // `FFI_PANIC_PREFIX` still at position 0. Folding it into a domain
+            // variant instead would (a) hand this table a value with no
+            // retry/outcome meaning to classify, (b) let the arms below re-code
+            // or re-prefix a message hosts are told to key on, and (c) add a
+            // variant to a public, non-`#[non_exhaustive]` enum in the
+            // lower-level `platform-wallet` crate — a source break for every
+            // downstream exhaustive match (dashpay/platform#4424 review).
+            //
             // NOTE: `MessageSigningFailed` is deliberately NOT matched, so it
             // falls to the `ErrorUnknown` catch-all below. Its causes are
             // internal invariant breaks (a public key that does not own the

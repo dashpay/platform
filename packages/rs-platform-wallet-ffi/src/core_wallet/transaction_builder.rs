@@ -1,3 +1,4 @@
+use crate::core_wallet::lifecycle::lifecycle_gate_or_release;
 use crate::core_wallet_types::OutPointFFI;
 use crate::error::*;
 use crate::handle::{Handle, CORE_SIGNED_TRANSACTION_STORAGE, PLATFORM_WALLET_STORAGE};
@@ -165,11 +166,11 @@ pub unsafe extern "C" fn core_wallet_tx_builder_finalize(
     // the signer await, never around it: holding it across an open signing prompt
     // would stall this wallet's teardown for as long as the user takes, and the
     // check makes that unnecessary.
-    let (_lifecycle, wallet_is_live) = unwrap_result_or_return!(runtime().try_block_on(async {
-        let gate = wallet.core().generation_payment_guard().await;
-        let live = wallet.core().is_current_generation().await;
-        (gate, live)
-    }));
+    let (_lifecycle, wallet_is_live) = unwrap_result_or_return!(lifecycle_gate_or_release(
+        wallet.core(),
+        wallet.core(),
+        &finalized
+    ));
     if !wallet_is_live {
         // No handle was published, so nothing would ever release this build's
         // reservation. Reconcile it here: the release is generation-bound, so on
@@ -299,11 +300,11 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
     // Deliberately acquired AFTER the signer await rather than around it: holding
     // it across an open signing prompt would stall this wallet's teardown for as
     // long as the user takes, and the check below makes that unnecessary.
-    let (_lifecycle, wallet_is_live) = unwrap_result_or_return!(runtime().try_block_on(async {
-        let gate = wallet.core().generation_payment_guard().await;
-        let live = wallet.core().is_current_generation().await;
-        (gate, live)
-    }));
+    let (_lifecycle, wallet_is_live) = unwrap_result_or_return!(lifecycle_gate_or_release(
+        wallet.core(),
+        wallet.core(),
+        &finalized
+    ));
     if !wallet_is_live {
         // Nothing was registered, so no token would ever release this build's
         // reservation. Reconcile it here: the release is generation-bound, so on
@@ -777,6 +778,11 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_inputs_from_outpoints(
         Ok::<_, String>(())
     });
 
+    // Peel the FFI-local outer failure off first. This is one of the three
+    // call sites the review named: `add_inputs_from_outpoints failed: ` would
+    // otherwise be prepended to a caught panic, pushing its marker off
+    // position 0 (dashpay/platform#4424 review).
+    let result = unwrap_result_or_return!(crate::panic_guard::peel_boundary(result));
     match result {
         Ok(()) => PlatformWalletFFIResult::ok(),
         Err(e) => PlatformWalletFFIResult::err(

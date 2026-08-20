@@ -553,8 +553,19 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
         };
 
         if start_result.is_ok() {
-            let _guard = runtime().enter();
-            spv.spawn_run_loop();
+            // `start_result` being `Ok` means `block_on_worker` already
+            // acquired the runtime, so this cannot fail; match rather than
+            // unwrap so a future refactor that breaks that coupling reports
+            // instead of aborting.
+            match runtime().checked() {
+                Ok(rt) => {
+                    let _guard = rt.enter();
+                    spv.spawn_run_loop();
+                }
+                Err(error) => {
+                    tracing::error!(%error, "SPV started but its run loop could not be spawned");
+                }
+            }
         }
 
         start_result

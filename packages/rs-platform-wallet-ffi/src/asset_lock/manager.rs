@@ -86,7 +86,7 @@ pub unsafe extern "C" fn asset_lock_manager_list_tracked_locks(
                 }
             })
             .collect();
-        Ok::<_, platform_wallet::PlatformWalletError>(entries)
+        Ok::<_, crate::panic_guard::FfiBoundaryError>(entries)
     });
     let entries = unwrap_result_or_return!(unwrap_option_or_return!(option));
 

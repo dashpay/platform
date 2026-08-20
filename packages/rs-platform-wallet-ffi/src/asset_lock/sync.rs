@@ -132,6 +132,9 @@ pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
             );
         }
     };
+    // Peel the FFI-local outer failure off first: the arm below adds context
+    // around the error, which would push a caught panic's marker off position 0.
+    let result = unwrap_result_or_return!(crate::panic_guard::peel_boundary(result));
     match result {
         Ok(_) => {
             tracing::info!(
