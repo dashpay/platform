@@ -89,6 +89,35 @@ pub struct LoadDegradation {
     pub unimplemented_rows: u32,
 }
 
+impl LoadDegradation {
+    /// Fold another read's tally into this one.
+    ///
+    /// The single owner of the two field invariants — `total` is the sum of
+    /// `by_site`, `degraded` is `!by_site.is_empty()` — so no caller
+    /// re-derives them and drifts.
+    pub(crate) fn merge(&mut self, other: Self) {
+        let mut by_site = std::mem::take(&mut self.by_site);
+        for (site, count) in other.by_site {
+            let slot = by_site.entry(site).or_insert(0);
+            *slot = slot.saturating_add(count);
+        }
+        let unimplemented_rows = self
+            .unimplemented_rows
+            .saturating_add(other.unimplemented_rows);
+        *self = Self::from_counts(by_site, unimplemented_rows);
+    }
+
+    /// Derive the invariant fields from the raw counters.
+    fn from_counts(by_site: BTreeMap<LoadSite, u32>, unimplemented_rows: u32) -> Self {
+        Self {
+            degraded: !by_site.is_empty(),
+            total: by_site.values().copied().fold(0u32, u32::saturating_add),
+            by_site,
+            unimplemented_rows,
+        }
+    }
+}
+
 /// Where a degraded site fired, as structured log fields.
 ///
 /// `account_type` is `dyn Debug` so this stays free of the wallet types;
@@ -202,13 +231,7 @@ impl LoadCtx {
 
     /// Snapshot the counters accumulated so far.
     pub fn degradation(&self) -> LoadDegradation {
-        let by_site = self.counts.borrow().clone();
-        LoadDegradation {
-            degraded: !by_site.is_empty(),
-            total: by_site.values().copied().fold(0u32, u32::saturating_add),
-            by_site,
-            unimplemented_rows: self.unimplemented_rows.get(),
-        }
+        LoadDegradation::from_counts(self.counts.borrow().clone(), self.unimplemented_rows.get())
     }
 
     fn count(&self, site: LoadSite, occurrences: u32) {
@@ -286,6 +309,53 @@ mod tests {
         let snapshot = ctx.degradation();
         assert!(snapshot.degraded);
         assert_eq!(snapshot.by_site.get(&LoadSite::OrphanedUtxoOwner), Some(&1));
+    }
+
+    #[test]
+    fn merge_re_derives_the_invariants_from_the_folded_counters() {
+        let first = LoadCtx::recovery();
+        first
+            .tolerate(
+                LoadSite::ChainLockBlob,
+                WalletStorageError::blob_decode("one"),
+            )
+            .expect("recovery must tolerate");
+        first.add_unimplemented_rows(3);
+        let second = LoadCtx::recovery();
+        second
+            .tolerate(
+                LoadSite::ChainLockBlob,
+                WalletStorageError::blob_decode("two"),
+            )
+            .expect("recovery must tolerate");
+        second
+            .tolerate(
+                LoadSite::UnownedIdentityHasRegistrationIndex,
+                WalletStorageError::blob_decode("three"),
+            )
+            .expect("recovery must tolerate");
+        second.add_unimplemented_rows(4);
+
+        let mut merged = first.degradation();
+        merged.merge(second.degradation());
+
+        assert!(merged.degraded);
+        assert_eq!(merged.total, 3, "total is the sum of by_site");
+        assert_eq!(merged.by_site.get(&LoadSite::ChainLockBlob), Some(&2));
+        assert_eq!(merged.unimplemented_rows, 7);
+    }
+
+    #[test]
+    fn merging_only_unimplemented_rows_keeps_the_snapshot_clean() {
+        let rows_only = LoadCtx::strict();
+        rows_only.add_unimplemented_rows(9);
+
+        let mut merged = LoadDegradation::default();
+        merged.merge(rows_only.degradation());
+
+        assert!(!merged.degraded);
+        assert_eq!(merged.total, 0);
+        assert_eq!(merged.unimplemented_rows, 9);
     }
 
     #[test]

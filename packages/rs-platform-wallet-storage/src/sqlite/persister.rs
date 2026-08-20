@@ -379,23 +379,10 @@ impl SqlitePersister {
     /// Fold another read's tally into the current snapshot, for the reads
     /// that run outside `load()` and so must not reset it.
     fn merge_load_degradation(&self, degradation: LoadDegradation) {
-        let mut slot = self
-            .last_load_degradation
+        self.last_load_degradation
             .lock()
-            .unwrap_or_else(|p| p.into_inner());
-        for (site, count) in degradation.by_site {
-            let entry = slot.by_site.entry(site).or_insert(0);
-            *entry = entry.saturating_add(count);
-        }
-        slot.total = slot
-            .by_site
-            .values()
-            .copied()
-            .fold(0u32, u32::saturating_add);
-        slot.degraded = !slot.by_site.is_empty();
-        slot.unimplemented_rows = slot
-            .unimplemented_rows
-            .saturating_add(degradation.unimplemented_rows);
+            .unwrap_or_else(|p| p.into_inner())
+            .merge(degradation);
     }
 
     /// `true` when the last `load()` tolerated at least one inconsistency.
