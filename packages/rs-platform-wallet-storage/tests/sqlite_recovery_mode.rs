@@ -347,6 +347,117 @@ fn corrupt_shielded_viewing_key_row_is_skipped_in_recovery() {
     assert_only_site(&persister, LoadSite::ShieldedViewingKeyRow, 1);
 }
 
+// ── (g) unowned identity carrying a registration index ──────────────────
+
+/// Plant an identity with no owning wallet that nonetheless claims a
+/// position within one — a row that contradicts itself.
+fn seed_self_contradictory_unowned_identity(persister: &SqlitePersister, identity_id: &[u8; 32]) {
+    use platform_wallet::changeset::{IdentityChangeSet, IdentityEntry};
+    use platform_wallet::wallet::identity::IdentityStatus;
+    let id = dpp::prelude::Identifier::from(*identity_id);
+    let mut identities = IdentityChangeSet::default();
+    identities.identities.insert(
+        id,
+        IdentityEntry {
+            id,
+            balance: 0,
+            revision: 0,
+            // No owning wallet, yet a position within one.
+            identity_index: Some(4),
+            last_updated_balance_block_time: None,
+            last_synced_keys_block_time: None,
+            dpns_names: Vec::new(),
+            contested_dpns_names: Vec::new(),
+            status: IdentityStatus::Unknown,
+            wallet_id: None,
+            dashpay_profile: None,
+            dashpay_payments: Default::default(),
+            contact_profiles: Default::default(),
+            ignored_senders: Default::default(),
+        },
+    );
+    persister
+        .store(
+            [0u8; 32],
+            PlatformWalletChangeSet {
+                identities: Some(identities),
+                ..Default::default()
+            },
+        )
+        .expect("seed unowned identity carrying a registration index");
+}
+
+#[test]
+fn unowned_identity_with_registration_index_is_fatal_under_strict() {
+    let identity_id = [0x5Au8; 32];
+    let (persister, _tmp, _path) = fresh_persister();
+    seed_self_contradictory_unowned_identity(&persister, &identity_id);
+
+    let err = persister
+        .load_unowned_identities()
+        .expect_err("a self-contradictory identity row must not be served under strict");
+    assert!(
+        matches!(
+            err,
+            WalletStorageError::UnownedIdentityHasRegistrationIndex {
+                identity_index: 4,
+                ..
+            }
+        ),
+        "expected UnownedIdentityHasRegistrationIndex, got {err:?}"
+    );
+}
+
+#[test]
+fn unowned_identity_with_registration_index_is_tolerated_in_recovery() {
+    let identity_id = [0x5Bu8; 32];
+    let (persister, _tmp, _path) = fresh_recovery_persister(|strict| {
+        seed_self_contradictory_unowned_identity(strict, &identity_id)
+    });
+
+    let unowned = persister
+        .load_unowned_identities()
+        .expect("recovery must return the identity anyway");
+    assert!(
+        unowned.contains_key(&dpp::prelude::Identifier::from(identity_id)),
+        "the identity must still be reachable for rescue"
+    );
+    assert_only_site(&persister, LoadSite::UnownedIdentityRegistrationIndex, 1);
+}
+
+#[test]
+fn load_unowned_identities_adds_to_the_load_snapshot_instead_of_replacing_it() {
+    let wallet = wid(0x2C);
+    let identity_id = [0x5Cu8; 32];
+    let (persister, _tmp, _path) = fresh_recovery_persister(|strict| {
+        seed_corrupt_chain_lock(strict, &wallet);
+        seed_self_contradictory_unowned_identity(strict, &identity_id);
+    });
+
+    persister.load().expect("recovery load");
+    persister
+        .load_unowned_identities()
+        .expect("recovery unowned read");
+
+    let degradation = persister.last_load_degradation();
+    assert_eq!(
+        degradation.by_site.get(&LoadSite::ChainLockBlob).copied(),
+        Some(1),
+        "the load()'s own tally must survive: {:?}",
+        degradation.by_site
+    );
+    assert_eq!(
+        degradation
+            .by_site
+            .get(&LoadSite::UnownedIdentityRegistrationIndex)
+            .copied(),
+        Some(1),
+        "the unowned read must fold in: {:?}",
+        degradation.by_site
+    );
+    assert_eq!(degradation.total, 2);
+}
+
 // ── flag semantics ──────────────────────────────────────────────────────
 
 #[test]

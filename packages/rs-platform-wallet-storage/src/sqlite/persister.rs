@@ -18,7 +18,7 @@ use crate::sqlite::backup::{self, BackupKind};
 use crate::sqlite::buffer::Buffer;
 use crate::sqlite::config::{FlushMode, LoadPolicy, SqlitePersisterConfig, Synchronous};
 use crate::sqlite::error::{AutoBackupOperation, WalletStorageError};
-use crate::sqlite::load_ctx::{LoadCtx, LoadDegradation};
+use crate::sqlite::load_ctx::{LoadCtx, LoadDegradation, LoadSite};
 use crate::sqlite::reports::{CommitReport, DeleteWalletReport};
 use crate::sqlite::schema;
 use crate::sqlite::util::permissions::{apply_secure_permissions, precreate_secure};
@@ -366,6 +366,28 @@ impl SqlitePersister {
             .unwrap_or_else(|p| p.into_inner()) = degradation;
     }
 
+    /// Fold another read's tally into the current snapshot, for the reads
+    /// that run outside `load()` and so must not reset it.
+    fn merge_load_degradation(&self, degradation: LoadDegradation) {
+        let mut slot = self
+            .last_load_degradation
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        for (site, count) in degradation.by_site {
+            let entry = slot.by_site.entry(site).or_insert(0);
+            *entry = entry.saturating_add(count);
+        }
+        slot.total = slot
+            .by_site
+            .values()
+            .copied()
+            .fold(0u32, u32::saturating_add);
+        slot.degraded = !slot.by_site.is_empty();
+        slot.unimplemented_rows = slot
+            .unimplemented_rows
+            .saturating_add(degradation.unimplemented_rows);
+    }
+
     /// `true` when the last `load()` tolerated at least one inconsistency.
     pub fn is_degraded(&self) -> bool {
         self.last_load_degradation
@@ -542,6 +564,17 @@ impl SqlitePersister {
     /// Keys are folded in exactly as `load()` does for wallet-owned
     /// identities, so a returned `ManagedIdentity` is usable without a
     /// second call. Tombstoned identities are omitted.
+    ///
+    /// # Errors
+    ///
+    /// [`WalletStorageError::UnownedIdentityHasRegistrationIndex`] when a
+    /// row claims both "no owning wallet" and a position within one. Under
+    /// [`LoadPolicy::Recovery`](crate::LoadPolicy) it is counted and the
+    /// identity is returned anyway.
+    ///
+    /// Its tally is *added* to the snapshot from the last `load()` rather
+    /// than replacing it, so [`last_load_degradation`](Self::last_load_degradation)
+    /// reads as "since the last `load()`".
     pub fn load_unowned_identities(
         &self,
     ) -> Result<BTreeMap<Identifier, ManagedIdentity>, WalletStorageError> {
@@ -552,19 +585,22 @@ impl SqlitePersister {
         let state = schema::identities::load_prekeyed(&conn, &UNOWNED_SCOPE, &ctx)?;
         // An unowned identity carries no registration index, so it lands
         // in `out_of_wallet_identities`. A row that somehow holds one is
-        // self-contradictory (an index is a position WITHIN a wallet);
-        // surface it rather than silently dropping it.
+        // self-contradictory (an index is a position WITHIN a wallet).
         use dpp::identity::accessors::IdentityGettersV0;
         let mut unowned = state.out_of_wallet_identities;
         if let Some(indexed) = state.wallet_identities.get(&UNOWNED_SCOPE) {
-            for managed in indexed.values() {
-                tracing::warn!(
-                    identity_id = %hex::encode(managed.identity.id().to_buffer()),
-                    "unowned identity carries a registration index; returning it anyway"
-                );
+            for (identity_index, managed) in indexed {
+                ctx.tolerate(
+                    LoadSite::UnownedIdentityRegistrationIndex,
+                    WalletStorageError::UnownedIdentityHasRegistrationIndex {
+                        identity_id: managed.identity.id().to_buffer(),
+                        identity_index: *identity_index,
+                    },
+                )?;
                 unowned.insert(managed.identity.id(), managed.clone());
             }
         }
+        self.merge_load_degradation(ctx.degradation());
         Ok(unowned)
     }
 

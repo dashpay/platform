@@ -14,7 +14,7 @@ use {platform_wallet::changeset::IdentityEntry, rusqlite::Connection};
 
 use super::wallet_id_to_param;
 use crate::sqlite::error::WalletStorageError;
-use crate::sqlite::load_ctx::LoadCtx;
+use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
 use crate::sqlite::schema::blob;
 use crate::sqlite::schema::blob::impl_persistable_blob;
 
@@ -360,23 +360,26 @@ pub fn ensure_exists(
 /// are populated at load time — the FFI persister's pre-keyed shape,
 /// with no separate changeset layered on afterwards.
 ///
-/// Entries route by owner `identity_id` across BOTH buckets. An owner
-/// absent from the loaded set is acceptable ONLY when it names a
-/// known-tombstoned identity (`tombstoned`) — its rows are logical-delete
-/// orphans, skipped and summarised once per collection. Any other miss is
-/// corruption or a wallet-scope mismatch and returns
-/// [`WalletStorageError::OrphanedIdentityEntry`] rather than silently
-/// dropping live key / contact state. Only key `upserts` and the
-/// `sent` / `incoming` / `established` maps are routed; `removed_*`
-/// (insert-only feed) and `ignored` / `unignored` (restored in the
-/// identity reader from the `ignored_senders` table) are skipped. No
+/// Entries route by owner `identity_id` across BOTH buckets. Only key
+/// `upserts` and the `sent` / `incoming` / `established` maps are routed;
+/// `removed_*` (insert-only feed) and `ignored` / `unignored` (restored in
+/// the identity reader from the `ignored_senders` table) are skipped. No
 /// `Network` needed — key insert is network-independent.
+///
+/// # Errors
+///
+/// [`WalletStorageError::OrphanedIdentityEntry`] when an entry's owner is
+/// absent from the loaded set. A known-tombstoned owner is the one case
+/// [`LoadPolicy::Recovery`](crate::LoadPolicy) forgives: its rows are
+/// logical-delete leftovers, skipped and summarised once per collection.
+/// Under `Strict` even those abort, because "the owner is gone" is exactly
+/// the state that silently drops live key / contact material.
 pub fn merge_contacts_and_keys(
     state: &mut IdentityManagerStartState,
     contacts: ContactChangeSet,
     identity_keys: IdentityKeysChangeSet,
     tombstoned: &HashSet<Identifier>,
-    _ctx: &LoadCtx,
+    ctx: &LoadCtx,
 ) -> Result<(), WalletStorageError> {
     // One transient id → &mut ManagedIdentity view over both buckets so
     // routing is O(1) per entry rather than a per-entry bucket scan. The
@@ -391,82 +394,98 @@ pub fn merge_contacts_and_keys(
         }
     }
 
-    let mut skipped_keys = 0usize;
-    for (_key, entry) in identity_keys.upserts {
-        match by_id.get_mut(&entry.identity_id) {
-            Some(managed) => managed.identity.add_public_key(entry.public_key),
-            None if tombstoned.contains(&entry.identity_id) => skipped_keys += 1,
+    route_by_owner(
+        identity_keys
+            .upserts
+            .into_values()
+            .map(|entry| (entry.identity_id, entry.public_key)),
+        &mut by_id,
+        tombstoned,
+        ctx,
+        "identity_keys",
+        |managed, key| managed.identity.add_public_key(key),
+    )?;
+    route_by_owner(
+        contacts
+            .sent_requests
+            .into_iter()
+            .map(|(key, entry)| (key.owner_id, entry.request)),
+        &mut by_id,
+        tombstoned,
+        ctx,
+        "sent_contact_requests",
+        |managed, request| managed.apply_sent_contact_request(request),
+    )?;
+    route_by_owner(
+        contacts
+            .incoming_requests
+            .into_iter()
+            .map(|(key, entry)| (key.owner_id, entry.request)),
+        &mut by_id,
+        tombstoned,
+        ctx,
+        "incoming_contact_requests",
+        |managed, request| managed.apply_incoming_contact_request(request),
+    )?;
+    route_by_owner(
+        contacts
+            .established
+            .into_iter()
+            .map(|(key, established)| (key.owner_id, established)),
+        &mut by_id,
+        tombstoned,
+        ctx,
+        "established_contacts",
+        |managed, established| managed.apply_established_contact(established),
+    )?;
+
+    Ok(())
+}
+
+/// Apply one collection's entries to their owning identity.
+///
+/// An entry whose owner is loaded is applied. An entry whose owner is
+/// tombstoned is counted and, if the policy allows it, skipped — decided
+/// once after the walk rather than per entry, so a wallet with thousands of
+/// leftovers produces one log line, not thousands. Any other missing owner
+/// is fatal in both policies.
+fn route_by_owner<T>(
+    entries: impl IntoIterator<Item = (Identifier, T)>,
+    by_id: &mut HashMap<Identifier, &mut ManagedIdentity>,
+    tombstoned: &HashSet<Identifier>,
+    ctx: &LoadCtx,
+    collection: &'static str,
+    apply: impl Fn(&mut ManagedIdentity, T),
+) -> Result<(), WalletStorageError> {
+    let mut skipped = 0usize;
+    let mut first_skipped_owner: Option<Identifier> = None;
+    for (owner, payload) in entries {
+        match by_id.get_mut(&owner) {
+            Some(managed) => apply(managed, payload),
+            None if tombstoned.contains(&owner) => {
+                skipped += 1;
+                first_skipped_owner.get_or_insert(owner);
+            }
             None => {
                 return Err(WalletStorageError::OrphanedIdentityEntry {
-                    owner: entry.identity_id.to_buffer(),
+                    owner: owner.to_buffer(),
                 })
             }
         }
     }
-    if skipped_keys > 0 {
+    if let Some(owner) = first_skipped_owner {
+        ctx.tolerate(
+            LoadSite::TombstonedIdentityOrphan,
+            WalletStorageError::OrphanedIdentityEntry {
+                owner: owner.to_buffer(),
+            },
+        )?;
         tracing::warn!(
-            count = skipped_keys,
-            "skipped identity keys of tombstoned identities during rehydration merge"
+            collection,
+            count = skipped,
+            "skipped rehydration entries whose owning identity is tombstoned"
         );
     }
-
-    let mut skipped_sent = 0usize;
-    for (key, entry) in contacts.sent_requests {
-        match by_id.get_mut(&key.owner_id) {
-            Some(managed) => managed.apply_sent_contact_request(entry.request),
-            None if tombstoned.contains(&key.owner_id) => skipped_sent += 1,
-            None => {
-                return Err(WalletStorageError::OrphanedIdentityEntry {
-                    owner: key.owner_id.to_buffer(),
-                })
-            }
-        }
-    }
-    if skipped_sent > 0 {
-        tracing::warn!(
-            count = skipped_sent,
-            "skipped sent contact requests of tombstoned identities during rehydration merge"
-        );
-    }
-
-    let mut skipped_incoming = 0usize;
-    for (key, entry) in contacts.incoming_requests {
-        match by_id.get_mut(&key.owner_id) {
-            Some(managed) => managed.apply_incoming_contact_request(entry.request),
-            None if tombstoned.contains(&key.owner_id) => skipped_incoming += 1,
-            None => {
-                return Err(WalletStorageError::OrphanedIdentityEntry {
-                    owner: key.owner_id.to_buffer(),
-                })
-            }
-        }
-    }
-    if skipped_incoming > 0 {
-        tracing::warn!(
-            count = skipped_incoming,
-            "skipped incoming contact requests of tombstoned identities during rehydration merge"
-        );
-    }
-
-    let mut skipped_established = 0usize;
-    for (key, established) in contacts.established {
-        match by_id.get_mut(&key.owner_id) {
-            Some(managed) => managed.apply_established_contact(established),
-            None if tombstoned.contains(&key.owner_id) => skipped_established += 1,
-            None => {
-                return Err(WalletStorageError::OrphanedIdentityEntry {
-                    owner: key.owner_id.to_buffer(),
-                })
-            }
-        }
-    }
-    if skipped_established > 0 {
-        tracing::warn!(
-            count = skipped_established,
-            "skipped established contacts of tombstoned identities during rehydration merge"
-        );
-    }
-
     Ok(())
 }
 
@@ -1053,7 +1072,7 @@ mod tests {
     /// entry whose owner is a known-tombstoned identity: those orphaned rows
     /// are the expected, self-explained fallout of a logical delete.
     #[test]
-    fn load_prekeyed_skips_orphaned_keys_of_tombstoned_owner() {
+    fn load_prekeyed_skips_orphaned_keys_of_tombstoned_owner_in_recovery() {
         use platform_wallet::changeset::IdentityKeysChangeSet;
 
         let mut conn = migrated_conn();
@@ -1077,8 +1096,15 @@ mod tests {
         removed.removed.insert(y);
         apply_in_tx(&mut conn, &a, &removed);
 
-        let state = load_prekeyed(&conn, &a, &LoadCtx::strict())
-            .expect("tombstoned-owner orphan must be skipped, not fatal");
+        let strict = load_prekeyed(&conn, &a, &LoadCtx::strict())
+            .expect_err("a tombstoned owner's leftover key must abort a strict load");
+        assert!(
+            matches!(strict, WalletStorageError::OrphanedIdentityEntry { .. }),
+            "expected OrphanedIdentityEntry, got {strict:?}"
+        );
+
+        let state = load_prekeyed(&conn, &a, &LoadCtx::recovery())
+            .expect("tombstoned-owner orphan must be skipped in recovery, not fatal");
         assert!(
             state
                 .wallet_identities
@@ -1101,7 +1127,7 @@ mod tests {
     /// NULL-safe `IS` is what closes it, and this test is what holds it
     /// closed: revert that predicate to `= ?1` and this fails.
     #[test]
-    fn load_prekeyed_skips_orphaned_keys_of_tombstoned_unowned_owner() {
+    fn load_prekeyed_skips_orphaned_keys_of_tombstoned_unowned_owner_in_recovery() {
         use platform_wallet::changeset::IdentityKeysChangeSet;
 
         let mut conn = migrated_conn();
@@ -1136,8 +1162,8 @@ mod tests {
             "the orphaned key row must actually exist, or this test proves nothing"
         );
 
-        let state = load_prekeyed(&conn, &unowned, &LoadCtx::strict())
-            .expect("a tombstoned UNOWNED owner's orphan key must be skipped, not fatal");
+        let state = load_prekeyed(&conn, &unowned, &LoadCtx::recovery())
+            .expect("a tombstoned UNOWNED owner's orphan key must be skipped in recovery");
         assert!(
             state.out_of_wallet_identities.is_empty(),
             "the tombstoned identity must not surface in the loaded state"
