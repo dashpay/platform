@@ -486,6 +486,7 @@ fn route_by_owner<T>(
             },
         )?;
         tracing::warn!(
+            site = LoadSite::TombstonedIdentityOrphan.as_str(),
             collection,
             count = skipped,
             "skipped rehydration entries whose owning identity is tombstoned"

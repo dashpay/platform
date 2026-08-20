@@ -19,7 +19,7 @@ use platform_wallet::wallet::provider_key_at_index::{
     insert_platform_node_pool_entry, PlatformNodePoolError,
 };
 
-use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
+use crate::sqlite::load_ctx::{LoadCtx, LoadSite, SiteCoords};
 use crate::sqlite::schema::accounts::{self, AccountManifest};
 use crate::sqlite::schema::core_pool::{self, OwningAccount};
 use crate::WalletStorageError;
@@ -343,14 +343,14 @@ pub fn apply_persisted_core_state(
         if !orphaned_owners.is_empty() {
             ctx.note_degraded(
                 LoadSite::OrphanedUtxoOwner,
-                &format!(
-                    "wallet {} routed {} restored UTXO(s) or used address(es) to its first \
-                     funds account: their owning accounts {:?} are not funds accounts of this \
-                     wallet; the per-account view re-warms on the next sync",
-                    hex::encode(wallet_id),
-                    orphaned_owners.len(),
-                    orphaned_owners
-                ),
+                SiteCoords {
+                    wallet_id,
+                    account_type: &orphaned_owners,
+                    affected: orphaned_owners.len(),
+                },
+                "restored UTXOs or used addresses were routed to the first funds account \
+                 because their own owning accounts are not funds accounts of this wallet; \
+                 the per-account view re-warms on the next sync",
             );
         }
 
@@ -597,13 +597,13 @@ fn extend_pools_for_restored_addresses(
         if !unresolved.is_empty() {
             ctx.note_degraded(
                 LoadSite::UnresolvedUtxoAddress,
-                &format!(
-                    "wallet {} left {} restored address(es) unresolved against the {:?} account \
-                     xpub; they re-warm on the next full sync and the balance total is exact",
-                    hex::encode(wallet_id),
-                    unresolved.len(),
-                    account_type
-                ),
+                SiteCoords {
+                    wallet_id,
+                    account_type: &account_type,
+                    affected: unresolved.len(),
+                },
+                "restored addresses did not resolve against this account's xpub; they re-warm \
+                 on the next full sync and the balance total is exact",
             );
         }
     }
@@ -657,7 +657,12 @@ fn extend_pools_for_restored_addresses(
                         LoadSite::RehydrationEnsureDerived,
                         WalletStorageError::RehydrationEnsureDerivedFailed { index: deepest },
                     )?;
-                    warn_deferred_pool(wallet_id, &account_type, pool.pool_type);
+                    warn_deferred_pool(
+                        LoadSite::RehydrationEnsureDerived,
+                        wallet_id,
+                        &account_type,
+                        pool.pool_type,
+                    );
                 }
             }
         }
@@ -716,7 +721,12 @@ fn extend_pools_for_restored_addresses(
                         cap: MAX_REHYDRATION_GAP_REFILL,
                     },
                 )?;
-                warn_deferred_pool(wallet_id, &account_type, pool.pool_type);
+                warn_deferred_pool(
+                    LoadSite::RehydrationGapLimit,
+                    wallet_id,
+                    &account_type,
+                    pool.pool_type,
+                );
                 break;
             }
 
@@ -732,7 +742,12 @@ fn extend_pools_for_restored_addresses(
                     LoadSite::RehydrationGapLimit,
                     WalletStorageError::RehydrationGapLimitFailed { source: e },
                 )?;
-                warn_deferred_pool(wallet_id, &account_type, pool.pool_type);
+                warn_deferred_pool(
+                    LoadSite::RehydrationGapLimit,
+                    wallet_id,
+                    &account_type,
+                    pool.pool_type,
+                );
                 break;
             }
         }
@@ -741,14 +756,17 @@ fn extend_pools_for_restored_addresses(
 }
 
 /// Locate a pool whose window a tolerated derivation failure left short.
-/// The failure itself is logged by [`LoadCtx::tolerate`]; this adds only
-/// the coordinates, and so fires only when the policy tolerated it.
+/// The failure itself is logged by [`LoadCtx::tolerate`]; this adds the
+/// coordinates under the same `site`, so the two records join, and fires
+/// only when the policy tolerated it.
 fn warn_deferred_pool(
+    site: LoadSite,
     wallet_id: [u8; 32],
     account_type: &AccountType,
     pool_type: key_wallet::managed_account::address_pool::AddressPoolType,
 ) {
     tracing::warn!(
+        site = site.as_str(),
         wallet_id = %hex::encode(wallet_id),
         account_type = ?account_type,
         pool_type = ?pool_type,

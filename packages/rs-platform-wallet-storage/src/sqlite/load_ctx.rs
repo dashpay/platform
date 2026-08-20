@@ -89,6 +89,16 @@ pub struct LoadDegradation {
     pub unimplemented_rows: u32,
 }
 
+/// Where a degraded site fired, as structured log fields.
+///
+/// `account_type` is `dyn Debug` so this stays free of the wallet types;
+/// `affected` is how many rows, addresses or entries the incident covers.
+pub(crate) struct SiteCoords<'a> {
+    pub wallet_id: [u8; 32],
+    pub account_type: &'a dyn fmt::Debug,
+    pub affected: usize,
+}
+
 /// Per-`load()` policy + counters, created on the loading thread's stack.
 ///
 /// Not stored on the persister (which keeps only the resulting
@@ -169,11 +179,16 @@ impl LoadCtx {
     ///
     /// For sites whose signal cannot distinguish corruption from a healthy
     /// wallet, so failing the load would brick legitimate wallets.
-    pub(crate) fn note_degraded(&self, site: LoadSite, cause: &dyn Display) {
+    /// `coords` and `cause` land as fields of one record, so nothing has to
+    /// be joined against a neighbouring line to know where it happened.
+    pub(crate) fn note_degraded(&self, site: LoadSite, coords: SiteCoords<'_>, cause: &str) {
         self.count(site, 1);
         tracing::warn!(
             site = site.as_str(),
-            cause = %cause,
+            wallet_id = %hex::encode(coords.wallet_id),
+            account_type = ?coords.account_type,
+            affected = coords.affected,
+            cause,
             "load degraded: an ambiguous persisted inconsistency was accepted as-is"
         );
     }
@@ -259,7 +274,15 @@ mod tests {
     #[test]
     fn note_degraded_counts_under_strict_too() {
         let ctx = LoadCtx::strict();
-        ctx.note_degraded(LoadSite::OrphanedUtxoOwner, &"ambiguous owner");
+        ctx.note_degraded(
+            LoadSite::OrphanedUtxoOwner,
+            SiteCoords {
+                wallet_id: [7u8; 32],
+                account_type: &"Standard[0]",
+                affected: 1,
+            },
+            "ambiguous owner",
+        );
         let snapshot = ctx.degradation();
         assert!(snapshot.degraded);
         assert_eq!(snapshot.by_site.get(&LoadSite::OrphanedUtxoOwner), Some(&1));

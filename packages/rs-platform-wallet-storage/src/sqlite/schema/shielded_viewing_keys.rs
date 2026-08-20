@@ -14,13 +14,14 @@ use crate::sqlite::schema::{blob, id32};
 const VIEWING_KEY_WIDTH: usize = 96;
 
 /// Log which row was skipped. The failure itself is already logged by
-/// [`LoadCtx::tolerate`], so this adds only the coordinates needed to find
-/// the row — and therefore fires only when the policy tolerated it.
+/// [`LoadCtx::tolerate`], so this adds the coordinates needed to find the
+/// row under the same `site`, and fires only when the policy tolerated it.
 fn warn_skipped_row(row_number: usize, wallet_id: Option<&[u8]>, account_index: Option<i64>) {
     let wallet_id = wallet_id
         .map(hex::encode)
         .unwrap_or_else(|| "<unreadable>".to_string());
     tracing::warn!(
+        site = LoadSite::ShieldedViewingKeyRow.as_str(),
         row_number,
         wallet_id = %wallet_id,
         account_index = ?account_index,
