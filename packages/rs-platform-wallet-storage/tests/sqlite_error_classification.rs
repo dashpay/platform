@@ -77,34 +77,31 @@ fn sqlite_oom() -> WalletStorageError {
     ))
 }
 
-/// A stage with no derivation index must not render a placeholder — an
-/// invented index in a corruption report sends the reader to the wrong slot.
+/// A derivation failure is read by whoever has to rescue the wallet, so
+/// each variant's `Display` must state the consequence — an address that
+/// can be handed out again — and not just the step that failed.
 #[test]
-fn rehydration_derivation_display_omits_a_missing_index() {
-    let windowed = WalletStorageError::RehydrationDerivationFailed {
-        stage: "maintain_gap_limit",
-        index: None,
-        cause: "watch-only".into(),
-    }
-    .to_string();
-    assert_eq!(
-        windowed,
-        "rehydration derivation failed at maintain_gap_limit: watch-only"
-    );
-    assert!(!windowed.contains("index"));
-    assert!(!windowed.contains("None"));
+fn rehydration_derivation_display_states_the_consequence() {
+    let targeted = WalletStorageError::RehydrationEnsureDerivedFailed { index: 45 }.to_string();
+    assert!(targeted.contains("index 45"), "{targeted}");
+    assert!(targeted.contains("fresh receive address"), "{targeted}");
 
-    let targeted = WalletStorageError::RehydrationDerivationFailed {
-        stage: "ensure_derived",
-        index: Some(45),
-        cause: "no address".into(),
+    let over_cap = WalletStorageError::RehydrationGapLimitRefillTooLarge {
+        refill_target: 300_000,
+        generated: 20,
+        implied: 299_980,
+        cap: 250_000,
     }
     .to_string();
-    assert_eq!(
-        targeted,
-        "rehydration derivation failed at ensure_derived (index 45): no address"
-    );
-    assert!(!targeted.contains("Some("));
+    assert!(over_cap.contains("299980"), "{over_cap}");
+    assert!(over_cap.contains("250000"), "{over_cap}");
+    assert!(over_cap.contains("handed out again as fresh"), "{over_cap}");
+
+    let refused = WalletStorageError::RehydrationGapLimitFailed {
+        source: key_wallet::error::Error::WatchOnly,
+    }
+    .to_string();
+    assert!(refused.contains("fresh receive address"), "{refused}");
 }
 
 #[test]
@@ -278,10 +275,15 @@ fn samples() -> Vec<WalletStorageError> {
             ),
         },
         WalletStorageError::ReadOnlyRecoveryMode { operation: "store" },
-        WalletStorageError::RehydrationDerivationFailed {
-            stage: "maintain_gap_limit",
-            index: None,
-            cause: "watch-only".into(),
+        WalletStorageError::RehydrationEnsureDerivedFailed { index: 45 },
+        WalletStorageError::RehydrationGapLimitRefillTooLarge {
+            refill_target: 300_000,
+            generated: 20,
+            implied: 299_980,
+            cap: 250_000,
+        },
+        WalletStorageError::RehydrationGapLimitFailed {
+            source: key_wallet::error::Error::WatchOnly,
         },
         WalletStorageError::UsedAddressOwnerConflict {
             address: "yaddr".into(),
@@ -393,8 +395,14 @@ fn tc_p2_005_is_transient_table() {
                 (false, "rehydration_pool_type_mismatch")
             }
             WalletStorageError::ReadOnlyRecoveryMode { .. } => (false, "read_only_recovery_mode"),
-            WalletStorageError::RehydrationDerivationFailed { .. } => {
-                (false, "rehydration_derivation_failed")
+            WalletStorageError::RehydrationEnsureDerivedFailed { .. } => {
+                (false, "rehydration_ensure_derived_failed")
+            }
+            WalletStorageError::RehydrationGapLimitRefillTooLarge { .. } => {
+                (false, "rehydration_gap_limit_refill_too_large")
+            }
+            WalletStorageError::RehydrationGapLimitFailed { .. } => {
+                (false, "rehydration_gap_limit_failed")
             }
             WalletStorageError::UsedAddressOwnerConflict { .. } => {
                 (false, "used_address_owner_conflict")

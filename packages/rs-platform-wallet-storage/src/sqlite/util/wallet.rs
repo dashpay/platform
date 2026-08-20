@@ -655,11 +655,7 @@ fn extend_pools_for_restored_addresses(
                 if ensure_derived(pool, key_source, deepest).is_none() {
                     ctx.tolerate(
                         LoadSite::RehydrationEnsureDerived,
-                        WalletStorageError::RehydrationDerivationFailed {
-                            stage: "ensure_derived",
-                            index: Some(deepest),
-                            cause: "the pool produced no address at this index".to_owned(),
-                        },
+                        WalletStorageError::RehydrationEnsureDerivedFailed { index: deepest },
                     )?;
                     warn_deferred_pool(wallet_id, &account_type, pool.pool_type);
                 }
@@ -713,13 +709,11 @@ fn extend_pools_for_restored_addresses(
             if implied > MAX_REHYDRATION_GAP_REFILL {
                 ctx.tolerate(
                     LoadSite::RehydrationGapLimit,
-                    WalletStorageError::RehydrationDerivationFailed {
-                        stage: "maintain_gap_limit",
-                        index: None,
-                        cause: format!(
-                            "refilling to index {refill_target} from {generated} implies \
-                             {implied} new addresses, over the {MAX_REHYDRATION_GAP_REFILL} cap"
-                        ),
+                    WalletStorageError::RehydrationGapLimitRefillTooLarge {
+                        refill_target,
+                        generated,
+                        implied,
+                        cap: MAX_REHYDRATION_GAP_REFILL,
                     },
                 )?;
                 warn_deferred_pool(wallet_id, &account_type, pool.pool_type);
@@ -736,12 +730,7 @@ fn extend_pools_for_restored_addresses(
             if let Err(e) = pool.maintain_gap_limit(key_source) {
                 ctx.tolerate(
                     LoadSite::RehydrationGapLimit,
-                    WalletStorageError::RehydrationDerivationFailed {
-                        stage: "maintain_gap_limit",
-                        // No single slot to name: this refills a window.
-                        index: None,
-                        cause: e.to_string(),
-                    },
+                    WalletStorageError::RehydrationGapLimitFailed { source: e },
                 )?;
                 warn_deferred_pool(wallet_id, &account_type, pool.pool_type);
                 break;
@@ -2470,13 +2459,13 @@ mod tests {
         assert!(
             matches!(
                 err,
-                WalletStorageError::RehydrationDerivationFailed {
-                    stage: "maintain_gap_limit",
-                    index: None,
+                WalletStorageError::RehydrationGapLimitRefillTooLarge {
+                    implied,
+                    cap: MAX_REHYDRATION_GAP_REFILL,
                     ..
-                }
+                } if implied > MAX_REHYDRATION_GAP_REFILL
             ),
-            "the cap must report the gap-limit stage: {err:?}"
+            "the cap must report the refill it refused and the cap it applied: {err:?}"
         );
     }
 

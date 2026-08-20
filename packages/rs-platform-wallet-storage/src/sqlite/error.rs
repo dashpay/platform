@@ -447,25 +447,43 @@ pub enum WalletStorageError {
     #[error("`{operation}` is blocked: the persister is open in recovery mode (read-only)")]
     ReadOnlyRecoveryMode { operation: &'static str },
 
-    /// Rehydration could not put a restored address back into its pool at
-    /// the right derivation slot, so that address stays unmarked and could
-    /// be re-issued as a fresh receive address (address-reuse privacy leak).
-    /// `stage` names the failing step. `index` is the derivation index in
-    /// play, and is `None` for stages that have none — `maintain_gap_limit`
-    /// refills a window rather than targeting one slot, so a number there
-    /// would be invented, and an invented index in a corruption report is
-    /// worse than no index. `cause` is rendered rather than kept as a
-    /// `#[source]` because the stages disagree on type: `maintain_gap_limit`
-    /// carries an upstream `key_wallet` error while `ensure_derived` has no
-    /// error value at all, only "no address at this index".
+    /// A restored address could not be derived into its pool at the
+    /// resolved slot, so it stays unmarked and can be re-issued as a fresh
+    /// receive address (address-reuse privacy leak). `index` is the slot
+    /// the discovery probe resolved from this account's own xpub, which
+    /// the pool then failed to produce an address for.
     #[error(
-        "rehydration derivation failed at {stage}{}: {cause}",
-        index.map_or_else(String::new, |index| format!(" (index {index})"))
+        "a restored address at derivation index {index} could not be put back into its \
+         address pool, so it may be handed out again as a fresh receive address"
     )]
-    RehydrationDerivationFailed {
-        stage: &'static str,
-        index: Option<u32>,
-        cause: String,
+    RehydrationEnsureDerivedFailed { index: u32 },
+
+    /// A pool's gap-limit refill would derive more addresses than
+    /// rehydration will spend on one pool, so the window stays short and a
+    /// previously-used address inside it can be re-issued as fresh. Costed
+    /// before the refill runs, so nothing is allocated on the way out.
+    #[error(
+        "refilling an address pool to derivation index {refill_target} from {generated} \
+         implies {implied} new addresses, over the {cap} rehydration cap; the pool's window \
+         stays short, so a previously-used address in it may be handed out again as fresh"
+    )]
+    RehydrationGapLimitRefillTooLarge {
+        refill_target: u32,
+        generated: u32,
+        implied: u32,
+        cap: u32,
+    },
+
+    /// The upstream gap-limit refill itself failed, leaving the pool's
+    /// window short — a previously-used address inside it can be re-issued
+    /// as fresh.
+    #[error(
+        "an address pool's gap window could not be refilled, so a previously-used address \
+         in it may be handed out again as a fresh receive address"
+    )]
+    RehydrationGapLimitFailed {
+        #[source]
+        source: key_wallet::error::Error,
     },
 
     /// One used address resolves to two different owning accounts —
@@ -585,7 +603,9 @@ impl WalletStorageError {
             | Self::RehydrationPoolMismatch { .. }
             | Self::RehydrationPoolTypeMismatch { .. }
             | Self::ReadOnlyRecoveryMode { .. }
-            | Self::RehydrationDerivationFailed { .. }
+            | Self::RehydrationEnsureDerivedFailed { .. }
+            | Self::RehydrationGapLimitRefillTooLarge { .. }
+            | Self::RehydrationGapLimitFailed { .. }
             | Self::UsedAddressOwnerConflict { .. }
             | Self::UnownedIdentityHasRegistrationIndex { .. } => false,
         }
@@ -682,7 +702,11 @@ impl WalletStorageError {
             Self::RehydrationPoolMismatch { .. } => "rehydration_pool_mismatch",
             Self::RehydrationPoolTypeMismatch { .. } => "rehydration_pool_type_mismatch",
             Self::ReadOnlyRecoveryMode { .. } => "read_only_recovery_mode",
-            Self::RehydrationDerivationFailed { .. } => "rehydration_derivation_failed",
+            Self::RehydrationEnsureDerivedFailed { .. } => "rehydration_ensure_derived_failed",
+            Self::RehydrationGapLimitRefillTooLarge { .. } => {
+                "rehydration_gap_limit_refill_too_large"
+            }
+            Self::RehydrationGapLimitFailed { .. } => "rehydration_gap_limit_failed",
             Self::UsedAddressOwnerConflict { .. } => "used_address_owner_conflict",
             Self::UnownedIdentityHasRegistrationIndex { .. } => {
                 "unowned_identity_has_registration_index"

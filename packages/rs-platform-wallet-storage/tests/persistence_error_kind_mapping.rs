@@ -232,11 +232,22 @@ fn tc_code_004_b_fatal_variants_map_to_fatal_kind() {
             WalletStorageError::ReadOnlyRecoveryMode { operation: "store" },
         ),
         (
-            "RehydrationDerivationFailed",
-            WalletStorageError::RehydrationDerivationFailed {
-                stage: "ensure_derived",
-                index: Some(42),
-                cause: "no address at index".into(),
+            "RehydrationEnsureDerivedFailed",
+            WalletStorageError::RehydrationEnsureDerivedFailed { index: 42 },
+        ),
+        (
+            "RehydrationGapLimitRefillTooLarge",
+            WalletStorageError::RehydrationGapLimitRefillTooLarge {
+                refill_target: 300_000,
+                generated: 20,
+                implied: 299_980,
+                cap: 250_000,
+            },
+        ),
+        (
+            "RehydrationGapLimitFailed",
+            WalletStorageError::RehydrationGapLimitFailed {
+                source: key_wallet::error::Error::WatchOnly,
             },
         ),
         (
