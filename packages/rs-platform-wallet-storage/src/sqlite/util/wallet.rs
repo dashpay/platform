@@ -688,6 +688,14 @@ fn extend_pools_for_restored_addresses(
             let Some(key_source) = key_source.as_ref() else {
                 break;
             };
+            // TODO(recovery-mode): the second defensive site with no
+            // reachable seed from the storage layer, and the reason is this
+            // site's own: the `key_source` reached here is the one whose
+            // xpub already derived this pool, so a refill failure needs a
+            // key source that derives some indices and not others — not a
+            // state any persisted row can produce. Kept fail-closed for the
+            // same reason as `ensure_derived` above: a short window means a
+            // previously-used address can be re-issued as fresh.
             if let Err(e) = pool.maintain_gap_limit(key_source) {
                 ctx.tolerate(
                     LoadSite::RehydrationGapLimit,
