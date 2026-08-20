@@ -232,17 +232,20 @@ path. `PlatformWalletManager::load_from_persistor` then rehydrates the
 manager's wallet maps from that payload, reconstructing and registering
 every persisted wallet.
 
-Loading is **fail-hard**: any row that fails to decode, or a stored
-`wallet_id` that is not exactly 32 bytes, aborts the whole call with a typed
-[`WalletStorageError`](src/sqlite/error.rs)
-(`BincodeDecode` / `BlobDecode` / `InvalidWalletIdLength`). There is no
-corruption tolerance, no per-row skip, and no partial `Ok` — a corrupt
-database surfaces as an error rather than silently losing rows.
+What a failed decode or an inconsistent row does to the call is the load
+contract, stated once in [Strict loading and recovery
+mode](#strict-loading-and-recovery-mode) above — read it there. Failures
+that abort surface as a typed
+[`WalletStorageError`](src/sqlite/error.rs); the variants are documented on
+the enum rather than listed a second time here, where the list would go
+stale the next time one is added.
 
-The summary `tracing::info!` carries `wallets_seen`, `addresses_loaded`,
-`wallets_rehydrated` (the count actually rehydrated this call), and
-`wallets_pending_rehydration` (now always `0` — every seen wallet is
-rehydrated). The only deferred field is listed in `LOAD_UNIMPLEMENTED`.
+The summary `tracing::info!` reports the per-call counts plus the
+degradation snapshot. Its fields are the `info!` call in
+`SqlitePersister::load` and are deliberately not enumerated here — an
+exhaustive field list in a README drifts on the first addition.
+Persisted-but-unread areas are named in `LOAD_UNIMPLEMENTED` and
+row-counted from `LOAD_UNIMPLEMENTED_TABLES`.
 
 ### KV metadata API
 

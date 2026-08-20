@@ -370,8 +370,14 @@ marker, and height `0` is a legal confirmed height. On height-only rows,
 `finalized` is meaningful only on blob-bearing rows. A blob-bearing row always
 takes precedence over a height-only write, even when the latter reports a
 different height. `WalletStorageError::CoreTransactionEntryMismatch` detects
-typed/blob disagreement so readers can trust the blob and repair derived
-columns.
+typed/blob disagreement. The blob is authoritative and the typed columns are
+left exactly as found — **no read path writes**, in either load policy
+(pinned by `get_core_tx_record_never_writes`). The policy decides only what
+the disagreement costs: under `LoadPolicy::Strict` it aborts the load, under
+`LoadPolicy::Recovery` it is logged and counted as
+`LoadSite::CoreTransactionColumnDrift` while the blob's values are used.
+Repairing the drifted columns is a writer's job, on the next write of that
+row.
 
 - PK: `(wallet_id, txid)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
