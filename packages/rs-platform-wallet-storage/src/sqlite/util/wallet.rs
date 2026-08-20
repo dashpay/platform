@@ -1176,97 +1176,6 @@ mod tests {
     /// land `used` in the CoinJoin pool and be absent from the BIP44 pool —
     /// otherwise it stays "unused" on CoinJoin and could be re-issued as a
     /// fresh receive address (the address-reuse privacy leak).
-    /// A used address whose owning account is not one of this wallet's funds
-    /// accounts — what a masternode-operator wallet looks like, since
-    /// provider accounts sit on a non-secp256k1 curve and are not funds
-    /// accounts at all. Degraded in every policy, fatal in none.
-    #[test]
-    fn rehydration_orphaned_used_address_owner_is_degraded_not_fatal() {
-        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
-        use key_wallet::Address;
-        use std::collections::HashMap;
-
-        let wallet = Wallet::from_seed_bytes(
-            [13u8; 64],
-            Network::Testnet,
-            WalletAccountCreationOptions::Default,
-        )
-        .unwrap();
-        let manifest = manifest_for(&wallet);
-        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
-
-        // An owner this wallet has no funds account for.
-        let mut used: HashMap<Address, Option<OwningAccount>> = HashMap::new();
-        used.insert(
-            first_external_address(&wallet_info, &manifest),
-            Some(OwningAccount {
-                account_type: "provider_platform".to_string(),
-                account_index: 0,
-                user_identity_id: [0u8; 32],
-                friend_identity_id: [0u8; 32],
-            }),
-        );
-
-        let core = platform_wallet::changeset::CoreChangeSet {
-            last_processed_height: Some(1),
-            synced_height: Some(1),
-            ..Default::default()
-        };
-        let ctx = LoadCtx::strict();
-        apply_persisted_core_state(
-            &mut wallet_info,
-            &manifest,
-            &core,
-            &Default::default(),
-            &used,
-            &ctx,
-        )
-        .expect("an unroutable owner must never brick a strict load");
-
-        let degradation = ctx.degradation();
-        assert!(degradation.degraded);
-        assert_eq!(
-            degradation.by_site.get(&LoadSite::OrphanedUtxoOwner),
-            Some(&1),
-            "the unroutable owner must be counted: {:?}",
-            degradation.by_site
-        );
-    }
-
-    /// External index-0 address of the wallet's first funds account.
-    fn first_external_address(
-        wallet_info: &key_wallet::wallet::managed_wallet_info::ManagedWalletInfo,
-        manifest: &[AccountRegistrationEntry],
-    ) -> key_wallet::Address {
-        use key_wallet::bip32::DerivationPath;
-        use key_wallet::gap_limit::DEFAULT_EXTERNAL_GAP_LIMIT;
-        use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
-        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-
-        let account_type = wallet_info
-            .accounts
-            .all_funding_accounts()
-            .into_iter()
-            .next()
-            .expect("a funds account")
-            .managed_account_type()
-            .to_account_type();
-        let xpub = manifest
-            .iter()
-            .find(|e| e.account_type == account_type)
-            .map(|e| e.account_xpub)
-            .expect("funds account xpub");
-        let mut pool = AddressPool::new_without_generation(
-            DerivationPath::master(),
-            AddressPoolType::External,
-            DEFAULT_EXTERNAL_GAP_LIMIT,
-            Network::Testnet,
-        );
-        pool.generate_addresses(1, &KeySource::Public(xpub), true)
-            .unwrap();
-        pool.address_at_index(0).unwrap()
-    }
-
     #[test]
     fn rehydration_routes_used_address_to_owning_account() {
         use key_wallet::bip32::DerivationPath;
@@ -1365,6 +1274,97 @@ mod tests {
                 "the CoinJoin used address must not appear in any BIP44 pool"
             );
         }
+    }
+
+    /// A used address whose owning account is not one of this wallet's funds
+    /// accounts — what a masternode-operator wallet looks like, since provider
+    /// accounts sit on a non-secp256k1 curve and are not funds accounts at all.
+    /// Degraded in every policy, fatal in none (dashpay/platform#3968).
+    #[test]
+    fn rehydration_orphaned_used_address_owner_is_degraded_not_fatal() {
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+        use key_wallet::Address;
+        use std::collections::HashMap;
+
+        let wallet = Wallet::from_seed_bytes(
+            [13u8; 64],
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let manifest = manifest_for(&wallet);
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
+
+        // An owner this wallet has no funds account for.
+        let mut used: HashMap<Address, Option<OwningAccount>> = HashMap::new();
+        used.insert(
+            first_external_address(&wallet_info, &manifest),
+            Some(OwningAccount {
+                account_type: "provider_platform".to_string(),
+                account_index: 0,
+                user_identity_id: [0u8; 32],
+                friend_identity_id: [0u8; 32],
+            }),
+        );
+
+        let core = platform_wallet::changeset::CoreChangeSet {
+            last_processed_height: Some(1),
+            synced_height: Some(1),
+            ..Default::default()
+        };
+        let ctx = LoadCtx::strict();
+        apply_persisted_core_state(
+            &mut wallet_info,
+            &manifest,
+            &core,
+            &Default::default(),
+            &used,
+            &ctx,
+        )
+        .expect("an unroutable owner must never brick a strict load");
+
+        let degradation = ctx.degradation();
+        assert!(degradation.degraded);
+        assert_eq!(
+            degradation.by_site.get(&LoadSite::OrphanedUtxoOwner),
+            Some(&1),
+            "the unroutable owner must be counted: {:?}",
+            degradation.by_site
+        );
+    }
+
+    /// External index-0 address of the wallet's first funds account.
+    fn first_external_address(
+        wallet_info: &key_wallet::wallet::managed_wallet_info::ManagedWalletInfo,
+        manifest: &[AccountRegistrationEntry],
+    ) -> key_wallet::Address {
+        use key_wallet::bip32::DerivationPath;
+        use key_wallet::gap_limit::DEFAULT_EXTERNAL_GAP_LIMIT;
+        use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+        let account_type = wallet_info
+            .accounts
+            .all_funding_accounts()
+            .into_iter()
+            .next()
+            .expect("a funds account")
+            .managed_account_type()
+            .to_account_type();
+        let xpub = manifest
+            .iter()
+            .find(|e| e.account_type == account_type)
+            .map(|e| e.account_xpub)
+            .expect("funds account xpub");
+        let mut pool = AddressPool::new_without_generation(
+            DerivationPath::master(),
+            AddressPoolType::External,
+            DEFAULT_EXTERNAL_GAP_LIMIT,
+            Network::Testnet,
+        );
+        pool.generate_addresses(1, &KeySource::Public(xpub), true)
+            .unwrap();
+        pool.address_at_index(0).unwrap()
     }
 
     /// A UTXO whose address is not derivable from this account's
