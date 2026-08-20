@@ -199,6 +199,36 @@ pub enum WalletStorageError {
     #[error("identity entry id disagrees with its map key")]
     IdentityEntryIdMismatch,
 
+    /// Two different identities claimed one wallet's derivation slot.
+    /// `identity_index` is an HD path component, so `(wallet_id,
+    /// identity_index)` names exactly one identity; a second claim is a
+    /// contradiction rather than a competition, and is refused instead
+    /// of orphaning the displaced identity's keys at the next load.
+    #[error(
+        "identity index conflict: index {identity_index} of wallet {} is held by identity {}, cannot assign it to {}",
+        hex::encode(wallet_id),
+        hex::encode(existing),
+        hex::encode(incoming)
+    )]
+    IdentityIndexConflict {
+        wallet_id: [u8; 32],
+        identity_index: u32,
+        existing: [u8; 32],
+        incoming: [u8; 32],
+    },
+
+    /// A wallet-less identity carried a derivation index. Out-of-wallet
+    /// identities are keyed by identity id alone and have no derivation
+    /// context, so an index on one is state that can never be honoured.
+    #[error(
+        "wallet-less identity {} carries derivation index {identity_index}",
+        hex::encode(identity_id)
+    )]
+    WalletlessIdentityIndex {
+        identity_id: [u8; 32],
+        identity_index: u32,
+    },
+
     /// An `asset_locks` row's typed-column `(outpoint, account_index)`
     /// disagreed with the lifecycle blob's `(out_point, account_index)`.
     /// Mirrors `IdentityKeyEntryMismatch` — a torn write, partial
@@ -364,6 +394,8 @@ impl WalletStorageError {
             | Self::ForeignKeysNotEnforced
             | Self::IdentityKeyEntryMismatch
             | Self::IdentityEntryIdMismatch
+            | Self::IdentityIndexConflict { .. }
+            | Self::WalletlessIdentityIndex { .. }
             | Self::AssetLockEntryMismatch { .. }
             | Self::BlobTooLarge { .. }
             | Self::UtxoAddressNotDerived { .. }
@@ -393,6 +425,12 @@ impl WalletStorageError {
             Self::Sqlite(rusqlite::Error::SqliteFailure(e, _))
                 if matches!(e.code, ErrorCode::ConstraintViolation) =>
             {
+                PersistenceErrorKind::Constraint
+            }
+            // Uniqueness of `(wallet_id, identity_index)` is enforced in
+            // Rust, not by a SQL constraint, so it has to be classified
+            // here by hand — it is a caller-data violation all the same.
+            Self::IdentityIndexConflict { .. } | Self::WalletlessIdentityIndex { .. } => {
                 PersistenceErrorKind::Constraint
             }
             // Refinery surfaces FK / constraint problems through
@@ -444,6 +482,8 @@ impl WalletStorageError {
             Self::ForeignKeysNotEnforced => "foreign_keys_not_enforced",
             Self::IdentityKeyEntryMismatch => "identity_key_entry_mismatch",
             Self::IdentityEntryIdMismatch => "identity_entry_id_mismatch",
+            Self::IdentityIndexConflict { .. } => "identity_index_conflict",
+            Self::WalletlessIdentityIndex { .. } => "walletless_identity_index",
             Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
             Self::BlobTooLarge { .. } => "blob_too_large",
             Self::UtxoAddressNotDerived { .. } => "utxo_address_not_derived",

@@ -851,11 +851,28 @@ impl PlatformWalletPersistence for SqlitePersister {
     ///   in-memory buffer. Durability requires
     ///   [`flush`](Self::flush) (per-wallet) or
     ///   [`commit_writes`](Self::commit_writes) (every dirty wallet).
+    ///
+    /// # Errors
+    ///
+    /// [`WalletStorageError::IdentityIndexConflict`] /
+    /// [`WalletStorageError::WalletlessIdentityIndex`] (kind
+    /// `Constraint`) when the identities sub-changeset would put two
+    /// identities in one wallet's derivation slot. The changeset is
+    /// rejected whole and never reaches the buffer.
     fn store(
         &self,
         wallet_id: WalletId,
         changeset: PlatformWalletChangeSet,
     ) -> Result<(), PersistenceError> {
+        // Validate BEFORE the changeset joins the shared per-wallet
+        // buffer: the error then names the write that caused it, and a
+        // changeset another caller staged for the same wallet cannot be
+        // dropped as collateral of this one's rejection.
+        if let Some(identities) = changeset.identities.as_ref() {
+            let conn = self.conn().map_err(PersistenceError::from)?;
+            schema::identities::check_index_conflicts(&conn, &wallet_id, identities)
+                .map_err(PersistenceError::from)?;
+        }
         self.buffer
             .store(wallet_id, changeset)
             .map_err(PersistenceError::from)?;

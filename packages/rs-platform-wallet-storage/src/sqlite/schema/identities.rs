@@ -1,13 +1,16 @@
 //! `identities` table writer.
 
-use rusqlite::{params, Transaction};
+use std::collections::BTreeMap;
+
+use dpp::prelude::Identifier;
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 use platform_wallet::changeset::IdentityChangeSet;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 // Imports used only by the test-gated readers below.
 #[cfg(any(test, feature = "__test-helpers"))]
-use {platform_wallet::changeset::IdentityEntry, rusqlite::Connection};
+use platform_wallet::changeset::IdentityEntry;
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
@@ -84,6 +87,103 @@ pub fn apply(
         for id in &cs.removed {
             stmt.execute(params![id.as_slice()])?;
         }
+    }
+    Ok(())
+}
+
+/// Refuse a changeset that would put two identities in one wallet's
+/// derivation slot, or hand a wallet-less identity a slot at all.
+///
+/// `identity_index` is an HD derivation-path component, so
+/// `(wallet_id, identity_index)` names exactly one identity. A duplicate
+/// that reaches disk leaves the displaced identity's keys and contacts
+/// without an owner, which the next `load()` reports as fatal for the
+/// whole wallet — so the write is rejected while it can still be
+/// attributed to the caller that made it.
+///
+/// Occupancy is keyed on the FLUSH SCOPE, not on the incoming row's
+/// stored `wallet_id`: [`apply`]'s upsert promotes a NULL `wallet_id`
+/// into the flush scope, so the scope is the slot the write actually
+/// lands in. Ids in `cs.removed` hold no slot — [`apply`] inserts before
+/// it tombstones, so "tombstone A@N + insert B@N" in one changeset has a
+/// legal final state. Tombstoned rows are likewise transparent: the
+/// tombstone `UPDATE` leaves `wallet_index` populated, and counting
+/// those would refuse legitimate slot reuse.
+///
+/// A pre-existing on-disk duplicate (written before this check existed)
+/// makes both of its slot-mates unwritable here. That wallet already
+/// fails to load; refusing to extend the contradiction is the point.
+///
+/// Scope-keying also covers the promotion case (an existing NULL-parented
+/// row being pulled into a wallet that already fills the slot) at no
+/// extra cost. That case is defensive only: no production write creates a
+/// `wallet_id IS NULL` `identities` row, since the flush scope is always
+/// the persister's bound wallet id.
+///
+/// # Errors
+///
+/// - [`WalletStorageError::WalletlessIdentityIndex`] — sentinel scope
+///   (a NULL `wallet_id` row) combined with an index.
+/// - [`WalletStorageError::IdentityIndexConflict`] — the slot is held by
+///   a different live identity, on disk or elsewhere in `cs`.
+pub(crate) fn check_index_conflicts(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    cs: &IdentityChangeSet,
+) -> Result<(), WalletStorageError> {
+    if cs.identities.is_empty() {
+        return Ok(());
+    }
+    let scope_is_sentinel = wallet_id.iter().all(|b| *b == 0);
+    let wallet_id_param = wallet_id_to_param(wallet_id);
+    let mut stmt = conn.prepare_cached(
+        "SELECT identity_id FROM identities \
+         WHERE wallet_id IS ?1 AND wallet_index = ?2 AND tombstoned = 0 \
+           AND identity_id != ?3",
+    )?;
+    let mut claimed: BTreeMap<u32, Identifier> = BTreeMap::new();
+    for (id, entry) in &cs.identities {
+        // A removed id is tombstoned by the end of the same `apply`, so
+        // whatever it claims here it does not keep.
+        if cs.removed.contains(id) {
+            continue;
+        }
+        let Some(index) = entry.identity_index else {
+            continue;
+        };
+        if scope_is_sentinel {
+            return Err(WalletStorageError::WalletlessIdentityIndex {
+                identity_id: id.to_buffer(),
+                identity_index: index,
+            });
+        }
+        if let Some(other) = claimed.insert(index, *id) {
+            return Err(WalletStorageError::IdentityIndexConflict {
+                wallet_id: *wallet_id,
+                identity_index: index,
+                existing: other.to_buffer(),
+                incoming: id.to_buffer(),
+            });
+        }
+        let occupant: Option<Vec<u8>> = stmt
+            .query_row(
+                params![wallet_id_param, i64::from(index), id.as_slice()],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let Some(occupant) = occupant else { continue };
+        let occupant: [u8; 32] = occupant.try_into().map_err(|_| {
+            WalletStorageError::blob_decode("identities.identity_id is not 32 bytes")
+        })?;
+        if cs.removed.contains(&Identifier::from(occupant)) {
+            continue;
+        }
+        return Err(WalletStorageError::IdentityIndexConflict {
+            wallet_id: *wallet_id,
+            identity_index: index,
+            existing: occupant,
+            incoming: id.to_buffer(),
+        });
     }
     Ok(())
 }
