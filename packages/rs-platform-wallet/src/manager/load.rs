@@ -468,10 +468,12 @@ mod tests {
         );
 
         drop(manager);
-        // The failure path already joined the adapter via `shutdown`; a yield
-        // also covers the `Drop` backstop's `abort` reclamation.
-        tokio::task::yield_now().await;
-
+        // Asserted directly, never polled: the failure path awaits the
+        // adapter's `JoinHandle` inside `shutdown`, so the task's clone is
+        // already released before `drop` runs. Release on THIS path is
+        // synchronous, which is the stronger guarantee — a poll loop (or a
+        // `yield_now`, which cedes nothing to another worker) would only
+        // hide a regression into eventual release.
         assert_eq!(
             Arc::strong_count(&probe),
             1,
