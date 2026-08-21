@@ -217,6 +217,22 @@ pub fn select_notes_with_fee<'a>(
         })
     };
 
+    // Full value the selection must cover: `amount + fee + min_change`, CHECKED. Saturating here
+    // would turn an unrepresentable requirement into `u64::MAX`, which a (corrupt/crafted) store
+    // totaling exactly `u64::MAX` then satisfies via `>=` — returning `Ok` for a selection whose
+    // strictly-positive-change postcondition cannot hold, so the builder rejects it downstream.
+    // An unrepresentable requirement is an error, exactly like `select_notes`' own overflow gates.
+    let required_total = |fee: u64| -> Result<u64, PlatformWalletError> {
+        amount
+            .checked_add(fee)
+            .and_then(|v| v.checked_add(min_change))
+            .ok_or_else(|| {
+                PlatformWalletError::ShieldedBuildError(
+                    "amount + fee + minimum change overflows u64".to_string(),
+                )
+            })
+    };
+
     for _ in 0..5 {
         let selected = select_notes(unspent, amount, selection_target(fee_estimate)?)?;
         let total: u64 = selected.iter().map(|n| n.value).sum();
@@ -225,7 +241,7 @@ pub fn select_notes_with_fee<'a>(
             .compute(num_actions, platform_version)
             .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
-        if total >= amount.saturating_add(exact_fee).saturating_add(min_change) {
+        if total >= required_total(exact_fee)? {
             return Ok((selected, total, exact_fee));
         }
 
@@ -240,7 +256,7 @@ pub fn select_notes_with_fee<'a>(
         .compute(num_actions, platform_version)
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
-    let required = amount.saturating_add(exact_fee).saturating_add(min_change);
+    let required = required_total(exact_fee)?;
     if total < required {
         return Err(PlatformWalletError::ShieldedInsufficientBalance {
             available: total,
@@ -578,6 +594,56 @@ mod tests {
             }
             other => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    /// An UNREPRESENTABLE strict-change requirement must be an error, never a saturated success.
+    ///
+    /// Boundary: `amount + exact_fee == u64::MAX` with strict change, so the full requirement
+    /// (`amount + exact_fee + 1`) overflows u64. A saturating comparison would clamp it to
+    /// `u64::MAX`, which a crafted/corrupt store totaling exactly `u64::MAX` then satisfies via
+    /// `>=` — an `Ok` selection whose positive-change postcondition cannot hold (the builder
+    /// rejects it downstream). The note shape forces the greedy pass past the estimate-phase
+    /// target so the OVERFLOWING requirement is only reachable at the convergence re-check,
+    /// where the old code saturated (`select_notes`' own gates are checked and never see it).
+    #[test]
+    fn test_select_notes_with_fee_strict_change_overflow_is_an_error_not_saturation() {
+        let platform_version = PlatformVersion::latest();
+        let min_actions = 2;
+        let fee_2 = compute_minimum_shielded_fee(2, platform_version).expect("fee");
+        let fee_3 = compute_minimum_shielded_fee(3, platform_version).expect("fee");
+        assert!(fee_3 > fee_2, "the fee must grow with the action count");
+        let fee_step = fee_3 - fee_2;
+
+        // amount + fee_3 == u64::MAX exactly → the strict requirement is u64::MAX + 1.
+        let amount = u64::MAX - fee_3;
+
+        // Three notes summing to exactly u64::MAX, shaped so largest-first must take all three
+        // to reach the estimate-phase target (the top two together stay strictly below it):
+        // the selection lands on 3 actions, the fee converges from fee_2 up to fee_3, and the
+        // re-check computes the overflowing full requirement.
+        let notes = vec![
+            test_note(u64::MAX - 2 * (fee_step + 10), 0),
+            test_note(fee_step + 10, 1),
+            test_note(fee_step + 10, 2),
+        ];
+
+        let err = select_notes_with_fee(
+            &notes,
+            amount,
+            min_actions,
+            ShieldedFeeKind::Base,
+            ChangeRequirement::StrictlyPositive,
+            platform_version,
+        )
+        .expect_err("an unrepresentable requirement must be an error, not a saturated Ok");
+        assert!(
+            matches!(
+                err,
+                PlatformWalletError::ShieldedBuildError(ref m)
+                    if m.contains("overflows")
+            ),
+            "expected an overflow ShieldedBuildError, got: {err:?}"
+        );
     }
 
     /// The strict floor must survive fee convergence: when the selector adds notes, the action
