@@ -156,7 +156,7 @@ describe('migrateConfigFileFactory', () => {
     // This is the last time a stock tag is recognised by shape, so both halves
     // need pinning - a widened pattern would overwrite operator images, and a
     // narrowed one would strand operators on a tag that no longer moves.
-    const FROM_VERSION = '4.0.0';
+    const fromVersion = '4.0.0';
 
     // Spelled out rather than only imported, so adding an identifier to the
     // shared list without deciding it belongs here fails instead of silently
@@ -172,13 +172,13 @@ describe('migrateConfigFileFactory', () => {
 
     const migrateImages = (driveImage, rsDapiImage) => {
       const configFileData = createConfigFile().toObject();
-      configFileData.configFormatVersion = FROM_VERSION;
+      configFileData.configFormatVersion = fromVersion;
       for (const options of Object.values(configFileData.configs)) {
         options.platform.drive.abci.docker.image = driveImage;
         options.platform.dapi.rsDapi.docker.image = rsDapiImage;
       }
 
-      const migrated = migrateConfigFile(configFileData, FROM_VERSION, version);
+      const migrated = migrateConfigFile(configFileData, fromVersion, version);
 
       return migrated.configs[firstConfigName].platform;
     };
@@ -234,14 +234,14 @@ describe('migrateConfigFileFactory', () => {
     // pin and the ACME directory default. A node upgrading from 4.1.0 crosses both,
     // and the runner orders them by version rather than by their position in the
     // table, where the Tenderdash pin sits last.
-    const FROM_VERSION = '4.1.0';
+    const fromVersion = '4.1.0';
     const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
     const baseConfig = container.resolve('defaultConfigs').get('base');
     const expectedTenderdashImage = baseConfig.get('platform.drive.tenderdash.docker.image');
 
     const configFileData = createConfigFile().toObject();
-    configFileData.configFormatVersion = FROM_VERSION;
+    configFileData.configFormatVersion = fromVersion;
     for (const options of Object.values(configFileData.configs)) {
       // The shapes a config stamped 4.1.0 carries, before either migration ran.
       options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1.6.0';
@@ -249,7 +249,7 @@ describe('migrateConfigFileFactory', () => {
       delete options.platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl;
     }
 
-    const migrated = migrateConfigFile(configFileData, FROM_VERSION, version);
+    const migrated = migrateConfigFile(configFileData, fromVersion, version);
 
     for (const [name, options] of Object.entries(migrated.configs)) {
       expect(options.platform.drive.tenderdash.docker.image).to.equal(
@@ -278,11 +278,11 @@ describe('migrateConfigFileFactory', () => {
     // not define, so a config that keeps them cannot be loaded at all - which is
     // every node running a development build, the population these changes are
     // validated on.
-    const FROM_VERSION = '4.2.0-dev.1';
+    const fromVersion = '4.2.0-dev.1';
     const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
     const configFileData = createConfigFile().toObject();
-    configFileData.configFormatVersion = FROM_VERSION;
+    configFileData.configFormatVersion = fromVersion;
     for (const options of Object.values(configFileData.configs)) {
       // The shape the base config carried while these overrides still existed.
       options.platform.drive.tenderdash.consensus.unsafeOverride.commit = {
@@ -291,7 +291,7 @@ describe('migrateConfigFileFactory', () => {
       };
     }
 
-    const migrated = migrateConfigFile(configFileData, FROM_VERSION, version);
+    const migrated = migrateConfigFile(configFileData, fromVersion, version);
 
     for (const [name, options] of Object.entries(migrated.configs)) {
       let loadError = null;
@@ -313,20 +313,20 @@ describe('migrateConfigFileFactory', () => {
     // migration, so it is the first place operator intent can be respected. It
     // used to overwrite unconditionally, which destroyed a custom image before
     // any later migration could tell it apart from a stale default.
-    const FROM_VERSION = '3.1.0';
+    const fromVersion = '3.1.0';
     const customDriveImage = 'registry.example.com/security-patched-drive:stable';
     const customRsDapiImage = 'registry.example.com/security-patched-rs-dapi:stable';
 
     const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
     const configFileData = createConfigFile().toObject();
-    configFileData.configFormatVersion = FROM_VERSION;
+    configFileData.configFormatVersion = fromVersion;
     for (const options of Object.values(configFileData.configs)) {
       options.platform.drive.abci.docker.image = customDriveImage;
       options.platform.dapi.rsDapi.docker.image = customRsDapiImage;
     }
 
-    const migrated = migrateConfigFile(configFileData, FROM_VERSION, version);
+    const migrated = migrateConfigFile(configFileData, fromVersion, version);
 
     for (const [name, options] of Object.entries(migrated.configs)) {
       expect(options.platform.drive.abci.docker.image).to.equal(
@@ -344,7 +344,7 @@ describe('migrateConfigFileFactory', () => {
     // A config from before 4.0.0 carries a tag of its own era. Those still have
     // to be recognised as published defaults, or an operator who never chose an
     // image is stranded on a tag nothing moves any more.
-    const FROM_VERSION = '3.1.0';
+    const fromVersion = '3.1.0';
 
     const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
@@ -352,13 +352,13 @@ describe('migrateConfigFileFactory', () => {
     // major alone in v1.0.2, and the 0.x line used major.minor throughout.
     for (const tag of ['3', '2', '1-dev', '1.0', '1.0-rc', '0.25', '0.24']) {
       const configFileData = createConfigFile().toObject();
-      configFileData.configFormatVersion = FROM_VERSION;
+      configFileData.configFormatVersion = fromVersion;
       for (const options of Object.values(configFileData.configs)) {
         options.platform.drive.abci.docker.image = `dashpay/drive:${tag}`;
         options.platform.dapi.rsDapi.docker.image = `dashpay/rs-dapi:${tag}`;
       }
 
-      const migrated = migrateConfigFile(configFileData, FROM_VERSION, version);
+      const migrated = migrateConfigFile(configFileData, fromVersion, version);
 
       for (const [name, options] of Object.entries(migrated.configs)) {
         expect(options.platform.drive.abci.docker.image).to.equal(
