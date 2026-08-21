@@ -9,9 +9,19 @@ import Problem from '../Problem.js';
  */
 const RESTART_HINT = chalk`Then restart Platform so the gateway picks it up: {bold.cyanBright dashmate restart --platform}`;
 
+/**
+ * An operator reading a certificate problem is deciding whether their node is
+ * falling behind. It is not: `update` pulls images whatever the certificate
+ * does, and only refuses to report success. Leaving this out lets a client
+ * reachability problem be read as a software delivery one.
+ */
+const UPDATE_CONSEQUENCE = 'While this is unresolved, clients cannot connect to this node.'
+  + ' `dashmate update` still pulls new images, so protocol upgrades and security patches'
+  + ' continue to arrive - but it exits non-zero until the certificate is fixed.';
+
 export default function analyseGatewayCertificateFactory() {
   /**
-   * Analyse the certificate the gateway actually serves.
+   * Analyse the certificate installed for the gateway and the one it serves.
    *
    * @typedef analyseGatewayCertificate
    * @param {Samples} samples
@@ -24,13 +34,45 @@ export default function analyseGatewayCertificateFactory() {
       return [];
     }
 
+    const problems = [];
+
+    // The gateway is stopped whenever the documented upgrade procedure is
+    // followed, and a stopped gateway answers no TLS connection - so the probe
+    // below records nothing and every problem with the files on disk would go
+    // unreported, on exactly the node an operator has just been told to run
+    // doctor on.
+    const installed = samples.getServiceInfo('gateway', 'installedCertificate');
+
+    if (installed) {
+      installed.reasons.forEach(({ message }) => {
+        problems.push(new Problem(
+          message,
+          chalk`${UPDATE_CONSEQUENCE}
+
+Check what is wrong and obtain a new certificate:
+{bold.cyanBright dashmate doctor}
+{bold.cyanBright dashmate ssl obtain --provider letsencrypt}
+${RESTART_HINT}`,
+          SEVERITY.HIGH,
+        ));
+      });
+
+      installed.warnings.forEach(({ message }) => {
+        problems.push(new Problem(
+          message,
+          chalk`Nothing is broken yet. If it needs attention, obtain a new certificate:
+{bold.cyanBright dashmate ssl obtain --provider letsencrypt}
+${RESTART_HINT}`,
+          SEVERITY.LOW,
+        ));
+      });
+    }
+
     const served = samples.getServiceInfo('gateway', 'servedCertificate');
 
     if (!served) {
-      return [];
+      return problems;
     }
-
-    const problems = [];
 
     // Certificate validity is judged against the moment the samples were taken, not the moment
     // they are analysed. A report is often opened days after it was collected, and the node's

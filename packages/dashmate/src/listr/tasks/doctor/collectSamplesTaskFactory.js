@@ -39,6 +39,7 @@ async function fetchTextOrError(url) {
  * @param {HomeDir} homeDir
  * @param {validateZeroSslCertificate} validateZeroSslCertificate
  * @param {validateLetsEncryptCertificate} validateLetsEncryptCertificate
+ * @param {checkGatewayCertificate} checkGatewayCertificate
  * @return {collectSamplesTask}
  */
 export default function collectSamplesTaskFactory(
@@ -51,6 +52,7 @@ export default function collectSamplesTaskFactory(
   homeDir,
   validateZeroSslCertificate,
   validateLetsEncryptCertificate,
+  checkGatewayCertificate,
 ) {
   /**
    * @typedef {function} collectSamplesTask
@@ -190,6 +192,30 @@ export default function collectSamplesTaskFactory(
                     default:
                       throw new Error('Unknown SSL provider');
                   }
+                },
+              },
+              {
+                // Judged where the files are, because an archived report is
+                // analysed somewhere else entirely. This is also the only
+                // certificate sample a stopped node produces: the probe below
+                // needs a listener to answer it, and the documented upgrade
+                // procedure leaves the gateway down.
+                enabled: () => config.get('platform.enable'),
+                title: 'Gateway certificate files',
+                task: async () => {
+                  const verdict = checkGatewayCertificate(config);
+
+                  ctx.samples.setServiceInfo('gateway', 'installedCertificate', {
+                    status: verdict.status,
+                    reasons: verdict.reasons,
+                    warnings: verdict.warnings,
+                    skipped: verdict.skipped,
+                    provider: verdict.provider,
+                    expiresInDays: verdict.expiresInDays,
+                    validTo: verdict.installed
+                      ? verdict.installed.validTo.toUTCString()
+                      : null,
+                  });
                 },
               },
               {

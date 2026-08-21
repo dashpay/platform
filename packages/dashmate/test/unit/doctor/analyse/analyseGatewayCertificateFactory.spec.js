@@ -164,4 +164,80 @@ describe('analyseGatewayCertificateFactory', () => {
 
     expect(analyse(served({ certificate: { validTo: validTo(-100) } }))).to.be.empty();
   });
+
+  describe('the certificate on disk', () => {
+    /**
+     * @param {Object} installed
+     * @param {Object} [servedCertificate]
+     * @return {Problem[]}
+     */
+    function analyseInstalled(installed, servedCertificate) {
+      samples.setServiceInfo('gateway', 'installedCertificate', installed);
+
+      if (servedCertificate) {
+        samples.setServiceInfo('gateway', 'servedCertificate', servedCertificate);
+      }
+
+      return analyseGatewayCertificate(samples);
+    }
+
+    // Under the documented upgrade procedure the node is stopped when the
+    // certificate check fails, and a stopped gateway answers no TLS connection
+    // - so the probe records nothing and every problem on disk went unreported.
+    // That is exactly the node an operator has just been told to run doctor on.
+    it('should report a problem for a stopped node with a broken bundle', () => {
+      const problems = analyseInstalled({
+        status: 'INVALID',
+        reasons: [{ code: 'EXPIRED', message: 'The installed certificate expired on 2026-05-01' }],
+        warnings: [],
+      });
+
+      expect(problems).to.have.lengthOf(1);
+      expect(problems[0].getSeverity()).to.equal(SEVERITY.HIGH);
+      expect(problems[0].getDescription()).to.include('expired on 2026-05-01');
+    });
+
+    // An operator who reads this is deciding whether to stop updating. Images
+    // keep arriving whatever the certificate does, and saying so is what keeps
+    // a client-reachability problem from being read as a software-delivery one.
+    it('should say that updates still deliver images', () => {
+      const [problem] = analyseInstalled({
+        status: 'INVALID',
+        reasons: [{ code: 'EXPIRED', message: 'expired' }],
+        warnings: [],
+      });
+
+      expect(problem.getSolution()).to.include('still pulls new images');
+      expect(problem.getSolution()).to.include('exits non-zero');
+    });
+
+    it('should report each warning separately and more quietly', () => {
+      const problems = analyseInstalled({
+        status: 'WARN',
+        reasons: [],
+        warnings: [
+          { code: 'EXPIRING_SOON', message: 'expires tomorrow' },
+          { code: 'PROVIDER_MISMATCH', message: 'issuer disagrees' },
+        ],
+      });
+
+      expect(problems).to.have.lengthOf(2);
+      problems.forEach((problem) => expect(problem.getSeverity()).to.equal(SEVERITY.LOW));
+    });
+
+    it('should say nothing when the checks passed', () => {
+      expect(analyseInstalled({ status: 'CHECKS_PASSED', reasons: [], warnings: [] }))
+        .to.have.lengthOf(0);
+    });
+
+    it('should still analyse what the gateway serves', () => {
+      const problems = analyseInstalled(
+        { status: 'CHECKS_PASSED', reasons: [], warnings: [] },
+        served({ certificate: { fingerprint256: 'AA:BB', validTo: validTo(-1) } }),
+      );
+
+      expect(problems).to.have.lengthOf(1);
+      expect(problems[0].getDescription()).to.include('expired');
+    });
+  });
 });

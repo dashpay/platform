@@ -10,6 +10,7 @@ import { SEVERITY } from '../../../../../src/doctor/Prescription.js';
 import Samples from '../../../../../src/doctor/Samples.js';
 import collectSamplesTaskFactory from '../../../../../src/listr/tasks/doctor/collectSamplesTaskFactory.js';
 import Certificate from '../../../../../src/ssl/zerossl/Certificate.js';
+import checkGatewayCertificateFactory from '../../../../../src/ssl/checkGatewayCertificateFactory.js';
 import validateZeroSslCertificateFactory, { ERRORS as ZEROSSL_ERRORS } from '../../../../../src/ssl/zerossl/validateZeroSslCertificateFactory.js';
 import providers from '../../../../../src/status/providers.js';
 
@@ -117,6 +118,7 @@ describe('collectSamplesTaskFactory', () => {
       homeDir,
       validateZeroSslCertificateFactory(homeDir, getCertificate),
       this.sinon.stub().resolves({}),
+      checkGatewayCertificateFactory(homeDir),
     );
 
     analyseConfig = analyseConfigFactory();
