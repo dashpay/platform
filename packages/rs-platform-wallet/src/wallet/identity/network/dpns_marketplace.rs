@@ -2194,6 +2194,11 @@ mod tests {
         /// a working backend, which is how the retry arm is proven to
         /// actually make progress rather than merely defer forever.
         fail: std::sync::Mutex<Option<PersistenceErrorKind>>,
+        /// Every DPNS name-state changeset handed to [`Self::store`], in
+        /// order — the row deltas a real host would apply to its durable
+        /// mirror. Lets a test assert not merely what a sync summary
+        /// CLAIMS but what actually reached the persistence boundary.
+        stored_dpns: std::sync::Mutex<Vec<DpnsNameStateChangeSet>>,
     }
 
     impl MirrorPersister {
@@ -2210,6 +2215,7 @@ mod tests {
                     .collect(),
                 lookups: std::sync::Mutex::new(Vec::new()),
                 fail: std::sync::Mutex::new(None),
+                stored_dpns: std::sync::Mutex::new(Vec::new()),
             }
         }
 
@@ -2233,14 +2239,28 @@ mod tests {
         fn lookups(&self) -> Vec<(WalletId, Identifier, String)> {
             self.lookups.lock().expect("lookup log").clone()
         }
+
+        /// Every document id a stored DPNS name-state delta removed, in
+        /// store order.
+        fn stored_dpns_removals(&self) -> Vec<Identifier> {
+            self.stored_dpns
+                .lock()
+                .expect("stored log")
+                .iter()
+                .flat_map(|cs| cs.removed.iter().copied())
+                .collect()
+        }
     }
 
     impl PlatformWalletPersistence for MirrorPersister {
         fn store(
             &self,
             _wallet_id: WalletId,
-            _changeset: PlatformWalletChangeSet,
+            changeset: PlatformWalletChangeSet,
         ) -> Result<(), PersistenceError> {
+            if let Some(cs) = changeset.dpns_name_states {
+                self.stored_dpns.lock().expect("stored log").push(cs);
+            }
             Ok(())
         }
 
@@ -2794,6 +2814,177 @@ mod tests {
         );
     }
 
+    /// The labels `identity_id` currently carries in the wallet manager —
+    /// the departure trigger the Failed arm must preserve.
+    async fn dpns_labels(wallet: &IdentityWallet, identity_id: &Identifier) -> Vec<String> {
+        let wm = wallet.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet.wallet_id).expect("wallet info");
+        info.identity_manager
+            .wallet_identity(&wallet.wallet_id, identity_id)
+            .expect("managed identity")
+            .dpns_names
+            .iter()
+            .map(|name| name.label.clone())
+            .collect()
+    }
+
+    /// [`DepartureResolution::Failed`] as the SYNC LOOP consumes it —
+    /// the load-bearing caller branch the resolver-level tests above
+    /// cannot reach. A managed identity still carries [`DEPARTED_LABEL`],
+    /// Platform confirms the domain document absent, and the mirror read
+    /// fails fatally. The pass must surface the failure on
+    /// `departures_failed` while leaving EVERYTHING else untouched: were
+    /// the arm to regress to the old degrade-to-`None` behavior, the pass
+    /// would instead report a successful departure with no document id,
+    /// drop the label (the only re-detection trigger), and orphan the
+    /// mirror's durable row for good — every assertion below fails on
+    /// that regression. The healed second pass then proves the retained
+    /// label really does let a later pass finish the removal, so the
+    /// terminal failure neither parks the queue nor loses the departure.
+    #[tokio::test]
+    async fn sync_pass_surfaces_a_terminal_departure_failure_and_completes_it_once_healed() {
+        use dpp::identity::v0::IdentityV0;
+        use dpp::identity::Identity;
+
+        let document_id = Identifier::from([0xB1; 32]);
+        let identity_id = Identifier::from([0xB2; 32]);
+        let mirror = Arc::new(MirrorPersister::hydrated_but_failing(
+            vec![mirrored_row(document_id, identity_id)],
+            PersistenceErrorKind::Fatal,
+        ));
+        let wallet = mirror_backed_identity_wallet_with_sdk(
+            Arc::clone(&mirror),
+            sdk_for_departed_identity_sync(&identity_id, DEPARTED_LABEL).await,
+        );
+
+        // The wallet still holds the identity AND its label; Platform
+        // (the mock) no longer shows the identity owning any document.
+        {
+            let mut wm = wallet.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&wallet.wallet_id)
+                .expect("wallet info");
+            info.identity_manager
+                .add_identity(
+                    Identity::V0(IdentityV0 {
+                        id: identity_id,
+                        public_keys: BTreeMap::new(),
+                        balance: 0,
+                        revision: 0,
+                    }),
+                    0,
+                    wallet.wallet_id,
+                    &wallet.persister,
+                )
+                .expect("add identity");
+            info.identity_manager
+                .wallet_identity_mut(&wallet.wallet_id, &identity_id)
+                .expect("managed identity")
+                .dpns_names
+                .push(DpnsNameInfo {
+                    label: DEPARTED_LABEL.to_string(),
+                    acquired_at: Some(500),
+                });
+        }
+
+        let summary = wallet
+            .sync_dpns_marketplace()
+            .await
+            .expect("a terminal PER-ITEM failure must not fail the pass");
+
+        // Surfaced on the summary, not silently swallowed...
+        assert_eq!(
+            summary.departures_failed.len(),
+            1,
+            "the fatal mirror read under a confirmed-absent document must land \
+             in departures_failed, got {:?}",
+            summary.departures_failed
+        );
+        let failure = &summary.departures_failed[0];
+        assert_eq!(failure.identity_id, identity_id);
+        assert_eq!(failure.label, DEPARTED_LABEL);
+        assert!(
+            failure.error.contains("simulated mirror read failure"),
+            "the summary must carry the underlying persistence error, got: {}",
+            failure.error
+        );
+
+        // ...and NOT reported as a successful departure or any other delta.
+        assert!(
+            summary.names_departed.is_empty(),
+            "a failed departure must not appear in names_departed: {:?}",
+            summary.names_departed
+        );
+        assert!(
+            summary.is_empty_delta(),
+            "the failed pass must apply no adds, departures or price changes"
+        );
+        assert_eq!(summary.names_tracked, 0);
+
+        // The label survives — it is the only trigger for re-detection.
+        assert_eq!(
+            dpns_labels(&wallet, &identity_id).await,
+            vec![DEPARTED_LABEL.to_string()],
+            "the failed departure must leave the identity's label in place"
+        );
+
+        // No row delta reached the durable mirror.
+        assert_eq!(
+            mirror.stored_dpns_removals(),
+            Vec::<Identifier>::new(),
+            "nothing may be removed from the mirror while the document id is unknown"
+        );
+
+        // The queue is not parked: the failed item was consumed, not
+        // requeued, so the identity carries no pending sync progress and
+        // the next pass starts from a clean scan (which re-detects the
+        // departure from the retained label).
+        assert!(
+            wallet
+                .dpns_sync_progress
+                .lock()
+                .expect("progress lock")
+                .get(&identity_id)
+                .is_none(),
+            "a terminal failure must not park the departure queue"
+        );
+
+        // Backend repaired: the SAME departure — re-detected through the
+        // preserved label — now resolves, drops the label, and finally
+        // emits the removal delta for the mirror's row.
+        mirror.heal();
+        let healed = wallet
+            .sync_dpns_marketplace()
+            .await
+            .expect("healed pass must succeed");
+        assert!(
+            healed.departures_failed.is_empty(),
+            "no failure may remain once the backend answers: {:?}",
+            healed.departures_failed
+        );
+        assert_eq!(
+            healed.names_departed,
+            vec![DepartedDpnsName {
+                identity_id,
+                label: DEPARTED_LABEL.to_string(),
+                document_id: Some(document_id),
+                status: None,
+            }],
+            "the healed pass must complete the departure with the document id \
+             recovered from the mirror"
+        );
+        assert_eq!(
+            dpns_labels(&wallet, &identity_id).await,
+            Vec::<String>::new(),
+            "the completed departure finally drops the label"
+        );
+        assert_eq!(
+            mirror.stored_dpns_removals(),
+            vec![document_id],
+            "the removal delta must finally reach the durable mirror"
+        );
+    }
+
     /// A live `IdentityWallet` over a bare mock SDK (no expectations, so
     /// every network read fails) whose persister is `mirror`.
     fn mirror_backed_identity_wallet(mirror: Arc<MirrorPersister>) -> IdentityWallet {
@@ -2847,6 +3038,73 @@ mod tests {
             .expect_fetch_many::<Identifier, Document, _, dash_sdk::query_types::Documents>(
                 query,
                 Some(documents),
+            )
+            .await
+            .expect("domain-document expectation");
+        Arc::new(sdk)
+    }
+
+    /// A mock SDK primed for a full [`IdentityWallet::sync_dpns_marketplace`]
+    /// pass over one identity that has LOST `label`: the DPNS contract
+    /// fetch, the identity-owned domain page query (answered empty — the
+    /// identity owns no documents on Platform, so every label it still
+    /// carries locally is a departure) and the exact-match domain query
+    /// for `label` (also empty — Platform CONFIRMING the name is gone,
+    /// the branch whose removal delta needs the persisted document id).
+    async fn sdk_for_departed_identity_sync(
+        identity_id: &Identifier,
+        label: &str,
+    ) -> Arc<dash_sdk::Sdk> {
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(dpp::version::PlatformVersion::latest())
+            .build()
+            .expect("mock sdk");
+        let contract = dpp::system_data_contracts::load_system_data_contract(
+            dpp::data_contracts::SystemDataContract::DPNS,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .expect("bundled DPNS contract");
+        sdk.mock()
+            .expect_fetch(dpns_contract_id(), Some(contract.clone()))
+            .await
+            .expect("DPNS contract expectation");
+        let contract = Arc::new(contract);
+        // The exact first (cursor-less) page query
+        // `dpns_domain_states_page` issues during a sync pass. If the
+        // production query drifts from this shape the mock stops
+        // matching, the page fetch errors, and the test fails on its
+        // `departures_failed` precondition — loudly, not vacuously.
+        let page_query = DocumentQuery {
+            select: SelectProjection::documents(),
+            data_contract: Arc::clone(&contract),
+            document_type_name: DPNS_DOCUMENT_TYPE.to_string(),
+            where_clauses: vec![WhereClause {
+                field: "records.identity".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(identity_id.to_buffer()),
+            }],
+            group_by: vec![],
+            having: vec![],
+            order_by_clauses: vec![],
+            limit: SYNC_QUERY_LIMIT,
+            offset: None,
+            start: None,
+        };
+        sdk.mock()
+            .expect_fetch_many::<Identifier, Document, _, dash_sdk::query_types::Documents>(
+                page_query,
+                Some(dash_sdk::query_types::Documents::new()),
+            )
+            .await
+            .expect("identity domain-page expectation");
+        let label_query = domain_by_normalized_label_query(
+            contract,
+            convert_to_homograph_safe_chars(dpns_label(label)),
+        );
+        sdk.mock()
+            .expect_fetch_many::<Identifier, Document, _, dash_sdk::query_types::Documents>(
+                label_query,
+                Some(dash_sdk::query_types::Documents::new()),
             )
             .await
             .expect("domain-document expectation");
