@@ -152,6 +152,38 @@ describe('checkGatewayCertificateFactory', () => {
       });
     });
 
+    // The gateway loads a delimiter line padded with trailing whitespace, so
+    // treating the padding as damage would refuse an update on a node that
+    // serves TLS perfectly well. A suffix that is not whitespace is different:
+    // the gateway refuses that, and so does this.
+    [
+      ['a trailing space', (chain) => chain.replace(/-----(BEGIN|END) CERTIFICATE-----/g, '-----$1 CERTIFICATE----- ')],
+      ['a trailing tab', (chain) => chain.replace(/-----(BEGIN|END) CERTIFICATE-----/g, '-----$1 CERTIFICATE-----\t')],
+      ['trailing space and CRLF', (chain) => chain.replace(/-----(BEGIN|END) CERTIFICATE-----/g, '-----$1 CERTIFICATE----- ').replace(/\n/g, '\r\n')],
+    ].forEach(([label, pad]) => {
+      it(`should accept a bundle whose delimiters carry ${label}`, () => {
+        const { leaf, intermediate } = issueChain({ ip: EXTERNAL_IP });
+
+        install(pad(leaf.pem + intermediate.pem), leaf.keyPem);
+
+        const verdict = checkGatewayCertificate(config);
+
+        expect(codes(verdict.reasons)).to.deep.equal([]);
+        expect(verdict.status).to.equal(CERTIFICATE_STATUS.CHECKS_PASSED);
+      });
+    });
+
+    it('should block on a delimiter line carrying a suffix that is not whitespace', () => {
+      const { leaf, intermediate } = issueChain({ ip: EXTERNAL_IP });
+      const damaged = (leaf.pem + intermediate.pem)
+        .replace(/-----(BEGIN|END) CERTIFICATE-----/g, '-----$1 CERTIFICATE-----x');
+
+      install(damaged, leaf.keyPem);
+
+      expect(codes(checkGatewayCertificate(config).reasons))
+        .to.include(CERTIFICATE_REASONS.BUNDLE_UNREADABLE);
+    });
+
     // The gateway loads a bundle with Windows line endings, so requiring the
     // delimiter to be its own line must not turn the trailing carriage return
     // into damage.

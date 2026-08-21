@@ -8,13 +8,18 @@ export const LEAF_SELECTION_ERRORS = {
 };
 
 /**
- * Both delimiters must be a line of their own. Matched as substrings they can
- * be read out of the middle of a mangled line - a stray prefix, indentation, an
- * extra hyphen - and the gateway refuses such a file. The optional carriage
- * return keeps a bundle written with Windows line endings valid, which the
- * gateway loads without complaint.
+ * Both delimiters must start a line of their own. Matched as substrings they
+ * can be read out of the middle of a mangled line - a stray prefix,
+ * indentation, an extra hyphen - and the gateway refuses such a file.
+ *
+ * What may follow the marker on its line is decided by what the gateway
+ * tolerates, not by what looks tidy: trailing spaces or tabs and a Windows
+ * carriage return are all loaded without complaint, so treating any of them as
+ * damage would refuse an update on a node that serves TLS perfectly well. A
+ * suffix that is not whitespace is a different matter - the gateway refuses
+ * that, and so does this.
  */
-const PEM_CERTIFICATE = /^-----BEGIN CERTIFICATE-----\r?$[\s\S]*?^-----END CERTIFICATE-----\r?$/gm;
+const PEM_CERTIFICATE = /^-----BEGIN CERTIFICATE-----[ \t]*\r?$[\s\S]*?^-----END CERTIFICATE-----[ \t]*\r?$/gm;
 
 /**
  * Deliberately unanchored, unlike the block match above. Anything that looks
