@@ -8,8 +8,8 @@ use rusqlite::{Connection, OptionalExtension};
 
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::{
-    ClientStartState, PersistenceCapabilities, PersistenceError, PlatformWalletChangeSet,
-    PlatformWalletPersistence,
+    ClientStartState, IdentityChangeSet, Merge, PersistenceCapabilities, PersistenceError,
+    PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::wallet::identity::ManagedIdentity;
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -440,9 +440,12 @@ impl SqlitePersister {
     /// # Source trust
     ///
     /// Restore verifies SQLite integrity, wallet application identity, and
-    /// schema compatibility, but not backup provenance. It trusts a valid
-    /// source file as much as the live database; protect the backup directory
-    /// from untrusted replacement or modification.
+    /// schema compatibility, but not backup provenance — and not content
+    /// invariants: a source holding two identities in one wallet's derivation
+    /// slot is restored as-is and surfaces as a failed `load()` afterwards,
+    /// because `store`'s write-path check never sees these bytes. Restore
+    /// trusts a valid source file as much as the live database; protect the
+    /// backup directory from untrusted replacement or modification.
     pub fn restore_from(
         dest_db_path: &Path,
         src_backup: &Path,
@@ -705,6 +708,8 @@ impl SqlitePersister {
             // otherwise rollback-from-backup can't recover them. The backup
             // must precede the cascade's `BEGIN EXCLUSIVE` because
             // `Backup::new` deadlocks if the source holds an active write tx.
+            // Applying a changeset outside `store()` is safe here because
+            // `identities::apply` re-runs the slot check inside this very tx.
             if let Some(cs) = drained_slot.take() {
                 #[cfg(any(test, feature = "__test-helpers"))]
                 if let Some(primed) = primed_pre_flush_error {
@@ -720,14 +725,38 @@ impl SqlitePersister {
                         return Err(WalletStorageError::Sqlite(e));
                     }
                 };
-                if let Err(e) = apply_changeset_to_tx(&pre_flush_tx, &wallet_id, &cs) {
-                    let _ = pre_flush_tx.rollback();
-                    drained_slot.set(Some(cs));
-                    return Err(e);
-                }
-                if let Err(e) = pre_flush_tx.commit() {
-                    drained_slot.set(Some(cs));
-                    return Err(WalletStorageError::Sqlite(e));
+                match apply_changeset_to_tx(&pre_flush_tx, &wallet_id, &cs) {
+                    Ok(()) => {
+                        if let Err(e) = pre_flush_tx.commit() {
+                            drained_slot.set(Some(cs));
+                            return Err(WalletStorageError::Sqlite(e));
+                        }
+                    }
+                    // An identity-slot collision means these pending
+                    // writes can never be persisted, so keeping them
+                    // would make the wallet undeletable — the one state
+                    // a user most wants gone. Drop them and delete; they
+                    // name only this wallet, whose rows are about to go.
+                    // Every other constraint failure (FK, CHECK, UNIQUE,
+                    // NOT NULL) describes corruption elsewhere in the
+                    // schema and aborts the delete below.
+                    Err(
+                        e @ (WalletStorageError::IdentityIndexConflict { .. }
+                        | WalletStorageError::WalletlessIdentityIndex { .. }),
+                    ) => {
+                        let _ = pre_flush_tx.rollback();
+                        tracing::warn!(
+                            wallet_id = %hex::encode(wallet_id),
+                            error_kind = e.error_kind_str(),
+                            dropped_field_count = populated_field_count(&cs),
+                            "pending writes violate a storage invariant and cannot be persisted — dropping them so the delete can proceed"
+                        );
+                    }
+                    Err(e) => {
+                        let _ = pre_flush_tx.rollback();
+                        drained_slot.set(Some(cs));
+                        return Err(e);
+                    }
                 }
             }
 
@@ -874,8 +903,14 @@ impl SqlitePersister {
     fn flush_inner(&self, wallet_id: &WalletId) -> Result<(), PersistenceError> {
         self.ensure_writable("flush")
             .map_err(PersistenceError::from)?;
-        self.ensure_connection_usable()
-            .map_err(PersistenceError::from)?;
+        // Hold the connection across the take, the write AND the
+        // restore-on-failure. In between, the changeset is in neither
+        // the buffer nor the database, and a `store` probing that window
+        // would read a free slot that is not free. Taking the connection
+        // first denies it the window: `store` needs the same lock to
+        // check an identity write. Locking it also subsumes the
+        // `ensure_connection_usable` poison check.
+        let mut conn = self.conn().map_err(PersistenceError::from)?;
         let cs = self
             .buffer
             .take_for_flush(wallet_id)
@@ -888,25 +923,10 @@ impl SqlitePersister {
             return self.handle_flush_error(wallet_id, cs, injected);
         }
 
-        match self.write_changeset_in_one_tx(wallet_id, &cs) {
+        match write_changeset_in_one_tx(&mut conn, wallet_id, &cs) {
             Ok(()) => Ok(()),
             Err(e) => self.handle_flush_error(wallet_id, cs, e),
         }
-    }
-
-    /// Apply every populated sub-changeset under one transaction and
-    /// commit. Returned `Err` is the per-area / commit failure verbatim
-    /// — classification + buffer restore happen one level up.
-    fn write_changeset_in_one_tx(
-        &self,
-        wallet_id: &WalletId,
-        cs: &PlatformWalletChangeSet,
-    ) -> Result<(), WalletStorageError> {
-        let mut conn = self.conn()?;
-        let tx = conn.transaction()?;
-        apply_changeset_to_tx(&tx, wallet_id, cs)?;
-        tx.commit()?;
-        Ok(())
     }
 
     /// Classify the failure: transient errors restore the buffer and
@@ -1115,6 +1135,13 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// [`WalletStorageError::ReadOnlyRecoveryMode`] under
     /// [`LoadPolicy::Recovery`](crate::LoadPolicy), raised before the
     /// changeset is buffered so it cannot reach disk through a later flush.
+    ///
+    /// [`WalletStorageError::IdentityIndexConflict`] /
+    /// [`WalletStorageError::WalletlessIdentityIndex`] (kind `Constraint`)
+    /// when the identities sub-changeset would put two identities in one
+    /// wallet's derivation slot — whether the sitting occupant is on disk or
+    /// still buffered. The changeset is rejected whole and never reaches the
+    /// buffer.
     fn store(
         &self,
         wallet_id: WalletId,
@@ -1127,9 +1154,33 @@ impl PlatformWalletPersistence for SqlitePersister {
             .map_err(PersistenceError::from)?;
         self.ensure_connection_usable()
             .map_err(PersistenceError::from)?;
-        self.buffer
-            .store(wallet_id, changeset)
-            .map_err(PersistenceError::from)?;
+        // Validate BEFORE the changeset joins the shared per-wallet
+        // buffer: the error then names the write that caused it, and a
+        // changeset another caller staged for the same wallet cannot be
+        // dropped as collateral of this one's rejection.
+        //
+        // The check runs against the merged view — buffered plus
+        // incoming, exactly what a flush would write — from inside the
+        // buffer's critical section, with the connection held. Two
+        // callers racing the same slot are therefore serialized: the
+        // second one sees the first as the occupant and is refused here
+        // rather than merging into a contradictory changeset that the
+        // flush drops whole.
+        if changeset.identities.is_some() {
+            let conn = self.conn().map_err(PersistenceError::from)?;
+            self.buffer
+                .store_checked(wallet_id, changeset, |buffered, incoming| {
+                    let Some(merged) = merged_identities(buffered, incoming) else {
+                        return Ok(());
+                    };
+                    schema::identities::check_index_conflicts(&conn, &wallet_id, &merged)
+                })
+                .map_err(PersistenceError::from)?;
+        } else {
+            self.buffer
+                .store(wallet_id, changeset)
+                .map_err(PersistenceError::from)?;
+        }
         match self.config.flush_mode {
             FlushMode::Immediate => self.flush_inner(&wallet_id),
             FlushMode::Manual => Ok(()),
@@ -1565,6 +1616,40 @@ fn apply_pragmas(
         u64::try_from(config.busy_timeout.as_millis()).unwrap_or(i64::MAX as u64),
     )?;
     conn.pragma_update(None, "busy_timeout", ms)?;
+    Ok(())
+}
+
+/// The identity view a flush would write once `incoming` merges into
+/// `buffered` — the state the slot check has to judge.
+///
+/// Built with the same `Merge` impl the buffer uses, so the check sees
+/// what `apply` will see and not an approximation of it. `None` when
+/// `incoming` carries no identities.
+fn merged_identities(
+    buffered: Option<&PlatformWalletChangeSet>,
+    incoming: &PlatformWalletChangeSet,
+) -> Option<IdentityChangeSet> {
+    let incoming = incoming.identities.clone()?;
+    let Some(mut merged) = buffered.and_then(|cs| cs.identities.clone()) else {
+        return Some(incoming);
+    };
+    merged.merge(incoming);
+    Some(merged)
+}
+
+/// Apply every populated sub-changeset under one transaction and
+/// commit. Returned `Err` is the per-area / commit failure verbatim —
+/// classification + buffer restore happen one level up. Takes the
+/// already-locked connection so the caller can span the take/write
+/// window with a single lock.
+fn write_changeset_in_one_tx(
+    conn: &mut Connection,
+    wallet_id: &WalletId,
+    cs: &PlatformWalletChangeSet,
+) -> Result<(), WalletStorageError> {
+    let tx = conn.transaction()?;
+    apply_changeset_to_tx(&tx, wallet_id, cs)?;
+    tx.commit()?;
     Ok(())
 }
 

@@ -30,12 +30,16 @@ fn reopen(path: &std::path::Path) -> platform_wallet_storage::SqlitePersister {
 
 /// Build an `IdentityEntry` parented to a specific wallet (so the upsert
 /// cross-check passes and the typed `wallet_id` column is populated).
+///
+/// The derivation slot is keyed off `id` because `(wallet_id,
+/// identity_index)` names exactly one identity: two identities of one
+/// wallet sharing a slot is the corruption `store` refuses to write.
 fn entry_for(id: u8, wallet_id: [u8; 32]) -> IdentityEntry {
     IdentityEntry {
         id: Identifier::from([id; 32]),
         balance: u64::from(id),
         revision: 1,
-        identity_index: Some(0),
+        identity_index: Some(u32::from(id)),
         last_updated_balance_block_time: None,
         last_synced_keys_block_time: None,
         dpns_names: Vec::new(),

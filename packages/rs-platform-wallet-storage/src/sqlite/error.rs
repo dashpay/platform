@@ -240,6 +240,36 @@ pub enum WalletStorageError {
     #[error("identity entry id disagrees with its map key")]
     IdentityEntryIdMismatch,
 
+    /// Two different identities claimed one wallet's derivation slot.
+    /// `identity_index` is an HD path component, so `(wallet_id,
+    /// identity_index)` names exactly one identity; a second claim is a
+    /// contradiction rather than a competition, and is refused instead
+    /// of orphaning the displaced identity's keys at the next load.
+    #[error(
+        "identity index conflict: index {identity_index} of wallet {} is held by identity {}, cannot assign it to {}",
+        hex::encode(wallet_id),
+        hex::encode(existing),
+        hex::encode(incoming)
+    )]
+    IdentityIndexConflict {
+        wallet_id: [u8; 32],
+        identity_index: u32,
+        existing: [u8; 32],
+        incoming: [u8; 32],
+    },
+
+    /// A wallet-less identity carried a derivation index. Out-of-wallet
+    /// identities are keyed by identity id alone and have no derivation
+    /// context, so an index on one is state that can never be honoured.
+    #[error(
+        "wallet-less identity {} carries derivation index {identity_index}",
+        hex::encode(identity_id)
+    )]
+    WalletlessIdentityIndex {
+        identity_id: [u8; 32],
+        identity_index: u32,
+    },
+
     /// A rehydration merge (`load_prekeyed`) found an `identity_keys` /
     /// `contacts` entry whose owner identity is neither loaded nor
     /// tombstoned for this wallet — an orphaned row a logical delete does
@@ -594,6 +624,8 @@ impl WalletStorageError {
             | Self::IdentityKeyEntryMismatch
             | Self::IdentityKeyWalletMismatch { .. }
             | Self::IdentityEntryIdMismatch
+            | Self::IdentityIndexConflict { .. }
+            | Self::WalletlessIdentityIndex { .. }
             | Self::OrphanedIdentityEntry { .. }
             | Self::AccountRegistrationEntryMismatch
             | Self::ProviderKeyAccountEntryMismatch
@@ -636,11 +668,19 @@ impl WalletStorageError {
             {
                 PersistenceErrorKind::Constraint
             }
+            // Uniqueness of `(wallet_id, identity_index)` is enforced in
+            // Rust, not by a SQL constraint, so it has to be classified
+            // here by hand — it is a caller-data violation all the same.
+            Self::IdentityIndexConflict { .. } | Self::WalletlessIdentityIndex { .. } => {
+                PersistenceErrorKind::Constraint
+            }
             // Typed re-mapping of an FK violation — same class as the raw
             // `ConstraintViolation` above, so it reports the same kind.
             Self::IdentityKeyWalletMismatch { .. } => PersistenceErrorKind::Constraint,
-            // A migration failure (`Self::Migration`) isn't a caller bug,
-            // so it stays `Fatal` rather than `Constraint`.
+            // Refinery surfaces FK / constraint problems through rusqlite;
+            // if that path leaks through here the typed variant lives in
+            // `Self::Migration`, which we leave as `Fatal` since a
+            // migration failure isn't a caller bug.
             _ => PersistenceErrorKind::Fatal,
         }
     }
@@ -693,6 +733,8 @@ impl WalletStorageError {
             Self::IdentityKeyEntryMismatch => "identity_key_entry_mismatch",
             Self::IdentityKeyWalletMismatch { .. } => "identity_key_wallet_mismatch",
             Self::IdentityEntryIdMismatch => "identity_entry_id_mismatch",
+            Self::IdentityIndexConflict { .. } => "identity_index_conflict",
+            Self::WalletlessIdentityIndex { .. } => "walletless_identity_index",
             Self::OrphanedIdentityEntry { .. } => "orphaned_identity_entry",
             Self::AccountRecordInvalid { .. } => "account_record_invalid",
             Self::MissingAccount { .. } => "missing_account_registration_entry",

@@ -119,6 +119,39 @@ fn tc_code_004_b_constraint_variants_map_to_constraint_kind() {
     }
 }
 
+/// Identity-slot uniqueness is enforced in Rust rather than by a SQL
+/// constraint, so its variants have to claim the `Constraint` kind
+/// explicitly — they are caller-data violations like any FK breach.
+#[test]
+fn tc_code_004_b_identity_index_variants_map_to_constraint_kind() {
+    let cases: Vec<(&str, WalletStorageError)> = vec![
+        (
+            "IdentityIndexConflict",
+            WalletStorageError::IdentityIndexConflict {
+                wallet_id: [0xAA; 32],
+                identity_index: 1,
+                existing: [0xBB; 32],
+                incoming: [0xCC; 32],
+            },
+        ),
+        (
+            "WalletlessIdentityIndex",
+            WalletStorageError::WalletlessIdentityIndex {
+                identity_id: [0xDD; 32],
+                identity_index: 2,
+            },
+        ),
+    ];
+    for (label, err) in cases {
+        assert!(!err.is_transient(), "{label}: must not be transient");
+        assert_eq!(
+            kind_of(err),
+            PersistenceErrorKind::Constraint,
+            "{label}: trait-boundary kind must be Constraint"
+        );
+    }
+}
+
 /// Every remaining fatal-but-not-constraint variant maps to `Fatal`.
 /// Spot-check enough variants to lock the table; the
 /// exhaustiveness is guarded by the wildcard-free invariant test.

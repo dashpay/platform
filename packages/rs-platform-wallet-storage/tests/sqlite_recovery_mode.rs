@@ -415,40 +415,42 @@ fn used_address_owner_conflict_is_tolerated_in_recovery() {
 
 /// Plant an identity with no owning wallet that nonetheless claims a
 /// position within one — a row that contradicts itself.
+///
+/// Written straight to SQLite: `store` refuses to create this state
+/// (`WalletlessIdentityIndex`), so only a legacy database predating that
+/// check can hold it — which is the state under test. `load_prekeyed`
+/// buckets on the index inside `entry_blob`, so the contradiction has to
+/// live in the blob, not just the column.
 fn seed_self_contradictory_unowned_identity(persister: &SqlitePersister, identity_id: &[u8; 32]) {
-    use platform_wallet::changeset::{IdentityChangeSet, IdentityEntry};
+    use platform_wallet::changeset::IdentityEntry;
     use platform_wallet::wallet::identity::IdentityStatus;
+    use platform_wallet_storage::sqlite::schema::blob;
     let id = dpp::prelude::Identifier::from(*identity_id);
-    let mut identities = IdentityChangeSet::default();
-    identities.identities.insert(
+    let entry = IdentityEntry {
         id,
-        IdentityEntry {
-            id,
-            balance: 0,
-            revision: 0,
-            // No owning wallet, yet a position within one.
-            identity_index: Some(4),
-            last_updated_balance_block_time: None,
-            last_synced_keys_block_time: None,
-            dpns_names: Vec::new(),
-            contested_dpns_names: Vec::new(),
-            status: IdentityStatus::Unknown,
-            wallet_id: None,
-            dashpay_profile: None,
-            dashpay_payments: Default::default(),
-            contact_profiles: Default::default(),
-            ignored_senders: Default::default(),
-        },
-    );
-    persister
-        .store(
-            [0u8; 32],
-            PlatformWalletChangeSet {
-                identities: Some(identities),
-                ..Default::default()
-            },
-        )
-        .expect("seed unowned identity carrying a registration index");
+        balance: 0,
+        revision: 0,
+        // No owning wallet, yet a position within one.
+        identity_index: Some(4),
+        last_updated_balance_block_time: None,
+        last_synced_keys_block_time: None,
+        dpns_names: Vec::new(),
+        contested_dpns_names: Vec::new(),
+        status: IdentityStatus::Unknown,
+        wallet_id: None,
+        dashpay_profile: None,
+        dashpay_payments: Default::default(),
+        contact_profiles: Default::default(),
+        ignored_senders: Default::default(),
+    };
+    let payload = blob::encode(&entry).expect("encode unowned identity entry");
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "INSERT INTO identities (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
+         VALUES (?1, NULL, 4, ?2, 0)",
+        params![id.as_slice(), payload],
+    )
+    .expect("seed unowned identity carrying a registration index");
 }
 
 #[test]

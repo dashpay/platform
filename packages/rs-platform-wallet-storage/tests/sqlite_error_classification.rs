@@ -234,6 +234,16 @@ fn samples() -> Vec<WalletStorageError> {
         },
         WalletStorageError::ConfigInvalid { reason: "bad knob" },
         WalletStorageError::IdentityEntryIdMismatch,
+        WalletStorageError::IdentityIndexConflict {
+            wallet_id: [3u8; 32],
+            identity_index: 1,
+            existing: [4u8; 32],
+            incoming: [5u8; 32],
+        },
+        WalletStorageError::WalletlessIdentityIndex {
+            identity_id: [6u8; 32],
+            identity_index: 2,
+        },
         WalletStorageError::OrphanedIdentityEntry { owner: [0x0E; 32] },
         WalletStorageError::AddressDecode {
             source: dashcore::address::Error::UnrecognizedScript,
@@ -371,6 +381,10 @@ fn tc_p2_005_is_transient_table() {
                 (false, "identity_key_wallet_mismatch")
             }
             WalletStorageError::IdentityEntryIdMismatch => (false, "identity_entry_id_mismatch"),
+            WalletStorageError::IdentityIndexConflict { .. } => (false, "identity_index_conflict"),
+            WalletStorageError::WalletlessIdentityIndex { .. } => {
+                (false, "walletless_identity_index")
+            }
             WalletStorageError::OrphanedIdentityEntry { .. } => (false, "orphaned_identity_entry"),
             WalletStorageError::AssetLockEntryMismatch { .. } => {
                 (false, "asset_lock_entry_mismatch")
