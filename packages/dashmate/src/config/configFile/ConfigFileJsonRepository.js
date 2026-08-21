@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 import lockfile from 'proper-lockfile';
 import semver from 'semver';
 import writeFileAtomic from 'write-file-atomic';
+import { FILESYSTEM_MUTATING_MIGRATIONS } from '../../../configs/getConfigFileMigrationsFactory.js';
 import Config from '../Config.js';
 import { PACKAGE_ROOT_DIR } from '../../constants.js';
 import ConfigFileMigrationRequiredError from '../errors/ConfigFileMigrationRequiredError.js';
@@ -256,12 +257,17 @@ export default class ConfigFileJsonRepository {
     // and it stops a stop-first upgrade before the node goes down rather than
     // after.
     //
+    // Only the migrations that touch the filesystem are refused. The rest
+    // reshape the configuration object, which can be applied in memory and
+    // thrown away - and has to be, because the first run after an upgrade is
+    // both the run where a migration is due and the run this mode exists for.
+    //
     // Answering a different question from the one below. "Take the lock" is
     // safe to answer yes to whenever the state cannot be read, but "tell the
     // operator an older dashmate wrote this" has to be true - a file that is
     // missing or damaged must report itself as missing or damaged, and one of
     // those errors is what first-run setup catches to create defaults.
-    if (options.readOnly === true && this.#isRecordedVersionBehind()) {
+    if (options.readOnly === true && this.#hasFilesystemMigrationDue()) {
       throw new ConfigFileMigrationRequiredError(this.configFilePath);
     }
 
@@ -308,11 +314,23 @@ export default class ConfigFileJsonRepository {
    *
    * @returns {boolean}
    */
-  #isRecordedVersionBehind() {
-    if (typeof this.configFormatVersion !== 'string') {
+  #hasFilesystemMigrationDue() {
+    const recordedVersion = this.#recordedVersion();
+
+    if (recordedVersion === null || typeof this.configFormatVersion !== 'string') {
       return false;
     }
 
+    return FILESYSTEM_MUTATING_MIGRATIONS.some((version) => semver.gt(version, recordedVersion)
+      && semver.lte(version, this.configFormatVersion));
+  }
+
+  /**
+   * The format version the file records, or null when it cannot be read.
+   *
+   * @returns {string|null}
+   */
+  #recordedVersion() {
     let recordedVersion;
 
     try {
@@ -320,14 +338,16 @@ export default class ConfigFileJsonRepository {
         fs.readFileSync(this.configFilePath, 'utf8'),
       ).configFormatVersion;
     } catch {
-      return false;
+      // An unreadable or malformed file is read()'s to report, with the error
+      // that names the file and the reason.
+      return null;
     }
 
     if (typeof recordedVersion !== 'string' || semver.valid(recordedVersion) === null) {
-      return false;
+      return null;
     }
 
-    return semver.lt(recordedVersion, this.configFormatVersion);
+    return recordedVersion;
   }
 
   /**

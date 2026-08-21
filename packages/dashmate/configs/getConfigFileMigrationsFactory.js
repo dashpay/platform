@@ -16,6 +16,19 @@ import { stockImagePattern, historicalStockImagePattern } from '../src/config/st
  * @param {DefaultConfigs} defaultConfigs
  * @returns {getConfigFileMigrations}
  */
+/**
+ * Migrations that move, copy or delete files, as opposed to reshaping data.
+ *
+ * Almost every migration only rewrites the configuration object, which can be
+ * applied in memory and discarded. These two relocate TLS material and remove
+ * the originals, so a caller that has promised to change nothing cannot run
+ * them and has to decline instead.
+ *
+ * A migration added here must be added to this set, and a test fails if one
+ * touches the filesystem without being declared.
+ */
+export const FILESYSTEM_MUTATING_MIGRATIONS = ['0.25.7', '1.0.0-dev.12'];
+
 export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
   /**
    * @typedef {function} getConfigFileMigrations

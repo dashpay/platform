@@ -373,6 +373,63 @@ describe('ConfigFileJsonRepository', () => {
       });
     });
 
+    // The run this mode exists for is the first one after an upgrade, which is
+    // exactly when a migration is due. Refusing there fails the operator at the
+    // moment they were told the command was safe - before they stop a healthy
+    // node. Almost every migration only reshapes data, so it can be applied in
+    // memory and thrown away.
+    it('should migrate in memory when no migration touches the disk', async () => {
+      const container = await createDIContainer();
+      container.resolve('homeDir').change(homeDir);
+
+      const configFormatVersion = container.resolve('configFormatVersion');
+
+      const seeded = JSON.parse(seedConfigFile());
+      seeded.configFormatVersion = '4.1.0';
+      fs.writeFileSync(configFilePath, JSON.stringify(seeded, undefined, 2), 'utf8');
+
+      const before = fs.readFileSync(configFilePath, 'utf8');
+
+      const repository = new ConfigFileJsonRepository(
+        container.resolve('migrateConfigFile'),
+        homeDir,
+        createDefaults,
+        configFormatVersion,
+      );
+
+      let rendered = false;
+      const { configFile } = repository.readAndMigrate(
+        { readOnly: true },
+        () => { rendered = true; },
+      );
+
+      // The caller gets current data to judge, and the disk is untouched.
+      expect(configFile.getConfigFormatVersion()).to.equal(configFormatVersion);
+      expect(rendered).to.be.false();
+      expect(fs.readFileSync(configFilePath, 'utf8')).to.equal(before);
+      expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.false();
+    });
+
+    // The two migrations that move and delete TLS material are the only reason
+    // this mode ever refuses, so it has to refuse when one of them is in range.
+    it('should still refuse when a migration in range touches the disk', async () => {
+      const container = await createDIContainer();
+      container.resolve('homeDir').change(homeDir);
+
+      const legacy = getConfigFileDataV0250();
+      fs.writeFileSync(configFilePath, JSON.stringify(legacy, undefined, 2), 'utf8');
+
+      const repository = new ConfigFileJsonRepository(
+        container.resolve('migrateConfigFile'),
+        homeDir,
+        createDefaults,
+        container.resolve('configFormatVersion'),
+      );
+
+      expect(() => repository.readAndMigrate({ readOnly: true }))
+        .to.throw(ConfigFileMigrationRequiredError);
+    });
+
     // The common case, and the one that has to stay fast: nothing to migrate,
     // so nothing to refuse and no lock to take.
     it('should read without locking for a caller that changes nothing', () => {
