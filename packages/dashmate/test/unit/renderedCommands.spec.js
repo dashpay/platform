@@ -272,6 +272,116 @@ describe('every command dashmate tells an operator to run', () => {
     });
   });
 
+  // `dashmate ssl obtain` installs the pair and signals the gateway, and the
+  // signal reaches Envoy's hot-restarter, which re-execs Envoy against the same
+  // configuration without touching the container. Telling an operator to
+  // restart after obtaining therefore buys them an outage and changes nothing.
+  //
+  // This has been reported five separate times, each in a surface the previous
+  // fix did not cover, so the invariant is asserted over every rendered remedy
+  // at once rather than at the places it happened to appear.
+  describe('remedies routed through ssl obtain', () => {
+    /**
+     * @param {string} label
+     * @param {string} text
+     * @return {boolean} whether this text prescribed an obtain
+     */
+    function expectNoRestartAlongsideObtain(label, text) {
+      const commands = commandsIn(text);
+      const obtains = commands.filter((command) => /dashmate\s+ssl\s+obtain/.test(command));
+      const restarts = commands.filter((command) => /dashmate\s+restart/.test(command));
+
+      if (obtains.length === 0) {
+        return false;
+      }
+
+      expect(restarts, `${label} prescribes an obtain and then ${restarts.join(', ')}`)
+        .to.be.empty();
+
+      return true;
+    }
+
+    it('never tells the operator to restart afterwards in the update guidance', () => {
+      let covered = 0;
+
+      ['zerossl', 'letsencrypt', 'file', 'self-signed'].forEach((provider) => {
+        config.set('platform.gateway.ssl.provider', provider);
+
+        [true, false].forEach((isNodeRunning) => {
+          const text = renderCertificateGuidance({
+            config, verdict: verdict(), isNodeRunning, pull: null,
+          });
+
+          if (expectNoRestartAlongsideObtain(`guidance ${provider}/${isNodeRunning}`, text)) {
+            covered += 1;
+          }
+        });
+      });
+
+      expect(covered, 'no guidance variant prescribed an obtain').to.equal(8);
+    });
+
+    it('never tells the operator to restart afterwards in a doctor prescription', () => {
+      /**
+       * @param {Object} servedCertificate
+       * @return {Object[]}
+       */
+      const problemsFor = (servedCertificate) => {
+        const samples = new Samples();
+        samples.setDashmateConfig(config);
+        samples.setServiceInfo('gateway', 'installedCertificate', {
+          status: 'INVALID',
+          reasons: [{ code: 'EXPIRED', message: 'expired' }],
+          warnings: [],
+        });
+        samples.setServiceInfo('gateway', 'servedCertificate', servedCertificate);
+
+        return analyseGatewayCertificateFactory()(samples);
+      };
+
+      const expired = new Date(Date.now() - 864e5).toUTCString();
+      const base = {
+        state: 'served',
+        port: 443,
+        chainVerified: true,
+        identityVerified: true,
+        matchesOnDisk: true,
+      };
+
+      // Every branch that can prescribe an obtain: the address it served does
+      // not belong to this node, its certificate has run out, and its
+      // certificate differs from a disk copy not known to be usable.
+      const cases = [
+        { ...base, identityVerified: false, identityError: 'not in the cert altnames' },
+        { ...base, certificate: { fingerprint256: 'AA:BB', validTo: expired } },
+        {
+          ...base,
+          certificate: { fingerprint256: 'AA:BB', validTo: expired },
+          matchesOnDisk: false,
+          onDisk: { fingerprint256: 'CC:DD' },
+        },
+        {
+          ...base,
+          certificate: { fingerprint256: 'AA:BB', validTo: new Date(Date.now() + 864e5).toUTCString() },
+          matchesOnDisk: false,
+          onDisk: { fingerprint256: 'CC:DD' },
+        },
+      ];
+
+      let covered = 0;
+
+      cases.forEach((servedCertificate, index) => {
+        problemsFor(servedCertificate).forEach((problem, position) => {
+          if (expectNoRestartAlongsideObtain(`doctor ${index}/${position}`, problem.getSolution())) {
+            covered += 1;
+          }
+        });
+      });
+
+      expect(covered, 'no doctor prescription offered an obtain').to.be.greaterThan(2);
+    });
+  });
+
   // The backstop. Rendering can only check surfaces a test knows about, and
   // this class of defect has recurred by arriving in a place nobody thought to
   // check. Anything under src/ that lays out a command has to name the node,

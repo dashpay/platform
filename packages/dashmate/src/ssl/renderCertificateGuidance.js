@@ -150,6 +150,12 @@ function renderFix(cfg, isNodeRunning, isAlreadyLetsEncrypt) {
   // authority that issues IP-address certificates over ACME - so the heading
   // that offers a switch would contradict the diagnosis printed above it. The
   // commands are the same either way.
+  //
+  // No restart follows the obtain. That command installs the pair and signals
+  // the gateway, and the signal reaches Envoy's hot-restarter, which re-execs
+  // Envoy against the same configuration without touching the container, so a
+  // restart would cost an outage and change nothing. Starting a node that is
+  // already stopped is a different thing and stays.
   const heading = isAlreadyLetsEncrypt
     ? `  THE FIX - obtain a new certificate from Let's Encrypt.`
     : `  THE FIX - switch to Let's Encrypt, which issues IP-address certificates free.`;
@@ -165,8 +171,16 @@ function renderFix(cfg, isNodeRunning, isAlreadyLetsEncrypt) {
   Then:
 
       dashmate ssl obtain ${cfg} --provider letsencrypt
-      dashmate ${isNodeRunning ? 'restart' : 'start'} ${cfg}
-`;
+
+${isNodeRunning
+    ? `  That installs the certificate and signals the gateway, so a running node
+  needs nothing further - no restart.
+`
+    : `  That installs the certificate and signals the gateway. This node is
+  stopped, so bring it back up:
+
+      dashmate start ${cfg}
+`}`;
 }
 
 /**

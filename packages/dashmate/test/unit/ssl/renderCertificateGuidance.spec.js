@@ -258,11 +258,15 @@ describe('renderCertificateGuidance', () => {
     expect(output).to.contain('dashmate start --config base');
   });
 
-  it('should offer restart instead when the node is running', () => {
+  // Obtaining installs the pair and signals the gateway, so a node that is
+  // already up needs nothing further. Telling the operator to restart it would
+  // cost them an outage for no change.
+  it('should ask for nothing further when the node is running', () => {
     const output = render({ isNodeRunning: true });
 
     expect(output).to.not.contain('Your node is currently stopped');
-    expect(output).to.contain('dashmate restart --config base');
+    expect(output).to.not.contain('dashmate restart --config base');
+    expect(output).to.contain('needs nothing further - no restart');
   });
 
   it('should say when images failed to pull', () => {

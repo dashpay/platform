@@ -184,8 +184,8 @@ signals the gateway:
         + 'Clients cannot connect to this node',
         chalk`Renewal has not succeeded. Check the renewal logs:
 {bold.cyanBright dashmate logs ${cfg} dashmate_helper}
-Then obtain a new certificate: {bold.cyanBright dashmate ssl obtain ${cfg}}
-${restartHint(cfg)}`,
+Then obtain a new certificate, which installs it and signals the gateway:
+{bold.cyanBright dashmate ssl obtain ${cfg}}`,
         SEVERITY.HIGH,
       ));
     } else if (onDiskDiffers) {
