@@ -277,8 +277,9 @@ describe('every command dashmate tells an operator to run', () => {
   // configuration without touching the container. Telling an operator to
   // restart after obtaining therefore buys them an outage and changes nothing.
   //
-  // Asserted over every rendered remedy at once rather than per site, because a
-  // surface nobody thought to check is exactly where this reappears.
+  // Asserted over every rendered remedy at once rather than at individual call
+  // sites, because the invariant belongs to the whole surface: any remedy that
+  // ends in an obtain is finished, wherever it is written.
   describe('remedies routed through ssl obtain', () => {
     /**
      * @param {string} label
@@ -381,11 +382,10 @@ describe('every command dashmate tells an operator to run', () => {
     });
   });
 
-  // The backstop. Rendering can only check surfaces a test knows about, and
-  // this class of defect has recurred by arriving in a place nobody thought to
-  // check. Anything under src/ that lays out a command has to name the node,
-  // and a file joining the exemption list is a visible edit rather than a
-  // silent one.
+  // The backstop. Rendering can only check surfaces a test knows about, so a
+  // command laid out somewhere no test drives would go unexamined. Anything
+  // under src/ that lays out a command has to name the node, and a file joining
+  // the exemption list is a visible edit rather than a silent one.
   describe('as written', () => {
     it('lays out no command anywhere in src that cannot name the node', () => {
       const offenders = [];

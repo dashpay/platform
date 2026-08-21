@@ -230,9 +230,9 @@ ${restartHint(cfg)}`,
     // from a connect test, which measures whether something is listening - and
     // nothing listens on port 80 on a healthy node except for the seconds a
     // renewal takes, so it reports closed on healthy nodes by construction.
-    // Reporting it alongside certificate problems put the claim in front of
-    // exactly the operators least able to tell a real firewall problem from a
-    // phantom one, and sent them to rewrite rules that were already correct.
+    // Alongside a certificate problem it reads as the cause of that problem, to
+    // exactly the operators least able to tell a real firewall fault from this
+    // phantom one, and sends them to rewrite rules that are already correct.
     // A drop carries no information; only an answer or a refusal does.
 
     return problems;
