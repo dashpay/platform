@@ -3,6 +3,16 @@ import ObtainCommand from '../../../../src/commands/ssl/obtain.js';
 import ServiceIsNotRunningError from '../../../../src/docker/errors/ServiceIsNotRunningError.js';
 
 describe('SSL obtain command', () => {
+  let stderr;
+
+  beforeEach(function beforeEach() {
+    stderr = '';
+    this.sinon.stub(process.stderr, 'write').callsFake((chunk) => {
+      stderr += chunk;
+      return true;
+    });
+  });
+
   /**
    * @param {Object} sinon
    * @param {string} [provider]
@@ -167,6 +177,32 @@ describe('SSL obtain command', () => {
 
     expect(obtainZeroSSLCertificateTask).to.have.been.calledOnce();
     expect(configFileRepository.write).to.have.been.calledOnceWith(configFile);
+  });
+
+  // The gate's own remediation tells the operator to run this command, and
+  // §the permanence requirement is the whole reason the eight dark nodes went
+  // dark. An operator who opens port 80 for one migration, runs this, succeeds
+  // and closes the port again must not be able to do so silently.
+  it('should state that port 80 has to stay open after obtaining', async function it() {
+    const dependencies = obtainDependencies(this.sinon);
+    dependencies.obtainTask = this.sinon.stub().callsFake(() => new Listr([{
+      task: (ctx) => { ctx.certificateObtained = true; },
+    }]));
+
+    await runObtain(dependencies);
+
+    expect(stderr).to.contain('LEAVE PORT 80 OPEN');
+    expect(stderr).to.contain('survives a reboot');
+  });
+
+  // Nothing was issued, so there is nothing to warn about and a cron run stays
+  // quiet.
+  it('should stay silent when no new certificate was obtained', async function it() {
+    const dependencies = obtainDependencies(this.sinon);
+
+    await runObtain(dependencies);
+
+    expect(stderr).to.not.contain('LEAVE PORT 80 OPEN');
   });
 
   // The retry loop lives in the shared obtain task, so `ssl obtain` gains it

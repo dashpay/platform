@@ -2,6 +2,7 @@ import { Listr } from 'listr2';
 import { Flags } from '@oclif/core';
 import ServiceIsNotRunningError from '../../docker/errors/ServiceIsNotRunningError.js';
 import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
+import { PORT_80_PERMANENCE } from '../../listr/tasks/ssl/letsencrypt/obtainLetsEncryptCertificateTaskFactory.js';
 import isInteractiveSession from '../../util/isInteractiveSession.js';
 import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
 import Certificate from '../../ssl/zerossl/Certificate.js';
@@ -147,18 +148,28 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
       },
     );
 
+    const context = {
+      noRetry,
+      force,
+      expirationDays,
+      // Whether the obtain may ask a question is decided here rather than
+      // inside the shared task, so a caller that never opts in - the helper's
+      // unattended renewal - cannot enable prompting by omission.
+      interactive: isInteractiveSession({ flags }),
+    };
+
     try {
-      await tasks.run({
-        noRetry,
-        force,
-        expirationDays,
-        // Whether the obtain may ask a question is decided here rather than
-        // inside the shared task, so a caller that never opts in - the helper's
-        // unattended renewal - cannot enable prompting by omission.
-        interactive: isInteractiveSession({ flags }),
-      });
+      await tasks.run(context);
     } catch (e) {
       throw new MuteOneLineError(e);
+    }
+
+    // Only when something was actually issued. This is the command the
+    // certificate check tells an operator to run, and an operator who opened
+    // port 80 for this one migration is the one who most needs to hear that it
+    // has to stay open - they never saw a failure that would have said so.
+    if (context.certificateObtained && provider === SSL_PROVIDERS.LETSENCRYPT) {
+      process.stderr.write(`\n${PORT_80_PERMANENCE}\n`);
     }
   }
 }

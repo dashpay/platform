@@ -483,6 +483,55 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
       expect(enquirer.options[1].message).to.contain('[attempt 3 of 3]');
     });
 
+    // When another process holds port 80, Docker refuses the port binding and
+    // lego never starts: no ACME request is made, so nothing is rate-limited,
+    // nothing can be paused, and the firewall is not the problem - the port is
+    // reachable, it is occupied. Branching on the request never having been
+    // attempted, rather than on what the authority said, is what keeps this
+    // out of the business of classifying provider output.
+    it('should not blame the firewall or the authority when the helper never started', async function it() {
+      const missing = Object.assign(new Error('container not found'), { statusCode: 404 });
+      const bindRefused = Object.assign(
+        new Error('(HTTP code 500) server error - failed to set up container networking:'
+          + ' failed to bind host port 0.0.0.0:80/tcp: address already in use'),
+        { statusCode: 500 },
+      );
+      const docker = {
+        getContainer: this.sinon.stub().rejects(missing),
+        createContainer: this.sinon.stub().resolves({
+          start: this.sinon.stub().rejects(bindRefused),
+          logs: this.sinon.stub().resolves(Buffer.from('')),
+          wait: this.sinon.stub().resolves({ StatusCode: 0 }),
+        }),
+      };
+
+      const error = await buildFailingTask(this.sinon, docker)(config)
+        .run({ force: true }).catch((e) => e);
+
+      // The Docker error is shown, because it is the only thing that says what
+      // actually happened.
+      expect(error.message).to.contain('address already in use');
+      expect(error.message).to.contain('already listening on port 80');
+
+      // And none of the authority-side consequences are claimed.
+      expect(error.message).to.not.contain('PAUSED');
+      expect(error.message).to.not.contain('rate-limit');
+      expect(error.message).to.not.contain('failed attempts are shared');
+      expect(error.message).to.not.contain('Fix inbound port 80 first');
+    });
+
+    // A failure the authority did return keeps the guidance that is about the
+    // authority.
+    it('should keep the rate-limit guidance when the request did reach the authority', async function it() {
+      const docker = getFailingDockerMock(this.sinon);
+
+      const error = await buildFailingTask(this.sinon, docker)(config)
+        .run({ force: true }).catch((e) => e);
+
+      expect(error.message).to.contain('PAUSED');
+      expect(error.message).to.contain('failed attempts are shared');
+    });
+
     // lego fails for reasons that have nothing to do with the firewall - a rate
     // limit, an account problem, a bad directory - and naming port 80 as the
     // cause of all of them sends an operator to check something that is fine.

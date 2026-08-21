@@ -5,6 +5,8 @@ import os from 'os';
 
 import { ERRORS } from '../../../../ssl/letsencrypt/validateLetsEncryptCertificateFactory.js';
 import LegoCertificate from '../../../../ssl/letsencrypt/LegoCertificate.js';
+import { LETSENCRYPT_ACME_DIRECTORY_URL } from '../../../../constants.js';
+import LegoDidNotStartError from '../../../../ssl/errors/LegoDidNotStartError.js';
 import promptOrThrow from '../../../../util/promptOrThrow.js';
 import renderConfigFlag from '../../../../util/renderConfigFlag.js';
 
@@ -18,6 +20,23 @@ const LEGO_IMAGE = 'goacme/lego:v4.31.0';
  * helper room.
  */
 const MAX_OBTAIN_ATTEMPTS = 3;
+
+/**
+ * Port 80 is a standing requirement, not a step.
+ *
+ * An IP-address certificate lasts about six days and every renewal performs a
+ * fresh challenge, so a rule opened once for a migration and closed afterwards
+ * - or one that does not survive a reboot - takes the node dark within a week,
+ * and nothing reports it. The operator who has just succeeded is the one least
+ * likely to hear this otherwise, because they never saw a failure.
+ */
+export const PORT_80_PERMANENCE = `LEAVE PORT 80 OPEN. This is not a one-time requirement. Certificates for
+IP addresses last about six days, and dashmate keeps renewing this one for as
+long as the node runs - every renewal needs inbound port 80 again.
+
+If you opened port 80 just to make this work, make the rule permanent and make
+sure it survives a reboot. If it lapses, this node goes dark within six days
+and nothing will tell you.`;
 
 /**
  * What to tell an operator who has run out of attempts.
@@ -43,7 +62,35 @@ Let's Encrypt's Self-Service Portal to unpause it:
     https://letsencrypt.org/docs/rate-limits/
 
 Fix inbound port 80 first, then: `
-    + `dashmate ssl obtain ${renderConfigFlag(config.getName())} --provider letsencrypt`;
+    + `dashmate ssl obtain ${renderConfigFlag(config.getName())} --provider letsencrypt`
+    + `\n\n${PORT_80_PERMANENCE}`;
+}
+
+/**
+ * What to tell an operator whose helper never started.
+ *
+ * Nothing reached the certificate authority, so none of the authority-side
+ * consequences apply: nothing was validated, no issuance budget was spent, and
+ * no address can have been paused. Saying otherwise would send them to a
+ * rate-limit portal over a local port conflict.
+ *
+ * @param {Config} config
+ * @param {Error} cause
+ * @return {string}
+ */
+function renderHelperDidNotStartGuidance(config, cause) {
+  return `dashmate could not start the certificate helper, so no request was
+made to Let's Encrypt. Nothing was issued, nothing was validated, and no
+rate limit was spent.
+
+${cause.message}
+
+The usual cause is that something is already listening on port 80 here. The
+port being reachable is not the problem - it is occupied. Find what holds it,
+stop that, then retry:
+
+    sudo ss -lntp 'sport = :80'
+    dashmate ssl obtain ${renderConfigFlag(config.getName())} --provider letsencrypt`;
 }
 
 const LEGO_CA_CERTIFICATE_MOUNT_PATH = '/acme-ca.pem';
@@ -72,6 +119,29 @@ export default function obtainLetsEncryptCertificateTaskFactory(
   legoCaCertificatePath,
   legoContainerOptions,
 ) {
+  /**
+   * Create and start the lego container, reporting a failure to do either as
+   * distinct from a failure the certificate authority returned.
+   *
+   * Nothing here has spoken to the authority yet, so a failure means no
+   * validation was attempted and no issuance budget was spent.
+   *
+   * @param {Object} options - Docker create-container options
+   * @return {Promise<Object>} the started container
+   */
+  async function startLegoContainer(options) {
+    let container;
+
+    try {
+      container = await docker.createContainer(options);
+      await container.start();
+    } catch (e) {
+      throw new LegoDidNotStartError(e);
+    }
+
+    return container;
+  }
+
   /**
    * @typedef {obtainLetsEncryptCertificateTask}
    * @param {Config} config
@@ -199,6 +269,17 @@ export default function obtainLetsEncryptCertificateTaskFactory(
             throw new Error('ACME directory URL must use HTTPS');
           }
 
+          // Named before the request rather than after it. Until now the
+          // directory only appeared inside lego's own output, so a node
+          // pointed at staging - or at production when staging was meant -
+          // could not be told apart until an authorization had been spent.
+          const isProductionDirectory = acmeDirectoryUrl.toString()
+            === LETSENCRYPT_ACME_DIRECTORY_URL;
+
+          // eslint-disable-next-line no-param-reassign
+          task.output = `Certificate authority: ${acmeDirectoryUrl.toString()}`
+            + `${isProductionDirectory ? '' : ' (NOT the production directory)'}`;
+
           // Determine if this is initial run or renewal
           const command = ctx.isRenewal ? 'renew' : 'run';
 
@@ -264,7 +345,9 @@ export default function obtainLetsEncryptCertificateTaskFactory(
               env.push(`LEGO_CA_CERTIFICATES=${LEGO_CA_CERTIFICATE_MOUNT_PATH}`);
             }
 
-            const container = await docker.createContainer({
+            // From here to the container running, any failure means the helper
+            // never ran and nothing reached the authority.
+            const container = await startLegoContainer({
               name: containerName,
               Image: LEGO_IMAGE,
               Cmd: legoArgs,
@@ -284,8 +367,6 @@ export default function obtainLetsEncryptCertificateTaskFactory(
 
             // eslint-disable-next-line no-param-reassign
             task.output = `Running lego ${command}...`;
-
-            await container.start();
 
             // Wait for container to finish
             const result = await container.wait();
@@ -324,6 +405,12 @@ export default function obtainLetsEncryptCertificateTaskFactory(
 
               break;
             } catch (e) {
+              // The helper never ran, so there is nothing the authority could
+              // tell us and nothing to retry against - the fix is local.
+              if (e instanceof LegoDidNotStartError) {
+                throw new Error(renderHelperDidNotStartGuidance(config, e.cause));
+              }
+
               // Prompting needs a positive opt-in from the entry point. The
               // helper renews inside a container with no terminal, where a
               // prompt would never settle and would hold the config lock -
@@ -359,6 +446,7 @@ export default function obtainLetsEncryptCertificateTaskFactory(
           }
 
           ctx.configurationUpdateRequired = true;
+          ctx.certificateObtained = true;
 
           // eslint-disable-next-line no-param-reassign
           task.output = 'Certificate obtained successfully';
