@@ -521,10 +521,17 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
 
       const tasks = inject(buildFailingTask(this.sinon, docker)(config), enquirer);
 
-      await expect(tasks.run({ force: true })).to.be.rejected();
+      const error = await tasks.run({ force: true }).catch((e) => e);
 
       expect(enquirer.prompt).to.not.have.been.called();
       expect(docker.createContainer).to.have.been.calledOnce();
+
+      // lego's own account of the failure is what the operator needs. Reaching
+      // the prompt and being refused there would be safe but would replace it
+      // with a report that dashmate tried to ask a question, so the decision
+      // not to retry has to be made before the prompt is reached.
+      expect(error.message).to.contain('Timeout during connect');
+      expect(error.message).to.not.contain('without a terminal');
     });
 
     it('should honour no-retry even for an operator at a terminal', async function it() {

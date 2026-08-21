@@ -380,9 +380,16 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
     // prompt reached in that container never settles and never releases the
     // config lock - which then blocks every other dashmate command forever.
     it('should not construct a prompt when the session cannot answer', async function it() {
-      await expect(run.call(this, {})).to.be.rejected();
+      const error = await run.call(this, {}).catch((e) => e);
 
       expect(enquirer.prompt).to.not.have.been.called();
+
+      // The verification failure is what the operator needs to see. Reaching
+      // the prompt and being refused there would be safe but would replace the
+      // real error with a report that dashmate tried to ask a question, so the
+      // decision not to retry has to be made before the prompt is reached.
+      expect(error.message).to.contain('domain control validation failed');
+      expect(error.message).to.not.contain('without a terminal');
     });
 
     it('should still ask an operator who is at a terminal', async function it() {
