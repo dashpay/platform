@@ -4,8 +4,13 @@ import crypto from 'crypto';
 import Docker from 'dockerode';
 import { asValue } from 'awilix';
 import createDIContainer from '../../../src/createDIContainer.js';
+import Config from '../../../src/config/Config.js';
+import ConfigFile from '../../../src/config/configFile/ConfigFile.js';
+import ConfigFileJsonRepository from '../../../src/config/configFile/ConfigFileJsonRepository.js';
 import HomeDir from '../../../src/config/HomeDir.js';
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
+import isCertificatePairInstalled from '../../../src/ssl/letsencrypt/isCertificatePairInstalled.js';
+import renewCertificate from '../../../src/helper/renewCertificate.js';
 
 /**
  * Obtain a certificate from a real ACME server.
@@ -373,5 +378,147 @@ describe('Let\'s Encrypt certificate against a local ACME server', function main
     // Rewriting an unchanged configuration is what made read-only commands
     // clobber concurrent edits, and a renewal check runs unattended.
     expect(config.isChanged()).to.be.false();
+  });
+
+  /**
+   * Nothing prompts for a contact address any more, so every fresh setup and
+   * every migration from another provider issues without one. If contactless
+   * issuance does not work, the feature does not work - which is why this is a
+   * gate rather than a nice-to-have.
+   *
+   * The client half is already measured: lego does not require --email and
+   * substitutes noemail@example.com as a local directory name. What is proved
+   * here is the CA half - that registration without a contact is accepted and
+   * the certificate that comes back is the same certificate.
+   */
+  describe('issuance without a contact address', () => {
+    /**
+     * @param {string} name
+     * @param {string|null} email
+     * @return {Config}
+     */
+    function createConfig(name, email) {
+      const created = new Config(name, getBaseConfigFactory(homeDir)().getOptions());
+
+      created.set('externalIp', legoIp);
+      created.set('platform.gateway.ssl.providerConfigs.letsencrypt.email', email);
+      created.set(
+        'platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl',
+        `https://${PEBBLE_HOSTNAME}:${PEBBLE_ACME_PORT}/dir`,
+      );
+
+      return created;
+    }
+
+    /**
+     * @param {Config} target
+     * @return {{certificate: crypto.X509Certificate, paired: boolean, accounts: string[]}}
+     */
+    function inspect(target) {
+      const dir = homeDir.joinPath(target.getName(), 'platform', 'gateway', 'ssl');
+      const legoDir = homeDir.joinPath(target.getName(), 'platform', 'gateway', 'lego');
+      const bundlePath = path.join(dir, 'bundle.crt');
+      const keyPath = path.join(dir, 'private.key');
+
+      return {
+        certificate: new crypto.X509Certificate(fs.readFileSync(bundlePath)),
+        paired: isCertificatePairInstalled(
+          path.join(legoDir, 'certificates', `${legoIp}.crt`),
+          path.join(legoDir, 'certificates', `${legoIp}.key`),
+          bundlePath,
+          keyPath,
+        ),
+        accounts: fs.readdirSync(path.join(legoDir, 'accounts'), { recursive: true })
+          .map((entry) => entry.toString()),
+      };
+    }
+
+    let contactless;
+    let withContact;
+
+    before(async () => {
+      const obtainLetsEncryptCertificateTask = container.resolve('obtainLetsEncryptCertificateTask');
+
+      contactless = createConfig('contactless', null);
+      withContact = createConfig('withcontact', 'operator@example.org');
+
+      await obtainLetsEncryptCertificateTask(contactless).run({ force: true });
+      await obtainLetsEncryptCertificateTask(withContact).run({ force: true });
+    });
+
+    it('should produce the same certificate with and without a contact address', () => {
+      const a = inspect(contactless);
+      const b = inspect(withContact);
+
+      // Same identifier, same validity window length, same subject alternative
+      // name. A contact address buys nothing from the authority.
+      expect(a.certificate.subjectAltName).to.equal(`IP Address:${legoIp}`);
+      expect(b.certificate.subjectAltName).to.equal(a.certificate.subjectAltName);
+
+      const window = (certificate) => new Date(certificate.validTo).getTime()
+        - new Date(certificate.validFrom).getTime();
+
+      expect(window(a.certificate)).to.equal(window(b.certificate));
+
+      // Both have to be installed as a matching pair, or the gateway cannot
+      // serve either of them.
+      expect(a.paired).to.be.true();
+      expect(b.paired).to.be.true();
+    });
+
+    it('should record the provider for a node that has no contact address', () => {
+      expect(contactless.get('platform.gateway.ssl.enabled')).to.be.true();
+      expect(contactless.get('platform.gateway.ssl.provider')).to.equal('letsencrypt');
+      expect(contactless.get('platform.gateway.ssl.providerConfigs.letsencrypt.email')).to.be.null();
+    });
+
+    // The account directory lego uses is named after the contact address, so a
+    // contactless node's account lives somewhere else entirely. `lego renew`
+    // needs the account that issued, which makes this the half of contactless
+    // operation that issuance alone does not prove.
+    it('should keep the two accounts apart on disk', () => {
+      expect(inspect(contactless).accounts.some((entry) => entry.includes('noemail@example.com')))
+        .to.be.true();
+      expect(inspect(withContact).accounts.some((entry) => entry.includes('operator@example.org')))
+        .to.be.true();
+    });
+
+    // Renewal is where a missing account would surface, and it runs unattended
+    // inside the helper - the one place a failure goes unnoticed for months.
+    it('should renew a contactless certificate through the helper entry point', async () => {
+      const obtainLetsEncryptCertificateTask = container.resolve('obtainLetsEncryptCertificateTask');
+      const before = inspect(contactless).certificate.serialNumber;
+
+      const configFile = new ConfigFile(
+        [contactless],
+        '4.2.0',
+        'abcdef12',
+        contactless.getName(),
+        null,
+      );
+      const configFileRepository = new ConfigFileJsonRepository(
+        (data) => data,
+        homeDir,
+        () => null,
+      );
+      configFileRepository.write(configFile);
+
+      const { renewed } = await renewCertificate({
+        configName: contactless.getName(),
+        provider: 'letsencrypt',
+        // Well past the certificate's own six-day life, so renewal is due.
+        expirationDays: 60,
+        obtainCertificateTask: obtainLetsEncryptCertificateTask,
+        configFileRepository,
+        writeConfigTemplates: () => {},
+      });
+
+      expect(renewed).to.be.true();
+
+      const after = inspect(contactless);
+      expect(after.certificate.serialNumber).to.not.equal(before);
+      expect(after.certificate.subjectAltName).to.equal(`IP Address:${legoIp}`);
+      expect(after.paired).to.be.true();
+    });
   });
 });

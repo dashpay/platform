@@ -10,6 +10,7 @@ import {
   CERTIFICATE_STATUS,
 } from '../../../../../src/ssl/checkGatewayCertificateFactory.js';
 import getEnquirerMock from '../../../../../src/test/mock/getEnquirerMock.js';
+import ServiceIsNotRunningError from '../../../../../src/docker/errors/ServiceIsNotRunningError.js';
 
 describe('gatewayCertificateTaskFactory', () => {
   let homeDir;
@@ -82,7 +83,11 @@ describe('gatewayCertificateTaskFactory', () => {
 
     await tasks.run(context);
 
-    return { context, errors: (tasks.err ?? []).map((e) => e?.error ?? e) };
+    return {
+      context,
+      errors: (tasks.err ?? []).map((e) => e?.error ?? e),
+      state: tasks.tasks[0].state,
+    };
   }
 
   beforeEach(function it() {
@@ -367,6 +372,68 @@ describe('gatewayCertificateTaskFactory', () => {
       expect(errors[0]).to.be.an.instanceOf(CertificateUnresolvedError);
       expect(obtainLetsEncryptCertificateTask).to.not.have.been.called();
       expect(configFileRepository.write).to.not.have.been.called();
+    });
+
+    // listr2 5.0.7 has no fail() on the task wrapper, so throwing is the only
+    // way to show the operator which step went wrong. A green line above an
+    // error message is worse than no line at all.
+    it('should render the step as failed', async function it() {
+      const { state } = await run.call(this, {
+        checkGatewayCertificate: () => invalid(),
+        interactive: false,
+      });
+
+      expect(state).to.equal('FAILED');
+    });
+  });
+
+  describe('the gateway is told about a new certificate', () => {
+    // Envoy reads the certificate files once at startup. Under the documented
+    // upgrade procedure the node is stopped and the new certificate loads at
+    // the next start, but update against a running node is supported too, and
+    // there this is what makes the change reach the wire.
+    it('should reload a running gateway after a successful obtain', async function it() {
+      let checked = 0;
+      await run.call(this, {
+        checkGatewayCertificate: () => {
+          checked += 1;
+          return checked === 1 ? invalid() : verdict();
+        },
+        answers: [true],
+      });
+
+      expect(dockerCompose.execCommand)
+        .to.have.been.calledOnceWith(config, 'gateway', 'kill -SIGHUP 1');
+    });
+
+    it('should carry on when the gateway is not running', async function it() {
+      dockerCompose.execCommand.rejects(new ServiceIsNotRunningError('base', 'gateway'));
+
+      let checked = 0;
+      const { errors } = await run.call(this, {
+        checkGatewayCertificate: () => {
+          checked += 1;
+          return checked === 1 ? invalid() : verdict();
+        },
+        answers: [true],
+      });
+
+      expect(errors).to.be.empty();
+    });
+
+    it('should not swallow a reload that failed for another reason', async function it() {
+      dockerCompose.execCommand.rejects(new Error('docker daemon is unreachable'));
+
+      let checked = 0;
+      const { errors } = await run.call(this, {
+        checkGatewayCertificate: () => {
+          checked += 1;
+          return checked === 1 ? invalid() : verdict();
+        },
+        answers: [true],
+      });
+
+      expect(errors[0].message).to.contain('docker daemon is unreachable');
     });
   });
 
