@@ -1073,16 +1073,12 @@ fn derive_new_utxos(record: &TransactionRecord) -> Vec<Utxo> {
 
 /// Derive the "ours" UTXOs spent by a transaction's inputs.
 ///
-/// Walks `record.input_details` (the entries keyed to inputs that spent
-/// our outpoints) and synthesizes a `Utxo` per entry using the data we
-/// have: the outpoint from `transaction.input[index].previous_output`,
-/// the value and address from `InputDetail`. The script_pubkey, height,
-/// and confirmation flags belong to the *previous* transaction's
-/// output and aren't carried in `InputDetail`; they're filled with
-/// defaults (height 0, all flags false). The
-/// persister deletes by `outpoint` so the missing fields are
-/// informational only — they never affect correctness of the spent-set
-/// removal, only the audit-trail richness on the way out.
+/// One `Utxo` per `record.input_details` entry: outpoint from the
+/// matching input, value and address from `InputDetail`, script_pubkey
+/// reconstructed from that address. Height and the confirmation flags
+/// describe the *previous* output and aren't carried in `InputDetail`,
+/// so they default (height 0, flags false); `core_utxos` has no column
+/// for either, so those defaults never become durable state.
 fn derive_spent_utxos(record: &TransactionRecord) -> Vec<Utxo> {
     record
         .input_details
