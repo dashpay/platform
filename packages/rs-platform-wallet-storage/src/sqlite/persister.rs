@@ -1085,6 +1085,14 @@ impl SqlitePersister {
     /// Test-only: install a callback fired between `store()`'s buffer
     /// merge and its flush. Same visibility rules as
     /// [`lock_conn_for_test`](Self::lock_conn_for_test).
+    ///
+    /// Unlike [`force_next_flush_to_fail`](Self::force_next_flush_to_fail) /
+    /// [`force_next_pre_flush_to_fail`](Self::force_next_pre_flush_to_fail),
+    /// **this is not one-shot** — the callback stays armed and fires on
+    /// every subsequent `store()` call on this persister until overwritten
+    /// or cleared. A test that wants it to fire exactly once (the common
+    /// case) needs its own latch — see `release_at_store_seam` in
+    /// `tests/common` for the pattern.
     #[doc(hidden)]
     #[cfg(any(test, feature = "__test-helpers"))]
     pub fn set_store_flush_seam_for_test(&self, seam: Arc<dyn Fn() + Send + Sync>) {
