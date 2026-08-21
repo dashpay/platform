@@ -203,6 +203,51 @@ pub fn ensure_platform_address(persister: &SqlitePersister, wallet_id: &WalletId
     .expect("ensure platform_address");
 }
 
+/// Run `action` on another thread, released exactly at the seam
+/// between a `store()`'s buffer merge and its flush, and block that
+/// `store()` for up to `budget` waiting for `action` to return.
+///
+/// This is how the crate tests what a second actor can and cannot do
+/// inside that window without racing for it. An `Immediate` `store()`
+/// holds the write connection across the whole seam, so an `action`
+/// that needs it is parked until the `store()` returns and the wait
+/// simply expires; waiting is not the assertion, it only guarantees the
+/// action had its chance, so no outcome rides on thread scheduling.
+///
+/// The seam is ONE-SHOT: `action` may itself call `store`, and that
+/// call must not be released back into this same rendezvous.
+pub fn release_at_store_seam<T, F>(
+    persister: &std::sync::Arc<SqlitePersister>,
+    budget: std::time::Duration,
+    action: F,
+) -> std::thread::JoinHandle<T>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{mpsc, Arc, Mutex};
+
+    let (go_tx, go_rx) = mpsc::channel::<()>();
+    let (done_tx, done_rx) = mpsc::channel::<()>();
+    let handle = std::thread::spawn(move || {
+        go_rx.recv().expect("the seam released the action");
+        let out = action();
+        let _ = done_tx.send(());
+        out
+    });
+    let done_rx = Mutex::new(done_rx);
+    let released = AtomicBool::new(false);
+    persister.set_store_flush_seam_for_test(Arc::new(move || {
+        if released.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        go_tx.send(()).expect("the action thread is listening");
+        let _ = done_rx.lock().expect("seam channel").recv_timeout(budget);
+    }));
+    handle
+}
+
 /// Echo a simple `store` + `flush` of an arbitrary changeset.
 pub fn store_and_flush(
     persister: &SqlitePersister,

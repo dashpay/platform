@@ -18,14 +18,19 @@
 //! database, and a probe that ran there would read a slot as free that
 //! is not.
 //!
-//! The loop is a stress harness, not the proof — the property holds by
-//! lock structure. It exists because the original defect's window was a
-//! handful of instructions wide (Marvin reproduced it once in ~500-2000
-//! jammer-assisted attempts) and a regression would be just as quiet.
+//! The proof is the deterministic test below: it parks the first
+//! `store()` mid-window and releases the second claim into that exact
+//! window, so a regression fails every run. The stress loop after it is
+//! a shaker, not the proof — it exists because the original defect's
+//! window was a handful of instructions wide (Marvin reproduced it once
+//! in ~500-2000 jammer-assisted attempts) and it reaches interleavings
+//! no scripted rendezvous names. Its iteration count is a CI-time
+//! trade, not a confidence threshold: every attempt builds a database
+//! and spins six threads.
 
 mod common;
 
-use common::{ensure_wallet_meta, fresh_persister, wid};
+use common::{ensure_wallet_meta, fresh_persister, release_at_store_seam, wid};
 
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::{
@@ -39,6 +44,17 @@ use rusqlite::{params, OptionalExtension};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Barrier};
 use std::thread;
+use std::time::Duration;
+
+/// Attempts the stress loop makes. High enough to interleave two
+/// threads many different ways, low enough that the deterministic test
+/// above stays the one carrying the guarantee.
+const STRESS_ATTEMPTS: usize = 64;
+
+/// How long the parked `store()` waits for the second claim. It always
+/// expires — the second claim is parked on the write connection — so
+/// keep it short.
+const CLAIM_BUDGET: Duration = Duration::from_millis(250);
 
 fn iid(byte: u8) -> Identifier {
     Identifier::from([byte; 32])
@@ -86,13 +102,44 @@ fn live_occupant(p: &SqlitePersister, wallet_id: &WalletId, index: u32) -> Optio
     .map(|raw| raw.try_into().expect("32-byte identity_id"))
 }
 
+/// A second claim on the slot, released into the exact window where the
+/// first `store()` has merged but not yet flushed, must be refused —
+/// there is no interleaving in which both succeed, because the first
+/// call holds the write connection across the whole window and the
+/// second needs it to probe the slot.
+#[test]
+fn a_second_claim_released_mid_store_is_refused() {
+    let (p, _tmp, _path) = fresh_persister();
+    let p = Arc::new(p);
+    let w = wid(0xAB);
+    ensure_wallet_meta(&p, &w);
+
+    let second_claimant = Arc::clone(&p);
+    let claimant = release_at_store_seam(&p, CLAIM_BUDGET, move || {
+        second_claimant.store(w, identity_cs(identity_entry(0x02, 1)))
+    });
+    p.store(w, identity_cs(identity_entry(0x01, 1)))
+        .expect("the first claim is uncontested");
+    let second = claimant.join().expect("claimant panicked");
+
+    assert!(
+        second.is_err(),
+        "the slot was taken by the time the second claim was judged: {second:?}"
+    );
+    assert_eq!(
+        live_occupant(&p, &w, 1),
+        Some([0x01; 32]),
+        "the winner's identity is the one on disk"
+    );
+}
+
 /// Exactly one of two racing claims on a slot may succeed, and the
 /// identity it named must be on disk when `store()` returns `Ok` in
 /// `FlushMode::Immediate`. Any single attempt that breaks either half is
 /// a confirmed regression; the loop just keeps shaking the interleaving.
 #[test]
 fn racing_stores_never_report_ok_for_an_identity_that_was_dropped() {
-    for attempt in 0..500 {
+    for attempt in 0..STRESS_ATTEMPTS {
         let (p, _tmp, _path) = fresh_persister();
         let p = Arc::new(p);
         let w = wid(0xAA);

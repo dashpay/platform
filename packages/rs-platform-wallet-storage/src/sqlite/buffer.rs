@@ -27,6 +27,11 @@ impl Buffer {
     }
 
     /// Merge a changeset into the buffer for `wallet_id`.
+    ///
+    /// Test-only convenience: every production write goes through
+    /// [`store_checked`](Self::store_checked), which the persister hands
+    /// the identity-slot probe.
+    #[cfg(test)]
     pub fn store(
         &self,
         wallet_id: WalletId,

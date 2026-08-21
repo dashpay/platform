@@ -156,6 +156,11 @@ pub struct SqlitePersister {
     /// Test-only one-shot injector for `delete_wallet`'s pre-flush phase.
     #[cfg(any(test, feature = "__test-helpers"))]
     primed_pre_flush_error: Mutex<Option<WalletStorageError>>,
+    /// Test-only rendezvous fired between `store()`'s buffer merge and
+    /// its flush, so a test can drive another flusher at that seam
+    /// instead of racing for it.
+    #[cfg(any(test, feature = "__test-helpers"))]
+    store_flush_seam: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
 impl SqlitePersister {
@@ -317,6 +322,8 @@ impl SqlitePersister {
             primed_flush_error: Mutex::new(None),
             #[cfg(any(test, feature = "__test-helpers"))]
             primed_pre_flush_error: Mutex::new(None),
+            #[cfg(any(test, feature = "__test-helpers"))]
+            store_flush_seam: Mutex::new(None),
         })
     }
 
@@ -911,6 +918,21 @@ impl SqlitePersister {
         // check an identity write. Locking it also subsumes the
         // `ensure_connection_usable` poison check.
         let mut conn = self.conn().map_err(PersistenceError::from)?;
+        self.flush_locked(&mut conn, wallet_id)
+    }
+
+    /// Drain and write `wallet_id`'s buffered changeset under a
+    /// connection the caller already holds.
+    ///
+    /// Split out of [`flush_inner`](Self::flush_inner) so an
+    /// `Immediate`-mode `store` can span its merge and its flush with
+    /// ONE guard: `self.conn()` is not reentrant, so a `store` holding
+    /// the connection cannot call `flush_inner`.
+    fn flush_locked(
+        &self,
+        conn: &mut Connection,
+        wallet_id: &WalletId,
+    ) -> Result<(), PersistenceError> {
         let cs = self
             .buffer
             .take_for_flush(wallet_id)
@@ -923,10 +945,37 @@ impl SqlitePersister {
             return self.handle_flush_error(wallet_id, cs, injected);
         }
 
-        match write_changeset_in_one_tx(&mut conn, wallet_id, &cs) {
+        match write_changeset_in_one_tx(conn, wallet_id, &cs) {
             Ok(()) => Ok(()),
             Err(e) => self.handle_flush_error(wallet_id, cs, e),
         }
+    }
+
+    /// Merge `cs` into `wallet_id`'s buffer, refusing it if its
+    /// identities would contradict the slots already taken.
+    ///
+    /// The check runs against the merged view — buffered plus incoming,
+    /// exactly what a flush would write — from inside the buffer's
+    /// critical section, so two callers racing one slot are serialized:
+    /// the second sees the first as the occupant and is refused here
+    /// rather than merging into a contradictory changeset that the flush
+    /// would drop whole. `conn` is `None` only when the changeset can't
+    /// claim a slot in the first place, which makes the probe moot.
+    fn merge_checked(
+        &self,
+        conn: Option<&Connection>,
+        wallet_id: WalletId,
+        cs: PlatformWalletChangeSet,
+    ) -> Result<(), PersistenceError> {
+        self.buffer
+            .store_checked(wallet_id, cs, |buffered, incoming| {
+                let (Some(conn), Some(merged)) = (conn, merged_identities(buffered, incoming))
+                else {
+                    return Ok(());
+                };
+                schema::identities::check_index_conflicts(conn, &wallet_id, &merged)
+            })
+            .map_err(PersistenceError::from)
     }
 
     /// Classify the failure: transient errors restore the buffer and
@@ -1023,6 +1072,29 @@ impl SqlitePersister {
             .lock()
             .expect("primed_pre_flush_error")
             .take()
+    }
+
+    /// Test-only: install a callback fired between `store()`'s buffer
+    /// merge and its flush. Same visibility rules as
+    /// [`lock_conn_for_test`](Self::lock_conn_for_test).
+    #[doc(hidden)]
+    #[cfg(any(test, feature = "__test-helpers"))]
+    pub fn set_store_flush_seam_for_test(&self, seam: Arc<dyn Fn() + Send + Sync>) {
+        *self.store_flush_seam.lock().expect("store_flush_seam") = Some(seam);
+    }
+
+    /// Clone the callback out before running it: a seam that re-enters
+    /// `store` would otherwise deadlock on this very mutex.
+    #[cfg(any(test, feature = "__test-helpers"))]
+    fn run_store_flush_seam(&self) {
+        let seam = self
+            .store_flush_seam
+            .lock()
+            .expect("store_flush_seam")
+            .clone();
+        if let Some(seam) = seam {
+            seam();
+        }
     }
 
     /// Test-only: whether the wallet has a buffered changeset (asserts the
@@ -1154,36 +1226,38 @@ impl PlatformWalletPersistence for SqlitePersister {
             .map_err(PersistenceError::from)?;
         self.ensure_connection_usable()
             .map_err(PersistenceError::from)?;
-        // Validate BEFORE the changeset joins the shared per-wallet
-        // buffer: the error then names the write that caused it, and a
-        // changeset another caller staged for the same wallet cannot be
-        // dropped as collateral of this one's rejection.
-        //
-        // The check runs against the merged view — buffered plus
-        // incoming, exactly what a flush would write — from inside the
-        // buffer's critical section, with the connection held. Two
-        // callers racing the same slot are therefore serialized: the
-        // second one sees the first as the occupant and is refused here
-        // rather than merging into a contradictory changeset that the
-        // flush drops whole.
-        if changeset.identities.is_some() {
-            let conn = self.conn().map_err(PersistenceError::from)?;
-            self.buffer
-                .store_checked(wallet_id, changeset, |buffered, incoming| {
-                    let Some(merged) = merged_identities(buffered, incoming) else {
-                        return Ok(());
-                    };
-                    schema::identities::check_index_conflicts(&conn, &wallet_id, &merged)
-                })
-                .map_err(PersistenceError::from)?;
-        } else {
-            self.buffer
-                .store(wallet_id, changeset)
-                .map_err(PersistenceError::from)?;
-        }
+        // Validating BEFORE the changeset joins the shared per-wallet
+        // buffer makes the error name the write that caused it, and
+        // keeps a changeset another caller staged for the same wallet
+        // from being dropped as collateral of this one's rejection.
         match self.config.flush_mode {
-            FlushMode::Immediate => self.flush_inner(&wallet_id),
-            FlushMode::Manual => Ok(()),
+            // ONE connection guard spans the merge AND the flush. Every
+            // path that drains the buffer takes the same lock, so no
+            // other flush can own — and fatally drop — the changeset
+            // merged just above: the flush below reports the fate of
+            // exactly what this call staged, which is what the
+            // durability contract above promises.
+            FlushMode::Immediate => {
+                let mut conn = self.conn().map_err(PersistenceError::from)?;
+                self.merge_checked(Some(&conn), wallet_id, changeset)?;
+                #[cfg(any(test, feature = "__test-helpers"))]
+                self.run_store_flush_seam();
+                self.flush_locked(&mut conn, &wallet_id)
+            }
+            // Nothing reaches disk here, so the connection is worth
+            // taking only for the identity-slot probe.
+            FlushMode::Manual => {
+                let conn = changeset
+                    .identities
+                    .is_some()
+                    .then(|| self.conn())
+                    .transpose()
+                    .map_err(PersistenceError::from)?;
+                self.merge_checked(conn.as_deref(), wallet_id, changeset)?;
+                #[cfg(any(test, feature = "__test-helpers"))]
+                self.run_store_flush_seam();
+                Ok(())
+            }
         }
     }
 
