@@ -397,3 +397,134 @@ fn tc045_v010_widens_asset_lock_status_on_existing_db() {
         .expect("count");
     assert_eq!(remaining, 0, "ON DELETE CASCADE must survive the rebuild");
 }
+
+/// V011 → V012 upgrade path: a database created at the prior release
+/// schema (through V011) carrying a legacy empty-script spent row becomes
+/// loadable again.
+///
+/// The poisoned row is what the producer wrote before it reconstructed a
+/// spent output's script from its typed address: `spent = 1, script = X''`.
+/// `load_used_addresses` decodes every stored script with no load-policy
+/// escape hatch, so that one row rejects the whole file — this test drives
+/// exactly the sequence an existing install experiences, asserting the read
+/// fails before the purge and recovers after it.
+#[test]
+fn tc046_v012_purges_legacy_empty_script_spent_utxos() {
+    use platform_wallet_storage::sqlite::schema::core_state;
+    use platform_wallet_storage::WalletStorageError;
+    use rusqlite::params;
+
+    let mut conn = rusqlite::Connection::open_in_memory().expect("open in-memory db");
+    conn.pragma_update(None, "foreign_keys", true)
+        .expect("enable foreign keys");
+
+    // 1. Stand the database up at the PRIOR release schema (V011).
+    let to_v011 = mig::runner().set_target(refinery::Target::Version(11));
+    to_v011.run(&mut conn).expect("migrate to V011");
+
+    // 2. Two wallets: the poisoned one, and one holding the unspent
+    //    empty-script edge case the predicate must NOT reach.
+    let poisoned = [42u8; 32];
+    let untouched = [43u8; 32];
+    for wallet_id in [poisoned, untouched] {
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![wallet_id.as_slice()],
+        )
+        .expect("insert wallet");
+    }
+
+    // P2PKH: OP_DUP OP_HASH160 <20-byte hash> OP_EQUALVERIFY OP_CHECKSIG.
+    let mut real_script = vec![0x76, 0xa9, 0x14];
+    real_script.extend_from_slice(&[0x11u8; 20]);
+    real_script.extend_from_slice(&[0x88, 0xac]);
+
+    conn.execute(
+        "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) \
+         VALUES (?1, ?2, 1000, X'', 1)",
+        params![poisoned.as_slice(), [1u8; 36].as_slice()],
+    )
+    .expect("insert poisoned row");
+    conn.execute(
+        "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) \
+         VALUES (?1, ?2, 2000, ?3, 1)",
+        params![
+            poisoned.as_slice(),
+            [2u8; 36].as_slice(),
+            real_script.as_slice()
+        ],
+    )
+    .expect("insert legitimate spent row");
+    // Same degenerate script, but `spent = 0`: balance state, out of the
+    // predicate's reach whatever the script holds.
+    conn.execute(
+        "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) \
+         VALUES (?1, ?2, 3000, X'', 0)",
+        params![untouched.as_slice(), [3u8; 36].as_slice()],
+    )
+    .expect("insert unspent empty-script row");
+
+    // 3. The damage V012 exists to repair: at V011 the single poisoned row
+    //    rejects the used-set read for the whole wallet.
+    let err = core_state::load_used_addresses(&conn, &poisoned, dashcore::Network::Testnet)
+        .expect_err("the poisoned row must reject the used-set read before V012");
+    assert!(
+        matches!(err, WalletStorageError::AddressDecode { .. }),
+        "expected AddressDecode from the empty script, got {err:?}"
+    );
+
+    // 4. Upgrade to the latest schema (applies V012's purge).
+    mig::run(&mut conn).expect("migrate to latest");
+
+    // 5. The poisoned row is gone...
+    let poisoned_rows: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM core_utxos WHERE spent = 1 AND length(script) = 0",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count poisoned rows");
+    assert_eq!(
+        poisoned_rows, 0,
+        "V012 must purge legacy empty-script spent rows"
+    );
+
+    // 6. ...the legitimate spent row beside it survived byte-identical...
+    let (value, script): (i64, Vec<u8>) = conn
+        .query_row(
+            "SELECT value, script FROM core_utxos WHERE wallet_id = ?1",
+            params![poisoned.as_slice()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("the legitimate spent row survives");
+    assert_eq!((value, script.as_slice()), (2000, real_script.as_slice()));
+
+    // 7. ...so the read the poisoned row was rejecting now succeeds, and
+    //    the real address still guards against reuse.
+    let used = core_state::load_used_addresses(&conn, &poisoned, dashcore::Network::Testnet)
+        .expect("the used-set read recovers after the purge");
+    let used_scripts: Vec<Vec<u8>> = used
+        .iter()
+        .map(|(addr, _owner)| addr.script_pubkey().to_bytes())
+        .collect();
+    assert_eq!(
+        used_scripts,
+        vec![real_script],
+        "the real address must stay in the reuse guard"
+    );
+
+    // 8. The unspent empty-script row is untouched: the predicate is scoped
+    //    to `spent = 1`, not "any empty script".
+    let unspent_rows: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM core_utxos WHERE wallet_id = ?1 AND spent = 0 \
+             AND length(script) = 0",
+            params![untouched.as_slice()],
+            |row| row.get(0),
+        )
+        .expect("count unspent rows");
+    assert_eq!(
+        unspent_rows, 1,
+        "an unspent row is balance state and must survive any script content"
+    );
+}
