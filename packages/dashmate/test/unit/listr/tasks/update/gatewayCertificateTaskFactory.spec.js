@@ -113,6 +113,68 @@ describe('gatewayCertificateTaskFactory', () => {
 
   afterEach(() => homeDir.remove());
 
+  // A ZeroSSL node reaches WARN through any warning at all - the certificate
+  // running out inside a day, an unmanaged pair, a provider that disagrees with
+  // the configuration. The switch offer is the whole point of noticing ZeroSSL,
+  // and it is needed most in exactly those states, so it must not be reachable
+  // only from a completely clean verdict.
+  describe('a ZeroSSL node that also has a warning', () => {
+    const expiringSoon = () => verdict({
+      status: CERTIFICATE_STATUS.WARN,
+      warnings: [{ code: CERTIFICATE_REASONS.EXPIRING_SOON, message: 'expires tomorrow' }],
+      expiresInDays: 0.5,
+    });
+
+    it('should still offer the switch when expiry is hours away', async function it() {
+      const { errors } = await run.call(this, {
+        checkGatewayCertificate: () => expiringSoon(),
+      });
+
+      expect(errors).to.be.empty();
+      expect(enquirer.prompt).to.have.been.called();
+      expect(enquirer.options[0].message).to.contain("Switch to Let's Encrypt");
+    });
+
+    it('should still explain the ZeroSSL wall to a machine', async function it() {
+      const { context, errors } = await run.call(this, {
+        checkGatewayCertificate: () => expiringSoon(),
+        interactive: false,
+      });
+
+      expect(errors).to.be.empty();
+      expect(context.certificateWarnings.join('\n')).to.contain('three certificates in total');
+    });
+
+    // The reason it reached WARN is a fact about this node in its own right and
+    // has to survive: it is what tells the operator the certificate is nearly
+    // out, which is why the switch is urgent at all.
+    it('should keep the warning that made it WARN', async function it() {
+      const { context } = await run.call(this, {
+        checkGatewayCertificate: () => expiringSoon(),
+        interactive: false,
+      });
+
+      expect(context.certificateWarnings.join('\n')).to.contain('expires tomorrow');
+    });
+
+    it('should still report a non-ZeroSSL warning on its own', async function it() {
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+      const { context, errors } = await run.call(this, {
+        checkGatewayCertificate: () => verdict({
+          status: CERTIFICATE_STATUS.WARN,
+          provider: 'letsencrypt',
+          warnings: [{ code: CERTIFICATE_REASONS.EXPIRING_SOON, message: 'expires tomorrow' }],
+        }),
+        interactive: false,
+      });
+
+      expect(errors).to.be.empty();
+      expect(context.certificateWarnings).to.deep.equal(['expires tomorrow']);
+      expect(enquirer.prompt).to.not.have.been.called();
+    });
+  });
+
   describe('nothing blocks on a certificate that passed', () => {
     it('should say nothing at all for a provider that is working', async function it() {
       config.set('platform.gateway.ssl.provider', 'letsencrypt');
@@ -650,7 +712,12 @@ describe('gatewayCertificateTaskFactory', () => {
       });
 
       expect(errors).to.be.empty();
-      expect(context.certificateWarnings).to.deep.equal(['issuer disagrees', 'expires tomorrow']);
+
+      // This node is on ZeroSSL, so the structural warning about the free-tier
+      // limit rides along in front. What matters here is that neither verdict
+      // warning is dropped on the way through.
+      expect(context.certificateWarnings.slice(-2))
+        .to.deep.equal(['issuer disagrees', 'expires tomorrow']);
     });
   });
 

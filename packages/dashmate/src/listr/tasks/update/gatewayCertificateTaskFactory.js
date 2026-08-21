@@ -258,15 +258,25 @@ export default function gatewayCertificateTaskFactory(
         return;
       }
 
-      if (verdict.status === CERTIFICATE_STATUS.CHECKS_PASSED) {
+      // Anything short of blocking, not only a spotless verdict. A ZeroSSL node
+      // reaches WARN through any warning at all, including the certificate
+      // running out inside a day - and that is when the switch below matters
+      // most, so gating it on a clean verdict withheld the offer at exactly the
+      // moment it was worth making.
+      if (verdict.status !== CERTIFICATE_STATUS.INVALID) {
         // Someone who bought a certificate is never nagged. ZeroSSL is the one
         // exception, because a free account stops being able to renew and the
         // operator has no way to find that out until it has happened.
         if (verdict.provider !== SSL_PROVIDERS.ZEROSSL) {
+          collectWarnings(ctx, verdict);
+
           return;
         }
 
         const daysLeft = Math.floor(verdict.expiresInDays ?? 0);
+        // Below a day this floors to zero, and "expires in 0 days" reads as a
+        // rendering fault rather than as the most urgent thing on the page.
+        const remaining = daysLeft < 1 ? 'in less than a day' : `in ${daysLeft} days`;
 
         // Said on every run, to a human and to a script alike: a free ZeroSSL
         // account allows three certificates in total, and nothing tells an
@@ -274,7 +284,7 @@ export default function gatewayCertificateTaskFactory(
         const warn = () => {
           ctx.certificateWarnings = [
             ...(ctx.certificateWarnings ?? []),
-            `This node's ZeroSSL certificate expires in ${daysLeft} days. A free ZeroSSL`
+            `This node's ZeroSSL certificate expires ${remaining}. A free ZeroSSL`
             + " account allows three certificates in total, so dashmate's renewals stop"
             + ` working after about 270 days. Switch to Let's Encrypt with:`
             + `\n    dashmate ssl obtain ${cfg} --provider letsencrypt`,
@@ -283,6 +293,7 @@ export default function gatewayCertificateTaskFactory(
 
         if (!interactive) {
           warn();
+          collectWarnings(ctx, verdict);
 
           return;
         }
@@ -300,6 +311,7 @@ export default function gatewayCertificateTaskFactory(
 
         if (!accepted) {
           warn();
+          collectWarnings(ctx, verdict);
 
           return;
         }
@@ -339,15 +351,6 @@ export default function gatewayCertificateTaskFactory(
         ctx.certificate = after;
 
         throw new CertificateUnresolvedError(after);
-      }
-
-      if (verdict.status === CERTIFICATE_STATUS.WARN) {
-        ctx.certificateWarnings = [
-          ...(ctx.certificateWarnings ?? []),
-          ...verdict.warnings.map(({ message }) => message),
-        ];
-
-        return;
       }
 
       // INVALID from here on. Nothing is acted on without an operator: a
