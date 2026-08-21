@@ -16,6 +16,39 @@ import renderConfigFlag from '../../../util/renderConfigFlag.js';
 const ZEROSSL_URGENT_DAYS = 14;
 
 /**
+ * What declining actually leaves behind, said only as far as the verdict goes.
+ *
+ * Always the pair installed for the gateway, never what the node is serving:
+ * these checks read files and never opened a connection, so the two are not
+ * known to be the same thing. And never that nothing is wrong in general - only
+ * that nothing stopped this update.
+ *
+ * @param {Object} verdict
+ * @return {string}
+ */
+function renderDeclining(verdict) {
+  if (verdict.status === CERTIFICATE_STATUS.CHECKS_PASSED) {
+    return `  The certificate installed for the gateway passed these checks and stays
+  in place, so nothing changes if you decline.
+`;
+  }
+
+  if (verdict.status !== CERTIFICATE_STATUS.WARN) {
+    return `  Declining leaves the certificate installed for the gateway exactly as it
+  is: unchanged, and still failing the checks above.
+`;
+  }
+
+  // Rendered here rather than referred to. This prompt is where the operator
+  // decides, and the warnings are printed only once the command has finished,
+  // so pointing at them would be pointing at something not yet on screen.
+  return `  Declining leaves the certificate installed for the gateway exactly as it
+  is. Nothing about it stopped this update, but these checks did find:
+
+${verdict.warnings.map(({ message }) => `    - ${message}\n`).join('')}`;
+}
+
+/**
  * The whole argument for switching, including the port-80 requirement, in the
  * prompt header - this is the last moment the operator can go and open a
  * firewall rule instead of failing three times.
@@ -23,24 +56,11 @@ const ZEROSSL_URGENT_DAYS = 14;
  * @param {Config} config
  * @param {string} externalIp
  * @param {Object} [options]
- * @param {string} [options.status] - the verdict for the certificate this node
- *   is running on right now, which decides what declining actually leaves behind
+ * @param {Object} [options.verdict] - decides what declining leaves behind, and
+ *   carries the warnings the operator is being asked to weigh
  * @return {string}
  */
-const DECLINING = {
-  [CERTIFICATE_STATUS.CHECKS_PASSED]:
-    '  The certificate this node is running on now passed its checks and stays\n'
-    + '  in place, so nothing changes if you decline.\n',
-  [CERTIFICATE_STATUS.WARN]:
-    '  The certificate this node is running on now is not blocking anything and\n'
-    + '  stays in place, so declining changes nothing - including the warnings\n'
-    + '  above, which remain.\n',
-  [CERTIFICATE_STATUS.INVALID]:
-    '  Declining leaves the installed certificate exactly as it is: unchanged,\n'
-    + '  and still failing the checks above.\n',
-};
-
-function renderSwitchOffer(config, externalIp, { status = CERTIFICATE_STATUS.INVALID } = {}) {
+function renderSwitchOffer(config, externalIp, { verdict } = {}) {
   return `  Switching this node to Let's Encrypt will:
     - obtain a new certificate now, free, for ${externalIp}
     - change platform.gateway.ssl.provider from ${config.get('platform.gateway.ssl.provider')} to letsencrypt
@@ -58,7 +78,7 @@ function renderSwitchOffer(config, externalIp, { status = CERTIFICATE_STATUS.INV
 
   Your image pull is running now and will finish either way, so answering No
   does not hold this node back from protocol upgrades or security patches.
-${DECLINING[status] ?? DECLINING[CERTIFICATE_STATUS.INVALID]}`;
+${renderDeclining(verdict ?? { status: CERTIFICATE_STATUS.INVALID, warnings: [] })}`;
 }
 
 /**
@@ -310,9 +330,7 @@ export default function gatewayCertificateTaskFactory(
 
         const accepted = await promptOrThrow(task, {
           type: 'toggle',
-          header: renderSwitchOffer(config, config.get('externalIp'), {
-            status: verdict.status,
-          }),
+          header: renderSwitchOffer(config, config.get('externalIp'), { verdict }),
           message: "Switch to Let's Encrypt and obtain a certificate now?",
           enabled: 'Yes',
           disabled: 'Not now',

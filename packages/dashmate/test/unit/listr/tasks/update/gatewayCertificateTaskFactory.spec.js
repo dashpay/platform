@@ -220,13 +220,55 @@ describe('gatewayCertificateTaskFactory', () => {
         checkGatewayCertificate: () => warned(CERTIFICATE_REASONS.PROVIDER_MISMATCH),
       });
 
-      expect(enquirer.options[0].header).to.not.contain('passed its checks');
+      expect(enquirer.options[0].header).to.not.contain('passed these checks');
+    });
+
+    // Absence of the passing sentence is not enough on its own - the failing
+    // copy is also absent that sentence, so the offer could silently fall back
+    // to telling a warned operator their certificate is failing.
+    it('should not tell a warned node its certificate is failing either', async function it() {
+      await run.call(this, {
+        checkGatewayCertificate: () => warned(CERTIFICATE_REASONS.PROVIDER_MISMATCH),
+      });
+
+      expect(enquirer.options[0].header).to.not.contain('still failing the checks');
+    });
+
+    // The offer is where the operator decides, so what was found has to be in
+    // front of them there, not promised for later.
+    it('should show the operator the warnings it is asking them to decide on', async function it() {
+      await run.call(this, {
+        checkGatewayCertificate: () => warned(CERTIFICATE_REASONS.SELF_SIGNED),
+      });
+
+      const { header } = enquirer.options[0];
+
+      expect(header).to.contain(`warning: ${CERTIFICATE_REASONS.SELF_SIGNED}`);
+      expect(header).to.not.contain('warnings\n  above');
+    });
+
+    // These checks never opened a connection, so what is on disk is all that
+    // was established - not what the gateway is serving right now.
+    it('should not claim the installed pair is what the node is serving', async function it() {
+      await run.call(this, {
+        checkGatewayCertificate: () => warned(CERTIFICATE_REASONS.PROVIDER_MISMATCH),
+      });
+
+      expect(enquirer.options[0].header).to.not.contain('running on');
+    });
+
+    it('should not claim a warned certificate blocks nothing at all', async function it() {
+      await run.call(this, {
+        checkGatewayCertificate: () => warned(CERTIFICATE_REASONS.SSL_UNMANAGED),
+      });
+
+      expect(enquirer.options[0].header).to.not.contain('not blocking anything');
     });
 
     it('should still say the certificate passed when the verdict is clean', async function it() {
       await run.call(this, { checkGatewayCertificate: () => verdict() });
 
-      expect(enquirer.options[0].header).to.contain('passed its checks');
+      expect(enquirer.options[0].header).to.contain('passed these checks');
     });
   });
 
