@@ -277,9 +277,8 @@ describe('every command dashmate tells an operator to run', () => {
   // configuration without touching the container. Telling an operator to
   // restart after obtaining therefore buys them an outage and changes nothing.
   //
-  // This has been reported five separate times, each in a surface the previous
-  // fix did not cover, so the invariant is asserted over every rendered remedy
-  // at once rather than at the places it happened to appear.
+  // Asserted over every rendered remedy at once rather than per site, because a
+  // surface nobody thought to check is exactly where this reappears.
   describe('remedies routed through ssl obtain', () => {
     /**
      * @param {string} label

@@ -770,7 +770,7 @@ describe('gatewayCertificateTaskFactory', () => {
 
       // This node is on ZeroSSL, so the structural warning about the free-tier
       // limit rides along in front. What matters here is that neither verdict
-      // warning is dropped on the way through.
+      // warning is dropped on the way through, whatever precedes them.
       expect(context.certificateWarnings.slice(-2))
         .to.deep.equal(['issuer disagrees', 'expires tomorrow']);
     });
