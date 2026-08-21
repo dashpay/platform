@@ -232,16 +232,22 @@ export default function gatewayCertificateTaskFactory(
 
         const daysLeft = Math.floor(verdict.expiresInDays ?? 0);
 
-        ctx.certificateCourtesyOffered = true;
-        ctx.certificateWarnings = [
-          ...(ctx.certificateWarnings ?? []),
-          `This node's ZeroSSL certificate expires in ${daysLeft} days. A free ZeroSSL`
-          + " account allows three certificates in total, so dashmate's renewals stop"
-          + ` working after about 270 days. Switch to Let's Encrypt with:`
-          + `\n    dashmate ssl obtain ${cfg} --provider letsencrypt`,
-        ];
+        // Said on every run, to a human and to a script alike: a free ZeroSSL
+        // account allows three certificates in total, and nothing tells an
+        // operator that renewal has stopped being possible until it has.
+        const warn = () => {
+          ctx.certificateWarnings = [
+            ...(ctx.certificateWarnings ?? []),
+            `This node's ZeroSSL certificate expires in ${daysLeft} days. A free ZeroSSL`
+            + " account allows three certificates in total, so dashmate's renewals stop"
+            + ` working after about 270 days. Switch to Let's Encrypt with:`
+            + `\n    dashmate ssl obtain ${cfg} --provider letsencrypt`,
+          ];
+        };
 
         if (!interactive) {
+          warn();
+
           return;
         }
 
@@ -255,6 +261,8 @@ export default function gatewayCertificateTaskFactory(
         }, { interactive });
 
         if (!accepted) {
+          warn();
+
           return;
         }
 
@@ -267,11 +275,18 @@ export default function gatewayCertificateTaskFactory(
           ctx.certificate = after;
 
           if (ctx.certificateObtainError) {
+            // Nothing was touched, so the node still holds the ZeroSSL
+            // certificate and still needs to hear about it.
+            warn();
+
             ctx.certificateWarnings.push(
               `The switch to Let's Encrypt did not complete: ${ctx.certificateObtainError.message}`
               + '\nThe certificate this node was already using is untouched.',
             );
           } else {
+            // The node is no longer on ZeroSSL, so its expiry is no longer
+            // this node's problem and repeating it would contradict the
+            // success message.
             ctx.certificateSuccess = renderSuccess(config, after);
           }
 

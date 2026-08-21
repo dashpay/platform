@@ -187,6 +187,23 @@ describe('gatewayCertificateTaskFactory', () => {
       expect(context.certificateWarnings.join('\n')).to.contain('untouched');
     });
 
+    // The node is no longer on ZeroSSL, so repeating its expiry alongside the
+    // success message would contradict it.
+    it('should drop the ZeroSSL warning once the switch succeeds', async function it() {
+      let checked = 0;
+      const { context, errors } = await run.call(this, {
+        checkGatewayCertificate: () => {
+          checked += 1;
+          return checked === 1 ? verdict() : verdict({ provider: 'letsencrypt' });
+        },
+        answers: [true],
+      });
+
+      expect(errors).to.be.empty();
+      expect(context.certificateWarnings).to.be.undefined();
+      expect(context.certificateSuccess).to.contain('LEAVE PORT 80 OPEN');
+    });
+
     // saveCertificateTask writes the bundle and the key as two separate
     // in-place writes, so a failure between them can replace a working pair
     // with a mismatched one. Promising exit 0 here would tell an operator their
