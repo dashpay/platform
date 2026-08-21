@@ -1,4 +1,4 @@
-mod address_funds;
+pub(crate) mod address_funds;
 mod data_contract_based_queries;
 mod document_history;
 mod document_query;

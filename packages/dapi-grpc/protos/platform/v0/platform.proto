@@ -116,6 +116,8 @@ service Platform {
           returns (GetAddressesTrunkStateResponse);
   rpc getAddressesBranchState(GetAddressesBranchStateRequest)
           returns (GetAddressesBranchStateResponse);
+  rpc getAddressFundingFeeQuote(GetAddressFundingFeeQuoteRequest)
+          returns (GetAddressFundingFeeQuoteResponse);
   rpc getRecentAddressBalanceChanges(GetRecentAddressBalanceChangesRequest)
           returns (GetRecentAddressBalanceChangesResponse);
   rpc getRecentCompactedAddressBalanceChanges(GetRecentCompactedAddressBalanceChangesRequest)
@@ -2987,6 +2989,41 @@ message GetAddressesBranchStateResponse {
     bytes merk_proof = 2;
   }
   oneof version { GetAddressesBranchStateResponseV0 v0 = 1; }
+}
+
+message GetAddressFundingFeeQuoteRequest {
+  message GetAddressFundingFeeQuoteRequestV0 {
+    // The funding recipient: a serialized platform address (21 bytes)
+    bytes address = 1;
+    // Optional 36-byte asset lock outpoint (txid || vout LE) of the planned
+    // fresh lock. Empty: the node derives a deterministic placeholder — for a
+    // fresh (absent) outpoint both have the same expected search depth.
+    bytes asset_lock_outpoint = 2;
+    // The user fee increase the quote should include (percent of the
+    // processing fee per unit); must fit in 16 bits
+    uint32 user_fee_increase = 3;
+    // Length hint for the future transition's signable bytes; 0 uses the
+    // node's default. Clamped server-side, so it cannot understate the fee.
+    uint32 signable_bytes_len_hint = 4;
+  }
+  oneof version { GetAddressFundingFeeQuoteRequestV0 v0 = 1; }
+}
+
+message GetAddressFundingFeeQuoteResponse {
+  message GetAddressFundingFeeQuoteResponseV0 {
+    // State-aware estimate of the fee the network would charge for a
+    // 0-input / 1-output funding executed near this state. A computed
+    // value, not state — there is no proof; treat it as planning data.
+    uint64 estimated_fee_credits = 1 [ jstype = JS_STRING ];
+    // The consensus admission floor for the lock (calculate_min_required_fee)
+    uint64 minimum_required_lock_credits = 2 [ jstype = JS_STRING ];
+    // The protocol version the node quoted with
+    uint32 protocol_version = 3;
+    // The committed block height the quote was computed on
+    uint64 state_height = 4 [ jstype = JS_STRING ];
+    ResponseMetadata metadata = 5;
+  }
+  oneof version { GetAddressFundingFeeQuoteResponseV0 v0 = 1; }
 }
 
 message GetRecentAddressBalanceChangesRequest {

@@ -7,7 +7,7 @@ pub mod block_state_info;
 /// An execution event
 pub(in crate::execution) mod execution_event;
 /// A structure representing the context of the execution of a state transition
-pub(in crate::execution) mod execution_operation;
+pub(crate) mod execution_operation;
 /// A structure showing the storage and processing fees in a pool
 pub(in crate::execution) mod fees_in_pools;
 /// The outcome of processing block fees

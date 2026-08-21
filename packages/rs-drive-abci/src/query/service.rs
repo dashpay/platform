@@ -13,7 +13,8 @@ use dapi_grpc::drive::v0::{GetProofsRequest, GetProofsResponse};
 use dapi_grpc::platform::v0::get_path_elements_request;
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
 use dapi_grpc::platform::v0::{
-    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetAddressInfoRequest,
+    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse,
+    GetAddressFundingFeeQuoteRequest, GetAddressFundingFeeQuoteResponse, GetAddressInfoRequest,
     GetAddressInfoResponse, GetAddressesBranchStateRequest, GetAddressesBranchStateResponse,
     GetAddressesInfosRequest, GetAddressesInfosResponse, GetAddressesTrunkStateRequest,
     GetAddressesTrunkStateResponse, GetConsensusParamsRequest, GetConsensusParamsResponse,
@@ -870,6 +871,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_addresses_branch_state,
             "get_addresses_branch_state",
+        )
+        .await
+    }
+
+    async fn get_address_funding_fee_quote(
+        &self,
+        request: Request<GetAddressFundingFeeQuoteRequest>,
+    ) -> Result<Response<GetAddressFundingFeeQuoteResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_address_funding_fee_quote,
+            "get_address_funding_fee_quote",
         )
         .await
     }

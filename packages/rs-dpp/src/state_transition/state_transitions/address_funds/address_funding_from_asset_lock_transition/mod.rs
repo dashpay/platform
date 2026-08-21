@@ -5,6 +5,7 @@ mod proved;
 #[cfg(all(test, feature = "state-transition-signing"))]
 mod signing_tests;
 mod state_transition_estimated_fee_validation;
+pub use state_transition_estimated_fee_validation::calculate_address_funding_min_required_fee_for_counts;
 mod state_transition_fee_strategy;
 mod state_transition_like;
 mod state_transition_validation;

@@ -633,6 +633,12 @@ impl Platform for PlatformServiceImpl {
     );
 
     drive_method!(
+        get_address_funding_fee_quote,
+        dapi_grpc::platform::v0::GetAddressFundingFeeQuoteRequest,
+        dapi_grpc::platform::v0::GetAddressFundingFeeQuoteResponse
+    );
+
+    drive_method!(
         get_recent_address_balance_changes,
         dapi_grpc::platform::v0::GetRecentAddressBalanceChangesRequest,
         dapi_grpc::platform::v0::GetRecentAddressBalanceChangesResponse

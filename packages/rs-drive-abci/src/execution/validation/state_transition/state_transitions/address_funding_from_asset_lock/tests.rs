@@ -9883,4 +9883,527 @@ mod tests {
             );
         }
     }
+
+    // ==========================================
+    // ADDRESS FUNDING FEE QUOTE QUERY
+    // getAddressFundingFeeQuote priced against real apply=true executions on
+    // the same committed state. Bands are regression headroom for these
+    // specific scenarios and protocol versions — not an upper-bound claim.
+    // ==========================================
+
+    mod address_funding_fee_quote_query {
+        use super::*;
+        use crate::query::address_funds::address_funding_fee_quote::v0::{
+            DEFAULT_SIGNABLE_BYTES_LEN_HINT, MAX_SIGNABLE_BYTES_LEN_HINT,
+            MIN_SIGNABLE_BYTES_LEN_HINT,
+        };
+        use crate::test::helpers::setup::TempPlatform;
+        use dapi_grpc::platform::v0::get_address_funding_fee_quote_request::{
+            GetAddressFundingFeeQuoteRequestV0, Version as QuoteRequestVersion,
+        };
+        use dapi_grpc::platform::v0::get_address_funding_fee_quote_response::{
+            GetAddressFundingFeeQuoteResponseV0, Version as QuoteResponseVersion,
+        };
+        use dapi_grpc::platform::v0::GetAddressFundingFeeQuoteRequest;
+        use dpp::fee::fee_result::FeeResult;
+        use dpp::serialization::{PlatformSerializable, Signable};
+        use dpp::state_transition::StateTransitionEstimatedFeeValidation;
+
+        fn build_quote_platform() -> TempPlatform<MockCoreRPCLike> {
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state()
+        }
+
+        fn quote_raw(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            request_v0: GetAddressFundingFeeQuoteRequestV0,
+        ) -> crate::query::QueryValidationResult<
+            dapi_grpc::platform::v0::GetAddressFundingFeeQuoteResponse,
+        > {
+            let platform_state = platform.state.load();
+            platform
+                .platform
+                .query_address_funding_fee_quote(
+                    GetAddressFundingFeeQuoteRequest {
+                        version: Some(QuoteRequestVersion::V0(request_v0)),
+                    },
+                    &platform_state,
+                    PlatformVersion::latest(),
+                )
+                .expect("quote query should not error")
+        }
+
+        fn quote(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            request_v0: GetAddressFundingFeeQuoteRequestV0,
+        ) -> GetAddressFundingFeeQuoteResponseV0 {
+            let result = quote_raw(platform, request_v0);
+            assert!(
+                result.errors.is_empty(),
+                "quote must succeed, got {:?}",
+                result.errors
+            );
+            match result
+                .data
+                .expect("quote response data")
+                .version
+                .expect("quote response version")
+            {
+                QuoteResponseVersion::V0(v0) => v0,
+            }
+        }
+
+        /// Builds a signed 0-input/1-output funding for `recipient`, then
+        /// executes it with apply=true. Returns the charged fee, the
+        /// transition's signable-bytes length, its outpoint, and the built
+        /// transition. `commit` controls whether the execution is committed
+        /// (deepening the trees) or rolled back (a probe).
+        async fn execute_funding(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            recipient: PlatformAddress,
+            user_fee_increase: u16,
+            commit: bool,
+            rng: &mut StdRng,
+        ) -> (FeeResult, u32, [u8; 36], StateTransition) {
+            let platform_version = PlatformVersion::latest();
+            let signer = TestAddressSigner::new();
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(rng);
+            let outpoint: [u8; 36] = asset_lock_proof
+                .out_point()
+                .expect("asset lock outpoint")
+                .into();
+
+            let outputs = BTreeMap::from([(recipient, None)]);
+            let transition =
+                create_signed_address_funding_from_asset_lock_transition_with_fee_increase(
+                    asset_lock_proof,
+                    &asset_lock_pk,
+                    &signer,
+                    BTreeMap::new(),
+                    outputs,
+                    vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+                    user_fee_increase,
+                )
+                .await;
+            let signable_len = transition.signable_bytes().expect("signable bytes").len() as u32;
+            let serialized = transition.serialize_to_bytes().expect("serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("process state transition");
+            let fee_result = match processing_result.execution_results().as_slice() {
+                [StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. }] => {
+                    fee_result.clone()
+                }
+                other => panic!("expected successful execution, got {other:?}"),
+            };
+            if commit {
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("commit transaction");
+            } else {
+                drop(transaction);
+            }
+            (fee_result, signable_len, outpoint, transition)
+        }
+
+        fn assert_quote_brackets(quoted: u64, actual: u64, what: &str) {
+            assert!(
+                quoted >= actual.saturating_mul(85) / 100
+                    && quoted <= actual.saturating_mul(115) / 100,
+                "{what}: quoted {quoted} not within [85%, 115%] of actual {actual}"
+            );
+        }
+
+        /// The quote brackets the real charged fee at genesis, the exact and
+        /// placeholder outpoints quote nearly identically, and the reported
+        /// lock floor equals the built transition's consensus floor.
+        #[tokio::test]
+        async fn test_quote_brackets_actual_fee_at_genesis() {
+            let platform = build_quote_platform();
+            let mut rng = StdRng::seed_from_u64(90_001);
+            let recipient = create_platform_address(200);
+
+            // Build the transition first (state untouched), quote on committed
+            // state, then execute the very same transition.
+            let signer = TestAddressSigner::new();
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            let outpoint: [u8; 36] = asset_lock_proof
+                .out_point()
+                .expect("asset lock outpoint")
+                .into();
+            let transition = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                &signer,
+                BTreeMap::new(),
+                BTreeMap::from([(recipient, None)]),
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+            )
+            .await;
+            let signable_len = transition.signable_bytes().expect("signable bytes").len() as u32;
+
+            let quoted_exact = quote(
+                &platform,
+                GetAddressFundingFeeQuoteRequestV0 {
+                    address: recipient.to_bytes(),
+                    asset_lock_outpoint: outpoint.to_vec(),
+                    user_fee_increase: 0,
+                    signable_bytes_len_hint: signable_len,
+                },
+            );
+            let quoted_placeholder = quote(
+                &platform,
+                GetAddressFundingFeeQuoteRequestV0 {
+                    address: recipient.to_bytes(),
+                    asset_lock_outpoint: vec![],
+                    user_fee_increase: 0,
+                    signable_bytes_len_hint: signable_len,
+                },
+            );
+
+            let serialized = transition.serialize_to_bytes().expect("serialize");
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    PlatformVersion::latest(),
+                    false,
+                    None,
+                )
+                .expect("process state transition");
+            let actual = match processing_result.execution_results().as_slice() {
+                [StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. }] => {
+                    fee_result.total_base_fee()
+                }
+                other => panic!("expected successful execution, got {other:?}"),
+            };
+            drop(transaction);
+
+            assert_quote_brackets(quoted_exact.estimated_fee_credits, actual, "genesis, exact");
+            assert_quote_brackets(
+                quoted_placeholder.estimated_fee_credits,
+                actual,
+                "genesis, placeholder",
+            );
+            // A placeholder differs from the exact key by at most one AVL
+            // level of the absence boundary.
+            let (lo, hi) = (
+                quoted_exact
+                    .estimated_fee_credits
+                    .min(quoted_placeholder.estimated_fee_credits),
+                quoted_exact
+                    .estimated_fee_credits
+                    .max(quoted_placeholder.estimated_fee_credits),
+            );
+            assert!(
+                hi - lo <= hi / 20,
+                "placeholder and exact quotes must agree within 5%: {lo} vs {hi}"
+            );
+
+            let StateTransition::AddressFundingFromAssetLock(concrete_transition) = &transition
+            else {
+                panic!("expected an address funding transition");
+            };
+            let floor = concrete_transition
+                .calculate_min_required_fee(PlatformVersion::latest())
+                .expect("transition floor");
+            assert_eq!(
+                quoted_exact.minimum_required_lock_credits, floor,
+                "quoted lock floor must equal the built transition's floor"
+            );
+
+            println!(
+                "genesis: quoted exact {} / placeholder {} vs actual {}",
+                quoted_exact.estimated_fee_credits,
+                quoted_placeholder.estimated_fee_credits,
+                actual
+            );
+        }
+
+        /// Eight committed fundings deepen the trees; the quote for the ninth
+        /// still brackets its real charged fee, for a new and for an existing
+        /// recipient.
+        #[tokio::test]
+        async fn test_quote_brackets_actual_fee_on_populated_state() {
+            let platform = build_quote_platform();
+            let mut rng = StdRng::seed_from_u64(90_002);
+
+            for n in 0..8u8 {
+                execute_funding(
+                    &platform,
+                    create_platform_address(10 + n),
+                    0,
+                    true,
+                    &mut rng,
+                )
+                .await;
+            }
+
+            // New recipient.
+            let new_recipient = create_platform_address(200);
+            let quoted_new = quote(
+                &platform,
+                GetAddressFundingFeeQuoteRequestV0 {
+                    address: new_recipient.to_bytes(),
+                    asset_lock_outpoint: vec![],
+                    user_fee_increase: 0,
+                    signable_bytes_len_hint: 0,
+                },
+            );
+            let (actual_new, _, _, _) =
+                execute_funding(&platform, new_recipient, 0, false, &mut rng).await;
+            assert_quote_brackets(
+                quoted_new.estimated_fee_credits,
+                actual_new.total_base_fee(),
+                "populated, new recipient",
+            );
+
+            // Existing recipient (seeded above): the balance write is a
+            // replace, so both the quote and the actual fee drop.
+            let existing_recipient = create_platform_address(10);
+            let quoted_existing = quote(
+                &platform,
+                GetAddressFundingFeeQuoteRequestV0 {
+                    address: existing_recipient.to_bytes(),
+                    asset_lock_outpoint: vec![],
+                    user_fee_increase: 0,
+                    signable_bytes_len_hint: 0,
+                },
+            );
+            let (actual_existing, _, _, _) =
+                execute_funding(&platform, existing_recipient, 0, false, &mut rng).await;
+            assert_quote_brackets(
+                quoted_existing.estimated_fee_credits,
+                actual_existing.total_base_fee(),
+                "populated, existing recipient",
+            );
+            assert!(
+                quoted_existing.estimated_fee_credits < quoted_new.estimated_fee_credits,
+                "a replace must quote below an insert: {} vs {}",
+                quoted_existing.estimated_fee_credits,
+                quoted_new.estimated_fee_credits
+            );
+
+            println!(
+                "populated: new quoted {} vs actual {}; existing quoted {} vs actual {}",
+                quoted_new.estimated_fee_credits,
+                actual_new.total_base_fee(),
+                quoted_existing.estimated_fee_credits,
+                actual_existing.total_base_fee(),
+            );
+        }
+
+        /// The quote at the SDK retry ceiling (user_fee_increase = 14) still
+        /// brackets the real charged fee of an execution at the same increase.
+        #[tokio::test]
+        async fn test_quote_brackets_actual_fee_at_max_retry_user_fee_increase() {
+            let platform = build_quote_platform();
+            let mut rng = StdRng::seed_from_u64(90_003);
+            let recipient = create_platform_address(201);
+
+            let quoted_base = quote(
+                &platform,
+                GetAddressFundingFeeQuoteRequestV0 {
+                    address: recipient.to_bytes(),
+                    asset_lock_outpoint: vec![],
+                    user_fee_increase: 0,
+                    signable_bytes_len_hint: 0,
+                },
+            );
+            let quoted_at_max_retry = quote(
+                &platform,
+                GetAddressFundingFeeQuoteRequestV0 {
+                    address: recipient.to_bytes(),
+                    asset_lock_outpoint: vec![],
+                    user_fee_increase: 14,
+                    signable_bytes_len_hint: 0,
+                },
+            );
+            assert!(
+                quoted_at_max_retry.estimated_fee_credits > quoted_base.estimated_fee_credits,
+                "a user fee increase must raise the quote"
+            );
+
+            let (actual, _, _, _) =
+                execute_funding(&platform, recipient, 14, false, &mut rng).await;
+            assert_quote_brackets(
+                quoted_at_max_retry.estimated_fee_credits,
+                actual.total_base_fee(),
+                "user_fee_increase 14",
+            );
+        }
+
+        /// A spent outpoint is refused with a validation error — the quote
+        /// models a fresh lock only.
+        #[tokio::test]
+        async fn test_quote_rejects_spent_outpoint() {
+            let platform = build_quote_platform();
+            let mut rng = StdRng::seed_from_u64(90_004);
+
+            let (_, _, spent_outpoint, _) =
+                execute_funding(&platform, create_platform_address(10), 0, true, &mut rng).await;
+
+            let result = quote_raw(
+                &platform,
+                GetAddressFundingFeeQuoteRequestV0 {
+                    address: create_platform_address(200).to_bytes(),
+                    asset_lock_outpoint: spent_outpoint.to_vec(),
+                    user_fee_increase: 0,
+                    signable_bytes_len_hint: 0,
+                },
+            );
+            assert!(
+                !result.errors.is_empty(),
+                "a spent outpoint must be refused"
+            );
+        }
+
+        /// The quote is read-only (root hash byte-identical across calls) and
+        /// deterministic (identical requests produce identical responses).
+        #[tokio::test]
+        async fn test_quote_is_read_only_and_deterministic() {
+            let platform = build_quote_platform();
+            let mut rng = StdRng::seed_from_u64(90_005);
+            let platform_version = PlatformVersion::latest();
+
+            for n in 0..3u8 {
+                execute_funding(
+                    &platform,
+                    create_platform_address(10 + n),
+                    0,
+                    true,
+                    &mut rng,
+                )
+                .await;
+            }
+
+            let before = platform
+                .drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .expect("root hash");
+
+            let request = GetAddressFundingFeeQuoteRequestV0 {
+                address: create_platform_address(200).to_bytes(),
+                asset_lock_outpoint: vec![],
+                user_fee_increase: 0,
+                signable_bytes_len_hint: 0,
+            };
+            let first = quote(&platform, request.clone());
+            let second = quote(&platform, request);
+            assert_eq!(
+                first, second,
+                "identical quote requests must produce identical responses"
+            );
+
+            let after = platform
+                .drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .expect("root hash");
+            assert_eq!(before, after, "quoting must not change the root hash");
+        }
+
+        /// Invalid arguments are refused as validation errors: a malformed
+        /// address, a wrong-size outpoint, and an oversized fee increase.
+        #[tokio::test]
+        async fn test_quote_rejects_invalid_arguments() {
+            let platform = build_quote_platform();
+
+            let bad_address = quote_raw(
+                &platform,
+                GetAddressFundingFeeQuoteRequestV0 {
+                    address: vec![0xAB; 7],
+                    asset_lock_outpoint: vec![],
+                    user_fee_increase: 0,
+                    signable_bytes_len_hint: 0,
+                },
+            );
+            assert!(!bad_address.errors.is_empty(), "malformed address");
+
+            let bad_outpoint = quote_raw(
+                &platform,
+                GetAddressFundingFeeQuoteRequestV0 {
+                    address: create_platform_address(1).to_bytes(),
+                    asset_lock_outpoint: vec![0xCD; 35],
+                    user_fee_increase: 0,
+                    signable_bytes_len_hint: 0,
+                },
+            );
+            assert!(!bad_outpoint.errors.is_empty(), "wrong-size outpoint");
+
+            let bad_fee_increase = quote_raw(
+                &platform,
+                GetAddressFundingFeeQuoteRequestV0 {
+                    address: create_platform_address(1).to_bytes(),
+                    asset_lock_outpoint: vec![],
+                    user_fee_increase: u32::from(u16::MAX) + 1,
+                    signable_bytes_len_hint: 0,
+                },
+            );
+            assert!(
+                !bad_fee_increase.errors.is_empty(),
+                "oversized fee increase"
+            );
+        }
+
+        /// The default signable-length hint stays anchored to the measured
+        /// signable length of a real instant-proof 0-input/1-output funding —
+        /// a transition format change forces a conscious constant update.
+        #[tokio::test]
+        async fn test_default_signable_len_hint_brackets_real_fixture() {
+            let mut rng = StdRng::seed_from_u64(90_006);
+            let (asset_lock_proof, _) = create_asset_lock_proof_with_key(&mut rng);
+            let measured = get_signable_bytes_for_transition(
+                &asset_lock_proof,
+                &BTreeMap::new(),
+                &BTreeMap::from([(create_platform_address(1), None)]),
+            )
+            .len() as u32;
+
+            assert!(
+                (MIN_SIGNABLE_BYTES_LEN_HINT..=MAX_SIGNABLE_BYTES_LEN_HINT).contains(&measured),
+                "measured signable length {measured} must sit inside the clamp bounds"
+            );
+            assert!(
+                DEFAULT_SIGNABLE_BYTES_LEN_HINT >= measured / 2
+                    && DEFAULT_SIGNABLE_BYTES_LEN_HINT <= measured.saturating_mul(2),
+                "default hint {DEFAULT_SIGNABLE_BYTES_LEN_HINT} must stay within 2x of the \
+                 measured instant-proof signable length {measured}"
+            );
+            println!("measured instant-proof signable length: {measured}");
+        }
+    }
 }
