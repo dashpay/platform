@@ -11,6 +11,12 @@ import renderConfigFlag from '../../util/renderConfigFlag.js';
  * The node is named because a report is read against one config among several, and a command
  * pasted without one acts on whichever happens to be the default.
  *
+ * Only for a remedy that changes the files by hand. Anything routed through
+ * `dashmate ssl obtain` needs no restart: that command installs the pair and
+ * signals the gateway, and the signal reaches Envoy's hot-restarter, which
+ * re-execs Envoy against the same configuration without touching the
+ * container. Measured against a live gateway, not inferred.
+ *
  * @param {string} cfg
  * @return {string}
  */
@@ -107,12 +113,20 @@ Obtain a new certificate - it signals the gateway itself, so no restart is neede
     // on the same port - and in that case the certificate it returned says nothing about this
     // node, so reporting it as a wrong or stale certificate would be misleading.
     if (served.identityVerified === false) {
+      // No restart here, and no unconditional reissue. If something else is
+      // answering on that port, a new certificate installs on a gateway nobody
+      // is reaching and the port stays taken - the operator would take an
+      // outage and still have the problem. Reissuing is the remedy only once
+      // this node's gateway is known to be what answered.
       problems.push(new Problem(
         `The certificate served on port ${served.port} is not valid for ${externalIp}: ${served.identityError}`,
-        chalk`Either the certificate is issued for the wrong address, or something other than this
-node's gateway is answering on that port. Check that no other node or proxy is using it, then
-regenerate the certificate if needed: {bold.cyanBright dashmate ssl obtain ${cfg} --force}
-${restartHint(cfg)}`,
+        chalk`Something other than this node's gateway may be answering on that port, or the
+certificate is issued for the wrong address. Find what is listening on ${served.port}
+first - another dashmate config, a reverse proxy, or a second node sharing the
+address.
+
+If this node's gateway is the one answering and the address is simply wrong:
+{bold.cyanBright dashmate ssl obtain ${cfg} --force}`,
         SEVERITY.HIGH,
       ));
 

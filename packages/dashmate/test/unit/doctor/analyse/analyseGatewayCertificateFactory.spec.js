@@ -329,6 +329,33 @@ describe('analyseGatewayCertificateFactory', () => {
     expect(problem.getSolution()).to.not.match(/dashmate restart/);
   });
 
+  // This branch means the connection did not reach this node's gateway at all -
+  // another config, a proxy, or a second node is answering on that port. So
+  // reissuing the certificate and restarting Platform fixes nothing: the port
+  // is still taken, and the operator has bought an outage for it.
+  describe('when the connection did not reach this node', () => {
+    const hijacked = () => served({
+      identityVerified: false,
+      identityError: 'Host: 198.51.100.7. is not in the cert\'s altnames',
+    });
+
+    it('should send the operator to find what is answering, not to restart', () => {
+      const [problem] = analyse(hijacked());
+
+      expect(problem.getSolution()).to.not.match(/dashmate restart/);
+      expect(problem.getSolution()).to.contain('what is listening on 443');
+    });
+
+    // Reissuing is only the remedy once the gateway is known to be the thing
+    // answering, so it is offered on that condition rather than as the step.
+    it('should offer reissuing only once the gateway is known to be answering', () => {
+      const [problem] = analyse(hijacked());
+
+      expect(problem.getSolution()).to.contain('If this node\'s gateway is the one answering');
+      expect(problem.getSolution()).to.contain('dashmate ssl obtain --config base --force');
+    });
+  });
+
   // A later expiry says nothing about whether the disk pair can be served. The
   // sample carries only a fingerprint and a date; key pairing, address and
   // self-signature come from the installed verdict, which is collected in the
