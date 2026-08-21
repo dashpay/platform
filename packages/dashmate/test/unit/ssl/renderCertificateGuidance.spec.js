@@ -185,6 +185,32 @@ describe('renderCertificateGuidance', () => {
     expect(output).to.contain('not publicly trusted');
   });
 
+  // Eight mainnet nodes are in this state. Telling them to switch to the
+  // provider they are already on is the message they would get.
+  it('should not offer a switch to a node already on that provider', () => {
+    config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+    const output = render({ verdict: verdict({ provider: 'letsencrypt' }) });
+
+    expect(output).to.contain('already configured for Let\'s Encrypt');
+    expect(output).to.contain('THE FIX - obtain a new certificate');
+    expect(output).to.not.contain('THE FIX - switch to');
+
+    // The remediation itself is still the right next step and stays.
+    expect(output).to.contain('dashmate ssl obtain --config base --provider letsencrypt');
+  });
+
+  // Saying the same thing three times in one message is how an operator learns
+  // to skim past it.
+  it('should state the port 80 argument once', () => {
+    const output = render({ verdict: verdict({ provider: 'letsencrypt' }) });
+
+    const occurrences = (needle) => output.split(needle).length - 1;
+
+    expect(occurrences('issued certificates on the same day')).to.equal(1);
+    expect(occurrences('PORT 80 MUST STAY OPEN PERMANENTLY')).to.equal(1);
+  });
+
   // A silent drop of an external probe is no information at all: 52 nodes that
   // dropped the same probe hold Let's Encrypt certificates issued within four
   // days, which is only possible over port 80. Asserting the port is blocked

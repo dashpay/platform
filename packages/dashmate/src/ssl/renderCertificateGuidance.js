@@ -146,8 +146,16 @@ function renderLetsEncryptDiagnosis(cfg) {
  * @param {boolean} isNodeRunning
  * @return {string}
  */
-function renderFix(cfg, isNodeRunning) {
-  return `  THE FIX - switch to Let's Encrypt, which issues IP-address certificates free.
+function renderFix(cfg, isNodeRunning, isAlreadyLetsEncrypt) {
+  // A node already on Let's Encrypt has nothing to switch to - it is the only
+  // authority that issues IP-address certificates over ACME - so the heading
+  // that offers a switch would contradict the diagnosis printed above it. The
+  // commands are the same either way.
+  const heading = isAlreadyLetsEncrypt
+    ? `  THE FIX - obtain a new certificate from Let's Encrypt.`
+    : `  THE FIX - switch to Let's Encrypt, which issues IP-address certificates free.`;
+
+  return `${heading}
 
   Let's Encrypt proves this node owns its IP by connecting to it on inbound
   port 80. Check that first; it limits how often you may fail, so a blind
@@ -232,7 +240,7 @@ export default function renderCertificateGuidance({
       blocks.push(renderLetsEncryptDiagnosis(cfg));
     }
 
-    blocks.push(renderFix(cfg, isNodeRunning));
+    blocks.push(renderFix(cfg, isNodeRunning, provider === SSL_PROVIDERS.LETSENCRYPT));
     blocks.push(renderPortEightyPermanence());
 
     blocks.push(`  IF YOU CANNOT OPEN PORT 80. dashmate currently has no supported alternative
