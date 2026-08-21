@@ -241,6 +241,30 @@ describe('ConfigFileJsonRepository', () => {
         .to.equal('9.9.9');
     });
 
+    // A command that promises to change nothing must keep that promise even on
+    // the one run where a migration is due - which, right after an upgrade, is
+    // the run it is most likely to be used on. It still gets the migrated
+    // shape; it just does not write it, render from it, or take the lock to do
+    // either, so it cannot abort on a lock timeout while renewal holds it.
+    it('should migrate in memory only when the caller changes nothing', () => {
+      seedConfigFile();
+
+      const migration = (data) => ({ ...data, configFormatVersion: '9.9.9' });
+      const repository = new ConfigFileJsonRepository(migration, homeDir, createDefaults);
+      const before = fs.readFileSync(configFilePath, 'utf8');
+
+      let rendered = false;
+      const { configFile } = repository.readAndMigrate(
+        { readOnly: true },
+        () => { rendered = true; },
+      );
+
+      expect(configFile.getConfigFormatVersion()).to.equal('9.9.9');
+      expect(rendered).to.be.false();
+      expect(fs.readFileSync(configFilePath, 'utf8')).to.equal(before);
+      expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.false();
+    });
+
     // Migrations are not all pure - one moves TLS files and deletes the
     // originals - so deciding whether one is due must not run them. Running
     // them to find out would do that work outside the lock, where another

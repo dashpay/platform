@@ -188,8 +188,12 @@ export default function renderCertificateGuidance({
 }) {
   const cfg = renderConfigFlag(config.getName());
   const provider = config.get('platform.gateway.ssl.provider');
-  const isSwitchIncomplete = verdict.reasons
-    .some(({ code }) => code === CERTIFICATE_REASONS.SWITCH_INCOMPLETE);
+  // Only when the interrupted switch is the whole problem. The installed pair
+  // being the one lego produced says nothing about whether it is still valid,
+  // so this state can carry an expired or misaddressed certificate alongside
+  // it - and there, saving the setting is not the repair.
+  const isSwitchIncomplete = verdict.reasons.length === 1
+    && verdict.reasons[0].code === CERTIFICATE_REASONS.SWITCH_INCOMPLETE;
 
   const blocks = [
     `${renderOpening(pull)}

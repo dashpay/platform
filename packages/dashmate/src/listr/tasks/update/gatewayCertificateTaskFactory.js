@@ -79,6 +79,28 @@ function renderSuccess(config, verdict) {
 }
 
 /**
+ * Carry a verdict's warnings into the run's report.
+ *
+ * The command prints only what is collected here, so a branch that re-checks
+ * and returns without this drops any warning the new state carries - a
+ * provider that still disagrees, or an accepted self-signed certificate on a
+ * fullnode - from everything except machine output.
+ *
+ * @param {Object} ctx
+ * @param {Object} verdict
+ */
+function collectWarnings(ctx, verdict) {
+  if (verdict.warnings.length === 0) {
+    return;
+  }
+
+  ctx.certificateWarnings = [
+    ...(ctx.certificateWarnings ?? []),
+    ...verdict.warnings.map(({ message }) => message),
+  ];
+}
+
+/**
  * @param {Object} verdict
  * @param {string} code
  * @return {boolean}
@@ -315,9 +337,13 @@ export default function gatewayCertificateTaskFactory(
         throw new CertificateUnresolvedError(verdict);
       }
 
-      // The pair is already installed and correct; only the setting was never
-      // written. There is nothing to obtain.
-      if (hasReason(verdict, CERTIFICATE_REASONS.SWITCH_INCOMPLETE)) {
+      // Only when the interrupted switch is the whole problem. The pair being
+      // byte-identical to the one lego produced says nothing about whether it
+      // is still valid, so this state can carry an expired or misaddressed
+      // certificate alongside it - and there the setting is not all that is
+      // missing. Those fall through to the obtain below.
+      if (verdict.reasons.length === 1
+        && hasReason(verdict, CERTIFICATE_REASONS.SWITCH_INCOMPLETE)) {
         const complete = await promptOrThrow(task, {
           type: 'toggle',
           header: `  A Let's Encrypt certificate is installed for the gateway, but the
@@ -341,7 +367,18 @@ export default function gatewayCertificateTaskFactory(
 
         await reloadGateway(config);
 
-        ctx.certificate = checkGatewayCertificate(config);
+        // Judged by what the node holds afterwards, like every other branch.
+        // Persisting can fail, the reload can fail, and the installed pair can
+        // expire between the check and the write - telling an operator their
+        // node is fixed when it is dark is worse than saying nothing.
+        const after = checkGatewayCertificate(config);
+
+        ctx.certificate = after;
+        collectWarnings(ctx, after);
+
+        if (after.status === CERTIFICATE_STATUS.INVALID) {
+          throw new CertificateUnresolvedError(after);
+        }
 
         return;
       }
@@ -364,10 +401,26 @@ export default function gatewayCertificateTaskFactory(
         if (installFiles) {
           await installCertificateFilesTask(config, { interactive }).run({ ...ctx, interactive });
 
+          // The gateway listener is branched on the provider: self-signed
+          // renders a tls_inspector and a raw_buffer filter chain, so the port
+          // goes on accepting plaintext connections. Leaving the setting behind
+          // would keep that chain on a node that now holds a real certificate.
+          //
+          // Written only now, after the files are installed, so configuration
+          // can never name a provider the node has no certificate for. Saved
+          // immediately rather than at command exit, because update carries on
+          // into a multi-minute pull and the end-of-run save is skipped
+          // whenever the run later throws.
+          config.set('platform.gateway.ssl.enabled', true);
+          config.set('platform.gateway.ssl.provider', SSL_PROVIDERS.FILE);
+
+          persistProvider(config);
+
           await reloadGateway(config);
 
           const after = checkGatewayCertificate(config);
           ctx.certificate = after;
+          collectWarnings(ctx, after);
 
           if (after.status !== CERTIFICATE_STATUS.INVALID) {
             return;

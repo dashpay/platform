@@ -22,10 +22,19 @@ export default class BaseCommand extends Command {
   };
 
   /**
+   * Whether this run changes nothing on disk. A command that reconfigures a
+   * node can still have a mode that only reports, and such a mode has to keep
+   * that promise all the way down: it takes no lock, saves no configuration,
+   * and does not persist a migration it happened to need.
+   *
+   * Set from the command's flags in init(). A command that declares one of
+   * these modes gives up its end-of-run save in that mode, which is the point.
+   */
+  isReadOnlyRun = false;
+
+  /**
    * Whether this run holds the configuration lock. Defaults to what the command
-   * declares and is narrowed once its flags are known, because a command can
-   * declare that it reconfigures a node and still have a mode that changes
-   * nothing.
+   * declares and is narrowed once its flags are known.
    */
   holdsConfigLock = this.constructor.mutatesConfig === true;
 
@@ -62,9 +71,11 @@ export default class BaseCommand extends Command {
     //
     // Such a command may still have a mode that changes nothing - a read-only
     // preflight, say - and taking a write lock there would let it fail on a
-    // lock timeout for no reason, so it can opt that mode out.
-    this.holdsConfigLock = this.holdsConfigLock
-      && this.constructor.shouldSkipConfigLock?.(this.parsedFlags) !== true;
+    // lock timeout for no reason, so it can opt that mode out. The migration
+    // below is opted out with it: migrating writes and renders under the same
+    // lock, and it is due on exactly the run right after an upgrade.
+    this.isReadOnlyRun = this.constructor.isReadOnlyRun?.(this.parsedFlags) === true;
+    this.holdsConfigLock = this.holdsConfigLock && !this.isReadOnlyRun;
 
     if (this.holdsConfigLock) {
       configFileRepository.acquire();
@@ -82,6 +93,7 @@ export default class BaseCommand extends Command {
       ({ configFile } = configFileRepository.readAndMigrate(
         {
           skipValidation,
+          readOnly: this.isReadOnlyRun,
         },
         (migratedConfigs) => {
           const writeConfigTemplates = this.container.resolve('writeConfigTemplates');

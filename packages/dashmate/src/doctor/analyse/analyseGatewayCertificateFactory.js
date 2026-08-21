@@ -1,13 +1,20 @@
 import chalk from 'chalk';
 import { SEVERITY } from '../Prescription.js';
 import Problem from '../Problem.js';
+import renderConfigFlag from '../../util/renderConfigFlag.js';
 
 /**
  * The manual obtain command writes certificate files but does not signal the gateway, so an
  * operator following the advice can succeed and see no change on the wire. Every message about
  * a certificate the gateway has not picked up has to say this.
+ *
+ * The node is named because a report is read against one config among several, and a command
+ * pasted without one acts on whichever happens to be the default.
+ *
+ * @param {string} cfg
+ * @return {string}
  */
-const RESTART_HINT = chalk`Then restart Platform so the gateway picks it up: {bold.cyanBright dashmate restart --platform}`;
+const restartHint = (cfg) => chalk`Then restart Platform so the gateway picks it up: {bold.cyanBright dashmate restart ${cfg} --platform}`;
 
 /**
  * An operator reading a certificate problem is deciding whether their node is
@@ -15,9 +22,10 @@ const RESTART_HINT = chalk`Then restart Platform so the gateway picks it up: {bo
  * does, and only refuses to report success. Leaving this out lets a client
  * reachability problem be read as a software delivery one.
  */
-const UPDATE_CONSEQUENCE = 'While this is unresolved, clients cannot connect to this node.'
-  + ' `dashmate update` still pulls new images, so protocol upgrades and security patches'
-  + ' continue to arrive - but it exits non-zero until the certificate is fixed.';
+const UPDATE_CONSEQUENCE = 'Standards-compliant clients reject a certificate in this state,'
+  + ' so this node may not be reachable. `dashmate update` still pulls new images, so protocol'
+  + ' upgrades and security patches continue to arrive - but it exits non-zero until the'
+  + ' certificate is fixed.';
 
 export default function analyseGatewayCertificateFactory() {
   /**
@@ -34,6 +42,8 @@ export default function analyseGatewayCertificateFactory() {
       return [];
     }
 
+    const cfg = renderConfigFlag(config.getName());
+
     const problems = [];
 
     // The gateway is stopped whenever the documented upgrade procedure is
@@ -49,10 +59,9 @@ export default function analyseGatewayCertificateFactory() {
           message,
           chalk`${UPDATE_CONSEQUENCE}
 
-Check what is wrong and obtain a new certificate:
-{bold.cyanBright dashmate doctor}
-{bold.cyanBright dashmate ssl obtain --provider letsencrypt}
-${RESTART_HINT}`,
+Obtain a new certificate:
+{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt}
+${restartHint(cfg)}`,
           SEVERITY.HIGH,
         ));
       });
@@ -61,8 +70,8 @@ ${RESTART_HINT}`,
         problems.push(new Problem(
           message,
           chalk`Nothing is broken yet. If it needs attention, obtain a new certificate:
-{bold.cyanBright dashmate ssl obtain --provider letsencrypt}
-${RESTART_HINT}`,
+{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt}
+${restartHint(cfg)}`,
           SEVERITY.LOW,
         ));
       });
@@ -83,7 +92,7 @@ ${RESTART_HINT}`,
     if (served.state === 'unreachable') {
       problems.push(new Problem(
         `The gateway did not answer a TLS connection (${served.reason}). Clients may not be able to connect`,
-        chalk`Please check that the gateway is running and listening: {bold.cyanBright dashmate status platform}`,
+        chalk`Please check that the gateway is running and listening: {bold.cyanBright dashmate status ${cfg} platform}`,
         SEVERITY.MEDIUM,
       ));
 
@@ -105,8 +114,8 @@ ${RESTART_HINT}`,
         `The certificate served on port ${served.port} is not valid for ${externalIp}: ${served.identityError}`,
         chalk`Either the certificate is issued for the wrong address, or something other than this
 node's gateway is answering on that port. Check that no other node or proxy is using it, then
-regenerate the certificate if needed: {bold.cyanBright dashmate ssl obtain --force}
-${RESTART_HINT}`,
+regenerate the certificate if needed: {bold.cyanBright dashmate ssl obtain ${cfg} --force}
+${restartHint(cfg)}`,
         SEVERITY.HIGH,
       ));
 
@@ -122,7 +131,7 @@ ${RESTART_HINT}`,
         `The gateway is serving a certificate that expired on ${served.certificate.validTo}, `
         + 'while a newer one is already present on disk',
         chalk`The certificate was renewed but never reached the gateway.
-{bold.cyanBright dashmate restart --platform}`,
+{bold.cyanBright dashmate restart ${cfg} --platform}`,
         SEVERITY.HIGH,
       ));
     } else if (isServedExpired) {
@@ -130,9 +139,9 @@ ${RESTART_HINT}`,
         `The gateway is serving a certificate that expired on ${served.certificate.validTo}. `
         + 'Clients cannot connect to this node',
         chalk`Renewal has not succeeded. Check the renewal logs:
-{bold.cyanBright dashmate logs dashmate_helper}
-Then obtain a new certificate: {bold.cyanBright dashmate ssl obtain}
-${RESTART_HINT}`,
+{bold.cyanBright dashmate logs ${cfg} dashmate_helper}
+Then obtain a new certificate: {bold.cyanBright dashmate ssl obtain ${cfg}}
+${restartHint(cfg)}`,
         SEVERITY.HIGH,
       ));
     } else if (onDiskDiffers) {
@@ -142,7 +151,7 @@ ${RESTART_HINT}`,
         'The gateway is serving an older certificate than the one on disk. '
         + `It will stop accepting clients on ${served.certificate.validTo}`,
         chalk`The certificate was renewed but never reached the gateway.
-{bold.cyanBright dashmate restart --platform}`,
+{bold.cyanBright dashmate restart ${cfg} --platform}`,
         SEVERITY.HIGH,
       ));
     }
@@ -156,7 +165,7 @@ ${RESTART_HINT}`,
         chalk`Clients verifying against public certificate authorities will reject this node.
 If the certificate chain is incomplete, make sure the bundle contains the issuing
 certificates as well as the server certificate.
-${RESTART_HINT}`,
+${restartHint(cfg)}`,
         SEVERITY.HIGH,
       ));
     }

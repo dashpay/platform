@@ -231,6 +231,10 @@ export default class ConfigFileJsonRepository {
    * write.
    *
    * @param {Object} [options={}] - passed through to read()
+   * @param {boolean} [options.readOnly=false] - migrate in memory and stop
+   *   there: no lock, no render, no save. For a caller that has promised to
+   *   change nothing, which has to hold even on the one run where a migration
+   *   is due
    * @param {function(Config[]): void} [onMigrated] - runs before the migrated
    *   config file is saved and while the lock is held
    * @returns {{configFile: ConfigFile}}
@@ -247,7 +251,7 @@ export default class ConfigFileJsonRepository {
     // Migrations are not all pure - some move service files on disk and delete
     // the originals - so running them to find out would do that work outside
     // the lock, and again inside it.
-    if (!this.#isMigrationDue()) {
+    if (options.readOnly === true || !this.#isMigrationDue()) {
       return { configFile: this.read(options) };
     }
 

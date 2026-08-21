@@ -81,7 +81,7 @@ describe('analyseGatewayCertificateFactory', () => {
 
     expect(problems).to.have.lengthOf(1);
     expect(problems[0].getDescription()).to.include('newer one is already present on disk');
-    expect(problems[0].getSolution()).to.include('dashmate restart --platform');
+    expect(problems[0].getSolution()).to.include('dashmate restart --config base --platform');
   });
 
   it('should warn before the outage when a renewed certificate has not been picked up', () => {
@@ -209,6 +209,43 @@ describe('analyseGatewayCertificateFactory', () => {
 
       expect(problem.getSolution()).to.include('still pulls new images');
       expect(problem.getSolution()).to.include('exits non-zero');
+    });
+
+    // Doctor is run against a named node, and a solution pasted without one
+    // targets whichever config happens to be the default. For `ssl obtain`
+    // that re-issues a certificate for a different node's address and rewrites
+    // that node's provider - a mutation of the wrong machine.
+    it('should put the node it analysed on every command it suggests', () => {
+      const problems = analyseInstalled({
+        status: 'INVALID',
+        reasons: [{ code: 'EXPIRED', message: 'expired' }],
+        warnings: [{ code: 'EXPIRING_SOON', message: 'expires tomorrow' }],
+      });
+
+      expect(problems).to.have.lengthOf(2);
+
+      problems.forEach((problem) => {
+        const commands = problem.getSolution()
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line.startsWith('dashmate '));
+
+        expect(commands).to.have.length.greaterThan(0);
+        commands.forEach((command) => {
+          expect(command, command).to.contain(`--config ${config.getName()}`);
+        });
+      });
+    });
+
+    // Telling someone who is reading a doctor report to run doctor is circular.
+    it('should not suggest running doctor as the fix for a doctor problem', () => {
+      const [problem] = analyseInstalled({
+        status: 'INVALID',
+        reasons: [{ code: 'EXPIRED', message: 'expired' }],
+        warnings: [],
+      });
+
+      expect(problem.getSolution()).to.not.match(/^\s*dashmate doctor\b/m);
     });
 
     it('should report each warning separately and more quietly', () => {

@@ -304,6 +304,52 @@ describe('gatewayCertificateTaskFactory', () => {
       expect(configFileRepository.write).to.have.been.calledOnce();
     });
 
+    // The pair being the one lego produced says nothing about whether it is
+    // still valid, so this state can carry an expired certificate too. Saving
+    // the setting there fixes the helper's target and leaves the node dark -
+    // and telling the operator it is fixed is worse than saying nothing.
+    it('should not claim a dead certificate is fixed by saving the setting', async function it() {
+      const dead = invalid(CERTIFICATE_REASONS.SWITCH_INCOMPLETE, {
+        reasons: [
+          { code: CERTIFICATE_REASONS.SWITCH_INCOMPLETE, message: 'switch interrupted' },
+          { code: CERTIFICATE_REASONS.EXPIRED, message: 'expired 158 days ago' },
+        ],
+      });
+
+      let checked = 0;
+      const { errors } = await run.call(this, {
+        checkGatewayCertificate: () => {
+          checked += 1;
+          return checked === 1 ? dead : verdict();
+        },
+        answers: [true],
+      });
+
+      // A certificate is genuinely needed here, so the operator is asked for
+      // one rather than told the setting is all that was missing.
+      expect(obtainLetsEncryptCertificateTask).to.have.been.calledOnce();
+      expect(errors).to.be.empty();
+      expect(enquirer.options[0].message).to.not.contain('Finish the interrupted switch');
+    });
+
+    // Persisting can fail, the reload can fail, and the installed pair can have
+    // expired between the check and the write. Success is what the re-check
+    // says, not what the branch assumed.
+    it('should fail when the certificate is still unusable after completing', async function it() {
+      let checked = 0;
+      const { errors } = await run.call(this, {
+        checkGatewayCertificate: () => {
+          checked += 1;
+          return checked === 1
+            ? invalid(CERTIFICATE_REASONS.SWITCH_INCOMPLETE)
+            : invalid(CERTIFICATE_REASONS.KEY_MISMATCH);
+        },
+        answers: [true],
+      });
+
+      expect(errors[0]).to.be.an.instanceOf(CertificateUnresolvedError);
+    });
+
     it('should block when the operator declines to finish it', async function it() {
       const { errors } = await run.call(this, {
         checkGatewayCertificate: () => invalid(CERTIFICATE_REASONS.SWITCH_INCOMPLETE),
@@ -332,6 +378,68 @@ describe('gatewayCertificateTaskFactory', () => {
       expect(installCertificateFilesTask).to.have.been.calledOnce();
       expect(obtainLetsEncryptCertificateTask).to.not.have.been.called();
       expect(enquirer.options[0].message).to.contain('Install new certificate files');
+    });
+
+    // The gateway listener is branched on the provider: self-signed renders a
+    // tls_inspector plus a raw_buffer filter chain, so the port keeps accepting
+    // plaintext. Installing a real certificate without recording that the
+    // provider changed leaves that chain in place on a node whose operator has
+    // just done exactly the right thing.
+    it('should record the new provider after installing operator files', async function it() {
+      config.set('platform.gateway.ssl.provider', 'self-signed');
+
+      let checked = 0;
+      const { errors } = await run.call(this, {
+        checkGatewayCertificate: () => {
+          checked += 1;
+          return checked === 1 ? invalid(CERTIFICATE_REASONS.SELF_SIGNED) : verdict();
+        },
+        answers: [true],
+      });
+
+      expect(errors).to.be.empty();
+      expect(config.get('platform.gateway.ssl.provider')).to.equal('file');
+      expect(config.get('platform.gateway.ssl.enabled')).to.be.true();
+    });
+
+    // The gate is the only caller that persists mid-run, because update carries
+    // on into a multi-minute pull afterwards and the end-of-run save is skipped
+    // whenever the run later throws.
+    it('should persist and re-render immediately after installing files', async function it() {
+      config.set('platform.gateway.ssl.provider', 'self-signed');
+
+      let checked = 0;
+      await run.call(this, {
+        checkGatewayCertificate: () => {
+          checked += 1;
+          return checked === 1 ? invalid(CERTIFICATE_REASONS.SELF_SIGNED) : verdict();
+        },
+        answers: [true],
+      });
+
+      expect(configFileRepository.write).to.have.been.calledOnceWith(configFile);
+      expect(writeConfigTemplates).to.have.been.calledOnceWith(config);
+    });
+
+    // The verdict after the install can still carry warnings - a provider that
+    // disagrees with the new certificate's issuer, say - and the command prints
+    // only what the task collects.
+    it('should carry warnings from the installed certificate', async function it() {
+      config.set('platform.gateway.ssl.provider', 'file');
+
+      let checked = 0;
+      const { context } = await run.call(this, {
+        checkGatewayCertificate: () => {
+          checked += 1;
+          return checked === 1 ? invalid() : verdict({
+            status: CERTIFICATE_STATUS.WARN,
+            warnings: [{ code: CERTIFICATE_REASONS.PROVIDER_MISMATCH, message: 'issuer disagrees' }],
+          });
+        },
+        answers: [true],
+      });
+
+      expect(context.certificateWarnings).to.deep.equal(['issuer disagrees']);
     });
 
     // Changing the authority on a certificate someone bought is a decision only

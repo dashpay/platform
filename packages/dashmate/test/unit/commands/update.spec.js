@@ -135,19 +135,60 @@ describe('Update command', () => {
     // open for minutes.
     it('should observe a pull that rejects immediately', async function it() {
       const rejection = new Error('service list is broken');
-      let handledDuringTask = true;
+      let taskRan = false;
 
       await expect(runUpdate({
         updateNode: () => Promise.reject(rejection),
         gatewayCertificateTask: () => async () => {
-          // Anything unhandled would already have been reported by now.
+          // An unobserved rejection would already have taken the process down.
           await new Promise((resolve) => { setImmediate(resolve); });
-          handledDuringTask = true;
+          taskRan = true;
         },
-      })).to.not.be.rejected();
+      })).to.be.rejectedWith(rejection);
 
-      expect(handledDuringTask).to.be.true();
-      expect(stderr).to.contain('service list is broken');
+      expect(taskRan).to.be.true();
+    });
+
+    // A pull that rejects fetched nothing at all. Reporting it and carrying on
+    // hands a playbook running `update && start` a node whose images were never
+    // fetched, with no exit code to catch - and set -e cannot see it.
+    it('should fail the command when the pull rejects', async () => {
+      const rejection = new Error('service list is broken');
+
+      await expect(runUpdate({ updateNode: () => Promise.reject(rejection) }))
+        .to.be.rejectedWith(rejection);
+    });
+
+    // The certificate guidance is still worth printing, but it is not what the
+    // command failed on, and it must not replace the error that is.
+    it('should still print the certificate guidance before failing on the pull', async () => {
+      const rejection = new Error('service list is broken');
+      const verdict = invalidVerdict();
+
+      await expect(runUpdate({
+        updateNode: () => Promise.reject(rejection),
+        checkGatewayCertificate: () => verdict,
+        gatewayCertificateTask: () => async (ctx) => {
+          ctx.certificate = verdict;
+          throw new CertificateUnresolvedError(verdict);
+        },
+      })).to.be.rejectedWith(rejection);
+
+      expect(stderr).to.contain('did not pass');
+    });
+
+    // Individual images failing is not a rejection: updateNode resolves those
+    // as error rows, and that has always exited 0.
+    it('should not fail the command when individual pulls fail', async function it() {
+      mockDocker = {
+        pull: this.sinon.stub().callsFake((image, cb) => cb(new Error('registry down'), null)),
+      };
+      this.sinon.stub(console, 'log');
+
+      await expect(runUpdate({ updateNode: updateNodeFactory(mockGetServicesList, mockDocker) }))
+        .to.not.be.rejected();
+
+      expect(process.exitCode).to.equal(0);
     });
 
     // exitOnError is false so the throw does not stop the list, and the
@@ -298,10 +339,10 @@ describe('Update command', () => {
       expect(source).to.not.match(/process\.exit\(/);
     });
 
-    it('should not take the configuration lock', () => {
+    it('should declare itself read-only so it neither locks nor writes', () => {
       expect(UpdateCommand.mutatesConfig).to.be.true();
-      expect(UpdateCommand.shouldSkipConfigLock({ 'check-certificate': true })).to.be.true();
-      expect(UpdateCommand.shouldSkipConfigLock({ 'check-certificate': false })).to.be.false();
+      expect(UpdateCommand.isReadOnlyRun({ 'check-certificate': true })).to.be.true();
+      expect(UpdateCommand.isReadOnlyRun({ 'check-certificate': false })).to.be.false();
     });
   });
 

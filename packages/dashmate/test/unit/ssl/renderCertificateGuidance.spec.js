@@ -197,6 +197,24 @@ describe('renderCertificateGuidance', () => {
     expect(output).to.not.contain('THE FIX');
   });
 
+  // The installed pair being the one lego produced says nothing about whether
+  // it is still valid. When something else is wrong with it too, saving the
+  // setting is not the repair, and offering it as one sends the operator away
+  // believing a dark node is fixed.
+  it('should not offer the setting as the repair when the certificate is also broken', () => {
+    const output = render({
+      verdict: verdict({
+        reasons: [
+          { code: CERTIFICATE_REASONS.SWITCH_INCOMPLETE, message: 'A switch was interrupted' },
+          { code: CERTIFICATE_REASONS.EXPIRED, message: 'expired 158 days ago' },
+        ],
+      }),
+    });
+
+    expect(output).to.not.contain('Nothing needs to be obtained');
+    expect(output).to.contain('THE FIX');
+  });
+
   it('should name the bypass and say it is not a playbook line', () => {
     const output = render();
 

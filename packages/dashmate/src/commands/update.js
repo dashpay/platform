@@ -24,14 +24,16 @@ export default class UpdateCommand extends ConfigBaseCommand {
   static mutatesConfig = true;
 
   /**
-   * The read-only preflight changes nothing, and it exists to be run before the
-   * node is stopped - possibly while the helper is renewing. Taking a write
-   * lock there would let it fail on a lock timeout for no reason.
+   * The preflight changes nothing, and it exists to be run before the node is
+   * stopped - possibly while the helper is renewing. So it takes no lock, saves
+   * no configuration, and does not persist a migration: any of those could make
+   * it fail on a lock acquire timeout, and all of them would break the promise
+   * that it changes nothing.
    *
    * @param {Object} flags
    * @return {boolean}
    */
-  static shouldSkipConfigLock(flags) {
+  static isReadOnlyRun(flags) {
     return flags['check-certificate'] === true;
   }
 
@@ -170,9 +172,13 @@ export default class UpdateCommand extends ConfigBaseCommand {
       const result = await settled;
 
       if (!result.ok) {
+        // Nothing was fetched at all - not a per-image failure, which resolves
+        // as an error row and has always exited 0. Retained so it can be
+        // raised once the certificate has had its say: returning quietly here
+        // hands `update && start` a node whose images were never downloaded,
+        // with no exit code for the caller to catch.
         this.pullResult = { ok: false, failed: 0, total: 0 };
-
-        process.stderr.write(`Failed to pull images: ${result.error.message}\n`);
+        this.pullError = result.error;
 
         return;
       }
@@ -286,9 +292,20 @@ export default class UpdateCommand extends ConfigBaseCommand {
       throw unexpected;
     }
 
+    // Printed before either failure is raised, so an operator whose node has
+    // both problems still gets the remediation for the one they can act on.
     if (unresolved) {
       await reportUnresolved(unresolved.getVerdict());
+    }
 
+    // A pull that fetched nothing is what this command exists to do, so it
+    // outranks the certificate: the caller has to see a non-zero exit and the
+    // reason, not a muted certificate message.
+    if (this.pullError) {
+      throw this.pullError;
+    }
+
+    if (unresolved) {
       throw new MuteOneLineError(unresolved);
     }
 
