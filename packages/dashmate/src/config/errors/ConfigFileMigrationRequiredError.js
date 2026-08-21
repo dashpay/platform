@@ -25,12 +25,13 @@ and has to be migrated before it can be read:
 Migrating moves and removes files on disk, so a command
 that changes nothing will not do it.
 
-Run any other dashmate command first, for example:
+Run any other dashmate command for this node first - any one
+that is not this check. It migrates the configuration while
+holding the configuration lock. Then run this one again.
 
-    dashmate status
-
-That migrates the configuration while holding the
-configuration lock. Then run this one again.`);
+No command is suggested here on purpose: this is raised before
+a node has been selected, so any command written out would
+name the wrong one as often as the right one.`);
 
     this.configFilePath = configFilePath;
   }

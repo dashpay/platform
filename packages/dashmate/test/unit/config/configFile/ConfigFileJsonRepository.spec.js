@@ -7,6 +7,8 @@ import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFact
 import ConfigFile from '../../../../src/config/configFile/ConfigFile.js';
 import ConfigFileJsonRepository from '../../../../src/config/configFile/ConfigFileJsonRepository.js';
 import ConfigFileMigrationRequiredError from '../../../../src/config/errors/ConfigFileMigrationRequiredError.js';
+import ConfigFileNotFoundError from '../../../../src/config/errors/ConfigFileNotFoundError.js';
+import InvalidConfigFileFormatError from '../../../../src/config/errors/InvalidConfigFileFormatError.js';
 import createDIContainer from '../../../../src/createDIContainer.js';
 import getConfigFileDataV0250 from '../../../../src/test/fixtures/getConfigFileDataV0250.js';
 
@@ -254,13 +256,22 @@ describe('ConfigFileJsonRepository', () => {
     it('should refuse to migrate for a caller that changes nothing', () => {
       seedConfigFile();
 
+      const seeded = JSON.parse(seedConfigFile());
+      seeded.configFormatVersion = '0.25.0';
+      fs.writeFileSync(configFilePath, JSON.stringify(seeded, undefined, 2), 'utf8');
+
       let migrationRuns = 0;
       const migration = (data) => {
         migrationRuns += 1;
 
-        return { ...data, configFormatVersion: '9.9.9' };
+        return { ...data, configFormatVersion: CURRENT_FORMAT_VERSION };
       };
-      const repository = new ConfigFileJsonRepository(migration, homeDir, createDefaults);
+      const repository = new ConfigFileJsonRepository(
+        migration,
+        homeDir,
+        createDefaults,
+        CURRENT_FORMAT_VERSION,
+      );
       const before = fs.readFileSync(configFilePath, 'utf8');
 
       expect(() => repository.readAndMigrate({ readOnly: true }))
@@ -271,6 +282,59 @@ describe('ConfigFileJsonRepository', () => {
       expect(migrationRuns).to.equal(0);
       expect(fs.readFileSync(configFilePath, 'utf8')).to.equal(before);
       expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.false();
+    });
+
+    // Refusing has to mean "the recorded version is genuinely behind", not
+    // "something about this file defeated the probe". A missing or damaged
+    // config file has its own errors, and one of them is what first-run setup
+    // catches to create defaults - reporting a migration instead breaks that
+    // and tells the operator something untrue about a file that may not exist.
+    it('should let a missing config file report itself', () => {
+      const repository = new ConfigFileJsonRepository(
+        identityMigration,
+        homeDir,
+        createDefaults,
+        CURRENT_FORMAT_VERSION,
+      );
+
+      expect(() => repository.readAndMigrate({ readOnly: true }))
+        .to.throw(ConfigFileNotFoundError);
+    });
+
+    it('should let a malformed config file report itself', () => {
+      fs.writeFileSync(configFilePath, '{ not json at all', 'utf8');
+
+      const repository = new ConfigFileJsonRepository(
+        identityMigration,
+        homeDir,
+        createDefaults,
+        CURRENT_FORMAT_VERSION,
+      );
+
+      expect(() => repository.readAndMigrate({ readOnly: true }))
+        .to.throw(InvalidConfigFileFormatError);
+    });
+
+    [
+      ['no recorded version', ({ configFormatVersion, ...rest }) => rest],
+      ['an unparseable recorded version', (data) => ({ ...data, configFormatVersion: 'not-a-version' })],
+    ].forEach(([name, damage]) => {
+      it(`should not claim a migration is due from ${name}`, () => {
+        const damaged = damage(JSON.parse(seedConfigFile()));
+        fs.writeFileSync(configFilePath, JSON.stringify(damaged, undefined, 2), 'utf8');
+
+        const repository = new ConfigFileJsonRepository(
+          identityMigration,
+          homeDir,
+          createDefaults,
+          CURRENT_FORMAT_VERSION,
+        );
+
+        // Whatever this file's own problem turns out to be, it is not that an
+        // older dashmate wrote it - nothing here establishes that.
+        expect(() => repository.readAndMigrate({ readOnly: true }))
+          .to.not.throw(ConfigFileMigrationRequiredError);
+      });
     });
 
     // The common case, and the one that has to stay fast: nothing to migrate,
@@ -291,6 +355,42 @@ describe('ConfigFileJsonRepository', () => {
       expect(configFile.getConfig('base')).to.exist();
       expect(fs.readFileSync(configFilePath, 'utf8')).to.equal(before);
       expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.false();
+    });
+
+    // Every command dashmate prints falls back to the default node when it
+    // carries no --config, and this error is raised from a layer that has no
+    // idea which node was selected. So it names none: prose an operator cannot
+    // paste at the wrong machine.
+    it('should suggest no command it cannot aim at the right node', () => {
+      const seeded = JSON.parse(seedConfigFile());
+      seeded.configFormatVersion = '0.25.0';
+      fs.writeFileSync(configFilePath, JSON.stringify(seeded, undefined, 2), 'utf8');
+
+      const repository = new ConfigFileJsonRepository(
+        identityMigration,
+        homeDir,
+        createDefaults,
+        CURRENT_FORMAT_VERSION,
+      );
+
+      const error = (() => {
+        try {
+          repository.readAndMigrate({ readOnly: true });
+        } catch (e) {
+          return e;
+        }
+
+        return null;
+      })();
+
+      expect(error).to.be.an.instanceOf(ConfigFileMigrationRequiredError);
+      expect(error.message).to.contain(configFilePath);
+
+      // Prose may name dashmate; nothing may be laid out as a command to copy.
+      error.message.split('\n').forEach((line) => {
+        expect(line, line).to.not.match(/^\s+dashmate\s/);
+        expect(line, line).to.not.match(/`dashmate\s/);
+      });
     });
 
     // The migration this refuses to run really does delete things. Driven with

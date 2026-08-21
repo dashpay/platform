@@ -236,7 +236,7 @@ describe('renderCertificateGuidance', () => {
       .to.contain('2 of 7 failed');
     expect(render({ pull: { ok: false, failed: 0, total: 0 } }))
       .to.contain('could not pull images');
-    expect(render()).to.contain('pulled images, then stopped');
+    expect(render()).to.contain('This run pulled images, then stopped');
   });
 
   // The read-only preflight starts no pull at all, so it must not say anything
@@ -247,6 +247,7 @@ describe('renderCertificateGuidance', () => {
 
     expect(output).to.not.contain('could not pull images');
     expect(output).to.not.contain('pulled images');
+    expect(output).to.not.contain('This run pulled');
     expect(output).to.contain("This node's installed TLS certificate did not pass");
   });
 

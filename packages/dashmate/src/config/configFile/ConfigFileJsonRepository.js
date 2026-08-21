@@ -249,20 +249,26 @@ export default class ConfigFileJsonRepository {
       return { configFile, migrated };
     };
 
-    // Decide whether a migration is due from the recorded version alone.
-    // Migrations are not all pure - some move service files on disk and delete
-    // the originals - so running them to find out would do that work outside
-    // the lock, and again inside it.
     // Reading is what runs the migrations, and some of them copy TLS material
     // to a new location, remove the originals, and then delete the legacy ssl
     // directory outright. A caller that promised to change nothing cannot read
     // a config file that is not current: declining is the only honest answer,
     // and it stops a stop-first upgrade before the node goes down rather than
     // after.
-    if (options.readOnly === true && this.#isMigrationDue()) {
+    //
+    // Answering a different question from the one below. "Take the lock" is
+    // safe to answer yes to whenever the state cannot be read, but "tell the
+    // operator an older dashmate wrote this" has to be true - a file that is
+    // missing or damaged must report itself as missing or damaged, and one of
+    // those errors is what first-run setup catches to create defaults.
+    if (options.readOnly === true && this.#isRecordedVersionBehind()) {
       throw new ConfigFileMigrationRequiredError(this.configFilePath);
     }
 
+    // Decide whether a migration is due from the recorded version alone.
+    // Migrations are not all pure - some move service files on disk and delete
+    // the originals - so running them to find out would do that work outside
+    // the lock, and again inside it.
     if (options.readOnly === true || !this.#isMigrationDue()) {
       return { configFile: this.read(options) };
     }
@@ -288,6 +294,40 @@ export default class ConfigFileJsonRepository {
 
       return { configFile };
     });
+  }
+
+  /**
+   * Whether the recorded format version is demonstrably older than this build's.
+   *
+   * Narrower than the question below, and deliberately so: this one is only
+   * true when both versions could be read and compared. Anything that defeats
+   * the comparison - no file, unreadable file, a missing or unparseable
+   * version, no target to compare against - is not evidence that an older
+   * dashmate wrote the file, so it answers false and leaves the file to report
+   * its own problem.
+   *
+   * @returns {boolean}
+   */
+  #isRecordedVersionBehind() {
+    if (typeof this.configFormatVersion !== 'string') {
+      return false;
+    }
+
+    let recordedVersion;
+
+    try {
+      recordedVersion = JSON.parse(
+        fs.readFileSync(this.configFilePath, 'utf8'),
+      ).configFormatVersion;
+    } catch {
+      return false;
+    }
+
+    if (typeof recordedVersion !== 'string' || semver.valid(recordedVersion) === null) {
+      return false;
+    }
+
+    return semver.lt(recordedVersion, this.configFormatVersion);
   }
 
   /**

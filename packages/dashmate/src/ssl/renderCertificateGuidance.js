@@ -22,17 +22,17 @@ function renderOpening(pull) {
   }
 
   if (!pull.ok) {
-    return `  dashmate update could not pull images, and stopped: this node's installed TLS
+    return `  This run could not pull images, and stopped: this node's installed TLS
   certificate did not pass dashmate's checks.`;
   }
 
   if (pull.failed > 0) {
-    return `  dashmate update pulled images - ${pull.failed} of ${pull.total} failed, see the
-  table above - then stopped: this node's installed TLS certificate did not
-  pass dashmate's checks.`;
+    return `  This run pulled images - ${pull.failed} of ${pull.total} failed, see the table
+  above - then stopped: this node's installed TLS certificate did not pass
+  dashmate's checks.`;
   }
 
-  return `  dashmate update pulled images, then stopped: this node's installed TLS
+  return `  This run pulled images, then stopped: this node's installed TLS
   certificate did not pass dashmate's checks.`;
 }
 
