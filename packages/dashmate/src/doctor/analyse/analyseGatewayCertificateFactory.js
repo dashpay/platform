@@ -157,7 +157,7 @@ ${restartHint(cfg)}`,
     } else if (isServedExpired && onDiskDiffers) {
       problems.push(new Problem(
         `The gateway is serving a certificate that expired on ${served.certificate.validTo}. `
-        + 'The copy on disk is a different one, and it is no newer',
+        + 'The copy on disk is a different one, and is not known to be a usable replacement',
         chalk`Neither the certificate on the wire nor the one on disk is usable, so restarting
 Platform would not help. Obtain a current certificate, which installs it and
 signals the gateway:
@@ -188,10 +188,10 @@ ${restartHint(cfg)}`,
       } else {
         problems.push(new Problem(
           'The gateway is serving a different certificate from the one on disk, and the one '
-          + 'on disk is not the newer of the two',
-          chalk`Whatever is on the wire is currently the better of the two, so do not restart
-Platform to load the file - that would replace it with the older one. Obtain a
-current certificate first, which also installs it and signals the gateway:
+          + 'on disk is not known to be a usable replacement for it',
+          chalk`What is on the wire is working and the file has not been shown to be a safe
+replacement, so do not restart Platform to load it. Obtain a current
+certificate instead, which installs it and signals the gateway:
 {bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt}`,
           SEVERITY.HIGH,
         ));

@@ -244,10 +244,22 @@ describe('SSL obtain command', () => {
   // too. Its --no-retry defaults to false, which would turn an obtain run from
   // cron into a hang if the flag were what decided whether to prompt.
   it('should not offer to prompt when run without a terminal', async function it() {
+    // Set rather than inherited: run from a developer's terminal with CI
+    // unset, the ambient streams are terminals and this stops proving
+    // anything about the unattended path.
+    const restore = { stdin: process.stdin.isTTY, stdout: process.stdout.isTTY };
+    delete process.stdin.isTTY;
+    delete process.stdout.isTTY;
+
     const dependencies = obtainDependencies(this.sinon);
     const context = captureContext(this.sinon, dependencies);
 
-    await runObtain({ ...dependencies, 'no-retry': false });
+    try {
+      await runObtain({ ...dependencies, 'no-retry': false });
+    } finally {
+      process.stdin.isTTY = restore.stdin;
+      process.stdout.isTTY = restore.stdout;
+    }
 
     expect(context.interactive).to.equal(false);
   });
@@ -276,7 +288,9 @@ describe('SSL obtain command', () => {
     };
 
     try {
-      await runObtain(dependencies);
+      // The command's own default, not the helper's test-only one, since the
+      // point is that interactivity does not come from this flag.
+      await runObtain({ ...dependencies, 'no-retry': false });
     } finally {
       this.restoreStreams();
     }

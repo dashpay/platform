@@ -314,6 +314,21 @@ describe('analyseGatewayCertificateFactory', () => {
     });
   });
 
+  // The disk copy can fail the usability gate while genuinely being the newer
+  // of the two, so saying it is not newer would be a second wrong claim in
+  // place of the one that was removed.
+  it('should not deny the disk copy is newer when the objection is something else', () => {
+    installedIsUsable('EE:FF');
+
+    const [problem] = analyse(served({
+      matchesOnDisk: false,
+      onDisk: { fingerprint256: 'CC:DD', validTo: validTo(60) },
+    }));
+
+    expect(problem.getDescription()).to.not.match(/is no newer|not the newer/i);
+    expect(problem.getSolution()).to.not.match(/dashmate restart/);
+  });
+
   // A later expiry says nothing about whether the disk pair can be served. The
   // sample carries only a fingerprint and a date; key pairing, address and
   // self-signature come from the installed verdict, which is collected in the

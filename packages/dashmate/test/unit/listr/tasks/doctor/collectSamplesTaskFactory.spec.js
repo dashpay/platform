@@ -51,6 +51,7 @@ describe('collectSamplesTaskFactory', () => {
   let samples;
   let dockerCompose;
   let rpcClient;
+  let originalUser;
 
   /**
    * Run the sample collection the same way the doctor command does: as a subtask
@@ -68,6 +69,7 @@ describe('collectSamplesTaskFactory', () => {
   }
 
   beforeEach(function beforeEach() {
+    originalUser = process.env.USER;
     homeDir = HomeDir.createTemp();
 
     config = getBaseConfigFactory()();
@@ -131,6 +133,14 @@ describe('collectSamplesTaskFactory', () => {
 
   afterEach(() => {
     homeDir.remove();
+
+    // The masking cases below mutate and delete USER, and one of them leaves it
+    // deleted for every later test in the process otherwise.
+    if (originalUser === undefined) {
+      delete process.env.USER;
+    } else {
+      process.env.USER = originalUser;
+    }
   });
 
   it('should report a problem for a ZeroSSL certificate that expired months ago', async () => {
