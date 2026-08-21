@@ -85,7 +85,12 @@ describe('analyseGatewayCertificateFactory', () => {
   });
 
   it('should warn before the outage when a renewed certificate has not been picked up', () => {
-    const problems = analyse(served({ matchesOnDisk: false }));
+    // Renewed means the disk copy outlives the served one; that is what makes
+    // a restart the right advice here.
+    const problems = analyse(served({
+      matchesOnDisk: false,
+      onDisk: { fingerprint256: 'CC:DD', validTo: validTo(60) },
+    }));
 
     expect(problems).to.have.lengthOf(1);
     expect(problems[0].getDescription()).to.include('older certificate than the one on disk');
@@ -128,17 +133,6 @@ describe('analyseGatewayCertificateFactory', () => {
     expect(problems).to.be.empty();
   });
 
-  it('should report a closed port 80 as a likely cause when a certificate problem exists', () => {
-    samples.setServiceInfo('gateway', 'validationHttpPort', 'CLOSED');
-
-    const problems = analyse(served({
-      certificate: { fingerprint256: 'AA:BB', validTo: validTo(-3) },
-    }));
-
-    expect(problems).to.have.lengthOf(2);
-    expect(problems[1].getDescription()).to.include('port 80');
-  });
-
   it('should not report a closed port 80 on a node whose certificate is healthy', () => {
     // The port is only bound for the seconds a validation takes, so an external check finds it
     // closed on actively renewing nodes too. Alone it would fire far more often than it is right.
@@ -163,6 +157,62 @@ describe('analyseGatewayCertificateFactory', () => {
     config.set('platform.enable', false);
 
     expect(analyse(served({ certificate: { validTo: validTo(-100) } }))).to.be.empty();
+  });
+
+  // The branch fires on the two certificates merely differing. Asserting a
+  // direction without comparing them, and then advising a restart on that
+  // basis, swaps a valid served certificate for an expired one and takes a
+  // working node dark - which is the outcome this whole feature exists to
+  // prevent, produced by its own remediation.
+  describe('when the served and on-disk certificates differ', () => {
+    it('should advise a restart only when the disk copy is the newer one', () => {
+      const problems = analyse(served({
+        matchesOnDisk: false,
+        onDisk: { fingerprint256: 'CC:DD', validTo: validTo(60) },
+      }));
+
+      const [problem] = problems.filter((p) => p.getDescription().includes('on disk'));
+
+      expect(problem.getDescription()).to.include('older certificate than the one on disk');
+      expect(problem.getSolution()).to.include('dashmate restart');
+    });
+
+    it('should not advise a restart when the disk copy is the stale one', () => {
+      const problems = analyse(served({
+        matchesOnDisk: false,
+        onDisk: { fingerprint256: 'CC:DD', validTo: validTo(-158) },
+      }));
+
+      const [problem] = problems.filter((p) => p.getDescription().includes('disk'));
+
+      expect(problem.getDescription()).to.not.include('older certificate than the one on disk');
+      expect(problem.getSolution()).to.not.match(/dashmate restart/);
+    });
+
+    it('should claim no direction when it cannot compare them', () => {
+      const problems = analyse(served({ matchesOnDisk: false, onDisk: null }));
+
+      const [problem] = problems.filter((p) => p.getDescription().includes('disk'));
+
+      expect(problem.getDescription()).to.not.include('older certificate than the one on disk');
+      expect(problem.getSolution()).to.not.match(/dashmate restart/);
+    });
+  });
+
+  // An external connect test measures whether something is listening, and
+  // nothing listens on port 80 on a healthy node except for the seconds a
+  // renewal takes. So it reports CLOSED on healthy nodes by construction, and
+  // attaching it to every certificate problem sends operators to rewrite
+  // firewall rules that are already correct.
+  it('should not claim port 80 is unreachable from a listener probe', () => {
+    samples.setServiceInfo('gateway', 'validationHttpPort', 'CLOSED');
+
+    const problems = analyse(served({ certificate: { fingerprint256: 'AA:BB', validTo: validTo(-1) } }));
+
+    expect(problems).to.have.length.greaterThan(0);
+    problems.forEach((problem) => {
+      expect(problem.getDescription()).to.not.match(/port 80 is not reachable/i);
+    });
   });
 
   describe('the certificate on disk', () => {

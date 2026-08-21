@@ -142,15 +142,35 @@ ${restartHint(cfg)}`,
         SEVERITY.HIGH,
       ));
     } else if (onDiskDiffers) {
-      // Still serving a valid certificate, but the renewed one has not been picked up, so this
-      // node goes dark when the served certificate expires.
-      problems.push(new Problem(
-        'The gateway is serving an older certificate than the one on disk. '
-        + `It will stop accepting clients on ${served.certificate.validTo}`,
-        chalk`The certificate was renewed but never reached the gateway.
+      // Which of the two is newer decides both the description and whether a
+      // restart is safe to advise. A restart makes the gateway load the disk
+      // copy, so advising one without checking can replace a valid served
+      // certificate with an expired one and take a working node dark.
+      const onDiskExpiresAt = served.onDisk
+        ? new Date(served.onDisk.validTo).getTime()
+        : null;
+
+      if (onDiskExpiresAt !== null && onDiskExpiresAt > servedExpiresAt) {
+        // Still serving a valid certificate, but the renewed one has not been picked up, so this
+        // node goes dark when the served certificate expires.
+        problems.push(new Problem(
+          'The gateway is serving an older certificate than the one on disk. '
+          + `It will stop accepting clients on ${served.certificate.validTo}`,
+          chalk`The certificate was renewed but never reached the gateway.
 {bold.cyanBright dashmate restart ${cfg} --platform}`,
-        SEVERITY.HIGH,
-      ));
+          SEVERITY.HIGH,
+        ));
+      } else {
+        problems.push(new Problem(
+          'The gateway is serving a different certificate from the one on disk, and the one '
+          + 'on disk is not the newer of the two',
+          chalk`Whatever is on the wire is currently the better of the two, so do not restart
+Platform to load the file - that would replace it with the older one. Obtain a
+current certificate first, which also installs it and signals the gateway:
+{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt}`,
+          SEVERITY.HIGH,
+        ));
+      }
     }
 
     // Reported separately from expiry because the connection surfaces only its first
@@ -167,22 +187,14 @@ ${restartHint(cfg)}`,
       ));
     }
 
-    // Both obtainable providers reach this node on port 80 to validate it. Being closed is
-    // only reported alongside a certificate problem: the port is bound just for the seconds a
-    // validation takes, so an external check finds it closed on healthy nodes too and on its
-    // own would be noise.
-    const validationHttpPort = samples.getServiceInfo('gateway', 'validationHttpPort');
-
-    if (problems.length > 0 && validationHttpPort && validationHttpPort !== 'OPEN') {
-      problems.push(new Problem(
-        'Inbound port 80 is not reachable, which is how certificates are validated. '
-        + 'This may be why renewal is failing',
-        chalk`Please make sure port 80 on ${externalIp} accepts incoming connections from the
-internet. Both certificate providers connect back to it to validate this node's
-address before issuing a certificate. If you are behind NAT, forward port 80 as well.`,
-        SEVERITY.MEDIUM,
-      ));
-    }
+    // Nothing is said about inbound port 80 here on purpose. The sample comes
+    // from a connect test, which measures whether something is listening - and
+    // nothing listens on port 80 on a healthy node except for the seconds a
+    // renewal takes, so it reports closed on healthy nodes by construction.
+    // Reporting it alongside certificate problems put the claim in front of
+    // exactly the operators least able to tell a real firewall problem from a
+    // phantom one, and sent them to rewrite rules that were already correct.
+    // A drop carries no information; only an answer or a refusal does.
 
     return problems;
   }
