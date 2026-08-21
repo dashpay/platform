@@ -205,7 +205,7 @@ export default function collectSamplesTaskFactory(
                 task: async () => {
                   const verdict = checkGatewayCertificate(config);
 
-                  ctx.samples.setServiceInfo('gateway', 'installedCertificate', {
+                  const installed = {
                     status: verdict.status,
                     reasons: verdict.reasons,
                     warnings: verdict.warnings,
@@ -215,7 +215,19 @@ export default function collectSamplesTaskFactory(
                     validTo: verdict.installed
                       ? verdict.installed.validTo.toUTCString()
                       : null,
-                  });
+                  };
+
+                  // A problem with the files names the file it could not read,
+                  // which is an absolute path under the operator's home
+                  // directory. The report this ends up in is what an operator
+                  // hands to whoever is helping them, so the path stays - it is
+                  // what makes the problem actionable - and the name in it does
+                  // not.
+                  obfuscateObjectRecursive(installed, (_field, value) => (typeof value === 'string'
+                    ? value.replaceAll(process.env.USER, hideString(process.env.USER))
+                    : value));
+
+                  ctx.samples.setServiceInfo('gateway', 'installedCertificate', installed);
                 },
               },
               {

@@ -48,6 +48,8 @@ describe('collectSamplesTaskFactory', () => {
   let collectSamplesTask;
   let analyseConfig;
   let samples;
+  let dockerCompose;
+  let rpcClient;
 
   /**
    * Run the sample collection the same way the doctor command does: as a subtask
@@ -93,13 +95,13 @@ describe('collectSamplesTaskFactory', () => {
       text: async () => 'metrics_sample 1',
     });
 
-    const dockerCompose = {
+    dockerCompose = {
       throwErrorIfNotInstalled: this.sinon.stub().resolves(),
       inspectService: this.sinon.stub().resolves({}),
       logs: this.sinon.stub().resolves({ out: '', err: '' }),
     };
 
-    const rpcClient = {
+    rpcClient = {
       getBestChainLock: this.sinon.stub().resolves({ result: {} }),
       quorum: this.sinon.stub().resolves({ result: {} }),
       getBlockchainInfo: this.sinon.stub().resolves({ result: {} }),
@@ -169,6 +171,55 @@ describe('collectSamplesTaskFactory', () => {
     expect(samples.getServiceInfo('gateway', 'ssl').error).to.be.undefined();
 
     expect(analyseConfig(samples)).to.be.empty();
+  });
+
+  // Doctor archives are the artefact operators hand to support, and a
+  // certificate problem names the file it could not read - an absolute path
+  // under the operator's home directory. Every neighbouring certificate branch
+  // masks the username before storing; this one has to as well.
+  it('should not put the operator\'s username in a shared archive', async function it() {
+    const leakyPath = `/Users/${process.env.USER}/.dashmate/base/platform/gateway/ssl/bundle.crt`;
+
+    const task = collectSamplesTaskFactory(
+      dockerCompose,
+      this.sinon.stub().returns(rpcClient),
+      this.sinon.stub().resolves('127.0.0.1'),
+      this.sinon.stub().returns({ request: this.sinon.stub().resolves({}) }),
+      this.sinon.stub().resolves([]),
+      this.sinon.stub().resolves({}),
+      homeDir,
+      validateZeroSslCertificateFactory(homeDir, getCertificate),
+      this.sinon.stub().resolves({}),
+      () => ({
+        status: 'INVALID',
+        reasons: [{
+          code: 'BUNDLE_MISSING',
+          message: `dashmate could not find the certificate bundle at ${leakyPath}`,
+        }],
+        warnings: [],
+        skipped: [],
+        provider: 'zerossl',
+        installed: null,
+        expiresInDays: null,
+      }),
+    );
+
+    getCertificate.resolves(new Certificate({
+      id: 'certificate-id',
+      common_name: EXTERNAL_IP,
+      status: 'issued',
+      created: toZeroSslDate(daysFromNow(-1)),
+      expires: toZeroSslDate(daysFromNow(89)),
+    }));
+
+    await new Listr([{ task: () => task(config) }], { renderer: 'silent' }).run({ samples });
+
+    const serialised = JSON.stringify(samples.getServiceInfo('gateway', 'installedCertificate'));
+
+    // The path is still there - it is what makes the problem actionable - but
+    // the name in it is not.
+    expect(serialised).to.contain('bundle.crt');
+    expect(serialised).to.not.contain(process.env.USER);
   });
 
   it('should collect the certificate the gateway actually serves', async () => {

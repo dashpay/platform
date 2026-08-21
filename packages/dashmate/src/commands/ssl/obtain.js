@@ -112,6 +112,15 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
           // been obtained by then, so failing there would report the whole
           // command as failed and send the operator back to a provider that may
           // have nothing left to issue.
+          //
+          // A signal is sufficient and nothing here needs to restart the
+          // container. PID 1 in the gateway container is Envoy's hot-restarter,
+          // not Envoy: its SIGHUP handler forks and re-execs Envoy with an
+          // incremented restart epoch against the same envoy.yaml. The new
+          // process parses that file from scratch and opens the certificate by
+          // name, so both a renewed certificate and a changed listener
+          // structure take effect while the old process drains. A container
+          // restart would achieve the same thing and cost an outage.
           title: 'Reload gateway',
           task: async (ctx, listrTask) => {
             try {

@@ -80,8 +80,8 @@ function renderPortEightyPermanence() {
   If you open port 80 only to get this certificate and close it afterwards, or
   if the rule does not survive a reboot, this node goes dark within six days
   and nothing will tell you. That is the most common way an evonode dies: three
-  mainnet nodes were issued certificates on the same day, all went dark six
-  days later, and all three now block port 80.
+  mainnet nodes issued certificates on the same day all went dark together six
+  days later - one operator, one change, a whole fleet at once.
 
   Make the rule permanent and make sure it persists across reboots.
 `;
@@ -130,8 +130,8 @@ function renderLetsEncryptDiagnosis(cfg) {
   The most likely cause is inbound port 80. Let's Encrypt re-checks it on every
   renewal - roughly every four days, permanently - and a firewall rule that was
   opened once and later closed, or that did not survive a reboot, produces
-  exactly this pattern. Three mainnet nodes issued on the same day went dark
-  together six days later, and all three now block port 80.
+  exactly this pattern. Three mainnet nodes issued certificates on the same day
+  went dark together six days later - one operator, one change, three nodes.
 
   It is not always port 80: half the nodes in this state have port 80 open and
   stopped renewing regardless. Check the renewal logs as well:
@@ -201,9 +201,9 @@ export default function renderCertificateGuidance({
   Node:        ${config.get('network')} (config "${config.getName()}", ${config.get('externalIp') ?? 'no external IP set'})
   Certificate: ${renderObservation(verdict)}
 
-  If this is the certificate the gateway is serving, standards-compliant
-  clients reject it. dashmate did not open a connection to check what is
-  actually on the wire; \`dashmate doctor ${cfg}\` does that.
+  A standards-compliant client rejects a certificate in this state. dashmate
+  did not open a connection to check what is actually on the wire, so it cannot
+  say what this node is serving; \`dashmate doctor ${cfg}\` does that.
 
   Nothing broke just now. This is the first release of dashmate that checks
   the certificate, so this is the first time you are being told.
@@ -235,16 +235,16 @@ export default function renderCertificateGuidance({
     blocks.push(renderPortEightyPermanence());
 
     blocks.push(`  IF YOU CANNOT OPEN PORT 80. dashmate currently has no supported alternative
-  for an IP-address certificate. If your host will not open it, this node
-  cannot serve DAPI clients. Updates themselves are unaffected: images are
+  for an IP-address certificate. Without one this node has no certificate a
+  DAPI client will accept. Updates themselves are unaffected: images are
   always pulled, whatever this check finds, so this node is not being held back
   from protocol upgrades or security patches. To suppress this check for one
   run:
 
       dashmate update ${cfg} --skip-certificate-check
 
-  This leaves clients unable to connect to your node. It is an escape for a
-  single run, not a line to add to a playbook.
+  This silences the check; it does not repair the certificate. It is an escape
+  for a single run, not a line to add to a playbook.
 `);
   }
 

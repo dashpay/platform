@@ -80,26 +80,99 @@ describe('renderCertificateGuidance', () => {
   // error printer, which hard-wraps at 74 columns on a non-TTY stream and would
   // break the longest remediation line mid-token into something unpastable.
   it('should never break a command across lines', () => {
-    const output = render();
+    // oclif's error printer hard-wraps at the terminal width less six, which is
+    // 74 on a non-TTY stderr, and it breaks mid-token. Re-wrapping the output
+    // that way is what shows the hazard is real: a command an operator is meant
+    // to paste does not survive it. That is why the guidance is written straight
+    // to stderr and never handed to that printer.
+    const WRAP_AT = 74;
 
-    expect(output).to.contain(
-      'dashmate ssl obtain --config base --provider letsencrypt',
-    );
-    output.split('\n').forEach((line) => {
-      expect(line, line).to.not.match(/--conf$|--provide$|dashm$/);
+    /**
+     * @param {string} text
+     * @return {string[]}
+     */
+    const commandsIn = (text) => text.split('\n')
+      .filter((line) => /^ {6,}dashmate /.test(line))
+      .map((line) => line.trim());
+
+    /**
+     * @param {string} text
+     * @return {string}
+     */
+    const hardWrap = (text) => text.split('\n')
+      .flatMap((line) => line.match(new RegExp(`.{1,${WRAP_AT}}`, 'g')) ?? [''])
+      .join('\n');
+
+    // Every rendered command survives as written, on every variant.
+    [
+      render(),
+      render({ verdict: verdict({ provider: 'letsencrypt' }) }),
+      render({
+        verdict: verdict({
+          reasons: [{
+            code: CERTIFICATE_REASONS.SWITCH_INCOMPLETE,
+            message: 'A switch was interrupted',
+          }],
+        }),
+      }),
+    ].forEach((output) => {
+      const commands = commandsIn(output);
+
+      expect(commands).to.have.length.greaterThan(0);
+      commands.forEach((command) => expect(output, command).to.contain(command));
+    });
+
+    // And at least one of them is long enough that the printer would have
+    // broken it, so this is pinning a hazard that exists rather than one that
+    // cannot arise.
+    const switchIncomplete = render({
+      verdict: verdict({
+        reasons: [{
+          code: CERTIFICATE_REASONS.SWITCH_INCOMPLETE,
+          message: 'A switch was interrupted',
+        }],
+      }),
+    });
+    const longest = commandsIn(switchIncomplete)
+      .reduce((a, b) => (b.length > a.length ? b : a));
+
+    expect(longest.length).to.be.greaterThan(WRAP_AT - 6);
+    expect(hardWrap(switchIncomplete)).to.not.contain(longest);
+  });
+
+  // The check reads files. It never opens a connection, so it cannot report
+  // what clients experienced - only what a client verifying this certificate
+  // would do with it. Matching on a family of phrasings rather than one exact
+  // string, because the previous guard named a sentence the code never used.
+  it('should not state a wire outcome it never measured', () => {
+    const outputs = [
+      render(),
+      render({ isNodeRunning: true }),
+      render({ verdict: verdict({ provider: 'letsencrypt' }) }),
+      render({ pull: null }),
+    ];
+
+    outputs.forEach((output) => {
+      expect(output).to.not.match(/clients (are|were|could not|cannot|unable)/i);
+      expect(output).to.not.match(/(is|was|has been) unreachable/i);
+      expect(output).to.not.match(/your node is (down|dark|offline)/i);
     });
   });
 
-  // The check reads files on disk. It cannot know what is on the wire, whether
-  // any client failed to connect, or what the helper has been doing.
-  it('should claim nothing it did not observe', () => {
-    const output = render();
+  // A silent drop of an external probe is no information at all: 52 nodes that
+  // dropped the same probe hold Let's Encrypt certificates issued within four
+  // days, which is only possible over port 80. Asserting the port is blocked
+  // from that is the kind of overclaim this whole design is meant to avoid.
+  it('should not assert that the cluster blocks port 80', () => {
+    const outputs = [render(), render({ verdict: verdict({ provider: 'letsencrypt' }) })];
 
-    expect(output).to.contain('If this is the certificate the gateway is serving');
-    expect(output).to.contain('dashmate did not open a connection');
-    expect(output).to.not.contain('still being paid');
-    expect(output).to.not.contain('clients could not connect');
-    expect(output).to.not.contain('there is currently no other way');
+    outputs.forEach((output) => {
+      expect(output).to.not.match(/all three now (block|filter)/i);
+      expect(output).to.not.match(/now block port 80/i);
+    });
+
+    // What the evidence does support: one operator, one day, three nodes.
+    expect(render()).to.contain('issued certificates on the same day');
   });
 
   it('should reassure that the update itself broke nothing', () => {

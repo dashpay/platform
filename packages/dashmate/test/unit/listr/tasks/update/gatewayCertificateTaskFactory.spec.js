@@ -154,6 +154,32 @@ describe('gatewayCertificateTaskFactory', () => {
       expect(enquirer.options[0].initial).to.be.true();
     });
 
+    // The courtesy offer is only made when the installed certificate passed the
+    // checks and stays in place. Telling that operator declining leaves clients
+    // unable to connect contradicts what the same run just established.
+    it('should not tell an operator whose certificate passed that clients cannot connect', async function it() {
+      await run.call(this, {
+        checkGatewayCertificate: () => verdict(),
+        answers: [false],
+      });
+
+      const { header } = enquirer.options[0];
+
+      expect(header).to.not.match(/clients (are|were|could not|cannot|unable)/i);
+      expect(header).to.contain('nothing changes');
+    });
+
+    // The same wording is correct on the failing path, where the certificate
+    // really did not pass, so the offer has to say different things.
+    it('should say what declining costs when the certificate did not pass', async function it() {
+      await run.call(this, {
+        checkGatewayCertificate: () => invalid(),
+        answers: [false],
+      });
+
+      expect(enquirer.options[0].header).to.contain('leaves this node without');
+    });
+
     it('should exit cleanly when the courtesy switch is declined', async function it() {
       const { errors } = await run.call(this, {
         checkGatewayCertificate: () => verdict(),
@@ -202,6 +228,33 @@ describe('gatewayCertificateTaskFactory', () => {
       expect(errors).to.be.empty();
       expect(context.certificateWarnings).to.be.undefined();
       expect(context.certificateSuccess).to.contain('LEAVE PORT 80 OPEN');
+    });
+
+    // Nothing was touched, so nothing regressed - and a certificate that
+    // crossed the expiring-soon boundary during a multi-minute failed obtain
+    // re-checks as a warning, not a pass. Demanding an exact pass there fails
+    // the run on a node that is exactly as it was.
+    it('should stay benign when a failed switch leaves only a warning behind', async function it() {
+      obtainLetsEncryptCertificateTask.callsFake(() => ({
+        run: async () => {
+          throw new Error('port 80 is closed');
+        },
+      }));
+
+      let checked = 0;
+      const { errors, context } = await run.call(this, {
+        checkGatewayCertificate: () => {
+          checked += 1;
+          return checked === 1 ? verdict() : verdict({
+            status: CERTIFICATE_STATUS.WARN,
+            warnings: [{ code: CERTIFICATE_REASONS.EXPIRING_SOON, message: 'expires tomorrow' }],
+          });
+        },
+        answers: [true],
+      });
+
+      expect(errors).to.be.empty();
+      expect(context.certificateWarnings.join('\n')).to.contain('did not complete');
     });
 
     // saveCertificateTask writes the bundle and the key as two separate

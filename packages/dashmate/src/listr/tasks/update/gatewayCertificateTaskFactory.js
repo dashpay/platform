@@ -22,9 +22,12 @@ const ZEROSSL_URGENT_DAYS = 14;
  *
  * @param {Config} config
  * @param {string} externalIp
+ * @param {Object} [options]
+ * @param {boolean} [options.certificatePassedChecks] - whether the certificate
+ *   this node is running on right now cleared the checks
  * @return {string}
  */
-function renderSwitchOffer(config, externalIp) {
+function renderSwitchOffer(config, externalIp, { certificatePassedChecks = false } = {}) {
   return `  Switching this node to Let's Encrypt will:
     - obtain a new certificate now, free, for ${externalIp}
     - change platform.gateway.ssl.provider from ${config.get('platform.gateway.ssl.provider')} to letsencrypt
@@ -41,9 +44,12 @@ function renderSwitchOffer(config, externalIp) {
   it permanently, and re-run dashmate update ${renderConfigFlag(config.getName())}.
 
   Your image pull is running now and will finish either way, so answering No
-  does not hold this node back from protocol upgrades or security patches - it
-  only leaves clients unable to connect until the certificate is fixed.
-`;
+  does not hold this node back from protocol upgrades or security patches.
+${certificatePassedChecks
+    ? '  The certificate this node is running on now passed its checks and stays\n'
+      + '  in place, so nothing changes if you decline.\n'
+    : '  Declining leaves this node without a certificate a standards-compliant\n'
+      + '  client will accept.\n'}`;
 }
 
 /**
@@ -163,6 +169,14 @@ export default function gatewayCertificateTaskFactory(
    * next start, but update against a running node is supported too and there
    * the reload is what makes the change reach the wire.
    *
+   * A signal is sufficient and nothing here needs to restart the container.
+   * PID 1 in the gateway container is Envoy's hot-restarter, not Envoy: its
+   * SIGHUP handler forks and re-execs Envoy with an incremented restart epoch
+   * against the same envoy.yaml. The new process parses that file from scratch
+   * and opens the certificate by name, so both a renewed certificate and a
+   * changed listener structure take effect while the old process drains. A
+   * container restart would achieve the same thing and cost an outage.
+   *
    * @param {Config} config
    * @return {Promise<void>}
    */
@@ -275,7 +289,9 @@ export default function gatewayCertificateTaskFactory(
 
         const accepted = await promptOrThrow(task, {
           type: 'toggle',
-          header: renderSwitchOffer(config, config.get('externalIp')),
+          header: renderSwitchOffer(config, config.get('externalIp'), {
+            certificatePassedChecks: true,
+          }),
           message: "Switch to Let's Encrypt and obtain a certificate now?",
           enabled: 'Yes',
           disabled: 'Not now',
@@ -292,8 +308,11 @@ export default function gatewayCertificateTaskFactory(
 
         // Nothing was blocking before this ran, so a failure that left the node
         // as it was is a warning. A failure that damaged the installed pair is
-        // not, and this is the only thing that can tell them apart.
-        if (after.status === CERTIFICATE_STATUS.CHECKS_PASSED) {
+        // not, and this is the only thing that can tell them apart. Judged the
+        // same way as every other branch - anything short of blocking is a
+        // node that still works, and a certificate can cross the
+        // expiring-soon boundary during a multi-minute failed obtain.
+        if (after.status !== CERTIFICATE_STATUS.INVALID) {
           ctx.certificate = after;
 
           if (ctx.certificateObtainError) {
@@ -305,6 +324,8 @@ export default function gatewayCertificateTaskFactory(
               `The switch to Let's Encrypt did not complete: ${ctx.certificateObtainError.message}`
               + '\nThe certificate this node was already using is untouched.',
             );
+
+            collectWarnings(ctx, after);
           } else {
             // The node is no longer on ZeroSSL, so its expiry is no longer
             // this node's problem and repeating it would contradict the
