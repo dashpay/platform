@@ -49,6 +49,30 @@ describe('maskOperatorIdentity', () => {
     });
   });
 
+  // A sibling directory that merely starts with the home path is a different
+  // directory, and rewriting it to `~2` produces a path that resolves to
+  // something else entirely.
+  it('should not rewrite a directory that merely starts with the home path', () => {
+    expect(maskOperatorIdentity('/home/alice2/x', { username: 'bob', homePath: '/home/alice' }))
+      .to.equal('/home/alice2/x');
+    expect(maskOperatorIdentity('/home/alice.bak/x', { username: 'bob', homePath: '/home/alice' }))
+      .to.equal('/home/alice.bak/x');
+  });
+
+  it('should still rewrite the home path itself and its children', () => {
+    expect(maskOperatorIdentity('/home/alice', { username: 'bob', homePath: '/home/alice' }))
+      .to.equal('~');
+    expect(maskOperatorIdentity('at /home/alice, then', { username: 'bob', homePath: '/home/alice' }))
+      .to.equal('at ~, then');
+  });
+
+  // macOS and Windows resolve paths case-insensitively, so the same directory
+  // reaches a report in more than one spelling.
+  it('should rewrite the home path whatever case it arrives in', () => {
+    expect(maskOperatorIdentity('/Home/Alice/x', { username: 'bob', homePath: '/home/alice' }))
+      .to.equal('~/x');
+  });
+
   it('should leave text alone when no identity is known', () => {
     expect(maskOperatorIdentity('/home/alice/x', { username: null, homePath: null }))
       .to.equal('/home/alice/x');

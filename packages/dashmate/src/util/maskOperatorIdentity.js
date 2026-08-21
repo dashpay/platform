@@ -14,6 +14,14 @@ import hideString from './hideString.js';
 const PRODUCT_WORDS = ['dashmate'];
 
 /**
+ * @param {string} value
+ * @return {string}
+ */
+function escapeForRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
  * A name is only masked where it stands alone. Substring replacement turns
  * every word that happens to contain it into nonsense, and the collisions are
  * not rare - short account names are common.
@@ -22,9 +30,7 @@ const PRODUCT_WORDS = ['dashmate'];
  * @return {RegExp}
  */
 function wholeWord(name) {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-  return new RegExp(`(?<![A-Za-z0-9])${escaped}(?![A-Za-z0-9])`, 'g');
+  return new RegExp(`(?<![A-Za-z0-9])${escapeForRegExp(name)}(?![A-Za-z0-9])`, 'g');
 }
 
 /**
@@ -52,7 +58,16 @@ export default function maskOperatorIdentity(value, { username, homePath }) {
     // Written home-relative rather than blanked out. A masked segment removes
     // the name but also removes the operator's ability to paste the path back;
     // `~` removes the name and still resolves.
-    masked = masked.replaceAll(homePath, '~');
+    //
+    // Only where the home path ends: a sibling directory that merely starts
+    // with it is a different directory, and rewriting /home/alice2 to ~2 would
+    // produce a path pointing somewhere else. Matched without regard to case
+    // because macOS and Windows resolve paths that way, so the same directory
+    // arrives in more than one spelling.
+    masked = masked.replace(
+      new RegExp(`${escapeForRegExp(homePath)}(?![A-Za-z0-9_.-])`, 'gi'),
+      '~',
+    );
   }
 
   if (username && !PRODUCT_WORDS.includes(username)) {
