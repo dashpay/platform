@@ -32,7 +32,7 @@
 //! manager's lifetime; on shutdown, fire the [`CancellationToken`] to
 //! make the task exit cleanly.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -380,20 +380,20 @@ async fn run_wallet_event_adapter<P>(
             )
             .await;
             // After the same-fold retraction, so a sweep undone by this
-            // very event reads `Pending` (the hooks' ordinary confirm owns
-            // it) and only a durably `Failed` entry is corrected here.
-            let reinstated_flips =
-                crate::wallet::identity::network::confirm_reinstated_sent_payments_for_store(
+            // very event reads `Pending` and the ordered confirm below
+            // takes it straight to `Confirmed` on this event's round.
+            let confirm_flips =
+                crate::wallet::identity::network::confirm_final_sent_payments_for_store(
                     &wallet_manager,
                     &wallet_id,
-                    &core.records,
+                    &event,
                 )
                 .await;
             entry.core.merge(core);
             entry.asset_locks.merge(asset_locks);
             if payments_attested {
                 fold_payment_flips(entry, &mut payment_rollbacks, wallet_id, flips);
-                fold_payment_flips(entry, &mut payment_rollbacks, wallet_id, reinstated_flips);
+                fold_payment_flips(entry, &mut payment_rollbacks, wallet_id, confirm_flips);
             }
         }
 
@@ -418,25 +418,21 @@ async fn run_wallet_event_adapter<P>(
                         &core.records,
                     )
                     .await;
-                    // See the first-fold site: after the retraction, only
-                    // a durably `Failed` entry is corrected here.
-                    let reinstated_flips =
-                        crate::wallet::identity::network::confirm_reinstated_sent_payments_for_store(
+                    // See the first-fold site: after the retraction, so a
+                    // same-fold-swept entry reads `Pending` for the
+                    // ordered confirm.
+                    let confirm_flips =
+                        crate::wallet::identity::network::confirm_final_sent_payments_for_store(
                             &wallet_manager,
                             &wallet_id,
-                            &core.records,
+                            &event,
                         )
                         .await;
                     entry.core.merge(core);
                     entry.asset_locks.merge(asset_locks);
                     if payments_attested {
                         fold_payment_flips(entry, &mut payment_rollbacks, wallet_id, flips);
-                        fold_payment_flips(
-                            entry,
-                            &mut payment_rollbacks,
-                            wallet_id,
-                            reinstated_flips,
-                        );
+                        fold_payment_flips(entry, &mut payment_rollbacks, wallet_id, confirm_flips);
                     }
                     folded += 1;
                 }
@@ -450,22 +446,35 @@ async fn run_wallet_event_adapter<P>(
 
         // Commit the folded batch. The channel is lossless, so the only way a
         // watermark is held back is a rejected `store()` (the fail-closed
-        // backstop inside `commit_batch`). When the batch stages payment
-        // overlay rows, the commit re-validates them against live memory
-        // under the manager lock — see
-        // [`commit_batch_with_payment_revalidation`] for why that lock is
-        // held across the store itself.
-        let diag = commit_batch_with_payment_revalidation(
-            &wallet_manager,
+        // backstop inside `commit_batch`).
+        //
+        // No commit-time re-validation of the staged payment rows is
+        // needed, and none is done: every sent-payment verdict writer
+        // either IS this task (the sweep flip and the ordered confirm
+        // above, applied in emission order and staged into this very
+        // batch, where a later flip's row overwrites an earlier one per
+        // `(owner, txid)`), or persists memory-and-store atomically under
+        // a continuous hold of the manager WRITE lock with `Pending`-only
+        // evidence (the reconcile pass via `resolve_sent_payment_by_txid`
+        // → `record_dashpay_payment`). A staged row always asserts
+        // `Failed` or `Confirmed`, so between this drain's fold and its
+        // store no other writer can move the entry the row describes —
+        // the reconcile pass's evidence excludes both states — and its
+        // write-lock hold across its own store means the store order of
+        // the two writers matches their memory order. When verdicts also
+        // ran on the EventHandler broadcast (unordered spawned tasks
+        // persisting on their own rounds), a commit-time re-validation
+        // under a held read lock was required here to drop staged rows a
+        // hook had outrun; routing every verdict through this drain is
+        // what retired it.
+        let diag = commit_batch(
             &*persister,
             batch,
-            &mut payment_rollbacks,
             folded,
             &mut fault,
             &sync_fault,
             &mut freeze_logged,
-        )
-        .await;
+        );
 
         // A rejected round leaves NOTHING durable — the loser's record and
         // the payment flip alike — so memory must return to the durable
@@ -548,10 +557,7 @@ where
 }
 
 /// Commit one wallet's folded changeset — the per-wallet unit of
-/// [`commit_batch`], split out so
-/// [`commit_batch_with_payment_revalidation`] can scope its manager-lock
-/// hold to exactly the store that lock orders instead of the whole
-/// multi-wallet batch.
+/// [`commit_batch`].
 fn commit_wallet<P>(
     persister: &P,
     wallet_id: WalletId,
@@ -764,16 +770,19 @@ fn freeze_synced_height_if_faulted(core: &mut CoreChangeSet, persistence_faulted
 struct WalletBatch {
     core: CoreChangeSet,
     asset_locks: AssetLockChangeSet,
-    /// Sent DashPay payments a folded sweep failed, riding the SAME
-    /// `store()` as the sweep that proved them dead. This is the flip's
-    /// only durability: a sweep never re-emits once its round is durable,
-    /// so a separately persisted flip whose store failed was lost for
-    /// good — while here a rejection keeps the loser's record with it,
-    /// the wallet faults, the re-scan re-detects the conflict, and the
-    /// re-emitted sweep recomputes the flip (after
-    /// [`run_wallet_event_adapter`] rolls the in-memory half back).
-    /// Folded last-write-wins per `(owner, txid)`, matching
-    /// `PlatformWalletChangeSet::merge`'s overlay rule.
+    /// Sent DashPay payment verdicts this fold's events produced — a
+    /// sweep's `Failed` rows and the ordered confirm's `Confirmed` rows —
+    /// riding the SAME `store()` as the events that proved them. This is
+    /// a flip's only durability: a sweep never re-emits once its round is
+    /// durable, and a chainlocked reinstatement can be a one-shot, so a
+    /// separately persisted flip whose store failed was lost for good —
+    /// while here a rejection keeps the proving event's rows with it, the
+    /// wallet faults, the re-scan re-emits the event, and the replay
+    /// recomputes the flip (after [`run_wallet_event_adapter`] rolls the
+    /// in-memory half back). Folded last-write-wins per `(owner, txid)` —
+    /// matching `PlatformWalletChangeSet::merge`'s overlay rule — which
+    /// is also what makes a fold containing both a confirmation and a
+    /// later eviction commit only the newer verdict.
     payments_overlay: std::collections::BTreeMap<
         dpp::prelude::Identifier,
         std::collections::BTreeMap<String, crate::wallet::identity::PaymentEntry>,
@@ -868,11 +877,12 @@ async fn reconstruct_asset_locks_for_event(
     reconstruction::reconstruct_tracked_asset_locks(wallet_manager, &wallet_id, &candidates).await
 }
 
-/// The payment half of a sweep: flip the losers' `Pending` sent DashPay
-/// payments to `Failed` in memory and hand back the overlay + rollback the
-/// drain loop stages into the sweep's own store round. Every other event
-/// is a no-op. See [`WalletBatch::payments_overlay`] for why this rides
-/// the round instead of the payment hooks' own store.
+/// The payment half of a sweep: flip the losers' sent DashPay payments
+/// (`Pending` — or `Confirmed`, when this sweep postdates the entry's
+/// confirmation) to `Failed` in memory and hand back the overlay +
+/// rollback the drain loop stages into the sweep's own store round.
+/// Every other event is a no-op. See [`WalletBatch::payments_overlay`]
+/// for why this rides the round rather than persisting on its own.
 async fn swept_payment_flips_for_event(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     event: &WalletEvent,
@@ -914,23 +924,26 @@ async fn swept_payment_flips_for_event(
 /// same set `CoreChangeSet::merge` keys its own retraction on, taken from
 /// the same projection, so the two can never diverge. Without this, a
 /// buffered `[TransactionsSwept(X), BlockProcessed(chainlocked X)]` fold
-/// would commit X's reinstated record beside a stale `Failed` overlay row
-/// — and because the payment hooks confirm X on their own task, that row
-/// could overwrite a `Confirmed` the hooks had already persisted.
+/// would commit X's reinstated record beside a stale `Failed` overlay
+/// row.
 ///
 /// Three moves per reinstated txid, all before the overlay can reach a
 /// store: drop the staged overlay row, drop its rollback-ledger entry
 /// (a later rejection of this round must not replay the dead undo), and
 /// undo the in-memory flip through the guarded
-/// [`rollback_payment_flips`] — which leaves the entry alone if the
-/// hooks already advanced it to `Confirmed`, the table's terminal.
+/// [`rollback_payment_flips`], returning the entry to `Pending` so the
+/// ordered confirm running right after this retraction
+/// ([`confirm_final_sent_payments_for_store`](crate::wallet::identity::network))
+/// takes it straight to `Confirmed` on this same round.
 ///
-/// This function only sees records THIS drain captured. A reinstating
-/// record queued after `try_recv` stopped folding — whose payment hooks
-/// may confirm the entry on their own task before this batch stores — is
-/// the commit stage's job: [`commit_batch_with_payment_revalidation`]
-/// re-validates every staged row against live memory under the manager
-/// lock, held across the store.
+/// This function only sees records THIS drain captured, and that is
+/// enough: a reinstating record queued after `try_recv` stopped folding
+/// is simply the NEXT drain's event — the adapter is the only
+/// sent-payment verdict writer that stages rows, so nothing can supersede
+/// this batch's staged rows between its fold and its store (see the
+/// commit-site comment in [`run_wallet_event_adapter`]), and the later
+/// drain's `Failed → Confirmed` is exactly the transition the shared
+/// table permits.
 async fn retract_reinstated_payment_flips(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     entry: &mut WalletBatch,
@@ -1017,206 +1030,6 @@ fn fold_payment_flips(
         .entry(wallet_id)
         .or_default()
         .extend(flips.rollback);
-}
-
-/// The cross-drain half of the reinstatement invariant: **a store round
-/// must never carry a sweep's `Failed` overlay row that live memory has
-/// already superseded.** [`retract_reinstated_payment_flips`] covers the
-/// same-fold case, keyed on records this drain captured — but a
-/// chainlocked reinstating record queued just after `try_recv` observed an
-/// empty channel is invisible to it. The payment hooks process that record
-/// on their own task and can advance the entry `Failed → Confirmed` in
-/// memory and persist `Confirmed` on their own round BEFORE this sweep
-/// batch reaches the persister; the staged `Failed` row would then land
-/// after it and durably demote the terminal state, while the live
-/// confirmation event has already been consumed. Atomicity within a store
-/// round does not order separate rounds — so the staged failure is applied
-/// conditionally instead.
-///
-/// The manager READ lock is held from the re-validation of a wallet's
-/// staged rows through THAT wallet's `store()`, and that hold is
-/// load-bearing. The confirm path
-/// ([`resolve_sent_payment_by_txid`](crate::wallet::identity::network) via
-/// the payment hooks) advances memory and persists under one continuous
-/// hold of the manager WRITE lock, so for every store that carries payment
-/// rows the two critical sections are mutually exclusive and totally
-/// ordered:
-///
-/// - confirm first: this re-validation sees `Confirmed` and drops the
-///   staged row (and its rollback-ledger entry — a later rejection of this
-///   round must not replay an undo for a row the round never carried);
-/// - this round first: the store lands `Failed` before the confirm can
-///   run, and the confirm's own later round advances it — `Failed →
-///   Confirmed` is exactly the transition the shared table permits.
-///
-/// A check released before the store would reopen the race: the whole
-/// confirm (memory advance + persist) could run inside the gap.
-///
-/// The hold is exactly as wide as that argument requires and no wider —
-/// the persistence trait permits inline I/O and calls made under the
-/// manager lock are latency-sensitive, so a writer must never wait out a
-/// synchronous store the lock is not ordering. Scoping per wallet keeps
-/// the proof intact, because the ordering obligation is per store: each
-/// overlay-carrying store runs inside a read hold that began before its
-/// own rows were re-validated, which is all the mutual exclusion above
-/// ever used — the guard that covered OTHER wallets' stores ordered
-/// nothing. Concretely:
-///
-/// - a wallet with no staged rows commits outside any guard (on a
-///   payments-blind backend — bit 11 not attested — that is every wallet,
-///   since the fold never stages the overlay there);
-/// - a wallet whose re-validation drops EVERY staged row commits after
-///   the guard is released: no payment row rides the round, so nothing
-///   needs ordering, exactly as if it never staged;
-/// - a wallet with surviving rows commits under the guard.
-#[allow(clippy::too_many_arguments)]
-async fn commit_batch_with_payment_revalidation<P>(
-    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-    persister: &P,
-    batch: BTreeMap<WalletId, WalletBatch>,
-    payment_rollbacks: &mut BTreeMap<
-        WalletId,
-        Vec<crate::wallet::identity::network::PaymentFlipUndo>,
-    >,
-    folded: usize,
-    fault: &mut AdapterFaultState,
-    sync_fault: &AtomicBool,
-    freeze_logged: &mut bool,
-) -> BatchDiagnostics
-where
-    P: PlatformWalletPersistence + ?Sized,
-{
-    // The hot path: no wallet staged a payment row — every drain on a
-    // payments-blind backend, and every drain without a sweep — so the
-    // whole batch commits exactly as before, without a lock or the
-    // per-wallet branching below.
-    if batch
-        .values()
-        .all(|entry| entry.payments_overlay.is_empty())
-    {
-        return commit_batch(persister, batch, folded, fault, sync_fault, freeze_logged);
-    }
-    let mut diag = BatchDiagnostics::new(folded, batch.len());
-    for (wallet_id, mut wallet_batch) in batch {
-        if wallet_batch.payments_overlay.is_empty() {
-            commit_wallet(
-                persister,
-                wallet_id,
-                wallet_batch,
-                &mut diag,
-                fault,
-                sync_fault,
-                freeze_logged,
-            );
-            continue;
-        }
-        let wm = wallet_manager.read().await;
-        retract_superseded_payment_flips(&wm, wallet_id, &mut wallet_batch, payment_rollbacks);
-        if wallet_batch.payments_overlay.is_empty() {
-            // Every staged row was superseded: nothing left on this round
-            // needs ordering against the confirm path, so release the
-            // writers before the store.
-            drop(wm);
-            commit_wallet(
-                persister,
-                wallet_id,
-                wallet_batch,
-                &mut diag,
-                fault,
-                sync_fault,
-                freeze_logged,
-            );
-        } else {
-            // Deliberately still under `wm`: releasing the guard before
-            // this store is the race this function exists to close.
-            // `commit_wallet` is synchronous and takes no manager lock, so
-            // this cannot deadlock.
-            commit_wallet(
-                persister,
-                wallet_id,
-                wallet_batch,
-                &mut diag,
-                fault,
-                sync_fault,
-                freeze_logged,
-            );
-            drop(wm);
-        }
-    }
-    diag
-}
-
-/// Drop every staged payment overlay row whose in-memory entry no longer
-/// holds the status the row asserts, together with its rollback-ledger
-/// entry. Called only under the manager lock
-/// [`commit_batch_with_payment_revalidation`] holds across the store.
-///
-/// A staged row exists because a round-riding flip wrote it in this very
-/// drain — the sweep's `Pending → Failed`
-/// ([`flip_swept_sent_payments_for_store`](crate::wallet::identity::network))
-/// or the reinstatement's `Failed → Confirmed`
-/// ([`confirm_reinstated_sent_payments_for_store`](crate::wallet::identity::network))
-/// — and the same-fold retraction removes both the row and the flip when
-/// it undoes one. So at commit time the live entry either still holds the
-/// written status (keep the row: the store must learn the verdict) or
-/// another writer outran the batch — for a `Failed` row, the payment
-/// hooks advancing the entry to `Confirmed`, whose own round carries the
-/// truth (drop the row). Anything else — the entry or its wallet vanished
-/// — is also dropped: the overlay asserts what memory holds, and memory
-/// no longer holds it.
-fn retract_superseded_payment_flips(
-    wm: &WalletManager<PlatformWalletInfo>,
-    wallet_id: WalletId,
-    entry: &mut WalletBatch,
-    payment_rollbacks: &mut BTreeMap<
-        WalletId,
-        Vec<crate::wallet::identity::network::PaymentFlipUndo>,
-    >,
-) {
-    if entry.payments_overlay.is_empty() {
-        return;
-    }
-    let info = wm.get_wallet_info(&wallet_id);
-    // Owner-keyed index of the dropped rows, probed once per ledger
-    // entry below. A sweep event can carry many payment txids, and a
-    // linear rescan of the dropped set per ledger entry would be
-    // O(dropped × ledger) identifier-and-string comparisons on the
-    // commit path.
-    let mut superseded: BTreeMap<dpp::prelude::Identifier, BTreeSet<String>> = BTreeMap::new();
-    for (owner, rows) in entry.payments_overlay.iter_mut() {
-        rows.retain(|txid, row| {
-            // A row is kept while the live entry still holds the status
-            // the row asserts. A sweep's `Failed` row loses its standing
-            // when the hooks advanced the entry to `Confirmed`; a
-            // reinstatement's `Confirmed` row can lose it only if the
-            // entry vanished, since `Confirmed` is terminal.
-            let still_standing = info
-                .and_then(|info| info.identity_manager.managed_identity(owner))
-                .and_then(|managed| managed.dashpay().payments.get(txid))
-                .is_some_and(|live| live.status == row.status);
-            if !still_standing {
-                tracing::info!(
-                    owner = %owner,
-                    txid = %txid,
-                    "Retracting a staged payment flip row superseded in memory before \
-                     its round stored"
-                );
-                superseded.entry(*owner).or_default().insert(txid.clone());
-            }
-            still_standing
-        });
-    }
-    entry.payments_overlay.retain(|_, rows| !rows.is_empty());
-    if superseded.is_empty() {
-        return;
-    }
-    if let Some(ledger) = payment_rollbacks.get_mut(&wallet_id) {
-        ledger.retain(|undo| {
-            !superseded
-                .get(&undo.owner)
-                .is_some_and(|txids| txids.contains(&undo.txid))
-        });
-    }
 }
 
 /// Project an upstream [`WalletEvent`] into a [`CoreChangeSet`] suitable
@@ -4179,11 +3992,10 @@ mod tests {
     /// it — `CoreChangeSet::merge` retracts the sweep, and
     /// `retract_reinstated_payment_flips` must retract the payment flip
     /// keyed on the very same record set. The in-memory flip is undone
-    /// with it, so the entry reads `Pending` for the confirm path the
-    /// reinstated record drives (the payment hooks run on their own task;
-    /// this harness runs only the adapter). Without the retraction the
-    /// fold committed a stale `Failed` row that could overwrite a
-    /// `Confirmed` the hooks had already persisted.
+    /// with it, so the entry reads `Pending` for the ordered confirm the
+    /// reinstated record drives on this same fold. Without the retraction
+    /// the fold would commit a stale `Failed` assertion beside the record
+    /// that disproves it.
     ///
     /// Both events are queued BEFORE the adapter task spawns, which is
     /// what makes the single-fold deterministic: the first `recv` takes
@@ -4329,9 +4141,14 @@ mod tests {
             "the reinstated record must ride the fold's store"
         );
         assert_eq!(
-            observed.n_payment_overlay_rows, 0,
-            "a merged changeset must never carry a sweep-derived assertion about a \
-             txid the same fold reinstates"
+            observed.n_payment_overlay_rows, 1,
+            "the fold must carry exactly the reinstating record's own verdict"
+        );
+        assert_eq!(
+            observed.n_payment_overlay_confirmed, 1,
+            "a merged changeset must never carry a sweep-derived Failed about a \
+             txid the same fold reinstates — the retraction drops it and the \
+             ordered confirm stages Confirmed in its place"
         );
 
         {
@@ -4349,9 +4166,9 @@ mod tests {
                 .status;
             assert_eq!(
                 status,
-                PaymentStatus::Pending,
-                "the retraction must undo the in-memory flip so the reinstated \
-                 record's own confirm path decides the entry"
+                PaymentStatus::Confirmed,
+                "the retraction undoes the in-memory flip and the reinstating \
+                 record's ordered confirm decides the entry on the same fold"
             );
         }
 
@@ -4359,172 +4176,375 @@ mod tests {
         handle.await.expect("adapter task joins");
     }
 
-    /// The CROSS-drain half of the reinstatement invariant: a chainlocked
-    /// reinstating record queued just after `try_recv` observed an empty
-    /// channel is invisible to the same-fold retraction, and the payment
-    /// hooks process it on their own task — they can advance the entry
-    /// `Failed → Confirmed` in memory and persist `Confirmed` on their own
-    /// round BEFORE the sweep batch reaches the persister. Storing the
-    /// batch's staged `Failed` row after that durably demotes the terminal
-    /// state (memory `Confirmed`, storage `Failed`) with the live
-    /// confirmation event already consumed.
-    ///
-    /// Drives the commit stage with the drain's exact staging sequence and
-    /// the confirm wedged into the cross-drain window — an interleaving the
-    /// live loop cannot be made to schedule deterministically from outside:
-    /// stage the sweep's flips exactly as the fold does, run the real
-    /// confirm path against one of them, then commit through
-    /// [`commit_batch_with_payment_revalidation`](super::commit_batch_with_payment_revalidation).
-    /// The round must carry only the row memory still stands behind, and
-    /// the superseded row's rollback-ledger entry must be gone with it.
-    #[tokio::test]
-    async fn a_confirmation_landing_before_the_sweeps_store_retracts_its_stale_failed_row() {
+    /// Seed `owner` with one `Pending` sent payment under `txid`, through
+    /// a noop persister so a probe's observation stream carries only the
+    /// adapter's own stores. Shared by the ordering regressions below.
+    async fn seed_pending_sent_payment(
+        wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: WalletId,
+        owner: dpp::prelude::Identifier,
+        contact: dpp::prelude::Identifier,
+        txid: dashcore::Txid,
+    ) -> crate::wallet::persister::WalletPersister {
         use dpp::identity::v0::IdentityV0;
         use dpp::identity::Identity;
-        use dpp::prelude::Identifier;
-        use key_wallet::account::account_type::StandardAccountType;
 
-        use crate::test_support::{funded_wallet_manager, NoopTestPersister};
-        use crate::wallet::identity::types::dashpay::payment::{PaymentEntry, PaymentStatus};
+        use crate::test_support::NoopTestPersister;
+        use crate::wallet::identity::types::dashpay::payment::PaymentEntry;
         use crate::wallet::persister::WalletPersister;
-
-        let (wallet_manager, wallet_id, _generation, _signer) =
-            funded_wallet_manager(StandardAccountType::BIP44Account).await;
-        let owner = Identifier::from([0xAA; 32]);
-        let contact = Identifier::from([0xBB; 32]);
-        let reinstated = dashcore::Txid::from([0xE1; 32]);
-        let still_dead = dashcore::Txid::from([0xE2; 32]);
 
         let noop = WalletPersister::new(
             wallet_id,
             Arc::new(NoopTestPersister) as Arc<dyn crate::changeset::PlatformWalletPersistence>,
         );
-        {
-            let mut wm = wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
-            info.identity_manager
-                .add_identity(
-                    Identity::V0(IdentityV0 {
-                        id: owner,
-                        public_keys: std::collections::BTreeMap::new(),
-                        balance: 0,
-                        revision: 0,
-                    }),
-                    0,
-                    wallet_id,
-                    &noop,
-                )
-                .expect("add owner");
-            let managed = info
-                .identity_manager
-                .managed_identity_mut(&owner)
-                .expect("managed");
-            for txid in [reinstated, still_dead] {
-                managed
-                    .record_dashpay_payment(
-                        txid.to_string(),
-                        PaymentEntry::new_sent(contact, 50_000, None),
-                        &noop,
-                    )
-                    .expect("record pending sent");
-            }
-        }
+        let mut wm = wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+        info.identity_manager
+            .add_identity(
+                Identity::V0(IdentityV0 {
+                    id: owner,
+                    public_keys: std::collections::BTreeMap::new(),
+                    balance: 0,
+                    revision: 0,
+                }),
+                0,
+                wallet_id,
+                &noop,
+            )
+            .expect("add owner");
+        info.identity_manager
+            .managed_identity_mut(&owner)
+            .expect("managed")
+            .record_dashpay_payment(
+                txid.to_string(),
+                PaymentEntry::new_sent(contact, 50_000, None),
+                &noop,
+            )
+            .expect("record pending sent");
+        noop
+    }
 
-        // Stage the sweep's flips exactly as the drain's fold does: both
-        // entries flip to `Failed` in memory, the overlay and rollback
-        // ledger ride the batch.
-        let flips = crate::wallet::identity::network::flip_swept_sent_payments_for_store(
-            &wallet_manager,
-            &wallet_id,
-            &[reinstated, still_dead],
-        )
-        .await;
-        let mut batch: BTreeMap<WalletId, super::WalletBatch> = BTreeMap::new();
-        let mut payment_rollbacks = BTreeMap::new();
-        super::fold_payment_flips(
-            batch.entry(wallet_id).or_default(),
-            &mut payment_rollbacks,
-            wallet_id,
-            flips,
-        );
+    async fn sent_payment_status(
+        wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: &WalletId,
+        owner: &dpp::prelude::Identifier,
+        txid: &str,
+    ) -> crate::wallet::identity::types::dashpay::payment::PaymentStatus {
+        let wm = wallet_manager.read().await;
+        wm.get_wallet_info(wallet_id)
+            .expect("info")
+            .identity_manager
+            .managed_identity(owner)
+            .expect("managed")
+            .dashpay()
+            .payments
+            .get(txid)
+            .expect("entry")
+            .status
+    }
 
-        // The cross-drain window: the payment hooks confirm `reinstated`
-        // from the chainlocked record's live evidence — memory `Failed →
-        // Confirmed`, persisted on the hooks' own round — before the sweep
-        // batch stores.
-        crate::wallet::identity::network::confirm_sent_dashpay_payment_by_txid(
-            &wallet_manager,
-            &wallet_id,
-            &noop,
-            &reinstated,
-        )
-        .await;
+    /// THE regression from the dashpay/platform#4442 review — interleaving
+    /// A: a pre-sweep confirmation hook is parked until the newer sweep
+    /// has been emitted (and durably applied), then released.
+    ///
+    /// Upstream emits `TransactionInstantLocked(X)` and later — the
+    /// chainlocked-conflict eviction upstream explicitly permits —
+    /// `TransactionsSwept(X)`. The adapter applies both in emission
+    /// order: `Confirmed` rides the IS-lock's round, the newer sweep
+    /// demotes to `Failed` on its own round. The EventHandler hook task
+    /// for the OLD IS-lock event — parked past both rounds, which the
+    /// lossy, unordered broadcast path genuinely allows — is then
+    /// released, running exactly the code the handler's spawned task runs
+    /// (`run_dashpay_payment_hooks`). The hook no longer writes
+    /// sent-payment verdicts, so the stale pre-sweep evidence cannot
+    /// resurrect the dead payment. Before the fix, the released hook
+    /// confirmed from `Failed` (`LIVE_CONFIRM_EVIDENCE` admitted it) and
+    /// durably landed `Confirmed` for a transaction upstream had proven
+    /// dead — with no later sweep re-emission to repair it.
+    #[tokio::test]
+    async fn a_parked_pre_sweep_confirmation_hook_cannot_resurrect_the_swept_payment() {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        use key_wallet::account::account_type::StandardAccountType;
 
-        // Commit the sweep batch through the drain's commit stage.
+        use super::spawn_wallet_event_adapter;
+        use crate::test_support::funded_wallet_manager;
+        use crate::wallet::identity::types::dashpay::payment::PaymentStatus;
+
+        let (wallet_manager, wallet_id, _generation, _signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let owner = dpp::prelude::Identifier::from([0xAA; 32]);
+        let contact = dpp::prelude::Identifier::from([0xBB; 32]);
+        let txid = dashcore::Txid::from([0xF1; 32]);
+        let noop =
+            seed_pending_sent_payment(&wallet_manager, wallet_id, owner, contact, txid).await;
+
         let (obs_tx, mut obs_rx) = unbounded_channel();
-        let persister = ProbePersister::with_capabilities(
+        let persister = Arc::new(ProbePersister::with_capabilities(
             obs_tx,
             crate::changeset::PersistenceCapabilities::CORE_SWEEP_REMOVAL
                 .union(crate::changeset::PersistenceCapabilities::DASHPAY_PAYMENTS)
                 .union(crate::changeset::PersistenceCapabilities::ATOMIC_CHANGESETS),
+        ));
+        let (event_tx, event_rx) = unbounded_channel();
+        let cancel = CancellationToken::new();
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let handle = spawn_wallet_event_adapter(
+            Arc::clone(&wallet_manager),
+            Arc::clone(&persister),
+            event_rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
         );
-        let sync_fault = AtomicBool::new(false);
-        let mut fault = AdapterFaultState::default();
-        let mut freeze_logged = false;
-        super::commit_batch_with_payment_revalidation(
+
+        // The pre-sweep confirmation event. Its HOOK task is parked (not
+        // run) until after the sweep below is durable.
+        let is_lock_event = WalletEvent::TransactionInstantLocked {
+            wallet_id,
+            txid,
+            instant_lock: InstantLock::default(),
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        };
+
+        // The adapter applies the IS-lock in emission order: the ordered
+        // confirm stages `Confirmed` on the event's own round.
+        event_tx
+            .send(is_lock_event.clone())
+            .expect("send IS-lock event");
+        let observed = obs_rx.recv().await.expect("IS-lock round");
+        assert!(!observed.rejected);
+        assert_eq!(
+            observed.n_payment_overlay_confirmed, 1,
+            "the ordered confirm must ride the IS-lock event's own round"
+        );
+        assert_eq!(
+            sent_payment_status(&wallet_manager, &wallet_id, &owner, &txid.to_string()).await,
+            PaymentStatus::Confirmed
+        );
+
+        // The newer sweep — upstream evicted X for a chainlocked conflict
+        // — demotes the confirmation on its own round.
+        event_tx
+            .send(WalletEvent::TransactionsSwept {
+                wallet_id,
+                txids: vec![txid],
+                superseded_by: dashcore::Txid::from([0xF2; 32]),
+                released_outpoints: vec![],
+                balance: WalletCoreBalance::default(),
+                account_balances: BTreeMap::new(),
+            })
+            .expect("send sweep");
+        let observed = obs_rx.recv().await.expect("sweep round");
+        assert!(!observed.rejected);
+        assert_eq!(observed.n_payment_overlay_rows, 1);
+        assert_eq!(
+            observed.n_payment_overlay_confirmed, 0,
+            "the newer sweep's Failed row must overrule the older confirmation"
+        );
+        assert_eq!(
+            sent_payment_status(&wallet_manager, &wallet_id, &owner, &txid.to_string()).await,
+            PaymentStatus::Failed
+        );
+
+        // Release the parked hook — the delayed task for the pre-sweep
+        // IS-lock event finally runs, after the newer sweep is durable.
+        crate::wallet::identity::network::run_dashpay_payment_hooks(
             &wallet_manager,
-            &persister,
-            batch,
-            &mut payment_rollbacks,
-            1,
-            &mut fault,
-            &sync_fault,
-            &mut freeze_logged,
+            &wallet_id,
+            &noop,
+            &is_lock_event,
+        )
+        .await;
+        assert_eq!(
+            sent_payment_status(&wallet_manager, &wallet_id, &owner, &txid.to_string()).await,
+            PaymentStatus::Failed,
+            "a parked pre-sweep confirmation hook must not resurrect the swept payment"
+        );
+
+        cancel.cancel();
+        handle.await.expect("adapter task joins");
+    }
+
+    /// The same review finding's interleaving B: the pre-sweep
+    /// confirmation RUNS just before the sweep is staged. Pre-fix, the
+    /// hook confirmed `Pending → Confirmed` on its own round and the
+    /// sweep's eligibility check then skipped the entry (`Confirmed` was
+    /// terminal), leaving the dead payment durably `Confirmed`. Post-fix
+    /// the released hook writes nothing, the confirmation is the
+    /// adapter's own ordered write on the IS-lock round, and the sweep —
+    /// the newer verdict — demotes it on its round.
+    #[tokio::test]
+    async fn a_sweep_staged_after_a_confirmation_still_fails_the_dead_payment() {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        use key_wallet::account::account_type::StandardAccountType;
+
+        use super::spawn_wallet_event_adapter;
+        use crate::test_support::funded_wallet_manager;
+        use crate::wallet::identity::types::dashpay::payment::PaymentStatus;
+
+        let (wallet_manager, wallet_id, _generation, _signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let owner = dpp::prelude::Identifier::from([0xAA; 32]);
+        let contact = dpp::prelude::Identifier::from([0xBB; 32]);
+        let txid = dashcore::Txid::from([0xF3; 32]);
+        let noop =
+            seed_pending_sent_payment(&wallet_manager, wallet_id, owner, contact, txid).await;
+
+        let is_lock_event = WalletEvent::TransactionInstantLocked {
+            wallet_id,
+            txid,
+            instant_lock: InstantLock::default(),
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        };
+
+        // The hook task runs FIRST — just before the adapter stages
+        // anything. Post-fix it writes no sent-payment verdict.
+        crate::wallet::identity::network::run_dashpay_payment_hooks(
+            &wallet_manager,
+            &wallet_id,
+            &noop,
+            &is_lock_event,
         )
         .await;
 
-        let observed = obs_rx.recv().await.expect("the sweep round's store");
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::with_capabilities(
+            obs_tx,
+            crate::changeset::PersistenceCapabilities::CORE_SWEEP_REMOVAL
+                .union(crate::changeset::PersistenceCapabilities::DASHPAY_PAYMENTS)
+                .union(crate::changeset::PersistenceCapabilities::ATOMIC_CHANGESETS),
+        ));
+        let (event_tx, event_rx) = unbounded_channel();
+        let cancel = CancellationToken::new();
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let handle = spawn_wallet_event_adapter(
+            Arc::clone(&wallet_manager),
+            Arc::clone(&persister),
+            event_rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
+        );
+
+        // The adapter's ordered confirm owns the flip instead.
+        event_tx
+            .send(is_lock_event.clone())
+            .expect("send IS-lock event");
+        let observed = obs_rx.recv().await.expect("IS-lock round");
+        assert_eq!(
+            observed.n_payment_overlay_confirmed, 1,
+            "the confirmation must be the adapter's ordered write, not the hook's"
+        );
+
+        // The newer sweep must still fail the dead payment — pre-fix the
+        // hook's earlier Confirmed made this a skipped, durable wrong
+        // terminal.
+        event_tx
+            .send(WalletEvent::TransactionsSwept {
+                wallet_id,
+                txids: vec![txid],
+                superseded_by: dashcore::Txid::from([0xF4; 32]),
+                released_outpoints: vec![],
+                balance: WalletCoreBalance::default(),
+                account_balances: BTreeMap::new(),
+            })
+            .expect("send sweep");
+        let observed = obs_rx.recv().await.expect("sweep round");
+        assert_eq!(
+            observed.n_payment_overlay_rows, 1,
+            "the sweep must demote the earlier confirmation on its own round"
+        );
+        assert_eq!(observed.n_payment_overlay_confirmed, 0);
+        assert_eq!(
+            sent_payment_status(&wallet_manager, &wallet_id, &owner, &txid.to_string()).await,
+            PaymentStatus::Failed,
+            "the newer sweep's verdict must win over the pre-sweep confirmation"
+        );
+
+        cancel.cancel();
+        handle.await.expect("adapter task joins");
+    }
+
+    /// The two events of the race folded into ONE drain: `[IS-lock(X),
+    /// Swept(X)]` buffered together must commit a single round whose
+    /// payment row is the LAST verdict in emission order — `Failed` —
+    /// because the fold overwrites the staged `Confirmed` row per
+    /// `(owner, txid)` when the later sweep demotes it in memory.
+    #[tokio::test]
+    async fn a_confirmation_and_its_eviction_in_one_fold_commit_the_newer_verdict() {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        use key_wallet::account::account_type::StandardAccountType;
+
+        use super::spawn_wallet_event_adapter;
+        use crate::test_support::funded_wallet_manager;
+        use crate::wallet::identity::types::dashpay::payment::PaymentStatus;
+
+        let (wallet_manager, wallet_id, _generation, _signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let owner = dpp::prelude::Identifier::from([0xAA; 32]);
+        let contact = dpp::prelude::Identifier::from([0xBB; 32]);
+        let txid = dashcore::Txid::from([0xF5; 32]);
+        seed_pending_sent_payment(&wallet_manager, wallet_id, owner, contact, txid).await;
+
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::with_capabilities(
+            obs_tx,
+            crate::changeset::PersistenceCapabilities::CORE_SWEEP_REMOVAL
+                .union(crate::changeset::PersistenceCapabilities::DASHPAY_PAYMENTS)
+                .union(crate::changeset::PersistenceCapabilities::ATOMIC_CHANGESETS),
+        ));
+        let (event_tx, event_rx) = unbounded_channel();
+
+        // Queue BOTH events before the adapter task spawns, which is what
+        // makes the single-fold deterministic: the first `recv` takes the
+        // IS-lock and the backlog `try_recv` folds the sweep.
+        event_tx
+            .send(WalletEvent::TransactionInstantLocked {
+                wallet_id,
+                txid,
+                instant_lock: InstantLock::default(),
+                balance: WalletCoreBalance::default(),
+                account_balances: BTreeMap::new(),
+            })
+            .expect("send IS-lock event");
+        event_tx
+            .send(WalletEvent::TransactionsSwept {
+                wallet_id,
+                txids: vec![txid],
+                superseded_by: dashcore::Txid::from([0xF6; 32]),
+                released_outpoints: vec![],
+                balance: WalletCoreBalance::default(),
+                account_balances: BTreeMap::new(),
+            })
+            .expect("send sweep");
+
+        let cancel = CancellationToken::new();
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let handle = spawn_wallet_event_adapter(
+            Arc::clone(&wallet_manager),
+            Arc::clone(&persister),
+            event_rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
+        );
+
+        let observed = obs_rx.recv().await.expect("the folded round");
         assert!(!observed.rejected);
         assert_eq!(
             observed.n_payment_overlay_rows, 1,
-            "the round must carry only the row memory still stands behind — \
-             storing the superseded Failed row would durably demote a \
-             Confirmed the hooks' round already persisted"
+            "one row per (owner, txid): the later flip overwrites the earlier"
         );
-
-        // The superseded row's undo left the ledger with it: a later
-        // rejection of this round must not replay an undo for a row the
-        // round never carried.
-        let ledger = payment_rollbacks.get(&wallet_id).expect("ledger");
         assert_eq!(
-            ledger.len(),
-            1,
-            "only the retained row keeps its rollback entry"
+            observed.n_payment_overlay_confirmed, 0,
+            "the fold must commit the newer verdict — Failed, not the folded-over Confirmed"
         );
-        assert_eq!(ledger[0].txid, still_dead.to_string());
+        assert_eq!(
+            sent_payment_status(&wallet_manager, &wallet_id, &owner, &txid.to_string()).await,
+            PaymentStatus::Failed
+        );
 
-        // The retraction reads memory, never writes it: the confirmed
-        // entry keeps its terminal state, the still-dead one keeps the
-        // verdict its row just stored.
-        {
-            let wm = wallet_manager.read().await;
-            let payments = &wm
-                .get_wallet_info(&wallet_id)
-                .expect("info")
-                .identity_manager
-                .managed_identity(&owner)
-                .expect("managed")
-                .dashpay()
-                .payments;
-            assert_eq!(
-                payments.get(&reinstated.to_string()).expect("entry").status,
-                PaymentStatus::Confirmed
-            );
-            assert_eq!(
-                payments.get(&still_dead.to_string()).expect("entry").status,
-                PaymentStatus::Failed
-            );
-        }
+        cancel.cancel();
+        handle.await.expect("adapter task joins");
     }
 
     /// The one-shot reinstatement gets the round's durability, end to end
@@ -4532,10 +4552,10 @@ mod tests {
     /// arriving in a LATER drain than the sweep finds the entry durably
     /// `Failed`, and the record re-arrives already final, so no further
     /// detection follows it and the reconcile pass (`Pending`-only by
-    /// construction) cannot cover it — the hooks' own store round was the
-    /// last chance, and a rejection there left a durable `Failed` for a
+    /// construction) cannot cover it — a separately persisted correction
+    /// whose store was rejected would have left a durable `Failed` for a
     /// transaction that survived. The adapter therefore owns the
-    /// correction: `confirm_reinstated_sent_payments_for_store` flips the
+    /// correction: `confirm_final_sent_payments_for_store` flips the
     /// entry and rides the `Confirmed` row on the SAME store round as the
     /// reinstated record.
     ///
