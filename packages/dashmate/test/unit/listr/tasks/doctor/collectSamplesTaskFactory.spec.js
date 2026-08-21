@@ -239,6 +239,50 @@ describe('collectSamplesTaskFactory', () => {
     });
   });
 
+  // Doctor will only advise loading the file over a working served certificate
+  // when the checks that judged the file describe the same file the probe
+  // measured. The two fingerprints come from different selectors - the probe
+  // takes the first non-CA block, the checks take the block matching the
+  // private key - so that they agree for an ordinary pair is a property worth
+  // holding, not an assumption. If it ever stops holding the advice silently
+  // stops being given.
+  it('should record the same certificate in the verdict and the wire sample', async () => {
+    const { cert, key } = createCertificateForTest({ ip: EXTERNAL_IP, days: 30 });
+    const sslDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl');
+
+    fs.writeFileSync(path.join(sslDir, 'bundle.crt'), cert, 'utf8');
+    fs.writeFileSync(path.join(sslDir, 'private.key'), key, 'utf8');
+
+    const server = tls.createServer({ cert, key }, (socket) => socket.end());
+    const liveSockets = [];
+    server.on('secureConnection', (socket) => liveSockets.push(socket));
+
+    await new Promise((resolve) => { server.listen(0, '127.0.0.1', resolve); });
+
+    config.set('platform.gateway.listeners.dapiAndDrive.port', server.address().port);
+
+    getCertificate.resolves(new Certificate({
+      id: 'certificate-id',
+      common_name: EXTERNAL_IP,
+      status: 'issued',
+      created: toZeroSslDate(daysFromNow(-1)),
+      expires: toZeroSslDate(daysFromNow(89)),
+    }));
+
+    try {
+      await collectSamples();
+    } finally {
+      liveSockets.forEach((socket) => socket.destroy());
+      await new Promise((resolve) => { server.close(resolve); });
+    }
+
+    const installed = samples.getServiceInfo('gateway', 'installedCertificate');
+    const servedSample = samples.getServiceInfo('gateway', 'servedCertificate');
+
+    expect(installed.fingerprint256).to.be.a('string');
+    expect(servedSample.onDisk.fingerprint256).to.equal(installed.fingerprint256);
+  });
+
   it('should collect the certificate the gateway actually serves', async () => {
     const { cert, key } = createCertificateForTest({ ip: EXTERNAL_IP, days: 30 });
 
