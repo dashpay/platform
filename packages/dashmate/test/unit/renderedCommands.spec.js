@@ -54,6 +54,22 @@ const PRESENTED_IN_SOURCE = new RegExp(
  * skipped by pattern so a NEW file cannot join them silently - which is the
  * whole point of the sweep below.
  */
+/**
+ * Where telling an operator to restart Platform is the right advice, and why.
+ *
+ * A restart makes the gateway re-read the certificate files already on disk, so
+ * it helps only where those files are known to be the better ones. Anywhere
+ * else it loads something staler than what is being served and takes a working
+ * node off the network.
+ */
+const RESTART_ADVICE_ALLOWED = {
+  'src/doctor/analyse/analyseGatewayCertificateFactory.js':
+    'a renewed certificate is already on disk, verified newer and usable than the one being '
+    + 'served, and only the gateway has not picked it up - re-reading the files is the entire '
+    + 'remedy; and the incomplete-chain case, where the operator edits the bundle by hand and '
+    + 'nothing else signals the gateway afterwards',
+};
+
 const PRE_EXISTING_BARE_COMMANDS = [
   'src/commands/doctor/index.js',
   'src/commands/setup.js',
@@ -403,6 +419,41 @@ describe('every command dashmate tells an operator to run', () => {
       });
 
       expect(offenders, offenders.join('\n')).to.be.empty();
+    });
+
+    // Restarting Platform makes the gateway re-read the files already on disk.
+    // That is the remedy only when those files are known to be better than what
+    // is being served; every other time it replaces something working with
+    // something older, and the operator did it to themselves on this advice.
+    //
+    // Discovered rather than enumerated. A rendered check can only drive
+    // surfaces it was told about, and remediation text is produced by eight
+    // different files here, so a restart prescribed anywhere under src/ has to
+    // be written down with its reason or this fails.
+    it('prescribes no restart anywhere in src that is not justified here', () => {
+      const offenders = [];
+
+      javascriptFilesIn('src').forEach((file) => {
+        const advises = presentedCommandsIn(fs.readFileSync(file, 'utf8'))
+          .some((command) => /dashmate\s+restart/.test(command));
+
+        if (advises && !RESTART_ADVICE_ALLOWED[file]) {
+          offenders.push(file);
+        }
+      });
+
+      expect(offenders, `restart advice with no recorded reason:\n${offenders.join('\n')}`)
+        .to.be.empty();
+    });
+
+    it('keeps the restart allow-list honest', () => {
+      Object.keys(RESTART_ADVICE_ALLOWED).forEach((file) => {
+        const advises = presentedCommandsIn(fs.readFileSync(file, 'utf8'))
+          .some((command) => /dashmate\s+restart/.test(command));
+
+        expect(advises, `${file} no longer prescribes a restart and can leave the list`)
+          .to.be.true();
+      });
     });
 
     it('keeps the exemption list honest', () => {

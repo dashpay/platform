@@ -184,11 +184,18 @@ Note that changing it makes renewal register a new account with the authority.`,
                 description: chalk`Let's Encrypt certificate expires at ${ssl?.data?.certificate?.expires}.`,
                 solution: chalk`Please run {bold.cyanBright dashmate ssl obtain --provider=letsencrypt} to renew`,
               },
+              // Never a restart. This fires because the issued certificate was not
+              // copied to where the gateway loads from, so a restart makes the gateway
+              // re-read the copy it already has - the out-of-date one. On a node still
+              // serving a valid certificate that is what takes it off the network.
               [LETSENCRYPT_ERRORS.CERTIFICATE_NOT_INSTALLED]: {
                 description: chalk`A renewed Let's Encrypt certificate has not been installed for the gateway.`,
-                solution: chalk`The gateway keeps serving the previous certificate until it is reloaded,
-and will stop accepting clients when that one expires.
-Please restart Platform: {bold.cyanBright dashmate restart --platform}`,
+                solution: chalk`The issued certificate was never copied to where the gateway loads from,
+so the two disagree. Install it - that also signals the gateway, with no
+downtime: {bold.cyanBright dashmate ssl obtain --provider=letsencrypt}
+Do not restart Platform to fix this. A restart only reloads the copy the
+gateway already has, which is the out-of-date one, and this node may still
+be serving a valid certificate that a restart would throw away.`,
               },
               [LETSENCRYPT_ERRORS.CERTIFICATE_NOT_VALID]: {
                 description: chalk`Let's Encrypt certificate is not valid.`,

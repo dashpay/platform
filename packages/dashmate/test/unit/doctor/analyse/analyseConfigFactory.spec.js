@@ -65,6 +65,38 @@ describe('analyseConfigFactory', () => {
     expect(problems[0].getDescription()).to.include('No contact is registered');
   });
 
+  // This fires when the issued certificate was never copied to where the gateway
+  // loads from. A restart only makes the gateway re-read the copy it already
+  // has, which is the out-of-date one - so on a node still serving a valid
+  // certificate, following that advice is what takes it off the network.
+  describe('a renewed certificate that never reached the gateway', () => {
+    const notInstalled = () => analyseSslSample({
+      error: LETSENCRYPT_ERRORS.CERTIFICATE_NOT_INSTALLED,
+      data: {},
+    }, 'letsencrypt');
+
+    it('should not tell the operator to restart Platform', () => {
+      const [problem] = notInstalled();
+
+      expect(problem.getSolution()).to.not.match(/dashmate\s+restart/);
+    });
+
+    it('should tell the operator to install the issued certificate', () => {
+      const [problem] = notInstalled();
+
+      expect(problem.getSolution()).to.contain('dashmate ssl obtain');
+    });
+
+    // The report can carry the gateway analyser's finding for the same node,
+    // which says in as many words not to restart. Two opposite instructions in
+    // one report leave the operator to guess, and one guess breaks the node.
+    it('should not contradict the advice not to restart', () => {
+      const [problem] = notInstalled();
+
+      expect(problem.getSolution()).to.match(/not restart|Do not restart/);
+    });
+  });
+
   it('should report a problem for a ZeroSSL certificate that expires soon', () => {
     const problems = analyseSslSample({
       error: ZEROSSL_ERRORS.CERTIFICATE_EXPIRES_SOON,
