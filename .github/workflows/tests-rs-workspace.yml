@@ -193,20 +193,29 @@ jobs:
           cargo install cargo-machete 2>/dev/null || true
           cargo machete
 
-      # The transport-free cut is how embedders with their own networking
+      # The transport-free cuts are how embedders with their own networking
       # (Dash Core's platform GUI, explorers) consume verification: feature
-      # unification hides transport regressions in whole-workspace builds, so
-      # check the standalone graphs and assert the networking stack stays out
-      # of the proof-verification tree (native) and out of wasm builds.
-      - name: Check transport-free feature cut
+      # unification hides regressions in whole-workspace builds, so check the
+      # standalone graphs and assert the networking stack stays out of the
+      # proof-verification tree (native) and out of wasm builds.
+      - name: Check transport-free feature cuts
         run: |
           cargo check -p dapi-grpc --no-default-features --features core,platform,client --locked
           cargo check -p drive-proof-verifier --locked
-          for banned in hyper rustls tower; do
-            if cargo tree -p drive-proof-verifier -e normal -i "$banned" 2>/dev/null | grep -q .; then
-              echo "::error::$banned leaked into drive-proof-verifier's dependency tree"
-              exit 1
-            fi
+          cargo check -p dash-platform-queries --locked
+          # Native graphs: assert the networking transport stack stays out.
+          # `tonic` itself is present (dapi-grpc's generated client types) but
+          # without its transport feature — which is exactly what the absence
+          # of hyper/rustls/tower proves. tokio is deliberately NOT asserted
+          # absent: dash-context-provider depends on dash-async, which uses it
+          # on native targets, and that edge predates the queries-crate split.
+          for native_package in drive-proof-verifier dash-platform-queries; do
+            for banned in hyper rustls tower; do
+              if cargo tree -p "$native_package" -e normal -i "$banned" 2>/dev/null | grep -q .; then
+                echo "::error::$banned leaked into $native_package's dependency tree"
+                exit 1
+              fi
+            done
           done
           for banned in hyper rustls tower mio; do
             for wasm_package in dash-sdk wasm-sdk; do

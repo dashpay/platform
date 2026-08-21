@@ -1704,6 +1704,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "dash-platform-queries"
+version = "4.2.0-dev.1"
+dependencies = [
+ "dapi-grpc",
+ "dash-context-provider",
+ "dash-platform-macros",
+ "dpp",
+ "drive",
+ "drive-proof-verifier",
+ "hex",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "dash-sdk"
 version = "4.2.0-dev.1"
 dependencies = [
@@ -1720,6 +1737,7 @@ dependencies = [
  "dash-context-provider",
  "dash-network-seeds",
  "dash-platform-macros",
+ "dash-platform-queries",
  "derive_more 1.0.0",
  "dotenvy",
  "dpp",

@@ -16,7 +16,7 @@
 //!
 //! [`DocumentHavingEntries`]: drive_proof_verifier::DocumentHavingEntries
 
-use crate::platform::documents::document_query::DocumentQuery;
+use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dash_context_provider::ContextProvider;

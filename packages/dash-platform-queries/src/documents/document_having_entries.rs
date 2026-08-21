@@ -54,7 +54,7 @@
 //!
 //! `SELECT COUNT(*) GROUP BY hashtag HAVING $count > 100 ORDER BY $count DESC LIMIT 100`
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use dash_sdk::{Sdk, platform::{DataContract, DocumentQuery, Fetch, Identifier}};
 //! use dash_sdk::drive::query::{
 //!     HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator,
@@ -96,9 +96,8 @@
 //! }
 //! ```
 
-use crate::platform::documents::document_query::DocumentQuery;
-use crate::platform::documents::having_proof_helpers::verify_having_query;
-use crate::platform::Fetch;
+use crate::documents::document_query::DocumentQuery;
+use crate::documents::having_proof_helpers::verify_having_query;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dash_context_provider::ContextProvider;
 use dpp::dashcore::Network;
@@ -133,11 +132,6 @@ impl FromProof<DocumentQuery> for DocumentHavingEntries {
     }
 }
 
-impl Fetch for DocumentHavingEntries {
-    type Query = DocumentQuery;
-    type Request = dapi_grpc::platform::v0::GetDocumentsRequest;
-}
-
 #[cfg(test)]
 mod tests {
     //! Offline tests for the having client surface: the request→wire
@@ -147,8 +141,8 @@ mod tests {
     //! `having_range_tests`, where a populated Drive exists.
 
     use super::*;
-    use crate::platform::documents::document_query::RankingDirection;
-    use crate::platform::documents::having_proof_helpers::assert_having_shape;
+    use crate::documents::document_query::RankingDirection;
+    use crate::documents::having_proof_helpers::assert_having_shape;
     use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::select as proto_select;
     use dapi_grpc::platform::v0::get_documents_request::{
         having_aggregate, having_clause, GetDocumentsRequestV1, Version as RequestVersion,
