@@ -61,35 +61,73 @@ describe('checkGatewayCertificateFactory', () => {
   const codes = (list) => list.map(({ code }) => code);
 
   describe('leaf identification', () => {
-    // A bundle can be written either way round, and an operator supplying their
-    // own routinely writes the root first. Selecting the leaf by position gets
-    // one of the two orders wrong every time.
-    ['leaf-first', 'root-first'].forEach((order) => {
-      it(`should identify the leaf by its key in a ${order} bundle`, () => {
-        const { leaf, intermediate, root } = issueChain({ ip: EXTERNAL_IP });
-        const blocks = [leaf.pem, intermediate.pem, root.pem];
+    // The leaf is identified by matching key material rather than by position,
+    // because that is the check that says which block belongs to private.key
+    // and it works for every key type an authority might issue.
+    it('should identify the leaf by its key material', () => {
+      const { leaf, intermediate, root } = issueChain({ ip: EXTERNAL_IP });
 
-        install((order === 'leaf-first' ? blocks : [...blocks].reverse()).join(''), leaf.keyPem);
+      install(leaf.pem + intermediate.pem + root.pem, leaf.keyPem);
 
-        const verdict = checkGatewayCertificate(config);
+      const verdict = checkGatewayCertificate(config);
 
-        expect(verdict.status).to.equal(CERTIFICATE_STATUS.CHECKS_PASSED);
-        expect(verdict.installed.fingerprint256).to.be.a('string');
-      });
+      expect(verdict.status).to.equal(CERTIFICATE_STATUS.CHECKS_PASSED);
+      expect(verdict.installed.fingerprint256).to.be.a('string');
+    });
 
-      // An ordinary public chain contains a self-signed root. Testing every
-      // block for self-signature rejects every valid paid chain outright.
-      it(`should accept a chain containing a self-signed root, ${order}`, () => {
-        const { leaf, intermediate, root } = issueChain({ ip: EXTERNAL_IP });
-        const blocks = [leaf.pem, intermediate.pem, root.pem];
+    // An ordinary public chain contains a self-signed root. Only the block that
+    // matches the key is self-sign tested, so carrying a root is not mistaken
+    // for the certificate itself being self-signed.
+    it('should accept a chain containing a self-signed root', () => {
+      const { leaf, intermediate, root } = issueChain({ ip: EXTERNAL_IP });
 
-        install((order === 'leaf-first' ? blocks : [...blocks].reverse()).join(''), leaf.keyPem);
+      install(leaf.pem + intermediate.pem + root.pem, leaf.keyPem);
 
-        const verdict = checkGatewayCertificate(config);
+      const verdict = checkGatewayCertificate(config);
 
-        expect(codes(verdict.reasons)).to.deep.equal([]);
-        expect(verdict.status).to.equal(CERTIFICATE_STATUS.CHECKS_PASSED);
-      });
+      expect(codes(verdict.reasons)).to.deep.equal([]);
+      expect(verdict.status).to.equal(CERTIFICATE_STATUS.CHECKS_PASSED);
+    });
+
+    // Envoy reads the chain file in order and serves the first block as the
+    // leaf. A bundle written the other way round is therefore broken at the
+    // gateway however well its contents pair up, so finding the key's
+    // certificate further down is a finding rather than a pass.
+    it('should block on a bundle whose leaf is not the first block', () => {
+      const { leaf, intermediate, root } = issueChain({ ip: EXTERNAL_IP });
+
+      install(root.pem + intermediate.pem + leaf.pem, leaf.keyPem);
+
+      const verdict = checkGatewayCertificate(config);
+
+      expect(verdict.status).to.equal(CERTIFICATE_STATUS.INVALID);
+      expect(codes(verdict.reasons)).to.include(CERTIFICATE_REASONS.BUNDLE_ORDER);
+    });
+
+    it('should name the position the key-matching certificate was found at', () => {
+      const { leaf, intermediate, root } = issueChain({ ip: EXTERNAL_IP });
+
+      install(root.pem + intermediate.pem + leaf.pem, leaf.keyPem);
+
+      const [reason] = checkGatewayCertificate(config).reasons
+        .filter(({ code }) => code === CERTIFICATE_REASONS.BUNDLE_ORDER);
+
+      expect(reason.message).to.contain('3');
+    });
+
+    // A block Envoy will choke on is not something to pass over quietly. The
+    // bundle is what the gateway loads, so an unparseable block in it is a
+    // problem with the bundle whether or not a usable leaf sits beside it.
+    it('should block on a bundle holding a certificate block that will not parse', () => {
+      const { leaf, intermediate } = issueChain({ ip: EXTERNAL_IP });
+      const corrupt = '-----BEGIN CERTIFICATE-----\nbm90IGEgY2VydGlmaWNhdGU=\n-----END CERTIFICATE-----\n';
+
+      install(leaf.pem + corrupt + intermediate.pem, leaf.keyPem);
+
+      const verdict = checkGatewayCertificate(config);
+
+      expect(verdict.status).to.equal(CERTIFICATE_STATUS.INVALID);
+      expect(codes(verdict.reasons)).to.include(CERTIFICATE_REASONS.BUNDLE_UNREADABLE);
     });
 
     // An operator's own self-signed certificate is usually marked as a CA.

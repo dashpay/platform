@@ -4,6 +4,7 @@ export const LEAF_SELECTION_ERRORS = {
   KEY_UNUSABLE: 'KEY_UNUSABLE',
   BUNDLE_UNREADABLE: 'BUNDLE_UNREADABLE',
   KEY_MISMATCH: 'KEY_MISMATCH',
+  BUNDLE_ORDER: 'BUNDLE_ORDER',
 };
 
 const PEM_CERTIFICATE = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
@@ -29,15 +30,18 @@ function exportSubjectPublicKeyInfo(publicKey) {
 /**
  * Find the certificate in a bundle that belongs to a private key.
  *
- * The leaf is the block whose public key material is the key's own. That single
- * rule does three jobs: it finds the leaf whichever way round the bundle is
- * written, it is itself the pairing check, and comparing key material rather
- * than verifying an RSA signature works for every key type an authority might
- * issue.
+ * The leaf is the block whose public key material is the key's own. Comparing
+ * key material is both how the leaf is recognised and the pairing check itself,
+ * and unlike verifying an RSA signature it works for every key type an
+ * authority might issue. Self-sign testing every block to find the leaf would
+ * instead reject any chain carrying its own root, which an ordinary publicly
+ * trusted bundle does.
  *
- * Selecting by position gets one bundle order wrong, and self-sign testing
- * every block to find the leaf rejects any chain that carries its own root -
- * which an ordinary publicly trusted bundle does.
+ * Identifying it that way does not make its position free. Envoy reads the
+ * chain file in order and serves the first block as the leaf, so a bundle
+ * written the other way round is broken at the gateway however well its
+ * contents pair up. The key's certificate is therefore required to be the first
+ * block as well as to exist.
  *
  * @param {string} bundlePem
  * @param {string} privateKeyPem
@@ -64,34 +68,46 @@ export default function selectLeafCertificate(bundlePem, privateKeyPem) {
     return { error: LEAF_SELECTION_ERRORS.KEY_UNUSABLE, detail: 'its key material could not be read' };
   }
 
-  const certificates = (bundlePem.match(PEM_CERTIFICATE) ?? [])
-    .map((block) => {
-      try {
-        return new crypto.X509Certificate(block);
-      } catch {
-        // A block that will not parse is skipped rather than failing the whole
-        // bundle, which may hold comments or a stray key.
-        return null;
-      }
-    })
-    .filter(Boolean);
+  const blocks = bundlePem.match(PEM_CERTIFICATE) ?? [];
 
-  if (certificates.length === 0) {
+  if (blocks.length === 0) {
     return { error: LEAF_SELECTION_ERRORS.BUNDLE_UNREADABLE, detail: 'it holds no certificate' };
   }
 
-  const leaf = certificates.find((certificate) => {
+  const certificates = [];
+  for (let position = 0; position < blocks.length; position += 1) {
+    try {
+      certificates.push(new crypto.X509Certificate(blocks[position]));
+    } catch (e) {
+      // Not skipped. The gateway loads this same file, so a block it will choke
+      // on is a problem with the bundle even when a usable leaf sits beside it.
+      return {
+        error: LEAF_SELECTION_ERRORS.BUNDLE_UNREADABLE,
+        detail: `certificate ${position + 1} of ${blocks.length} could not be parsed: ${e.message}`,
+      };
+    }
+  }
+
+  const position = certificates.findIndex((certificate) => {
     const spki = exportSubjectPublicKeyInfo(certificate.publicKey);
 
     return spki !== null && spki.equals(subjectPublicKeyInfo);
   });
 
-  if (!leaf) {
+  if (position === -1) {
     return {
       error: LEAF_SELECTION_ERRORS.KEY_MISMATCH,
       detail: 'no certificate in the bundle belongs to the private key',
     };
   }
 
-  return { leaf };
+  if (position !== 0) {
+    return {
+      error: LEAF_SELECTION_ERRORS.BUNDLE_ORDER,
+      detail: `the certificate belonging to the private key is block ${position + 1}`
+        + ` of ${certificates.length}, and the gateway serves the first block as the leaf`,
+    };
+  }
+
+  return { leaf: certificates[0] };
 }

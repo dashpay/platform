@@ -20,6 +20,7 @@ export const CERTIFICATE_STATUS = {
 export const CERTIFICATE_REASONS = {
   BUNDLE_MISSING: 'BUNDLE_MISSING',
   BUNDLE_UNREADABLE: 'BUNDLE_UNREADABLE',
+  BUNDLE_ORDER: 'BUNDLE_ORDER',
   KEY_MISSING: 'KEY_MISSING',
   KEY_UNUSABLE: 'KEY_UNUSABLE',
   KEY_MISMATCH: 'KEY_MISMATCH',
@@ -212,7 +213,16 @@ export default function checkGatewayCertificateFactory(homeDir) {
     if (error === LEAF_SELECTION_ERRORS.BUNDLE_UNREADABLE) {
       reasons.push({
         code: CERTIFICATE_REASONS.BUNDLE_UNREADABLE,
-        message: `dashmate could not read any certificate from ${bundleFilePath}`,
+        message: `dashmate could not read ${bundleFilePath}: ${detail}`,
+      });
+
+      return verdict();
+    }
+
+    if (error === LEAF_SELECTION_ERRORS.BUNDLE_ORDER) {
+      reasons.push({
+        code: CERTIFICATE_REASONS.BUNDLE_ORDER,
+        message: `The certificates in ${bundleFilePath} are in the wrong order: ${detail}`,
       });
 
       return verdict();
