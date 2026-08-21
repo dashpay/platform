@@ -23,6 +23,7 @@ pub struct DriveAddressFundsMethodVersions {
     pub prove_address_funds_branch_query: FeatureVersion,
     pub address_funds_query_min_depth: u8,
     pub address_funds_query_max_depth: u8,
+    pub estimate_funding_fee: FeatureVersion,
     pub cost_estimation: DriveAddressFundsCostEstimationMethodVersions,
 }
 

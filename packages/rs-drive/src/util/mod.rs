@@ -7,6 +7,9 @@ pub mod grove_operations;
 /// Structures used by drive
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod object_size_info;
+/// Merk search-path structure from locally generated GroveDB proofs
+#[cfg(feature = "server")]
+pub(crate) mod proof_depth;
 
 /// Common
 #[cfg(any(feature = "server", feature = "verify"))]

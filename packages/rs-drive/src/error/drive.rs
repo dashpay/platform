@@ -215,6 +215,12 @@ pub enum DriveError {
     #[error("no checkpoints available")]
     NoCheckpointsAvailable,
 
+    /// The asset lock outpoint is already present in the state (fully or
+    /// partially consumed), so an operation that requires a fresh outpoint
+    /// cannot proceed
+    #[error("asset lock outpoint already present in state: {0}")]
+    AssetLockOutpointAlreadyPresent(&'static str),
+
     /// Checkpoint not found for specified block height
     #[error("checkpoint not found for block height: {0}")]
     CheckpointNotFound(u64),

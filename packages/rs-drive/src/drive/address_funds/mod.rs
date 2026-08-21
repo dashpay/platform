@@ -1,5 +1,8 @@
 #[cfg(feature = "server")]
 mod add_balance_to_address;
+/// State-aware fee estimation for address funding from an asset lock.
+#[cfg(feature = "server")]
+pub mod estimate_funding_fee;
 /// Cost estimation for address balance operations.
 #[cfg(feature = "server")]
 mod estimated_costs;
