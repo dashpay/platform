@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { STOCK_PRERELEASE_IDS } from '../../../../src/config/stockImages.js';
+import Config from '../../../../src/config/Config.js';
 import HomeDir from '../../../../src/config/HomeDir.js';
 import { PACKAGE_ROOT_DIR } from '../../../../src/constants.js';
 import createDIContainer from '../../../../src/createDIContainer.js';
@@ -263,6 +264,47 @@ describe('migrateConfigFileFactory', () => {
         baseConfig.get('platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl'),
         `4.2.0 did not set the ACME directory for ${name}`,
       );
+    }
+  });
+
+  it('should load a config a development build stamped with its own prerelease version', async () => {
+    // A development build records its own package version in the config, so
+    // every node running one is stamped at a prerelease of the next release.
+    // Semver orders such a stamp above a key named after an earlier patch
+    // release, so a migration keyed there is skipped for exactly these configs.
+    //
+    // The migration that drops the Tenderdash Commit timeout overrides is keyed
+    // that way. The schema stopped defining them and accepts no property it does
+    // not define, so a config that keeps them cannot be loaded at all - which is
+    // every node running a development build, the population these changes are
+    // validated on.
+    const FROM_VERSION = '4.2.0-dev.1';
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+
+    const configFileData = createConfigFile().toObject();
+    configFileData.configFormatVersion = FROM_VERSION;
+    for (const options of Object.values(configFileData.configs)) {
+      // The shape the base config carried while these overrides still existed.
+      options.platform.drive.tenderdash.consensus.unsafeOverride.commit = {
+        timeout: null,
+        bypass: null,
+      };
+    }
+
+    const migrated = migrateConfigFile(configFileData, FROM_VERSION, version);
+
+    for (const [name, options] of Object.entries(migrated.configs)) {
+      let loadError = null;
+      try {
+        // Loading is what fails in production, so that is what is asserted
+        // rather than the absence of the key on its own.
+        new Config(name, options);
+      } catch (e) {
+        loadError = e;
+      }
+
+      expect(loadError, `migrated ${name} config does not load: ${loadError?.message}`)
+        .to.equal(null);
     }
   });
 

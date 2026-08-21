@@ -75,6 +75,27 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       }
     }
 
+    /**
+     * Drop the Tenderdash Commit timeout overrides Tenderdash itself removed.
+     *
+     * The config schema stopped defining them, and it accepts no property it
+     * does not define, so a config that still carries them cannot be loaded at
+     * all.
+     *
+     * Called from more than one migration on purpose. A config records the
+     * version of the build that wrote it, and a development build records its
+     * own prerelease version - which semver orders above a key named after an
+     * earlier patch release. A config stamped that way skips such a key
+     * entirely, so a deletion the schema depends on has to be repeated at a key
+     * above every stamp still in the field. Repeating it costs nothing: removing
+     * a key that is not there does nothing.
+     *
+     * @param {Object} options - one config's options
+     */
+    function dropRemovedTenderdashCommitOverride(options) {
+      delete options.platform?.drive?.tenderdash?.consensus?.unsafeOverride?.commit;
+    }
+
     function getDefaultConfigByNetwork(network) {
       if (network === NETWORK_MAINNET) {
         return defaultConfigs.get('mainnet');
@@ -1715,11 +1736,12 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         return configFile;
       },
       '4.2.0': (configFile) => {
-        // The ACME directory certificates are requested from became
-        // configurable. Existing configs have no value for it, and the schema
-        // requires one, so fill in the directory they were already using.
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
+            // Also done by the 4.1.1 migration, which a config written by a
+            // development build of this release is stamped above and skips.
+            dropRemovedTenderdashCommitOverride(options);
+
             const providerConfigs = options.platform?.gateway?.ssl?.providerConfigs;
 
             if (providerConfigs?.letsencrypt
@@ -1769,11 +1791,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               rsDapiDocker.image = base.get('platform.dapi.rsDapi.docker.image');
             }
 
-            // The Commit timeout and BypassCommitTimeout overrides no longer
-            // exist in Tenderdash, which now only warns when they are set.
-            // Drop them: the config schema accepts no properties it does not
-            // define, so a config that kept them would fail validation.
-            delete options.platform?.drive?.tenderdash?.consensus?.unsafeOverride?.commit;
+            dropRemovedTenderdashCommitOverride(options);
           });
 
         return configFile;
