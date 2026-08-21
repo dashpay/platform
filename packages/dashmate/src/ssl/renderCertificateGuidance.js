@@ -198,6 +198,7 @@ ${isNodeRunning
  * @param {Config} options.config
  * @param {Object} options.verdict
  * @param {boolean} options.isNodeRunning
+ * @param {boolean} [options.obtainAttemptFailed] - an obtain was run and threw
  * @param {{ok: boolean, failed: number, total: number}|null} options.pull
  * @return {string}
  */
@@ -206,6 +207,7 @@ export default function renderCertificateGuidance({
   verdict,
   isNodeRunning,
   pull,
+  obtainAttemptFailed = false,
 }) {
   const cfg = renderConfigFlag(config.getName());
   const provider = config.get('platform.gateway.ssl.provider');
@@ -227,8 +229,14 @@ export default function renderCertificateGuidance({
   not validate the certificate against public trust stores either;
   \`dashmate doctor ${cfg}\` does the first of those.
 
-  Nothing broke just now. This is the first release of dashmate that checks
-  the certificate, so this is the first time you are being told.
+  ${obtainAttemptFailed
+    ? `An attempt to obtain a certificate ran just now and did not complete.
+  It can have failed at any point, including after writing one half of the
+  pair, so the files on disk may not be what they were before this run. The
+  status above was read back from disk after the attempt, so it describes
+  what is there now.`
+    : `Nothing broke just now. This is the first release of dashmate that checks
+  the certificate, so this is the first time you are being told.`}
 `,
   ];
 
@@ -237,7 +245,15 @@ export default function renderCertificateGuidance({
   // complaint, assumes it changed nothing and walks away has left a stopped
   // masternode behind.
   if (!isNodeRunning) {
-    blocks.push(`  Your node is currently stopped. Run \`dashmate start ${cfg}\` to bring
+    // The reassurance holds for a certificate that merely failed the checks:
+    // nothing about them gates startup. It does not hold once an obtain has
+    // run and failed, because what is on disk may have changed underneath the
+    // gateway, and promising a clean start there is a claim this cannot make.
+    blocks.push(obtainAttemptFailed
+      ? `  Your node is currently stopped. Bring it back up with \`dashmate start ${cfg}\`,
+  then check it came up: the attempt above may have changed what is installed.
+`
+      : `  Your node is currently stopped. Run \`dashmate start ${cfg}\` to bring
   it back up - the certificate problem does not prevent it from starting.
 `);
   }

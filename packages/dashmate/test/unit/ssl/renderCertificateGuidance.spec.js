@@ -269,6 +269,30 @@ describe('renderCertificateGuidance', () => {
     expect(output).to.contain('needs nothing further - no restart');
   });
 
+  // An obtain that failed can have failed anywhere, including between writing
+  // the certificate and writing the key - which replaces a working pair with a
+  // mismatched one. Two of the claims here are unconditional and the code
+  // cannot support either of them once that has happened.
+  describe('after a remediation attempt that failed', () => {
+    it('should not claim nothing changed', () => {
+      const output = render({ obtainAttemptFailed: true });
+
+      expect(output).to.not.contain('Nothing broke just now');
+      expect(output).to.contain('did not complete');
+    });
+
+    it('should not promise the node will start', () => {
+      const output = render({ obtainAttemptFailed: true, isNodeRunning: false });
+
+      expect(output).to.not.contain('does not prevent it from starting');
+    });
+
+    it('should still say nothing changed when no attempt was made', () => {
+      expect(render()).to.contain('Nothing broke just now');
+      expect(render({ isNodeRunning: false })).to.contain('does not prevent it from starting');
+    });
+  });
+
   it('should say when images failed to pull', () => {
     expect(render({ pull: { ok: true, failed: 2, total: 7 } }))
       .to.contain('2 of 7 failed');

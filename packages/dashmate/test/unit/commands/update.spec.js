@@ -177,6 +177,28 @@ describe('Update command', () => {
       expect(stderr).to.contain('did not pass');
     });
 
+    // The renderer can only tell the truth about a failed attempt if the
+    // command actually tells it one happened, so the wiring is pinned here
+    // rather than left to the renderer's own tests.
+    it('should tell the guidance an obtain was attempted and failed', async () => {
+      const verdict = invalidVerdict();
+
+      // An unresolved certificate always exits non-zero, so the rejection is
+      // the command working; the guidance it printed first is what is checked.
+      await expect(runUpdate({
+        checkGatewayCertificate: () => verdict,
+        gatewayCertificateTask: () => async (ctx) => {
+          ctx.certificate = verdict;
+          ctx.certificateObtainError = new Error('lego exited 1');
+
+          throw new CertificateUnresolvedError(verdict);
+        },
+      })).to.be.rejected();
+
+      expect(stderr).to.contain('did not complete');
+      expect(stderr).to.not.contain('Nothing broke just now');
+    });
+
     // Individual images failing is not a rejection: updateNode resolves those
     // as error rows, and that has always exited 0.
     it('should not fail the command when individual pulls fail', async function it() {

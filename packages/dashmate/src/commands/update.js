@@ -100,9 +100,10 @@ export default class UpdateCommand extends ConfigBaseCommand {
 
     /**
      * @param {Object} verdict
+     * @param {boolean} [obtainAttemptFailed]
      * @return {Promise<void>}
      */
-    const reportUnresolved = async (verdict) => {
+    const reportUnresolved = async (verdict, obtainAttemptFailed = false) => {
       let isNodeRunning = false;
       try {
         isNodeRunning = await dockerCompose.isServiceRunning(config, 'gateway');
@@ -116,6 +117,7 @@ export default class UpdateCommand extends ConfigBaseCommand {
         verdict,
         isNodeRunning,
         pull: this.pullResult ?? null,
+        obtainAttemptFailed,
       }));
     };
 
@@ -295,7 +297,10 @@ export default class UpdateCommand extends ConfigBaseCommand {
     // Printed before either failure is raised, so an operator whose node has
     // both problems still gets the remediation for the one they can act on.
     if (unresolved) {
-      await reportUnresolved(unresolved.getVerdict());
+      await reportUnresolved(
+        unresolved.getVerdict(),
+        Boolean(context.certificateObtainError),
+      );
     }
 
     // A pull that fetched nothing is what this command exists to do, so it
