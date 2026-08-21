@@ -410,6 +410,47 @@ describe('ConfigFileJsonRepository', () => {
       expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.false();
     });
 
+    // Classifying from one read of the file and then migrating from another is
+    // a window: a restore, a rollback, or an older helper writing between the
+    // two substitutes a legacy config after it has been judged safe, and the
+    // destructive migrations then run with no lock held - which is the whole
+    // thing this mode exists to prevent, reached by a different route.
+    it('should judge and migrate the same bytes', async function it() {
+      const container = await createDIContainer();
+      container.resolve('homeDir').change(homeDir);
+
+      const current = JSON.parse(seedConfigFile());
+      current.configFormatVersion = '4.1.0';
+      const currentJson = JSON.stringify(current, undefined, 2);
+      const legacyJson = JSON.stringify(getConfigFileDataV0250(), undefined, 2);
+
+      fs.writeFileSync(configFilePath, currentJson, 'utf8');
+
+      // A pre-1.0 config is substituted the moment the file has been read once.
+      let configReads = 0;
+      const readFileSync = this.sinon.stub(fs, 'readFileSync');
+      readFileSync.callThrough();
+      readFileSync.withArgs(configFilePath).callsFake(() => {
+        configReads += 1;
+
+        return configReads === 1 ? currentJson : legacyJson;
+      });
+
+      const repository = new ConfigFileJsonRepository(
+        container.resolve('migrateConfigFile'),
+        homeDir,
+        createDefaults,
+        container.resolve('configFormatVersion'),
+      );
+
+      const { configFile } = repository.readAndMigrate({ readOnly: true });
+
+      // One read leaves no window to substitute anything into, so what was
+      // judged is what was migrated.
+      expect(configReads).to.equal(1);
+      expect(configFile.getConfig('base')).to.exist();
+    });
+
     // The two migrations that move and delete TLS material are the only reason
     // this mode ever refuses, so it has to refuse when one of them is in range.
     it('should still refuse when a migration in range touches the disk', async () => {

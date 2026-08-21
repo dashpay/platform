@@ -111,19 +111,40 @@ export default class ConfigFileJsonRepository {
    * @returns {ConfigFile}
    */
   read(options = {}) {
-    const { skipValidation = false } = options;
+    return this.#buildConfigFile(this.#readRawConfigFile(), options);
+  }
+
+  /**
+   * The bytes on disk, parsed, and nothing more.
+   *
+   * Separate from building a ConfigFile so a caller that has to decide
+   * something about the file before migrating it can decide and migrate from
+   * the same snapshot. Reading twice leaves a window in which the file can be
+   * replaced between the decision and the work it authorised.
+   *
+   * @returns {Object}
+   */
+  #readRawConfigFile() {
     if (!fs.existsSync(this.configFilePath)) {
       throw new ConfigFileNotFoundError(this.configFilePath);
     }
 
     const configFileJSON = fs.readFileSync(this.configFilePath, 'utf8');
 
-    let configFileData;
     try {
-      configFileData = JSON.parse(configFileJSON);
+      return JSON.parse(configFileJSON);
     } catch (e) {
       throw new InvalidConfigFileFormatError(this.configFilePath, e);
     }
+  }
+
+  /**
+   * @param {Object} configFileData - already read and parsed
+   * @param {Object} [options={}]
+   * @returns {ConfigFile}
+   */
+  #buildConfigFile(configFileData, options = {}) {
+    const { skipValidation = false } = options;
 
     const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
@@ -267,15 +288,25 @@ export default class ConfigFileJsonRepository {
     // operator an older dashmate wrote this" has to be true - a file that is
     // missing or damaged must report itself as missing or damaged, and one of
     // those errors is what first-run setup catches to create defaults.
-    if (options.readOnly === true && this.#hasFilesystemMigrationDue()) {
-      throw new ConfigFileMigrationRequiredError(this.configFilePath);
+    if (options.readOnly === true) {
+      // Read once. Deciding from one read and then migrating from another
+      // leaves a window in which the file can be swapped for a legacy one
+      // after it has been judged safe, and the destructive migrations would
+      // then run with no lock held.
+      const configFileData = this.#readRawConfigFile();
+
+      if (this.#hasFilesystemMigrationDue(configFileData.configFormatVersion)) {
+        throw new ConfigFileMigrationRequiredError(this.configFilePath);
+      }
+
+      return { configFile: this.#buildConfigFile(configFileData, options) };
     }
 
     // Decide whether a migration is due from the recorded version alone.
     // Migrations are not all pure - some move service files on disk and delete
     // the originals - so running them to find out would do that work outside
     // the lock, and again inside it.
-    if (options.readOnly === true || !this.#isMigrationDue()) {
+    if (!this.#isMigrationDue()) {
       return { configFile: this.read(options) };
     }
 
@@ -312,10 +343,15 @@ export default class ConfigFileJsonRepository {
    * dashmate wrote the file, so it answers false and leaves the file to report
    * its own problem.
    *
+   * @param {*} rawRecordedVersion - the version recorded in the snapshot being
+   *   judged, so the decision and the migration cannot disagree
    * @returns {boolean}
    */
-  #hasFilesystemMigrationDue() {
-    const recordedVersion = this.#recordedVersion();
+  #hasFilesystemMigrationDue(rawRecordedVersion) {
+    const recordedVersion = typeof rawRecordedVersion === 'string'
+      && semver.valid(rawRecordedVersion) !== null
+      ? rawRecordedVersion
+      : null;
 
     if (recordedVersion === null || typeof this.configFormatVersion !== 'string') {
       return false;
@@ -323,31 +359,6 @@ export default class ConfigFileJsonRepository {
 
     return FILESYSTEM_MUTATING_MIGRATIONS.some((version) => semver.gt(version, recordedVersion)
       && semver.lte(version, this.configFormatVersion));
-  }
-
-  /**
-   * The format version the file records, or null when it cannot be read.
-   *
-   * @returns {string|null}
-   */
-  #recordedVersion() {
-    let recordedVersion;
-
-    try {
-      recordedVersion = JSON.parse(
-        fs.readFileSync(this.configFilePath, 'utf8'),
-      ).configFormatVersion;
-    } catch {
-      // An unreadable or malformed file is read()'s to report, with the error
-      // that names the file and the reason.
-      return null;
-    }
-
-    if (typeof recordedVersion !== 'string' || semver.valid(recordedVersion) === null) {
-      return null;
-    }
-
-    return recordedVersion;
   }
 
   /**

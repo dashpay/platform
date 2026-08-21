@@ -38,10 +38,18 @@ describe('migrateConfigFileFactory', () => {
 
     expect(keys).to.have.length.greaterThan(50);
 
+    // Matched on the operation names rather than on `fs.`, so an aliased
+    // import, a local helper or bracket access cannot slip a filesystem write
+    // past the scan by not spelling the module out.
+    const mutatingCall = new RegExp(`\\b(?:${[
+      'appendFile', 'chmod', 'chown', 'copyFile', 'cp', 'link', 'mkdir', 'mkdtemp',
+      'rename', 'rm', 'rmdir', 'symlink', 'truncate', 'unlink', 'utimes', 'writeFile',
+    ].map((name) => `${name}(?:Sync)?`).join('|')})\\b`);
+
     const touchesFilesystem = keys.filter(({ index }, position) => {
       const end = position + 1 < keys.length ? keys[position + 1].index : source.length;
 
-      return /\bfs\.\w+/.test(source.slice(index, end));
+      return mutatingCall.test(source.slice(index, end));
     }).map(([, version]) => version);
 
     expect(touchesFilesystem.sort())
