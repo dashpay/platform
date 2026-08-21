@@ -303,13 +303,28 @@ describe('checkGatewayCertificateFactory', () => {
       expect(codes(verdict.reasons)).to.not.include(CERTIFICATE_REASONS.IP_MISMATCH);
     });
 
-    it('should fall back to the common name when the leaf carries no IP SAN', () => {
+    // Node's own tls.checkServerIdentity does not consult the common name for
+    // an IP identifier, and neither do browsers. A certificate that carries the
+    // address only in its subject is rejected by every client that matters, so
+    // passing it here would report no problem on a node nothing can connect to.
+    it('should block on a leaf that carries the address only in its common name', () => {
       const certificate = issueCertificate({ subject: { commonName: EXTERNAL_IP } });
 
       install(certificate.pem, certificate.keyPem);
 
       expect(codes(checkGatewayCertificate(config).reasons))
-        .to.not.include(CERTIFICATE_REASONS.IP_MISMATCH);
+        .to.include(CERTIFICATE_REASONS.IP_MISMATCH);
+    });
+
+    it('should say the address is missing from the SAN rather than wrong', () => {
+      const certificate = issueCertificate({ subject: { commonName: EXTERNAL_IP } });
+
+      install(certificate.pem, certificate.keyPem);
+
+      const [reason] = checkGatewayCertificate(config).reasons
+        .filter(({ code }) => code === CERTIFICATE_REASONS.IP_MISMATCH);
+
+      expect(reason.message).to.contain('subject alternative name');
     });
   });
 

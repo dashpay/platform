@@ -44,19 +44,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const EXPIRING_SOON_DAYS = 1;
 
 /**
- * @param {string} distinguishedName - as rendered by X509Certificate
- * @return {string|undefined}
- */
-function commonNameOf(distinguishedName) {
-  const line = (distinguishedName ?? '')
-    .split('\n')
-    .map((entry) => entry.trim())
-    .find((entry) => entry.startsWith('CN='));
-
-  return line?.slice('CN='.length);
-}
-
-/**
  * Which provider the issuer of an installed leaf points at.
  *
  * Only issuers dashmate can obtain from are recognised. An unrecognised issuer
@@ -295,17 +282,20 @@ export default function checkGatewayCertificateFactory(homeDir) {
     if (!externalIp) {
       skipped.push('IDENTITY');
     } else {
-      // Dashmate identifies a node by its address, and lego passes --disable-cn
-      // for an IP certificate, so the address is normally only in the SAN. The
-      // common name is the fallback for a certificate issued without one.
-      const namesExternalIp = installed.ipAddresses.length > 0
-        ? installed.ipAddresses.includes(externalIp)
-        : commonNameOf(leaf.subject) === externalIp;
+      // Only the subject alternative name counts. Node's own
+      // tls.checkServerIdentity does not consult the common name for an IP
+      // identifier and neither do browsers, so a certificate carrying the
+      // address only in its subject is one every client rejects - accepting it
+      // would pass a node that nothing can connect to.
+      if (!installed.ipAddresses.includes(externalIp)) {
+        const detail = installed.ipAddresses.length > 0
+          ? `it names ${installed.ipAddresses.join(', ')} instead`
+          : 'it carries no IP address at all';
 
-      if (!namesExternalIp) {
         reasons.push({
           code: CERTIFICATE_REASONS.IP_MISMATCH,
-          message: `The installed certificate does not name this node's address ${externalIp}`,
+          message: "The installed certificate does not carry this node's address"
+            + ` ${externalIp} in its subject alternative name - ${detail}`,
         });
       }
     }
