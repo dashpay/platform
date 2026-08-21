@@ -25,6 +25,7 @@ grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "a
 dash-async = { path = "../rs-dash-async" }
 dash-context-provider = { path = "../rs-context-provider", default-features = false }
 dash-platform-macros = { path = "../rs-dash-platform-macros" }
+dash-platform-queries = { path = "../dash-platform-queries" }
 platform-encryption = { path = "../rs-platform-encryption" }
 http = { version = "1.1" }
 ciborium = { version = "0.2.2" }
@@ -89,6 +90,7 @@ spv-client = [
 mocks = [
   "dep:serde",
   "dep:serde_json",
+  "dash-platform-queries/mocks",
   "rs-dapi-client/mocks",
   "rs-dapi-client/dump",
   "dpp/document-cbor-conversion",

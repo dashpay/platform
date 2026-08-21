@@ -12,11 +12,8 @@
 //! impl passes the verified entries through unchanged, mapping
 //! `AverageEntry` to `SplitAverageEntry`.
 
-use crate::platform::documents::average_proof_helpers::{
-    assert_select_is_avg, verify_average_query,
-};
-use crate::platform::documents::document_query::DocumentQuery;
-use crate::platform::Fetch;
+use crate::documents::average_proof_helpers::{assert_select_is_avg, verify_average_query};
+use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dash_context_provider::ContextProvider;
 use dpp::dashcore::Network;
@@ -56,9 +53,4 @@ impl FromProof<DocumentQuery> for DocumentSplitAverages {
         });
         Ok((split, mtd, proof))
     }
-}
-
-impl Fetch for DocumentSplitAverages {
-    type Query = super::document_query::DocumentQuery;
-    type Request = dapi_grpc::platform::v0::GetDocumentsRequest;
 }

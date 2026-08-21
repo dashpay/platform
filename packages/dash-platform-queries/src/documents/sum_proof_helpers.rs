@@ -1,25 +1,25 @@
-//! Shared AVG-proof dispatch used by [`DocumentAverage`] and
-//! [`DocumentSplitAverages`].
+//! Shared SUM-proof dispatch used by [`DocumentSum`] and
+//! [`DocumentSplitSums`].
 //!
 //! Mirror of [`super::count_proof_helpers::verify_count_query`] for
-//! the average surface. Both consumers reduce to "give me verified
-//! `Vec<AverageEntry>` for this `DocumentQuery`" —
-//! [`DocumentAverage`] sums into a single `(count, sum)` pair,
-//! [`DocumentSplitAverages`] passes the entries through.
+//! the sum surface. Both consumers reduce to "give me verified
+//! `Vec<SumEntry>` for this `DocumentQuery`" — [`DocumentSum`] sums
+//! the entries into a single `i64`, [`DocumentSplitSums`] passes
+//! them through.
 //!
 //! Routing is driven by drive's resolved [`DocumentSumMode`] (via
-//! [`detect_sum_mode_from_inputs`]) — same as the SUM helper.
-//! AVG and SUM share the same routing table because their grovedb
-//! primitives differ only in which element type is extracted
-//! (`KVCountSum` for AVG vs `KVSum` for SUM); the dispatch
-//! decisions are otherwise identical, which is why drive's
-//! `drive_dispatcher` translates `AverageMode` → `(CountMode,
-//! SumMode)` 1:1 before invoking the per-mode executor.
+//! [`detect_sum_mode_from_inputs`]) rather than ad-hoc clause-shape
+//! heuristics — same approach as count. Without that, `group_by =
+//! [in_field]` with a co-present range clause could be silently
+//! answered with an aggregate-shape proof while the server emitted
+//! a carrier-shape proof, producing verification failures (or worse,
+//! silently-accepted mismatches if the byte shapes happened to
+//! overlap).
 //!
-//! [`DocumentAverage`]: drive_proof_verifier::DocumentAverage
-//! [`DocumentSplitAverages`]: drive_proof_verifier::DocumentSplitAverages
+//! [`DocumentSum`]: drive_proof_verifier::DocumentSum
+//! [`DocumentSplitSums`]: drive_proof_verifier::DocumentSplitSums
 
-use crate::platform::documents::document_query::DocumentQuery;
+use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dash_context_provider::ContextProvider;
@@ -35,29 +35,24 @@ use drive::query::drive_document_sum_query::mode_detection::detect_sum_mode_from
 use drive::query::drive_document_sum_query::{DocumentSumMode, DriveDocumentSumQuery, SumMode};
 use drive::query::{SelectFunction, WhereOperator};
 use drive_proof_verifier::{
-    verify_aggregate_count_and_sum_proof, verify_carrier_aggregate_count_and_sum_proof,
-    verify_distinct_count_and_sum_proof, verify_point_lookup_count_and_sum_proof,
-    verify_primary_key_count_sum_tree_proof, AverageEntry,
+    verify_aggregate_sum_proof, verify_carrier_aggregate_sum_proof, verify_distinct_sum_proof,
+    verify_point_lookup_sum_proof, verify_primary_key_sum_tree_proof, SumEntry,
 };
 
 /// Validate that the caller-built [`DocumentQuery`] targets the
-/// average surface. AVG always needs a non-empty `field` naming
-/// the integer property to average — `AVG()` with no field is a
-/// wire-shape error (the server-side `not_yet_implemented` gate
-/// rejects it too, so this is the SDK-side mirror).
-pub(super) fn assert_select_is_avg(
+/// sum surface. SUM always needs a non-empty `field` naming the
+/// integer property to aggregate.
+pub(super) fn assert_select_is_sum(
     request: &DocumentQuery,
 ) -> Result<(), drive_proof_verifier::Error> {
-    if request.select.function != SelectFunction::Avg || request.select.field.is_empty() {
+    if request.select.function != SelectFunction::Sum || request.select.field.is_empty() {
         return Err(drive_proof_verifier::Error::RequestError {
             error: format!(
-                "DocumentAverage / DocumentSplitAverages require \
-                 `SelectProjection::avg(\"<field>\")`; got {:?}. \
+                "DocumentSum / DocumentSplitSums require \
+                 `SelectProjection::sum(\"<field>\")`; got {:?}. \
                  The named field must match the doctype-level \
-                 `documentsSummable` (or `documentsAverageable`) \
-                 OR a `summable: \"<field>\"` index covering the \
-                 where-clause shape — averages reuse sum-tree \
-                 indexes, no separate `averageable` flag is needed.",
+                 `documentsSummable` OR a `summable: \"<field>\"` \
+                 index covering the where-clause shape.",
                 request.select
             ),
         });
@@ -65,12 +60,12 @@ pub(super) fn assert_select_is_avg(
     Ok(())
 }
 
-/// Verify an AVG-shape proof and return per-branch `AverageEntry`s.
+/// Verify a SUM-shape proof and return per-branch `SumEntry`s.
 ///
 /// Picks the verifier primitive by **drive's resolved
-/// [`DocumentSumMode`]** (AVG reuses SUM's resolved-mode space —
-/// see module docstring) rather than a clause-shape heuristic, so
-/// the SDK's routing matches the server's exactly.
+/// [`DocumentSumMode`]** rather than a clause-shape heuristic, so
+/// the SDK's routing matches the server's exactly. Mirrors count's
+/// [`super::count_proof_helpers::verify_count_query`] approach.
 ///
 /// **Routing**: build a [`SumMode`] from `(group_by,
 /// where_clauses)` matching the abci handler's `validate_and_route`
@@ -79,28 +74,26 @@ pub(super) fn assert_select_is_avg(
 /// by the resolved mode:
 ///
 /// - [`DocumentSumMode::PointLookupProof`] (no range, with or
-///   without `In`) → [`verify_point_lookup_count_and_sum_proof`].
-///   Special-case: doctype-level `documentsCountable +
-///   documentsSummable` + empty where →
-///   [`verify_primary_key_count_sum_tree_proof`].
+///   without `In`) → [`verify_point_lookup_sum_proof`].
+///   Special-case: doctype-level `documentsSummable` + empty where
+///   → [`verify_primary_key_sum_tree_proof`].
 /// - [`DocumentSumMode::RangeProof`] (range, no In, no distinct) →
-///   [`verify_aggregate_count_and_sum_proof`] → single empty-key
-///   entry.
+///   [`verify_aggregate_sum_proof`] → single empty-key entry.
 /// - [`DocumentSumMode::RangeDistinctProof`] (range + distinct walk
 ///   via `GroupByRange` / `GroupByCompound`) →
-///   [`verify_distinct_count_and_sum_proof`].
+///   [`verify_distinct_sum_proof`].
 /// - [`DocumentSumMode::RangeAggregateCarrierProof`] (`In + range +
 ///   group_by = [in_field]` on the prove path) →
-///   [`verify_carrier_aggregate_count_and_sum_proof`].
+///   [`verify_carrier_aggregate_sum_proof`].
 /// - `Total` / `PerInValue` / `RangeNoProof` are no-proof modes
 ///   that should be unreachable here (`prove = true`); reject as
 ///   `RequestError` if they bubble through.
-pub(super) fn verify_average_query(
+pub(super) fn verify_sum_query(
     request: DocumentQuery,
     response: GetDocumentsResponse,
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
-) -> Result<(Option<Vec<AverageEntry>>, ResponseMetadata, Proof), drive_proof_verifier::Error> {
+) -> Result<(Option<Vec<SumEntry>>, ResponseMetadata, Proof), drive_proof_verifier::Error> {
     let document_type = request
         .data_contract
         .document_type_for_name(&request.document_type_name)
@@ -119,31 +112,35 @@ pub(super) fn verify_average_query(
     let contract_id = request.data_contract.id().to_buffer();
     let sum_property = request.select.field.clone();
 
-    // Resolve the SQL-shape `SumMode` the request implies — AVG
-    // shares the routing table with SUM (see module docstring), so
-    // we use the same SumMode resolver. The shape is mechanically
-    // identical to `AverageMode` (Aggregate / GroupByIn /
-    // GroupByRange / GroupByCompound).
+    // Resolve the SQL-shape `SumMode` the request implies. Same
+    // decision tree as `validate_and_route` in the abci handler —
+    // single source of truth would be nicer but the SDK can't
+    // depend on rs-drive-abci.
     let sum_mode = resolve_sum_mode(&request.group_by, &request.where_clauses)?;
 
+    // Translate the SQL-shape mode + where-clause shape into the
+    // resolved `DocumentSumMode` the prover dispatched on. Driver-
+    // side detect_sum_mode_from_inputs is the single source of
+    // truth — the SDK calling it directly keeps the verifier in
+    // sync with whatever new prove-mode lands next.
     let resolved_mode =
         detect_sum_mode_from_inputs(&request.where_clauses, sum_mode, true, platform_version)
             .map_err(|e| drive_proof_verifier::Error::RequestError {
-                error: format!("avg-mode detection failed (via sum-mode router): {e}"),
+                error: format!("sum-mode detection failed: {e}"),
             })?;
 
-    // Empty-where AVG fast path: primary-key count-sum-bearing
-    // element direct read. Doctype must declare BOTH
-    // `documentsCountable` AND a matching `documentsSummable`.
+    // Empty-where SUM fast path: primary-key SumTree element direct
+    // read. Lives outside `detect_sum_mode`'s output because the
+    // contract-level `documents_summable` flag isn't part of mode
+    // detection; pre-empt before falling through to PointLookupProof.
     if matches!(resolved_mode, DocumentSumMode::PointLookupProof)
         && request.where_clauses.is_empty()
-        && document_type.documents_countable()
         && document_type
             .documents_summable()
             .map(|p| p == sum_property)
             .unwrap_or(false)
     {
-        let (count, sum) = verify_primary_key_count_sum_tree_proof(
+        let sum = verify_primary_key_sum_tree_proof(
             contract_id,
             &request.document_type_name,
             proof,
@@ -152,17 +149,17 @@ pub(super) fn verify_average_query(
             provider,
         )?;
         return Ok((
-            Some(single_empty_key_entry(count, sum)),
+            Some(single_empty_key_entry(sum)),
             mtd.clone(),
             proof.clone(),
         ));
     }
 
-    // Pick the index the prover would have picked. Range modes need
-    // an index that's BOTH `range_summable: true` AND
-    // `range_countable: true` (i.e. PCPS) — that's the surface a
-    // `rangeAverageable: true` index resolves to. Everything else
-    // uses a summable + countable terminator.
+    // Pick the index the prover would have picked. Range modes
+    // need a `range_summable: true` index; everything else uses
+    // the regular `summable: "<prop>"` resolver. Mismatch here
+    // would produce a path-query different from the prover's, so
+    // the index lookup matches drive's dispatch.
     let needs_range_index = matches!(
         resolved_mode,
         DocumentSumMode::RangeProof
@@ -175,13 +172,10 @@ pub(super) fn verify_average_query(
             &request.where_clauses,
             &sum_property,
         )
-        .filter(|idx| idx.range_countable)
         .ok_or_else(|| drive_proof_verifier::Error::RequestError {
-            error: "prove range AVG requires an index that declares BOTH `rangeCountable: \
-                    true` AND `rangeSummable: true` (a `rangeAverageable: true` \
-                    index is the shorthand) whose last property matches the range \
-                    field and whose summable property matches the request's \
-                    select `field`"
+            error: "prove range SUM requires a `rangeSummable: true` index whose last \
+                    property matches the range field and whose summable property \
+                    matches the request's select `field`"
                 .to_string(),
         })?
     } else {
@@ -190,12 +184,11 @@ pub(super) fn verify_average_query(
             &request.where_clauses,
             &sum_property,
         )
-        .filter(|idx| idx.countable.is_countable())
         .ok_or_else(|| drive_proof_verifier::Error::RequestError {
-            error: "prove AVG requires an index that declares BOTH `summable: \
-                    \"<prop>\"` AND a countable terminator (`countable: \
-                    \"countable\"` or `\"countableAllowingOffset\"`) whose properties \
-                    exactly match the where clause fields"
+            error: "prove SUM requires a `summable: \"<prop>\"` index whose properties \
+                    exactly match the where clause fields and whose summed property \
+                    matches the request's select `field`, or `documentsSummable: \
+                    \"<prop>\"` on the document type for unfiltered total sums"
                 .to_string(),
         })?
     };
@@ -210,37 +203,44 @@ pub(super) fn verify_average_query(
 
     match resolved_mode {
         DocumentSumMode::PointLookupProof => {
-            let entries = verify_point_lookup_count_and_sum_proof(
-                &sum_query,
-                proof,
-                mtd,
-                platform_version,
-                provider,
-            )?;
+            let entries =
+                verify_point_lookup_sum_proof(&sum_query, proof, mtd, platform_version, provider)?;
             Ok((Some(entries), mtd.clone(), proof.clone()))
         }
         DocumentSumMode::RangeProof => {
-            let (count, sum) = verify_aggregate_count_and_sum_proof(
-                &sum_query,
-                proof,
-                mtd,
-                platform_version,
-                provider,
-            )?;
+            let sum =
+                verify_aggregate_sum_proof(&sum_query, proof, mtd, platform_version, provider)?;
             Ok((
-                Some(single_empty_key_entry(count, sum)),
+                Some(single_empty_key_entry(sum)),
                 mtd.clone(),
                 proof.clone(),
             ))
         }
         DocumentSumMode::RangeDistinctProof => {
+            // Limit handling on the prove path:
+            // - Fallback uses [`drive::config::DEFAULT_QUERY_LIMIT`]
+            //   (compile-time constant), matching the server's
+            //   `DocumentSumMode::RangeDistinctProof` arm in
+            //   `drive_document_sum_query/drive_dispatcher.rs`.
+            //   Both sides MUST anchor to the same compile-time
+            //   value — operator-tunable
+            //   `drive_config.default_query_limit` is intentionally
+            //   NOT used here so a tuned operator default can't
+            //   byte-differ the reconstructed `SizedQuery::limit`
+            //   from the prover's.
+            // - Raw caller limit propagates unchanged on the prove
+            //   path — the server rejects over-max
+            //   (`max_query_limit`) requests with a typed
+            //   `InvalidLimit` error before producing proof bytes,
+            //   so the SDK never sees a clamped value to
+            //   un-clamp.
             let limit_u16 = if request.limit == 0 {
                 drive::config::DEFAULT_QUERY_LIMIT
             } else {
                 u16::try_from(request.limit).map_err(|_| {
                     drive_proof_verifier::Error::RequestError {
                         error: format!(
-                            "limit {} exceeds u16::MAX for distinct AVG proof",
+                            "limit {} exceeds u16::MAX for distinct SUM proof",
                             request.limit
                         ),
                     }
@@ -251,7 +251,7 @@ pub(super) fn verify_average_query(
                 .first()
                 .map(|c| c.ascending)
                 .unwrap_or(true);
-            let entries = verify_distinct_count_and_sum_proof(
+            let entries = verify_distinct_sum_proof(
                 &sum_query,
                 proof,
                 mtd,
@@ -269,7 +269,7 @@ pub(super) fn verify_average_query(
                 Some(u16::try_from(request.limit).map_err(|_| {
                     drive_proof_verifier::Error::RequestError {
                         error: format!(
-                            "limit {} exceeds u16::MAX for carrier-aggregate AVG proof",
+                            "limit {} exceeds u16::MAX for carrier-aggregate SUM proof",
                             request.limit
                         ),
                     }
@@ -280,7 +280,7 @@ pub(super) fn verify_average_query(
                 .first()
                 .map(|c| c.ascending)
                 .unwrap_or(true);
-            let entries = verify_carrier_aggregate_count_and_sum_proof(
+            let entries = verify_carrier_aggregate_sum_proof(
                 &sum_query,
                 proof,
                 mtd,
@@ -291,11 +291,16 @@ pub(super) fn verify_average_query(
             )?;
             Ok((Some(entries), mtd.clone(), proof.clone()))
         }
+        // `Total` / `PerInValue` / `RangeNoProof` are no-proof modes
+        // that detect_sum_mode_from_inputs returns only for
+        // `prove = false`. We pass `prove = true`, so reaching here
+        // would indicate a drive routing-table bug rather than a
+        // user error — surface it clearly.
         DocumentSumMode::Total | DocumentSumMode::PerInValue | DocumentSumMode::RangeNoProof => {
             Err(drive_proof_verifier::Error::RequestError {
                 error: format!(
                 "internal: detect_sum_mode_from_inputs returned no-proof mode {resolved_mode:?} \
-                 for prove=true (AVG path) — the routing table is internally inconsistent. \
+                 for prove=true — the routing table is internally inconsistent. \
                  Please report this as a drive bug."
             ),
             })
@@ -304,11 +309,11 @@ pub(super) fn verify_average_query(
 }
 
 /// Build the SQL-shape [`SumMode`] from `(group_by, where_clauses)`.
-/// Identical resolver to [`super::sum_proof_helpers::resolve_sum_mode`]
-/// — AVG and SUM share the same SQL surface (their `AverageMode` /
-/// `SumMode` enums have the same shape and the same routing
-/// decisions). Duplicated here to keep the SDK helper self-contained
-/// (so users can disable the sum surface without breaking AVG).
+/// Mirrors [`super::count_proof_helpers::resolve_count_mode`] —
+/// same SQL surface, same routing decision shape (`SumMode` is
+/// structurally identical to `CountMode`). Keeping the two
+/// resolvers in lock-step means a future SQL extension only has
+/// to land once in count + once in sum.
 fn resolve_sum_mode(
     group_by: &[String],
     where_clauses: &[drive::query::WhereClause],
@@ -360,15 +365,13 @@ fn resolve_sum_mode(
     }
 }
 
-/// Wrap a single `(count, sum)` from a per-key-less aggregate
-/// primitive (primary-key fast path / PCPS aggregate range) as a
-/// one-element `Vec<AverageEntry>` so call sites see a uniform
-/// shape across aggregate and carrier variants.
-fn single_empty_key_entry(count: u64, sum: i64) -> Vec<AverageEntry> {
-    vec![AverageEntry {
+/// Wrap a single `i64` from an aggregate primitive (range-aggregate
+/// or primary-key direct read) as a one-element `Vec<SumEntry>` so
+/// call sites see a uniform shape.
+fn single_empty_key_entry(sum: i64) -> Vec<SumEntry> {
+    vec![SumEntry {
         in_key: None,
         key: Vec::new(),
-        count: Some(count),
         sum: Some(sum),
     }]
 }
