@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import tls from 'node:tls';
 import { Listr } from 'listr2';
@@ -177,49 +178,65 @@ describe('collectSamplesTaskFactory', () => {
   // certificate problem names the file it could not read - an absolute path
   // under the operator's home directory. Every neighbouring certificate branch
   // masks the username before storing; this one has to as well.
-  it('should not put the operator\'s username in a shared archive', async function it() {
-    const leakyPath = `/Users/${process.env.USER}/.dashmate/base/platform/gateway/ssl/bundle.crt`;
+  // Read from the operating system rather than the environment, because the
+  // point of the test is that masking still happens when the environment does
+  // not say who is running.
+  const operator = os.userInfo().username;
 
-    const task = collectSamplesTaskFactory(
-      dockerCompose,
-      this.sinon.stub().returns(rpcClient),
-      this.sinon.stub().resolves('127.0.0.1'),
-      this.sinon.stub().returns({ request: this.sinon.stub().resolves({}) }),
-      this.sinon.stub().resolves([]),
-      this.sinon.stub().resolves({}),
-      homeDir,
-      validateZeroSslCertificateFactory(homeDir, getCertificate),
-      this.sinon.stub().resolves({}),
-      () => ({
-        status: 'INVALID',
-        reasons: [{
-          code: 'BUNDLE_MISSING',
-          message: `dashmate could not find the certificate bundle at ${leakyPath}`,
-        }],
-        warnings: [],
-        skipped: [],
-        provider: 'zerossl',
-        installed: null,
-        expiresInDays: null,
-      }),
-    );
+  [
+    ['with USER set', operator],
+    ['with USER unset', undefined],
+  ].forEach(([name, userValue]) => {
+    it(`should not put the operator's username in a shared archive, ${name}`, async function it() {
+      if (userValue === undefined) {
+        delete process.env.USER;
+      } else {
+        process.env.USER = userValue;
+      }
 
-    getCertificate.resolves(new Certificate({
-      id: 'certificate-id',
-      common_name: EXTERNAL_IP,
-      status: 'issued',
-      created: toZeroSslDate(daysFromNow(-1)),
-      expires: toZeroSslDate(daysFromNow(89)),
-    }));
+      const leakyPath = `/Users/${operator}/.dashmate/base/platform/gateway/ssl/bundle.crt`;
 
-    await new Listr([{ task: () => task(config) }], { renderer: 'silent' }).run({ samples });
+      const task = collectSamplesTaskFactory(
+        dockerCompose,
+        this.sinon.stub().returns(rpcClient),
+        this.sinon.stub().resolves('127.0.0.1'),
+        this.sinon.stub().returns({ request: this.sinon.stub().resolves({}) }),
+        this.sinon.stub().resolves([]),
+        this.sinon.stub().resolves({}),
+        homeDir,
+        validateZeroSslCertificateFactory(homeDir, getCertificate),
+        this.sinon.stub().resolves({}),
+        () => ({
+          status: 'INVALID',
+          reasons: [{
+            code: 'BUNDLE_MISSING',
+            message: `dashmate could not find the certificate bundle at ${leakyPath}`,
+          }],
+          warnings: [],
+          skipped: [],
+          provider: 'zerossl',
+          installed: null,
+          expiresInDays: null,
+        }),
+      );
 
-    const serialised = JSON.stringify(samples.getServiceInfo('gateway', 'installedCertificate'));
+      getCertificate.resolves(new Certificate({
+        id: 'certificate-id',
+        common_name: EXTERNAL_IP,
+        status: 'issued',
+        created: toZeroSslDate(daysFromNow(-1)),
+        expires: toZeroSslDate(daysFromNow(89)),
+      }));
 
-    // The path is still there - it is what makes the problem actionable - but
-    // the name in it is not.
-    expect(serialised).to.contain('bundle.crt');
-    expect(serialised).to.not.contain(process.env.USER);
+      await new Listr([{ task: () => task(config) }], { renderer: 'silent' }).run({ samples });
+
+      const serialised = JSON.stringify(samples.getServiceInfo('gateway', 'installedCertificate'));
+
+      // The path is still there - it is what makes the problem actionable - but
+      // the name in it is not.
+      expect(serialised).to.contain('bundle.crt');
+      expect(serialised).to.not.contain(operator);
+    });
   });
 
   it('should collect the certificate the gateway actually serves', async () => {

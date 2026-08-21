@@ -349,11 +349,20 @@ describe('Update command', () => {
   describe('scope', () => {
     ['local', 'devnet'].forEach((network) => {
       it(`should not check the certificate on ${network}`, async function it() {
-        const gatewayCertificateTask = this.sinon.stub().returns(async () => {});
+        const innerTask = this.sinon.stub().resolves();
+        const checkGatewayCertificate = this.sinon.stub().returns(passingVerdict());
         config.set('network', network);
 
-        await runUpdate({ gatewayCertificateTask });
+        await runUpdate({
+          checkGatewayCertificate,
+          gatewayCertificateTask: () => innerTask,
+        });
 
+        // Nothing about the certificate is looked at, and the images are still
+        // pulled - which is the whole of the rule for a network whose
+        // certificate is self-signed by design.
+        expect(innerTask).to.not.have.been.called();
+        expect(checkGatewayCertificate).to.not.have.been.called();
         expect(mockDocker.pull).to.have.been.calledOnce();
       });
     });

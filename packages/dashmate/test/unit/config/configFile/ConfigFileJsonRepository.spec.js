@@ -337,6 +337,42 @@ describe('ConfigFileJsonRepository', () => {
       });
     });
 
+    // Falling through to read() on an undetermined version is only safe because
+    // the version comparison inside the migration chain rejects a version it
+    // cannot parse before any migration body runs. Proven against the shipped
+    // migrations rather than argued, because one of those bodies deletes a
+    // directory of TLS material.
+    [
+      ['no recorded version', ({ configFormatVersion, ...rest }) => rest],
+      ['an unparseable recorded version', (data) => ({ ...data, configFormatVersion: 'bad' })],
+    ].forEach(([name, damage]) => {
+      it(`should run no migration for a read-only caller given ${name}`, async () => {
+        const container = await createDIContainer();
+        container.resolve('homeDir').change(homeDir);
+
+        const legacy = damage(getConfigFileDataV0250());
+        const [legacyName] = Object.keys(legacy.configs);
+        fs.writeFileSync(configFilePath, JSON.stringify(legacy, undefined, 2), 'utf8');
+
+        const legacySslDir = homeDir.joinPath('ssl', legacyName);
+        fs.mkdirSync(legacySslDir, { recursive: true });
+        fs.writeFileSync(path.join(legacySslDir, 'bundle.crt'), 'certificate', 'utf8');
+
+        const repository = new ConfigFileJsonRepository(
+          container.resolve('migrateConfigFile'),
+          homeDir,
+          createDefaults,
+          container.resolve('configFormatVersion'),
+        );
+
+        expect(() => repository.readAndMigrate({ readOnly: true })).to.throw();
+
+        expect(fs.existsSync(path.join(legacySslDir, 'bundle.crt'))).to.be.true();
+        expect(fs.existsSync(homeDir.joinPath('ssl'))).to.be.true();
+        expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.false();
+      });
+    });
+
     // The common case, and the one that has to stay fast: nothing to migrate,
     // so nothing to refuse and no lock to take.
     it('should read without locking for a caller that changes nothing', () => {

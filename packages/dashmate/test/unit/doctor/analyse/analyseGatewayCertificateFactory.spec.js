@@ -216,6 +216,23 @@ describe('analyseGatewayCertificateFactory', () => {
       expect(problem.getSolution()).to.contain('did not pass');
     });
 
+    // `dashmate ssl obtain` signals the gateway itself once it has the files,
+    // so telling the operator to restart afterwards buys an outage and nothing
+    // else. Restart guidance belongs on the paths where nothing else reloads.
+    it('should not ask for a restart after a command that reloads by itself', () => {
+      const problems = analyseInstalled({
+        status: 'INVALID',
+        reasons: [{ code: 'EXPIRED', message: 'expired' }],
+        warnings: [{ code: 'EXPIRING_SOON', message: 'expires tomorrow' }],
+      });
+
+      expect(problems).to.have.lengthOf(2);
+      problems.forEach((problem) => {
+        expect(problem.getSolution()).to.contain('dashmate ssl obtain');
+        expect(problem.getSolution()).to.not.match(/dashmate restart/);
+      });
+    });
+
     it('should say that updates still deliver images', () => {
       const [problem] = analyseInstalled({
         status: 'INVALID',

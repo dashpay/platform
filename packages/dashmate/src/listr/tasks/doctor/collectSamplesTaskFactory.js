@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import { Listr } from 'listr2';
 import path from 'path';
 import process from 'process';
@@ -42,6 +43,65 @@ async function fetchTextOrError(url) {
  * @param {checkGatewayCertificate} checkGatewayCertificate
  * @return {collectSamplesTask}
  */
+/**
+ * Mask the name of whoever is running dashmate out of collected data.
+ *
+ * A report is the artefact an operator hands to whoever is helping them, and
+ * the paths in it are absolute, so they carry a home directory. The paths stay
+ * - they are what makes a problem actionable - and the name in them does not.
+ *
+ * The name is read from the operating system rather than the environment.
+ * Doctor runs unattended often enough - from cron, from a service manager -
+ * that USER cannot be relied on, and replacing an undefined needle silently
+ * masks nothing at all. When no name can be determined there is nothing to
+ * mask and the data is left alone rather than having "undefined" replaced in
+ * it.
+ *
+ * @return {string|null}
+ */
+function getOperatorName() {
+  try {
+    const { username } = os.userInfo();
+
+    if (username) {
+      return username;
+    }
+  } catch {
+    // A process running under a uid with no passwd entry has no name to read.
+  }
+
+  return process.env.USER || process.env.USERNAME || null;
+}
+
+/**
+ * @param {Object} data - mutated in place
+ */
+function obfuscateOperatorName(data) {
+  const username = getOperatorName();
+
+  if (!username) {
+    return;
+  }
+
+  obfuscateObjectRecursive(data, (_field, value) => (typeof value === 'string'
+    ? value.replaceAll(username, hideString(username))
+    : value));
+}
+
+/**
+ * @param {string|undefined} text
+ * @return {string|undefined}
+ */
+function hideOperatorNameIn(text) {
+  const username = getOperatorName();
+
+  if (!username || typeof text !== 'string') {
+    return text;
+  }
+
+  return text.replaceAll(username, hideString(username));
+}
+
 export default function collectSamplesTaskFactory(
   dockerCompose,
   createRpcClient,
@@ -114,10 +174,7 @@ export default function collectSamplesTaskFactory(
                         Certificate.EXPIRATION_LIMIT_DAYS,
                       );
 
-                      obfuscateObjectRecursive(data, (_field, value) => (typeof value === 'string' ? value.replaceAll(
-                        process.env.USER,
-                        hideString(process.env.USER),
-                      ) : value));
+                      obfuscateOperatorName(data);
 
                       ctx.samples.setServiceInfo('gateway', 'ssl', {
                         error,
@@ -135,10 +192,7 @@ export default function collectSamplesTaskFactory(
                         LegoCertificate.EXPIRATION_LIMIT_DAYS,
                       );
 
-                      obfuscateObjectRecursive(data, (_field, value) => (typeof value === 'string' ? value.replaceAll(
-                        process.env.USER,
-                        hideString(process.env.USER),
-                      ) : value));
+                      obfuscateOperatorName(data);
 
                       ctx.samples.setServiceInfo('gateway', 'ssl', {
                         error,
@@ -164,10 +218,7 @@ export default function collectSamplesTaskFactory(
                         privateFilePath,
                       };
 
-                      obfuscateObjectRecursive(data, (_field, value) => (typeof value === 'string' ? value.replaceAll(
-                        process.env.USER,
-                        hideString(process.env.USER),
-                      ) : value));
+                      obfuscateOperatorName(data);
 
                       if (!fs.existsSync(chainFilePath) || !fs.existsSync(privateFilePath)) {
                         ctx.samples.setServiceInfo('gateway', 'ssl', {
@@ -223,9 +274,7 @@ export default function collectSamplesTaskFactory(
                   // hands to whoever is helping them, so the path stays - it is
                   // what makes the problem actionable - and the name in it does
                   // not.
-                  obfuscateObjectRecursive(installed, (_field, value) => (typeof value === 'string'
-                    ? value.replaceAll(process.env.USER, hideString(process.env.USER))
-                    : value));
+                  obfuscateOperatorName(installed);
 
                   ctx.samples.setServiceInfo('gateway', 'installedCertificate', installed);
                 },
@@ -461,28 +510,15 @@ export default function collectSamplesTaskFactory(
 
                 if (logs?.out) {
                   // Hide username & external ip from logs
-                  logs.out = logs.out.replaceAll(
-                    process.env.USER,
-                    hideString(process.env.USER),
-                  );
+                  logs.out = hideOperatorNameIn(logs.out);
                 }
 
                 if (logs?.err) {
-                  logs.err = logs.err.replaceAll(
-                    process.env.USER,
-                    hideString(process.env.USER),
-                  );
+                  logs.err = hideOperatorNameIn(logs.err);
                 }
 
                 // Hide username & external ip from inspect
-                obfuscateObjectRecursive(inspect, (_field, value) => (
-                  typeof value === 'string'
-                    ? value.replaceAll(
-                      process.env.USER,
-                      hideString(process.env.USER),
-                    )
-                    : value
-                ));
+                obfuscateOperatorName(inspect);
 
                 ctx.samples.setServiceInfo(service.name, 'stdOut', logs?.out);
                 ctx.samples.setServiceInfo(service.name, 'stdErr', logs?.err);

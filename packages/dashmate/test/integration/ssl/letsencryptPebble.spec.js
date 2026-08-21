@@ -440,6 +440,15 @@ describe('Let\'s Encrypt certificate against a local ACME server', function main
     let contactless;
     let withContact;
 
+    // The renewal below refuses to run unless the provider says letsencrypt, so
+    // a test that leaves it changed - including one that fails part way through
+    // - would take the renewal down with it and hide which of the two broke.
+    afterEach(() => {
+      if (contactless) {
+        contactless.set('platform.gateway.ssl.provider', 'letsencrypt');
+      }
+    });
+
     before(async () => {
       const obtainLetsEncryptCertificateTask = container.resolve('obtainLetsEncryptCertificateTask');
 
@@ -528,8 +537,6 @@ describe('Let\'s Encrypt certificate against a local ACME server', function main
 
       expect(verdict.status).to.equal('INVALID');
       expect(verdict.reasons.map(({ code }) => code)).to.deep.equal(['SWITCH_INCOMPLETE']);
-
-      contactless.set('platform.gateway.ssl.provider', 'letsencrypt');
     });
 
     // Renewal is where a missing account would surface, and it runs unattended

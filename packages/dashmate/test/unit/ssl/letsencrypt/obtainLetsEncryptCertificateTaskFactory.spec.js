@@ -483,6 +483,24 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
       expect(enquirer.options[1].message).to.contain('[attempt 3 of 3]');
     });
 
+    // lego fails for reasons that have nothing to do with the firewall - a rate
+    // limit, an account problem, a bad directory - and naming port 80 as the
+    // cause of all of them sends an operator to check something that is fine.
+    // Its own output says what happened; the prompt should not overrule it.
+    it('should not blame port 80 for every failure', async function it() {
+      const docker = getFailingDockerMock(this.sinon);
+      const enquirer = getEnquirerMock(this.sinon, false);
+
+      const tasks = inject(buildFailingTask(this.sinon, docker)(config), enquirer);
+
+      await expect(tasks.run({ force: true, interactive: true })).to.be.rejected();
+
+      const { header } = enquirer.options[0];
+
+      expect(header).to.contain('Timeout during connect');
+      expect(header).to.not.match(/could not reach [0-9.]+ on port 80/i);
+    });
+
     it('should stop as soon as the operator declines', async function it() {
       const docker = getFailingDockerMock(this.sinon);
       const enquirer = getEnquirerMock(this.sinon, false);

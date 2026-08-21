@@ -338,12 +338,14 @@ export default function obtainLetsEncryptCertificateTaskFactory(
               // per hour this node shares with its own automatic renewal.
               const retry = canRetry && await promptOrThrow(task, {
                 type: 'toggle',
-                header: `  Let's Encrypt could not reach ${ctx.externalIp} on port 80:
+                header: `  Let's Encrypt did not issue a certificate for ${ctx.externalIp}:
 
   ${e.message}
 
-  Retrying without changing anything will fail again. Fix the port first, then
-  answer Yes - or answer No and try again once port 80 is open.`,
+  Whatever the output above says is the reason - most often inbound port 80,
+  but a rate limit or an account problem looks different and is not fixed by
+  opening a firewall. Retrying without changing anything will fail the same
+  way, so read it first, then answer Yes once something has changed.`,
                 message: `Try again? [attempt ${attempt + 1} of ${MAX_OBTAIN_ATTEMPTS}]`,
                 enabled: 'Yes',
                 disabled: 'No',

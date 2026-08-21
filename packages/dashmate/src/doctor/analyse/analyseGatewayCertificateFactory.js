@@ -58,9 +58,8 @@ export default function analyseGatewayCertificateFactory() {
           message,
           chalk`${UPDATE_CONSEQUENCE}
 
-Obtain a new certificate:
-{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt}
-${restartHint(cfg)}`,
+Obtain a new certificate - it signals the gateway itself, so no restart is needed:
+{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt}`,
           SEVERITY.HIGH,
         ));
       });
@@ -69,8 +68,7 @@ ${restartHint(cfg)}`,
         problems.push(new Problem(
           message,
           chalk`Nothing is broken yet. If it needs attention, obtain a new certificate:
-{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt}
-${restartHint(cfg)}`,
+{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt}`,
           SEVERITY.LOW,
         ));
       });

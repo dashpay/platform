@@ -182,6 +182,11 @@ describe('SSL obtain command', () => {
   });
 
   it('should offer to prompt an operator at a terminal', async function it() {
+    // Built before the streams are touched, so nothing can throw between the
+    // change and the restore that undoes it.
+    const dependencies = obtainDependencies(this.sinon);
+    const context = captureContext(this.sinon, dependencies);
+
     // A stream that is not a terminal has no isTTY property at all - not a
     // false one - so it is assigned rather than stubbed.
     const restore = { stdin: process.stdin.isTTY, stdout: process.stdout.isTTY, ci: process.env.CI };
@@ -198,9 +203,6 @@ describe('SSL obtain command', () => {
         process.env.CI = restore.ci;
       }
     };
-
-    const dependencies = obtainDependencies(this.sinon);
-    const context = captureContext(this.sinon, dependencies);
 
     try {
       await runObtain(dependencies);
