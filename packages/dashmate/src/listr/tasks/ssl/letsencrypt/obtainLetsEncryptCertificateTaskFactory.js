@@ -320,7 +320,6 @@ export default function obtainLetsEncryptCertificateTaskFactory(
 
           for (let attempt = 1; attempt <= MAX_OBTAIN_ATTEMPTS; attempt += 1) {
             try {
-              // eslint-disable-next-line no-await-in-loop
               await runLego();
 
               break;
@@ -337,7 +336,6 @@ export default function obtainLetsEncryptCertificateTaskFactory(
               // operator has not left the terminal to change a firewall rule,
               // and each attempt spends one of the five failed authorizations
               // per hour this node shares with its own automatic renewal.
-              // eslint-disable-next-line no-await-in-loop
               const retry = canRetry && await promptOrThrow(task, {
                 type: 'toggle',
                 header: `  Let's Encrypt could not reach ${ctx.externalIp} on port 80:

@@ -406,13 +406,11 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
   describe('port 80 retry loop', () => {
     let homeDir;
     let config;
-    let legoDir;
 
     beforeEach(() => {
       homeDir = HomeDir.createTemp();
       config = getBaseConfigFactory(homeDir)();
       config.set('externalIp', '1.2.3.4');
-      legoDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'lego');
     });
 
     afterEach(() => homeDir.remove());
