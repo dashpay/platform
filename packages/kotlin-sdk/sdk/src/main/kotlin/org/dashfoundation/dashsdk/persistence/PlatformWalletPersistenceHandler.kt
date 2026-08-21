@@ -1075,7 +1075,7 @@ class PlatformWalletPersistenceHandler(
         isConfirmed: Boolean,
         isInstantLocked: Boolean,
         isLocked: Boolean,
-    ) {
+    ): Boolean {
         val outpoint = makeOutpoint(txid, vout)
         val parentTx = db.transactionDao().getByTxid(txid)
         // A globally-swept parent is a transaction Rust has already
@@ -1099,7 +1099,7 @@ class PlatformWalletPersistenceHandler(
         // defensive here is correct: there is no record in flight to
         // attribute a resurrected output to. See
         // TransactionEntity.isGloballySwept.
-        if (parentTx?.isGloballySwept == true) return
+        if (parentTx?.isGloballySwept == true) return false
         // Ensure a parent transaction row exists (stub if missing, so
         // the TXO FK holds; the real tx upsert overwrites it later).
         if (parentTx == null) {
@@ -1209,6 +1209,7 @@ class PlatformWalletPersistenceHandler(
             }
             for (p in pending) db.documentDao().deletePendingInput(p)
         }
+        return true
     }
 
     /**
@@ -1222,15 +1223,26 @@ class PlatformWalletPersistenceHandler(
         val engineUtxos: Int,
         val inserted: Int,
         val insertedDuffs: Long,
-        val netAmountRepairs: Int,
+        /** Healed TXOs whose pre-existing record's netAmount MAY be short by
+         *  the healed amount. LOG-ONLY: the record can already carry the
+         *  corrected net (a corrective callback racing this sweep), and
+         *  blind addition double-credits. The event pipeline owns net
+         *  correctness. */
+        val netAmountSuspects: Int,
         val skippedImmature: Int,
         val skippedNoAddress: Int,
         val accountErrors: Int,
-        /** Store rows marked unspent whose outpoint the engine knows was
-         *  spent — the lost-spend-update class (dashpay/platform#4425);
-         *  flipped to spent in place. */
-        val flippedSpent: Int = 0,
-        val flippedSpentDuffs: Long = 0,
+        /** Store rows marked unspent whose outpoint the engine records as
+         *  spent — the lost-spend-update class (dashpay/platform#4425).
+         *  LOG-ONLY: the engine's spent set includes mempool spends with no
+         *  context, so flipping would persist an unconfirmed spend as
+         *  settled. */
+        val wouldFlipSpent: Int = 0,
+        val wouldFlipSpentDuffs: Long = 0,
+        /** Engine UTXOs whose insert the shared discipline refused (their
+         *  parent transaction is globally swept) — excluded from
+         *  [inserted], never netAmount-affecting. */
+        val skippedSwept: Int = 0,
         /** Store rows marked unspent that the engine has in NEITHER
          *  inventory — swept/abandoned residue (pre-rust-dashcore#971
          *  stores). LOG-ONLY: counted and named in the log, never removed
@@ -1299,11 +1311,12 @@ class PlatformWalletPersistenceHandler(
         val accountErrors = root["errors"]?.jsonArray?.size ?: 0
         var inserted = 0
         var insertedDuffs = 0L
-        var netAmountRepairs = 0
+        var netAmountSuspects = 0
         var skippedImmature = 0
         var skippedNoAddress = 0
-        var flippedSpent = 0
-        var flippedSpentDuffs = 0L
+        var wouldFlipSpent = 0
+        var wouldFlipSpentDuffs = 0L
+        var skippedSwept = 0
         var wouldRemove = 0
         var wouldRemoveDuffs = 0L
         var skippedForeign = 0
@@ -1351,9 +1364,7 @@ class PlatformWalletPersistenceHandler(
                     val scriptPubKey =
                         row["scriptHex"]?.jsonPrimitive?.content.orEmpty().hexToByteArray()
                     val isLocked = row["isLocked"]?.jsonPrimitive?.boolean ?: false
-                    // netAmount repair decision BEFORE the insert stubs a row.
-                    val priorTx = database.transactionDao().getByTxid(txid)
-                    upsertUtxoRow(
+                    val wrote = upsertUtxoRow(
                         database, walletId, txid, vout, amount, address, scriptPubKey,
                         height,
                         isCoinbase = false,
@@ -1361,12 +1372,31 @@ class PlatformWalletPersistenceHandler(
                         isInstantLocked = false,
                         isLocked = isLocked,
                     )
+                    if (!wrote) {
+                        // The shared insert discipline refused (globally-swept
+                        // parent). Counting it as healed — or repairing a
+                        // netAmount for it — would falsify the report.
+                        skippedSwept++
+                        continue
+                    }
                     inserted++
                     insertedDuffs += amount
+                    // netAmount is NOT mutated here. The record's net may
+                    // already be correct (a corrective record callback can
+                    // land while its TXO delivery races this sweep), and
+                    // adding the healed amount to an already-corrected net
+                    // double-credits. The event pipeline owns net
+                    // correctness; this pass only reports the suspicion.
+                    val priorTx = database.transactionDao().getByTxid(txid)
                     if (priorTx != null && priorTx.transactionData.isNotEmpty()) {
-                        if (database.transactionDao().addToNetAmount(txid, amount) > 0) {
-                            netAmountRepairs++
-                        }
+                        netAmountSuspects++
+                        Log.w(
+                            TAG,
+                            "txos reconcile: healed TXO ${'$'}{txid.toHex()}:${'$'}vout " +
+                                "(${'$'}amount duffs) has a pre-existing record whose " +
+                                "netAmount may be short by that amount — LOG-ONLY, " +
+                                "storedNet=${'$'}{priorTx.netAmount}",
+                        )
                     }
                 }
 
@@ -1380,6 +1410,16 @@ class PlatformWalletPersistenceHandler(
                     .filter { it.accountType == ACCOUNT_TYPE_TAG_DASHPAY_EXTERNAL }
                     .map { it.id }
                     .toSet()
+                // Production changeset writes leave txos.accountId null and
+                // route ownership through coreAddressId -> core_addresses
+                // .accountId, so the exclusion must resolve BOTH paths — an
+                // accountId-only check silently classifies every contact row.
+                suspend fun rowIsForeign(row: org.dashfoundation.dashsdk.persistence.entities.TxoEntity): Boolean {
+                    if (row.accountId != null) return row.accountId in foreignAccountIds
+                    val addr = row.coreAddressId ?: return false
+                    val owner = database.coreAddressDao().getByAddress(addr)?.accountId
+                    return owner != null && owner in foreignAccountIds
+                }
                 @Suppress("NAME_SHADOWING")
                 val storeRows = database.txoDao().observeByWallet(walletId).first()
                 // Case 3 (log-only): rows marked spent for coins the engine
@@ -1388,7 +1428,7 @@ class PlatformWalletPersistenceHandler(
                 // un-marked, only reported.
                 for (row in storeRows) {
                     if (!row.isSpent) continue
-                    if (row.accountId != null && row.accountId in foreignAccountIds) continue
+                    if (rowIsForeign(row)) continue
                     val key = "${row.txid?.toHex() ?: continue}:${row.vout}"
                     if (key in engineUnspentKeys) {
                         stuckSpent++
@@ -1403,7 +1443,7 @@ class PlatformWalletPersistenceHandler(
                 }
                 val storeUnspent = storeRows.filter { !it.isSpent }
                 for (row in storeUnspent) {
-                    if (row.accountId != null && row.accountId in foreignAccountIds) {
+                    if (rowIsForeign(row)) {
                         skippedForeign++
                         continue
                     }
@@ -1411,18 +1451,23 @@ class PlatformWalletPersistenceHandler(
                     when {
                         key in engineUnspentKeys -> {}
                         key in engineSpentKeys -> {
-                            // Lost spend update (#4425): the engine knows this
-                            // coin was spent; the row missed the flip. Flip in
-                            // place — spendingTxid stays as-is (usually null;
-                            // the spender's row, if it ever arrives, relinks
-                            // via the deferred-input drain).
-                            database.txoDao().upsert(row.copy(isSpent = true))
-                            flippedSpent++
-                            flippedSpentDuffs += row.amount
+                            // Lost spend update (#4425) — PROBABLY. The
+                            // engine's spent set records every input of every
+                            // recorded transaction, INCLUDING mempool spends,
+                            // and carries no context; flipping the store on
+                            // it would persist an unconfirmed spend as
+                            // settled, contradicting this handler's own
+                            // in-block gating (see onWalletChangesetUtxoSpent).
+                            // LOG-ONLY until the engine exports spends with
+                            // their confirmation context.
+                            wouldFlipSpent++
+                            wouldFlipSpentDuffs += row.amount
                             Log.w(
                                 TAG,
-                                "txos reconcile: flipped lost-spend row to spent " +
-                                    "outpoint=$key amount=${row.amount}",
+                                "txos reconcile: store row unspent but the engine " +
+                                    "records a spend (context unknown, possibly " +
+                                    "mempool) outpoint=$key amount=${row.amount} — " +
+                                    "LOG-ONLY, not flipped",
                             )
                         }
                         else -> {
@@ -1435,9 +1480,11 @@ class PlatformWalletPersistenceHandler(
                             wouldRemoveDuffs += row.amount
                             Log.w(
                                 TAG,
-                                "txos reconcile: store row unknown to engine " +
-                                    "(swept/abandoned residue?) outpoint=$key " +
-                                    "amount=${row.amount} — LOG-ONLY, not removed",
+                                "txos reconcile: store row in neither engine " +
+                                    "inventory outpoint=$key amount=${row.amount} — " +
+                                    "ambiguous (swept/abandoned residue, or a " +
+                                    "finalized spend whose engine record was " +
+                                    "dropped) — LOG-ONLY, not removed",
                             )
                         }
                     }
@@ -1448,26 +1495,28 @@ class PlatformWalletPersistenceHandler(
             engineUtxos = utxos.size,
             inserted = inserted,
             insertedDuffs = insertedDuffs,
-            netAmountRepairs = netAmountRepairs,
+            netAmountSuspects = netAmountSuspects,
             skippedImmature = skippedImmature,
             skippedNoAddress = skippedNoAddress,
             accountErrors = accountErrors,
-            flippedSpent = flippedSpent,
-            flippedSpentDuffs = flippedSpentDuffs,
+            wouldFlipSpent = wouldFlipSpent,
+            wouldFlipSpentDuffs = wouldFlipSpentDuffs,
+            skippedSwept = skippedSwept,
             wouldRemove = wouldRemove,
             wouldRemoveDuffs = wouldRemoveDuffs,
             skippedForeign = skippedForeign,
             stuckSpent = stuckSpent,
             stuckSpentDuffs = stuckSpentDuffs,
         )
-        if (inserted > 0 || accountErrors > 0 || flippedSpent > 0 || wouldRemove > 0 ||
-            stuckSpent > 0
+        if (inserted > 0 || accountErrors > 0 || wouldFlipSpent > 0 || wouldRemove > 0 ||
+            stuckSpent > 0 || skippedSwept > 0
         ) {
             Log.w(
                 TAG,
                 "txos reconcile: healed $inserted missing TXO(s) ($insertedDuffs duffs), " +
-                    "$netAmountRepairs netAmount repair(s), " +
-                    "flippedSpent=$flippedSpent ($flippedSpentDuffs duffs), " +
+                    "$netAmountSuspects netAmount suspect(s) (log-only), " +
+                    "wouldFlipSpent=$wouldFlipSpent ($wouldFlipSpentDuffs duffs, log-only), " +
+                    "skippedSwept=$skippedSwept, " +
                     "wouldRemove=$wouldRemove ($wouldRemoveDuffs duffs, log-only), " +
                     "stuckSpent=$stuckSpent ($stuckSpentDuffs duffs, log-only), " +
                     "engine=${report.engineUtxos} " +

@@ -4459,9 +4459,25 @@ unsafe fn restore_core_address_pools(
                 // up to the persisted watermark. Never fatal: a failed
                 // repair restores exactly what the rows carried (the
                 // pre-repair behavior).
-                if !matches!(key_source, key_wallet::KeySource::NoKeySource)
-                    && !matches!(pool_type, AddressPoolType::AbsentHardened)
-                {
+                let repairable = !matches!(key_source, key_wallet::KeySource::NoKeySource)
+                    && !matches!(pool_type, AddressPoolType::AbsentHardened);
+                if !repairable {
+                    // Announce the skip instead of silently claiming full
+                    // coverage. DashPay contact pools land here by design —
+                    // `key_source_for_account_type` returns NoKeySource for
+                    // both DashPay variants (their keys derive from identity
+                    // material, not an account xpub) — and their pools are
+                    // re-derived by DashPay contact sync at runtime, so a
+                    // sparse restore self-heals through that path instead.
+                    // Hardened pools cannot be publicly derived at all.
+                    tracing::info!(
+                        wallet_id = %hex::encode(wallet_id),
+                        ?account_type,
+                        ?pool_type,
+                        "load: address-pool hole repair skipped (no public key                          source); pool restored as persisted"
+                    );
+                }
+                if repairable {
                     if let Some(max_idx) = pool.highest_generated {
                         match pool.ensure_contiguous_to(max_idx, &key_source) {
                             Ok(0) => {}

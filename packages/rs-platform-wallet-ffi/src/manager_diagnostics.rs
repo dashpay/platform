@@ -652,13 +652,7 @@ pub unsafe extern "C" fn platform_wallet_account_spent_outpoints(
     if rows.is_empty() {
         return PlatformWalletFFIResult::ok();
     }
-    let entries: Vec<OutPointFFI> = rows
-        .into_iter()
-        .map(|op| OutPointFFI {
-            txid: txid_to_array(&op.txid),
-            vout: op.vout,
-        })
-        .collect();
+    let entries: Vec<OutPointFFI> = rows.iter().map(OutPointFFI::from).collect();
     let count = entries.len();
     *out_outpoints = Box::into_raw(entries.into_boxed_slice()) as *const _;
     *out_count = count;
