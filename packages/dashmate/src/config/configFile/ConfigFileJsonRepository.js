@@ -255,10 +255,10 @@ export default class ConfigFileJsonRepository {
    *
    * @param {Object} [options={}] - passed through to read()
    * @param {boolean} [options.readOnly=false] - for a caller that has promised
-   *   to change nothing. Reads a config file that is already current, and
-   *   refuses outright when one is not: migrations move and delete files on
-   *   disk, so running them on such a caller's behalf would break the promise
-   *   and do it without the lock
+   *   to change nothing. Migrations that only reshape data are applied in
+   *   memory and discarded; the two that move and delete files on disk are
+   *   refused outright, because running those on such a caller's behalf would
+   *   break the promise and do it without the lock
    * @param {function(Config[]): void} [onMigrated] - runs before the migrated
    *   config file is saved and while the lock is held
    * @returns {{configFile: ConfigFile}}

@@ -242,6 +242,47 @@ describe('analyseGatewayCertificateFactory', () => {
     });
   });
 
+  // A later expiry says nothing about whether the disk pair can be served. The
+  // sample carries only a fingerprint and a date; key pairing, address and
+  // self-signature come from the installed verdict, which is collected in the
+  // same run. Loading a later-expiring but unusable pair over a working one is
+  // the same outage the date comparison was added to prevent.
+  describe('when the disk copy is newer but not usable', () => {
+    [
+      ['the pair does not match its key', 'KEY_MISMATCH'],
+      ['it names another address', 'IP_MISMATCH'],
+    ].forEach(([name, code]) => {
+      it(`should not advise a restart when ${name}`, () => {
+        samples.setServiceInfo('gateway', 'installedCertificate', {
+          status: 'INVALID',
+          reasons: [{ code, message: 'the installed pair is unusable' }],
+          warnings: [],
+        });
+
+        const problems = analyse(served({
+          matchesOnDisk: false,
+          onDisk: { fingerprint256: 'CC:DD', validTo: validTo(60) },
+        }));
+
+        problems.forEach((problem) => {
+          expect(problem.getSolution()).to.not.match(/dashmate restart/);
+        });
+      });
+    });
+
+    it('should not advise a restart when the disk copy has itself expired', () => {
+      const problems = analyse(served({
+        certificate: { fingerprint256: 'AA:BB', validTo: validTo(-40) },
+        matchesOnDisk: false,
+        onDisk: { fingerprint256: 'CC:DD', validTo: validTo(-10) },
+      }));
+
+      problems.forEach((problem) => {
+        expect(problem.getSolution()).to.not.match(/dashmate restart/);
+      });
+    });
+  });
+
   // An external connect test measures whether something is listening, and
   // nothing listens on port 80 on a healthy node except for the seconds a
   // renewal takes. So it reports CLOSED on healthy nodes by construction, and

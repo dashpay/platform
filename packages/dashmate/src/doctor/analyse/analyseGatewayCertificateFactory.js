@@ -123,16 +123,21 @@ ${restartHint(cfg)}`,
     const isServedExpired = servedExpiresAt <= now;
     const onDiskDiffers = served.matchesOnDisk === false;
 
-    // Which of the two is newer decides both the description and whether a
-    // restart is safe to advise, on either branch below. A restart makes the
-    // gateway load the disk copy, so advising one without checking can replace
-    // what is on the wire with something no better - or worse.
+    // A restart makes the gateway load whatever is on disk, so it may only be
+    // advised once the disk copy is known to be better on every count that
+    // matters. Outliving what is on the wire is necessary and nowhere near
+    // sufficient: the wire sample carries a fingerprint and a date, while
+    // whether the pair matches its key, names this address, or is self-signed
+    // comes from the checks run over the files in the same collection.
     const onDiskExpiresAt = served.onDisk
       ? new Date(served.onDisk.validTo).getTime()
       : null;
     const isOnDiskNewer = onDiskExpiresAt !== null && onDiskExpiresAt > servedExpiresAt;
+    const isOnDiskUsable = isOnDiskNewer
+      && onDiskExpiresAt > now
+      && (!installed || installed.status !== 'INVALID');
 
-    if (isServedExpired && onDiskDiffers && isOnDiskNewer) {
+    if (isServedExpired && onDiskDiffers && isOnDiskUsable) {
       problems.push(new Problem(
         `The gateway is serving a certificate that expired on ${served.certificate.validTo}, `
         + 'while a newer one is already present on disk',
@@ -161,7 +166,7 @@ ${restartHint(cfg)}`,
         SEVERITY.HIGH,
       ));
     } else if (onDiskDiffers) {
-      if (isOnDiskNewer) {
+      if (isOnDiskUsable) {
         // Still serving a valid certificate, but the renewed one has not been picked up, so this
         // node goes dark when the served certificate expires.
         problems.push(new Problem(
