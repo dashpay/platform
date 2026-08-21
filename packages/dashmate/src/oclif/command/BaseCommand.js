@@ -22,6 +22,14 @@ export default class BaseCommand extends Command {
   };
 
   /**
+   * Whether this run holds the configuration lock. Defaults to what the command
+   * declares and is narrowed once its flags are known, because a command can
+   * declare that it reconfigures a node and still have a mode that changes
+   * nothing.
+   */
+  holdsConfigLock = this.constructor.mutatesConfig === true;
+
+  /**
    * @param {Object} options
    * @return {Promise<AwilixContainer>}
    */
@@ -51,7 +59,14 @@ export default class BaseCommand extends Command {
     // for the whole run and no other writer can get in between. Everything else
     // changes config through configFileRepository.update() and needs nothing
     // here.
-    if (this.constructor.mutatesConfig) {
+    //
+    // Such a command may still have a mode that changes nothing - a read-only
+    // preflight, say - and taking a write lock there would let it fail on a
+    // lock timeout for no reason, so it can opt that mode out.
+    this.holdsConfigLock = this.holdsConfigLock
+      && this.constructor.shouldSkipConfigLock?.(this.parsedFlags) !== true;
+
+    if (this.holdsConfigLock) {
       configFileRepository.acquire();
     }
 
@@ -131,7 +146,7 @@ export default class BaseCommand extends Command {
     } finally {
       // Whether the command succeeded, failed, or failed before it started, the
       // lock must not outlive it.
-      if (this.container && this.constructor.mutatesConfig) {
+      if (this.container && this.holdsConfigLock) {
         this.container.resolve('configFileRepository').release();
       }
     }
@@ -157,7 +172,7 @@ export default class BaseCommand extends Command {
         // file it loaded - it read inside the lock, so its state is current. Any
         // other command changes configuration through update(), and saving its
         // startup copy here would write a snapshot from before the command ran.
-        if (this.constructor.mutatesConfig
+        if (this.holdsConfigLock
           && this.container.has('configFile') && err === undefined) {
           /**
            * @var {ConfigFile} configFile

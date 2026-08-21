@@ -1,7 +1,4 @@
-import fs from 'fs';
 import { Listr } from 'listr2';
-
-import validateSslCertificateFiles from '../../../prompts/validators/validateSslCertificateFiles.js';
 
 import {
   PRESET_MAINNET,
@@ -9,11 +6,10 @@ import {
   NODE_TYPE_FULLNODE,
 } from '../../../../constants.js';
 
-import validateFileExists from '../../../prompts/validators/validateFileExists.js';
 import listCertificates from '../../../../ssl/zerossl/listCertificates.js';
 
 /**
- * @param {saveCertificateTask} saveCertificateTask
+ * @param {installCertificateFilesTask} installCertificateFilesTask
  * @param {obtainZeroSSLCertificateTask} obtainZeroSSLCertificateTask
  * @param {obtainSelfSignedCertificateTask} obtainSelfSignedCertificateTask
  * @param {obtainLetsEncryptCertificateTask} obtainLetsEncryptCertificateTask
@@ -22,7 +18,7 @@ import listCertificates from '../../../../ssl/zerossl/listCertificates.js';
  * @returns {configureSSLCertificateTask}
  */
 export default function configureSSLCertificateTaskFactory(
-  saveCertificateTask,
+  installCertificateFilesTask,
   obtainZeroSSLCertificateTask,
   obtainSelfSignedCertificateTask,
   obtainLetsEncryptCertificateTask,
@@ -38,58 +34,7 @@ export default function configureSSLCertificateTaskFactory(
       [SSL_PROVIDERS.FILE]: {
         title: 'Set SSL certificate file',
         enabled: (ctx) => ctx.certificateProvider === SSL_PROVIDERS.FILE,
-        task: async (ctx, task) => {
-          let form = ctx.fileCertificateProviderForm;
-
-          if (!ctx.fileCertificateProviderForm) {
-            form = await task.prompt({
-              type: 'form',
-              header: `  To configure SSL certificates, you need to provide a certificate chain file
-  and a private key file.
-  The certificate chain file should contain your server certificate at the top and
-  then intermediate/root certificates if present.\n`,
-              message: 'Specify paths to your certificate files',
-              choices: [
-                {
-                  name: 'chainFilePath',
-                  message: 'Path to certificate chain file',
-                  validate: validateFileExists,
-                },
-                {
-                  name: 'privateFilePath',
-                  message: 'Path to certificate key file',
-                  validate: validateFileExists,
-                },
-              ],
-              validate: ({ chainFilePath, privateFilePath }) => {
-                if (!validateFileExists(chainFilePath)) {
-                  return 'certificate chain file path is not valid';
-                }
-
-                if (!validateFileExists(privateFilePath)) {
-                  return 'certificate key file path is not valid';
-                }
-
-                if (chainFilePath === privateFilePath) {
-                  return 'the same path for both files';
-                }
-
-                const isValid = validateSslCertificateFiles(chainFilePath, privateFilePath);
-
-                if (!isValid) {
-                  return 'The certificate and private key do not match';
-                }
-
-                return true;
-              },
-            });
-          }
-
-          ctx.certificateFile = fs.readFileSync(form.chainFilePath, 'utf8');
-          ctx.privateKeyFile = fs.readFileSync(form.privateFilePath, 'utf8');
-
-          return saveCertificateTask(ctx.config);
-        },
+        task: async (ctx) => installCertificateFilesTask(ctx.config, { interactive: true }),
       },
       [SSL_PROVIDERS.ZEROSSL]: {
         title: 'Obtain ZeroSSL certificate',

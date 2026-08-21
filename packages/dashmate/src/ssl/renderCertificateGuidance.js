@@ -1,0 +1,242 @@
+import { SSL_PROVIDERS } from '../constants.js';
+import renderConfigFlag from '../util/renderConfigFlag.js';
+import { CERTIFICATE_REASONS } from './checkGatewayCertificateFactory.js';
+
+/**
+ * How the run went for the images, said only as far as it was observed.
+ *
+ * A registry outage plus a bad certificate must not report that patches were
+ * fetched. `updateNode` resolves a failed pull as an `error` row rather than
+ * rejecting, so a run can succeed as a whole and still have delivered nothing.
+ *
+ * @param {{ok: boolean, failed: number, total: number}|null} pull
+ * @return {string}
+ */
+function renderPullSummary(pull) {
+  if (!pull || !pull.ok) {
+    return 'dashmate update could not pull images, and stopped';
+  }
+
+  if (pull.failed > 0) {
+    return `dashmate update pulled images - ${pull.failed} of ${pull.total} failed,`
+      + ' see the table above - then stopped';
+  }
+
+  return 'dashmate update pulled images, then stopped';
+}
+
+/**
+ * @param {Object} verdict
+ * @return {string}
+ */
+function renderObservation(verdict) {
+  const [first] = verdict.reasons;
+
+  return first ? first.message : 'the installed certificate did not pass the checks';
+}
+
+/**
+ * Why a free ZeroSSL account stops working, and why it is not the operator's
+ * mistake.
+ *
+ * @return {string}
+ */
+function renderZeroSslExplanation() {
+  return `  Your certificate provider is ZeroSSL. dashmate's ZeroSSL integration drives
+  ZeroSSL's REST API, and a free ZeroSSL account allows three certificates
+  through the dashboard/API and no REST API access - so dashmate's renewals
+  stop working after about 270 days. (ZeroSSL's ACME service is not a
+  substitute here: it does not issue IP-address certificates.) You did not
+  configure anything wrong - as of August 2026, four out of five ZeroSSL
+  evonodes on mainnet were in this state.
+`;
+}
+
+/**
+ * Port 80 is a permanent standing requirement, and the consequence of losing it
+ * is the thing operators have to hear. Phrasing it as "every few days when the
+ * certificate renews" reads as a maintenance window that can be scheduled
+ * around, which is how the requirement gets lost.
+ *
+ * @return {string}
+ */
+function renderPortEightyPermanence() {
+  return `  PORT 80 MUST STAY OPEN PERMANENTLY - this is not a maintenance window.
+  Let's Encrypt IP-address certificates last about six days, and dashmate
+  renews them continuously for as long as this node runs. Every renewal needs
+  inbound port 80 again.
+
+  If you open port 80 only to get this certificate and close it afterwards, or
+  if the rule does not survive a reboot, this node goes dark within six days
+  and nothing will tell you. That is the most common way an evonode dies: three
+  mainnet nodes were issued certificates on the same day, all went dark six
+  days later, and all three now block port 80.
+
+  Make the rule permanent and make sure it persists across reboots.
+`;
+}
+
+/**
+ * The interrupted-switch case needs no certificate work at all - the pair is
+ * already installed - so it gets the one command that finishes the job rather
+ * than the whole port-80 argument.
+ *
+ * @param {Config} config
+ * @param {string} cfg
+ * @return {string}
+ */
+function renderSwitchIncompleteGuidance(config, cfg) {
+  return `  A Let's Encrypt certificate is already installed for the gateway, but the
+  configuration still names ${config.get('platform.gateway.ssl.provider')}. A previous switch was interrupted
+  after the files were written and before the setting was saved, so dashmate's
+  helper is renewing the wrong provider.
+
+  Nothing needs to be obtained. Finish the switch:
+
+      dashmate config set ${cfg} platform.gateway.ssl.provider letsencrypt
+`;
+}
+
+/**
+ * Already on Let's Encrypt and already broken. No provider switch is offered
+ * because there is nothing to switch to - Let's Encrypt is the only authority
+ * that issues IP-address certificates over ACME.
+ *
+ * Port 80 is named as the prime suspect rather than the cause: half the nodes
+ * measured in this state have port 80 demonstrably open and stopped renewing
+ * regardless.
+ *
+ * @param {string} cfg
+ * @return {string}
+ */
+function renderLetsEncryptDiagnosis(cfg) {
+  return `  This node is already configured for Let's Encrypt, so there is no provider to
+  switch to - it is the only authority that issues IP-address certificates over
+  ACME. dashmate's helper is configured to retry renewal hourly, so renewal has
+  most likely been failing without anyone being told. dashmate has not inspected
+  the helper's history to confirm that.
+
+  The most likely cause is inbound port 80. Let's Encrypt re-checks it on every
+  renewal - roughly every four days, permanently - and a firewall rule that was
+  opened once and later closed, or that did not survive a reboot, produces
+  exactly this pattern. Three mainnet nodes issued on the same day went dark
+  together six days later, and all three now block port 80.
+
+  It is not always port 80: half the nodes in this state have port 80 open and
+  stopped renewing regardless. Check the renewal logs as well:
+
+      dashmate doctor ${cfg}
+      dashmate logs ${cfg} dashmate_helper
+`;
+}
+
+/**
+ * @param {string} cfg
+ * @param {boolean} isNodeRunning
+ * @return {string}
+ */
+function renderFix(cfg, isNodeRunning) {
+  return `  THE FIX - switch to Let's Encrypt, which issues IP-address certificates free.
+
+  Let's Encrypt proves this node owns its IP by connecting to it on inbound
+  port 80. Check that first; it limits how often you may fail, so a blind
+  attempt is expensive:
+
+      dashmate doctor ${cfg}
+
+  Then:
+
+      dashmate ssl obtain ${cfg} --provider letsencrypt
+      dashmate ${isNodeRunning ? 'restart' : 'start'} ${cfg}
+`;
+}
+
+/**
+ * Build the guidance printed after a run whose certificate was not resolved.
+ *
+ * Written to stderr directly and never handed to oclif's error printer: that
+ * printer hard-wraps at 74 columns on a non-TTY stream, which breaks the
+ * longest remediation line mid-token into something an operator cannot paste.
+ *
+ * Every claim is limited to what was observed. The check reads files on disk,
+ * so it cannot say what is on the wire, whether clients failed to connect, or
+ * what the helper has been doing.
+ *
+ * @param {Object} options
+ * @param {Config} options.config
+ * @param {Object} options.verdict
+ * @param {boolean} options.isNodeRunning
+ * @param {{ok: boolean, failed: number, total: number}|null} options.pull
+ * @return {string}
+ */
+export default function renderCertificateGuidance({
+  config,
+  verdict,
+  isNodeRunning,
+  pull,
+}) {
+  const cfg = renderConfigFlag(config.getName());
+  const provider = config.get('platform.gateway.ssl.provider');
+  const isSwitchIncomplete = verdict.reasons
+    .some(({ code }) => code === CERTIFICATE_REASONS.SWITCH_INCOMPLETE);
+
+  const blocks = [
+    `  ${renderPullSummary(pull)}: this node's installed TLS
+  certificate did not pass dashmate's checks.
+
+  Node:        ${config.get('network')} (config "${config.getName()}", ${config.get('externalIp') ?? 'no external IP set'})
+  Certificate: ${renderObservation(verdict)}
+
+  If this is the certificate the gateway is serving, standards-compliant
+  clients reject it. dashmate did not open a connection to check what is
+  actually on the wire; \`dashmate doctor ${cfg}\` does that.
+
+  Nothing broke just now. This is the first release of dashmate that checks
+  the certificate, so this is the first time you are being told.
+`,
+  ];
+
+  // The node is normally down when this is read: the documented upgrade
+  // procedure stops it before update runs. An operator who reads a certificate
+  // complaint, assumes it changed nothing and walks away has left a stopped
+  // masternode behind.
+  if (!isNodeRunning) {
+    blocks.push(`  Your node is currently stopped. Run \`dashmate start ${cfg}\` to bring
+  it back up - the certificate problem does not prevent it from starting.
+`);
+  }
+
+  if (isSwitchIncomplete) {
+    blocks.push(renderSwitchIncompleteGuidance(config, cfg));
+  } else {
+    if (provider === SSL_PROVIDERS.ZEROSSL) {
+      blocks.push(renderZeroSslExplanation());
+    }
+
+    if (provider === SSL_PROVIDERS.LETSENCRYPT) {
+      blocks.push(renderLetsEncryptDiagnosis(cfg));
+    }
+
+    blocks.push(renderFix(cfg, isNodeRunning));
+    blocks.push(renderPortEightyPermanence());
+
+    blocks.push(`  IF YOU CANNOT OPEN PORT 80. dashmate currently has no supported alternative
+  for an IP-address certificate. If your host will not open it, this node
+  cannot serve DAPI clients. Updates themselves are unaffected: images are
+  always pulled, whatever this check finds, so this node is not being held back
+  from protocol upgrades or security patches. To suppress this check for one
+  run:
+
+      dashmate update ${cfg} --skip-certificate-check
+
+  This leaves clients unable to connect to your node. It is an escape for a
+  single run, not a line to add to a playbook.
+`);
+  }
+
+  blocks.push(`  This release does not block \`dashmate start\` or \`dashmate restart\`. The
+  certificate check applies only to \`dashmate update\`.
+`);
+
+  return `\n${blocks.join('\n')}\n`;
+}
