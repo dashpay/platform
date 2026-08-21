@@ -10,6 +10,18 @@ export const LEAF_SELECTION_ERRORS = {
 const PEM_CERTIFICATE = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
 
 /**
+ * Counted separately from the block match above, which pairs a BEGIN with an
+ * END and so cannot see a BEGIN that never closes - a bundle truncated
+ * mid-block reads as one certificate shorter rather than as damaged, and the
+ * gateway refuses to load it.
+ *
+ * Only openings are counted. A stray END with no BEGIN is loaded by the
+ * gateway without complaint, so treating unpaired delimiters symmetrically
+ * would reject a bundle that works.
+ */
+const BEGIN_CERTIFICATE = /-----BEGIN CERTIFICATE-----/g;
+
+/**
  * A key protected by a passphrase is detected from the PEM rather than by
  * asking OpenSSL, which can go looking for a terminal to ask on.
  */
@@ -69,6 +81,15 @@ export default function selectLeafCertificate(bundlePem, privateKeyPem) {
   }
 
   const blocks = bundlePem.match(PEM_CERTIFICATE) ?? [];
+  const begins = (bundlePem.match(BEGIN_CERTIFICATE) ?? []).length;
+
+  if (begins !== blocks.length) {
+    return {
+      error: LEAF_SELECTION_ERRORS.BUNDLE_UNREADABLE,
+      detail: `it opens ${begins} certificate(s) but only ${blocks.length} are complete,`
+        + ' so at least one block is truncated',
+    };
+  }
 
   if (blocks.length === 0) {
     return { error: LEAF_SELECTION_ERRORS.BUNDLE_UNREADABLE, detail: 'it holds no certificate' };

@@ -115,6 +115,46 @@ describe('checkGatewayCertificateFactory', () => {
       expect(reason.message).to.contain('3');
     });
 
+    // A block whose END delimiter is missing is invisible to a match that pairs
+    // BEGIN with END: the text is simply not matched, so a truncated bundle
+    // looked identical to a well-formed one. Envoy refuses to load it, so
+    // passing it here blesses a bundle the gateway cannot serve.
+    it('should block on a bundle whose last certificate is unterminated', () => {
+      const { leaf, intermediate } = issueChain({ ip: EXTERNAL_IP });
+      const truncated = intermediate.pem.slice(0, intermediate.pem.length / 2);
+
+      install(`${leaf.pem}${truncated}`, leaf.keyPem);
+
+      const verdict = checkGatewayCertificate(config);
+
+      expect(verdict.status).to.equal(CERTIFICATE_STATUS.INVALID);
+      expect(codes(verdict.reasons)).to.include(CERTIFICATE_REASONS.BUNDLE_UNREADABLE);
+    });
+
+    it('should block on a bundle whose first certificate is unterminated', () => {
+      const { leaf, intermediate } = issueChain({ ip: EXTERNAL_IP });
+      const truncated = leaf.pem.slice(0, Math.floor(leaf.pem.length / 2));
+
+      install(`${truncated}${leaf.pem}${intermediate.pem}`, leaf.keyPem);
+
+      expect(codes(checkGatewayCertificate(config).reasons))
+        .to.include(CERTIFICATE_REASONS.BUNDLE_UNREADABLE);
+    });
+
+    // The gateway loads a bundle carrying a stray END without complaint, so
+    // rejecting it would refuse a node that works. Only an opening that never
+    // closes means a block is actually missing.
+    it('should accept a bundle carrying an END delimiter with no BEGIN', () => {
+      const { leaf, intermediate } = issueChain({ ip: EXTERNAL_IP });
+
+      install(`${leaf.pem}${intermediate.pem}-----END CERTIFICATE-----\n`, leaf.keyPem);
+
+      const verdict = checkGatewayCertificate(config);
+
+      expect(codes(verdict.reasons)).to.deep.equal([]);
+      expect(verdict.status).to.equal(CERTIFICATE_STATUS.CHECKS_PASSED);
+    });
+
     // A block Envoy will choke on is not something to pass over quietly. The
     // bundle is what the gateway loads, so an unparseable block in it is a
     // problem with the bundle whether or not a usable leaf sits beside it.
