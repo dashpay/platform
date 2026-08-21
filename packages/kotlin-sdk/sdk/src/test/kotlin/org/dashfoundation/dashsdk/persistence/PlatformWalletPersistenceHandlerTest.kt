@@ -2912,7 +2912,7 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun consumedAssetLockIsNotRegressedByAStaleNonConsumedUpsert() = runTest {
+    fun shouldNotRegressAConsumedAssetLockOnAStaleNonConsumedUpsert() = runTest {
         val outpoint = makeOutpoint(ByteArray(32) { 60 }, 0)
         persistAssetLock(outpoint, status = 4, proofBytes = ByteArray(8) { 1 })
 
@@ -2927,7 +2927,7 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun consumedAssetLockStillAcceptsAnotherConsumedWrite() = runTest {
+    fun shouldStillAcceptAnotherConsumedWriteOnAConsumedAssetLock() = runTest {
         val outpoint = makeOutpoint(ByteArray(32) { 61 }, 0)
         persistAssetLock(outpoint, status = 4)
         persistAssetLock(outpoint, status = 4, amountDuffs = 250_000, proofBytes = ByteArray(4) { 7 })
@@ -2939,7 +2939,7 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun nonConsumedAssetLockStatusesStayLastWriteWinsInBothDirections() = runTest {
+    fun shouldKeepNonConsumedAssetLockStatusesLastWriteWinsInBothDirections() = runTest {
         val outpoint = makeOutpoint(ByteArray(32) { 62 }, 0)
         val hex = encodeOutPointHex(outpoint)
 
@@ -2954,7 +2954,7 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun consumedAssetLockSurvivesAStaleRemoval() = runTest {
+    fun shouldRetainAConsumedAssetLockThroughAStaleRemoval() = runTest {
         val outpoint = makeOutpoint(ByteArray(32) { 63 }, 0)
         persistAssetLock(outpoint, status = 4)
 
@@ -2971,7 +2971,7 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun nonConsumedAssetLockIsStillRemoved() = runTest {
+    fun shouldStillRemoveANonConsumedAssetLock() = runTest {
         val outpoint = makeOutpoint(ByteArray(32) { 64 }, 0)
         persistAssetLock(outpoint, status = 0) // Built
 
@@ -3033,7 +3033,7 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun identitySweepKeepsAListedNameAsDepartedHistoryInsteadOfDestroyingIt() = runTest {
+    fun shouldKeepAListedNameAsDepartedHistoryThroughTheIdentitySweepInsteadOfDestroyingIt() = runTest {
         handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
         val identityId = ByteArray(32) { 20 }
         val documentId = ByteArray(32) { 21 }
@@ -3062,7 +3062,7 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun identitySweepKeepsASoldNameWithItsCounterparty() = runTest {
+    fun shouldKeepASoldNameWithItsCounterpartyThroughTheIdentitySweep() = runTest {
         handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
         val identityId = ByteArray(32) { 22 }
         val documentId = ByteArray(32) { 23 }
@@ -3084,7 +3084,7 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun identitySweepStillDeletesLabelCacheRowsWithNoMarketplaceHistory() = runTest {
+    fun shouldStillDeleteLabelCacheRowsWithNoMarketplaceHistoryOnTheIdentitySweep() = runTest {
         handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
         val identityId = ByteArray(32) { 25 }
 
@@ -3102,7 +3102,7 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun identitySnapshotDoesNotClobberMarketplaceColumnsOnAStillCarriedLabel() = runTest {
+    fun shouldNotClobberMarketplaceColumnsWhenAnIdentitySnapshotStillCarriesTheLabel() = runTest {
         handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
         val identityId = ByteArray(32) { 26 }
         val documentId = ByteArray(32) { 27 }
@@ -3136,7 +3136,7 @@ class PlatformWalletPersistenceHandlerTest {
     // `healIdentityIsLocalFlags` (:4688, called from loadWalletList :4719).
 
     @Test
-    fun persisterCreatedWalletLinkedIdentityIsMarkedLocal() = runTest {
+    fun shouldMarkAPersisterCreatedWalletLinkedIdentityLocal() = runTest {
         handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
         val identityId = ByteArray(32) { 30 }
 
@@ -3148,7 +3148,7 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun observedOutOfWalletIdentityStaysNonLocal() = runTest {
+    fun shouldKeepAnObservedOutOfWalletIdentityNonLocal() = runTest {
         handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
         val identityId = ByteArray(32) { 31 }
 
@@ -3166,7 +3166,7 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun laterWalletLinkagePromotesAnAlreadyPersistedIdentityToLocal() = runTest {
+    fun shouldPromoteAnAlreadyPersistedIdentityToLocalOnLaterWalletLinkage() = runTest {
         handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
         val identityId = ByteArray(32) { 32 }
 
@@ -3186,7 +3186,7 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun loadPathHealsLegacyIsLocalFalseOnWalletLinkedRowsOnly() = runTest {
+    fun shouldHealLegacyIsLocalFalseOnWalletLinkedRowsOnlyDuringLoad() = runTest {
         handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
 
         val legacyOwned = ByteArray(32) { 33 }
