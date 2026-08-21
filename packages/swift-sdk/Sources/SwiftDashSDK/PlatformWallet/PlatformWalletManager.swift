@@ -575,6 +575,10 @@ public class PlatformWalletManager: ObservableObject {
 
         for walletId in walletIds {
             guard walletId.count == 32 else { continue }
+            // A wallet Rust declined to register (corrupt/skipped row) is
+            // still listed by SwiftData; `get_wallet` returns NotFound for
+            // it, which the do/catch below logs to `lastError` and skips —
+            // one bad row never fails the whole restore.
             var walletHandle: Handle = NULL_HANDLE
             do {
                 try walletId.withUnsafeBytes { idPtr in

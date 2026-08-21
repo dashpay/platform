@@ -29,7 +29,7 @@ pub fn migration() -> String {
         last_synced_at_ms INTEGER NOT NULL,
         PRIMARY KEY (wallet_id, document_id),
         CHECK ((status = 'owned') = (counterparty_id IS NULL)),
-        FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
+        FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
     );"
     .to_string()
 }

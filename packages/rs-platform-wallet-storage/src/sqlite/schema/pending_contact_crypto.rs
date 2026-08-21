@@ -24,6 +24,9 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
 
+// PUBLIC material only: ciphertext + public-key indices, never private bytes.
+crate::sqlite::schema::blob::impl_persistable_blob!(PendingContactCrypto);
+
 /// TEXT-column domain for `pending_contact_crypto.kind`. Single source of truth
 /// shared with the migration's CHECK clause and [`kind_db_label`]; pinned equal
 /// to the writer's codomain by `kind_labels_match_enum`.
@@ -64,7 +67,10 @@ pub fn apply_pending_contact_crypto(
             let payload = blob::encode(entry)?;
             let owner = entry.owner_identity_id.to_buffer();
             let contact = entry.contact_id.to_buffer();
-            let enqueued = i64::try_from(entry.enqueued_at_ms).unwrap_or(i64::MAX);
+            let enqueued = crate::sqlite::util::safe_cast::u64_to_i64(
+                "pending_contact_crypto.enqueued_at_ms",
+                entry.enqueued_at_ms,
+            )?;
             stmt.execute(params![
                 wallet_id.as_slice(),
                 owner.as_slice(),
@@ -121,11 +127,7 @@ pub(crate) fn all_pending_contact_crypto(
     let mut out: BTreeMap<WalletId, Vec<PendingContactCrypto>> = BTreeMap::new();
     for r in rows {
         let (wid_bytes, payload) = r?;
-        let wallet_id = <[u8; 32]>::try_from(wid_bytes.as_slice()).map_err(|_| {
-            WalletStorageError::InvalidWalletIdLength {
-                actual: wid_bytes.len(),
-            }
-        })?;
+        let wallet_id = super::id32("pending_contact_crypto.wallet_id", &wid_bytes)?;
         let entry: PendingContactCrypto = blob::decode(&payload)?;
         out.entry(wallet_id).or_default().push(entry);
     }
@@ -157,13 +159,51 @@ mod tests {
         );
     }
 
+    /// `enqueued_at_ms` past `i64::MAX` must surface a typed
+    /// `IntegerOverflow` — consistent with every other durable u64→i64 cast
+    /// in this subtree — not silently clamp to `i64::MAX` and persist a
+    /// falsified timestamp.
+    #[test]
+    fn enqueued_at_ms_overflow_is_typed_error_not_silent_clamp() {
+        use crate::sqlite::migrations;
+        use crate::sqlite::schema::wallets;
+        use dpp::prelude::Identifier;
+        use platform_wallet::changeset::PendingContactCryptoOp;
+        use rusqlite::Connection;
+
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrations::run(&mut conn).unwrap();
+        let wallet_id: WalletId = [8u8; 32];
+        wallets::ensure_exists(&conn, &wallet_id).unwrap();
+
+        let entry = PendingContactCrypto {
+            owner_identity_id: Identifier::from([0xAAu8; 32]),
+            contact_id: Identifier::from([0xBBu8; 32]),
+            op: PendingContactCryptoOp::RegisterReceiving,
+            enqueued_at_ms: u64::MAX,
+        };
+        let tx = conn.transaction().unwrap();
+        let err = apply_pending_contact_crypto(&tx, &wallet_id, std::slice::from_ref(&entry), &[])
+            .expect_err("enqueued_at_ms past i64::MAX must error, not clamp");
+        assert!(
+            matches!(
+                err,
+                WalletStorageError::IntegerOverflow {
+                    field: "pending_contact_crypto.enqueued_at_ms",
+                    ..
+                }
+            ),
+            "expected IntegerOverflow for enqueued_at_ms, got {err:?}"
+        );
+    }
+
     /// Persist two queue entries, read them back, clear one, read again —
     /// proving the add-delta upsert, the keyed clear-delta delete, and the
     /// payload round-trip all work against the real migrated schema.
     #[test]
     fn round_trip_persists_and_clears_queue() {
         use crate::sqlite::migrations;
-        use crate::sqlite::schema::wallet_meta;
+        use crate::sqlite::schema::wallets;
         use dpp::prelude::Identifier;
         use platform_wallet::changeset::PendingContactCryptoOp;
         use rusqlite::Connection;
@@ -171,7 +211,7 @@ mod tests {
         let mut conn = Connection::open_in_memory().unwrap();
         migrations::run(&mut conn).unwrap();
         let wallet_id: WalletId = [7u8; 32];
-        wallet_meta::ensure_exists(&conn, &wallet_id).unwrap();
+        wallets::ensure_exists(&conn, &wallet_id).unwrap();
 
         let owner = Identifier::from([0xAAu8; 32]);
         let contact = Identifier::from([0xBBu8; 32]);

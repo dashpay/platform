@@ -1,3 +1,26 @@
 [advisories]
-# TODO Remove it from here
-ignore = [ "RUSTSEC-2020-0071"] # advisory IDs to ignore e.g. ["RUSTSEC-2019-0001", ...]
+# Advisory IDs to ignore, e.g. ["RUSTSEC-2019-0001", ...]. Each entry
+# must point at a live advisory in the resolved graph and carry a dated
+# rationale; an entry matching nothing trains reviewers to skim the list.
+#
+# rustsec/audit-check runs from the repo root (.github/workflows/security-audit-rust.yml)
+# and only reads THIS file — a crate-local .cargo/audit.toml is never consulted by CI.
+ignore = [
+    # RUSTSEC-2025-0141 — bincode is unmaintained (informational advisory,
+    # not an exploitable CVE; published 2025-12-16, no patched release).
+    # Acknowledged 2026-06-08.
+    #
+    # Why this is acceptable for now:
+    #   - The advisory reports maintenance status, not a known exploit.
+    #   - Variable-length wallet decode boundaries are budgeted: storage
+    #     enforces MAX_VALUE_LEN / BLOB_SIZE_LIMIT_BYTES, per-secret write
+    #     caps, and MAX_VAULT_SIZE_BYTES; FFI asset-lock recovery rejects
+    #     proofs over 16 MiB and applies the same bincode decode budget.
+    #   - Malformed or oversized persisted data fails with a typed error.
+    #
+    # Residual risk: a future bincode defect would go unpatched upstream.
+    # Remediation plan: migrate the BLOB codec to a maintained equivalent
+    # (postcard / bitcode candidates) once the wire format is frozen at
+    # release; revisit this ignore at that time.
+    "RUSTSEC-2025-0141",
+]

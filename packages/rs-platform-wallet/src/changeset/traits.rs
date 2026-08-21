@@ -73,6 +73,10 @@ pub enum PersistenceError {
     #[error("persister lock poisoned")]
     LockPoisoned,
 
+    /// The backend does not implement an optional persistence operation.
+    #[error("persistence backend does not support {operation}")]
+    UnsupportedOperation { operation: &'static str },
+
     /// Error bubbled up from the underlying storage engine
     /// (SQLite, file I/O, FFI callback, etc.).
     ///
@@ -122,7 +126,7 @@ impl PersistenceError {
 
     /// `true` if the error is a `Backend` whose kind is
     /// [`PersistenceErrorKind::Transient`]. `LockPoisoned`, `Fatal`,
-    /// and `Constraint` all read as non-transient.
+    /// `UnsupportedOperation`, and `Constraint` all read as non-transient.
     pub fn is_transient(&self) -> bool {
         matches!(
             self,
@@ -136,12 +140,14 @@ impl PersistenceError {
     /// Retry-policy classification for the error.
     ///
     /// Returns `None` for [`Self::LockPoisoned`] (which is its own
-    /// trait-level variant) and `Some(kind)` for [`Self::Backend`].
+    /// trait-level variant), `Fatal` for [`Self::UnsupportedOperation`],
+    /// and the stored kind for [`Self::Backend`].
     /// Callers that always need a kind should treat `None` as
     /// [`PersistenceErrorKind::Fatal`].
     pub fn kind(&self) -> Option<PersistenceErrorKind> {
         match self {
             Self::LockPoisoned => None,
+            Self::UnsupportedOperation { .. } => Some(PersistenceErrorKind::Fatal),
             Self::Backend { kind, .. } => Some(*kind),
         }
     }
@@ -265,6 +271,19 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// wallet accessor (readers and writers) for its duration. Keep the
     /// per-call work bounded; if the backend does inline I/O (see the type
     /// doc), size it accordingly.
+    ///
+    /// # Transient-failure retry contract
+    ///
+    /// An implementation that returns a [`PersistenceError`] classified
+    /// [`PersistenceErrorKind::Transient`] from `store` **MUST** have already
+    /// buffered/preserved the changeset so that a subsequent bare
+    /// [`flush`](Self::flush) — with no re-supplied changeset — completes the
+    /// write (mirroring `flush`'s own transient contract). This is what lets a
+    /// caller retry a transient `store` failure via `flush` alone; re-calling
+    /// `store` with the same changeset would double-merge it. An
+    /// implementation that cannot preserve the changeset on failure MUST
+    /// classify that failure [`PersistenceErrorKind::Fatal`] (or
+    /// [`Constraint`](PersistenceErrorKind::Constraint)), never `Transient`.
     fn store(
         &self,
         wallet_id: WalletId,
@@ -325,6 +344,17 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// already keyed by wallet id and the sub-changesets carry their own
     /// wallet attribution where needed.
     fn load(&self) -> Result<ClientStartState, PersistenceError>;
+
+    /// Delete all durable state belonging to `wallet_id`.
+    ///
+    /// Backends without wallet-scoped deletion return
+    /// [`PersistenceError::UnsupportedOperation`]. Implementations that
+    /// support deletion must leave no wallet-owned state behind on success.
+    fn delete_wallet(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+        Err(PersistenceError::UnsupportedOperation {
+            operation: "delete_wallet",
+        })
+    }
 
     /// Look up a single core transaction record by `txid` for `wallet_id`.
     ///

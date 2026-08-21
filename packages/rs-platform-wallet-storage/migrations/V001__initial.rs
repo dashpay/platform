@@ -7,15 +7,25 @@
 //!
 //! Per-wallet tables carry `wallet_id BLOB` in (or as all of) their
 //! primary key plus a native `FOREIGN KEY (wallet_id) REFERENCES
-//! wallet_metadata(wallet_id) ON DELETE CASCADE`. Identity-owned
-//! tables (`identity_keys`, `dashpay_profiles`,
-//! `dashpay_payments_overlay`, `token_balances`) are keyed by
-//! `identity_id` only; their FK targets `identities(identity_id)` so
-//! cascade flows `wallet_metadata → identities → child` through the
-//! nullable `identities.wallet_id` link. `identities.wallet_id` is
-//! NULL-allowed so identity-only flows (no parent wallet, e.g. the
-//! identity-sync manager populating rows before any wallet is
-//! registered) work without a placeholder.
+//! wallets(wallet_id) ON DELETE CASCADE`. Identity-owned
+//! tables (`dashpay_profiles`, `dashpay_payments_overlay`,
+//! `token_balances`) are keyed by `identity_id` only; their FK targets
+//! `identities(identity_id)` so cascade flows `wallets →
+//! identities → child` through the nullable `identities.wallet_id`
+//! link. `identity_keys` additionally carries its own `wallet_id`
+//! column (so per-wallet reads stay a direct `WHERE wallet_id = ?`)
+//! and its FK is compound — `(wallet_id, identity_id)` — so a key can
+//! only be filed under the wallet that owns the identity.
+//! `identities.wallet_id` is NULL-allowed so identity-only flows (no
+//! parent wallet, e.g. the identity-sync manager populating rows
+//! before any wallet is registered) work without a placeholder.
+//! A NULL-owned identity CAN hold keys: `identity_keys.wallet_id` is
+//! nullable too, and NULL on both sides spells the same unowned scope.
+//! Such a key is guarded by a trigger pair rather than by the compound
+//! FK, which MATCH SIMPLE leaves dormant once a child key column is
+//! NULL. Note this is distinct from an identity observed rather than
+//! owned, which stays wallet-scoped — `identity_index` NULL with
+//! `wallet_id` set to the discovering wallet.
 //!
 //! The one relationship that stays a trigger is
 //! `core_utxos.spent_in_txid` clearing to NULL on transaction delete —
@@ -27,10 +37,10 @@
 //! read back) at every connection open via `open_conn`
 //! (`src/sqlite/conn.rs`).
 //!
-//! Enum-shaped TEXT columns (`network`, `account_type`, `pool_type`,
-//! `status`, `state`) carry a `CHECK (col IN (...))` clause whose
+//! Enum-shaped TEXT columns (`network`, `account_type`, `status`,
+//! `state`) carry a `CHECK (col IN (...))` clause whose
 //! IN-list is built from the `*_LABELS` const arrays in
-//! `crate::sqlite::schema::{wallet_meta, accounts, asset_locks,
+//! `crate::sqlite::schema::{wallets, accounts, asset_locks,
 //! contacts}`. The consts are the single source of truth shared with
 //! the writer mapping functions; the per-module `*_labels_match_enum`
 //! unit tests enforce set-equality between each const and its writer's
@@ -46,18 +56,17 @@ fn build_check_in(labels: &[&str]) -> String {
 }
 
 pub fn migration() -> String {
-    let network_check = build_check_in(crate::sqlite::schema::wallet_meta::NETWORK_LABELS);
+    let network_check = build_check_in(crate::sqlite::schema::wallets::NETWORK_LABELS);
     let account_type_check =
         build_check_in(crate::sqlite::schema::accounts::ACCOUNT_TYPE_LABELS);
-    let pool_type_check = build_check_in(crate::sqlite::schema::accounts::POOL_TYPE_LABELS);
-    // FROZEN as of V004: the asset-lock status domain must no longer be
+    // FROZEN as of V010: the asset-lock status domain must no longer be
     // interpolated from the live `ASSET_LOCK_STATUS_LABELS` const — a
     // later variant addition would silently rewrite this migration's
     // generated SQL and break its Refinery checksum on every database
     // that already applied it (`abort_divergent` default). New status
     // labels are introduced by APPENDING a migration that rebuilds the
     // table with the widened CHECK (see
-    // `V004__asset_lock_recovered_status.rs`); this list stays
+    // `V010__asset_lock_recovered_status.rs`); this list stays
     // byte-identical to what V001 shipped with.
     let asset_lock_status_check = build_check_in(&[
         "built",
@@ -71,9 +80,17 @@ pub fn migration() -> String {
     let pending_contact_crypto_kind_check =
         build_check_in(crate::sqlite::schema::pending_contact_crypto::KIND_LABELS);
 
+    // Stamp the header `application_id` so a foreign refinery-versioned
+    // SQLite DB can be told apart from a wallet-storage DB (asserted in
+    // `open()` pre-migration and in `restore_from`'s staged validation).
+    // Splice the constant in decimal — `PRAGMA` takes no bound params.
+    let application_id = crate::sqlite::conn::APPLICATION_ID;
+
     format!(
         "\
-CREATE TABLE wallet_metadata (
+PRAGMA application_id = {application_id};
+
+CREATE TABLE wallets (
     wallet_id BLOB NOT NULL PRIMARY KEY,
     network TEXT NOT NULL CHECK (network IN {network_check}),
     birth_height INTEGER NOT NULL
@@ -83,19 +100,15 @@ CREATE TABLE account_registrations (
     wallet_id BLOB NOT NULL,
     account_type TEXT NOT NULL CHECK (account_type IN {account_type_check}),
     account_index INTEGER NOT NULL,
+    -- Discriminators sharing (account_type, account_index) across distinct
+    -- accounts: PlatformPayment key_class and the DashPay (user, friend)
+    -- identity pair. Sentinel default for variants without that axis.
+    key_class INTEGER NOT NULL DEFAULT 0,
+    user_identity_id BLOB NOT NULL DEFAULT (zeroblob(32)),
+    friend_identity_id BLOB NOT NULL DEFAULT (zeroblob(32)),
     account_xpub_bytes BLOB NOT NULL,
-    PRIMARY KEY (wallet_id, account_type, account_index),
-    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
-);
-
-CREATE TABLE account_address_pools (
-    wallet_id BLOB NOT NULL,
-    account_type TEXT NOT NULL CHECK (account_type IN {account_type_check}),
-    account_index INTEGER NOT NULL,
-    pool_type TEXT NOT NULL CHECK (pool_type IN {pool_type_check}),
-    snapshot_blob BLOB NOT NULL,
-    PRIMARY KEY (wallet_id, account_type, account_index, pool_type),
-    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
+    PRIMARY KEY (wallet_id, account_type, account_index, key_class, user_identity_id, friend_identity_id),
+    FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
 );
 
 CREATE TABLE pending_contact_crypto (
@@ -106,7 +119,7 @@ CREATE TABLE pending_contact_crypto (
     payload BLOB NOT NULL,
     enqueued_at_ms INTEGER NOT NULL,
     PRIMARY KEY (wallet_id, owner_identity_id, contact_id, kind),
-    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
+    FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
 );
 
 CREATE TABLE core_transactions (
@@ -118,7 +131,7 @@ CREATE TABLE core_transactions (
     finalized INTEGER NOT NULL,
     record_blob BLOB NOT NULL,
     PRIMARY KEY (wallet_id, txid),
-    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
+    FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_core_transactions_height ON core_transactions(wallet_id, height);
@@ -133,7 +146,7 @@ CREATE TABLE core_utxos (
     spent INTEGER NOT NULL,
     spent_in_txid BLOB,
     PRIMARY KEY (wallet_id, outpoint),
-    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
+    FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_core_utxos_spent ON core_utxos(wallet_id, spent);
@@ -157,50 +170,115 @@ CREATE TABLE core_instant_locks (
     txid BLOB NOT NULL,
     islock_blob BLOB NOT NULL,
     PRIMARY KEY (wallet_id, txid),
-    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
+    FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
 );
-
-CREATE TABLE core_derived_addresses (
-    wallet_id BLOB NOT NULL,
-    account_type TEXT NOT NULL CHECK (account_type IN {account_type_check}),
-    account_index INTEGER NOT NULL,
-    address TEXT NOT NULL,
-    derivation_path TEXT NOT NULL,
-    used INTEGER NOT NULL,
-    PRIMARY KEY (wallet_id, account_type, address),
-    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_core_derived_addresses_addr ON core_derived_addresses(wallet_id, address);
 
 CREATE TABLE core_sync_state (
     wallet_id BLOB NOT NULL PRIMARY KEY,
     last_processed_height INTEGER,
     synced_height INTEGER,
-    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
+    -- Bincode-encoded `dashcore::ephemerealdata::chain_lock::ChainLock`.
+    -- NULL until the first ChainLock has been applied and flushed.
+    last_applied_chain_lock BLOB,
+    FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
 );
 
 CREATE TABLE identities (
     identity_id BLOB NOT NULL PRIMARY KEY,
     wallet_id BLOB,
-    wallet_index INTEGER,
+    identity_index INTEGER,
     entry_blob BLOB NOT NULL,
     tombstoned INTEGER NOT NULL,
-    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
+    FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_identities_wallet ON identities(wallet_id);
 
+-- Parent key for `identity_keys`' compound FK. SQLite requires the
+-- referenced columns to carry a UNIQUE index. Adds no new restriction:
+-- `identity_id` is already PRIMARY KEY, so `(wallet_id, identity_id)`
+-- is unique for free.
+CREATE UNIQUE INDEX idx_identities_wallet_identity ON identities(wallet_id, identity_id);
+
 CREATE TABLE identity_keys (
+    -- NULLABLE: NULL is the canonical `owned by no wallet`, matching
+    -- `identities.wallet_id`. Read the two FKs below with that in mind —
+    -- SQLite's default MATCH SIMPLE skips foreign-key enforcement
+    -- entirely when ANY column of the child key is NULL, so for a
+    -- NULL-scoped row BOTH FKs are dormant and neither constrains which
+    -- identity the key names. The two triggers after this table exist
+    -- precisely to replace that dormancy; the FKs alone are NOT
+    -- sufficient, and a NULL-scoped row is only as safe as the triggers.
+    wallet_id BLOB,
     identity_id BLOB NOT NULL,
     key_id INTEGER NOT NULL,
     public_key_blob BLOB NOT NULL,
     public_key_hash BLOB NOT NULL,
+    -- Reserved for a future typed projection; always NULL today.
+    -- derivation_indices lives inside public_key_blob (the
+    -- IdentityKeyWire blob is the single source of truth).
+    derivation_blob BLOB,
+    -- `wallet_id` is deliberately NOT part of the key. `identities`
+    -- keys on `identity_id` ALONE, so an identity has exactly one row
+    -- and exactly one owning wallet — the scope column here carries no
+    -- discriminating power, it is a denormalised copy of
+    -- `identities.wallet_id`. The wider `(wallet_id, identity_id,
+    -- key_id)` key was the enabling condition for the duplicate-row
+    -- corruption: it let the same key exist twice under two scopes, a
+    -- state the domain (`IdentityKeysChangeSet`, keyed
+    -- `(identity_id, key_id)`) cannot express. Narrowing the key makes
+    -- that row pair unrepresentable rather than merely rejected.
     PRIMARY KEY (identity_id, key_id),
-    FOREIGN KEY (identity_id) REFERENCES identities(identity_id) ON DELETE CASCADE
+    -- Belt-and-braces: the compound FK below already implies a live
+    -- `wallets` row (the matched `identities` row carries this same
+    -- non-NULL wallet_id and is itself FK'd to `wallets`). Kept as an
+    -- explicit statement of intent and a second cascade path.
+    FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE,
+    -- Compound: a key may only be filed under the wallet that OWNS the
+    -- identity. The single-column form allowed a key to name an identity
+    -- parented to a different wallet — a row the per-wallet reader can
+    -- never resolve, surfacing much later as a fatal OrphanedIdentityEntry.
+    FOREIGN KEY (wallet_id, identity_id)
+        REFERENCES identities(wallet_id, identity_id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_identity_keys_identity ON identity_keys(identity_id);
+CREATE INDEX idx_identity_keys_wallet_identity ON identity_keys(wallet_id, identity_id);
+
+-- The NULL-scope guard the dormant FKs cannot provide: a key filed as
+-- unowned must name an identity that is itself unowned. Without this a
+-- NULL-scoped key could name a wallet-OWNED identity — a row no
+-- per-wallet reader can resolve, which is the corruption shape the
+-- compound FK was added to stop, re-entering through the NULL door.
+--
+-- The converse (a wallet-scoped key naming an unowned identity) needs no
+-- trigger: that child key is fully non-NULL, so the compound FK is live
+-- and rejects it.
+CREATE TRIGGER identity_keys_null_scope_requires_unowned_identity
+BEFORE INSERT ON identity_keys
+FOR EACH ROW WHEN NEW.wallet_id IS NULL
+BEGIN
+    SELECT RAISE(ABORT, 'identity_keys.wallet_id is NULL but the identity is wallet-owned')
+    WHERE EXISTS (
+        SELECT 1 FROM identities i
+        WHERE i.identity_id = NEW.identity_id AND i.wallet_id IS NOT NULL
+    );
+END;
+
+-- Necessary twin, NOT a redundant copy — do not simplify away. The primary
+-- key is (identity_id, key_id), so the writer's upsert resolves an
+-- existing key to DO UPDATE, and an UPDATE never fires a BEFORE INSERT
+-- trigger. Without this one the guard above is bypassed by the ordinary
+-- re-save path, which is the path real writes take.
+CREATE TRIGGER identity_keys_null_scope_requires_unowned_identity_on_update
+BEFORE UPDATE ON identity_keys
+FOR EACH ROW WHEN NEW.wallet_id IS NULL
+BEGIN
+    SELECT RAISE(ABORT, 'identity_keys.wallet_id is NULL but the identity is wallet-owned')
+    WHERE EXISTS (
+        SELECT 1 FROM identities i
+        WHERE i.identity_id = NEW.identity_id AND i.wallet_id IS NOT NULL
+    );
+END;
 
 CREATE TABLE contacts (
     wallet_id BLOB NOT NULL,
@@ -220,7 +298,7 @@ CREATE TABLE contacts (
     payment_channel_broken INTEGER,
     updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
     PRIMARY KEY (wallet_id, owner_id, contact_id),
-    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
+    FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
 );
 
 -- Ignored senders (per-sender mute = block, reversible — local-only). Keyed by
@@ -236,7 +314,7 @@ CREATE TABLE ignored_senders (
     sender_id BLOB NOT NULL,
     ignored_at INTEGER NOT NULL DEFAULT (unixepoch()),
     PRIMARY KEY (wallet_id, owner_id, sender_id),
-    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
+    FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
 );
 
 CREATE TABLE platform_addresses (
@@ -247,7 +325,7 @@ CREATE TABLE platform_addresses (
     balance INTEGER NOT NULL,
     nonce INTEGER NOT NULL,
     PRIMARY KEY (wallet_id, address),
-    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
+    FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
 );
 
 CREATE TABLE platform_address_sync (
@@ -255,7 +333,7 @@ CREATE TABLE platform_address_sync (
     sync_height INTEGER NOT NULL,
     sync_timestamp INTEGER NOT NULL,
     last_known_recent_block INTEGER NOT NULL,
-    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
+    FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
 );
 
 CREATE TABLE asset_locks (
@@ -267,7 +345,7 @@ CREATE TABLE asset_locks (
     amount_duffs INTEGER NOT NULL,
     lifecycle_blob BLOB NOT NULL,
     PRIMARY KEY (wallet_id, outpoint),
-    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
+    FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
 );
 
 CREATE TABLE token_balances (
@@ -364,7 +442,7 @@ CREATE TABLE meta_platform_address (
 
 -- Soft-cascade cleanup: drop a scope's metadata when its parent object
 -- is deleted. SQLite fires these for parents removed by an FK cascade
--- too (e.g. wallet_metadata delete → identities cascade → identity
+-- too (e.g. wallets delete → identities cascade → identity
 -- trigger), so deleting a wallet cleans its metadata transitively.
 --
 -- Two root brooms key on the deleted parent's id alone so they reach
@@ -378,7 +456,7 @@ CREATE TABLE meta_platform_address (
 -- row, parentless included. Keys on wallet_id only, so contact state and
 -- whether the typed parent ever existed are both irrelevant.
 CREATE TRIGGER cascade_meta_on_wallet_delete
-AFTER DELETE ON wallet_metadata
+AFTER DELETE ON wallets
 FOR EACH ROW
 BEGIN
     DELETE FROM meta_wallet           WHERE wallet_id = OLD.wallet_id;

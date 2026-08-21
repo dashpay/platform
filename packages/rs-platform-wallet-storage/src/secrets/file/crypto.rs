@@ -19,11 +19,10 @@ pub(crate) const ARGON2_MIN_T: u32 = 2;
 pub(crate) const ARGON2_P: u32 = 1;
 
 /// Argon2 parameter ceilings. Vault `kdf` params are attacker-
-/// controllable JSON, so an oversized `m_kib`/`t` would let a crafted
-/// vault force a multi-GiB allocation or an unbounded-time derivation (a
-/// DoS) before any tag check. 1 GiB memory and 16 passes bound the cost
-/// well above the shipped default (64 MiB, t=3) yet far below an
-/// exhaustion threshold.
+/// controllable JSON, so without a cap an oversized `m_kib`/`t` could
+/// force a multi-GiB allocation or unbounded derivation (DoS) before any
+/// tag check. 1 GiB / 16 passes is well above the default, far below
+/// exhaustion.
 pub(crate) const ARGON2_MAX_M_KIB: u32 = 1_048_576;
 pub(crate) const ARGON2_MAX_T: u32 = 16;
 
@@ -38,16 +37,18 @@ pub(crate) const NONCE_LEN: usize = 24;
 /// Derived AEAD key width.
 pub(crate) const KEY_LEN: usize = 32;
 
-/// Fill `buf` with CSPRNG bytes (`OsRng` via `getrandom`).
+/// Fill `buf` with CSPRNG bytes (`OsRng` via `getrandom`). Backs the salt,
+/// nonce, and key-material draws, so a failure is reported as
+/// [`SecretStoreError::EntropyUnavailable`] — never `KdfFailure`, which
+/// would misname the failing subsystem on the nonce/salt paths.
 pub(crate) fn random_bytes(buf: &mut [u8]) -> Result<(), SecretStoreError> {
-    getrandom(buf).map_err(|_| SecretStoreError::KdfFailure)
+    getrandom(buf).map_err(|_| SecretStoreError::EntropyUnavailable)
 }
 
-/// Argon2id parameters as stored in / read from the vault. Serializes
-/// directly to the on-disk `kdf` object — `id` discriminates the KDF
-/// algorithm (only [`KDF_ID_ARGON2ID`] is accepted today), validated
-/// alongside the parameter ranges in [`KdfParams::enforce_bounds`].
-/// `deny_unknown_fields` fails closed on a stray sibling (C3).
+/// Argon2id parameters stored in the on-disk `kdf` object. `id`
+/// discriminates the algorithm (only [`KDF_ID_ARGON2ID`] today),
+/// validated with the parameter ranges in [`KdfParams::enforce_bounds`].
+/// `deny_unknown_fields` fails closed on a stray sibling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct KdfParams {
@@ -68,13 +69,54 @@ impl KdfParams {
         }
     }
 
-    /// Reject params outside the accepted bounds before any derivation
-    /// or allocation runs. The lower bound refuses a downgraded vault;
-    /// the upper bound refuses an inflated vault from an
-    /// attacker-controllable JSON file that would otherwise force a
-    /// huge allocation / unbounded derivation ahead of any tag check.
-    /// An unknown algorithm `id` is also a bounds failure — Argon2id is
-    /// the only KDF family this version supports.
+    /// The fastest configuration [`enforce_bounds`] still accepts — the
+    /// enforced floor itself, and the ONE definition of "fastest legal
+    /// Argon2id params" in this crate. Every test call site and
+    /// [`SecretStore::file_mock`] derive at it, so a suite does not pay the
+    /// 64 MiB target per call (#4111).
+    ///
+    /// # Panics
+    ///
+    /// Panics unless the build has `debug_assertions` on, or is this crate's
+    /// own test harness. This is the single choke point for weak-but-legal
+    /// params, so guarding it here covers EVERY caller uniformly — the mock
+    /// constructors inherit it rather than repeating the check.
+    ///
+    /// `cfg!(debug_assertions)` is a runtime *value*, not a `debug_assert!`:
+    /// it is evaluated in every profile, so the check is present precisely in
+    /// the optimized build it defends. If `test-util` ever reaches a release
+    /// build (feature unification), any path to floor params stops loudly
+    /// instead of silently yielding weak crypto. A `const {}` assert would
+    /// instead break the BUILD, taking `--release --all-features` down with
+    /// it; the refusal belongs at the call, not at every consumer's compile.
+    ///
+    /// [`enforce_bounds`]: KdfParams::enforce_bounds
+    /// [`SecretStore::file_mock`]: crate::secrets::SecretStore::file_mock
+    #[cfg(any(test, feature = "test-util"))]
+    #[expect(
+        clippy::assertions_on_constants,
+        reason = "build-configuration guard: folds to `panic!` iff test-util reached a release build"
+    )]
+    pub(crate) fn floor_target() -> Self {
+        assert!(
+            cfg!(debug_assertions) || cfg!(test),
+            "KdfParams::floor_target is the Argon2id FLOOR and is test-only, but this build \
+             has debug_assertions off — the `test-util` feature reached a release build \
+             (likely via feature unification). Refusing to hand back weak-crypto params."
+        );
+        Self {
+            id: KDF_ID_ARGON2ID,
+            m_kib: ARGON2_MIN_M_KIB,
+            t: ARGON2_MIN_T,
+            p: ARGON2_P,
+        }
+    }
+
+    /// Reject out-of-bounds params before any derivation/allocation: the
+    /// lower bound refuses a downgraded vault, the upper bound an inflated
+    /// one (huge allocation / unbounded derivation ahead of any tag
+    /// check). An unknown algorithm `id` also fails — Argon2id is the only
+    /// supported family.
     pub(crate) fn enforce_bounds(&self) -> Result<(), SecretStoreError> {
         if self.id != KDF_ID_ARGON2ID
             || self.m_kib < ARGON2_MIN_M_KIB
@@ -89,20 +131,20 @@ impl KdfParams {
     }
 }
 
-/// Derive a 32-byte AEAD key from `passphrase` + `salt` with Argon2id.
-/// Output lands directly in a [`SecretBytes`].
+/// Derive a 32-byte AEAD key from `passphrase` + `salt` with Argon2id,
+/// landing directly in a [`SecretBytes`]. Takes `&SecretString` so the
+/// bare-byte passphrase view lives only inside this function.
 ///
-/// Takes `&SecretString` directly so the bare-byte view of the
-/// passphrase lives only inside this function — callers can no
-/// longer accidentally hand a `&[u8]` (e.g. by holding a stray
-/// `expose_secret().as_bytes()` longer than intended) into KDF input.
+/// Zeroization residual: argon2 0.5.3's `zeroize` feature wipes
+/// `initial_hash` / `blockhash` but NOT the bulk `Block` matrix (up to
+/// `m_kib` of derived state). Accepted residual against A5 (swap /
+/// core-dump while unlocked); closing it needs an upstream fix.
 pub(crate) fn derive_key(
     passphrase: &SecretString,
-    salt: &[u8],
+    salt: &[u8; SALT_LEN],
     params: KdfParams,
 ) -> Result<SecretBytes, SecretStoreError> {
-    // Bounds MUST gate before Params::new / hash_password_into so an
-    // inflated m_kib never reaches the allocator.
+    // Bounds MUST gate first so an inflated m_kib never reaches the allocator.
     params.enforce_bounds()?;
     let argon_params = Params::new(params.m_kib, params.t, params.p, Some(KEY_LEN))
         .map_err(|_| SecretStoreError::KdfFailure)?;
@@ -126,7 +168,7 @@ pub(crate) fn seal(
     plaintext: &[u8],
 ) -> Result<([u8; NONCE_LEN], Vec<u8>), SecretStoreError> {
     let cipher = XChaCha20Poly1305::new_from_slice(key.expose_secret())
-        .map_err(|_| SecretStoreError::KdfFailure)?;
+        .map_err(|_| SecretStoreError::Encrypt)?;
     let mut nonce_bytes = [0u8; NONCE_LEN];
     random_bytes(&mut nonce_bytes)?;
     let nonce = XNonce::from_slice(&nonce_bytes);
@@ -138,11 +180,36 @@ pub(crate) fn seal(
                 aad,
             },
         )
-        // Encrypt-path failure (XChaCha20-Poly1305 only fails here when
-        // the plaintext exceeds the construction's length limit), so it is
-        // not a decryption concern; keep it on the same write-oriented
-        // variant the cipher-construction failure above uses.
-        .map_err(|_| SecretStoreError::KdfFailure)?;
+        // AEAD write-side failure (only when plaintext exceeds the length
+        // limit), not a key-derivation one.
+        .map_err(|_| SecretStoreError::Encrypt)?;
+    Ok((nonce_bytes, ct))
+}
+
+/// Like [`seal`] but takes a caller-supplied `nonce` instead of pulling
+/// from the CSPRNG. **Test-only** — golden-vector / size-budget tests
+/// need byte-deterministic ciphertext output. Production code MUST use
+/// [`seal`] so nonces stay unique (XChaCha20-Poly1305 nonce reuse leaks
+/// the keystream).
+#[cfg(test)]
+pub(crate) fn seal_with_nonce(
+    key: &SecretBytes,
+    nonce_bytes: [u8; NONCE_LEN],
+    aad: &[u8],
+    plaintext: &[u8],
+) -> Result<([u8; NONCE_LEN], Vec<u8>), SecretStoreError> {
+    let cipher = XChaCha20Poly1305::new_from_slice(key.expose_secret())
+        .map_err(|_| SecretStoreError::Encrypt)?;
+    let nonce = XNonce::from_slice(&nonce_bytes);
+    let ct = cipher
+        .encrypt(
+            nonce,
+            chacha20poly1305::aead::Payload {
+                msg: plaintext,
+                aad,
+            },
+        )
+        .map_err(|_| SecretStoreError::Encrypt)?;
     Ok((nonce_bytes, ct))
 }
 
@@ -157,7 +224,7 @@ pub(crate) fn open(
     ciphertext: &[u8],
 ) -> Result<SecretBytes, SecretStoreError> {
     let cipher = XChaCha20Poly1305::new_from_slice(key.expose_secret())
-        .map_err(|_| SecretStoreError::KdfFailure)?;
+        .map_err(|_| SecretStoreError::Encrypt)?;
     let nonce = XNonce::from_slice(nonce);
     let pt = cipher
         .decrypt(
@@ -175,20 +242,13 @@ pub(crate) fn open(
 mod tests {
     use super::*;
 
-    /// Argon2id floor params — fast enough for unit tests; production
-    /// runs at the default target (64 MiB).
-    fn floor_params() -> KdfParams {
-        KdfParams {
-            id: KDF_ID_ARGON2ID,
-            m_kib: ARGON2_MIN_M_KIB,
-            t: ARGON2_MIN_T,
-            p: ARGON2_P,
-        }
-    }
+    // Compile-time guard: argon2's `impl Zeroize for Block` is feature-
+    // gated, so this fails to build if `argon2/zeroize` is ever dropped.
+    static_assertions::assert_impl_all!(argon2::Block: zeroize::Zeroize);
 
     #[test]
     fn floors_reject_weak_params() {
-        let base = floor_params();
+        let base = KdfParams::floor_target();
         assert!(KdfParams {
             m_kib: 1024,
             ..base
@@ -204,7 +264,7 @@ mod tests {
     fn ceilings_reject_inflated_params() {
         // An attacker-controllable JSON kdf cannot force a huge
         // allocation or unbounded derivation.
-        let base = floor_params();
+        let base = KdfParams::floor_target();
         assert!(KdfParams {
             m_kib: u32::MAX,
             ..base
@@ -239,7 +299,7 @@ mod tests {
         // algorithm id is refused before any derivation runs.
         let bad = KdfParams {
             id: 7,
-            ..floor_params()
+            ..KdfParams::floor_target()
         };
         assert!(matches!(
             bad.enforce_bounds(),
@@ -253,16 +313,14 @@ mod tests {
 
     #[test]
     fn derive_key_rejects_inflated_m_kib_before_allocating() {
-        // u32::MAX m_kib must error fast (enforce_bounds) and never reach
-        // the multi-GiB allocator. A real allocation of ~4 TiB would OOM
-        // the test, so reaching here at all proves the ceiling fired
-        // first.
+        // u32::MAX m_kib must error via enforce_bounds before the ~4 TiB
+        // allocation — which would OOM the test if it ever ran.
         let err = derive_key(
             &SecretString::new("pw"),
             &[0u8; SALT_LEN],
             KdfParams {
                 m_kib: u32::MAX,
-                ..floor_params()
+                ..KdfParams::floor_target()
             },
         )
         .unwrap_err();
@@ -273,7 +331,12 @@ mod tests {
     fn seal_open_roundtrip_with_floor_params() {
         let mut salt = [0u8; SALT_LEN];
         random_bytes(&mut salt).unwrap();
-        let key = derive_key(&SecretString::new("correct horse"), &salt, floor_params()).unwrap();
+        let key = derive_key(
+            &SecretString::new("correct horse"),
+            &salt,
+            KdfParams::floor_target(),
+        )
+        .unwrap();
         let aad = b"v1|wallet|label";
         let (nonce, ct) = seal(&key, aad, b"top secret seed").unwrap();
         let pt = open(&key, &nonce, aad, &ct).unwrap();
@@ -282,7 +345,12 @@ mod tests {
 
     #[test]
     fn wrong_aad_fails_with_no_plaintext() {
-        let key = derive_key(&SecretString::new("pw"), &[9u8; SALT_LEN], floor_params()).unwrap();
+        let key = derive_key(
+            &SecretString::new("pw"),
+            &[9u8; SALT_LEN],
+            KdfParams::floor_target(),
+        )
+        .unwrap();
         let (nonce, ct) = seal(&key, b"slot-A", b"seed").unwrap();
         let err = open(&key, &nonce, b"slot-B", &ct).unwrap_err();
         assert!(matches!(err, SecretStoreError::Decrypt));
@@ -291,8 +359,18 @@ mod tests {
     #[test]
     fn wrong_key_fails() {
         let salt = [1u8; SALT_LEN];
-        let k1 = derive_key(&SecretString::new("right"), &salt, floor_params()).unwrap();
-        let k2 = derive_key(&SecretString::new("wrong"), &salt, floor_params()).unwrap();
+        let k1 = derive_key(
+            &SecretString::new("right"),
+            &salt,
+            KdfParams::floor_target(),
+        )
+        .unwrap();
+        let k2 = derive_key(
+            &SecretString::new("wrong"),
+            &salt,
+            KdfParams::floor_target(),
+        )
+        .unwrap();
         let (nonce, ct) = seal(&k1, b"aad", b"seed").unwrap();
         assert!(matches!(
             open(&k2, &nonce, b"aad", &ct),
@@ -302,7 +380,12 @@ mod tests {
 
     #[test]
     fn nonces_are_unique_across_seals() {
-        let key = derive_key(&SecretString::new("pw"), &[2u8; SALT_LEN], floor_params()).unwrap();
+        let key = derive_key(
+            &SecretString::new("pw"),
+            &[2u8; SALT_LEN],
+            KdfParams::floor_target(),
+        )
+        .unwrap();
         let mut seen = std::collections::HashSet::new();
         for _ in 0..256 {
             let (nonce, _) = seal(&key, b"aad", b"x").unwrap();

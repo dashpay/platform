@@ -17,6 +17,14 @@ use platform_wallet_storage::secrets::{
 };
 
 fn vault_path(dir: &Path) -> PathBuf {
+    // `open` refuses a group/other-writable parent dir; a umask-0002
+    // tempdir lands at 0o775, so tighten it to 0o700 first.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+            .expect("tighten vault parent dir to 0o700 so open() passes the perm check");
+    }
     dir.join("vault.pwsvault")
 }
 
@@ -168,4 +176,76 @@ fn wrapper_debug_is_redacted() {
     assert!(!format!("{b:?}").contains("PLAINTEXT"));
     let s = SecretString::new("PLAINTEXTNEEDLE");
     assert!(!format!("{s:?}").contains("PLAINTEXT"));
+}
+
+/// SECRETS.md (the on-disk vault is "explicitly attacker-controllable",
+/// defenses must "fail closed", error doc: "malformed vault file ...
+/// truncated header"). A garbage / truncated / empty / non-UTF-8 vault
+/// fed through the FULL `EncryptedFileStore::open` integration path
+/// (`read_vault_at` -> `Vec::with_capacity(len)` -> `format::deserialize`)
+/// must surface a clean typed `MalformedVault` and NEVER panic. The
+/// `format.rs` unit tests exercise `deserialize` in isolation; they do
+/// not prove the file-open seam (perms check, size cap, allocation,
+/// take()) is wired to the same clean-error outcome.
+#[cfg(unix)]
+#[test]
+fn garbage_vault_file_fails_closed_at_open_no_panic() {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+
+    let cases: &[(&str, &[u8])] = &[
+        ("empty", b""),
+        ("ascii-garbage", b"this is not a vault at all"),
+        ("truncated-json", b"{\"version\":1,\"kdf\":{\"id\":1,"),
+        ("non-utf8", &[0xff, 0xfe, 0x00, 0x01, 0x80, 0x80]),
+        ("json-but-not-a-vault", b"{\"hello\":\"world\"}"),
+    ];
+    for (name, bytes) in cases {
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        fs::write(&path, bytes).unwrap();
+        // Match the resident-vault perm precondition so the failure is
+        // attributable to parsing, not to the (separately tested) perm
+        // refusal.
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+
+        let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
+            .expect_err("garbage vault must fail to open");
+        assert!(
+            matches!(err, SecretStoreError::MalformedVault),
+            "case `{name}`: expected MalformedVault, got {err:?}"
+        );
+        // The clean error must not echo the offending input bytes.
+        let rendered = format!("{err}");
+        assert!(
+            !rendered.contains("not a vault") && !rendered.contains("hello"),
+            "case `{name}`: error leaked input bytes: {rendered}"
+        );
+    }
+}
+
+/// SECRETS.md: an unknown/rolled-forward `format_version` is refused
+/// fail-closed through the file-open seam, distinct from a malformed
+/// body. The format.rs unit test proves the parser; this proves the
+/// `open()` path preserves the distinction end to end.
+#[cfg(unix)]
+#[test]
+fn unknown_version_vault_is_refused_at_open() {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = vault_path(dir.path());
+    // A structurally JSON document whose `version` is in the future:
+    // the lax probe reads it, then the version gate rejects it before
+    // any KDF/AEAD work.
+    fs::write(&path, br#"{"version":999,"extra":"tolerated-by-probe"}"#).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+
+    let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
+        .expect_err("unknown version must fail to open");
+    assert!(
+        matches!(err, SecretStoreError::VersionUnsupported { found: 999 }),
+        "expected VersionUnsupported{{999}}, got {err:?}"
+    );
 }

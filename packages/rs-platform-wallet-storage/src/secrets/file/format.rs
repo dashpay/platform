@@ -1,10 +1,7 @@
 //! Versioned, self-describing vault format + canonical AAD.
 //!
-//! The vault is one `serde_json` document covering every wallet in the
-//! store: a single passphrase / salt / KDF block at the top, and a
-//! nested map keyed first by `wallet_id` (lowercase hex) and then by
-//! `label`. One file, one passphrase, one lock — a multi-wallet store
-//! cannot lock its other wallets out by construction.
+//! The vault is one `serde_json` document: a single salt / KDF block at
+//! the top, then a map keyed by `wallet_id` (lowercase hex) and `label`.
 //!
 //! ```json
 //! {
@@ -21,22 +18,24 @@
 //! }
 //! ```
 //!
-//! Entries are nested `BTreeMap`s so lookup is O(log n) and the on-disk
-//! shape excludes duplicate `(wallet_id, label)` pairs by construction
-//! (a JSON object cannot carry two values under the same key).
+//! Nested `BTreeMap`s give O(log n) lookup and a JSON-object shape that
+//! excludes duplicate `(wallet_id, label)` pairs by construction on the
+//! WRITE side. On the READ side, a hand-edited document with duplicate JSON
+//! keys is not rejected — `serde_json` collapses duplicates last-wins into
+//! the `BTreeMap`. That is benign: every entry's ciphertext is AEAD-sealed
+//! with its `(wallet_id, label)` bound as AAD, so a collapsed or reordered
+//! structure can never surface bytes that don't authenticate against the
+//! surviving key (a forged duplicate fails its tag as `Corruption`).
 //!
 //! Parsing is two-step: a lax [`VersionProbe`] reads `version` first
-//! (tolerating future-version sibling fields), then — only for the
-//! compiled-in [`FORMAT_VERSION`] — the strict [`Vault`] payload is
-//! parsed. All byte fields are lowercase hex; Argon2 params are JSON
-//! numbers.
+//! (tolerating future-version siblings), then the strict [`Vault`]
+//! payload is parsed only for the compiled-in [`FORMAT_VERSION`].
 //!
-//! KDF params/salt are store-wide. `verify_ct` is an AEAD seal of a
-//! fixed constant under the header-derived key — a wrong passphrase
-//! fails its tag, so a mismatched key is rejected before any entry is
-//! written or read (no mixed-key corruption). The verify-token AAD is
-//! NOT bound to any wallet id (the store is now multi-wallet) so the
-//! token validates the store-wide passphrase exactly once per op.
+//! `verify_ct` is an AEAD seal of a fixed constant under the
+//! header-derived key, so a wrong passphrase fails its tag and a
+//! mismatched key is rejected before any entry is touched (no mixed-key
+//! corruption). The verify-token AAD is not bound to any wallet id, so it
+//! validates the store-wide passphrase once per op.
 
 use std::collections::BTreeMap;
 
@@ -44,6 +43,9 @@ use serde::{Deserialize, Serialize};
 
 use super::crypto::{KdfParams, NONCE_LEN, SALT_LEN};
 use crate::secrets::error::SecretStoreError;
+use crate::secrets::wire::aad::{EntryAad, VerifyAad};
+use crate::secrets::wire::config::{ENTRY_DOMAIN_V2, VERIFY_DOMAIN_V2, WIRE_CONFIG};
+use crate::secrets::wire::kdf::KdfParamsEncoded;
 
 pub(crate) const FORMAT_VERSION: u32 = 1;
 pub(crate) const KDF_ID_ARGON2ID: u8 = 1;
@@ -53,35 +55,16 @@ pub(crate) const KDF_ID_ARGON2ID: u8 = 1;
 /// value itself is not secret.
 pub(crate) const VERIFY_CONSTANT: &[u8] = b"PWSVAULT-VERIFY-v1";
 
-/// AAD slot label for the verification token. The leading NUL keeps it
-/// disjoint from every allowlisted entry label, so the token can never
-/// alias a real entry's AAD.
-pub(crate) const VERIFY_LABEL: &str = "\0verify";
-
-/// Sentinel wallet id used as the verify-token AAD's wallet slot. The
-/// store-wide token is not bound to any real wallet; this 32-byte zero
-/// id keeps the AAD shape identical to entry AAD (same length-prefixed
-/// construction) without aliasing a real wallet's namespace — a real
-/// wallet id `[0u8; 32]` would still produce a different AAD because
-/// the label slot differs ([`VERIFY_LABEL`] vs any allowlisted label).
-const VERIFY_WALLET_ID: [u8; 32] = [0u8; 32];
-
 /// Minimum AEAD ciphertext length: the Poly1305 tag is always present
 /// even for an empty plaintext, so any `verify_ct`/`ciphertext` shorter
 /// than this is structurally impossible and rejected.
 const AEAD_TAG_LEN: usize = 16;
 
-/// The full parsed vault: format `version`, KDF parameters, salt, the
-/// passphrase-verification token, and every wallet's entries.
-/// Serializes directly to the on-disk wire form — `hex_array` validates
-/// `salt`/`verify_nonce` widths at the serde seam, so no parallel
-/// `Vec<u8>`-typed wire mirror is needed. Field order matches the
-/// documented schema and `serde_json` preserves it, so the byte layout
-/// is stable.
-///
-/// `deny_unknown_fields` fails closed on a stray sibling for this
-/// compiled-in [`FORMAT_VERSION`] (C3). Forward-compat dispatch on
-/// `version` runs through [`VersionProbe`] before this strict parse.
+/// The full parsed vault, serializing directly to the on-disk wire form.
+/// `hex_array` validates fixed-width fields at the serde seam, and
+/// `serde_json` preserves field order, so the byte layout is stable.
+/// `deny_unknown_fields` fails closed on a stray sibling; forward-compat
+/// dispatch runs through [`VersionProbe`] before this strict parse.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Vault {
@@ -99,12 +82,9 @@ pub(crate) struct Vault {
     pub wallets: BTreeMap<String, BTreeMap<String, EntryBody>>,
 }
 
-/// One decrypted-on-demand vault entry body. The owning
-/// `Vault.wallets[wallet]` `BTreeMap` keys this by `label`, so the
-/// label is the map key — not a field — and the on-disk shape can't
-/// carry two entries under the same label. `hex_array` validates
-/// `nonce`'s fixed width at parse; `deny_unknown_fields` fails closed
-/// on a stray sibling (C3).
+/// One vault entry body, keyed by `label` in the owning `BTreeMap` (so
+/// the label is the map key, not a field). `hex_array` validates `nonce`'s
+/// width at parse; `deny_unknown_fields` fails closed on a stray sibling.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct EntryBody {
@@ -114,42 +94,49 @@ pub(crate) struct EntryBody {
     pub ciphertext: Vec<u8>,
 }
 
-/// Canonical length-prefixed AAD binding ciphertext to its slot:
-/// `format_version ‖ wallet_id ‖ label`. A blob moved to another slot,
-/// or a rolled-back `format_version`, fails the tag.
+/// Canonical AAD binding a vault entry's ciphertext to its slot:
+/// `domain ‖ format_version ‖ wallet_id ‖ label`, bincode-encoded
+/// against [`WIRE_CONFIG`]. A blob moved to another slot, or one
+/// version-rolled-back, fails the tag.
 ///
-/// AAD-DETERMINISM INVARIANT (C1): AAD is built solely from the typed
-/// `(format_version, wallet_id, label)` triple via this length-prefixed
-/// layout — never from any serialized JSON bytes or JSON key order. The
-/// `format_version` argument is always the compiled-in [`FORMAT_VERSION`]
-/// constant at every call site; the JSON `version` field is used ONLY as
-/// the two-step dispatch gate and is NEVER routed into AAD.
+/// Determinism invariant: AAD is built solely from this typed triple,
+/// never from serialized JSON bytes or key order. `format_version` is
+/// always the compiled-in [`FORMAT_VERSION`]; the JSON `version` field
+/// is a dispatch gate only and is never routed into AAD.
 pub(crate) fn aad(format_version: u32, wallet_id: &[u8; 32], label: &str) -> Vec<u8> {
-    let lb = label.as_bytes();
-    let mut v = Vec::with_capacity(4 + 4 + 32 + 4 + lb.len());
-    v.extend_from_slice(&format_version.to_le_bytes());
-    v.extend_from_slice(&(wallet_id.len() as u32).to_le_bytes());
-    v.extend_from_slice(wallet_id);
-    v.extend_from_slice(&(lb.len() as u32).to_le_bytes());
-    v.extend_from_slice(lb);
-    v
+    bincode::encode_to_vec(
+        EntryAad {
+            domain: ENTRY_DOMAIN_V2,
+            format_version,
+            wallet_id: *wallet_id,
+            label,
+        },
+        WIRE_CONFIG,
+    )
+    .expect("EntryAad encode is infallible")
 }
 
-/// AAD for the passphrase-verification token. Uses the same canonical
-/// construction as entry AAD but with a sentinel zero wallet id and
-/// [`VERIFY_LABEL`] (NUL-prefixed, disjoint from every allowlisted
-/// label) so the token is cryptographically tied to this
-/// `format_version` only and cannot be replayed into any real entry
-/// slot.
-pub(crate) fn verify_aad(format_version: u32) -> Vec<u8> {
-    aad(format_version, &VERIFY_WALLET_ID, VERIFY_LABEL)
+/// AAD for the verify-token: bincode-encoded `VerifyAad` binding the
+/// vault-wide salt + KDF header against the verify domain tag. A
+/// tampered header yields a different AAD AND a different derived key,
+/// so the token surfaces `WrongPassphrase`.
+pub(crate) fn verify_aad(format_version: u32, salt: &[u8; SALT_LEN], kdf: &KdfParams) -> Vec<u8> {
+    bincode::encode_to_vec(
+        VerifyAad {
+            domain: VERIFY_DOMAIN_V2,
+            format_version,
+            salt: *salt,
+            kdf: KdfParamsEncoded::from(*kdf),
+        },
+        WIRE_CONFIG,
+    )
+    .expect("VerifyAad encode is infallible")
 }
 
-/// Serde helpers encoding `Vec<u8>` as lowercase hex strings. Hex is
-/// already a crate dependency (`WalletId::to_hex`), is deterministic and
-/// self-validating, and avoids adding `base64`. The encoding sits wholly
-/// outside the AEAD envelope and the AAD (C1), so it has no bearing on
-/// any cryptographic binding.
+/// Serde helpers encoding `Vec<u8>` as lowercase hex. Hex is already a
+/// crate dependency, deterministic, and avoids adding `base64`. The
+/// encoding sits outside the AEAD envelope and the AAD, so it has no
+/// cryptographic bearing.
 mod hex_bytes {
     use serde::{Deserialize, Deserializer, Serializer};
 
@@ -163,12 +150,10 @@ mod hex_bytes {
     }
 }
 
-/// Const-generic companion to [`hex_bytes`] for fixed-width byte fields.
-/// Wire form is identical (lowercase hex), but the `[u8; N]` deserialize
-/// target moves length validation into the serde seam — a wrong-length
-/// hex blob is rejected at parse with a `serde::de::Error` naming both
-/// the offending size and the expected `N`, so the field is identifiable
-/// in the error message (no anonymous "invalid length").
+/// Const-generic companion to [`hex_bytes`] for fixed-width fields. The
+/// `[u8; N]` target moves length validation into the serde seam: a
+/// wrong-length blob is rejected at parse with an error naming the
+/// offending size and the expected `N`.
 pub(super) mod hex_array {
     use serde::{de::Error as DeError, Deserialize, Deserializer, Serializer};
 
@@ -201,33 +186,32 @@ pub(super) mod hex_array {
     }
 }
 
-/// Step-1 probe: read ONLY `version`, tolerating unknown sibling fields
-/// so a future v-N file can be dispatched on before its payload shape is
-/// committed to. MUST NOT use `deny_unknown_fields` (C3).
+/// Step-1 probe: read ONLY `version`, tolerating unknown siblings so a
+/// future vN file can be dispatched on. MUST NOT use `deny_unknown_fields`.
 #[derive(Deserialize)]
 struct VersionProbe {
     version: u32,
 }
 
-/// Serialize a full vault to JSON bytes. Contains only salt/params
-/// (non-secret) + ciphertext — never plaintext.
+/// Serialize a vault to JSON bytes — salt/params + ciphertext only, never
+/// plaintext.
 pub(crate) fn serialize(vault: &Vault) -> Vec<u8> {
-    // Vault carries only fixed-width arrays and owned Vecs that serialize
-    // infallibly; a serializer error would be a logic bug.
+    // Vault holds only fixed arrays and owned Vecs; serialization is
+    // infallible, so an error would be a logic bug.
     serde_json::to_vec(vault).expect("vault serialization is infallible")
 }
 
-/// Parse a vault. Two-step: probe `version` (lax), then parse the strict
-/// payload for the known version. Refuses unknown versions and any
-/// malformed/short byte field — fail closed. Unknown KDF
-/// algorithm ids and out-of-range Argon2 params are caught later at
-/// `KdfParams::enforce_bounds` (called on every `derive_key`), so they
-/// can't silently slip past. All `serde_json` errors are mapped to a
-/// static [`SecretStoreError`] with the source DISCARDED so input bytes
-/// can never leak into an error string or log. Salt and nonce widths
-/// are validated by `hex_array` at the serde seam; the AEAD-tag-length
-/// floor remains a post-parse check.
+/// Parse a vault: probe `version` (lax), then parse the strict payload
+/// for the known version. Fails closed on unknown versions and malformed
+/// fields. `serde_json` errors are mapped to a static
+/// [`SecretStoreError`] with the source DISCARDED so input bytes never
+/// leak. Unknown KDF ids / out-of-range Argon2 params are caught later at
+/// `KdfParams::enforce_bounds`.
 pub(crate) fn deserialize(buf: &[u8]) -> Result<Vault, SecretStoreError> {
+    // INTENTIONAL: the 2x parse (probe + strict) over the 128MiB-capped,
+    // lock-gated local file is accepted for forward-version dispatch.
+    // INTENTIONAL: relies on serde_json's default recursion limit (128)
+    // for deep-nesting DoS safety — MUST NOT disable it or use from_reader.
     let probe: VersionProbe =
         serde_json::from_slice(buf).map_err(|_| SecretStoreError::MalformedVault)?;
     if probe.version != FORMAT_VERSION {
@@ -242,12 +226,9 @@ pub(crate) fn deserialize(buf: &[u8]) -> Result<Vault, SecretStoreError> {
         return Err(SecretStoreError::MalformedVault);
     }
 
-    // Validate outer wallet-id keys and inner label keys at parse time.
-    // The serde shape allows any string for either key, so
-    // a malformed file (or a tampered one) could otherwise smuggle a
-    // bogus wallet id past parse and surface only at the first `put` /
-    // `get` / `delete`. Reject the whole vault on the first offender so
-    // a single bad key fails the file open, not a downstream op.
+    // Validate wallet-id and label keys at parse: the serde shape allows
+    // any string, so a bogus key would otherwise surface only at the
+    // first put/get/delete. Reject the whole vault on the first offender.
     for (wallet_hex, entries) in &vault.wallets {
         super::decode_wallet_id_hex(wallet_hex)?;
         for (label, body) in entries {
@@ -265,33 +246,6 @@ pub(crate) fn deserialize(buf: &[u8]) -> Result<Vault, SecretStoreError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn aad_binds_slot() {
-        let w = [1u8; 32];
-        assert_ne!(aad(1, &w, "a"), aad(1, &w, "b"));
-        assert_ne!(aad(1, &w, "a"), aad(2, &w, "a"));
-        assert_ne!(aad(1, &w, "a"), aad(1, &[2u8; 32], "a"));
-        // Length-prefix defeats `"a"+"bc"` vs `"ab"+"c"` ambiguity.
-        assert_ne!(aad(1, &w, "ab"), {
-            let mut v = aad(1, &w, "a");
-            v.extend_from_slice(b"b");
-            v
-        });
-    }
-
-    #[test]
-    fn verify_aad_disjoint_from_every_entry_aad() {
-        // The verify-token's slot is `(VERIFY_WALLET_ID, VERIFY_LABEL)`.
-        // VERIFY_LABEL starts with NUL, which the allowlist forbids, so
-        // no real entry's AAD can collide with the token's AAD — even
-        // if a caller happens to register the all-zero wallet id.
-        let v = verify_aad(FORMAT_VERSION);
-        // A real entry on the same sentinel wallet id can never match
-        // because its label cannot contain NUL.
-        assert_ne!(v, aad(FORMAT_VERSION, &VERIFY_WALLET_ID, "seed"));
-        assert_ne!(v, aad(FORMAT_VERSION, &[1u8; 32], "seed"));
-    }
 
     fn test_vault(wallets: BTreeMap<String, BTreeMap<String, EntryBody>>) -> Vault {
         Vault {
@@ -366,9 +320,8 @@ mod tests {
 
     #[test]
     fn deserialize_accepts_unknown_kdf_id_and_bounds_check_rejects_later() {
-        // Unknown algo ids ride through parse so the algorithm gate
-        // lives in one place — `KdfParams::enforce_bounds`, called on
-        // every `derive_key`. The format layer no longer guards it.
+        // Unknown algo ids ride through parse; the gate lives solely at
+        // `KdfParams::enforce_bounds` (called on every `derive_key`).
         let mut vault = test_vault(BTreeMap::new());
         vault.kdf.id = 7;
         let bytes = serialize(&vault);
@@ -617,5 +570,147 @@ mod tests {
             !rendered.contains(needle),
             "error leaked input bytes: {rendered}"
         );
+    }
+
+    /// A parse of mutated bytes must be a clean `Ok` or a typed error
+    /// variant — never a panic / abort.
+    fn assert_deserialize_outcome_is_typed(bytes: &[u8]) {
+        let res = std::panic::catch_unwind(|| deserialize(bytes));
+        let parsed = res.expect("deserialize must never panic on hostile input");
+        match parsed {
+            Ok(_)
+            | Err(SecretStoreError::MalformedVault)
+            | Err(SecretStoreError::VersionUnsupported { .. })
+            | Err(SecretStoreError::InvalidLabel) => {}
+            Err(other) => panic!("unexpected error variant from parser: {other:?}"),
+        }
+    }
+
+    /// Deterministic byte-level fuzz: flip bytes and truncate at every
+    /// offset of a valid vault, asserting the parser stays fail-closed and
+    /// never panics. Fixed seed, no proptest dependency.
+    #[test]
+    fn parser_is_fuzz_resistant_to_byte_mutation() {
+        let mut entries = BTreeMap::new();
+        entries.insert(
+            "bip39_mnemonic".to_string(),
+            EntryBody {
+                nonce: [0x33; NONCE_LEN],
+                ciphertext: vec![0x44; AEAD_TAG_LEN + 16],
+            },
+        );
+        let mut wallets = BTreeMap::new();
+        wallets.insert(hex::encode([0xABu8; 32]), entries);
+        let valid = serialize(&test_vault(wallets));
+
+        // The pristine vault parses.
+        assert!(deserialize(&valid).is_ok());
+
+        // xorshift32 — deterministic, std-only.
+        let mut state: u32 = 0x1234_5678;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state
+        };
+
+        for _ in 0..2_000 {
+            let mut buf = valid.clone();
+            // Flip 1..=4 random bytes.
+            let flips = 1 + (next() % 4) as usize;
+            for _ in 0..flips {
+                let idx = (next() as usize) % buf.len();
+                buf[idx] ^= (next() & 0xFF) as u8;
+            }
+            assert_deserialize_outcome_is_typed(&buf);
+        }
+
+        // Truncation at every offset — a short read must never panic.
+        for cut in 0..valid.len() {
+            assert_deserialize_outcome_is_typed(&valid[..cut]);
+        }
+    }
+
+    /// Structural fuzz: hostile shapes a byte-flip rarely hits (oversized
+    /// KDF params, deep nesting, bad labels, wrong-width hex). Each must be
+    /// a typed error or a valid Ok, never a panic. Inflated KDF params
+    /// parse Ok by design (the bounds gate lives at `derive_key`).
+    #[test]
+    fn parser_is_fuzz_resistant_to_structural_mutation() {
+        let base: serde_json::Value =
+            serde_json::from_slice(&serialize(&test_vault(BTreeMap::new()))).unwrap();
+        let wid_owned = hex::encode([1u8; 32]);
+        let wid = wid_owned.as_str();
+        let good_nonce = "0".repeat(NONCE_LEN * 2);
+        let good_ct = "0".repeat((AEAD_TAG_LEN + 1) * 2);
+
+        let mut cases: Vec<serde_json::Value> = Vec::new();
+
+        // Oversized / absurd KDF params.
+        for (k, v) in [
+            ("m_kib", serde_json::json!(u32::MAX)),
+            ("t", serde_json::json!(u32::MAX)),
+            ("p", serde_json::json!(u32::MAX)),
+            ("id", serde_json::json!(255)),
+        ] {
+            let mut c = base.clone();
+            c["kdf"][k] = v;
+            cases.push(c);
+        }
+
+        // Deep nesting in the wallets map (well past the type's depth).
+        {
+            let mut nested = serde_json::json!(0);
+            for _ in 0..512 {
+                nested = serde_json::json!([nested]);
+            }
+            let mut c = base.clone();
+            c["wallets"] = nested;
+            cases.push(c);
+        }
+
+        // Hostile labels and key shapes.
+        for label in ["\0null", "../escape", &"a".repeat(65), "has space"] {
+            let mut c = base.clone();
+            c["wallets"] = serde_json::json!({ wid: { label: { "nonce": good_nonce.as_str(), "ciphertext": good_ct.as_str() } } });
+            cases.push(c);
+        }
+
+        // Wrong-width hex and oversized declared sizes.
+        for (nonce, ct) in [
+            ("00", good_ct.as_str()),                       // short nonce
+            (good_nonce.as_str(), "00"),                    // short ciphertext
+            (&"0".repeat(NONCE_LEN * 4), good_ct.as_str()), // over-wide nonce
+            ("zz", good_ct.as_str()),                       // non-hex nonce
+        ] {
+            let mut c = base.clone();
+            c["wallets"] =
+                serde_json::json!({ wid: { "seed": { "nonce": nonce, "ciphertext": ct } } });
+            cases.push(c);
+        }
+
+        // Non-hex / wrong-length outer wallet-id key.
+        for bad_wid in ["not-hex", &"aa".repeat(8), &"AB".repeat(32)] {
+            let mut c = base.clone();
+            c["wallets"] = serde_json::json!({ bad_wid: { "seed": { "nonce": good_nonce.as_str(), "ciphertext": good_ct.as_str() } } });
+            cases.push(c);
+        }
+
+        // Header fields (salt / verify_nonce / verify_ct): empty / short /
+        // over-wide / non-hex must each be a typed error, never a panic.
+        let over_wide = "0".repeat(SALT_LEN * 4);
+        for field in ["salt", "verify_nonce", "verify_ct"] {
+            for bad in ["", "00", over_wide.as_str(), "zz"] {
+                let mut c = base.clone();
+                c[field] = serde_json::json!(bad);
+                cases.push(c);
+            }
+        }
+
+        for c in cases {
+            let bytes = serde_json::to_vec(&c).unwrap();
+            assert_deserialize_outcome_is_typed(&bytes);
+        }
     }
 }

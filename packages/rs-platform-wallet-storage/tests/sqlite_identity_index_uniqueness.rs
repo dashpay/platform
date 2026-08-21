@@ -72,14 +72,14 @@ fn typed(err: &PersistenceError) -> &WalletStorageError {
         PersistenceError::Backend { source, .. } => source
             .downcast_ref::<WalletStorageError>()
             .expect("backend source is a WalletStorageError"),
-        PersistenceError::LockPoisoned => panic!("unexpected LockPoisoned"),
+        other => panic!("unexpected persistence error: {other}"),
     }
 }
 
 fn backend_kind(err: &PersistenceError) -> PersistenceErrorKind {
     match err {
         PersistenceError::Backend { kind, .. } => *kind,
-        PersistenceError::LockPoisoned => panic!("unexpected LockPoisoned"),
+        other => panic!("unexpected persistence error: {other}"),
     }
 }
 
@@ -93,7 +93,7 @@ fn live_occupant(p: &SqlitePersister, wallet_id: &WalletId, index: u32) -> Optio
     };
     conn.query_row(
         "SELECT identity_id FROM identities \
-         WHERE wallet_id IS ?1 AND wallet_index = ?2 AND tombstoned = 0",
+         WHERE wallet_id IS ?1 AND identity_index = ?2 AND tombstoned = 0",
         params![wid_param, i64::from(index)],
         |row| row.get::<_, Vec<u8>>(0),
     )
@@ -124,7 +124,7 @@ fn row_tombstoned(p: &SqlitePersister, id: &Identifier) -> Option<bool> {
 fn peer_claims_slot(p: &SqlitePersister, wallet_id: &WalletId, id: &Identifier, index: u32) {
     let conn = p.lock_conn_for_test();
     conn.execute(
-        "INSERT INTO identities (identity_id, wallet_id, wallet_index, entry_blob, tombstoned) \
+        "INSERT INTO identities (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
          VALUES (?1, ?2, ?3, X'00', 0)",
         params![id.as_slice(), wallet_id.as_slice(), i64::from(index)],
     )
@@ -537,7 +537,7 @@ fn delete_wallet_proceeds_despite_unpersistable_pending_writes() {
     let conn = p.lock_conn_for_test();
     let wallets: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM wallet_metadata WHERE wallet_id = ?1",
+            "SELECT COUNT(*) FROM wallets WHERE wallet_id = ?1",
             params![w.as_slice()],
             |row| row.get(0),
         )

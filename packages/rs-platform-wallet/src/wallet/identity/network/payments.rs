@@ -109,11 +109,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         };
 
         let synced_height = info.core_wallet.synced_height();
-        // 0 means "scan from genesis / not yet started" — already a full
-        // historical scan, nothing to backfill toward.
-        if synced_height == 0 {
-            return Ok(None);
-        }
+        // A zero checkpoint already requests a scan from genesis. Keep
+        // processing candidates so they are marked as covered and do not
+        // trigger a redundant funding-height rewind after that scan advances.
 
         // (owner, contact) pairs that have a receival account — we can only
         // watch a contact's incoming addresses once its receival account exists.
@@ -670,6 +668,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// retried on the next sweep.
     ///
     /// Returns the number of entries confirmed this pass.
+    ///
+    /// # Errors
+    ///
+    /// Transient persistence read failures are deferred to the next sweep;
+    /// permanent failures return [`PlatformWalletError::PersisterLoad`].
     pub async fn reconcile_sent_payments(&self) -> Result<usize, PlatformWalletError> {
         use crate::wallet::identity::types::dashpay::payment::{PaymentDirection, PaymentStatus};
 
@@ -704,14 +707,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             let record = match self.persister.get_core_tx_record(&txid) {
                 Ok(Some(record)) => record,
                 Ok(None) => continue,
-                Err(e) => {
+                Err(e) if e.is_transient() => {
                     tracing::warn!(
                         error = %e,
                         txid = %txid_str,
-                        "reconcile_sent_payments: tx-record read failed; will retry next sweep"
+                        "reconcile_sent_payments: transient tx-record read failed; \
+                         will retry next sweep"
                     );
                     continue;
                 }
+                Err(e) => return Err(PlatformWalletError::PersisterLoad(e)),
             };
             // An InstantSend lock is final for DashPay display, same as a
             // mined block — one definition of "final", shared with the
@@ -1500,10 +1505,12 @@ mod tests {
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
     use key_wallet::mnemonic::{Language, Mnemonic};
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
     use key_wallet::Network;
 
     use crate::changeset::{
-        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+        ClientStartState, PersistenceError, PersistenceErrorKind, PlatformWalletChangeSet,
+        PlatformWalletPersistence,
     };
     use crate::error::PlatformWalletError;
     use crate::events::{EventHandler, PlatformEventHandler};
@@ -1553,6 +1560,9 @@ mod tests {
                 key_wallet::managed_account::transaction_record::TransactionRecord,
             >,
         >,
+        /// `Some(kind)` makes every `get_core_tx_record` fail with that
+        /// error class instead of answering from `records`.
+        read_error_kind: Mutex<Option<PersistenceErrorKind>>,
         /// Txids the enumeration lists but `get_core_tx_record` answers
         /// `Ok(None)` for — the FFI shape for "row exists, record not
         /// available yet" (missing bytes, undecodable, pending InstantSend).
@@ -1601,6 +1611,12 @@ mod tests {
             PersistenceError,
         > {
             *self.get_core_tx_record_calls.lock().unwrap() += 1;
+            if let Some(kind) = *self.read_error_kind.lock().unwrap() {
+                return Err(PersistenceError::backend_with_kind(
+                    kind,
+                    "simulated tx-record read failure",
+                ));
+            }
             if self.listed_but_unavailable.lock().unwrap().contains(txid) {
                 return Ok(None);
             }
@@ -2137,6 +2153,18 @@ mod tests {
                 )
                 .await
                 .expect("register_contact_account");
+        }
+
+        {
+            let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+            let wm = wallet.identity().wallet_manager.read().await;
+            assert_eq!(
+                wm.get_wallet_info(&wallet_id)
+                    .expect("info")
+                    .account_generation(),
+                1,
+                "registering a contact account must invalidate the prior filter-scan generation"
+            );
         }
 
         {
@@ -2749,8 +2777,16 @@ mod tests {
             "all candidates marked -> no re-trigger"
         );
 
-        // A newly discovered, older-funded contact re-lowers exactly once...
+        // Adding another account now invalidates upstream filter coverage and
+        // rewinds directly to the wallet birth floor. Reconcile recognizes that
+        // this full-history scan already covers the contact and marks it without
+        // a second, shallower rewind.
         establish_receival_contact(&manager, &persister, wallet_id, owner, c_c, 50, 50).await;
+        assert_eq!(
+            synced_height(&manager, wallet_id).await,
+            0,
+            "new account insertion rewinds filter coverage to the wallet birth floor"
+        );
         assert_eq!(
             iw_wallet
                 .identity()
@@ -2758,10 +2794,10 @@ mod tests {
                 .reconcile_dashpay_rescan()
                 .await
                 .expect("rescan 3"),
-            Some(50),
-            "a new older contact re-lowers to its funding height"
+            None,
+            "the already-scheduled full-history scan needs no second rewind"
         );
-        // ...then settles.
+        // The contact was marked while the checkpoint was zero, so it settles.
         assert_eq!(
             iw_wallet
                 .identity()
@@ -2775,8 +2811,8 @@ mod tests {
     }
 
     /// `synced_height == 0` means "scan from genesis / not started" — already a
-    /// full historical scan, so the rescan is a no-op (the masking path the spec
-    /// warns about).
+    /// full historical scan. Reconcile leaves the height alone but marks the
+    /// contact so advancing that scan does not cause a redundant rewind.
     #[tokio::test]
     async fn rescan_is_a_noop_when_synced_height_is_zero() {
         let (manager, persister, wallet_id) = make_wallet().await;
@@ -2798,6 +2834,19 @@ mod tests {
             "synced_height 0 -> no rescan"
         );
         assert_eq!(synced_height(&manager, wallet_id).await, 0);
+
+        set_synced_height(&manager, wallet_id, 200).await;
+        assert_eq!(
+            iw_wallet
+                .identity()
+                .dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("rescan after forward progress"),
+            None,
+            "genesis-covered contact must stay settled after the scan advances"
+        );
+        assert_eq!(synced_height(&manager, wallet_id).await, 200);
     }
 
     /// A `Sent` payment must advance `Pending → Confirmed` once its
@@ -3439,6 +3488,26 @@ mod tests {
             0,
             "reconcile must be idempotent"
         );
+
+        *persister.read_error_kind.lock().unwrap() = Some(PersistenceErrorKind::Transient);
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_sent_payments()
+                .await
+                .expect("transient read failure must wait for the next sweep"),
+            0
+        );
+
+        *persister.read_error_kind.lock().unwrap() = Some(PersistenceErrorKind::Fatal);
+        let err = iw
+            .dashpay()
+            .reconcile_sent_payments()
+            .await
+            .expect_err("permanent read failure must abort the reconcile sweep");
+        assert!(matches!(
+            err,
+            PlatformWalletError::PersisterLoad(ref source) if !source.is_transient()
+        ));
     }
 
     #[tokio::test]
@@ -4671,6 +4740,11 @@ mod tests {
 
         let wm = iw.wallet_manager.read().await;
         let info = wm.get_wallet_info(&wallet_id).expect("info");
+        assert_eq!(
+            info.account_generation(),
+            1,
+            "registering an external account must invalidate the prior filter-scan generation"
+        );
         use key_wallet::account::account_collection::DashpayAccountKey;
         let key = DashpayAccountKey {
             index: 0,

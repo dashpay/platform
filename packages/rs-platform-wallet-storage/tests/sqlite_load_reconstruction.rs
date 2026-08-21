@@ -1,14 +1,9 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! `load()` reconstructs the wired-up subset of client start-state.
-//!
-//! The wallet-level fields (`wallets[*].utxos` / `.unused_asset_locks`)
-//! are blocked on upstream `Wallet::from_persisted` — the persister
-//! stores the data (verified via direct SQL probes) but cannot
-//! reconstruct the `Wallet` + `ManagedWalletInfo` pair that
-//! `ClientWalletStartState` requires. The unwired fields are listed in
-//! `persister::LOAD_UNIMPLEMENTED` and surfaced via a `tracing::warn!`
-//! on every `load`.
+//! `load()` reconstruction tests: `load()` returns a keyless per-wallet
+//! payload (network, birth height, account manifest, core-state
+//! projection, identities, `Consumed`-filtered asset locks, contacts,
+//! identity keys) from which the manager re-derives the signing `Wallet`.
 
 mod common;
 
@@ -221,15 +216,115 @@ fn wallet_without_platform_state_is_omitted_from_load() {
     );
 }
 
-/// non-wired-up sub-areas are written to disk (verified by
-/// direct SQL probes) but do not surface in the load result.
-///
-/// Constructs non-empty `ContactChangeSet` and `TokenBalanceChangeSet`
-/// payloads — `is_empty()` returns false on either, so the buffer
-/// flushes them — then asserts both the `contacts` and `token_balances`
-/// rows are present in SQLite after a reopen, while
-/// `ClientStartState.platform_addresses` stays empty for the wallet
-/// (no platform-address activity was stored).
+/// `load_all` reconstructs `per_account` only from *registered* accounts:
+/// an address row whose `account_index` has no `platform_payment`
+/// registration carries no xpub and is skipped during per-account
+/// reconstruction. The reported `count` is the raw row total (the presence
+/// signal for `load()`'s surfacing gate), so it still includes orphan rows.
+#[test]
+fn load_all_reconstructs_only_registered_accounts() {
+    use platform_wallet::changeset::AccountRegistrationEntry;
+
+    let (persister, _tmp, path) = fresh_persister();
+
+    // Wallet A: one registered account (2 addresses) plus an orphan
+    // account_index with no registration (1 address). All 3 rows count,
+    // but only the registered account reconstructs into per_account.
+    let a = wid(0x70);
+    ensure_wallet_meta(&persister, &a);
+    let registered = 4u32;
+    let unregistered = 9u32;
+    let mut cs_a = PlatformWalletChangeSet::default();
+    cs_a.account_registrations = vec![AccountRegistrationEntry {
+        account_type: key_wallet::account::AccountType::PlatformPayment {
+            account: registered,
+            key_class: 0,
+        },
+        account_xpub: test_xpub(),
+    }];
+    cs_a.platform_addresses = Some(PlatformAddressChangeSet {
+        addresses: vec![
+            entry(a, registered, 0, 0xC0),
+            entry(a, registered, 1, 0xC1),
+            entry(a, unregistered, 0, 0xC2),
+        ],
+        ..Default::default()
+    });
+    persister.store(a, cs_a).unwrap();
+
+    // Wallet B: only an orphan-account row, no registration and no
+    // watermark — nothing reconstructs into per_account, but the raw row
+    // still counts and keeps the wallet above load()'s surfacing gate.
+    let b = wid(0x71);
+    ensure_wallet_meta(&persister, &b);
+    let mut cs_b = PlatformWalletChangeSet::default();
+    cs_b.platform_addresses = Some(PlatformAddressChangeSet {
+        addresses: vec![entry(b, unregistered, 0, 0xD0)],
+        ..Default::default()
+    });
+    persister.store(b, cs_b).unwrap();
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let conn = p2.lock_conn_for_test();
+    let all =
+        platform_wallet_storage::sqlite::schema::platform_addrs::load_all(&conn).expect("load_all");
+    let total_rows_a =
+        platform_wallet_storage::sqlite::schema::platform_addrs::count_per_wallet(&conn, &a)
+            .expect("count_per_wallet");
+    drop(conn);
+
+    // Sanity: wallet A really does carry the orphan row on disk.
+    assert_eq!(total_rows_a, 3, "wallet A has 3 platform_addresses rows");
+
+    let (sync_a, count_a) = all.get(&a).expect("wallet A present in load_all");
+    assert_eq!(
+        *count_a, 3,
+        "count is the raw row total, so it includes the orphan row"
+    );
+    assert_eq!(
+        sync_a.per_account.len(),
+        1,
+        "only the registered account reconstructs into per_account"
+    );
+    assert!(
+        sync_a.per_account.contains_key(&registered),
+        "the registered account is present in per_account"
+    );
+    assert!(
+        !sync_a.per_account.contains_key(&unregistered),
+        "the unregistered (orphan) account is excluded from per_account"
+    );
+
+    let (sync_b, count_b) = all.get(&b).expect("wallet B present in load_all");
+    assert_eq!(*count_b, 1, "wallet B's single orphan row still counts");
+    assert!(
+        sync_b.per_account.is_empty(),
+        "an orphan-only wallet reconstructs no accounts"
+    );
+
+    // The surfacing gate is `count > 0`, so both wallets appear in load();
+    // wallet B surfaces with an empty per_account rather than being dropped.
+    let state = p2.load().unwrap();
+    assert!(
+        state.platform_addresses.contains_key(&a),
+        "wallet A reconstructs the registered account and must surface"
+    );
+    let b_state = state
+        .platform_addresses
+        .get(&b)
+        .expect("wallet B surfaces because it has an address row on disk");
+    assert!(
+        b_state.per_account.is_empty(),
+        "wallet B surfaces but reconstructs no accounts"
+    );
+}
+
+/// `token_balances` is persisted-but-not-rehydrated (deferred) while
+/// contacts pre-key onto the owner's managed identity. Both tables are
+/// durable on disk after reopen (direct SQL probes), the contact
+/// round-trips onto the rehydrated identity, and `state.platform_addresses`
+/// stays empty (no platform-address activity was stored).
 #[test]
 fn tc043_non_wired_up_persisted_but_not_returned() {
     use dpp::prelude::Identifier;
@@ -295,6 +390,21 @@ fn tc043_non_wired_up_persisted_but_not_returned() {
     assert!(
         !state.platform_addresses.contains_key(&w),
         "no platform-address activity was stored — wallet must be absent"
+    );
+    // Contacts pre-key onto the owner's managed identity (out-of-wallet
+    // bucket, since the stub identity carries no `identity_index`).
+    let slice = state.wallets.get(&w).expect("wallet rehydrated");
+    let managed = slice
+        .identity_manager
+        .out_of_wallet_identities
+        .get(&owner)
+        .expect("owner identity rehydrated");
+    assert!(
+        managed
+            .dashpay()
+            .sent_contact_requests()
+            .contains_key(&recipient),
+        "the persisted sent contact request must rehydrate onto its identity"
     );
     drop(p2);
 
@@ -373,13 +483,9 @@ fn contact_request_entry(sender: u8, recipient: u8) -> ContactRequestEntry {
     }
 }
 
-/// identities reader round-trips per wallet, exact equality
-/// on `id`s.
-///
-/// `persister.load()` no longer surfaces the identities slot (the
-/// `ClientStartState` revert dropped it), so this exercises the
-/// hardened dormant reader `schema::identities::load_state` directly —
-/// keeping its fail-hard behaviour genuinely covered.
+/// identities reader round-trips per wallet, exact equality on `id`s.
+/// Exercises the hardened reader `schema::identities::load_state`
+/// directly (not surfaced by `load()`), covering its fail-hard behaviour.
 #[test]
 fn tc_p4_003_load_identities_two_wallets() {
     use platform_wallet_storage::sqlite::schema::identities;
@@ -1004,8 +1110,8 @@ fn tc_p4_005_load_asset_locks_bucketed() {
     assert_eq!(b_buckets[&0].len(), 1);
 }
 
-/// empty wallets emit `wallets_pending_rehydration = N`
-/// and `wallets` slot stays empty.
+/// Every persisted wallet is rehydrated into the keyless `wallets`
+/// payload — `wallets_rehydrated = N`, none pending.
 #[tracing_test::traced_test]
 #[test]
 fn tc_p4_006_pending_rehydration_count() {
@@ -1016,12 +1122,12 @@ fn tc_p4_006_pending_rehydration_count() {
     drop(persister);
     let p2 = reopen(&path);
     let state = p2.load().unwrap();
-    assert!(state.wallets.is_empty());
-    assert!(logs_contain("wallets_pending_rehydration=3"));
-    assert!(logs_contain("wallets_rehydrated=0"));
+    assert_eq!(state.wallets.len(), 3, "all 3 wallets rehydrated");
+    assert!(logs_contain("wallets_rehydrated=3"));
+    assert!(logs_contain("wallets_pending_rehydration=0"));
 }
 
-/// load() summary carries every counter, including zeros.
+/// load() summary carries the real rehydration counters.
 #[tracing_test::traced_test]
 #[test]
 fn tc_p4_007_summary_log_counters() {
@@ -1034,8 +1140,8 @@ fn tc_p4_007_summary_log_counters() {
     for field in [
         "wallets_seen=2",
         "addresses_loaded=0",
-        "wallets_rehydrated=0",
-        "wallets_pending_rehydration=2",
+        "wallets_rehydrated=2",
+        "wallets_pending_rehydration=0",
     ] {
         assert!(logs_contain(field), "missing structured field: {field}");
     }
@@ -1104,10 +1210,10 @@ fn tc_p4_008_corruption_is_hard_error() {
     assert_eq!(b_state.wallet_identities.get(&b).map(|m| m.len()), Some(1));
 }
 
-/// 008b: `contacts::load_state` is fail-hard. A garbage
-/// `outgoing_request` blob yields a typed `BincodeDecode`; a non-32-byte
-/// id column yields a typed `BlobDecode`. Neither is silently skipped,
-/// and an intact wallet still decodes cleanly.
+/// `contacts::load_state` is fail-hard. A garbage `outgoing_request`
+/// blob yields a typed `BincodeDecode`; a non-32-byte id column yields a
+/// typed `InvalidWalletIdLength`. Neither is silently skipped, and an intact
+/// wallet still decodes cleanly.
 #[test]
 fn tc_p4_008b_contacts_corruption_is_hard_error() {
     use platform_wallet_storage::sqlite::schema::contacts;
@@ -1170,16 +1276,22 @@ fn tc_p4_008b_contacts_corruption_is_hard_error() {
         "garbage contacts entry_blob must be a typed BincodeDecode; got {blob_result:?}"
     );
     assert!(
-        matches!(id_result, Err(WalletStorageError::BlobDecode { .. })),
-        "non-32-byte contacts id column must be a typed BlobDecode; got {id_result:?}"
+        matches!(
+            id_result,
+            Err(WalletStorageError::InvalidWalletIdLength {
+                column: "contacts.owner_id",
+                actual: 10
+            })
+        ),
+        "non-32-byte contacts id must identify contacts.owner_id and actual length 10; \
+         got {id_result:?}"
     );
     assert_eq!(good_state.sent_requests.len(), 1);
 }
 
-/// 008c: `asset_locks::load_state` is fail-hard. A garbage
-/// `lifecycle_blob` yields a typed `BincodeDecode`; a malformed
-/// `outpoint` column yields a typed decode error. An intact wallet
-/// still decodes cleanly.
+/// `asset_locks::load_state` is fail-hard. A garbage `lifecycle_blob`
+/// yields a typed `BincodeDecode`; a malformed `outpoint` column yields a
+/// typed decode error. An intact wallet still decodes cleanly.
 #[test]
 fn tc_p4_008c_asset_locks_corruption_is_hard_error() {
     use dashcore::hashes::Hash;
@@ -1272,19 +1384,18 @@ fn tc_p4_008c_asset_locks_corruption_is_hard_error() {
     assert_eq!(good_state[&0].len(), 1);
 }
 
-/// 008d: `wallet_meta::list_ids` is fail-hard on a malformed
-/// stored `wallet_id`. This is the code path where a non-32-byte id
-/// actually surfaces (the per-area `load_state` readers take a typed
-/// `&WalletId`, so the length check belongs here). A 10-byte
-/// `wallet_metadata.wallet_id` yields a typed `InvalidWalletIdLength`.
+/// `wallets::list_ids` is fail-hard on a malformed stored `wallet_id`.
+/// This is the code path where a non-32-byte id actually surfaces (the
+/// per-area `load_state` readers take a typed `&WalletId`). A 10-byte
+/// `wallets.wallet_id` yields a typed `InvalidWalletIdLength`.
 #[test]
 fn tc_p4_008d_list_ids_rejects_non_32_byte_wallet_id() {
-    use platform_wallet_storage::sqlite::schema::wallet_meta;
+    use platform_wallet_storage::sqlite::schema::wallets;
     let (persister, _tmp, path) = fresh_persister();
     {
         let conn = persister.lock_conn_for_test();
         conn.execute(
-            "INSERT INTO wallet_metadata (wallet_id, network, birth_height) \
+            "INSERT INTO wallets (wallet_id, network, birth_height) \
              VALUES (?1, 'testnet', 0)",
             rusqlite::params![&[0xAAu8; 10][..]],
         )
@@ -1294,31 +1405,25 @@ fn tc_p4_008d_list_ids_rejects_non_32_byte_wallet_id() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let result = wallet_meta::list_ids(&conn);
+    let result = wallets::list_ids(&conn);
     drop(conn);
     assert!(
         matches!(
             result,
-            Err(WalletStorageError::InvalidWalletIdLength { actual: 10 })
+            Err(WalletStorageError::InvalidWalletIdLength {
+                column: "wallets.wallet_id",
+                actual: 10
+            })
         ),
-        "non-32-byte stored wallet_id must be a typed InvalidWalletIdLength {{ actual: 10 }}; \
+        "non-32-byte stored wallet_id must identify wallets.wallet_id and actual length 10; \
          got {result:?}"
     );
 }
 
-/// `load()` query cost is bounded per wallet.
-///
-/// `load()` now drives the platform-address reader off
-/// `wallet_meta::list_ids` and issues a fixed, small number of
-/// statements per listed wallet (the dedup collapse traded the old
-/// constant-query bulk scans for the fail-hard per-wallet readers).
-/// This pins the per-wallet statement count so a future regression
-/// that fans out into an unbounded per-row round trip is caught.
-///
-/// Verified by enabling `sqlite3_trace_v2` on the persister's
-/// connection, counting `Stmt` events for the duration of one
-/// `load()`. `serial_test::serial` because the trace counter is a
-/// process-wide `AtomicUsize` (`Connection::trace_v2`'s callback must
+/// `load()` query cost is constant per wallet (no unbounded per-row
+/// fan-out), without pinning a brittle magic number. Counts `Stmt`
+/// events via `sqlite3_trace_v2` over one `load()`; `serial` because the
+/// counter is a process-wide `AtomicUsize` (the `trace_v2` callback must
 /// be a `fn`, not a `Fn`).
 #[test]
 #[serial_test::serial]
@@ -1375,21 +1480,37 @@ fn tc_p4_012_load_query_count_bounded() {
     seed_wallets(&p10, 10);
     let count_ten = count_load_queries(&p10);
 
-    // `load()` issues a fixed number of grouped scans regardless of
-    // wallet count: `wallet_meta::list_ids` plus one scan each over
-    // `platform_address_sync`, `platform_addresses`, and the
-    // `platform_payment` `account_registrations`. The count must NOT
-    // grow with the number of wallets — that's the constant-query
-    // contract.
+    // The per-wallet delta must be a constant (10×N readers minus the
+    // one shared `wallets::list_ids` divides evenly by 9), i.e.
+    // load() is O(1) statements per wallet — no unbounded per-row
+    // fan-out. The exact constant is not pinned (brittle as readers
+    // evolve) but it must be small and bounded.
+    let delta = count_ten - count_one;
     assert_eq!(
-        count_one, count_ten,
-        "load() query count must not grow with wallet count \
-         (N=1 → {count_one}, N=10 → {count_ten})"
+        delta % 9,
+        0,
+        "per-wallet statement count must be constant \
+         (N=1 → {count_one}, N=10 → {count_ten}, delta → {delta})"
     );
+    let per_wallet = delta / 9;
+    assert!(
+        (1..=20).contains(&per_wallet),
+        "per-wallet statement count must be small + bounded, got {per_wallet}"
+    );
+    // Shared (wallet-count-independent) overhead: the `list_ids` +
+    // `platform_addrs::load_all` scans. `count_one = shared + per_wallet`
+    // ⇒ shared must itself be a small constant, not growing with N.
+    let shared = count_one - per_wallet;
+    assert!(
+        (1..=8).contains(&shared),
+        "shared load() overhead must be a small constant, got {shared} \
+         (N=1 → {count_one}, per-wallet → {per_wallet})"
+    );
+    // And it really is N-independent: N=10 total == shared + 10×per_wallet.
     assert_eq!(
-        count_one, 4,
-        "load() must issue exactly 4 grouped statements \
-         (list_ids + sync + addresses + registrations), got {count_one}"
+        count_ten,
+        shared + 10 * per_wallet,
+        "load() statement count must be exactly shared + N×per_wallet"
     );
 }
 

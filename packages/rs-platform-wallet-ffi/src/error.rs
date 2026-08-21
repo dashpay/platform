@@ -369,6 +369,16 @@ pub enum PlatformWalletFFIResultCode {
     /// shortfall, not a shielded-note shortfall.
     ErrorShieldedInsufficientBalance = 41,
 
+    // -----------------------------------------------------------------
+    // Embedded-persister failures (42-43). A fresh contiguous block above
+    // every current claim, per the registry note above: 28 and 30 are
+    // nominally free but reusing a vacated slot restarts the churn.
+    // -----------------------------------------------------------------
+    /// A persister operation failed transiently; callers may retry.
+    ErrorPersisterTransient = 42,
+    /// A persister operation failed permanently; callers must not retry.
+    ErrorPersisterFatal = 43,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -388,6 +398,31 @@ pub enum PlatformWalletFFIResultCode {
     /// against (`dashpay/platform#4185`).
     NotFound = 98,
     ErrorUnknown = 99,
+}
+
+fn persistence_result_code(
+    error: &platform_wallet::changeset::PersistenceError,
+) -> PlatformWalletFFIResultCode {
+    if error.is_transient() {
+        PlatformWalletFFIResultCode::ErrorPersisterTransient
+    } else {
+        PlatformWalletFFIResultCode::ErrorPersisterFatal
+    }
+}
+
+fn platform_wallet_persister_result_code(
+    mut error: &PlatformWalletError,
+) -> PlatformWalletFFIResultCode {
+    loop {
+        match error {
+            PlatformWalletError::PersisterLoad(error)
+            | PlatformWalletError::PersisterStore(error) => {
+                return persistence_result_code(error);
+            }
+            PlatformWalletError::PersisterRestore(inner) => error = inner,
+            _ => return PlatformWalletFFIResultCode::ErrorPersisterFatal,
+        }
+    }
 }
 
 /// Must be freed with ['platform_wallet_ffi_result_free']
@@ -620,6 +655,11 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::AssetLockFundingMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockFundingMismatch
+            }
+            PlatformWalletError::PersisterLoad(..)
+            | PlatformWalletError::PersisterStore(..)
+            | PlatformWalletError::PersisterRestore(..) => {
+                platform_wallet_persister_result_code(&error)
             }
             // A quiesce/drain barrier that did not complete within budget
             // (clear/reset paths). The host must fail closed: keep its
@@ -888,10 +928,8 @@ impl From<dpp::platform_value::Error> for PlatformWalletFFIResult {
 
 impl From<platform_wallet::changeset::PersistenceError> for PlatformWalletFFIResult {
     fn from(e: platform_wallet::changeset::PersistenceError) -> Self {
-        Self::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("persistence error: {e}"),
-        )
+        let code = persistence_result_code(&e);
+        Self::err(code, format!("persistence error: {e}"))
     }
 }
 
@@ -916,6 +954,19 @@ impl From<anyhow::Error> for PlatformWalletFFIResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn result_code_discriminants_remain_stable() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorPersisterTransient as i32,
+            42
+        );
+        assert_eq!(PlatformWalletFFIResultCode::ErrorPersisterFatal as i32, 43);
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastRejected as i32,
+            26
+        );
+    }
     use key_wallet::account::StandardAccountType;
     use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 
@@ -953,6 +1004,71 @@ mod tests {
             "before\0after",
         );
         assert!(!r.message.is_null());
+    }
+
+    fn persistence_error(
+        kind: platform_wallet::changeset::PersistenceErrorKind,
+    ) -> platform_wallet::changeset::PersistenceError {
+        platform_wallet::changeset::PersistenceError::backend_with_kind(kind, "test failure")
+    }
+
+    #[test]
+    fn should_map_persistence_errors_by_retry_classification() {
+        use platform_wallet::changeset::{PersistenceError, PersistenceErrorKind};
+
+        let transient: PlatformWalletFFIResult =
+            persistence_error(PersistenceErrorKind::Transient).into();
+        assert_eq!(
+            transient.code,
+            PlatformWalletFFIResultCode::ErrorPersisterTransient
+        );
+
+        for error in [
+            persistence_error(PersistenceErrorKind::Fatal),
+            persistence_error(PersistenceErrorKind::Constraint),
+            PersistenceError::LockPoisoned,
+        ] {
+            let result: PlatformWalletFFIResult = error.into();
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorPersisterFatal
+            );
+        }
+    }
+
+    #[test]
+    fn should_map_platform_wallet_persister_errors_by_retry_classification() {
+        use platform_wallet::changeset::PersistenceErrorKind;
+
+        let cases = [
+            (
+                PlatformWalletError::PersisterLoad(persistence_error(
+                    PersistenceErrorKind::Transient,
+                )),
+                PlatformWalletFFIResultCode::ErrorPersisterTransient,
+            ),
+            (
+                PlatformWalletError::PersisterStore(persistence_error(PersistenceErrorKind::Fatal)),
+                PlatformWalletFFIResultCode::ErrorPersisterFatal,
+            ),
+            (
+                PlatformWalletError::PersisterRestore(Box::new(
+                    PlatformWalletError::PersisterStore(persistence_error(
+                        PersistenceErrorKind::Transient,
+                    )),
+                )),
+                PlatformWalletFFIResultCode::ErrorPersisterTransient,
+            ),
+            (
+                PlatformWalletError::PersisterRestore(Box::new(PlatformWalletError::WalletLocked)),
+                PlatformWalletFFIResultCode::ErrorPersisterFatal,
+            ),
+        ];
+
+        for (error, expected) in cases {
+            let result: PlatformWalletFFIResult = error.into();
+            assert_eq!(result.code, expected);
+        }
     }
 
     /// The three "can't-select-inputs" wallet variants (`NoSpendableInputs`,

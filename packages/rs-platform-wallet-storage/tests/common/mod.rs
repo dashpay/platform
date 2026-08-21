@@ -10,7 +10,7 @@ use platform_wallet::changeset::PlatformWalletPersistence;
 use platform_wallet::wallet::platform_wallet::WalletId;
 use rusqlite::Connection;
 
-pub use platform_wallet_storage::{FlushMode, SqlitePersister, SqlitePersisterConfig};
+pub use platform_wallet_storage::{FlushMode, LoadPolicy, SqlitePersister, SqlitePersisterConfig};
 
 /// Open an empty temp directory + persister for one test. Returns the
 /// persister, the keep-alive `tempfile::TempDir`, and the DB path.
@@ -19,11 +19,40 @@ pub fn fresh_persister() -> (SqlitePersister, tempfile::TempDir, PathBuf) {
 }
 
 pub fn fresh_persister_with_mode(mode: FlushMode) -> (SqlitePersister, tempfile::TempDir, PathBuf) {
-    let tmp = tempfile::tempdir().expect("tempdir");
+    let tmp = secure_tempdir().expect("tempdir");
     let path = tmp.path().join("wallet.db");
     let cfg = SqlitePersisterConfig::new(&path).with_flush_mode(mode);
     let p = SqlitePersister::open(cfg).expect("open persister");
     (p, tmp, path)
+}
+
+/// Seed a database through a strict persister, then reopen it in
+/// [`LoadPolicy::Recovery`].
+///
+/// The strict handle is dropped before the reopen: the process-wide
+/// open-path registry refuses a second live persister on one path.
+pub fn fresh_recovery_persister(
+    seed: impl FnOnce(&SqlitePersister),
+) -> (SqlitePersister, tempfile::TempDir, PathBuf) {
+    let tmp = secure_tempdir().expect("tempdir");
+    let path = tmp.path().join("wallet.db");
+    let strict = SqlitePersister::open(SqlitePersisterConfig::new(&path)).expect("open strict");
+    seed(&strict);
+    drop(strict);
+    let cfg = SqlitePersisterConfig::new(&path).with_load_policy(LoadPolicy::Recovery);
+    let p = SqlitePersister::open(cfg).expect("open recovery");
+    (p, tmp, path)
+}
+
+/// Create a test directory that satisfies the persister's Unix parent policy.
+pub fn secure_tempdir() -> std::io::Result<tempfile::TempDir> {
+    let tmp = tempfile::tempdir()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(tmp.path(), std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(tmp)
 }
 
 /// Wallet id helper.
@@ -41,18 +70,18 @@ pub fn ro_conn(path: &std::path::Path) -> Connection {
     .expect("open ro conn")
 }
 
-/// Insert a stub `wallet_metadata` row so child writes pass the native
+/// Insert a stub `wallets` row so child writes pass the native
 /// FK. Bypasses the buffer/flush layer — tests use this when they
 /// want to exercise a single sub-changeset writer in isolation.
 pub fn ensure_wallet_meta(persister: &SqlitePersister, wallet_id: &WalletId) {
     use rusqlite::params;
     let conn = persister.lock_conn_for_test();
     conn.execute(
-        "INSERT OR IGNORE INTO wallet_metadata (wallet_id, network, birth_height) \
+        "INSERT OR IGNORE INTO wallets (wallet_id, network, birth_height) \
          VALUES (?1, 'testnet', 0)",
         params![wallet_id.as_slice()],
     )
-    .expect("ensure wallet_metadata");
+    .expect("ensure wallets");
 }
 
 /// Insert a stub `identities` row so identity-owned table writes
@@ -66,16 +95,14 @@ pub fn ensure_identity(
     identity_id: &[u8; 32],
     parent_wallet_id: Option<&WalletId>,
 ) {
-    use rusqlite::params;
     let conn = persister.lock_conn_for_test();
-    let wid_param: Option<&[u8]> = parent_wallet_id.map(|w| w.as_slice());
-    conn.execute(
-        "INSERT OR IGNORE INTO identities \
-            (identity_id, wallet_id, wallet_index, entry_blob, tombstoned) \
-         VALUES (?1, ?2, NULL, X'00', 0)",
-        params![&identity_id[..], wid_param],
-    )
-    .expect("ensure identity");
+    // Delegate to the production stub writer so `entry_blob` holds a
+    // real, decodable `IdentityEntry` (the wired `load()` decodes every
+    // identity row). The all-zero sentinel WalletId maps to a NULL
+    // `wallet_id` column, so `None` lands as an orphan identity.
+    let scope: WalletId = parent_wallet_id.copied().unwrap_or([0u8; 32]);
+    platform_wallet_storage::sqlite::schema::identities::ensure_exists(&conn, &scope, identity_id)
+        .expect("ensure identity");
 }
 
 /// Insert a stub `token_balances` row so `meta_token` writes pass the
@@ -100,7 +127,7 @@ pub fn ensure_token_balance(
 /// Insert a stub `established` row in the unified `contacts` table so
 /// the `cascade_meta_contact_on_contact_delete` trigger has an
 /// established-contact parent to fire on for `meta_contact` writes keyed
-/// by `(wallet_id, owner_id, contact_id)`. The parent `wallet_metadata`
+/// by `(wallet_id, owner_id, contact_id)`. The parent `wallets`
 /// row must already exist (seed via [`ensure_wallet_meta`]).
 pub fn ensure_contact_established(
     persister: &SqlitePersister,
@@ -121,7 +148,7 @@ pub fn ensure_contact_established(
 
 /// Insert a stub `sent` contact row (pending outgoing request) so a
 /// `meta_contact` write keyed by `(wallet_id, owner_id, contact_id)` has
-/// a non-established parent to exercise. The parent `wallet_metadata`
+/// a non-established parent to exercise. The parent `wallets`
 /// row must already exist.
 pub fn ensure_contact_sent(
     persister: &SqlitePersister,
@@ -162,7 +189,7 @@ pub fn ensure_contact_received(
 /// Insert a stub `platform_addresses` row so `meta_platform_address`
 /// writes pass the composite FK to
 /// `platform_addresses(wallet_id, address)`. The parent
-/// `wallet_metadata` row must already exist (seed via
+/// `wallets` row must already exist (seed via
 /// [`ensure_wallet_meta`]). `address` is an opaque BLOB.
 pub fn ensure_platform_address(persister: &SqlitePersister, wallet_id: &WalletId, address: &[u8]) {
     use rusqlite::params;

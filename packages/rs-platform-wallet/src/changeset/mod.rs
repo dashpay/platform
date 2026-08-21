@@ -26,6 +26,8 @@ pub mod shielded_sync_start_state;
 pub mod traits;
 
 pub(crate) use changeset::account_address_pool_entries;
+#[cfg(any(feature = "bls", feature = "eddsa"))]
+pub use changeset::{rebuild_provider_key_account, ProviderAccountRebuildError};
 pub use changeset::{
     upsert_pending_contact_crypto, AccountAddressPoolEntry, AccountRegistrationEntry,
     AssetLockChangeSet, AssetLockEntry, ContactChangeSet, ContactRequestEntry, CoreChangeSet,

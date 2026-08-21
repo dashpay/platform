@@ -27,8 +27,9 @@ use platform_wallet_storage::{FlushMode, WalletStorageError};
 use rusqlite::{params, OptionalExtension};
 
 /// A buffered `identity_keys` upsert whose `identity_id` has no
-/// `identities` row is a plain FK violation — nothing to do with
-/// `(wallet_id, identity_index)` uniqueness. It is `Constraint`-KIND all
+/// `identities` row is an FK violation — nothing to do with
+/// `(wallet_id, identity_index)` uniqueness, whether it surfaces raw or
+/// wrapped in `IdentityKeyWalletMismatch`. It is `Constraint`-KIND all
 /// the same, so a kind-scoped carve-out would swallow it; the delete
 /// must instead fail loudly and keep the pending write.
 #[test]
@@ -74,8 +75,12 @@ fn delete_wallet_aborts_on_a_constraint_failure_outside_the_carve_out() {
         .expect_err("an FK violation is not the state the carve-out covers");
 
     assert!(
-        matches!(err, WalletStorageError::Sqlite(_)),
-        "expected the native SQLite constraint failure verbatim, got `{err:?}`"
+        !matches!(
+            err,
+            WalletStorageError::IdentityIndexConflict { .. }
+                | WalletStorageError::WalletlessIdentityIndex { .. }
+        ),
+        "the carve-out names two variants and this FK violation is neither, got `{err:?}`"
     );
     assert_eq!(
         err.persistence_kind(),
@@ -86,7 +91,7 @@ fn delete_wallet_aborts_on_a_constraint_failure_outside_the_carve_out() {
     let wallets: i64 = {
         let conn = p.lock_conn_for_test();
         conn.query_row(
-            "SELECT COUNT(*) FROM wallet_metadata WHERE wallet_id = ?1",
+            "SELECT COUNT(*) FROM wallets WHERE wallet_id = ?1",
             params![w.as_slice()],
             |row| row.get(0),
         )

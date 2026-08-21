@@ -28,6 +28,9 @@ fn kind_of(err: WalletStorageError) -> PersistenceErrorKind {
         PersistenceError::LockPoisoned => {
             panic!("LockPoisoned has no Backend.kind — test was given LockPoisoned by accident")
         }
+        PersistenceError::UnsupportedOperation { .. } => {
+            panic!("WalletStorageError conversion cannot yield UnsupportedOperation")
+        }
     }
 }
 
@@ -191,6 +194,10 @@ fn tc_code_004_b_fatal_variants_map_to_fatal_kind() {
             },
         ),
         (
+            "InsecureParentDir",
+            WalletStorageError::InsecureParentDir { mode: 0o777 },
+        ),
+        (
             "WalletNotFound",
             WalletStorageError::WalletNotFound {
                 wallet_id: [0xCD; 32],
@@ -209,7 +216,10 @@ fn tc_code_004_b_fatal_variants_map_to_fatal_kind() {
         ),
         (
             "InvalidWalletIdLength",
-            WalletStorageError::InvalidWalletIdLength { actual: 12 },
+            WalletStorageError::InvalidWalletIdLength {
+                column: "wallets.wallet_id",
+                actual: 12,
+            },
         ),
         (
             "ConfigInvalid",
@@ -248,6 +258,44 @@ fn tc_code_004_b_fatal_variants_map_to_fatal_kind() {
             "BackupDestinationExists",
             WalletStorageError::BackupDestinationExists {
                 path: PathBuf::from("/tmp/x"),
+            },
+        ),
+        (
+            "ReadOnlyRecoveryMode",
+            WalletStorageError::ReadOnlyRecoveryMode { operation: "store" },
+        ),
+        (
+            "RehydrationEnsureDerivedFailed",
+            WalletStorageError::RehydrationEnsureDerivedFailed { index: 42 },
+        ),
+        (
+            "RehydrationGapLimitRefillTooLarge",
+            WalletStorageError::RehydrationGapLimitRefillTooLarge {
+                refill_target: 300_000,
+                already_generated: 20,
+                implied: 299_980,
+                cap: 250_000,
+            },
+        ),
+        (
+            "RehydrationGapLimitFailed",
+            WalletStorageError::RehydrationGapLimitFailed {
+                source: key_wallet::error::Error::WatchOnly,
+            },
+        ),
+        (
+            "UsedAddressOwnerConflict",
+            WalletStorageError::UsedAddressOwnerConflict {
+                address: "yaddr".into(),
+                pool_owner: "Standard[0]".into(),
+                utxo_owner: "CoinJoin[0]".into(),
+            },
+        ),
+        (
+            "UnownedIdentityHasRegistrationIndex",
+            WalletStorageError::UnownedIdentityHasRegistrationIndex {
+                identity_id: [0xEF; 32],
+                identity_index: 3,
             },
         ),
     ];

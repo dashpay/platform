@@ -196,6 +196,7 @@ dependencies = [
  "blake2",
  "cpufeatures 0.2.17",
  "password-hash",
+ "zeroize",
 ]
 
 [[package]]
@@ -5287,6 +5288,7 @@ dependencies = [
  "refinery",
  "region",
  "rusqlite",
+ "schemars 1.2.1",
  "serde",
  "serde_json",
  "serial_test",

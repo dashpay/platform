@@ -33,6 +33,43 @@ final class ErrorHandlingTests: XCTestCase {
         )
     }
 
+    func testPersisterFFIResultMappingsRemainDistinguishable() {
+        XCTAssertEqual(PlatformWalletResultCode.errorPersisterTransient.rawValue, 42)
+        XCTAssertEqual(PlatformWalletResultCode.errorPersisterFatal.rawValue, 43)
+        XCTAssertEqual(
+            PlatformWalletResultCode(
+                ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_TRANSIENT
+            ),
+            .errorPersisterTransient
+        )
+        XCTAssertEqual(
+            PlatformWalletResultCode(
+                ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_FATAL
+            ),
+            .errorPersisterFatal
+        )
+
+        let transientResult = PlatformWalletResult(
+            PlatformWalletFFIResult(
+                code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_TRANSIENT,
+                message: nil
+            )
+        )
+        let fatalResult = PlatformWalletResult(
+            PlatformWalletFFIResult(
+                code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_FATAL,
+                message: nil
+            )
+        )
+
+        guard case .persisterTransient = PlatformWalletError(result: transientResult) else {
+            return XCTFail("transient persister code must map to persisterTransient")
+        }
+        guard case .persisterFatal = PlatformWalletError(result: fatalResult) else {
+            return XCTFail("fatal persister code must map to persisterFatal")
+        }
+    }
+
     func testPlatformWalletNotFoundFFIResultMapping() {
         // Code 98 (the blanket Option→result miss) stays typed inside the
         // wallet-error family — the mapping Kotlin now converges on
@@ -489,6 +526,13 @@ final class ErrorHandlingTests: XCTestCase {
     // MARK: - Core broadcast outcome mapping
 
     func testCoreBroadcastOutcomeMapping() throws {
+        XCTAssertEqual(PlatformWalletResultCode.errorTransactionBroadcastRejected.rawValue, 26)
+        XCTAssertEqual(
+            PlatformWalletResultCode(
+                ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_TRANSACTION_BROADCAST_REJECTED
+            ),
+            .errorTransactionBroadcastRejected
+        )
         XCTAssertEqual(
             try CoreTransactionBroadcastOutcome(
                 resultCode: .success,

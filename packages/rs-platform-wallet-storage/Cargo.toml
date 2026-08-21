@@ -46,6 +46,7 @@ rusqlite = { version = "0.38", features = [
     "backup",
     "blob",
     "hooks",
+    "limits",
     "trace",
 ], optional = true }
 refinery = { version = "0.9", default-features = false, features = [
@@ -61,6 +62,11 @@ chrono = { version = "0.4", default-features = false, features = [
     "clock",
 ], optional = true }
 sha2 = { version = "0.10", optional = true }
+# Opt-in `JsonSchema` for `SecretString` (gated by `secret-schemars`).
+# Reuses the workspace-locked 1.2.1. `default-features = false` drops the
+# `derive` feature (we hand-write the impl), matching the crate's existing
+# derive-free schemars usage so the lock gains no `schemars_derive` entry.
+schemars = { version = "1", optional = true, default-features = false }
 
 # Secret-storage deps (gated by the `secrets` feature). RustSec-clean
 # pins (Smythe §7); `aes-gcm` is deliberately omitted. `keyring`'s
@@ -80,7 +86,14 @@ keyring-core = { version = "=1.0.0", optional = true }
 # was removed from the sqlite arm — those tests grep for `fs2`/`fs4`
 # literals in this crate's source/manifest and would re-trigger on the
 # older crates. `fd-lock` has no such collision.
-fd-lock = { version = "4.0.4", optional = true }
+# LOCAL-FS ONLY: flock/LockFileEx interlock processes only on local
+# filesystems; over NFS/CIFS the lock does not interlock, so a vault file
+# must not be shared across hosts — steer multi-host to the OS-keyring arm.
+# Exact-pinned (`=`) like the rest of the soundness-critical stack: the
+# `VaultLock` unsafe drop-order argument in `secrets/file/mod.rs` is
+# calibrated to fd-lock 4.0.4's guard internals; any bump must re-verify
+# that the guard releases the OS lock before the backing `RwLock` frees.
+fd-lock = { version = "=4.0.4", optional = true }
 
 # CLI deps (gated by the `cli` feature)
 clap = { version = "4", features = ["derive"], optional = true }
@@ -135,8 +148,10 @@ serial_test = "3"
 # Test surface is opted into explicitly: `secrets` and `kv` are listed
 # so the plain `cargo test -p platform-wallet-storage` invocation runs
 # both feature paths (the `kv`-gated `sqlite_object_metadata.rs`
-# integration test and the `secrets`-gated unit tests).
-platform-wallet-storage = { path = ".", default-features = false, features = ["sqlite", "cli", "secrets", "kv", "__test-helpers"] }
+# integration test and the `secrets`-gated unit tests). `test-util` is here
+# so `secrets_mock_store_test_util.rs` proves the feature gate from the
+# outside — `cfg(test)` alone would satisfy it from within the crate.
+platform-wallet-storage = { path = ".", default-features = false, features = ["sqlite", "cli", "secrets", "kv", "__test-helpers", "test-util"] }
 tempfile = "3"
 # `sqlite_hardening_3625.rs`, `sqlite_persist_roundtrip.rs`, and
 # `sqlite_load_reconstruction.rs` import `dash_sdk::platform::address_sync::AddressFunds`.
@@ -154,6 +169,7 @@ dash-sdk = { path = "../rs-sdk", default-features = false, features = [
 default = ["sqlite", "cli", "secrets", "kv"]
 # SQLite-backed persister (`platform_wallet_storage::sqlite`).
 sqlite = [
+    "dep:libc",
     "dep:platform-wallet",
     "dep:serde",
     "dep:key-wallet",
@@ -184,6 +200,17 @@ cli = [
 # crate without the crypto graph.
 secrets = [
     "dep:argon2",
+    # Enable argon2's `zeroize` feature so the KDF wipes its sensitive
+    # intermediate state (`initial_hash`/`blockhash`) on drop. In argon2
+    # 0.5.3 this does NOT cover the bulk `Block` matrix — that residual is
+    # documented at `derive_key` in `secrets/file/crypto.rs`. Keep it in
+    # the feature list (not a `default-features = false` rewrite) so
+    # argon2's own default features stay intact.
+    "argon2/zeroize",
+    # bincode is the producer for the Tier-2 envelope wire format and the
+    # three AAD encodings (`Tier2Aad`/`EntryAad`/`VerifyAad`) — see
+    # `secrets/wire/`. `=2.0.1` is the workspace-wide pin.
+    "dep:bincode",
     "dep:chacha20poly1305",
     # secrets uses serde directly (vault format + crypto envelope derive
     # `Serialize`/`Deserialize`); declare the dep here so
@@ -203,6 +230,15 @@ secrets = [
     "dep:apple-native-keyring-store",
     "dep:windows-native-keyring-store",
 ]
+# Opt-in `SecretString` serde/schemars impls. Deliberately DEFAULT-OFF
+# even though `secrets` (and, via it, the `serde` dep) are default-on:
+# these gate the IMPLS, not the dep, so the impls are absent unless a
+# consumer explicitly opts in. `secret-serde` requires `secrets` (the type
+# only exists under it). NO `Serialize` is ever provided. `secret-schemars`
+# implies `secret-serde`. (design §5.4 / GAP-001 names / GAP-002 satisfiable
+# default-off.)
+secret-serde = ["secrets", "dep:serde"]
+secret-schemars = ["secret-serde", "dep:schemars"]
 # Per-object-type key/value metadata API
 # (`platform_wallet_storage::{KvStore, KvError, ObjectId}`) plus the
 # SQLite-backed impl. Requires `sqlite` because the only shipped backend
@@ -216,3 +252,15 @@ kv = ["sqlite"]
 # convention for "MUST NOT enable from downstream" features
 # (https://doc.rust-lang.org/cargo/reference/features.html#feature-resolver-version-2).
 __test-helpers = ["sqlite"]
+# e2e tests that drive the #3692 manager-apply path; enabled in the integrated stack (dash-evo-tool).
+rehydration-apply = []
+# Exposes `SecretStore::file_mock` / `EncryptedFileStore::open_mock` — vault
+# constructors that use the Argon2id floor for fresh-vault creation and
+# per-secret wrapping; existing vaults retain their header parameters. Enable
+# it in `[dev-dependencies]` ONLY. The constructors panic outside debug builds
+# and this crate's own test harness.
+test-util = []
+# Persists and restores Orchard viewing keys from the feature-gated
+# `PlatformWalletChangeSet::shielded` field. Other shielded state remains in
+# the host-provided `ShieldedStore`.
+shielded = ["platform-wallet/shielded"]

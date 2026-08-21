@@ -28,8 +28,9 @@ private-key material is ever written to that file.**
   [SECRETS.md](./SECRETS.md).
 - **Backup, restore, and migration handled for you.** Backups use
   SQLite's online backup API (safe under a concurrent writer); restores
-  run under `BEGIN EXCLUSIVE` so peers back off instead of racing the
-  swap; schema migrations apply automatically on every open.
+  use SQLite exclusive locking plus `BEGIN EXCLUSIVE` so peers back off
+  instead of racing the swap; schema migrations apply automatically on every
+  open.
 - **A flush contract you can build retries on.** Transient SQLite
   failures return a *retryable* error with the buffered changeset intact;
   fatal and constraint failures are reported distinctly and drop the
@@ -51,6 +52,43 @@ component. The persister is `Send + Sync` and usable behind
 ([`SqlitePersister::delete_wallet`]) and explicit Manual-mode commit
 ([`SqlitePersister::commit_writes`]) are inherent methods on the persister,
 not part of the trait.
+
+### Strict loading and recovery mode
+
+`load()` is **strict by default**: any persisted row that fails to decode,
+contradicts its typed columns, or cannot be routed back to its account
+aborts the load. A corrupted wallet is never handed back half-formed —
+which matters most in the address pools, where a swallowed failure leaves a
+previously-used address unmarked and lets it be handed out again as a fresh
+receive address.
+
+`SqlitePersisterConfig::with_load_policy(LoadPolicy::Recovery)` opts into a
+best-effort load for diagnosis and rescue: those failures are logged and
+counted on `SqlitePersister::last_load_degradation()` instead of returned.
+Recovery makes the persister **read-only** — `store`, `flush`,
+`commit_writes`, `delete_wallet`, `prune_backups`, and the KV `put` /
+`delete` all return `ReadOnlyRecoveryMode` — so a degraded projection can
+never be written back over good rows. `backup_to` stays available, and
+snapshot → `restore_from` → reopen strict is the intended way out.
+
+Recovery introduces no new tolerance: anything fatal today (an oversize
+blob, an unusable schema version, a failed `PRAGMA integrity_check`) stays
+fatal. The open-time gates in particular are unconditional, because `open()`
+runs migrations and migrating a structurally corrupt file only deepens the
+damage. Recovery also refuses `auto_backup_dir = None`, so the rescue
+attempt always keeps a rollback point.
+
+Two sites degrade under *both* policies, because their signal cannot
+distinguish corruption from a healthy wallet: a used address whose owner is
+not one of the wallet's funds accounts (what a masternode-operator wallet
+looks like — provider accounts are not funds accounts), and a restored
+address that does not resolve against its account xpub (foreign, or
+legitimately sparse past the bounded-work cap). Both re-warm on the next
+sync; the balance total is exact regardless.
+
+`LoadDegradation` also reports `unimplemented_rows`: rows sitting in tables
+`load()` has no reader for. Those are intact, merely unread, so they never
+set the `degraded` flag.
 
 ### KV / ObjectId metadata
 
@@ -79,6 +117,16 @@ database without writing custom code.
 
 ---
 
+## Testing
+
+Run `cargo test -p platform-wallet-storage --all-features` for complete
+crate coverage. A plain package test does not enable `rehydration-apply` and
+therefore skips the end-to-end #3968 regressions
+`rehydration_routes_via_real_sql_resolver` and
+`rehydration_routes_used_addresses_to_owning_account`.
+
+---
+
 ## Technical details
 
 ### Library usage
@@ -103,8 +151,11 @@ flush, 5 s busy timeout, WAL journal, `NORMAL` synchronous, and an
 auto-backup dir at `<db_dir>/backups/auto/`.
 
 The trait surface is `store` / `flush` / `load` / `get_core_tx_record`.
-Schema migrations are append-only Rust files under `migrations/`, applied
-via [`refinery`](https://github.com/rust-db/refinery) on every `open`.
+Schema migrations are versioned Rust files under `migrations/`, applied via
+[`refinery`](https://github.com/rust-db/refinery) on every `open`. The current
+migration set is still unreleased, so every migration may be edited in place
+until the crate's first release. Once the schema ships, migrations become
+append-only.
 
 #### Flush semantics (store / flush)
 
@@ -117,6 +168,20 @@ the marker `flush failed transiently`. **Retry the call** — do not discard
 state. Fatal failures (integrity check, encode error, mutex poison, …)
 return `kind: Fatal` (or `kind: Constraint` for SQL constraint violations)
 and drop the buffer.
+
+##### Connection mutex poison is permanent
+
+A `LockPoisoned` result means a panic occurred while the persister held its
+SQLite connection lock. The connection is never recovered because it may
+still contain a transaction interrupted by that panic. Drop the
+`SqlitePersister` and construct a fresh instance with `SqlitePersister::open`
+on the same path before attempting more work; the same-path open guard is
+released when the poisoned instance is dropped.
+
+Every later `store()`, `flush()`, `commit_writes()`, `load()`, and
+`delete_wallet()` call returns `LockPoisoned`. Detection also discards every
+buffered changeset because none can be made durable through the poisoned
+connection.
 
 The full classification lives on
 [`WalletStorageError::is_transient`](src/sqlite/error.rs) and the companion
@@ -138,29 +203,49 @@ so one failed wallet does not hide its siblings.
 
 #### load() reconstruction
 
-`SqlitePersister::load()` returns the base `ClientStartState` (plain struct,
-two slots — no `#[non_exhaustive]`):
+`SqlitePersister::load()` returns a fully-rehydrated `ClientStartState`
+(plain struct — no `#[non_exhaustive]`). Both slots are populated:
 
 | Slot | Reader | Status |
 |---|---|---|
-| `platform_addresses` | `schema::platform_addrs::load_all` (a fixed set of grouped scans over `platform_address_sync`, `platform_addresses`, and `account_registrations`, driven by the `wallet_meta::list_ids` wallet universe) | populated |
-| `wallets`            | — | empty pending upstream `Wallet::from_persisted` |
+| `platform_addresses` | `schema::platform_addrs::load_all` (a fixed set of grouped scans over `platform_address_sync`, `platform_addresses`, and `account_registrations`, driven by the `wallets::list_ids` wallet universe) | populated |
+| `wallets`            | per-wallet `schema::<area>` readers (see below) | populated |
 
-The `identities` / `contacts` / `asset_locks` per-area readers exist as
-hardened dormant helpers (`schema::<area>::load_state`) but are not wired
-into `load()` — `ClientStartState` carries no slot for them.
+Each `ClientStartState::wallets` entry is a **keyless** `ClientWalletStartState`
+reconstructed from these per-area readers:
 
-Loading is **fail-hard**: any row that fails to decode, or a stored
-`wallet_id` that is not exactly 32 bytes, aborts the whole call with a typed
-[`WalletStorageError`](src/sqlite/error.rs)
-(`BincodeDecode` / `BlobDecode` / `InvalidWalletIdLength`). There is no
-corruption tolerance, no per-row skip, and no partial `Ok` — a corrupt
-database surfaces as an error rather than silently losing rows.
+| Field | Reader |
+|---|---|
+| `network` / `birth_height` | `schema::wallets::fetch` |
+| `account_manifest` | `schema::accounts::load_state` |
+| `core_state` | `schema::core_state::load_state` |
+| `identity_manager` | `schema::identities::load_prekeyed` (folds persisted identities, public identity keys, and contacts into each `ManagedIdentity`) |
+| `unused_asset_locks` | `schema::asset_locks::load_unconsumed` (`Consumed`-filtered — spent locks stay on disk but are never resurrected) |
+| `contacts` | folded into `identity_manager` by `load_prekeyed`; the standalone field stays empty |
+| `identity_keys` | folded into `identity_manager` by `load_prekeyed`; the standalone field stays empty |
 
-The summary `tracing::info!` carries `wallets_seen`, `addresses_loaded`,
-`wallets_rehydrated`, and `wallets_pending_rehydration` (the count of
-wallets that *would* be rehydrated once upstream provides
-`Wallet::from_persisted`).
+The persisted payload stores **no** `Wallet` and no key material. `load()`
+reconstructs the full keyless payload, rebuilding each wallet
+external-signable (`Wallet::new_external_signable` from the manifest) with
+on-demand signing-key derivation through the `sign_with_mnemonic_resolver`
+path. `PlatformWalletManager::load_from_persistor` then rehydrates the
+manager's wallet maps from that payload, reconstructing and registering
+every persisted wallet.
+
+What a failed decode or an inconsistent row does to the call is the load
+contract, stated once in [Strict loading and recovery
+mode](#strict-loading-and-recovery-mode) above — read it there. Failures
+that abort surface as a typed
+[`WalletStorageError`](src/sqlite/error.rs); the variants are documented on
+the enum rather than listed a second time here, where the list would go
+stale the next time one is added.
+
+The summary `tracing::info!` reports the per-call counts plus the
+degradation snapshot. Its fields are the `info!` call in
+`SqlitePersister::load` and are deliberately not enumerated here — an
+exhaustive field list in a README drifts on the first addition.
+Persisted-but-unread areas are named in `LOAD_UNIMPLEMENTED` and
+row-counted from `LOAD_UNIMPLEMENTED_TABLES`.
 
 ### KV metadata API
 
@@ -234,15 +319,19 @@ Exit codes: `0` success, `1` runtime error, `2` usage error, `3` validation
 failure (e.g. corrupt backup source).
 
 **Restore exclusion.** `restore` opens a short-lived writer connection on
-the destination DB and holds a SQLite-native `BEGIN EXCLUSIVE` transaction
-across the entire restore body. This interlocks with every other SQLite
-peer — sibling `SqlitePersister` handles, bare `rusqlite::Connection`
-instances, the CLI — so concurrent writes back off via SQLite's
-`busy_timeout` instead of racing the atomic swap. If a peer holds the
+the destination DB in exclusive locking mode and holds a `BEGIN EXCLUSIVE`
+transaction through validation and staging. This interlocks with every other
+SQLite peer — sibling `SqlitePersister` handles, bare `rusqlite::Connection`
+instances, the CLI — so concurrent reads and writes back off via SQLite's
+`busy_timeout` instead of racing the staged work. If a peer holds the
 destination busy for longer than the timeout, `restore` returns
 `WalletStorageError::RestoreDestinationLocked`. The lock conn is released
 BEFORE the rename so SQLite's file handle on the old inode goes away before
 the new DB takes its place.
+
+Restore validation establishes structure, not provenance: a valid backup is
+trusted as much as the live database. Protect backup directories from
+untrusted replacement or modification.
 
 ### Cargo features
 
@@ -282,9 +371,11 @@ directly via `WalletStorageError::is_transient`.
 
 ### Schema
 
-The canonical schema is [`migrations/V001__initial.rs`](./migrations/V001__initial.rs)
-— 23 tables of hand-written `CREATE TABLE … FOREIGN KEY …` SQL with native
-`ON DELETE CASCADE`. Foreign-key enforcement is enabled and
+The schema is defined by the complete [`migrations/`](./migrations/) set.
+`V001` creates the 23-table base schema; later
+migrations add tables and columns for address pools, metadata versions,
+invitations, typed public keys, and reservation timestamps. Foreign-key
+enforcement is enabled and
 read-back-asserted on every connection open. For the full table reference,
 the cascade triggers, the no-FK `meta_*` soft cascade, the orphan-metadata
 limitation, and the enum-domain CHECK constraints, see
