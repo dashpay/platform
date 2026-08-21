@@ -1143,16 +1143,23 @@ pub async fn transfer_multi<S: ShieldedStore, P: OrchardProver>(
         let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
         let anchor_bytes = anchor.to_bytes();
 
-        let (state_transition, fee_used) = build_shielded_transfer_transition_multi(
-            spends,
-            &builder_outputs,
-            &change_addr,
-            &keys.full_viewing_key,
-            &keys.spend_auth_key,
-            anchor,
-            prover,
-            sdk.version(),
-        )
+        // Build + prove under a pre-broadcast panic guard: a prover panic here must become a
+        // DEFINITIVE error (broadcast provably never happened) so the outer failure arm
+        // releases the reservation — otherwise the panic unwinds to the FFI boundary, which
+        // keeps the (anchor-less) reservation under its ambiguous-outcome contract and no
+        // sync can ever free the notes (`stale_pending_spends` skips unarmed reservations).
+        let (state_transition, fee_used) = catch_pre_broadcast_panic("transfer_multi", || {
+            build_shielded_transfer_transition_multi(
+                spends,
+                &builder_outputs,
+                &change_addr,
+                &keys.full_viewing_key,
+                &keys.spend_auth_key,
+                anchor,
+                prover,
+                sdk.version(),
+            )
+        })?
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
         debug_assert_eq!(
             fee_used, exact_fee,
@@ -2255,6 +2262,38 @@ async fn cancel_pending<S: ShieldedStore>(
     }
 }
 
+/// Run a synchronous build/prove `step` that executes strictly BEFORE any broadcast,
+/// converting a panic into a definitive [`PlatformWalletError::ShieldedBuildError`].
+///
+/// Why: a panic that unwinds out of an operation skips its `match result` arms, so
+/// `cancel_pending` never runs and the FFI boundary's panic guard has no choice but the
+/// conservative ambiguous contract ("the spend may have broadcast — keep the reservation").
+/// For a reservation that was never armed with an anchor that contract is a trap:
+/// `stale_pending_spends` skips anchor-less reservations, so no later sync can release the
+/// notes — they stay unselectable for the rest of the process lifetime, and the host is
+/// explicitly told not to retry. A panic INSIDE the build/prove step, by contrast, is
+/// provably pre-broadcast (the broadcast call sits strictly after it in the same operation),
+/// so it is safe — and required — to convert it to a definitive error here, while the
+/// operation still owns the selected notes: the operation's ordinary failure arm then
+/// releases the reservation via `cancel_pending`. Panics during or after broadcast are NOT
+/// caught by this helper; those remain genuinely ambiguous and keep the FFI guard's
+/// conservative contract.
+fn catch_pre_broadcast_panic<T>(
+    operation: &'static str,
+    step: impl FnOnce() -> T,
+) -> Result<T, PlatformWalletError> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(step)).map_err(|payload| {
+        let message = payload
+            .downcast_ref::<&str>()
+            .map(|s| (*s).to_string())
+            .or_else(|| payload.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "non-string panic payload".to_string());
+        PlatformWalletError::ShieldedBuildError(format!(
+            "{operation}: build/prove panicked before broadcast: {message}"
+        ))
+    })
+}
+
 /// Record the recorded `anchor` the spend was built against and the
 /// linked activity entry on every selected note's reservation, so a
 /// spend that ends broadcast-accepted-but-unconfirmed can be released
@@ -3317,6 +3356,100 @@ mod note_reservation_release_tests {
                 "{e:?} must release the note reservation"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod pre_broadcast_panic_guard_tests {
+    use super::*;
+    use crate::wallet::shielded::store::InMemoryShieldedStore;
+
+    /// A panic inside the guarded build/prove step becomes a DEFINITIVE `ShieldedBuildError`
+    /// carrying the operation and the panic message — the class of error whose failure arm
+    /// releases the note reservation (see `error_releases_note_reservation`).
+    #[test]
+    fn prover_panic_maps_to_a_releasing_build_error() {
+        let err = catch_pre_broadcast_panic::<()>("transfer_multi", || {
+            panic!("halo2 constraint system failure")
+        })
+        .expect_err("a panicking step must surface as an error");
+        match &err {
+            PlatformWalletError::ShieldedBuildError(m) => {
+                assert!(m.contains("transfer_multi"), "missing operation: {m}");
+                assert!(
+                    m.contains("halo2 constraint system failure"),
+                    "missing panic message: {m}"
+                );
+                assert!(m.contains("before broadcast"), "missing provenance: {m}");
+            }
+            other => panic!("expected ShieldedBuildError, got: {other:?}"),
+        }
+        assert!(
+            error_releases_note_reservation(&err),
+            "the converted error must be one that RELEASES the reservation — the whole point \
+             of catching pre-broadcast"
+        );
+    }
+
+    /// Owned-String panic payloads (`panic!("{x}")` formatting) are preserved too.
+    #[test]
+    fn string_panic_payloads_are_preserved() {
+        let position = 7u64;
+        let err = catch_pre_broadcast_panic::<()>("transfer_multi", || {
+            panic!("witness for position {position} out of range")
+        })
+        .expect_err("a panicking step must surface as an error");
+        match err {
+            PlatformWalletError::ShieldedBuildError(m) => {
+                assert!(m.contains("witness for position 7"), "got: {m}");
+            }
+            other => panic!("expected ShieldedBuildError, got: {other:?}"),
+        }
+    }
+
+    /// A non-panicking step passes its value through untouched.
+    #[test]
+    fn success_passes_through() {
+        let out = catch_pre_broadcast_panic("transfer_multi", || 41 + 1)
+            .expect("a non-panicking step must succeed");
+        assert_eq!(out, 42);
+    }
+
+    /// End of the chain the guard exists for: once the definitive error reaches the operation's
+    /// failure arm, `cancel_pending` releases the reservation and the notes are SELECTABLE
+    /// again — unlike the unwinding path, where the anchor-less reservation was unreleasable
+    /// for the process lifetime (`stale_pending_spends` skips unarmed reservations).
+    #[tokio::test]
+    async fn cancel_pending_makes_reserved_notes_selectable_again() {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let id = SubwalletId::new([0xEE; 32], 0);
+        let note = ShieldedNote {
+            position: 0,
+            cmx: [1u8; 32],
+            nullifier: [2u8; 32],
+            block_height: 10,
+            is_spent: false,
+            value: 5_000,
+            note_data: vec![0u8; 115],
+        };
+        {
+            let mut s = store.write().await;
+            s.save_note(id, &note).unwrap();
+            s.mark_pending(id, &note.nullifier).unwrap();
+            assert!(
+                s.get_unspent_notes(id).unwrap().is_empty(),
+                "a reserved note must be excluded from selection"
+            );
+        }
+
+        cancel_pending(&store, id, std::slice::from_ref(&note)).await;
+
+        let unspent = store.read().await.get_unspent_notes(id).unwrap();
+        assert_eq!(
+            unspent.len(),
+            1,
+            "a cancelled reservation must make the note selectable again"
+        );
     }
 }
 
