@@ -226,11 +226,15 @@ fn read_cstring_required(env: &mut JNIEnv, s: &JString, field: &str) -> Option<s
     }
 }
 
-/// Read an OPTIONAL Java `String` into `Option<CString>`. JVM null (or an
-/// empty string) → `Ok(None)` — the FFI treats a null memo pointer as "no
-/// memo", and Rust's `encode_memo_text` maps an empty string to the same
-/// all-zero memo anyway, so both normalize to null here. Returns `Err(())`
-/// (after throwing) on an interior NUL; a JNI read error is treated as null.
+/// Read an OPTIONAL Java `String` into `Option<CString>`. ONLY a JVM null or
+/// an empty string means "absent" (`Ok(None)`) — the FFI treats a null memo
+/// pointer as "no memo", and Rust's `encode_memo_text` maps an empty string to
+/// the same all-zero memo anyway, so both normalize to null here. Returns
+/// `Err(())` (after throwing) on an interior NUL **or on a JNI read failure**:
+/// a non-null string the JVM could not hand over must abort the call, not
+/// silently degrade to "absent" — the callers are irreversible spend paths,
+/// and dropping a requested memo would prove and broadcast the transfer
+/// without it.
 fn read_cstring_opt(
     env: &mut JNIEnv,
     s: &JString,
@@ -243,7 +247,8 @@ fn read_cstring_opt(
         Ok(v) => v.into(),
         Err(_) => {
             let _ = env.exception_clear();
-            return Ok(None);
+            throw_sdk_exception(env, 1, &format!("{field} String could not be read"));
+            return Err(());
         }
     };
     if owned.is_empty() {
