@@ -284,6 +284,9 @@ fn avg_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(
         )
         .unwrap()
         .expect("indexed_avg_top_k must succeed")
+        .into_iter()
+        .map(|entry| entry.key_pair())
+        .collect()
 }
 
 fn count_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(u64, Vec<u8>)> {
@@ -299,6 +302,9 @@ fn count_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec
         )
         .unwrap()
         .expect("indexed_count_top_k must succeed")
+        .into_iter()
+        .map(|entry| entry.key_pair())
+        .collect()
 }
 
 fn sum_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(i64, Vec<u8>)> {
@@ -314,6 +320,9 @@ fn sum_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(
         )
         .unwrap()
         .expect("indexed_sum_top_k must succeed")
+        .into_iter()
+        .map(|entry| entry.key_pair())
+        .collect()
 }
 
 // ---------------------------------------------------------------------------

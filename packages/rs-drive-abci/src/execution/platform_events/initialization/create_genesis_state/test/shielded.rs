@@ -364,12 +364,15 @@ impl<C> Platform<C> {
                     cv_net: [0u8; 32],
                     payload: n.encrypted_note,
                 });
-                let append_result = ct.append_many_raw(iter).value.map_err(|e| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
-                        format!("seed: append_many_raw (batch {batch_index}): {e}")
-                            .into_boxed_str(),
-                    )))
-                })?;
+                let append_result = ct
+                    .append_many_raw(iter, &platform_version.drive.grove_version)
+                    .value
+                    .map_err(|e| {
+                        Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
+                            format!("seed: append_many_raw (batch {batch_index}): {e}")
+                                .into_boxed_str(),
+                        )))
+                    })?;
                 // Persist the Sinsemilla frontier per batch — cheap and
                 // gives durable mid-bake checkpoints if we ever want to
                 // resume from a crash. Mid-bake MMR `commit_mmr` is

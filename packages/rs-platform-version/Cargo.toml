@@ -11,7 +11,7 @@ license = "MIT"
 thiserror = { version = "2.0.12" }
 bincode = { version = "=2.0.1" }
 versioned-feature-core = { git = "https://github.com/dashpay/versioned-feature-core", version = "1.0.0" }
-grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "879cdbc23f9f19f9cdc7974f90bde224c7c94db6" }
+grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "fe17045aa7bcf47acb1f2fe0db5d738cbea50274" }
 
 [features]
 mock-versions = []

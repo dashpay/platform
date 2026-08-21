@@ -99,6 +99,7 @@ impl DriveDocumentRankedQuery<'_> {
                 (
                     entries
                         .into_iter()
+                        .map(|entry| entry.key_pair())
                         .map(|(count, key)| RankedEntry {
                             key,
                             value: RankedEntryValue::Count(count),
@@ -121,6 +122,7 @@ impl DriveDocumentRankedQuery<'_> {
                 (
                     entries
                         .into_iter()
+                        .map(|entry| entry.key_pair())
                         .map(|(sum, key)| RankedEntry {
                             key,
                             value: RankedEntryValue::Sum(sum),
@@ -143,6 +145,7 @@ impl DriveDocumentRankedQuery<'_> {
                 (
                     entries
                         .into_iter()
+                        .map(|entry| entry.key_pair())
                         .map(|(avg, key)| RankedEntry {
                             key,
                             value: RankedEntryValue::AvgFixedPoint(avg),

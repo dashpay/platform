@@ -75,6 +75,7 @@ impl DriveDocumentHavingQuery<'_> {
         let entries = match (self.bounds.axis(), result.entries) {
             (RankedAxis::Count, AxisEntries::Count(entries)) => entries
                 .into_iter()
+                .map(|entry| entry.key_pair())
                 .map(|(count, key)| RankedEntry {
                     key,
                     value: RankedEntryValue::Count(count),
@@ -82,6 +83,7 @@ impl DriveDocumentHavingQuery<'_> {
                 .collect::<Vec<_>>(),
             (RankedAxis::Sum, AxisEntries::Sum(entries)) => entries
                 .into_iter()
+                .map(|entry| entry.key_pair())
                 .map(|(sum, key)| RankedEntry {
                     key,
                     value: RankedEntryValue::Sum(sum),
@@ -89,6 +91,7 @@ impl DriveDocumentHavingQuery<'_> {
                 .collect::<Vec<_>>(),
             (RankedAxis::Avg, AxisEntries::Avg(entries)) => entries
                 .into_iter()
+                .map(|entry| entry.key_pair())
                 .map(|(avg, key)| RankedEntry {
                     key,
                     value: RankedEntryValue::AvgFixedPoint(avg),

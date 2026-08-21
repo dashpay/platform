@@ -60,6 +60,7 @@ impl DriveDocumentHavingQuery<'_> {
                 value
                     .map_err(|e| Error::GroveDB(Box::new(e)))?
                     .into_iter()
+                    .map(|entry| entry.key_pair())
                     .map(|(count, key)| RankedEntry {
                         key,
                         value: RankedEntryValue::Count(count),
@@ -79,6 +80,7 @@ impl DriveDocumentHavingQuery<'_> {
                 value
                     .map_err(|e| Error::GroveDB(Box::new(e)))?
                     .into_iter()
+                    .map(|entry| entry.key_pair())
                     .map(|(sum, key)| RankedEntry {
                         key,
                         value: RankedEntryValue::Sum(sum),
@@ -98,6 +100,7 @@ impl DriveDocumentHavingQuery<'_> {
                 value
                     .map_err(|e| Error::GroveDB(Box::new(e)))?
                     .into_iter()
+                    .map(|entry| entry.key_pair())
                     .map(|(avg, key)| RankedEntry {
                         key,
                         value: RankedEntryValue::AvgFixedPoint(avg),
