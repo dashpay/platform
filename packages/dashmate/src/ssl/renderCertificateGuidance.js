@@ -201,9 +201,10 @@ export default function renderCertificateGuidance({
   Node:        ${config.get('network')} (config "${config.getName()}", ${config.get('externalIp') ?? 'no external IP set'})
   Certificate: ${renderObservation(verdict)}
 
-  A standards-compliant client rejects a certificate in this state. dashmate
-  did not open a connection to check what is actually on the wire, so it cannot
-  say what this node is serving; \`dashmate doctor ${cfg}\` does that.
+  These checks read the files installed for the gateway. dashmate did not open
+  a connection, so it cannot say what this node is actually serving, and it did
+  not validate the certificate against public trust stores either;
+  \`dashmate doctor ${cfg}\` does the first of those.
 
   Nothing broke just now. This is the first release of dashmate that checks
   the certificate, so this is the first time you are being told.
@@ -235,8 +236,8 @@ export default function renderCertificateGuidance({
     blocks.push(renderPortEightyPermanence());
 
     blocks.push(`  IF YOU CANNOT OPEN PORT 80. dashmate currently has no supported alternative
-  for an IP-address certificate. Without one this node has no certificate a
-  DAPI client will accept. Updates themselves are unaffected: images are
+  for an IP-address certificate, so there is no route from here to one issued
+  by a public authority. Updates themselves are unaffected: images are
   always pulled, whatever this check finds, so this node is not being held back
   from protocol upgrades or security patches. To suppress this check for one
   run:

@@ -177,7 +177,15 @@ describe('gatewayCertificateTaskFactory', () => {
         answers: [false],
       });
 
-      expect(enquirer.options[0].header).to.contain('leaves this node without');
+      // What declining costs, in terms of what was actually established: the
+      // installed pair stays as it is and still fails the checks. Not what a
+      // client would do with it - the checks read files, never the wire, and
+      // never the chain to a public root.
+      const { header } = enquirer.options[0];
+
+      expect(header).to.contain('still failing the checks');
+      expect(header).to.not.match(/client (will|would|does not|will not)? ?(accept|reject)/i);
+      expect(header).to.not.match(/clients (are|were|could not|cannot|unable)/i);
     });
 
     it('should exit cleanly when the courtesy switch is declined', async function it() {

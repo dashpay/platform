@@ -7,6 +7,7 @@ import semver from 'semver';
 import writeFileAtomic from 'write-file-atomic';
 import Config from '../Config.js';
 import { PACKAGE_ROOT_DIR } from '../../constants.js';
+import ConfigFileMigrationRequiredError from '../errors/ConfigFileMigrationRequiredError.js';
 import ConfigFileNotFoundError from '../errors/ConfigFileNotFoundError.js';
 import InvalidConfigFileFormatError from '../errors/InvalidConfigFileFormatError.js';
 import configFileJsonSchema from './configFileJsonSchema.js';
@@ -231,10 +232,11 @@ export default class ConfigFileJsonRepository {
    * write.
    *
    * @param {Object} [options={}] - passed through to read()
-   * @param {boolean} [options.readOnly=false] - migrate in memory and stop
-   *   there: no lock, no render, no save. For a caller that has promised to
-   *   change nothing, which has to hold even on the one run where a migration
-   *   is due
+   * @param {boolean} [options.readOnly=false] - for a caller that has promised
+   *   to change nothing. Reads a config file that is already current, and
+   *   refuses outright when one is not: migrations move and delete files on
+   *   disk, so running them on such a caller's behalf would break the promise
+   *   and do it without the lock
    * @param {function(Config[]): void} [onMigrated] - runs before the migrated
    *   config file is saved and while the lock is held
    * @returns {{configFile: ConfigFile}}
@@ -251,6 +253,16 @@ export default class ConfigFileJsonRepository {
     // Migrations are not all pure - some move service files on disk and delete
     // the originals - so running them to find out would do that work outside
     // the lock, and again inside it.
+    // Reading is what runs the migrations, and some of them copy TLS material
+    // to a new location, remove the originals, and then delete the legacy ssl
+    // directory outright. A caller that promised to change nothing cannot read
+    // a config file that is not current: declining is the only honest answer,
+    // and it stops a stop-first upgrade before the node goes down rather than
+    // after.
+    if (options.readOnly === true && this.#isMigrationDue()) {
+      throw new ConfigFileMigrationRequiredError(this.configFilePath);
+    }
+
     if (options.readOnly === true || !this.#isMigrationDue()) {
       return { configFile: this.read(options) };
     }

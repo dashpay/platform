@@ -200,6 +200,22 @@ describe('analyseGatewayCertificateFactory', () => {
     // An operator who reads this is deciding whether to stop updating. Images
     // keep arriving whatever the certificate does, and saying so is what keeps
     // a client-reachability problem from being read as a software-delivery one.
+    // Doctor collects a wire sample too, and the two can legitimately disagree:
+    // a gateway running with a healthy in-memory certificate and a stale bundle
+    // on disk is exactly the case this analyser exists alongside. So the
+    // on-disk problem states what the files show, not what a client would do.
+    it('should not state a client outcome from an on-disk check', () => {
+      const [problem] = analyseInstalled({
+        status: 'INVALID',
+        reasons: [{ code: 'SWITCH_INCOMPLETE', message: 'a switch was interrupted' }],
+        warnings: [],
+      });
+
+      expect(problem.getSolution()).to.not.match(/clients? rejects?/i);
+      expect(problem.getSolution()).to.not.match(/clients (are|were|could not|cannot|unable)/i);
+      expect(problem.getSolution()).to.contain('did not pass');
+    });
+
     it('should say that updates still deliver images', () => {
       const [problem] = analyseInstalled({
         status: 'INVALID',

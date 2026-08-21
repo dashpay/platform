@@ -48,8 +48,8 @@ function renderSwitchOffer(config, externalIp, { certificatePassedChecks = false
 ${certificatePassedChecks
     ? '  The certificate this node is running on now passed its checks and stays\n'
       + '  in place, so nothing changes if you decline.\n'
-    : '  Declining leaves this node without a certificate a standards-compliant\n'
-      + '  client will accept.\n'}`;
+    : '  Declining leaves the installed certificate exactly as it is: unchanged,\n'
+      + '  and still failing the checks above.\n'}`;
 }
 
 /**

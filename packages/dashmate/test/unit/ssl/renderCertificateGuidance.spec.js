@@ -156,7 +156,33 @@ describe('renderCertificateGuidance', () => {
       expect(output).to.not.match(/clients (are|were|could not|cannot|unable)/i);
       expect(output).to.not.match(/(is|was|has been) unreachable/i);
       expect(output).to.not.match(/your node is (down|dark|offline)/i);
+
+      // Nor what a client would make of the certificate itself. The chain to a
+      // public root is never validated either, and some blocking findings - an
+      // unfinished provider switch - sit on a certificate a client would
+      // accept perfectly well.
+      expect(output).to.not.match(/client (will|would|does not|will not)? ?(accept|reject)/i);
+      expect(output).to.not.match(/clients? rejects?/i);
     });
+  });
+
+  // The one exception, and it is a real one rather than an oversight. Self
+  // signature is proven structurally - the leaf verifies under its own public
+  // key - and a certificate signed by nothing else is in no public trust store
+  // by definition. That is a property of the file, established by the check,
+  // not an inference about the wire.
+  it('should still say a self-signed certificate is not publicly trusted', () => {
+    const output = render({
+      verdict: verdict({
+        reasons: [{
+          code: CERTIFICATE_REASONS.SELF_SIGNED,
+          message: 'The installed certificate is self-signed. Self-signed TLS is not'
+            + ' publicly trusted and standards-compliant clients will reject it',
+        }],
+      }),
+    });
+
+    expect(output).to.contain('not publicly trusted');
   });
 
   // A silent drop of an external probe is no information at all: 52 nodes that

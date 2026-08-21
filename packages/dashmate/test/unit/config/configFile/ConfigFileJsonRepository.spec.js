@@ -1,10 +1,14 @@
 import fs from 'fs';
+import path from 'path';
 import { spawn } from 'child_process';
 import { expect } from 'chai';
 import HomeDir from '../../../../src/config/HomeDir.js';
 import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFactory.js';
 import ConfigFile from '../../../../src/config/configFile/ConfigFile.js';
 import ConfigFileJsonRepository from '../../../../src/config/configFile/ConfigFileJsonRepository.js';
+import ConfigFileMigrationRequiredError from '../../../../src/config/errors/ConfigFileMigrationRequiredError.js';
+import createDIContainer from '../../../../src/createDIContainer.js';
+import getConfigFileDataV0250 from '../../../../src/test/fixtures/getConfigFileDataV0250.js';
 
 const CURRENT_FORMAT_VERSION = '4.1.0';
 
@@ -242,27 +246,92 @@ describe('ConfigFileJsonRepository', () => {
     });
 
     // A command that promises to change nothing must keep that promise even on
-    // the one run where a migration is due - which, right after an upgrade, is
-    // the run it is most likely to be used on. It still gets the migrated
-    // shape; it just does not write it, render from it, or take the lock to do
-    // either, so it cannot abort on a lock timeout while renewal holds it.
-    it('should migrate in memory only when the caller changes nothing', () => {
+    // the one run where a migration is due. Migrations are not all pure - one
+    // copies TLS files to a new location and removes the originals, and then
+    // deletes the whole ssl directory - so migrating on its behalf would move
+    // and delete files outside any lock, from a command documented as safe to
+    // run against a node that is still up.
+    it('should refuse to migrate for a caller that changes nothing', () => {
       seedConfigFile();
 
-      const migration = (data) => ({ ...data, configFormatVersion: '9.9.9' });
+      let migrationRuns = 0;
+      const migration = (data) => {
+        migrationRuns += 1;
+
+        return { ...data, configFormatVersion: '9.9.9' };
+      };
       const repository = new ConfigFileJsonRepository(migration, homeDir, createDefaults);
       const before = fs.readFileSync(configFilePath, 'utf8');
 
-      let rendered = false;
-      const { configFile } = repository.readAndMigrate(
-        { readOnly: true },
-        () => { rendered = true; },
-      );
+      expect(() => repository.readAndMigrate({ readOnly: true }))
+        .to.throw(ConfigFileMigrationRequiredError);
 
-      expect(configFile.getConfigFormatVersion()).to.equal('9.9.9');
-      expect(rendered).to.be.false();
+      // Not "migrated in memory and discarded" - not run at all, because
+      // running it is what touches the disk.
+      expect(migrationRuns).to.equal(0);
       expect(fs.readFileSync(configFilePath, 'utf8')).to.equal(before);
       expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.false();
+    });
+
+    // The common case, and the one that has to stay fast: nothing to migrate,
+    // so nothing to refuse and no lock to take.
+    it('should read without locking for a caller that changes nothing', () => {
+      seedConfigFile();
+
+      const repository = new ConfigFileJsonRepository(
+        identityMigration,
+        homeDir,
+        createDefaults,
+        CURRENT_FORMAT_VERSION,
+      );
+      const before = fs.readFileSync(configFilePath, 'utf8');
+
+      const { configFile } = repository.readAndMigrate({ readOnly: true });
+
+      expect(configFile.getConfig('base')).to.exist();
+      expect(fs.readFileSync(configFilePath, 'utf8')).to.equal(before);
+      expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.false();
+    });
+
+    // The migration this refuses to run really does delete things. Driven with
+    // the shipped migration set rather than a stand-in, so the guard is pinned
+    // against the behaviour it exists for and not against a mock of it.
+    it('should leave the ssl directory alone that migrating would delete', async () => {
+      const container = await createDIContainer();
+      container.resolve('homeDir').change(homeDir);
+
+      const migrateConfigFile = container.resolve('migrateConfigFile');
+      const configFormatVersion = container.resolve('configFormatVersion');
+
+      // A genuine config of that era, so the migrations that follow it run
+      // against the shape they were written for.
+      const legacy = getConfigFileDataV0250();
+      const [legacyName] = Object.keys(legacy.configs);
+      fs.writeFileSync(configFilePath, JSON.stringify(legacy, undefined, 2), 'utf8');
+
+      const legacySslDir = homeDir.joinPath('ssl', legacyName);
+      fs.mkdirSync(legacySslDir, { recursive: true });
+      fs.writeFileSync(path.join(legacySslDir, 'bundle.crt'), 'certificate', 'utf8');
+
+      const repository = new ConfigFileJsonRepository(
+        migrateConfigFile,
+        homeDir,
+        createDefaults,
+        configFormatVersion,
+      );
+
+      expect(() => repository.readAndMigrate({ readOnly: true }))
+        .to.throw(ConfigFileMigrationRequiredError);
+
+      expect(fs.existsSync(path.join(legacySslDir, 'bundle.crt'))).to.be.true();
+      expect(fs.existsSync(homeDir.joinPath('ssl'))).to.be.true();
+      expect(JSON.parse(fs.readFileSync(configFilePath, 'utf8')).configFormatVersion)
+        .to.equal('0.25.0');
+
+      // The control: a normal read migrates, and that is what removes them.
+      repository.readAndMigrate();
+
+      expect(fs.existsSync(homeDir.joinPath('ssl'))).to.be.false();
     });
 
     // Migrations are not all pure - one moves TLS files and deletes the

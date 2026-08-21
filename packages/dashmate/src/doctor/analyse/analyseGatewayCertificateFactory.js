@@ -22,10 +22,9 @@ const restartHint = (cfg) => chalk`Then restart Platform so the gateway picks it
  * does, and only refuses to report success. Leaving this out lets a client
  * reachability problem be read as a software delivery one.
  */
-const UPDATE_CONSEQUENCE = 'Standards-compliant clients reject a certificate in this state,'
-  + ' so this node may not be reachable. `dashmate update` still pulls new images, so protocol'
-  + ' upgrades and security patches continue to arrive - but it exits non-zero until the'
-  + ' certificate is fixed.';
+const UPDATE_CONSEQUENCE = 'The certificate installed for the gateway did not pass dashmate\'s'
+  + ' checks. `dashmate update` still pulls new images, so protocol upgrades and security patches'
+  + ' continue to arrive - but it exits non-zero until this is fixed.';
 
 export default function analyseGatewayCertificateFactory() {
   /**
