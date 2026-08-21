@@ -190,7 +190,7 @@ describe('renderCertificateGuidance', () => {
   it('should not offer a switch to a node already on that provider', () => {
     config.set('platform.gateway.ssl.provider', 'letsencrypt');
 
-    const output = render({ verdict: verdict({ provider: 'letsencrypt' }) });
+    const output = render();
 
     expect(output).to.contain('already configured for Let\'s Encrypt');
     expect(output).to.contain('THE FIX - obtain a new certificate');
@@ -202,13 +202,21 @@ describe('renderCertificateGuidance', () => {
 
   // Saying the same thing three times in one message is how an operator learns
   // to skim past it.
-  it('should state the port 80 argument once', () => {
-    const output = render({ verdict: verdict({ provider: 'letsencrypt' }) });
+  // Driven from the configured provider, which is what the renderer actually
+  // reads. Overriding the verdict's own provider field leaves the config saying
+  // something else, so the Let's Encrypt blocks never render and the test
+  // measures a message no operator will ever see.
+  ['zerossl', 'letsencrypt', 'file', 'self-signed'].forEach((provider) => {
+    it(`should state the port 80 argument once for a ${provider} node`, () => {
+      config.set('platform.gateway.ssl.provider', provider);
 
-    const occurrences = (needle) => output.split(needle).length - 1;
+      const output = render();
 
-    expect(occurrences('issued certificates on the same day')).to.equal(1);
-    expect(occurrences('PORT 80 MUST STAY OPEN PERMANENTLY')).to.equal(1);
+      const occurrences = (needle) => output.split(needle).length - 1;
+
+      expect(occurrences('issued certificates on the same day')).to.equal(1);
+      expect(occurrences('PORT 80 MUST STAY OPEN PERMANENTLY')).to.equal(1);
+    });
   });
 
   // A silent drop of an external probe is no information at all: 52 nodes that

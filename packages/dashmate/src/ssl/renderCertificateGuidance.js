@@ -130,8 +130,7 @@ function renderLetsEncryptDiagnosis(cfg) {
   The most likely cause is inbound port 80. Let's Encrypt re-checks it on every
   renewal - roughly every four days, permanently - and a firewall rule that was
   opened once and later closed, or that did not survive a reboot, produces
-  exactly this pattern. Three mainnet nodes issued certificates on the same day
-  went dark together six days later - one operator, one change, three nodes.
+  exactly this pattern.
 
   It is not always port 80: half the nodes in this state have port 80 open and
   stopped renewing regardless. Check the renewal logs as well:
