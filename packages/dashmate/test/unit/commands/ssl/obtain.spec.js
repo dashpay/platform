@@ -195,6 +195,23 @@ describe('SSL obtain command', () => {
     expect(stderr).to.contain('survives a reboot');
   });
 
+  // A certificate that was issued and then failed to install is still a
+  // certificate this node now holds against its limits, and the operator who
+  // opened port 80 for it is about to close it again. The failure must not
+  // swallow the one thing that stops the node going dark in six days.
+  it('should state permanence even when a later step fails', async function it() {
+    const dependencies = obtainDependencies(this.sinon);
+    dependencies.obtainTask = this.sinon.stub().callsFake(() => new Listr([{
+      task: (ctx) => { ctx.certificateObtained = true; },
+    }]));
+    dependencies.dockerCompose.execCommand = this.sinon.stub()
+      .rejects(new Error('reload failed'));
+
+    await expect(runObtain(dependencies)).to.be.rejected();
+
+    expect(stderr).to.contain('LEAVE PORT 80 OPEN');
+  });
+
   // Nothing was issued, so there is nothing to warn about and a cron run stays
   // quiet.
   it('should stay silent when no new certificate was obtained', async function it() {

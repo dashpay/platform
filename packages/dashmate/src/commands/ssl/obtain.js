@@ -162,14 +162,19 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
       await tasks.run(context);
     } catch (e) {
       throw new MuteOneLineError(e);
-    }
-
-    // Only when something was actually issued. This is the command the
-    // certificate check tells an operator to run, and an operator who opened
-    // port 80 for this one migration is the one who most needs to hear that it
-    // has to stay open - they never saw a failure that would have said so.
-    if (context.certificateObtained && provider === SSL_PROVIDERS.LETSENCRYPT) {
-      process.stderr.write(`\n${PORT_80_PERMANENCE}\n`);
+    } finally {
+      // Only when the gateway's certificate actually changed. This is the
+      // command the certificate check tells an operator to run, and an
+      // operator who opened port 80 for this one migration is the one who most
+      // needs to hear that it has to stay open - they never saw a failure that
+      // would have said so.
+      //
+      // Printed even when a later step fails: a certificate that was issued
+      // and then failed to install still counts against this node's limits,
+      // and the operator is about to close the port either way.
+      if (context.certificateObtained && provider === SSL_PROVIDERS.LETSENCRYPT) {
+        process.stderr.write(`\n${PORT_80_PERMANENCE}\n`);
+      }
     }
   }
 }

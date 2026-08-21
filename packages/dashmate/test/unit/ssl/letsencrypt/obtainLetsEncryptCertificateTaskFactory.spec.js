@@ -509,15 +509,79 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
         .run({ force: true }).catch((e) => e);
 
       // The Docker error is shown, because it is the only thing that says what
-      // actually happened.
+      // actually happened, and the port conflict is offered as a possible
+      // cause rather than asserted as the cause.
       expect(error.message).to.contain('address already in use');
-      expect(error.message).to.contain('already listening on port 80');
+      expect(error.message).to.contain('holding port 80');
+      expect(error.message).to.contain('no request was');
 
       // And none of the authority-side consequences are claimed.
       expect(error.message).to.not.contain('PAUSED');
       expect(error.message).to.not.contain('rate-limit');
       expect(error.message).to.not.contain('failed attempts are shared');
       expect(error.message).to.not.contain('Fix inbound port 80 first');
+    });
+
+    // Clearing a stale container from a previous run happens before lego is
+    // even created, so a failure there is as far from a certificate authority
+    // response as a bind refusal is.
+    it('should not blame the authority when clearing a stale container fails', async function it() {
+      const denied = Object.assign(new Error('permission denied while removing container'), { statusCode: 403 });
+      const docker = {
+        getContainer: this.sinon.stub().resolves({
+          remove: this.sinon.stub().rejects(denied),
+          wait: this.sinon.stub().resolves(),
+        }),
+        createContainer: this.sinon.stub(),
+      };
+
+      const error = await buildFailingTask(this.sinon, docker)(config)
+        .run({ force: true }).catch((e) => e);
+
+      expect(error.message).to.contain('permission denied while removing container');
+      expect(error.message).to.not.contain('PAUSED');
+      expect(error.message).to.not.contain('failed attempts are shared');
+      expect(docker.createContainer).to.not.have.been.called();
+    });
+
+    // The Docker error is shown because only it says what happened; asserting
+    // the port is occupied for a daemon, permission or configuration failure
+    // would send the operator after the wrong thing.
+    it('should not assert a port conflict it did not observe', async function it() {
+      const daemonGone = Object.assign(new Error('Cannot connect to the Docker daemon'), { statusCode: 500 });
+      const missing = Object.assign(new Error('container not found'), { statusCode: 404 });
+      const docker = {
+        getContainer: this.sinon.stub().rejects(missing),
+        createContainer: this.sinon.stub().rejects(daemonGone),
+      };
+
+      const error = await buildFailingTask(this.sinon, docker)(config)
+        .run({ force: true }).catch((e) => e);
+
+      expect(error.message).to.contain('Cannot connect to the Docker daemon');
+      expect(error.message).to.not.match(/the port is occupied/i);
+      expect(error.message).to.not.match(/is already listening on port 80/i);
+    });
+
+    // The container ran, so a request may well have been made - but dashmate
+    // never saw the result, so it cannot report what the authority said either.
+    it('should say the result was never read when the wait fails', async function it() {
+      const missing = Object.assign(new Error('container not found'), { statusCode: 404 });
+      const docker = {
+        getContainer: this.sinon.stub().rejects(missing),
+        createContainer: this.sinon.stub().resolves({
+          start: this.sinon.stub().resolves(),
+          logs: this.sinon.stub().resolves(Buffer.from('')),
+          wait: this.sinon.stub().rejects(new Error('connection reset by peer')),
+        }),
+      };
+
+      const error = await buildFailingTask(this.sinon, docker)(config)
+        .run({ force: true }).catch((e) => e);
+
+      expect(error.message).to.contain('connection reset by peer');
+      expect(error.message).to.match(/could not read|did not see/i);
+      expect(error.message).to.not.contain('PAUSED');
     });
 
     // A failure the authority did return keeps the guidance that is about the

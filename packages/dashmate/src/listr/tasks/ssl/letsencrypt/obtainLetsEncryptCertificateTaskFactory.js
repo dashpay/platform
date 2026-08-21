@@ -7,6 +7,7 @@ import { ERRORS } from '../../../../ssl/letsencrypt/validateLetsEncryptCertifica
 import LegoCertificate from '../../../../ssl/letsencrypt/LegoCertificate.js';
 import { LETSENCRYPT_ACME_DIRECTORY_URL } from '../../../../constants.js';
 import LegoDidNotStartError from '../../../../ssl/errors/LegoDidNotStartError.js';
+import LegoResultNotObservedError from '../../../../ssl/errors/LegoResultNotObservedError.js';
 import promptOrThrow from '../../../../util/promptOrThrow.js';
 import renderConfigFlag from '../../../../util/renderConfigFlag.js';
 
@@ -83,13 +84,42 @@ function renderHelperDidNotStartGuidance(config, cause) {
 made to Let's Encrypt. Nothing was issued, nothing was validated, and no
 rate limit was spent.
 
+Docker reported:
+
 ${cause.message}
 
-The usual cause is that something is already listening on port 80 here. The
-port being reachable is not the problem - it is occupied. Find what holds it,
-stop that, then retry:
+That message is the diagnosis - dashmate did not look further than it. One
+common cause is another process already holding port 80, which is the
+opposite of a blocked port: it is reachable and occupied. Others are the
+Docker daemon being unreachable, or the current user not being permitted to
+use it.
 
     sudo ss -lntp 'sport = :80'
+    dashmate ssl obtain ${renderConfigFlag(config.getName())} --provider letsencrypt`;
+}
+
+/**
+ * What to tell an operator when the helper ran and its result was never read.
+ *
+ * A request may have been made, so it would be wrong to say nothing reached the
+ * authority - and nothing was read, so it is equally wrong to report what the
+ * authority said. Both claims are withheld and the state is described instead.
+ *
+ * @param {Config} config
+ * @param {Error} cause
+ * @return {string}
+ */
+function renderResultNotObservedGuidance(config, cause) {
+  return `The certificate helper started, but dashmate could not read how it
+finished:
+
+${cause.message}
+
+So dashmate does not know whether a certificate was requested. Check whether
+one arrived before trying again - a request that did reach Let's Encrypt
+counts against this node's limits whether or not dashmate saw the answer:
+
+    dashmate doctor ${renderConfigFlag(config.getName())}
     dashmate ssl obtain ${renderConfigFlag(config.getName())} --provider letsencrypt`;
 }
 
@@ -314,7 +344,9 @@ export default function obtainLetsEncryptCertificateTaskFactory(
           const containerName = 'dashmate-letsencrypt-lego';
 
           const runLego = async () => {
-            // Remove any existing container with the same name
+            // Clearing a stale container from a previous run happens before
+            // lego exists, so a failure here is as far from a response by the
+            // certificate authority as a refused port binding is.
             try {
               const existingContainer = await docker.getContainer(containerName);
               await existingContainer.remove({ force: true });
@@ -330,7 +362,7 @@ export default function obtainLetsEncryptCertificateTaskFactory(
             } catch (e) {
               // Container doesn't exist, that's fine
               if (e.statusCode !== 404) {
-                throw e;
+                throw new LegoDidNotStartError(e);
               }
             }
 
@@ -368,8 +400,14 @@ export default function obtainLetsEncryptCertificateTaskFactory(
             // eslint-disable-next-line no-param-reassign
             task.output = `Running lego ${command}...`;
 
-            // Wait for container to finish
-            const result = await container.wait();
+            // The container is running, so a request may have been made - but a
+            // result nobody read is not a result that can be reported.
+            let result;
+            try {
+              result = await container.wait();
+            } catch (e) {
+              throw new LegoResultNotObservedError(e);
+            }
 
             if (result.StatusCode !== 0) {
               // lego's own output is the best account of what went wrong -
@@ -411,6 +449,10 @@ export default function obtainLetsEncryptCertificateTaskFactory(
                 throw new Error(renderHelperDidNotStartGuidance(config, e.cause));
               }
 
+              if (e instanceof LegoResultNotObservedError) {
+                throw new Error(renderResultNotObservedGuidance(config, e.cause));
+              }
+
               // Prompting needs a positive opt-in from the entry point. The
               // helper renews inside a container with no terminal, where a
               // prompt would never settle and would hold the config lock -
@@ -446,7 +488,6 @@ export default function obtainLetsEncryptCertificateTaskFactory(
           }
 
           ctx.configurationUpdateRequired = true;
-          ctx.certificateObtained = true;
 
           // eslint-disable-next-line no-param-reassign
           task.output = 'Certificate obtained successfully';
@@ -460,6 +501,11 @@ export default function obtainLetsEncryptCertificateTaskFactory(
           ctx.certificateFile = fs.readFileSync(ctx.legoCertPath, 'utf8');
           ctx.privateKeyFile = fs.readFileSync(ctx.legoKeyPath, 'utf8');
           ctx.configurationUpdateRequired = true;
+
+          // Recorded here rather than after the issuance, so installing a
+          // certificate that was already issued - a run recovering from an
+          // interrupted one - counts as the gateway's certificate changing.
+          ctx.certificateObtained = true;
 
           // Save to gateway SSL directory
           return saveCertificateTask(config);
