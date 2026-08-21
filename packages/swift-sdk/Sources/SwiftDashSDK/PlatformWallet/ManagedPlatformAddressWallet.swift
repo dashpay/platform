@@ -902,4 +902,109 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
             )
         }
     }
+
+    // MARK: - Funding fee quote
+
+    /// A state-aware fee quote for a 0-input / 1-output address funding from
+    /// a fresh asset lock, computed by a node (`getAddressFundingFeeQuote`).
+    ///
+    /// Planning data from a single node — the response carries no proof.
+    /// Sizing the funding lock stays governed by
+    /// `minimumRequiredLockCredits` plus the application's own margin policy.
+    public struct AddressFundingFeeQuote: Sendable, Equatable {
+        /// State-aware estimate of the fee the network would charge for the
+        /// funding executed near the quoted state (includes the requested
+        /// user fee increase).
+        public let estimatedFeeCredits: UInt64
+        /// The consensus admission floor for the asset lock.
+        public let minimumRequiredLockCredits: UInt64
+        /// The protocol version the node quoted with.
+        public let protocolVersion: UInt32
+        /// The committed block height the quote was computed on.
+        public let stateHeight: UInt64
+    }
+
+    /// Fetch a state-aware fee quote for funding one platform address from a
+    /// fresh asset lock (0 address inputs, 1 remainder output).
+    ///
+    /// Asynchronous network call: the node prices the exact production
+    /// operations against its committed state (measured tree depths instead
+    /// of worst-case constants). There is no offline fallback — a network
+    /// failure throws, never a stale constant.
+    ///
+    /// - Parameters:
+    ///   - recipientAddress: the serialized platform address of the funding
+    ///     recipient, in the same byte format the `Addresses` query APIs use.
+    ///   - preparedOutpointTxid: the 32-byte txid of an already built and
+    ///     signed lock transaction, when the wallet has one; `nil` lets the
+    ///     node use a deterministic placeholder with the same expected
+    ///     search depth. An outpoint already spent on Platform is rejected.
+    ///   - preparedOutpointVout: the credit output index of the prepared
+    ///     lock; ignored when `preparedOutpointTxid` is `nil`.
+    ///   - userFeeIncrease: the fee increase the quote should include; the
+    ///     SDK's chain-lock retry loop can raise a funding by up to 14 units.
+    public func quoteFundingFee(
+        recipientAddress: Data,
+        preparedOutpointTxid: Data? = nil,
+        preparedOutpointVout: UInt32 = 0,
+        userFeeIncrease: UInt16 = 0
+    ) async throws -> AddressFundingFeeQuote {
+        if let txid = preparedOutpointTxid, txid.count != 32 {
+            throw PlatformWalletError.invalidParameter(
+                "preparedOutpointTxid must be exactly 32 bytes (was \(txid.count))"
+            )
+        }
+        let handle = self.handle
+
+        return try await Task.detached(priority: .userInitiated) {
+            () -> AddressFundingFeeQuote in
+            var quote = AddressFundingFeeQuoteFFI()
+            let result: PlatformWalletFFIResult
+            if let txid = preparedOutpointTxid {
+                var txidTuple: (
+                    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+                ) = (
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+                )
+                txid.withUnsafeBytes { src in
+                    Swift.withUnsafeMutableBytes(of: &txidTuple) { dst in
+                        dst.copyMemory(from: src)
+                    }
+                }
+                var outPoint = OutPointFFI(txid: txidTuple, vout: preparedOutpointVout)
+                result = recipientAddress.withUnsafeBytes { addr in
+                    platform_address_wallet_quote_funding_fee(
+                        handle,
+                        addr.bindMemory(to: UInt8.self).baseAddress,
+                        UInt(recipientAddress.count),
+                        &outPoint,
+                        userFeeIncrease,
+                        &quote
+                    )
+                }
+            } else {
+                result = recipientAddress.withUnsafeBytes { addr in
+                    platform_address_wallet_quote_funding_fee(
+                        handle,
+                        addr.bindMemory(to: UInt8.self).baseAddress,
+                        UInt(recipientAddress.count),
+                        nil,
+                        userFeeIncrease,
+                        &quote
+                    )
+                }
+            }
+            try result.check()
+            return AddressFundingFeeQuote(
+                estimatedFeeCredits: quote.estimated_fee_credits,
+                minimumRequiredLockCredits: quote.minimum_required_lock_credits,
+                protocolVersion: quote.protocol_version,
+                stateHeight: quote.state_height
+            )
+        }.value
+    }
 }
