@@ -522,6 +522,38 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
       expect(error.message).to.not.contain('Fix inbound port 80 first');
     });
 
+    // lego exited successfully, so a certificate was issued and counts against
+    // this node's weekly limit whether or not dashmate can find the files.
+    // Retrying that as though the authority had refused spends the limit again,
+    // up to three times, and then reports that nothing was obtained.
+    it('should not retry or blame the authority when the issued files are missing', async function it() {
+      const missing = Object.assign(new Error('container not found'), { statusCode: 404 });
+      const docker = {
+        getContainer: this.sinon.stub().rejects(missing),
+        createContainer: this.sinon.stub().resolves({
+          start: this.sinon.stub().resolves(),
+          logs: this.sinon.stub().resolves(Buffer.from('')),
+          // Exits cleanly, but writes nothing.
+          wait: this.sinon.stub().resolves({ StatusCode: 0 }),
+        }),
+      };
+
+      const context = { force: true, interactive: true };
+      const error = await buildFailingTask(this.sinon, docker)(config)
+        .run(context).catch((e) => e);
+
+      // Issued once, and only once.
+      expect(docker.createContainer).to.have.been.calledOnce();
+
+      expect(error.message).to.match(/was issued|counts against/i);
+      expect(error.message).to.not.contain('PAUSED');
+      expect(error.message).to.not.contain('failed attempts are shared');
+      expect(error.message).to.not.match(/did not obtain a certificate after/i);
+
+      // And the operator still hears the requirement that keeps the node up.
+      expect(context.certificateObtained).to.be.true();
+    });
+
     // Clearing a stale container from a previous run happens before lego is
     // even created, so a failure there is as far from a certificate authority
     // response as a bind refusal is.
@@ -561,6 +593,14 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
       expect(error.message).to.contain('Cannot connect to the Docker daemon');
       expect(error.message).to.not.match(/the port is occupied/i);
       expect(error.message).to.not.match(/is already listening on port 80/i);
+      // Nor any of the guidance that belongs to a response from the authority.
+      expect(error.message).to.not.contain('PAUSED');
+      expect(error.message).to.not.contain('failed attempts are shared');
+      expect(error.message).to.not.contain('Fix inbound port 80 first');
+      // It may say no limit was spent - that is the honest statement. What it
+      // must not do is discuss a limit as though one had been.
+      expect(error.message).to.contain('no request was');
+      expect(error.message).to.not.match(/may be PAUSED|Self-Service Portal/i);
     });
 
     // The container ran, so a request may well have been made - but dashmate

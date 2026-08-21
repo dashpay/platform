@@ -6,6 +6,7 @@ import os from 'os';
 import { ERRORS } from '../../../../ssl/letsencrypt/validateLetsEncryptCertificateFactory.js';
 import LegoCertificate from '../../../../ssl/letsencrypt/LegoCertificate.js';
 import { LETSENCRYPT_ACME_DIRECTORY_URL } from '../../../../constants.js';
+import LegoArtifactsMissingError from '../../../../ssl/errors/LegoArtifactsMissingError.js';
 import LegoDidNotStartError from '../../../../ssl/errors/LegoDidNotStartError.js';
 import LegoResultNotObservedError from '../../../../ssl/errors/LegoResultNotObservedError.js';
 import promptOrThrow from '../../../../util/promptOrThrow.js';
@@ -96,6 +97,34 @@ use it.
 
     sudo ss -lntp 'sport = :80'
     dashmate ssl obtain ${renderConfigFlag(config.getName())} --provider letsencrypt`;
+}
+
+/**
+ * What to tell an operator whose certificate was issued but never landed.
+ *
+ * The issuance is the fact that matters: it is spent whether or not the files
+ * arrived, so the one thing this must not do is invite another attempt.
+ *
+ * @param {Config} config
+ * @param {string} missingPath
+ * @return {string}
+ */
+function renderArtifactsMissingGuidance(config, missingPath) {
+  return `Let's Encrypt issued a certificate, but dashmate could not find the
+file it should have written:
+
+    ${missingPath}
+
+The certificate exists and counts against this node's issuance limit - five
+per address per week - so obtaining another one is not free and will not fix
+this. The problem is local: check the disk for space and permissions, and that
+the helper is allowed to write there.
+
+Once that is sorted, install what was already issued:
+
+    dashmate ssl obtain ${renderConfigFlag(config.getName())} --provider letsencrypt
+
+${PORT_80_PERMANENCE}`;
 }
 
 /**
@@ -427,13 +456,19 @@ export default function obtainLetsEncryptCertificateTaskFactory(
               throw new Error(`Failed to obtain Let's Encrypt certificate: ${errorMessage}`);
             }
 
+            // The authority has issued by this point, so the issuance counts
+            // against this node's weekly limit however the rest of this run
+            // goes. Recorded before anything else can fail, so a later problem
+            // cannot hide it.
+            ctx.certificateObtained = true;
+
             // Verify certificate and key were created
             if (!fs.existsSync(ctx.legoCertPath)) {
-              throw new Error('Certificate file was not created by lego');
+              throw new LegoArtifactsMissingError(ctx.legoCertPath);
             }
 
             if (!fs.existsSync(ctx.legoKeyPath)) {
-              throw new Error('Private key file was not created by lego');
+              throw new LegoArtifactsMissingError(ctx.legoKeyPath);
             }
           };
 
@@ -451,6 +486,12 @@ export default function obtainLetsEncryptCertificateTaskFactory(
 
               if (e instanceof LegoResultNotObservedError) {
                 throw new Error(renderResultNotObservedGuidance(config, e.cause));
+              }
+
+              // A certificate exists. Retrying would ask for another one for a
+              // problem that is entirely local to this machine.
+              if (e instanceof LegoArtifactsMissingError) {
+                throw new Error(renderArtifactsMissingGuidance(config, e.missingPath));
               }
 
               // Prompting needs a positive opt-in from the entry point. The
