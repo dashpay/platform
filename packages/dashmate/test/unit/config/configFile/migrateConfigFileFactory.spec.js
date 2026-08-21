@@ -23,6 +23,29 @@ describe('migrateConfigFileFactory', () => {
     mockConfigFileData = getConfigFileDataV0250();
   });
 
+  // lego keys its on-disk ACME account directory by the contact address, so
+  // that string decides which account a renewal runs under. A migration that
+  // nulled, normalised or removed it would silently register a brand new
+  // account on every node that has one, at its next renewal - a different
+  // account key, a reset failed-authorization budget, and a new registration
+  // spent against the per-address limit, network wide, in one release.
+  //
+  // 3.0.0 is where the provider config was introduced, so it is the oldest
+  // format a stored address can have come from.
+  it('should carry a configured contact address through every migration', async () => {
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+
+    const configFileData = createConfigFile().toObject();
+    const [name] = Object.keys(configFileData.configs);
+    configFileData.configs[name].platform.gateway.ssl.providerConfigs.letsencrypt.email = 'someone@example.org';
+
+    const migrated = migrateConfigFile(configFileData, '3.0.0', version);
+
+    expect(
+      migrated.configs[name].platform.gateway.ssl.providerConfigs.letsencrypt.email,
+    ).to.equal('someone@example.org');
+  });
+
   it('should migrate v0.25.0 config file to the latest one', async () => {
     const currentConfigFile = createConfigFile();
     const currentConfigFileData = currentConfigFile.toObject();

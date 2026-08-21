@@ -5,6 +5,7 @@ import ConfigFile from '../../../../src/config/configFile/ConfigFile.js';
 import ConfigFileJsonRepository from '../../../../src/config/configFile/ConfigFileJsonRepository.js';
 import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFactory.js';
 import { ERRORS } from '../../../../src/ssl/zerossl/validateZeroSslCertificateFactory.js';
+import getEnquirerMock from '../../../../src/test/mock/getEnquirerMock.js';
 
 describe('obtainZeroSSLCertificateTaskFactory', () => {
   let config;
@@ -317,5 +318,83 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
     } finally {
       homeDir.remove();
     }
+  });
+
+  describe('domain verification retry', () => {
+    let verifyDomain;
+    let enquirer;
+    let buildTask;
+
+    beforeEach(function beforeEach() {
+      config.set = this.sinon.stub();
+      verifyDomain = this.sinon.stub().rejects(
+        Object.assign(new Error('domain control validation failed'), { code: 1 }),
+      );
+      enquirer = getEnquirerMock(this.sinon, false);
+
+      buildTask = (sinon) => obtainZeroSSLCertificateTaskFactory(
+        sinon.stub().resolves('csr'),
+        sinon.stub().resolves({ privateKey: 'private', publicKey: 'public' }),
+        sinon.stub().resolves({
+          id: 'certificate-id',
+          status: 'pending_validation',
+          validation: {
+            other_methods: {
+              '1.2.3.4': {
+                file_validation_url_http: 'http://1.2.3.4/.well-known/x',
+                file_validation_content: 'content',
+              },
+            },
+          },
+        }),
+        verifyDomain,
+        sinon.stub(),
+        sinon.stub(),
+        sinon.stub(),
+        sinon.stub(),
+        verificationServer,
+        { joinPath: sinon.stub().returns('/tmp') },
+        sinon.stub(),
+      );
+    });
+
+    /**
+     * @param {Object} context
+     * @return {Promise}
+     */
+    function run(context) {
+      const tasks = buildTask(this.sinon)(config, {
+        onCertificateCreated: this.sinon.stub(),
+      });
+
+      tasks.options.injectWrapper = { enquirer };
+
+      return tasks.run({
+        force: true, externalIp: '1.2.3.4', apiKey: 'api-key', ...context,
+      });
+    }
+
+    // This loop was gated only on noRetry, which is fail-open: it prompts
+    // unless a caller remembers to say otherwise. The helper's unattended
+    // renewal is safe today only because it happens to pass noRetry, and a
+    // prompt reached in that container never settles and never releases the
+    // config lock - which then blocks every other dashmate command forever.
+    it('should not construct a prompt when the session cannot answer', async function it() {
+      await expect(run.call(this, {})).to.be.rejected();
+
+      expect(enquirer.prompt).to.not.have.been.called();
+    });
+
+    it('should still ask an operator who is at a terminal', async function it() {
+      await expect(run.call(this, { interactive: true })).to.be.rejected();
+
+      expect(enquirer.prompt).to.have.been.calledOnce();
+    });
+
+    it('should honour no-retry at a terminal', async function it() {
+      await expect(run.call(this, { interactive: true, noRetry: true })).to.be.rejected();
+
+      expect(enquirer.prompt).to.not.have.been.called();
+    });
   });
 });

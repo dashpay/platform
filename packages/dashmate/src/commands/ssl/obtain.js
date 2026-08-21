@@ -2,6 +2,7 @@ import { Listr } from 'listr2';
 import { Flags } from '@oclif/core';
 import ServiceIsNotRunningError from '../../docker/errors/ServiceIsNotRunningError.js';
 import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
+import isInteractiveSession from '../../util/isInteractiveSession.js';
 import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
 import Certificate from '../../ssl/zerossl/Certificate.js';
 import LegoCertificate from '../../ssl/letsencrypt/LegoCertificate.js';
@@ -46,13 +47,7 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
    */
   async runWithDependencies(
     args,
-    {
-      verbose: isVerbose,
-      'no-retry': noRetry,
-      'expiration-days': expirationDaysFlag,
-      force,
-      provider: providerFlag,
-    },
+    flags,
     config,
     obtainZeroSSLCertificateTask,
     obtainLetsEncryptCertificateTask,
@@ -60,6 +55,14 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
     configFile,
     dockerCompose,
   ) {
+    const {
+      verbose: isVerbose,
+      'no-retry': noRetry,
+      'expiration-days': expirationDaysFlag,
+      force,
+      provider: providerFlag,
+    } = flags;
+
     const provider = providerFlag || config.get('platform.gateway.ssl.provider');
 
     let task;
@@ -140,6 +143,10 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
         noRetry,
         force,
         expirationDays,
+        // Whether the obtain may ask a question is decided here rather than
+        // inside the shared task, so a caller that never opts in - the helper's
+        // unattended renewal - cannot enable prompting by omission.
+        interactive: isInteractiveSession({ flags }),
       });
     } catch (e) {
       throw new MuteOneLineError(e);

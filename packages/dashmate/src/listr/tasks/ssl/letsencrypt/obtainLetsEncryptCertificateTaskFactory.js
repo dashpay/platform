@@ -5,8 +5,46 @@ import os from 'os';
 
 import { ERRORS } from '../../../../ssl/letsencrypt/validateLetsEncryptCertificateFactory.js';
 import LegoCertificate from '../../../../ssl/letsencrypt/LegoCertificate.js';
+import promptOrThrow from '../../../../util/promptOrThrow.js';
+import renderConfigFlag from '../../../../util/renderConfigFlag.js';
 
 const LEGO_IMAGE = 'goacme/lego:v4.31.0';
+
+/**
+ * Let's Encrypt allows five failed authorizations per address per account per
+ * hour, and that budget is shared with the helper's renewal of a still-valid
+ * certificate, so an attempt is not free. Three is enough for an operator who
+ * is fixing a firewall rule between attempts and few enough to leave the
+ * helper room.
+ */
+const MAX_OBTAIN_ATTEMPTS = 3;
+
+/**
+ * What to tell an operator who has run out of attempts.
+ *
+ * No claim about when to come back: a long-failing address may be paused rather
+ * than rate-limited, and waiting never clears a pause - which is exactly the
+ * state a node that has been dark for months is likely to be in.
+ *
+ * @param {Config} config
+ * @param {number} attempts
+ * @return {string}
+ */
+function renderGiveUpGuidance(config, attempts) {
+  return `dashmate did not obtain a certificate after ${attempts} `
+    + `attempt${attempts === 1 ? '' : 's'}.
+
+Retrying now also blocks this node's automatic renewal: dashmate's helper
+renews under the same Let's Encrypt account, and failed attempts are shared.
+
+If this node has been failing for a long time, the address may be PAUSED
+rather than rate-limited - waiting does not clear a pause, and you may need
+Let's Encrypt's Self-Service Portal to unpause it:
+    https://letsencrypt.org/docs/rate-limits/
+
+Fix inbound port 80 first, then: `
+    + `dashmate ssl obtain ${renderConfigFlag(config.getName())} --provider letsencrypt`;
+}
 
 const LEGO_CA_CERTIFICATE_MOUNT_PATH = '/acme-ca.pem';
 
@@ -53,10 +91,6 @@ export default function obtainLetsEncryptCertificateTaskFactory(
           ctx.configurationUpdateRequired = !config.get('platform.gateway.ssl.enabled')
             || config.get('platform.gateway.ssl.provider') !== 'letsencrypt';
 
-          if (!ctx.email) {
-            throw new Error("Let's Encrypt email is not set. Please set it in the config file");
-          }
-
           if (!ctx.externalIp) {
             throw new Error('External IP is not set. Please set it in the config file');
           }
@@ -97,8 +131,6 @@ export default function obtainLetsEncryptCertificateTaskFactory(
               // eslint-disable-next-line no-param-reassign
               task.output = `Certificate is valid and expires at ${ctx.certificate.expires}`;
               break;
-            case ERRORS.EMAIL_IS_NOT_SET:
-              throw new Error('Let\'s Encrypt email is not set. Please set it in the config file');
             case ERRORS.EXTERNAL_IP_IS_NOT_SET:
               throw new Error('External IP is not set. Please set it in the config file');
             case ERRORS.CERTIFICATE_NOT_FOUND:
@@ -127,6 +159,16 @@ export default function obtainLetsEncryptCertificateTaskFactory(
               task.output = 'Certificate is not valid, obtaining a new one';
               ctx.certificateValid = false;
               ctx.isRenewal = false;
+              break;
+            case ERRORS.CERTIFICATE_NOT_INSTALLED:
+              // The certificate itself is fine; it just never reached the
+              // files the gateway loads. Issuing another one would spend an
+              // issuance to fix a copy, and the helper schedules this same
+              // path whenever the pair is not installed - so without this case
+              // an affected node retries hourly and throws every time.
+              // eslint-disable-next-line no-param-reassign
+              task.output = 'Certificate is valid but not installed for the gateway';
+              ctx.certificateValid = true;
               break;
             default:
               throw new Error(`Unknown error: ${error}`);
@@ -163,9 +205,14 @@ export default function obtainLetsEncryptCertificateTaskFactory(
           // Build lego command arguments
           // --disable-cn is needed for IP address certificates
           // --key-type rsa2048 is needed because node-forge doesn't support ECDSA
+          // lego keys its on-disk ACME account directory by the contact
+          // address, so an empty --email is a different account from no
+          // --email at all. Nothing asks for one any more, and RFC 8555 makes
+          // the contact optional, so an unset value omits the argument rather
+          // than passing it empty.
           const legoArgs = [
             `--server=${acmeDirectoryUrl.toString()}`,
-            '--email', ctx.email,
+            ...(ctx.email ? ['--email', ctx.email] : []),
             '--accept-tos',
             '--http',
             '--http.port', ':80',
@@ -185,88 +232,130 @@ export default function obtainLetsEncryptCertificateTaskFactory(
 
           const containerName = 'dashmate-letsencrypt-lego';
 
-          // Remove any existing container with the same name
-          try {
-            const existingContainer = await docker.getContainer(containerName);
-            await existingContainer.remove({ force: true });
-
+          const runLego = async () => {
+            // Remove any existing container with the same name
             try {
-              await existingContainer.wait();
-            } catch (waitError) {
-              // Skip error if container is already removed
-              if (waitError.statusCode !== 404) {
-                throw waitError;
+              const existingContainer = await docker.getContainer(containerName);
+              await existingContainer.remove({ force: true });
+
+              try {
+                await existingContainer.wait();
+              } catch (waitError) {
+                // Skip error if container is already removed
+                if (waitError.statusCode !== 404) {
+                  throw waitError;
+                }
+              }
+            } catch (e) {
+              // Container doesn't exist, that's fine
+              if (e.statusCode !== 404) {
+                throw e;
               }
             }
-          } catch (e) {
-            // Container doesn't exist, that's fine
-            if (e.statusCode !== 404) {
-              throw e;
+
+            const binds = [`${ctx.legoDir}:/data`];
+            const env = [];
+
+            // An ACME directory that is not publicly trusted - a staging or local
+            // server - presents a certificate lego rejects unless told which CA
+            // signed it.
+            if (legoCaCertificatePath) {
+              binds.push(`${legoCaCertificatePath}:${LEGO_CA_CERTIFICATE_MOUNT_PATH}:ro`);
+              env.push(`LEGO_CA_CERTIFICATES=${LEGO_CA_CERTIFICATE_MOUNT_PATH}`);
             }
-          }
 
-          const binds = [`${ctx.legoDir}:/data`];
-          const env = [];
+            const container = await docker.createContainer({
+              name: containerName,
+              Image: LEGO_IMAGE,
+              Cmd: legoArgs,
+              Env: env,
+              User: `${uid}:${gid}`,
+              ExposedPorts: { '80/tcp': {} },
+              ...legoContainerOptions,
+              HostConfig: {
+                AutoRemove: true,
+                Binds: binds,
+                PortBindings: { '80/tcp': [{ HostPort: '80' }] },
+                ...legoContainerOptions.HostConfig,
+              },
+            });
 
-          // An ACME directory that is not publicly trusted - a staging or local
-          // server - presents a certificate lego rejects unless told which CA
-          // signed it.
-          if (legoCaCertificatePath) {
-            binds.push(`${legoCaCertificatePath}:${LEGO_CA_CERTIFICATE_MOUNT_PATH}:ro`);
-            env.push(`LEGO_CA_CERTIFICATES=${LEGO_CA_CERTIFICATE_MOUNT_PATH}`);
-          }
+            startedContainers.addContainer(containerName);
 
-          const container = await docker.createContainer({
-            name: containerName,
-            Image: LEGO_IMAGE,
-            Cmd: legoArgs,
-            Env: env,
-            User: `${uid}:${gid}`,
-            ExposedPorts: { '80/tcp': {} },
-            ...legoContainerOptions,
-            HostConfig: {
-              AutoRemove: true,
-              Binds: binds,
-              PortBindings: { '80/tcp': [{ HostPort: '80' }] },
-              ...legoContainerOptions.HostConfig,
-            },
-          });
+            // eslint-disable-next-line no-param-reassign
+            task.output = `Running lego ${command}...`;
 
-          startedContainers.addContainer(containerName);
+            await container.start();
 
-          // eslint-disable-next-line no-param-reassign
-          task.output = `Running lego ${command}...`;
+            // Wait for container to finish
+            const result = await container.wait();
 
-          await container.start();
+            if (result.StatusCode !== 0) {
+              // lego's own output is the best account of what went wrong -
+              // Boulder answers "why did port 80 fail" in prose better than any
+              // classifier dashmate could keep current.
+              let errorMessage = `Lego exited with code ${result.StatusCode}`;
+              try {
+                const logs = await container.logs({
+                  stdout: true,
+                  stderr: true,
+                });
+                errorMessage += `\n${logs.toString()}`;
+              } catch (e) {
+                // Container may have been auto-removed
+              }
 
-          // Wait for container to finish
-          const result = await container.wait();
+              throw new Error(`Failed to obtain Let's Encrypt certificate: ${errorMessage}`);
+            }
 
-          if (result.StatusCode !== 0) {
-            // Try to get logs for error message
-            let errorMessage = `Lego exited with code ${result.StatusCode}`;
+            // Verify certificate and key were created
+            if (!fs.existsSync(ctx.legoCertPath)) {
+              throw new Error('Certificate file was not created by lego');
+            }
+
+            if (!fs.existsSync(ctx.legoKeyPath)) {
+              throw new Error('Private key file was not created by lego');
+            }
+          };
+
+          for (let attempt = 1; attempt <= MAX_OBTAIN_ATTEMPTS; attempt += 1) {
             try {
-              const logs = await container.logs({
-                stdout: true,
-                stderr: true,
-              });
-              errorMessage += `\n${logs.toString()}`;
+              // eslint-disable-next-line no-await-in-loop
+              await runLego();
+
+              break;
             } catch (e) {
-              // Container may have been auto-removed
+              // Prompting needs a positive opt-in from the entry point. The
+              // helper renews inside a container with no terminal, where a
+              // prompt would never settle and would hold the config lock -
+              // and its event loop never drains, so it would hang forever.
+              const canRetry = attempt < MAX_OBTAIN_ATTEMPTS
+                && ctx.noRetry !== true
+                && ctx.interactive === true;
+
+              // Default No: an immediate retry cannot succeed, because the
+              // operator has not left the terminal to change a firewall rule,
+              // and each attempt spends one of the five failed authorizations
+              // per hour this node shares with its own automatic renewal.
+              // eslint-disable-next-line no-await-in-loop
+              const retry = canRetry && await promptOrThrow(task, {
+                type: 'toggle',
+                header: `  Let's Encrypt could not reach ${ctx.externalIp} on port 80:
+
+  ${e.message}
+
+  Retrying without changing anything will fail again. Fix the port first, then
+  answer Yes - or answer No and try again once port 80 is open.`,
+                message: `Try again? [attempt ${attempt + 1} of ${MAX_OBTAIN_ATTEMPTS}]`,
+                enabled: 'Yes',
+                disabled: 'No',
+                initial: false,
+              }, { interactive: ctx.interactive });
+
+              if (!retry) {
+                throw new Error(`${e.message}\n\n${renderGiveUpGuidance(config, attempt)}`);
+              }
             }
-
-            throw new Error(`Failed to obtain Let's Encrypt certificate: ${errorMessage}\n`
-              + `Please ensure port 80 on your public IP address ${ctx.externalIp} is open\n`
-              + 'for incoming HTTP connections.');
-          }
-
-          // Verify certificate and key were created
-          if (!fs.existsSync(ctx.legoCertPath)) {
-            throw new Error('Certificate file was not created by lego');
-          }
-
-          if (!fs.existsSync(ctx.legoKeyPath)) {
-            throw new Error('Private key file was not created by lego');
           }
 
           ctx.configurationUpdateRequired = true;

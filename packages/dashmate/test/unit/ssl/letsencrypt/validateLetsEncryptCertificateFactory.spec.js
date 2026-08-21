@@ -42,6 +42,33 @@ describe('validateLetsEncryptCertificateFactory', () => {
     expect(ERRORS.CERTIFICATE_NOT_INSTALLED).to.equal('CERTIFICATE_NOT_INSTALLED');
   });
 
+  // The email check used to fire before every other one, so a node without a
+  // contact address reported EMAIL_IS_NOT_SET whatever else was wrong with its
+  // certificate. Nothing prompts for an address any more, so no new node has
+  // one and this would have become the answer for all of them - including for
+  // the helper's own renewal scheduler.
+  it('should judge a certificate for a node that has no contact address', async function it() {
+    config.get.callsFake((option) => ({
+      'platform.gateway.ssl.providerConfigs.letsencrypt.email': null,
+      externalIp: EXTERNAL_IP,
+    }[option]));
+
+    const { error } = await validateLetsEncryptCertificate(config);
+
+    expect(error).to.equal(ERRORS.CERTIFICATE_NOT_FOUND);
+  });
+
+  it('should still report a missing external IP ahead of anything else', async function it() {
+    config.get.callsFake((option) => ({
+      'platform.gateway.ssl.providerConfigs.letsencrypt.email': null,
+      externalIp: null,
+    }[option]));
+
+    const { error } = await validateLetsEncryptCertificate(config);
+
+    expect(error).to.equal(ERRORS.EXTERNAL_IP_IS_NOT_SET);
+  });
+
   it('should report no problem when the issued certificate is the one the gateway uses', async () => {
     const { cert, key } = issueCertificate();
 

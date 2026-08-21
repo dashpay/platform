@@ -155,8 +155,14 @@ ${LETSENCRYPT_ALTERNATIVE}`,
 
             const letsEncryptProblems = {
               [LETSENCRYPT_ERRORS.EMAIL_IS_NOT_SET]: {
-                description: 'Let\'s Encrypt email is not set.',
-                solution: chalk`Please update your configuration with {bold.cyanBright dashmate config set platform.gateway.ssl.providerConfigs.letsencrypt.email [EMAIL]}`,
+                // A contact address is optional under RFC 8555, Let's Encrypt
+                // stopped sending expiry notifications in 2025, and nothing in
+                // dashmate asks for one. Worth knowing, not worth fixing.
+                severity: SEVERITY.LOW,
+                description: 'No contact is registered with the certificate authority.',
+                solution: chalk`Nothing needs to be done. If you would like one on file:
+{bold.cyanBright dashmate config set platform.gateway.ssl.providerConfigs.letsencrypt.email [EMAIL]}
+Note that changing it makes renewal register a new account with the authority.`,
               },
               [LETSENCRYPT_ERRORS.EXTERNAL_IP_IS_NOT_SET]: {
                 description: 'External IP is not set.',
@@ -200,6 +206,7 @@ Please restart Platform: {bold.cyanBright dashmate restart --platform}`,
             const {
               description,
               solution,
+              severity = SEVERITY.HIGH,
             } = {
               ...fileProblems,
               ...providerProblems,
@@ -209,7 +216,7 @@ Please restart Platform: {bold.cyanBright dashmate restart --platform}`,
               const problem = new Problem(
                 description,
                 solution,
-                SEVERITY.HIGH,
+                severity,
               );
 
               problems.push(problem);

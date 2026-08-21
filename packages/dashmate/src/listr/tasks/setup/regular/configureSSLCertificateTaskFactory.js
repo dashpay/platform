@@ -126,20 +126,10 @@ export default function configureSSLCertificateTaskFactory(
       },
       [SSL_PROVIDERS.LETSENCRYPT]: {
         title: 'Obtain Let\'s Encrypt certificate',
-        task: async (ctx, task) => {
-          const email = await task.prompt({
-            type: 'input',
-            message: 'Enter email address for Let\'s Encrypt notifications',
-            validate: (input) => {
-              const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-              return emailRegex.test(input) || 'Please enter a valid email address';
-            },
-          });
-
-          ctx.config.set('platform.gateway.ssl.providerConfigs.letsencrypt.email', email);
-
-          return obtainLetsEncryptCertificateTask(ctx.config);
-        },
+        // No contact address is asked for. It is optional under RFC 8555,
+        // Let's Encrypt ended expiry notifications in 2025 and does not keep an
+        // address supplied through ACME, so the question bought nothing.
+        task: async (ctx) => obtainLetsEncryptCertificateTask(ctx.config),
       },
     };
 
@@ -147,6 +137,11 @@ export default function configureSSLCertificateTaskFactory(
       {
         title: 'Configure SSL certificate',
         task: async (ctx, task) => {
+          // Setup asks the operator a question at every step, so it cannot run
+          // unattended and states this rather than detecting it. The obtain
+          // tasks read it to decide whether they may prompt.
+          ctx.interactive = true;
+
           const choices = [
             { name: SSL_PROVIDERS.ZEROSSL, message: 'ZeroSSL' },
             { name: SSL_PROVIDERS.LETSENCRYPT, message: "Let's Encrypt" },
@@ -165,7 +160,7 @@ export default function configureSSLCertificateTaskFactory(
 
     ZeroSSL        - Provide a ZeroSSL API key and let dashmate configure the certificate
                      https://zerossl.com/documentation/api/ ("Access key" section)
-    Let's Encrypt  - Free certificates using Let's Encrypt (requires email)
+    Let's Encrypt  - Free certificates for your IP address, no account needed
     File on disk   - Provide your own certificate to dashmate\n`;
 
           if (isSelfSignedEnabled) {

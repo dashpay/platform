@@ -11,6 +11,7 @@ describe('SSL obtain command', () => {
   function obtainDependencies(sinon, provider = 'letsencrypt') {
     return {
       provider,
+      observed: {},
       config: {
         get: sinon.stub().returns(provider),
       },
@@ -23,11 +24,28 @@ describe('SSL obtain command', () => {
   }
 
   /**
+   * Capture the context the obtain task is run with.
+   *
+   * @param {Object} dependencies
+   * @return {Object}
+   */
+  function captureContext(sinon, dependencies) {
+    const observed = {};
+
+    // eslint-disable-next-line no-param-reassign
+    dependencies.obtainTask = sinon.stub().callsFake(() => new Listr([{
+      task: (ctx) => Object.assign(observed, ctx),
+    }]));
+
+    return observed;
+  }
+
+  /**
    * @param {Object} dependencies
    * @return {Promise}
    */
   function runObtain({
-    provider, config, dockerCompose, obtainTask,
+    provider, config, dockerCompose, obtainTask, 'no-retry': noRetry = true,
   }) {
     const noop = () => new Listr([]);
 
@@ -35,7 +53,7 @@ describe('SSL obtain command', () => {
       {},
       {
         verbose: false,
-        'no-retry': true,
+        'no-retry': noRetry,
         'expiration-days': undefined,
         force: false,
         provider,
@@ -149,5 +167,47 @@ describe('SSL obtain command', () => {
 
     expect(obtainZeroSSLCertificateTask).to.have.been.calledOnce();
     expect(configFileRepository.write).to.have.been.calledOnceWith(configFile);
+  });
+
+  // The retry loop lives in the shared obtain task, so `ssl obtain` gains it
+  // too. Its --no-retry defaults to false, which would turn an obtain run from
+  // cron into a hang if the flag were what decided whether to prompt.
+  it('should not offer to prompt when run without a terminal', async function it() {
+    const dependencies = obtainDependencies(this.sinon);
+    const context = captureContext(this.sinon, dependencies);
+
+    await runObtain({ ...dependencies, 'no-retry': false });
+
+    expect(context.interactive).to.equal(false);
+  });
+
+  it('should offer to prompt an operator at a terminal', async function it() {
+    // A stream that is not a terminal has no isTTY property at all - not a
+    // false one - so it is assigned rather than stubbed.
+    const restore = { stdin: process.stdin.isTTY, stdout: process.stdout.isTTY, ci: process.env.CI };
+    process.stdin.isTTY = true;
+    process.stdout.isTTY = true;
+    process.env.CI = '0';
+
+    this.restoreStreams = () => {
+      process.stdin.isTTY = restore.stdin;
+      process.stdout.isTTY = restore.stdout;
+      if (restore.ci === undefined) {
+        delete process.env.CI;
+      } else {
+        process.env.CI = restore.ci;
+      }
+    };
+
+    const dependencies = obtainDependencies(this.sinon);
+    const context = captureContext(this.sinon, dependencies);
+
+    try {
+      await runObtain(dependencies);
+    } finally {
+      this.restoreStreams();
+    }
+
+    expect(context.interactive).to.equal(true);
   });
 });

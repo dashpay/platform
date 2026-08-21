@@ -50,6 +50,21 @@ describe('analyseConfigFactory', () => {
     expect(problems[0].getSeverity()).to.equal(SEVERITY.HIGH);
   });
 
+  // Nothing prompts for a contact address any more, so a node without one is
+  // ordinary rather than broken. The check is kept rather than deleted so the
+  // information stays available - and so it is still there if contactless
+  // issuance ever stops working - but it must not read as an error.
+  it('should report a missing contact address as information, not a fault', () => {
+    const problems = analyseSslSample({
+      error: LETSENCRYPT_ERRORS.EMAIL_IS_NOT_SET,
+      data: {},
+    }, 'letsencrypt');
+
+    expect(problems).to.have.lengthOf(1);
+    expect(problems[0].getSeverity()).to.equal(SEVERITY.LOW);
+    expect(problems[0].getDescription()).to.include('No contact is registered');
+  });
+
   it('should report a problem for a ZeroSSL certificate that expires soon', () => {
     const problems = analyseSslSample({
       error: ZEROSSL_ERRORS.CERTIFICATE_EXPIRES_SOON,

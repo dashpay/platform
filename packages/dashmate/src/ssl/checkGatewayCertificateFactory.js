@@ -1,10 +1,10 @@
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
 import { SSL_PROVIDERS } from '../constants.js';
 import { parseIpAddresses } from './readCertificateBundle.js';
 import isCertificatePairInstalled from './letsencrypt/isCertificatePairInstalled.js';
+import selectLeafCertificate, { LEAF_SELECTION_ERRORS } from './selectLeafCertificate.js';
 
 export const CERTIFICATE_STATUS = {
   // Deliberately not VALID. This function runs a fixed list of local checks; it
@@ -42,14 +42,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  */
 const EXPIRING_SOON_DAYS = 1;
 
-const PEM_CERTIFICATE = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
-
-/**
- * A key protected by a passphrase is detected from the PEM rather than by
- * asking OpenSSL, which can go looking for a terminal to ask on.
- */
-const ENCRYPTED_KEY = /-----BEGIN ENCRYPTED PRIVATE KEY-----|^\s*Proc-Type:\s*4,ENCRYPTED/m;
-
 /**
  * @param {string} distinguishedName - as rendered by X509Certificate
  * @return {string|undefined}
@@ -70,7 +62,7 @@ function commonNameOf(distinguishedName) {
  * returns null rather than a guess, so a certificate from a paid CA is never
  * reported as disagreeing with anything.
  *
- * @param {crypto.X509Certificate} leaf
+ * @param {X509Certificate} leaf
  * @param {boolean} isSelfSigned
  * @return {string|null}
  */
@@ -90,18 +82,6 @@ function identifyIssuer(leaf, isSelfSigned) {
   }
 
   return null;
-}
-
-/**
- * @param {crypto.KeyObject|crypto.X509Certificate['publicKey']} publicKey
- * @return {Buffer|null}
- */
-function exportSubjectPublicKeyInfo(publicKey) {
-  try {
-    return publicKey.export({ type: 'spki', format: 'der' });
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -214,54 +194,22 @@ export default function checkGatewayCertificateFactory(homeDir) {
       return verdict();
     }
 
-    // The gateway is handed this file with no password or passphrase field
+    // The gateway is handed the key file with no password or passphrase field
     // anywhere in its configuration, so a key dashmate cannot load is a key the
     // gateway cannot load either and the node serves no TLS at all. Warning
     // here would pass a node that is already dark.
-    let subjectPublicKeyInfo = null;
-    if (ENCRYPTED_KEY.test(privateKeyPem)) {
+    const { leaf, error, detail } = selectLeafCertificate(bundlePem, privateKeyPem);
+
+    if (error === LEAF_SELECTION_ERRORS.KEY_UNUSABLE) {
       reasons.push({
         code: CERTIFICATE_REASONS.KEY_UNUSABLE,
-        message: `dashmate could not read the private key at ${privateKeyFilePath}:`
-          + ' it is protected by a passphrase, and the gateway has no way to be given one',
+        message: `dashmate could not read the private key at ${privateKeyFilePath}: ${detail}`,
       });
-    } else {
-      try {
-        subjectPublicKeyInfo = exportSubjectPublicKeyInfo(
-          crypto.createPublicKey(crypto.createPrivateKey(privateKeyPem)),
-        );
-      } catch (e) {
-        reasons.push({
-          code: CERTIFICATE_REASONS.KEY_UNUSABLE,
-          message: `dashmate could not read the private key at ${privateKeyFilePath}: ${e.message}`,
-        });
-      }
 
-      if (subjectPublicKeyInfo === null && reasons.length === 0) {
-        reasons.push({
-          code: CERTIFICATE_REASONS.KEY_UNUSABLE,
-          message: `dashmate could not read the private key at ${privateKeyFilePath}`,
-        });
-      }
-    }
-
-    if (subjectPublicKeyInfo === null) {
       return verdict();
     }
 
-    const certificates = (bundlePem.match(PEM_CERTIFICATE) ?? [])
-      .map((block) => {
-        try {
-          return new crypto.X509Certificate(block);
-        } catch {
-          // A block that will not parse is skipped rather than failing the
-          // whole bundle, which may hold comments or a stray key.
-          return null;
-        }
-      })
-      .filter(Boolean);
-
-    if (certificates.length === 0) {
+    if (error === LEAF_SELECTION_ERRORS.BUNDLE_UNREADABLE) {
       reasons.push({
         code: CERTIFICATE_REASONS.BUNDLE_UNREADABLE,
         message: `dashmate could not read any certificate from ${bundleFilePath}`,
@@ -270,17 +218,7 @@ export default function checkGatewayCertificateFactory(homeDir) {
       return verdict();
     }
 
-    // The leaf is the block whose public key belongs to the installed private
-    // key. Selecting by position gets one bundle order wrong, and self-sign
-    // testing every block rejects any chain carrying its root - which an
-    // ordinary public chain does.
-    const leaf = certificates.find((certificate) => {
-      const spki = exportSubjectPublicKeyInfo(certificate.publicKey);
-
-      return spki !== null && spki.equals(subjectPublicKeyInfo);
-    });
-
-    if (!leaf) {
+    if (error === LEAF_SELECTION_ERRORS.KEY_MISMATCH) {
       reasons.push({
         code: CERTIFICATE_REASONS.KEY_MISMATCH,
         message: `No certificate in ${bundleFilePath} belongs to the private key`

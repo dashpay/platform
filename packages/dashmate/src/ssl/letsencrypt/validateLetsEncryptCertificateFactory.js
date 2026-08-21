@@ -40,14 +40,11 @@ export default function validateLetsEncryptCertificateFactory(homeDir) {
     // Lego data directory (where lego stores its state)
     data.legoDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'lego');
 
+    // Reported for the caller's information only. A contact address is optional
+    // under RFC 8555, Let's Encrypt stopped sending expiry notifications in
+    // 2025, and nothing in dashmate asks for one - so no new node has one and
+    // refusing here would fail every check on every new node.
     data.email = config.get('platform.gateway.ssl.providerConfigs.letsencrypt.email');
-
-    if (!data.email) {
-      return {
-        error: ERRORS.EMAIL_IS_NOT_SET,
-        data,
-      };
-    }
 
     data.externalIp = config.get('externalIp');
 
