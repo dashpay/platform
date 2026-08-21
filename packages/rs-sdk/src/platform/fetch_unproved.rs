@@ -117,6 +117,10 @@ impl FetchUnproved for drive_proof_verifier::types::CurrentQuorumsInfo {
     type Request = platform_proto::GetCurrentQuorumsInfoRequest;
 }
 
+impl FetchUnproved for drive_proof_verifier::types::AddressFundingFeeQuote {
+    type Request = platform_proto::GetAddressFundingFeeQuoteRequest;
+}
+
 impl FetchUnproved for EvoNodeStatus {
     type Request = EvoNode;
 }

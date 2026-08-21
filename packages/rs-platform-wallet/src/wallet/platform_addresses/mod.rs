@@ -11,6 +11,7 @@ use crate::PlatformWalletError;
 
 mod fund_from_asset_lock;
 pub(crate) mod provider;
+mod quote;
 mod sync;
 mod transfer;
 mod wallet;

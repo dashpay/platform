@@ -5,6 +5,7 @@
 // generated types. Later these re-exports could be swapped with actual dash-platform-sdk's requests
 // and while it will change the substance, the API structure will remain the same.
 
+pub mod address_funding_fee_quote;
 pub mod address_sync;
 pub mod block_info_from_metadata;
 pub mod dashpay;

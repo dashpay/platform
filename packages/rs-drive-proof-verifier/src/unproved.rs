@@ -1,5 +1,5 @@
 use crate::types::evonode_status::EvoNodeStatus;
-use crate::types::CurrentQuorumsInfo;
+use crate::types::{AddressFundingFeeQuote, CurrentQuorumsInfo};
 use crate::Error;
 use dapi_grpc::platform::v0::ResponseMetadata;
 use dapi_grpc::platform::v0::{self as platform};
@@ -155,6 +155,36 @@ pub trait FromUnproved<Req> {
         let (main_item, response_metadata) =
             Self::maybe_from_unproved_with_metadata(request, response, network, platform_version)?;
         Ok((main_item.ok_or(Error::NotFound)?, response_metadata))
+    }
+}
+
+impl FromUnproved<platform::GetAddressFundingFeeQuoteRequest> for AddressFundingFeeQuote {
+    type Request = platform::GetAddressFundingFeeQuoteRequest;
+    type Response = platform::GetAddressFundingFeeQuoteResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        let response: platform::GetAddressFundingFeeQuoteResponse = response.into();
+
+        let platform::get_address_funding_fee_quote_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.clone().ok_or(Error::EmptyResponseMetadata)?;
+
+        let quote = AddressFundingFeeQuote {
+            estimated_fee_credits: v0.estimated_fee_credits,
+            minimum_required_lock_credits: v0.minimum_required_lock_credits,
+            protocol_version: v0.protocol_version,
+            state_height: v0.state_height,
+        };
+
+        Ok((Some(quote), metadata))
     }
 }
 

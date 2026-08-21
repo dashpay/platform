@@ -830,3 +830,12 @@ impl_transport_request_grpc!(
     },
     get_recent_compacted_address_balance_changes
 );
+
+// rpc getAddressFundingFeeQuote(GetAddressFundingFeeQuoteRequest) returns (GetAddressFundingFeeQuoteResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetAddressFundingFeeQuoteRequest,
+    platform_proto::GetAddressFundingFeeQuoteResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_address_funding_fee_quote
+);

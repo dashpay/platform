@@ -253,6 +253,32 @@ pub struct KeysInPath {
 )]
 pub struct TotalCreditsInPlatform(pub Credits);
 
+/// A state-aware fee quote for a 0-input / 1-output address funding from a
+/// fresh asset lock, computed by a node via `getAddressFundingFeeQuote`.
+///
+/// A computed value, not state — the response carries no proof, so the quote
+/// reflects what the answering node reports. Treat it as planning data:
+/// sizing a funding lock stays governed by `minimum_required_lock_credits`
+/// plus the wallet's own margin policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct AddressFundingFeeQuote {
+    /// State-aware estimate of the fee the network would charge for the
+    /// funding executed near the quoted state (includes the requested user
+    /// fee increase).
+    pub estimated_fee_credits: Credits,
+    /// The consensus admission floor for the asset lock.
+    pub minimum_required_lock_credits: Credits,
+    /// The protocol version the node quoted with.
+    pub protocol_version: u32,
+    /// The committed block height the quote was computed on.
+    pub state_height: u64,
+}
+
 /// A query with no parameters
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(

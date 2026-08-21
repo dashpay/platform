@@ -34,7 +34,8 @@ use drive_proof_verifier::types::token_info::{IdentitiesTokenInfos, IdentityToke
 use drive_proof_verifier::types::token_status::TokenStatuses;
 use drive::grovedb::GroveTrunkQueryResult;
 use drive_proof_verifier::types::{
-    AddressInfo, Contenders, ContestedResources, CurrentQuorumsInfo, ElementFetchRequestItem,
+    AddressFundingFeeQuote, AddressInfo, Contenders, ContestedResources, CurrentQuorumsInfo,
+    ElementFetchRequestItem,
     IdentityBalanceAndRevision, IndexMap, MasternodeProtocolVote, MostRecentShieldedAnchor,
     PlatformAddressTrunkState, PrefundedSpecializedBalance, ProposerBlockCounts,
     RecentAddressBalanceChanges, RecentCompactedAddressBalanceChanges, RetrievedValues,
@@ -502,6 +503,7 @@ impl_mock_response!(TotalCreditsInPlatform);
 impl_mock_response!(ElementFetchRequestItem);
 impl_mock_response!(EvoNodeStatus);
 impl_mock_response!(CurrentQuorumsInfo);
+impl_mock_response!(AddressFundingFeeQuote);
 impl_mock_response!(Group);
 impl_mock_response!(TokenPricingSchedule);
 impl_mock_response!(RewardDistributionMoment);
