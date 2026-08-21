@@ -742,11 +742,14 @@ impl SqlitePersister {
                     // An identity-slot collision means these pending
                     // writes can never be persisted, so keeping them
                     // would make the wallet undeletable — the one state
-                    // a user most wants gone. Drop them and delete; they
-                    // name only this wallet, whose rows are about to go.
-                    // Every other constraint failure (FK, CHECK, UNIQUE,
-                    // NOT NULL) describes corruption elsewhere in the
-                    // schema and aborts the delete below.
+                    // a user most wants gone. Proceed with the delete;
+                    // they name only this wallet, whose rows are about
+                    // to go. They are dropped after the cascade COMMITS,
+                    // not here: every step below can still fail, and a
+                    // wallet that survives the failure keeps its staged
+                    // writes. Every other constraint failure (FK, CHECK,
+                    // UNIQUE, NOT NULL) describes corruption elsewhere
+                    // in the schema and aborts the delete below.
                     Err(
                         e @ (WalletStorageError::IdentityIndexConflict { .. }
                         | WalletStorageError::WalletlessIdentityIndex { .. }),
@@ -755,9 +758,10 @@ impl SqlitePersister {
                         tracing::warn!(
                             wallet_id = %hex::encode(wallet_id),
                             error_kind = e.error_kind_str(),
-                            dropped_field_count = populated_field_count(&cs),
-                            "pending writes violate a storage invariant and cannot be persisted — dropping them so the delete can proceed"
+                            pending_field_count = populated_field_count(&cs),
+                            "pending writes violate a storage invariant and cannot be persisted — the delete proceeds and discards them once it commits"
                         );
+                        drained_slot.set(Some(cs));
                     }
                     Err(e) => {
                         let _ = pre_flush_tx.rollback();
@@ -789,6 +793,10 @@ impl SqlitePersister {
             // asserts nothing survives).
             crate::sqlite::schema::wallets::delete(&tx, &wallet_id)?;
             tx.commit()?;
+            // The wallet is gone, so anything still staged for it — a
+            // changeset the carve-out above could not persist — dies
+            // here rather than being restored to a buffer no flush could
+            // ever drain.
             drop(drained_slot.take());
             // Discard any changeset a Manual-mode store buffered during the
             // delete window — the wallet is gone.
@@ -1599,7 +1607,8 @@ impl PlatformWalletPersistence for SqlitePersister {
 }
 
 /// Count of top-level changeset slots carrying data, for the
-/// `restored_field_count` / `dropped_field_count` tracing fields. Computed
+/// `restored_field_count` / `dropped_field_count` / `pending_field_count`
+/// tracing fields. Computed
 /// from the public fields so no storage-only helper leaks into the
 /// `rs-platform-wallet` API.
 fn populated_field_count(cs: &PlatformWalletChangeSet) -> usize {

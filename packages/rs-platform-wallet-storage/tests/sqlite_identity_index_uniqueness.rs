@@ -22,7 +22,9 @@ use platform_wallet::changeset::{
 };
 use platform_wallet::wallet::identity::IdentityStatus;
 use platform_wallet::wallet::platform_wallet::WalletId;
-use platform_wallet_storage::{FlushMode, SqlitePersister, WalletStorageError};
+use platform_wallet_storage::{
+    FlushMode, SqlitePersister, SqlitePersisterConfig, WalletStorageError,
+};
 use rusqlite::{params, OptionalExtension};
 
 /// Sentinel wallet scope — "no parent wallet known", stored as a NULL
@@ -543,4 +545,65 @@ fn delete_wallet_proceeds_despite_unpersistable_pending_writes() {
         )
         .expect("count wallets");
     assert_eq!(wallets, 0, "the wallet is gone");
+}
+
+/// Dropping those pending writes is only justified once the wallet is
+/// actually gone. The carve-out fires long before the cascade commits —
+/// the auto-backup, the `BEGIN EXCLUSIVE`, the cascade and its commit
+/// can all still fail — and if one does, the wallet is still here, so
+/// its staged writes must be too. They may bundle sub-changesets that
+/// have nothing to do with the offending identity entry.
+#[test]
+fn a_delete_that_fails_after_the_carve_out_keeps_the_pending_writes() {
+    let tmp = common::secure_tempdir().expect("tempdir");
+    let path = tmp.path().join("wallet.db");
+    // No auto-backup directory: `delete_wallet` then fails in
+    // `run_auto_backup`, the step right after the carve-out.
+    let p = SqlitePersister::open(
+        SqlitePersisterConfig::new(&path)
+            .with_flush_mode(FlushMode::Manual)
+            .with_auto_backup_dir(None),
+    )
+    .expect("open persister");
+    let w = wid(0x5C);
+    ensure_wallet_meta(&p, &w);
+    p.store(w, identity_cs([identity_entry(0x01, Some(1))], []))
+        .expect("store");
+    peer_claims_slot(&p, &w, &iid(0x02), 1);
+
+    let err = p
+        .delete_wallet(w)
+        .expect_err("no auto-backup directory is configured");
+    assert!(
+        matches!(err, WalletStorageError::AutoBackupDisabled { .. }),
+        "the delete must fail at the backup, after the carve-out: `{err:?}`"
+    );
+
+    let wallets: i64 = {
+        let conn = p.lock_conn_for_test();
+        conn.query_row(
+            "SELECT COUNT(*) FROM wallets WHERE wallet_id = ?1",
+            params![w.as_slice()],
+            |row| row.get(0),
+        )
+        .expect("count wallets")
+    };
+    assert_eq!(wallets, 1, "the delete aborted — the wallet is still here");
+
+    // The staged write is not merely present, it is intact: clear what
+    // made it unflushable and it lands exactly as it was staged.
+    {
+        let conn = p.lock_conn_for_test();
+        conn.execute(
+            "DELETE FROM identities WHERE identity_id = ?1",
+            params![iid(0x02).as_slice()],
+        )
+        .expect("drop the peer's row");
+    }
+    p.flush(w).expect("the staged changeset is still flushable");
+    assert_eq!(
+        live_occupant(&p, &w, 1),
+        Some([0x01; 32]),
+        "the carve-out dropped a changeset for a wallet that still exists"
+    );
 }
