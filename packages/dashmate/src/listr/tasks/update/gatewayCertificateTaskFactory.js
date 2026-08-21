@@ -23,11 +23,24 @@ const ZEROSSL_URGENT_DAYS = 14;
  * @param {Config} config
  * @param {string} externalIp
  * @param {Object} [options]
- * @param {boolean} [options.certificatePassedChecks] - whether the certificate
- *   this node is running on right now cleared the checks
+ * @param {string} [options.status] - the verdict for the certificate this node
+ *   is running on right now, which decides what declining actually leaves behind
  * @return {string}
  */
-function renderSwitchOffer(config, externalIp, { certificatePassedChecks = false } = {}) {
+const DECLINING = {
+  [CERTIFICATE_STATUS.CHECKS_PASSED]:
+    '  The certificate this node is running on now passed its checks and stays\n'
+    + '  in place, so nothing changes if you decline.\n',
+  [CERTIFICATE_STATUS.WARN]:
+    '  The certificate this node is running on now is not blocking anything and\n'
+    + '  stays in place, so declining changes nothing - including the warnings\n'
+    + '  above, which remain.\n',
+  [CERTIFICATE_STATUS.INVALID]:
+    '  Declining leaves the installed certificate exactly as it is: unchanged,\n'
+    + '  and still failing the checks above.\n',
+};
+
+function renderSwitchOffer(config, externalIp, { status = CERTIFICATE_STATUS.INVALID } = {}) {
   return `  Switching this node to Let's Encrypt will:
     - obtain a new certificate now, free, for ${externalIp}
     - change platform.gateway.ssl.provider from ${config.get('platform.gateway.ssl.provider')} to letsencrypt
@@ -45,11 +58,7 @@ function renderSwitchOffer(config, externalIp, { certificatePassedChecks = false
 
   Your image pull is running now and will finish either way, so answering No
   does not hold this node back from protocol upgrades or security patches.
-${certificatePassedChecks
-    ? '  The certificate this node is running on now passed its checks and stays\n'
-      + '  in place, so nothing changes if you decline.\n'
-    : '  Declining leaves the installed certificate exactly as it is: unchanged,\n'
-      + '  and still failing the checks above.\n'}`;
+${DECLINING[status] ?? DECLINING[CERTIFICATE_STATUS.INVALID]}`;
 }
 
 /**
@@ -284,7 +293,8 @@ export default function gatewayCertificateTaskFactory(
         const warn = () => {
           ctx.certificateWarnings = [
             ...(ctx.certificateWarnings ?? []),
-            `This node's ZeroSSL certificate expires ${remaining}. A free ZeroSSL`
+            `This node is configured to use ZeroSSL, and the certificate it has`
+            + ` installed expires ${remaining}. A free ZeroSSL`
             + " account allows three certificates in total, so dashmate's renewals stop"
             + ` working after about 270 days. Switch to Let's Encrypt with:`
             + `\n    dashmate ssl obtain ${cfg} --provider letsencrypt`,
@@ -301,7 +311,7 @@ export default function gatewayCertificateTaskFactory(
         const accepted = await promptOrThrow(task, {
           type: 'toggle',
           header: renderSwitchOffer(config, config.get('externalIp'), {
-            certificatePassedChecks: true,
+            status: verdict.status,
           }),
           message: "Switch to Let's Encrypt and obtain a certificate now?",
           enabled: 'Yes',

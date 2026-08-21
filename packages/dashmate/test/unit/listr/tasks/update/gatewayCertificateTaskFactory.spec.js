@@ -175,6 +175,61 @@ describe('gatewayCertificateTaskFactory', () => {
     });
   });
 
+  // The branch is entered on the configured provider, which is not evidence of
+  // who issued the leaf that is actually installed. Under a provider mismatch
+  // the certificate on disk can come from anywhere, so nothing here may assert
+  // what it is, and nothing may claim it passed checks it only warned on.
+  describe('a ZeroSSL node whose installed leaf is not ZeroSSL', () => {
+    const warned = (code) => verdict({
+      status: CERTIFICATE_STATUS.WARN,
+      warnings: [{ code, message: `warning: ${code}` }],
+    });
+
+    [
+      CERTIFICATE_REASONS.PROVIDER_MISMATCH,
+      CERTIFICATE_REASONS.SSL_UNMANAGED,
+      CERTIFICATE_REASONS.SELF_SIGNED,
+    ].forEach((code) => {
+      it(`should not call the installed leaf a ZeroSSL certificate on ${code}`, async function it() {
+        const { context, errors } = await run.call(this, {
+          checkGatewayCertificate: () => warned(code),
+          interactive: false,
+        });
+
+        expect(errors).to.be.empty();
+
+        const warnings = context.certificateWarnings.join('\n');
+
+        expect(warnings).to.contain('three certificates in total');
+        expect(warnings).to.not.contain("This node's ZeroSSL certificate");
+        expect(warnings).to.contain(`warning: ${code}`);
+      });
+
+      it(`should still offer the switch on ${code}`, async function it() {
+        const { errors } = await run.call(this, {
+          checkGatewayCertificate: () => warned(code),
+        });
+
+        expect(errors).to.be.empty();
+        expect(enquirer.prompt).to.have.been.called();
+      });
+    });
+
+    it('should not tell a warned node its certificate passed its checks', async function it() {
+      await run.call(this, {
+        checkGatewayCertificate: () => warned(CERTIFICATE_REASONS.PROVIDER_MISMATCH),
+      });
+
+      expect(enquirer.options[0].header).to.not.contain('passed its checks');
+    });
+
+    it('should still say the certificate passed when the verdict is clean', async function it() {
+      await run.call(this, { checkGatewayCertificate: () => verdict() });
+
+      expect(enquirer.options[0].header).to.contain('passed its checks');
+    });
+  });
+
   describe('nothing blocks on a certificate that passed', () => {
     it('should say nothing at all for a provider that is working', async function it() {
       config.set('platform.gateway.ssl.provider', 'letsencrypt');
