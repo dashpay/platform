@@ -7,17 +7,24 @@ export const LEAF_SELECTION_ERRORS = {
   BUNDLE_ORDER: 'BUNDLE_ORDER',
 };
 
-const PEM_CERTIFICATE = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
+/**
+ * Both delimiters must be a line of their own. Matched as substrings they can
+ * be read out of the middle of a mangled line - a stray prefix, indentation, an
+ * extra hyphen - and the gateway refuses such a file. The optional carriage
+ * return keeps a bundle written with Windows line endings valid, which the
+ * gateway loads without complaint.
+ */
+const PEM_CERTIFICATE = /^-----BEGIN CERTIFICATE-----\r?$[\s\S]*?^-----END CERTIFICATE-----\r?$/gm;
 
 /**
- * Counted separately from the block match above, which pairs a BEGIN with an
- * END and so cannot see a BEGIN that never closes - a bundle truncated
- * mid-block reads as one certificate shorter rather than as damaged, and the
- * gateway refuses to load it.
+ * Deliberately unanchored, unlike the block match above. Anything that looks
+ * like an opening counts as one, so a marker the block match rightly refused -
+ * because its line carries something else, or because it never closes - still
+ * registers, and the totals disagree.
  *
- * Only openings are counted. A stray END with no BEGIN is loaded by the
- * gateway without complaint, so treating unpaired delimiters symmetrically
- * would reject a bundle that works.
+ * Only openings are counted. A stray END with no BEGIN is loaded by the gateway
+ * without complaint, so treating unpaired delimiters symmetrically would reject
+ * a bundle that works.
  */
 const BEGIN_CERTIFICATE = /-----BEGIN CERTIFICATE-----/g;
 
@@ -86,8 +93,8 @@ export default function selectLeafCertificate(bundlePem, privateKeyPem) {
   if (begins !== blocks.length) {
     return {
       error: LEAF_SELECTION_ERRORS.BUNDLE_UNREADABLE,
-      detail: `it opens ${begins} certificate(s) but only ${blocks.length} are complete,`
-        + ' so at least one block is truncated',
+      detail: `it opens ${begins} certificate(s) but only ${blocks.length} are well formed,`
+        + ' so at least one block is truncated or its delimiters are damaged',
     };
   }
 

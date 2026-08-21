@@ -131,6 +131,41 @@ describe('checkGatewayCertificateFactory', () => {
       expect(codes(verdict.reasons)).to.include(CERTIFICATE_REASONS.BUNDLE_UNREADABLE);
     });
 
+    // The delimiters are a line, not a substring. A line carrying anything else
+    // besides - a stray prefix, indentation, an extra hyphen - is not a
+    // delimiter, and the gateway refuses the file, so the checks must not read
+    // one out of the middle of it.
+    [
+      ['a prefix before the marker', (chain) => `garbage${chain}`],
+      ['an indented marker', (chain) => chain.replace('-----BEGIN CERTIFICATE-----', '  -----BEGIN CERTIFICATE-----')],
+      ['a marker with an extra hyphen', (chain) => chain.replace('-----BEGIN CERTIFICATE-----', '------BEGIN CERTIFICATE-----')],
+    ].forEach(([label, damage]) => {
+      it(`should block on a bundle with ${label}`, () => {
+        const { leaf, intermediate } = issueChain({ ip: EXTERNAL_IP });
+
+        install(damage(leaf.pem + intermediate.pem), leaf.keyPem);
+
+        const verdict = checkGatewayCertificate(config);
+
+        expect(verdict.status).to.equal(CERTIFICATE_STATUS.INVALID);
+        expect(codes(verdict.reasons)).to.include(CERTIFICATE_REASONS.BUNDLE_UNREADABLE);
+      });
+    });
+
+    // The gateway loads a bundle with Windows line endings, so requiring the
+    // delimiter to be its own line must not turn the trailing carriage return
+    // into damage.
+    it('should accept a bundle written with CRLF line endings', () => {
+      const { leaf, intermediate } = issueChain({ ip: EXTERNAL_IP });
+
+      install((leaf.pem + intermediate.pem).replace(/\n/g, '\r\n'), leaf.keyPem);
+
+      const verdict = checkGatewayCertificate(config);
+
+      expect(codes(verdict.reasons)).to.deep.equal([]);
+      expect(verdict.status).to.equal(CERTIFICATE_STATUS.CHECKS_PASSED);
+    });
+
     it('should block on a bundle whose first certificate is unterminated', () => {
       const { leaf, intermediate } = issueChain({ ip: EXTERNAL_IP });
       const truncated = leaf.pem.slice(0, Math.floor(leaf.pem.length / 2));
