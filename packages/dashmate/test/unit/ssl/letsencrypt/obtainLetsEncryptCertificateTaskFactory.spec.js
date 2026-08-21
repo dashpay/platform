@@ -545,7 +545,18 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
       // Issued once, and only once.
       expect(docker.createContainer).to.have.been.calledOnce();
 
-      expect(error.message).to.match(/was issued|counts against/i);
+      // The issuance is the fact the operator needs: it happened, and it cost
+      // one of the five this address gets each week.
+      expect(error.message).to.match(/issued a certificate/i);
+      expect(error.message).to.match(/issuance limit/i);
+
+      // Rerunning obtains a replacement, because files that were never written
+      // cannot be recovered. Saying it reinstalls what already exists would
+      // contradict the sentence above it about the limit.
+      expect(error.message).to.not.match(/install what was already issued/i);
+
+      // Printed once, by the command, not also here.
+      expect(error.message).to.not.contain('LEAVE PORT 80 OPEN');
       expect(error.message).to.not.contain('PAUSED');
       expect(error.message).to.not.contain('failed attempts are shared');
       expect(error.message).to.not.match(/did not obtain a certificate after/i);

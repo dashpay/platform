@@ -29,6 +29,21 @@ describe('analyseGatewayCertificateFactory', () => {
   }
 
   /**
+   * Record that the files on disk were judged sound, for the exact pair the
+   * wire probe sampled.
+   *
+   * @param {string} fingerprint256
+   */
+  function installedIsUsable(fingerprint256) {
+    samples.setServiceInfo('gateway', 'installedCertificate', {
+      status: 'CHECKS_PASSED',
+      reasons: [],
+      warnings: [],
+      fingerprint256,
+    });
+  }
+
+  /**
    * @param {Object} overrides
    * @return {Object}
    */
@@ -74,8 +89,11 @@ describe('analyseGatewayCertificateFactory', () => {
   });
 
   it('should distinguish a certificate that was renewed but never reached the gateway', () => {
-    // Renewed means the disk copy outlives the served one. Leaving that out
-    // let the branch claim a direction it had never checked.
+    // Renewed means the disk copy outlives the served one, and that it was
+    // judged sound. Leaving either out let the branch claim a direction and a
+    // safety it had never checked.
+    installedIsUsable('CC:DD');
+
     const problems = analyse(served({
       certificate: { fingerprint256: 'AA:BB', validTo: validTo(-2) },
       matchesOnDisk: false,
@@ -88,8 +106,10 @@ describe('analyseGatewayCertificateFactory', () => {
   });
 
   it('should warn before the outage when a renewed certificate has not been picked up', () => {
-    // Renewed means the disk copy outlives the served one; that is what makes
-    // a restart the right advice here.
+    // Renewed means the disk copy outlives the served one and was judged
+    // sound; together that is what makes a restart the right advice here.
+    installedIsUsable('CC:DD');
+
     const problems = analyse(served({
       matchesOnDisk: false,
       onDisk: { fingerprint256: 'CC:DD', validTo: validTo(60) },
@@ -169,6 +189,8 @@ describe('analyseGatewayCertificateFactory', () => {
   // prevent, produced by its own remediation.
   describe('when the served and on-disk certificates differ', () => {
     it('should advise a restart only when the disk copy is the newer one', () => {
+      installedIsUsable('CC:DD');
+
       const problems = analyse(served({
         matchesOnDisk: false,
         onDisk: { fingerprint256: 'CC:DD', validTo: validTo(60) },
@@ -208,6 +230,8 @@ describe('analyseGatewayCertificateFactory', () => {
   // will fix it.
   describe('when the served certificate has expired and the disk copy differs', () => {
     it('should advise a restart only when the disk copy really is newer', () => {
+      installedIsUsable('CC:DD');
+
       const [problem] = analyse(served({
         certificate: { fingerprint256: 'AA:BB', validTo: validTo(-1) },
         matchesOnDisk: false,
@@ -239,6 +263,54 @@ describe('analyseGatewayCertificateFactory', () => {
 
       expect(problem.getDescription()).to.not.include('newer one is already present on disk');
       expect(problem.getSolution()).to.not.match(/dashmate restart/);
+    });
+  });
+
+  // A verdict that is absent, merely not-invalid, or about a different pair is
+  // not evidence that the file is safe to load. A report collected by an older
+  // dashmate carries no verdict at all, and a renewal landing between the two
+  // samples means the pair judged is not the pair measured.
+  describe('when the disk copy cannot be shown to be usable', () => {
+    it('should not advise a restart when nothing judged the pair', () => {
+      const problems = analyse(served({
+        matchesOnDisk: false,
+        onDisk: { fingerprint256: 'CC:DD', validTo: validTo(60) },
+      }));
+
+      problems.forEach((problem) => {
+        expect(problem.getSolution()).to.not.match(/dashmate restart/);
+      });
+    });
+
+    it('should not advise a restart when the verdict only fell short of failing', () => {
+      samples.setServiceInfo('gateway', 'installedCertificate', {
+        status: 'WARN',
+        reasons: [],
+        warnings: [{ code: 'PROVIDER_MISMATCH', message: 'issuer disagrees' }],
+        fingerprint256: 'CC:DD',
+      });
+
+      const problems = analyse(served({
+        matchesOnDisk: false,
+        onDisk: { fingerprint256: 'CC:DD', validTo: validTo(60) },
+      }));
+
+      problems.forEach((problem) => {
+        expect(problem.getSolution()).to.not.match(/dashmate restart/);
+      });
+    });
+
+    it('should not advise a restart when the verdict judged a different pair', () => {
+      installedIsUsable('EE:FF');
+
+      const problems = analyse(served({
+        matchesOnDisk: false,
+        onDisk: { fingerprint256: 'CC:DD', validTo: validTo(60) },
+      }));
+
+      problems.forEach((problem) => {
+        expect(problem.getSolution()).to.not.match(/dashmate restart/);
+      });
     });
   });
 

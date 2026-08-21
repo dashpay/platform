@@ -115,16 +115,15 @@ file it should have written:
 
     ${missingPath}
 
-The certificate exists and counts against this node's issuance limit - five
-per address per week - so obtaining another one is not free and will not fix
-this. The problem is local: check the disk for space and permissions, and that
-the helper is allowed to write there.
+That certificate counted against this node's issuance limit - five per address
+per week - and it cannot be recovered: a file that was never written cannot be
+read back, and the authority does not re-send it. Running the command again
+requests a replacement, which spends the limit a second time.
 
-Once that is sorted, install what was already issued:
+So fix the local cause first. Check the disk for space and for permissions, and
+that the helper is allowed to write there. Only then:
 
-    dashmate ssl obtain ${renderConfigFlag(config.getName())} --provider letsencrypt
-
-${PORT_80_PERMANENCE}`;
+    dashmate ssl obtain ${renderConfigFlag(config.getName())} --provider letsencrypt`;
 }
 
 /**

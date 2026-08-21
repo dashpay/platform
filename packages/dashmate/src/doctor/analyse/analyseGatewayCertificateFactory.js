@@ -133,9 +133,18 @@ ${restartHint(cfg)}`,
       ? new Date(served.onDisk.validTo).getTime()
       : null;
     const isOnDiskNewer = onDiskExpiresAt !== null && onDiskExpiresAt > servedExpiresAt;
+    //
+    // Fails closed. An absent verdict is not a passing one - a report collected
+    // by an older dashmate carries none at all - and neither is one that merely
+    // stopped short of failing. The verdict must also be about the pair the
+    // probe measured: the two samples are taken moments apart, and a renewal
+    // landing between them means the file that was judged is not the file that
+    // would be loaded.
     const isOnDiskUsable = isOnDiskNewer
       && onDiskExpiresAt > now
-      && (!installed || installed.status !== 'INVALID');
+      && installed?.status === 'CHECKS_PASSED'
+      && Boolean(installed.fingerprint256)
+      && installed.fingerprint256 === served.onDisk?.fingerprint256;
 
     if (isServedExpired && onDiskDiffers && isOnDiskUsable) {
       problems.push(new Problem(

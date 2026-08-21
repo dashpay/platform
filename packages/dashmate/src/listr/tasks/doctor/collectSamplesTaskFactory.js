@@ -256,6 +256,13 @@ export default function collectSamplesTaskFactory(
                     validTo: verdict.installed
                       ? verdict.installed.validTo.toUTCString()
                       : null,
+                    // Which pair was judged. The wire probe records the same
+                    // fingerprint for the file it read, so an analyser can tell
+                    // whether the two samples describe the same certificate
+                    // before acting on the verdict.
+                    fingerprint256: verdict.installed
+                      ? verdict.installed.fingerprint256
+                      : null,
                   };
 
                   // A problem with the files names the file it could not read,

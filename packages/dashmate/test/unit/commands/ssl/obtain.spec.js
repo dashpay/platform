@@ -212,6 +212,24 @@ describe('SSL obtain command', () => {
     expect(stderr).to.contain('LEAVE PORT 80 OPEN');
   });
 
+  // The permanence block belongs to the command, so a task that also carries it
+  // would print it twice on the one path where both run.
+  it('should state permanence once when the issued files never landed', async function it() {
+    const dependencies = obtainDependencies(this.sinon);
+    dependencies.obtainTask = this.sinon.stub().callsFake(() => new Listr([{
+      task: (ctx) => {
+        ctx.certificateObtained = true;
+
+        throw new Error('Let\'s Encrypt issued a certificate, but dashmate could not find'
+          + ' the file it should have written');
+      },
+    }]));
+
+    await expect(runObtain(dependencies)).to.be.rejected();
+
+    expect(stderr.split('LEAVE PORT 80 OPEN')).to.have.lengthOf(2);
+  });
+
   // Nothing was issued, so there is nothing to warn about and a cron run stays
   // quiet.
   it('should stay silent when no new certificate was obtained', async function it() {
