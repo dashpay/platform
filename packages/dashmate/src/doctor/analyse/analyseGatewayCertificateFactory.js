@@ -123,12 +123,31 @@ ${restartHint(cfg)}`,
     const isServedExpired = servedExpiresAt <= now;
     const onDiskDiffers = served.matchesOnDisk === false;
 
-    if (isServedExpired && onDiskDiffers) {
+    // Which of the two is newer decides both the description and whether a
+    // restart is safe to advise, on either branch below. A restart makes the
+    // gateway load the disk copy, so advising one without checking can replace
+    // what is on the wire with something no better - or worse.
+    const onDiskExpiresAt = served.onDisk
+      ? new Date(served.onDisk.validTo).getTime()
+      : null;
+    const isOnDiskNewer = onDiskExpiresAt !== null && onDiskExpiresAt > servedExpiresAt;
+
+    if (isServedExpired && onDiskDiffers && isOnDiskNewer) {
       problems.push(new Problem(
         `The gateway is serving a certificate that expired on ${served.certificate.validTo}, `
         + 'while a newer one is already present on disk',
         chalk`The certificate was renewed but never reached the gateway.
 {bold.cyanBright dashmate restart ${cfg} --platform}`,
+        SEVERITY.HIGH,
+      ));
+    } else if (isServedExpired && onDiskDiffers) {
+      problems.push(new Problem(
+        `The gateway is serving a certificate that expired on ${served.certificate.validTo}. `
+        + 'The copy on disk is a different one, and it is no newer',
+        chalk`Neither the certificate on the wire nor the one on disk is usable, so restarting
+Platform would not help. Obtain a current certificate, which installs it and
+signals the gateway:
+{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt}`,
         SEVERITY.HIGH,
       ));
     } else if (isServedExpired) {
@@ -142,15 +161,7 @@ ${restartHint(cfg)}`,
         SEVERITY.HIGH,
       ));
     } else if (onDiskDiffers) {
-      // Which of the two is newer decides both the description and whether a
-      // restart is safe to advise. A restart makes the gateway load the disk
-      // copy, so advising one without checking can replace a valid served
-      // certificate with an expired one and take a working node dark.
-      const onDiskExpiresAt = served.onDisk
-        ? new Date(served.onDisk.validTo).getTime()
-        : null;
-
-      if (onDiskExpiresAt !== null && onDiskExpiresAt > servedExpiresAt) {
+      if (isOnDiskNewer) {
         // Still serving a valid certificate, but the renewed one has not been picked up, so this
         // node goes dark when the served certificate expires.
         problems.push(new Problem(

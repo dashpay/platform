@@ -74,9 +74,12 @@ describe('analyseGatewayCertificateFactory', () => {
   });
 
   it('should distinguish a certificate that was renewed but never reached the gateway', () => {
+    // Renewed means the disk copy outlives the served one. Leaving that out
+    // let the branch claim a direction it had never checked.
     const problems = analyse(served({
       certificate: { fingerprint256: 'AA:BB', validTo: validTo(-2) },
       matchesOnDisk: false,
+      onDisk: { fingerprint256: 'CC:DD', validTo: validTo(30) },
     }));
 
     expect(problems).to.have.lengthOf(1);
@@ -195,6 +198,46 @@ describe('analyseGatewayCertificateFactory', () => {
       const [problem] = problems.filter((p) => p.getDescription().includes('disk'));
 
       expect(problem.getDescription()).to.not.include('older certificate than the one on disk');
+      expect(problem.getSolution()).to.not.match(/dashmate restart/);
+    });
+  });
+
+  // The expired-served branch makes the same unchecked claim: it calls any
+  // differing disk copy newer and advises a restart, so a node serving an
+  // expired certificate with an equally dead one on disk is told a restart
+  // will fix it.
+  describe('when the served certificate has expired and the disk copy differs', () => {
+    it('should advise a restart only when the disk copy really is newer', () => {
+      const [problem] = analyse(served({
+        certificate: { fingerprint256: 'AA:BB', validTo: validTo(-1) },
+        matchesOnDisk: false,
+        onDisk: { fingerprint256: 'CC:DD', validTo: validTo(30) },
+      }));
+
+      expect(problem.getDescription()).to.include('newer one is already present on disk');
+      expect(problem.getSolution()).to.include('dashmate restart');
+    });
+
+    it('should not advise a restart when the disk copy is no better', () => {
+      const [problem] = analyse(served({
+        certificate: { fingerprint256: 'AA:BB', validTo: validTo(-1) },
+        matchesOnDisk: false,
+        onDisk: { fingerprint256: 'CC:DD', validTo: validTo(-158) },
+      }));
+
+      expect(problem.getDescription()).to.not.include('newer one is already present on disk');
+      expect(problem.getSolution()).to.not.match(/dashmate restart/);
+      expect(problem.getSolution()).to.include('dashmate ssl obtain');
+    });
+
+    it('should not advise a restart when there is nothing to compare', () => {
+      const [problem] = analyse(served({
+        certificate: { fingerprint256: 'AA:BB', validTo: validTo(-1) },
+        matchesOnDisk: false,
+        onDisk: null,
+      }));
+
+      expect(problem.getDescription()).to.not.include('newer one is already present on disk');
       expect(problem.getSolution()).to.not.match(/dashmate restart/);
     });
   });
