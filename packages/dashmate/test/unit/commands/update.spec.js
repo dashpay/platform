@@ -372,6 +372,47 @@ describe('Update command', () => {
     });
   });
 
+  describe('machine output', () => {
+    // Under JSON output stdout carries exactly one parseable array, so nothing
+    // about the certificate may be written there.
+    it('should keep the certificate diagnostics off stdout', async function it() {
+      const log = this.sinon.stub(console, 'log');
+
+      await runUpdate({
+        checkGatewayCertificate: () => invalidVerdict(),
+        gatewayCertificateTask: () => async (ctx) => {
+          ctx.certificate = invalidVerdict();
+        },
+      });
+
+      expect(log).to.have.been.calledOnce();
+      expect(() => JSON.parse(log.firstCall.firstArg)).to.not.throw();
+      expect(stderr).to.contain('"status":"INVALID"');
+    });
+
+    // reasons and warnings are ordered arrays because several can be true at
+    // once, and collapsing them to one value reintroduces a precedence nobody
+    // defined.
+    it('should emit reasons and warnings as arrays alongside the pull result', async () => {
+      await runUpdate({
+        gatewayCertificateTask: () => async (ctx) => {
+          ctx.certificate = {
+            ...invalidVerdict(),
+            warnings: [{ code: 'PROVIDER_MISMATCH', message: 'x' }],
+          };
+        },
+      }).catch(() => {});
+
+      const line = stderr.split('\n').find((entry) => entry.startsWith('{'));
+      const diagnostics = JSON.parse(line);
+
+      expect(diagnostics.reasons).to.deep.equal(['EXPIRED']);
+      expect(diagnostics.warnings).to.deep.equal(['PROVIDER_MISMATCH']);
+      expect(diagnostics.pull).to.deep.equal({ ok: true, failed: 0, total: 1 });
+      expect(diagnostics.status).to.not.equal('VALID');
+    });
+  });
+
   // A prompt that leaks past the interactivity guard neither throws nor
   // settles - the event loop drains and the process exits 0 with nothing done.
   // The entry-time exit code is the only thing that turns that into a failure.

@@ -9,20 +9,31 @@ import { CERTIFICATE_REASONS } from './checkGatewayCertificateFactory.js';
  * fetched. `updateNode` resolves a failed pull as an `error` row rather than
  * rejecting, so a run can succeed as a whole and still have delivered nothing.
  *
+ * A null pull means none was attempted - the read-only preflight - and the
+ * opening then says nothing about images at all, rather than reporting a
+ * failure that never happened.
+ *
  * @param {{ok: boolean, failed: number, total: number}|null} pull
  * @return {string}
  */
-function renderPullSummary(pull) {
-  if (!pull || !pull.ok) {
-    return 'dashmate update could not pull images, and stopped';
+function renderOpening(pull) {
+  if (pull === null || pull === undefined) {
+    return "  This node's installed TLS certificate did not pass dashmate's checks.";
+  }
+
+  if (!pull.ok) {
+    return `  dashmate update could not pull images, and stopped: this node's installed TLS
+  certificate did not pass dashmate's checks.`;
   }
 
   if (pull.failed > 0) {
-    return `dashmate update pulled images - ${pull.failed} of ${pull.total} failed,`
-      + ' see the table above - then stopped';
+    return `  dashmate update pulled images - ${pull.failed} of ${pull.total} failed, see the
+  table above - then stopped: this node's installed TLS certificate did not
+  pass dashmate's checks.`;
   }
 
-  return 'dashmate update pulled images, then stopped';
+  return `  dashmate update pulled images, then stopped: this node's installed TLS
+  certificate did not pass dashmate's checks.`;
 }
 
 /**
@@ -181,8 +192,7 @@ export default function renderCertificateGuidance({
     .some(({ code }) => code === CERTIFICATE_REASONS.SWITCH_INCOMPLETE);
 
   const blocks = [
-    `  ${renderPullSummary(pull)}: this node's installed TLS
-  certificate did not pass dashmate's checks.
+    `${renderOpening(pull)}
 
   Node:        ${config.get('network')} (config "${config.getName()}", ${config.get('externalIp') ?? 'no external IP set'})
   Certificate: ${renderObservation(verdict)}

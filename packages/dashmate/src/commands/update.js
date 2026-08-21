@@ -229,7 +229,13 @@ export default class UpdateCommand extends ConfigBaseCommand {
         // Without this the throw would skip the pull report entirely, hiding
         // the table - including any image that failed to download.
         exitOnError: false,
-        renderer: format === OUTPUT_FORMATS.JSON ? 'silent' : 'default',
+        // Interactivity beats --verbose: the verbose renderer manages no prompt
+        // area, and -v is exactly what an operator adds when the check has just
+        // failed.
+        renderer: (format === OUTPUT_FORMATS.JSON && 'silent')
+          || (interactive && 'default')
+          || (isVerbose && 'verbose')
+          || 'default',
         rendererOptions: {
           showTimer: isVerbose,
           clearOutput: false,
@@ -255,6 +261,23 @@ export default class UpdateCommand extends ConfigBaseCommand {
     const errors = (tasks.err ?? []).map((error) => error?.error ?? error);
     const unresolved = errors.find((error) => error instanceof CertificateUnresolvedError);
     const unexpected = errors.find((error) => !(error instanceof CertificateUnresolvedError));
+
+    // Under JSON output stdout is exactly one parseable array, so everything a
+    // machine might want about the certificate goes to stderr as one line.
+    if (format === OUTPUT_FORMATS.JSON && context.certificate) {
+      process.stderr.write(`${JSON.stringify({
+        status: context.certificate.status,
+        reasons: context.certificate.reasons.map(({ code }) => code),
+        warnings: context.certificate.warnings.map(({ code }) => code),
+        provider: context.certificate.provider,
+        config: config.getName(),
+        expiresAt: context.certificate.installed
+          ? context.certificate.installed.validTo.toISOString()
+          : null,
+        skipped: context.certificateSkipped === true,
+        pull: this.pullResult ?? null,
+      })}\n`);
+    }
 
     (context.certificateWarnings ?? []).forEach((warning) => {
       process.stderr.write(`${warning}\n\n`);

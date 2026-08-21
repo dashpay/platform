@@ -140,6 +140,17 @@ describe('renderCertificateGuidance', () => {
     expect(render()).to.contain('pulled images, then stopped');
   });
 
+  // The read-only preflight starts no pull at all, so it must not say anything
+  // about one. Reporting a pull failure that never happened sends an operator
+  // to look at a registry that is fine.
+  it('should say nothing about images when no pull was attempted', () => {
+    const output = render({ pull: null });
+
+    expect(output).to.not.contain('could not pull images');
+    expect(output).to.not.contain('pulled images');
+    expect(output).to.contain("This node's installed TLS certificate did not pass");
+  });
+
   it('should explain the ZeroSSL wall without blaming the operator', () => {
     const output = render();
 
