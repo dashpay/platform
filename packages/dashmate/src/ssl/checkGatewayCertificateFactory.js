@@ -294,23 +294,21 @@ export default function checkGatewayCertificateFactory(homeDir) {
 
     if (!externalIp) {
       skipped.push('IDENTITY');
-    } else {
+    } else if (!installed.ipAddresses.includes(externalIp)) {
       // Only the subject alternative name counts. Node's own
       // tls.checkServerIdentity does not consult the common name for an IP
       // identifier and neither do browsers, so a certificate carrying the
       // address only in its subject is one every client rejects - accepting it
       // would pass a node that nothing can connect to.
-      if (!installed.ipAddresses.includes(externalIp)) {
-        const detail = installed.ipAddresses.length > 0
-          ? `it names ${installed.ipAddresses.join(', ')} instead`
-          : 'it carries no IP address at all';
+      const named = installed.ipAddresses.length > 0
+        ? `it names ${installed.ipAddresses.join(', ')} instead`
+        : 'it carries no IP address at all';
 
-        reasons.push({
-          code: CERTIFICATE_REASONS.IP_MISMATCH,
-          message: "The installed certificate does not carry this node's address"
-            + ` ${externalIp} in its subject alternative name - ${detail}`,
-        });
-      }
+      reasons.push({
+        code: CERTIFICATE_REASONS.IP_MISMATCH,
+        message: "The installed certificate does not carry this node's address"
+          + ` ${externalIp} in its subject alternative name - ${named}`,
+      });
     }
 
     const legoDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'lego');
