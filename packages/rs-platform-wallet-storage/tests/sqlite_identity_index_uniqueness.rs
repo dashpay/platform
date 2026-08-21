@@ -362,6 +362,88 @@ fn reupserting_the_same_identity_at_its_own_index_is_accepted() {
     assert_eq!(live_occupant(&p, &w, 1), Some([0x01; 32]));
 }
 
+/// An occupant that the SAME changeset moves to another index has
+/// vacated its old slot by the time the changeset lands, exactly like
+/// one it tombstones. Judging the final state, not the starting one, is
+/// what makes the guard a uniqueness rule rather than a freeze.
+#[test]
+fn an_occupant_reindexed_in_the_same_changeset_frees_its_old_slot() {
+    let (p, _tmp, _path) = fresh_persister();
+    let w = wid(0xF7);
+    ensure_wallet_meta(&p, &w);
+    p.store(w, identity_cs([identity_entry(0x01, Some(1))], []))
+        .expect("initial write");
+
+    p.store(
+        w,
+        identity_cs(
+            [identity_entry(0x01, Some(2)), identity_entry(0x02, Some(1))],
+            [],
+        ),
+    )
+    .expect("A moves to 2 and B takes 1 — the final state is unique");
+
+    assert_eq!(live_occupant(&p, &w, 1), Some([0x02; 32]));
+    assert_eq!(live_occupant(&p, &w, 2), Some([0x01; 32]));
+}
+
+/// A two-way swap: both identities block each other's target slot on
+/// disk, and both vacate it in the same changeset.
+#[test]
+fn two_identities_swapping_indices_in_one_changeset_are_accepted() {
+    let (p, _tmp, _path) = fresh_persister();
+    let w = wid(0xF8);
+    ensure_wallet_meta(&p, &w);
+    p.store(
+        w,
+        identity_cs(
+            [identity_entry(0x01, Some(1)), identity_entry(0x02, Some(2))],
+            [],
+        ),
+    )
+    .expect("initial write");
+
+    p.store(
+        w,
+        identity_cs(
+            [identity_entry(0x01, Some(2)), identity_entry(0x02, Some(1))],
+            [],
+        ),
+    )
+    .expect("a swap ends with one identity per slot");
+
+    assert_eq!(live_occupant(&p, &w, 1), Some([0x02; 32]));
+    assert_eq!(live_occupant(&p, &w, 2), Some([0x01; 32]));
+}
+
+/// Dropping an occupant's index entirely (it becomes an out-of-wallet
+/// identity) frees the slot on the same terms — the row survives, the
+/// claim does not.
+#[test]
+fn an_occupant_losing_its_index_in_the_same_changeset_frees_its_slot() {
+    let (p, _tmp, _path) = fresh_persister();
+    let w = wid(0xF9);
+    ensure_wallet_meta(&p, &w);
+    p.store(w, identity_cs([identity_entry(0x01, Some(1))], []))
+        .expect("initial write");
+
+    p.store(
+        w,
+        identity_cs(
+            [identity_entry(0x01, None), identity_entry(0x02, Some(1))],
+            [],
+        ),
+    )
+    .expect("A gives up its index in the same changeset that B claims it");
+
+    assert_eq!(live_occupant(&p, &w, 1), Some([0x02; 32]));
+    assert_eq!(
+        row_tombstoned(&p, &iid(0x01)),
+        Some(false),
+        "A is still a live row, just no longer in a wallet slot"
+    );
+}
+
 /// Wallet-less identities carry NO index (`out_of_wallet_identities` is
 /// keyed by identity id alone), so an indexed write under the sentinel
 /// scope is refused.

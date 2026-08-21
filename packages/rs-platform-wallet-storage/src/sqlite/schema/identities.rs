@@ -120,6 +120,14 @@ pub fn apply(
 /// tombstone `UPDATE` leaves `identity_index` populated, and counting
 /// those would refuse legitimate slot reuse.
 ///
+/// The judgement is on the state the changeset ENDS in, never the one it
+/// starts from: an on-disk occupant that `cs` itself rewrites to another
+/// index — or to none at all — has vacated the slot as surely as a
+/// tombstoned one, so "A moves to 2, B takes 1" and a two-way swap are
+/// both legal. `identities` carries no `(wallet_id, identity_index)`
+/// UNIQUE index, so [`apply`]'s row-at-a-time upserts pass straight
+/// through the transient double-claim a swap goes through.
+///
 /// A pre-existing on-disk duplicate (written before this check existed)
 /// makes both of its slot-mates unwritable here. That wallet already
 /// fails to load; refusing to extend the contradiction is the point.
@@ -185,7 +193,19 @@ pub(crate) fn check_index_conflicts(
         let occupant: [u8; 32] = occupant.try_into().map_err(|_| {
             WalletStorageError::blob_decode("identities.identity_id is not 32 bytes")
         })?;
-        if cs.removed.contains(&Identifier::from(occupant)) {
+        let occupant_id = Identifier::from(occupant);
+        if cs.removed.contains(&occupant_id) {
+            continue;
+        }
+        // The occupant is rewritten by this same changeset, somewhere
+        // other than here: `apply` moves it out of this slot (to another
+        // index, or to none at all) in the same transaction, so by the
+        // time the changeset lands it holds no claim on `index`.
+        if cs
+            .identities
+            .get(&occupant_id)
+            .is_some_and(|entry| entry.identity_index != Some(index))
+        {
             continue;
         }
         return Err(WalletStorageError::IdentityIndexConflict {
