@@ -11,7 +11,7 @@ import Certificate from '../../../ssl/zerossl/Certificate.js';
 import probeServedCertificate, { STATE as PROBE_STATE } from '../../../ssl/probeServedCertificate.js';
 import readCertificateBundle from '../../../ssl/readCertificateBundle.js';
 import providers from '../../../status/providers.js';
-import hideString from '../../../util/hideString.js';
+import maskOperatorIdentity from '../../../util/maskOperatorIdentity.js';
 import obfuscateObjectRecursive from '../../../util/obfuscateObjectRecursive.js';
 import validateSslCertificateFiles from '../../prompts/validators/validateSslCertificateFiles.js';
 
@@ -57,35 +57,31 @@ async function fetchTextOrError(url) {
  * mask and the data is left alone rather than having "undefined" replaced in
  * it.
  *
- * @return {string|null}
+ * @return {{username: string|null, homePath: string|null}}
  */
-function getOperatorName() {
-  try {
-    const { username } = os.userInfo();
+function getOperatorIdentity() {
+  let username = null;
+  let homePath = null;
 
-    if (username) {
-      return username;
-    }
+  try {
+    ({ username, homedir: homePath } = os.userInfo());
   } catch {
     // A process running under a uid with no passwd entry has no name to read.
   }
 
-  return process.env.USER || process.env.USERNAME || null;
+  return {
+    username: username || process.env.USER || process.env.USERNAME || null,
+    homePath: homePath || os.homedir() || null,
+  };
 }
 
 /**
  * @param {Object} data - mutated in place
  */
 function obfuscateOperatorName(data) {
-  const username = getOperatorName();
+  const identity = getOperatorIdentity();
 
-  if (!username) {
-    return;
-  }
-
-  obfuscateObjectRecursive(data, (_field, value) => (typeof value === 'string'
-    ? value.replaceAll(username, hideString(username))
-    : value));
+  obfuscateObjectRecursive(data, (_field, value) => maskOperatorIdentity(value, identity));
 }
 
 /**
@@ -93,13 +89,7 @@ function obfuscateOperatorName(data) {
  * @return {string|undefined}
  */
 function hideOperatorNameIn(text) {
-  const username = getOperatorName();
-
-  if (!username || typeof text !== 'string') {
-    return text;
-  }
-
-  return text.replaceAll(username, hideString(username));
+  return maskOperatorIdentity(text, getOperatorIdentity());
 }
 
 export default function collectSamplesTaskFactory(
