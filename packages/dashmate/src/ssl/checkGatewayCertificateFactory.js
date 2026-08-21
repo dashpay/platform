@@ -19,6 +19,7 @@ export const CERTIFICATE_STATUS = {
 
 export const CERTIFICATE_REASONS = {
   BUNDLE_MISSING: 'BUNDLE_MISSING',
+  NOT_YET_VALID: 'NOT_YET_VALID',
   BUNDLE_UNREADABLE: 'BUNDLE_UNREADABLE',
   BUNDLE_ORDER: 'BUNDLE_ORDER',
   KEY_MISSING: 'KEY_MISSING',
@@ -262,6 +263,18 @@ export default function checkGatewayCertificateFactory(homeDir) {
       (isEnforced ? reasons : warnings).push({
         code: CERTIFICATE_REASONS.SELF_SIGNED,
         message,
+      });
+    }
+
+    // Unservable in exactly the way an expired certificate is - clients reject
+    // it on the same field. Nothing is concluded about the clock here: a fast
+    // local clock and a genuinely future start date look identical from disk,
+    // so this says only that the certificate cannot be served as it stands.
+    if (installed.validFrom.getTime() > Date.now()) {
+      reasons.push({
+        code: CERTIFICATE_REASONS.NOT_YET_VALID,
+        message: 'The installed certificate is not valid until'
+          + ` ${installed.validFrom.toISOString().slice(0, 10)}, so clients reject it`,
       });
     }
 

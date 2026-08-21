@@ -48,6 +48,7 @@ function toPem(der) {
  * @param {Object} [options.issuer] - the issuing authority, self-signed when absent
  * @param {string} [options.ip] - placed in the subject alternative name
  * @param {number} [options.days] - days from now it expires, negative for expired
+ * @param {number} [options.startsInDays] - days from now it becomes valid
  * @param {boolean} [options.ca]
  * @param {Object} [options.keys] - reuse an existing node-forge key pair
  * @return {{pem: string, keyPem: string, keys: Object, certificate: Object,
@@ -58,6 +59,7 @@ export function issueCertificate({
   issuer,
   ip,
   days = 30,
+  startsInDays,
   ca = false,
   keys = forge.pki.rsa.generateKeyPair(2048),
 } = {}) {
@@ -69,9 +71,9 @@ export function issueCertificate({
   // Anchored to the expiry so an already-expired certificate still starts
   // before it ends.
   certificate.validity.notAfter = new Date(Date.now() + days * DAY_MS);
-  certificate.validity.notBefore = new Date(
-    certificate.validity.notAfter.getTime() - 90 * DAY_MS,
-  );
+  certificate.validity.notBefore = startsInDays === undefined
+    ? new Date(certificate.validity.notAfter.getTime() - 90 * DAY_MS)
+    : new Date(Date.now() + startsInDays * DAY_MS);
 
   certificate.setSubject(toAttributes(subject));
   certificate.setIssuer(toAttributes(issuer ? issuer.subject : subject));

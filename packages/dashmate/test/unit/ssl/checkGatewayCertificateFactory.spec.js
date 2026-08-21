@@ -328,6 +328,33 @@ describe('checkGatewayCertificateFactory', () => {
     });
   });
 
+  // A certificate whose validity has not started yet is unservable in exactly
+  // the way an expired one is - clients reject it on the same field. This is a
+  // plain validity condition and infers nothing about the clock: a fast local
+  // clock and a genuinely future notBefore are indistinguishable from here, so
+  // no conclusion is drawn about which one it is.
+  describe('validity start', () => {
+    it('should block on a certificate that is not valid yet', () => {
+      const certificate = issueCertificate({ ip: EXTERNAL_IP, startsInDays: 5 });
+
+      install(certificate.pem, certificate.keyPem);
+
+      const verdict = checkGatewayCertificate(config);
+
+      expect(verdict.status).to.equal(CERTIFICATE_STATUS.INVALID);
+      expect(codes(verdict.reasons)).to.include(CERTIFICATE_REASONS.NOT_YET_VALID);
+    });
+
+    it('should not report a certificate already in its validity window', () => {
+      const certificate = issueCertificate({ ip: EXTERNAL_IP, startsInDays: -1 });
+
+      install(certificate.pem, certificate.keyPem);
+
+      expect(codes(checkGatewayCertificate(config).reasons))
+        .to.not.include(CERTIFICATE_REASONS.NOT_YET_VALID);
+    });
+  });
+
   describe('provider agreement', () => {
     /**
      * @param {Object} pair
