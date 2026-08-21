@@ -9,6 +9,7 @@ import printArrayOfObjects from '../printers/printArrayOfObjects.js';
 import CertificateUnresolvedError from '../ssl/errors/CertificateUnresolvedError.js';
 import { CERTIFICATE_STATUS } from '../ssl/checkGatewayCertificateFactory.js';
 import renderCertificateGuidance from '../ssl/renderCertificateGuidance.js';
+import isEnvironmentFlagSet from '../util/isEnvironmentFlagSet.js';
 import isInteractiveSession from '../util/isInteractiveSession.js';
 
 /**
@@ -16,20 +17,6 @@ import isInteractiveSession from '../util/isInteractiveSession.js';
  * are self-signed by design and disposable.
  */
 const GATED_NETWORKS = [NETWORK_MAINNET, NETWORK_TESTNET];
-
-/**
- * @param {string|undefined} value
- * @return {boolean}
- */
-function isEnvironmentFlagSet(value) {
-  if (value === undefined || value === null) {
-    return false;
-  }
-
-  const normalized = String(value).trim().toLowerCase();
-
-  return normalized !== '' && normalized !== '0' && normalized !== 'false';
-}
 
 export default class UpdateCommand extends ConfigBaseCommand {
   // The certificate check can obtain a certificate and record the provider that

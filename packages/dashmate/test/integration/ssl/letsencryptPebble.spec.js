@@ -152,7 +152,11 @@ describe('Pebble candidate network selection', () => {
 });
 
 describe('Let\'s Encrypt certificate against a local ACME server', function main() {
-  this.timeout(5 * 60 * 1000);
+  // `lego renew` sleeps a random delay of up to about eight minutes when the
+  // authority's renewalInfo endpoint says renewal is not yet due, which the
+  // renewal case below always hits: the certificate it renews was issued
+  // moments earlier. The budget covers that sleep rather than racing it.
+  this.timeout(15 * 60 * 1000);
 
   const docker = new Docker();
   const networkName = `dashmate-acme-test-${crypto.randomBytes(4).toString('hex')}`;
@@ -481,6 +485,51 @@ describe('Let\'s Encrypt certificate against a local ACME server', function main
         .to.be.true();
       expect(inspect(withContact).accounts.some((entry) => entry.includes('operator@example.org')))
         .to.be.true();
+    });
+
+    // A node that already has an address on file must keep using the account
+    // that address names. Nothing may quietly move it: a new account means a
+    // new account key and a reset failed-authorization budget, spent against
+    // the per-address registration limit.
+    //
+    // Issued rather than renewed, so this does not pay lego's renewal delay
+    // twice. The renewal path is covered below, and the property under test -
+    // which account directory the address resolves to - is the same either way.
+    it('should reissue for a node with a contact address against its original account', async () => {
+      const obtainLetsEncryptCertificateTask = container.resolve('obtainLetsEncryptCertificateTask');
+      const accountsBefore = inspect(withContact).accounts;
+      const serialBefore = inspect(withContact).certificate.serialNumber;
+
+      await obtainLetsEncryptCertificateTask(withContact).run({ force: true });
+
+      const after = inspect(withContact);
+
+      expect(after.certificate.serialNumber).to.not.equal(serialBefore);
+      expect(after.accounts).to.deep.equal(accountsBefore);
+      expect(withContact.get('platform.gateway.ssl.providerConfigs.letsencrypt.email'))
+        .to.equal('operator@example.org');
+    });
+
+    // The window between installing the pair and saving the provider. Left as
+    // a warning this never repairs itself - the helper keeps renewing the old
+    // provider while the installed six-day certificate runs out - so it has to
+    // block, and the block has to name a repair that needs no new certificate.
+    it('should detect a switch interrupted before the provider was saved', () => {
+      const checkGatewayCertificate = container.resolve('checkGatewayCertificate');
+
+      expect(checkGatewayCertificate(contactless).status).to.equal('CHECKS_PASSED');
+
+      // Exactly what a kill between the two steps leaves behind: the pair lego
+      // produced is installed for the gateway, the setting still names the
+      // provider it was switched away from.
+      contactless.set('platform.gateway.ssl.provider', 'zerossl');
+
+      const verdict = checkGatewayCertificate(contactless);
+
+      expect(verdict.status).to.equal('INVALID');
+      expect(verdict.reasons.map(({ code }) => code)).to.deep.equal(['SWITCH_INCOMPLETE']);
+
+      contactless.set('platform.gateway.ssl.provider', 'letsencrypt');
     });
 
     // Renewal is where a missing account would surface, and it runs unattended

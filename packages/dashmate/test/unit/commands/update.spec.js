@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import UpdateCommand from '../../../src/commands/update.js';
 import HomeDir from '../../../src/config/HomeDir.js';
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
@@ -281,6 +283,21 @@ describe('Update command', () => {
     // A read-only preflight is meant to be run before the node is stopped,
     // possibly while the helper is renewing. Taking a write lock there would
     // let it fail on a lock timeout for no reason.
+    // A "the check could not run" exit code was considered and dropped: the
+    // configuration lock is taken before the command body runs and the
+    // repository throws a plain Error, so the boundary cannot tell that case
+    // apart without a typed error and central mapping. A lock timeout is an
+    // ordinary failure and exits 1.
+    it('should use no exit code beyond 0, 1 and 2', () => {
+      const source = fs.readFileSync(
+        path.join(process.cwd(), 'src/commands/update.js'),
+        'utf8',
+      );
+
+      expect(source).to.not.match(/exitCode\s*=\s*[3-9]/);
+      expect(source).to.not.match(/process\.exit\(/);
+    });
+
     it('should not take the configuration lock', () => {
       expect(UpdateCommand.mutatesConfig).to.be.true();
       expect(UpdateCommand.shouldSkipConfigLock({ 'check-certificate': true })).to.be.true();
