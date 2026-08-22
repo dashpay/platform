@@ -703,6 +703,21 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
       expect(error.message).to.not.match(/paused/i);
     });
 
+    // An operator who has run out of attempts needs to know this will stop
+    // being survivable. No version number: the release plan is not something
+    // this code can establish, and a wrong one printed to every stuck operator
+    // is worse than none.
+    it('should say a certificate will become required, without naming a version', async function it() {
+      const docker = getFailingDockerMock(this.sinon);
+
+      const error = await buildFailingTask(this.sinon, docker)(config)
+        .run({ force: true }).catch((e) => e);
+
+      expect(error.message).to.contain('In upcoming versions');
+      expect(error.message).to.contain('will not start a node without a valid certificate');
+      expect(error.message).to.not.match(/\b\d+\.\d+(\.\d+)?\b/);
+    });
+
     // A failure the authority did return keeps the guidance that is about the
     // authority.
     it('should keep the rate-limit guidance when the request did reach the authority', async function it() {

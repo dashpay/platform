@@ -51,6 +51,8 @@ function renderGiveUpGuidance(config, attempts) {
 
   return `No certificate after ${attempts} attempt${attempts === 1 ? '' : 's'}.
 
+In upcoming versions dashmate will not start a node without a valid certificate.
+
 Do not keep retrying - Let's Encrypt limits how often this node may fail.
 
 Open inbound port 80, on the machine's firewall and your hosting provider's.
