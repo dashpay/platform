@@ -204,6 +204,32 @@ fn attach_child(
     Ok(parent)
 }
 
+fn subtree_from_node(node: MerkProofNode, target: &[u8]) -> Result<SubtreeKeyedNodes, Error> {
+    let keyed = match node {
+        MerkProofNode::Hash(_) | MerkProofNode::KVHash(_) | MerkProofNode::KVHashCount(_, _) => {
+            vec![]
+        }
+        MerkProofNode::KV(key, _)
+        | MerkProofNode::KVValueHash(key, _, _)
+        | MerkProofNode::KVValueHashFeatureType(key, _, _, _)
+        | MerkProofNode::KVRefValueHash(key, _, _)
+        | MerkProofNode::KVCount(key, _, _)
+        | MerkProofNode::KVRefValueHashCount(key, _, _, _)
+        | MerkProofNode::KVValueHashFeatureTypeWithChildHash(key, _, _, _, _) => {
+            vec![(0, key.as_slice() == target)]
+        }
+        MerkProofNode::KVDigest(key, _) | MerkProofNode::KVDigestCount(key, _, _) => {
+            vec![(0, key.as_slice() == target)]
+        }
+        other => {
+            return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+                "unexpected node type in local single-key merk proof: {other:?}"
+            ))));
+        }
+    };
+    Ok(SubtreeKeyedNodes { keyed })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -439,30 +465,4 @@ mod tests {
         }
         expect(75, false, 4, "seven nodes, absent above max");
     }
-}
-
-fn subtree_from_node(node: MerkProofNode, target: &[u8]) -> Result<SubtreeKeyedNodes, Error> {
-    let keyed = match node {
-        MerkProofNode::Hash(_) | MerkProofNode::KVHash(_) | MerkProofNode::KVHashCount(_, _) => {
-            vec![]
-        }
-        MerkProofNode::KV(key, _)
-        | MerkProofNode::KVValueHash(key, _, _)
-        | MerkProofNode::KVValueHashFeatureType(key, _, _, _)
-        | MerkProofNode::KVRefValueHash(key, _, _)
-        | MerkProofNode::KVCount(key, _, _)
-        | MerkProofNode::KVRefValueHashCount(key, _, _, _)
-        | MerkProofNode::KVValueHashFeatureTypeWithChildHash(key, _, _, _, _) => {
-            vec![(0, key.as_slice() == target)]
-        }
-        MerkProofNode::KVDigest(key, _) | MerkProofNode::KVDigestCount(key, _, _) => {
-            vec![(0, key.as_slice() == target)]
-        }
-        other => {
-            return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
-                "unexpected node type in local single-key merk proof: {other:?}"
-            ))));
-        }
-    };
-    Ok(SubtreeKeyedNodes { keyed })
 }
