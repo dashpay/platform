@@ -5,7 +5,6 @@ import LegoCertificate from './LegoCertificate.js';
 import isCertificatePairInstalled from './isCertificatePairInstalled.js';
 
 export const ERRORS = {
-  EMAIL_IS_NOT_SET: 'EMAIL_IS_NOT_SET',
   EXTERNAL_IP_IS_NOT_SET: 'EXTERNAL_IP_IS_NOT_SET',
   CERTIFICATE_NOT_FOUND: 'CERTIFICATE_NOT_FOUND',
   PRIVATE_KEY_NOT_FOUND: 'PRIVATE_KEY_NOT_FOUND',

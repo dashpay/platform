@@ -50,19 +50,17 @@ describe('analyseConfigFactory', () => {
     expect(problems[0].getSeverity()).to.equal(SEVERITY.HIGH);
   });
 
-  // Nothing prompts for a contact address any more, so a node without one is
-  // ordinary rather than broken. The check is kept rather than deleted so the
-  // information stays available - and so it is still there if contactless
-  // issuance ever stops working - but it must not read as an error.
-  it('should report a missing contact address as information, not a fault', () => {
-    const problems = analyseSslSample({
-      error: LETSENCRYPT_ERRORS.EMAIL_IS_NOT_SET,
-      data: {},
-    }, 'letsencrypt');
+  // A contact address is optional and nothing prompts for one, so a node
+  // without one has no problem to report. A doctor report is read to find
+  // problems, and an entry saying "this is not a problem" is noise in it.
+  //
+  // Driven with the code an older dashmate could have recorded in an archive,
+  // because doctor analyses those too: it must report nothing rather than
+  // fail on a code it no longer knows.
+  it('should report nothing for a node with no contact address', () => {
+    const problems = analyseSslSample({ error: 'EMAIL_IS_NOT_SET', data: {} }, 'letsencrypt');
 
-    expect(problems).to.have.lengthOf(1);
-    expect(problems[0].getSeverity()).to.equal(SEVERITY.LOW);
-    expect(problems[0].getDescription()).to.include('No contact is registered');
+    expect(problems).to.be.empty();
   });
 
   // This fires when the issued certificate was never copied to where the gateway

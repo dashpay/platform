@@ -42,11 +42,9 @@ describe('validateLetsEncryptCertificateFactory', () => {
     expect(ERRORS.CERTIFICATE_NOT_INSTALLED).to.equal('CERTIFICATE_NOT_INSTALLED');
   });
 
-  // The email check used to fire before every other one, so a node without a
-  // contact address reported EMAIL_IS_NOT_SET whatever else was wrong with its
-  // certificate. Nothing prompts for an address any more, so no new node has
-  // one and this would have become the answer for all of them - including for
-  // the helper's own renewal scheduler.
+  // A contact address is optional and nothing prompts for one, so no new node
+  // has one. Its absence must not become the answer for every node - including
+  // for the helper's own renewal scheduler - so it is not judged at all.
   it('should judge a certificate for a node that has no contact address', async function it() {
     config.get.callsFake((option) => ({
       'platform.gateway.ssl.providerConfigs.letsencrypt.email': null,
