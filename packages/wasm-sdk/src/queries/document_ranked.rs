@@ -1220,6 +1220,94 @@ impl WasmSdk {
     }
 }
 
+/// The one property host tests cannot observe: that a wide integer group key
+/// really crosses as an exact JavaScript `BigInt`.
+///
+/// [`exact_integer_to_js`] returning `JsValue` rather than `Result` makes the
+/// path infallible, but a signature cannot pin *representation* — swapping the
+/// body for `JsValue::from_f64(inner as f64)` would still compile, still be
+/// infallible, and still satisfy every host test, while silently rounding
+/// group keys past 2^53. These run on the wasm32 target, against the same
+/// function the production result path calls, and need no exported test hook.
+///
+/// Not run by the default `cargo test`; see the runner command in
+/// `Cargo.toml`. (`packages/wasm-drive-verify` carries its wasm tests the
+/// same way.)
+#[cfg(all(test, target_arch = "wasm32"))]
+mod wasm_tests {
+    use super::*;
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    /// The smallest integer that `f64` cannot represent exactly, so the one
+    /// that most cheaply distinguishes a `BigInt` from a rounded `number`.
+    const FIRST_INEXACT_IN_F64: u64 = (1u64 << 53) + 1;
+
+    fn js_type_of(value: &JsValue) -> String {
+        value
+            .js_typeof()
+            .as_string()
+            .expect("typeof always yields a string")
+    }
+
+    #[wasm_bindgen_test]
+    fn wide_unsigned_keys_render_as_exact_bigints() {
+        for key in [FIRST_INEXACT_IN_F64, u64::MAX] {
+            let rendered = exact_integer_to_js(ExactIntegerKey::U64(key));
+
+            assert_eq!(js_type_of(&rendered), "bigint");
+            assert_eq!(rendered, JsValue::from(key));
+            assert_ne!(
+                rendered,
+                JsValue::from_f64(key as f64),
+                "a rounded number must never pass for the exact key {key}"
+            );
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn wide_signed_keys_render_as_exact_bigints() {
+        for key in [-(FIRST_INEXACT_IN_F64 as i64), i64::MIN, i64::MAX] {
+            let rendered = exact_integer_to_js(ExactIntegerKey::I64(key));
+
+            assert_eq!(js_type_of(&rendered), "bigint");
+            assert_eq!(rendered, JsValue::from(key));
+        }
+    }
+
+    /// The two widths that cannot even be expressed as a JS `number`, and
+    /// which failed inside `serde_json` before this path existed.
+    #[wasm_bindgen_test]
+    fn oversized_keys_render_as_exact_bigints() {
+        let unsigned = exact_integer_to_js(ExactIntegerKey::U128(u128::MAX));
+        assert_eq!(js_type_of(&unsigned), "bigint");
+        assert_eq!(unsigned, JsValue::from(u128::MAX));
+
+        let signed = exact_integer_to_js(ExactIntegerKey::I128(i128::MIN));
+        assert_eq!(js_type_of(&signed), "bigint");
+        assert_eq!(signed, JsValue::from(i128::MIN));
+    }
+
+    /// The exact integer a proof committed to must survive the whole entry
+    /// conversion, not just the renderer in isolation.
+    #[wasm_bindgen_test]
+    fn a_wide_group_key_survives_the_entry_conversion() {
+        let parts = GroupEntryParts {
+            key_hex: "ff".to_string(),
+            decoded: Some(Value::U64(u64::MAX)),
+            key_absent: false,
+            value: RankedEntryValue::Count(1),
+        };
+
+        let entry =
+            group_entry_to_js(&parts, Some(0)).expect("a wide key must not reject the page");
+        let group_value = js_sys::Reflect::get(&entry, &JsValue::from_str("groupValue"))
+            .expect("the entry carries a groupValue");
+
+        assert_eq!(js_type_of(&group_value), "bigint");
+        assert_eq!(group_value, JsValue::from(u64::MAX));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
