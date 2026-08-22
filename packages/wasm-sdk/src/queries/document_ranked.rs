@@ -445,6 +445,26 @@ struct DocumentsRankedQueryInput {
     direction: Option<String>,
     #[serde(default)]
     offset: Option<u32>,
+    /// Pin operands are bounded to `i64::MIN..=u64::MAX`, the same bound the
+    /// pre-existing `DocumentsQuery` surface carries: they arrive through
+    /// serde-wasm-bindgen's `deserialize_any`, whose BigInt branch refuses
+    /// anything wider, and `serde_json::Value` could not hold it either.
+    ///
+    /// That is not currently a reachable limitation. A contract cannot
+    /// declare a 128-bit integer property: the schema path
+    /// (`DocumentPropertyType::try_from_value_map` →
+    /// `find_integer_type_for_subschema_value`) reads `minimum` / `maximum`
+    /// as `i64` and tops out at `U64` / `I64`, and the only constructors of
+    /// `DocumentPropertyType::{U128, I128}` are the deprecated
+    /// `try_from_name` and the random-document-type test generator. With no
+    /// 128-bit property there is no 128-bit index property to pin.
+    ///
+    /// If DPP ever gains a schema route to those widths, widening this is a
+    /// change for the whole document-query surface rather than these two
+    /// entry points: all ten share the `Vec<serde_json::Value>` shape, and
+    /// the fix has to bypass `deserialize_any` for the operand (reading
+    /// `where` off the raw object, with the field declared `IgnoredAny` so
+    /// `deny_unknown_fields` still holds).
     #[serde(rename = "where", default)]
     where_clauses: Option<Vec<JsonValue>>,
 }
