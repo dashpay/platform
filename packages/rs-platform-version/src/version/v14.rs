@@ -5,7 +5,7 @@ use crate::version::dpp_versions::dpp_costs_versions::v1::DPP_COSTS_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_document_versions::v3::DOCUMENT_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_factory_versions::v1::DPP_FACTORY_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_identity_versions::v1::IDENTITY_VERSIONS_V1;
-use crate::version::dpp_versions::dpp_method_versions::v2::DPP_METHOD_VERSIONS_V2;
+use crate::version::dpp_versions::dpp_method_versions::v3::DPP_METHOD_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_state_transition_conversion_versions::v2::STATE_TRANSITION_CONVERSION_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_state_transition_method_versions::v1::STATE_TRANSITION_METHOD_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v2::STATE_TRANSITION_SERIALIZATION_VERSIONS_V2;
@@ -30,7 +30,7 @@ use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 
-/// v14 hosts three consensus changes:
+/// v14 hosts four consensus changes:
 ///
 /// 1. **Contract-level ranked aggregates** (this branch): an index can
 ///    declare that its groups are rankable by an aggregate, so a query like
@@ -66,6 +66,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    the contest was created on — which halts the chain when that poll
 ///    ends — or open a contest for a document that is not a contested
 ///    resource at all.
+/// 4. **Daily withdrawal limit 2000 → 4000 Dash**: `DPP_METHOD_VERSIONS_V3`
+///    bumps `daily_withdrawal_limit` 1 → 2, doubling the amount of credits
+///    Platform pools into asset unlock transactions per 24 hours. This
+///    mirrors Core's doubled credit-pool unlock limit (`LimitAmountV24`,
+///    DIP-0165, dashpay/dash#6662), which Core gates on its own
+///    `DEPLOYMENT_V24` hard fork — v14 must not activate on a network before
+///    that fork does, or Core rejects the excess unlocks.
 ///
 /// The first two are orthogonal by construction: the ranked upgrade decides the
 /// *property-name* tree type, the demotion decides the *value* tree type
@@ -75,8 +82,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// shared-prefix shapes.
 ///
 /// Until a contract uses the ranked grammar, the only v14 behavior changes
-/// are the shared-prefix fix, the contested-index cross-check and the
-/// index-reorder schema-compatibility fix; everything else matches v13:
+/// are the shared-prefix fix, the contested-index cross-check, the
+/// index-reorder schema-compatibility fix and the doubled daily withdrawal
+/// limit; everything else matches v13:
 ///
 /// * `CONTRACT_VERSIONS_V6` points `document_type_schema` at the v3 document
 ///   meta-schema, which hosts the ranked index keywords
@@ -145,7 +153,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         voting_versions: VOTING_VERSION_V2,
         token_versions: TOKEN_VERSIONS_V2,
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
-        methods: DPP_METHOD_VERSIONS_V2,
+        methods: DPP_METHOD_VERSIONS_V3, // changed: daily_withdrawal_limit v2 — 4000 Dash per day, matching Core's LimitAmountV24
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33)
