@@ -13,11 +13,8 @@
 //! absent branch — same forward-compat for absence proofs as count)
 //! contribute 0 to both axes via `filter_map(|e| e.<field>)`.
 
-use crate::platform::documents::average_proof_helpers::{
-    assert_select_is_avg, verify_average_query,
-};
-use crate::platform::documents::document_query::DocumentQuery;
-use crate::platform::Fetch;
+use crate::documents::average_proof_helpers::{assert_select_is_avg, verify_average_query};
+use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dash_context_provider::ContextProvider;
 use dpp::dashcore::Network;
@@ -99,11 +96,6 @@ impl FromProof<DocumentQuery> for DocumentAverage {
         };
         Ok((avg, mtd, proof))
     }
-}
-
-impl Fetch for DocumentAverage {
-    type Query = super::document_query::DocumentQuery;
-    type Request = dapi_grpc::platform::v0::GetDocumentsRequest;
 }
 
 #[cfg(test)]

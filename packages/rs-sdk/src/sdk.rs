@@ -633,8 +633,8 @@ impl Sdk {
         self.proofs
     }
 
-    /// Build a [`QuerySettings`] borrowing this SDK's protocol version,
-    /// request settings, and `prove` flag.
+    /// Build a [`QuerySettings`] borrowing this SDK's protocol version
+    /// and `prove` flag.
     ///
     /// Hand the resulting context to [`crate::platform::Query::query`] when
     /// you need to encode a user-facing query into a wire `TransportRequest`
