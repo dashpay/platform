@@ -1,4 +1,4 @@
-//! Event handler that drives the DashPay payment hooks off upstream
+//! Event handler that records incoming DashPay payments off upstream
 //! `WalletEvent`s.
 //!
 //! Registered as one of the [`PlatformEventHandler`]s in
@@ -6,22 +6,35 @@
 //! keeps the DashPay-payment domain logic out of the generic
 //! core-changeset bridge ([`spawn_wallet_event_adapter`]): the bridge
 //! projects every event into a `CoreChangeSet` and persists it, while
-//! this handler independently records incoming payments and confirms
-//! sent ones.
+//! this handler independently records incoming payments.
+//!
+//! # No sent-payment verdicts here
+//!
+//! Sent-payment status writes (`Confirmed` on finality, `Failed` on a
+//! sweep) live EXCLUSIVELY on the wallet-event adapter's single ordered
+//! drain (`confirm_final_sent_payments_for_store`,
+//! `payments::SweptPaymentFlips`), never on this handler. This handler
+//! rides dash-spv's bounded, lossy broadcast and spawns one independent
+//! task per event, so execution order does not preserve emission order —
+//! a pre-sweep confirmation task delayed past a newer sweep would
+//! resurrect a dead payment as durably `Confirmed`, and a task that ran
+//! just before the sweep staged would make the sweep skip the entry.
+//! Verdicts are only safe where they apply in emission order. Incoming
+//! recording is different in kind: it is an idempotent insert keyed by
+//! txid with no state machine to race, and the recurring reconcile sweep
+//! backfills anything the lossy broadcast dropped.
 //!
 //! # Why it spawns
 //!
 //! [`PlatformEventHandler::on_wallet_event`] is synchronous and is
 //! dispatched from dash-spv's wallet-event broadcast monitor, which can
-//! fire while SPV holds the wallet-manager write lock. The payment hooks
-//! are async and take that same write lock, so they cannot run inline.
-//! The handler therefore captures an owned copy of the event and spawns
-//! a task that queues on the write lock and runs once SPV releases it.
-//! Every hook path is idempotent per txid (re-detections converge and
-//! the recurring reconcile sweep backfills anything a lagged broadcast
-//! dropped), so running off the core-store bridge's ordering is safe —
-//! a payment row's only foreign key is to its `identities` parent, never
-//! to a core transaction row.
+//! fire while SPV holds the wallet-manager write lock. The recording
+//! hook is async and takes that same write lock, so it cannot run
+//! inline. The handler therefore captures an owned copy of the event and
+//! spawns a task that queues on the write lock and runs once SPV
+//! releases it. Recording is idempotent per txid, so running off the
+//! core-store bridge's ordering is safe — a payment row's only foreign
+//! key is to its `identities` parent, never to a core transaction row.
 
 use std::sync::Arc;
 use std::{future::Future, sync::Mutex};
@@ -35,8 +48,9 @@ use crate::changeset::traits::PlatformWalletPersistence;
 use crate::events::PlatformEventHandler;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
-/// Records incoming DashPay payments and confirms sent ones in response
-/// to upstream `WalletEvent`s.
+/// Records incoming DashPay payments in response to upstream
+/// `WalletEvent`s. (Sent-payment verdicts live on the wallet-event
+/// adapter's ordered drain — see the module docs.)
 ///
 /// Holds the manager's `wallet_manager` (for the in-memory identity /
 /// payment state the hooks mutate) and an `Arc<dyn PlatformWalletPersistence>`
@@ -227,25 +241,20 @@ impl EventHandler for DashPayPaymentHandler {
 impl PlatformEventHandler for DashPayPaymentHandler {}
 
 /// Transaction records carried by `event` that should drive the DashPay
-/// payment hooks (live incoming-record recording + sent-payment confirm).
+/// incoming-payment recording.
 ///
 /// [`WalletEvent::TransactionDetected`] is the first off-chain sighting of
-/// a transaction — mempool, or a direct InstantSend lock — so its
-/// `record.context` is not yet block-confirmed.
+/// a transaction — mempool, or a direct InstantSend lock.
 /// [`WalletEvent::BlockProcessed`] carries the records a block changed:
-/// `inserted` (first stored in this block) and `updated`
-/// (previously-known records that this block confirmed). A wallet sees its
-/// *own* broadcast in the mempool first, so that transaction reaches a
-/// confirmed context only via `BlockProcessed.updated` — routing solely
-/// `TransactionDetected` is the gap that left sent payments stuck
-/// `Pending`: the confirm hook early-returns on the unconfirmed mempool
-/// sighting and never sees the confirming block. `matured` is
+/// `inserted` (first stored in this block — how a payment first seen in a
+/// block lands) and `updated` (previously-known records the block
+/// confirmed — a second chance to record a payment whose first-sighting
+/// broadcast was dropped by the lossy bus). `matured` is
 /// coinbase-maturity only — never a DashPay payment — so it is excluded.
 fn dashpay_payment_records(event: &WalletEvent) -> Vec<&TransactionRecord> {
     // Exhaustive on purpose (no `_` arm): a new upstream `WalletEvent`
     // variant that carries transaction records must fail to compile here
-    // rather than be silently dropped — routing only `TransactionDetected`
-    // is exactly the gap that left sent payments stuck `Pending`.
+    // rather than be silently dropped.
     match event {
         WalletEvent::TransactionDetected { record, .. } => vec![record.as_ref()],
         WalletEvent::BlockProcessed {
@@ -253,12 +262,16 @@ fn dashpay_payment_records(event: &WalletEvent) -> Vec<&TransactionRecord> {
         } => inserted.iter().chain(updated.iter()).collect(),
         // `TransactionsSwept` carries txids, not records: the wallet has
         // already dropped the records these name. Its payment consequence
-        // — failing the matching `Pending` sent payments, since a swept
-        // transaction can never confirm — is NOT this handler's to apply:
-        // a sweep never re-emits once its round is durable, so the flip
-        // must ride the sweep's own atomic store round, which belongs to
-        // the wallet-event adapter. Routing it here would persist the
-        // flip on a separate round with no replay if that round fails.
+        // — failing the matching sent payments, since a swept transaction
+        // can never confirm — is NOT this handler's to apply: sent-payment
+        // verdicts must apply in emission order, so the wallet-event
+        // adapter owns them (see `payments::SweptPaymentFlips` and the
+        // module docs). `TransactionInstantLocked` likewise: it is
+        // sent-payment finality evidence (no record, only a txid), owned
+        // by the adapter's ordered confirm
+        // (`confirm_final_sent_payments_for_store`) — a confirmation run
+        // from this handler's unordered task could land after a newer
+        // sweep and durably resurrect a dead payment.
         WalletEvent::TransactionInstantLocked { .. }
         | WalletEvent::TransactionsSwept { .. }
         | WalletEvent::SyncHeightAdvanced { .. }
@@ -268,68 +281,51 @@ fn dashpay_payment_records(event: &WalletEvent) -> Vec<&TransactionRecord> {
 
 /// Whether `event` is worth spawning a payment-hook task for.
 ///
-/// Covers the record-bearing events ([`dashpay_payment_records`]) plus
-/// [`WalletEvent::TransactionInstantLocked`], which drives the sent-payment
-/// confirm by txid alone (no record). A `BlockProcessed` that changed no
-/// records — the common case while syncing past empty blocks — has no
-/// payment work, so it is skipped rather than spawning a task that would
-/// only take and release the wallet-manager write lock for nothing.
+/// Exactly the record-bearing events ([`dashpay_payment_records`]): only
+/// they can carry an incoming payment to record. A `BlockProcessed` that
+/// changed no records — the common case while syncing past empty blocks —
+/// has no payment work, so it is skipped rather than spawning a task that
+/// would only take and release the wallet-manager write lock for nothing.
 /// Allocation-free.
 fn drives_payment_hooks(event: &WalletEvent) -> bool {
     match event {
-        WalletEvent::TransactionDetected { .. } | WalletEvent::TransactionInstantLocked { .. } => {
-            true
-        }
+        WalletEvent::TransactionDetected { .. } => true,
         WalletEvent::BlockProcessed {
             inserted, updated, ..
         } => !inserted.is_empty() || !updated.is_empty(),
         // No records to route (see `dashpay_payment_records`), so a task
         // here would take and release the wallet-manager write lock for
-        // nothing. The sweep's payment consequence belongs on the
-        // wallet-event adapter's own store round — see `dashpay_payment_records`.
-        WalletEvent::TransactionsSwept { .. }
+        // nothing. Sent-payment verdicts — the sweep's `Failed` AND every
+        // finality confirmation, including `TransactionInstantLocked`'s —
+        // ride the wallet-event adapter's ordered drain instead.
+        WalletEvent::TransactionInstantLocked { .. }
+        | WalletEvent::TransactionsSwept { .. }
         | WalletEvent::SyncHeightAdvanced { .. }
         | WalletEvent::ChainLockProcessed { .. } => false,
     }
 }
 
 /// Run the DashPay payment hooks for `event`: record any incoming DashPay
-/// payment, then advance a matching sent payment from `Pending` to
-/// `Confirmed` once its transaction reaches finality (mined or
-/// InstantSend-locked). The opposite terminal — `Failed`, when a sweep
-/// proves the transaction never can confirm — is deliberately not applied
-/// here: it belongs on the sweep's own atomic store round in the
-/// wallet-event adapter (see `dashpay_payment_records`). All paths are
-/// idempotent per txid, so re-detections and repeated block-processing
-/// rounds converge without duplicating entries.
+/// payment the event's records carry. Idempotent per txid, so
+/// re-detections and repeated block-processing rounds converge without
+/// duplicating entries.
+///
+/// Deliberately does NOT touch sent-payment status. Both verdicts — a
+/// sweep's `Failed` and a finality `Confirmed` (including the
+/// reinstatement correction) — are applied by the wallet-event adapter in
+/// emission order on the events' own store rounds (see
+/// `payments::SweptPaymentFlips` and
+/// `confirm_final_sent_payments_for_store`). This function runs on an
+/// unordered spawned task off a lossy broadcast; a verdict written here
+/// could overrule a newer one it never saw.
 pub(crate) async fn run_dashpay_payment_hooks(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     wallet_id: &WalletId,
     persister: &crate::wallet::persister::WalletPersister,
     event: &WalletEvent,
 ) {
-    // An InstantSend lock applied to a previously-seen transaction carries
-    // no record — only a txid — and is final for DashPay display, so
-    // confirm the matching sent payment directly.
-    if let WalletEvent::TransactionInstantLocked { txid, .. } = event {
-        crate::wallet::identity::network::confirm_sent_dashpay_payment_by_txid(
-            wallet_manager,
-            wallet_id,
-            persister,
-            txid,
-        )
-        .await;
-        return;
-    }
     for record in dashpay_payment_records(event) {
         crate::wallet::identity::network::record_incoming_dashpay_payments(
-            wallet_manager,
-            wallet_id,
-            persister,
-            record,
-        )
-        .await;
-        crate::wallet::identity::network::confirm_sent_dashpay_payment(
             wallet_manager,
             wallet_id,
             persister,
@@ -398,13 +394,12 @@ mod tests {
         }
     }
 
-    /// `BlockProcessed` is the path by which a wallet's own broadcast
-    /// confirms (`updated`), and the path by which a payment first seen in a
-    /// block lands (`inserted`); both must drive the DashPay payment hooks.
-    /// `matured` is coinbase-maturity only and carries no DashPay payment, so
-    /// it is excluded. A regression that re-narrows routing to
-    /// `TransactionDetected` — the original sent-payment-stuck-`Pending` bug —
-    /// drops the `updated` record and fails this test.
+    /// `BlockProcessed` is the path by which a payment first seen in a
+    /// block lands (`inserted`), and `updated` is the second chance to
+    /// record a payment whose first-sighting broadcast the lossy bus
+    /// dropped; both must drive the incoming-recording hook. `matured` is
+    /// coinbase-maturity only and carries no DashPay payment, so it is
+    /// excluded.
     #[test]
     fn dashpay_payment_records_covers_block_processed_inserted_and_updated() {
         let event = block_processed(vec![record(0x01)], vec![record(0x02)], vec![record(0x03)]);
@@ -419,7 +414,7 @@ mod tests {
         assert!(
             txids.contains(&record(0x02).txid),
             "updated (just-confirmed) record must drive the payment hooks — \
-             this is how a sent payment flips Pending → Confirmed"
+             the backfill chance for a dropped first sighting"
         );
         assert!(
             !txids.contains(&record(0x03).txid),
@@ -458,11 +453,14 @@ mod tests {
         assert!(!drives_payment_hooks(&event));
     }
 
-    /// `TransactionInstantLocked` carries no record but DOES drive the
-    /// payment hooks — it confirms a sent payment by txid alone (an
-    /// InstantSend lock is final for DashPay display).
+    /// `TransactionInstantLocked` must NOT drive the payment hooks: it is
+    /// sent-payment finality evidence, and every sent-payment verdict is
+    /// the wallet-event adapter's to apply in emission order
+    /// (`confirm_final_sent_payments_for_store`). A hook task here would
+    /// confirm on an unordered, lossy path — the exact shape that let a
+    /// stale pre-sweep confirmation durably resurrect a dead payment.
     #[test]
-    fn instant_locked_drives_payment_hooks_without_a_record() {
+    fn instant_locked_does_not_drive_payment_hooks() {
         use dashcore::ephemerealdata::instant_lock::InstantLock;
         let event = WalletEvent::TransactionInstantLocked {
             wallet_id: [0u8; 32],
@@ -471,18 +469,17 @@ mod tests {
             balance: WalletCoreBalance::default(),
             account_balances: std::collections::BTreeMap::new(),
         };
-        // No record to route, but the event must still drive the hooks.
         assert!(dashpay_payment_records(&event).is_empty());
-        assert!(drives_payment_hooks(&event));
+        assert!(!drives_payment_hooks(&event));
     }
 
     /// `TransactionsSwept` must NOT drive the payment hooks: its payment
-    /// consequence — failing the losers' `Pending` sent payments — belongs
-    /// on the wallet-event adapter's own atomic store round, because a
-    /// sweep never re-emits once its round is durable and a separately
-    /// persisted flip that failed its store would be lost for good.
-    /// Spawning a hook task here would race a second write against that
-    /// round.
+    /// consequence — failing the losers' `Pending` sent payments — rides
+    /// the wallet-event adapter's own atomic store round (see
+    /// `payments::SweptPaymentFlips`), because a sweep never re-emits once
+    /// its round is durable and a separately persisted flip that failed
+    /// its store would be lost for good. Spawning a hook task here would
+    /// race a second write against that round.
     #[test]
     fn transactions_swept_does_not_drive_payment_hooks() {
         let event = WalletEvent::TransactionsSwept {

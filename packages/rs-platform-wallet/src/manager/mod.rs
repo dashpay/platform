@@ -467,9 +467,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // with SPV's write lock.
         let lock_handler = Arc::new(LockNotifyHandler::new(Arc::clone(&lock_notify)));
         let balance_handler = Arc::new(BalanceUpdateHandler::new(Arc::clone(&wallets)));
-        // DashPayPaymentHandler records incoming DashPay payments and
-        // confirms sent ones off the wallet-event fan-out, keeping that
-        // domain logic out of the generic core-changeset bridge. It holds
+        // DashPayPaymentHandler records incoming DashPay payments off the
+        // wallet-event fan-out, keeping that domain logic out of the
+        // generic core-changeset bridge. (Sent-payment verdicts do NOT
+        // run here: they are the wallet-event adapter's to apply in
+        // emission order — see `payment_handler`'s module docs.) It holds
         // the wallet-manager (for the in-memory payment state it mutates)
         // and the persister (to write the resulting payment rows).
         let dashpay_payment_handler = Arc::new(DashPayPaymentHandler::new(

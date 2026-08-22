@@ -1131,6 +1131,13 @@ impl FFIPersister {
         // wallet-event adapter would couple the flip to a round that
         // silently drops it: the accepted-and-ignored shape the sweep
         // bit's own gating exists to prevent, reproduced one channel over.
+        // Unlike `CORE_SWEEP_REMOVAL` below, this bit does NOT fold in the
+        // begin/end pair: its contract is per-callback durability of the
+        // overlay rows, which holds on a non-atomic host too. The
+        // round-coupling the adapter's staging needs is expressed as the
+        // `ROUND_COUPLED_PAYMENT_FLIPS` composite (this bit plus
+        // `ATOMIC_CHANGESETS`), so atomicity stays attested once, by the
+        // bit that owns it.
         if self.callbacks.on_persist_dashpay_payments_fn.is_some() {
             capabilities = capabilities.union(PersistenceCapabilities::DASHPAY_PAYMENTS);
         }
@@ -6352,8 +6359,13 @@ mod tests {
     /// vtable leaves `on_persist_dashpay_payments_fn` unset, so even a
     /// host blindly OR-ing the bit must read as payments-blind: the
     /// wallet-event adapter keys the sweep's Failed-flip staging on this
-    /// bit, and an accepted-and-dropped overlay is exactly the shape the
-    /// gating exists to prevent.
+    /// bit (composed with `ATOMIC_CHANGESETS` — the
+    /// `ROUND_COUPLED_PAYMENT_FLIPS` composite — since the staging also
+    /// needs the round to commit as one unit), and an accepted-and-dropped
+    /// overlay is exactly the shape the gating exists to prevent. The bit
+    /// itself deliberately stays atomicity-free: it attests per-callback
+    /// durability, and the positive case below is such a host — one the
+    /// adapter now refuses to stage round-coupled overlays for.
     #[test]
     fn dashpay_payments_requires_the_slot_and_the_declaration() {
         fn persister_with(

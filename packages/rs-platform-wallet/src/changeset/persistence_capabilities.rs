@@ -84,6 +84,15 @@ impl PersistenceCapabilities {
     /// `CORE_SWEEP_REMOVAL`. On the FFI surface Rust honours the
     /// declaration only when `on_persist_dashpay_payments_fn` is actually
     /// wired.
+    ///
+    /// This bit alone attests only per-callback durability. The adapter's
+    /// round-coupled staging additionally requires `ATOMIC_CHANGESETS`
+    /// (see [`Self::ROUND_COUPLED_PAYMENT_FLIPS`]): on a host whose
+    /// callbacks commit independently, the Core record and watermark can
+    /// become durable while the process stops before the payments
+    /// callback — and a one-shot chainlocked reinstatement never
+    /// re-emits, so its payment would stay durably `Failed` beside a
+    /// durably recorded reinstatement.
     pub const DASHPAY_PAYMENTS: Self = Self(1 << 11);
 
     /// Capabilities required before exporting and funding an invitation voucher.
@@ -102,6 +111,22 @@ impl PersistenceCapabilities {
     /// restore that exact row after process restart.
     pub const ASSET_LOCK_RECONCILIATION: Self =
         Self(Self::ATOMIC_CHANGESETS.0 | Self::TRACKED_ASSET_LOCKS.0 | Self::WALLET_RESTORE.0);
+
+    /// Capabilities required before the wallet-event adapter stages a
+    /// sweep's `Failed` flip or a reinstatement's `Confirmed` correction
+    /// onto the triggering record's own store round. The point of that
+    /// staging is that the flip and the record land or fail together —
+    /// `DASHPAY_PAYMENTS` proves the overlay rows are durably applied,
+    /// and `ATOMIC_CHANGESETS` proves the round commits or rolls back as
+    /// one unit. A payments-durable host without the atomic round gives
+    /// neither the coupling nor the fail-closed watermark backstop: it
+    /// can commit the Core record and watermark, then stop before the
+    /// payments write — and a one-shot reinstatement never re-emits to
+    /// retry the orphaned flip. Such a host is treated as payments-blind
+    /// for staging (the in-memory flip still happens; funds-safe, as
+    /// payment entries are display metadata).
+    pub const ROUND_COUPLED_PAYMENT_FLIPS: Self =
+        Self(Self::ATOMIC_CHANGESETS.0 | Self::DASHPAY_PAYMENTS.0);
 
     pub const fn from_bits_retain(bits: u64) -> Self {
         Self(bits)
@@ -207,6 +232,10 @@ mod tests {
         assert_eq!(
             PersistenceCapabilities::ASSET_LOCK_RECONCILIATION.bits(),
             0x281
+        );
+        assert_eq!(
+            PersistenceCapabilities::ROUND_COUPLED_PAYMENT_FLIPS.bits(),
+            0x801
         );
     }
 

@@ -654,15 +654,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// persisted core transaction record reports the transaction final.
     ///
     /// Recovery path for sent-payment confirmation. The live confirm path
-    /// ([`confirm_sent_dashpay_payment`](super::confirm_sent_dashpay_payment))
-    /// flips a sent payment the moment its block / InstantSend-lock event
-    /// arrives, but that is a single live event: if it is missed — a lagged
-    /// wallet-event broadcast, or a relaunch after the transaction confirmed
-    /// but before the flip was captured — the entry would otherwise stay
-    /// `Pending` forever (received payments self-heal from receival-account
-    /// UTXOs; sent payments have no such ground truth). This sweep consults
-    /// the persisted core tx record (txid + context) and flips any `Pending`
-    /// `Sent` entry whose transaction is mined or InstantSend-locked.
+    /// ([`confirm_final_sent_payments_for_store`](super::confirm_final_sent_payments_for_store),
+    /// on the wallet-event adapter's ordered drain) flips a sent payment
+    /// the moment its block / InstantSend-lock event is applied, but that
+    /// is a single live event: if it is missed — a relaunch after the
+    /// transaction confirmed but before the flip was captured — the entry
+    /// would otherwise stay `Pending` forever (received payments
+    /// self-heal from receival-account UTXOs; sent payments have no such
+    /// ground truth). This sweep consults the persisted core tx record
+    /// (txid + context) and flips any `Pending` `Sent` entry whose
+    /// transaction is mined or InstantSend-locked.
     ///
     /// Runs as a local-only step of `dashpay_sync()` — one persister read
     /// per pending sent payment, no network round-trips. Idempotent: a
@@ -719,14 +720,25 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             if sent_payment_status_for_record(&record) != PaymentStatus::Confirmed {
                 continue;
             }
-            // Flip in place via the shared confirm path (re-checks the
-            // entry is still a `Pending` `Sent` under its own write lock,
-            // so it stays correct if a live event raced this sweep).
+            // Flip in place via the shared confirm path, declaring what
+            // this sweep's evidence can speak for: the record was read
+            // AFTER a snapshot that saw the entry `Pending`, so it proves
+            // nothing about an entry that has since moved. In particular
+            // the wallet-event adapter can flip the entry to `Failed`
+            // anywhere in the snapshot→confirm span (this pass runs on its
+            // own task, off the adapter's ordered drain, and the sweep
+            // deletes the record on the adapter task) — this pass's record
+            // read may predate that verdict, and confirming from it would
+            // land a dead payment `Confirmed` against a newer sweep. The
+            // resolver re-checks under its own write lock against exactly
+            // this evidence set, so an entry no longer `Pending` is left
+            // for the adapter, whose verdicts apply in emission order.
             confirm_sent_payment_by_txid(
                 &self.wallet_manager,
                 &self.wallet_id,
                 &self.persister,
                 &txid_str,
+                RECONCILE_CONFIRM_EVIDENCE,
             )
             .await;
             confirmed += 1;
@@ -916,107 +928,548 @@ fn sent_payment_status_for_record(
     }
 }
 
-/// Advance a sender's `Sent` [`PaymentEntry`] from `Pending` to
-/// `Confirmed` once its broadcast transaction reaches finality.
+/// What the reconcile confirm's evidence can speak for — the from-states
+/// it is entitled to advance. The transition table
+/// ([`sent_status_transition_allowed`]) says which moves the machine
+/// permits; this says which of them this caller's evidence actually
+/// supports, and the resolver requires both.
 ///
-/// [`IdentityWallet::send_payment`] records the outgoing entry as
-/// `Pending` at broadcast time and nothing else advances it. The wallet
-/// re-emits the sender's own transaction as it moves through mempool →
-/// InstantSend → in-block → chain-locked, so when a re-detection reports
-/// the transaction final the matching entry is flipped in place.
-///
-/// An **InstantSend lock counts as final** for DashPay display: it is
-/// effectively irreversible, so the user sees `Confirmed` without waiting
-/// for the surrounding block. A bare mempool re-detection (no IS lock, not
-/// yet mined) leaves the entry `Pending` — which it genuinely still is.
-/// Idempotent: once `Confirmed`, later re-detections find nothing to
-/// change and skip the persistence round.
-pub(crate) async fn confirm_sent_dashpay_payment(
-    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-    wallet_id: &WalletId,
-    persister: &crate::wallet::persister::WalletPersister,
-    record: &key_wallet::managed_account::transaction_record::TransactionRecord,
-) {
-    use key_wallet::transaction_checking::TransactionContext;
-    // Mined (InBlock / InChainLockedBlock) OR InstantSend-locked advances
-    // the entry. A plain mempool sighting does not.
-    let is_instant_send = matches!(record.context, TransactionContext::InstantSend(_));
-    if !record.is_confirmed() && !is_instant_send {
-        return;
-    }
-    confirm_sent_payment_by_txid(
-        wallet_manager,
-        wallet_id,
-        persister,
-        &record.txid.to_string(),
-    )
-    .await;
-}
+/// `Pending`-only, by construction: reconcile evidence is a
+/// persisted-record read made after a snapshot that saw the entry
+/// `Pending`, on a task with no ordering against the wallet-event
+/// adapter. If the entry has since moved to `Failed`, the read raced the
+/// adapter's sweep (which deletes the record on its own ordered drain)
+/// and may predate the verdict — confirming from it would land a dead
+/// payment `Confirmed` against a newer sweep. Every OTHER sent-payment
+/// verdict is applied by the adapter itself in emission order
+/// ([`confirm_final_sent_payments_for_store`],
+/// [`flip_swept_sent_payments_for_store`]) and needs no evidence class:
+/// on the ordered drain, the event being applied postdates every verdict
+/// already applied.
+const RECONCILE_CONFIRM_EVIDENCE:
+    &[crate::wallet::identity::types::dashpay::payment::PaymentStatus] =
+    &[crate::wallet::identity::types::dashpay::payment::PaymentStatus::Pending];
 
-/// Confirm a sender's `Sent` [`PaymentEntry`] by txid alone, for a
-/// [`WalletEvent::TransactionInstantLocked`](key_wallet_manager::WalletEvent::TransactionInstantLocked)
-/// that applies an InstantSend lock to a previously-seen transaction.
-/// That event carries no [`TransactionRecord`](key_wallet::managed_account::transaction_record::TransactionRecord),
-/// only the txid; an IS lock is treated as final for DashPay display, so
-/// this flips a matching `Pending` `Sent` entry to `Confirmed`. Idempotent
-/// (the underlying flip skips entries already past `Pending`).
-pub(crate) async fn confirm_sent_dashpay_payment_by_txid(
-    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-    wallet_id: &WalletId,
-    persister: &crate::wallet::persister::WalletPersister,
-    txid: &dashcore::Txid,
-) {
-    confirm_sent_payment_by_txid(wallet_manager, wallet_id, persister, &txid.to_string()).await;
-}
-
-/// Flip the `Pending` `Sent` [`PaymentEntry`] under `txid` (if any) to
-/// `Confirmed`, in place, preserving amount/memo/counterparty.
+/// Flip the `Sent` [`PaymentEntry`] under `txid` (if any) to `Confirmed`,
+/// in place, preserving amount/memo/counterparty. The reconcile sweep's
+/// recovery flip — every live/ordered confirmation is the wallet-event
+/// adapter's job ([`confirm_final_sent_payments_for_store`]).
 ///
-/// No-op when no entry exists for `txid`, it is not a `Sent` entry, or it
-/// is already past `Pending` (so repeated confirmed re-detections are
-/// idempotent and skip the persistence round). Separated from the event
-/// glue above so the state transition is unit-testable without
-/// constructing a full `TransactionRecord`.
+/// No-op when no entry exists for `txid`, it is not a `Sent` entry, it is
+/// already `Confirmed` (so repeated reconcile passes are idempotent and
+/// skip the persistence round), or its current state is outside what
+/// `evidence` can speak for — a `Failed` entry never advances here,
+/// because a reconcile pass's record read can predate the sweep verdict
+/// entirely (see [`RECONCILE_CONFIRM_EVIDENCE`]).
 async fn confirm_sent_payment_by_txid(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     wallet_id: &WalletId,
     persister: &crate::wallet::persister::WalletPersister,
     txid: &str,
+    evidence: &[crate::wallet::identity::types::dashpay::payment::PaymentStatus],
 ) {
+    use crate::wallet::identity::types::dashpay::payment::PaymentStatus;
+    // Log-and-continue is sound here: the flip rolled back in memory with
+    // the failed store, and the entry is still `Pending`, so the next
+    // reconcile pass — and any adapter-applied signal for the same
+    // transaction — re-drives the confirmation. The one-shot cases with
+    // no later signal (a sweep's `Failed`, a reinstating record's
+    // `Failed → Confirmed`) never come through here: they ride their
+    // event's own store round on the adapter with the round's fail-closed
+    // machinery, so a store failure HERE is only ever a lost recovery
+    // write, never the last chance.
+    if let Err(e) = resolve_sent_payment_by_txid(
+        wallet_manager,
+        wallet_id,
+        persister,
+        txid,
+        PaymentStatus::Confirmed,
+        evidence,
+    )
+    .await
+    {
+        tracing::warn!(
+            error = %e,
+            "Failed to persist sent-payment confirmation; will retry on next detection"
+        );
+    }
+}
+
+/// The in-memory `Failed` flips for a sweep's losers, packaged for the
+/// wallet-event adapter to ride on the sweep's OWN store round.
+///
+/// A swept transaction was provably beaten to one of its inputs, so it can
+/// never confirm — exactly the "transaction was dropped" case
+/// [`PaymentStatus::Failed`](crate::wallet::identity::types::dashpay::payment::PaymentStatus::Failed)
+/// documents — and the sweep deletes the record that was the last thing
+/// `reconcile_sent_payments_from_tx_history` could have resolved the entry
+/// from. Durability is why this is a changeset payload rather than a hook
+/// that persists on its own: a sweep never re-emits once its round is
+/// durable, so a separately persisted flip that failed its store was lost
+/// for good (a bounded retry only narrowed the window). Riding the same
+/// atomic `store()` as the core sweep gives the flip the round's own
+/// fail-closed machinery — a rejection keeps the loser's record too, the
+/// wallet faults, and the re-scan re-detects the conflict and re-emits the
+/// sweep, recomputing the flip.
+///
+/// A `Confirmed` entry IS demoted here (the shared transition table's
+/// `(Confirmed, Failed)` edge): the only confirmations that can exist
+/// when a sweep is applied were written from evidence the sweep
+/// postdates — every verdict writer is either this same ordered drain or
+/// re-validates under the manager lock against `Pending`-only evidence —
+/// and upstream never emits a sweep for a transaction that is currently
+/// final (a confirmed record is never a sweep loser). The one way the
+/// verdict reverses — a reinstatement — re-emits the record final, which
+/// the adapter's ordered confirm accepts from `Failed` on a later event.
+///
+/// Despite the name, this is the carrier for BOTH round-riding verdict
+/// flips: the sweep's `Failed` rows and the ordered confirm's
+/// `Confirmed` rows ([`confirm_final_sent_payments_for_store`]).
+#[derive(Debug, Default)]
+pub(crate) struct SweptPaymentFlips {
+    /// The flips applied to memory, in application order. Each is the
+    /// SINGLE record of its flip — the store overlay row, the
+    /// rejected-round undo, and the same-fold retraction are all derived
+    /// from it by the wallet-event adapter's round journal (see
+    /// `fold_payment_flips` in the core bridge), never bookkept apart.
+    pub flips: Vec<PaymentFlip>,
+}
+
+/// One applied in-memory sent-payment flip: the entry as it stood before
+/// (`previous`) and as memory now holds it (`updated`). Everything a
+/// round needs is a projection of this pair: the staged overlay row is
+/// `updated`, and the guarded undo is "restore `previous` while
+/// `updated.status` still stands" ([`PaymentFlipUndo`]).
+#[derive(Debug, Clone)]
+pub(crate) struct PaymentFlip {
+    pub owner: Identifier,
+    pub txid: String,
+    /// The entry as it stood before this flip.
+    pub previous: crate::wallet::identity::PaymentEntry,
+    /// The entry as memory holds it after the flip.
+    pub updated: crate::wallet::identity::PaymentEntry,
+}
+
+/// One staged payment flip's undo: what to restore if the store round the
+/// flip rode is rejected, and the status the flip wrote — the undo applies
+/// only while that write still stands (see [`rollback_payment_flips`]).
+///
+/// Derived, never bookkept: the adapter projects it out of its coalesced
+/// round journal (`previous` = the durable pre-round entry, `wrote` = the
+/// status the round last staged), so an undo can never describe a
+/// different history than the staged row it guards.
+#[derive(Debug, Clone)]
+pub(crate) struct PaymentFlipUndo {
+    pub owner: Identifier,
+    pub txid: String,
+    /// The entry as it stood before the flip.
+    pub previous: crate::wallet::identity::PaymentEntry,
+    /// The status the flip wrote over it.
+    pub wrote: crate::wallet::identity::types::dashpay::payment::PaymentStatus,
+}
+
+impl SweptPaymentFlips {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.flips.is_empty()
+    }
+
+    /// Project every flip into its guarded undo, in application order —
+    /// what [`rollback_payment_flips`] takes. Production rollbacks go
+    /// through the adapter's coalesced round journal instead (one undo
+    /// per `(owner, txid)`); this uncoalesced projection exists for the
+    /// single-flip unit tests.
+    #[cfg(test)]
+    pub(crate) fn into_undos(self) -> Vec<PaymentFlipUndo> {
+        self.flips
+            .into_iter()
+            .map(|flip| PaymentFlipUndo {
+                owner: flip.owner,
+                txid: flip.txid,
+                wrote: flip.updated.status,
+                previous: flip.previous,
+            })
+            .collect()
+    }
+}
+
+/// Flip the `Sent` entries under `txids` to `Failed` in memory and return
+/// the store payload + rollback. Persists NOTHING itself — the caller
+/// owns the store round (see [`SweptPaymentFlips`]).
+///
+/// Eligibility is the shared transition table: `Pending` AND `Confirmed`
+/// entries flip. Demoting `Confirmed` is what makes a sweep that
+/// postdates a confirmation win — upstream permits a chainlocked
+/// transaction to evict an IS-locked conflict, so a payment confirmed on
+/// IS-lock evidence can genuinely die afterwards — and it is sound only
+/// because this runs on the adapter's ordered drain, where every already
+/// applied confirmation predates the sweep being applied (see the table's
+/// `(Confirmed, Failed)` edge for the full argument). `Failed` entries
+/// are skipped, which keeps a replayed sweep idempotent.
+pub(crate) async fn flip_swept_sent_payments_for_store(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: &WalletId,
+    txids: &[dashcore::Txid],
+) -> SweptPaymentFlips {
     use crate::wallet::identity::types::dashpay::payment::{PaymentDirection, PaymentStatus};
 
+    let mut flips = SweptPaymentFlips::default();
+    if txids.is_empty() {
+        return flips;
+    }
+    let mut wm = wallet_manager.write().await;
+    let Some(info) = wm.get_wallet_info_mut(wallet_id) else {
+        return flips;
+    };
+    for txid in txids {
+        let key = txid.to_string();
+        'owners: for owner in info.identity_manager.identity_ids() {
+            let Some(managed) = info.identity_manager.managed_identity_mut(&owner) else {
+                continue;
+            };
+            let previous = match managed.dashpay().payments.get(&key) {
+                Some(entry)
+                    if entry.direction == PaymentDirection::Sent
+                        && sent_status_transition_allowed(entry.status, PaymentStatus::Failed) =>
+                {
+                    entry.clone()
+                }
+                _ => continue,
+            };
+            let mut updated = previous.clone();
+            updated.status = PaymentStatus::Failed;
+            tracing::info!(
+                owner = %owner,
+                txid = %key,
+                "Failing sent DashPay payment on its sweep's own store round"
+            );
+            managed
+                .dashpay_payments_mut()
+                .insert(key.clone(), updated.clone());
+            flips.flips.push(PaymentFlip {
+                owner,
+                txid: key.clone(),
+                previous,
+                updated,
+            });
+            // txid is unique — only one identity can hold this entry.
+            break 'owners;
+        }
+    }
+    flips
+}
+
+/// The adapter-owned sent-payment confirmation: flip the `Sent` entries
+/// whose transaction `event` proves final to `Confirmed` in memory, and
+/// return the flips for the wallet-event adapter to journal onto the
+/// event's OWN store round. Persists NOTHING itself — the caller owns
+/// the round.
+///
+/// This is the ONLY live confirmation path. It runs on the adapter's
+/// single ordered drain of the lossless persistence channel, which is
+/// what makes each verdict safe against every other: the event being
+/// applied postdates every verdict already applied, so a confirmation
+/// here can never overrule a newer sweep — and a sweep folded later
+/// ([`flip_swept_sent_payments_for_store`]) rightly overrules this
+/// confirmation. The confirmation must NOT also run off the EventHandler
+/// broadcast (the old payment-hook path): that bus is bounded, lossy, and
+/// drained by a detached task with no ordering against this drain, so a
+/// stale pre-sweep confirmation could execute after the sweep and durably
+/// resurrect a dead payment.
+///
+/// Finality is the shared gate ([`sent_payment_status_for_record`]:
+/// mined or IS-locked context), plus
+/// [`TransactionInstantLocked`](key_wallet_manager::WalletEvent::TransactionInstantLocked),
+/// which carries no record — an IS lock is final for DashPay display, so
+/// the txid alone confirms. Both `Pending` and `Failed` entries advance:
+/// `Failed → Confirmed` is the reinstatement correction, and final
+/// evidence delivered on this ordered drain necessarily postdates the
+/// sweep that failed the entry (upstream never re-emits final evidence
+/// for a txid it still considers dead). Riding the event's own atomic
+/// `store()` gives the flip the round's fail-closed machinery — needed
+/// because a chainlocked reinstatement can be a one-shot with no later
+/// signal to retry from — and keeps store order equal to emission order,
+/// so a round carrying this `Confirmed` row can never land after a newer
+/// sweep's `Failed` row. The `Pending`-only reconcile pass
+/// ([`RECONCILE_CONFIRM_EVIDENCE`]) remains as recovery for confirmations
+/// this drain missed (relaunch, lossy start-up).
+pub(crate) async fn confirm_final_sent_payments_for_store(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: &WalletId,
+    event: &key_wallet_manager::WalletEvent,
+) -> SweptPaymentFlips {
+    use crate::wallet::identity::types::dashpay::payment::{PaymentDirection, PaymentStatus};
+    use key_wallet_manager::WalletEvent;
+
+    // The txids this event proves final. Exhaustive on purpose (no `_`
+    // arm): a new upstream `WalletEvent` variant that can carry finality
+    // evidence must fail to compile here rather than be silently dropped.
+    let final_txids: Vec<String> = match event {
+        // No record, only a txid — final for DashPay display.
+        WalletEvent::TransactionInstantLocked { txid, .. } => vec![txid.to_string()],
+        // First off-chain sighting: final only when the record already
+        // carries IS-lock context (a plain mempool sighting is not).
+        WalletEvent::TransactionDetected { record, .. } => std::iter::once(record.as_ref())
+            .filter(|r| sent_payment_status_for_record(r) == PaymentStatus::Confirmed)
+            .map(|r| r.txid.to_string())
+            .collect(),
+        // `inserted` (first stored in this block — including a swept
+        // transaction's reinstating re-detection) and `updated`
+        // (previously-known records this block confirmed). `matured` is
+        // coinbase maturity — never a DashPay payment.
+        WalletEvent::BlockProcessed {
+            inserted, updated, ..
+        } => inserted
+            .iter()
+            .chain(updated.iter())
+            .filter(|r| sent_payment_status_for_record(r) == PaymentStatus::Confirmed)
+            .map(|r| r.txid.to_string())
+            .collect(),
+        // The sweep's verdict is the opposite flip
+        // ([`flip_swept_sent_payments_for_store`]); the rest carry no
+        // finality evidence for a sent payment.
+        WalletEvent::TransactionsSwept { .. }
+        | WalletEvent::SyncHeightAdvanced { .. }
+        | WalletEvent::ChainLockProcessed { .. } => Vec::new(),
+    };
+
+    let mut flips = SweptPaymentFlips::default();
+    if final_txids.is_empty() {
+        return flips;
+    }
+    // Fast path under the READ lock: almost every final record names no
+    // sent payment at all — don't make the drain take the write lock per
+    // event just to discover that. Missing a concurrent flip is not
+    // possible: the sweep flip and the rejected-round undo both run on
+    // this same adapter task, and the write-lock re-check below still
+    // gates the flip itself, so an entry the reconcile pass confirms in
+    // the gap is simply found already `Confirmed` and skipped.
+    {
+        let wm = wallet_manager.read().await;
+        let Some(info) = wm.get_wallet_info(wallet_id) else {
+            return flips;
+        };
+        let any_candidate = final_txids.iter().any(|key| {
+            info.identity_manager
+                .identity_ids()
+                .into_iter()
+                .any(|owner| {
+                    info.identity_manager
+                        .managed_identity(&owner)
+                        .and_then(|managed| managed.dashpay().payments.get(key))
+                        .is_some_and(|entry| {
+                            entry.direction == PaymentDirection::Sent
+                                && matches!(
+                                    entry.status,
+                                    PaymentStatus::Pending | PaymentStatus::Failed
+                                )
+                        })
+                })
+        });
+        if !any_candidate {
+            return flips;
+        }
+    }
+    let mut wm = wallet_manager.write().await;
+    let Some(info) = wm.get_wallet_info_mut(wallet_id) else {
+        return flips;
+    };
+    for key in &final_txids {
+        'owners: for owner in info.identity_manager.identity_ids() {
+            let Some(managed) = info.identity_manager.managed_identity_mut(&owner) else {
+                continue;
+            };
+            let previous = match managed.dashpay().payments.get(key) {
+                Some(entry)
+                    if entry.direction == PaymentDirection::Sent
+                        && sent_status_transition_allowed(
+                            entry.status,
+                            PaymentStatus::Confirmed,
+                        ) =>
+                {
+                    entry.clone()
+                }
+                _ => continue,
+            };
+            let mut updated = previous.clone();
+            updated.status = PaymentStatus::Confirmed;
+            tracing::info!(
+                owner = %owner,
+                txid = %key,
+                previous_status = ?previous.status,
+                "Confirming sent DashPay payment on its event's own store round"
+            );
+            managed
+                .dashpay_payments_mut()
+                .insert(key.clone(), updated.clone());
+            flips.flips.push(PaymentFlip {
+                owner,
+                txid: key.clone(),
+                previous,
+                updated,
+            });
+            // txid is unique — only one identity can hold this entry.
+            break 'owners;
+        }
+    }
+    flips
+}
+
+/// Undo round-riding in-memory payment flips — after the round they rode
+/// was rejected, or after the same fold reinstated their transaction and
+/// the adapter retracted the staged overlay row. Memory returns to the
+/// durable state (the entry the rejection left untouched in the store),
+/// which is what lets the replayed event — re-emitted by the re-scan,
+/// because the rejected round kept its rows too — find the entries
+/// eligible and recompute the flip. Without this, memory would read ahead
+/// of the store, the replay's eligibility check would skip the entries,
+/// and the store would never learn.
+///
+/// An undo is NOT a forward transition, so it does not go through
+/// [`sent_status_transition_allowed`] — but it obeys the same authority:
+/// it may only revert the flip's own still-standing write
+/// ([`PaymentFlipUndo::wrote`]). An entry that moved on — a later flip in
+/// the same fold overwriting this one, or the reconcile pass confirming a
+/// still-`Pending` entry concurrently — outranks the undo; restoring the
+/// captured state over what another writer's round may already hold
+/// durably would demote a verdict this undo has no authority over.
+pub(crate) async fn rollback_payment_flips(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: &WalletId,
+    rollback: Vec<PaymentFlipUndo>,
+) {
+    if rollback.is_empty() {
+        return;
+    }
     let mut wm = wallet_manager.write().await;
     let Some(info) = wm.get_wallet_info_mut(wallet_id) else {
         return;
     };
+    for undo in rollback {
+        let Some(managed) = info.identity_manager.managed_identity_mut(&undo.owner) else {
+            continue;
+        };
+        let payments = managed.dashpay_payments_mut();
+        match payments.get(&undo.txid) {
+            Some(current) if current.status == undo.wrote => {
+                payments.insert(undo.txid, undo.previous);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The sent-payment state machine's one transition table, shared by every
+/// writer so the confirm path and the sweep flip can never drift. Every
+/// legal edge is enumerated explicitly — no wildcard — so adding a
+/// `PaymentStatus` variant forces a review of this machine instead of
+/// silently admitting new transitions, and a same-state "move" is never a
+/// transition (that no-op is what lets re-delivered evidence skip the
+/// persistence round).
+///
+/// - `Pending → Confirmed`: the transaction reached finality (mined or
+///   IS-locked).
+/// - `Pending → Failed`: a sweep proved the transaction can never confirm
+///   (beaten to one of its inputs).
+/// - `Failed → Confirmed`: the reinstatement correction — the swept
+///   transaction re-arrived final.
+/// - `Confirmed → Failed`: the eviction correction — upstream permits a
+///   chainlocked transaction to evict an IS-locked conflict, so a payment
+///   confirmed on IS-lock (or provisional-block) evidence can genuinely
+///   die afterwards. This edge is sound ONLY because sent-payment
+///   verdicts are applied in emission order on the wallet-event adapter's
+///   single drain: when the sweep is applied, every `Confirmed` it can
+///   see was written from evidence the sweep postdates (the adapter's own
+///   earlier events, or a reconcile pass's read of a record state the
+///   sweep is about to delete), and no sweep can follow the evidence that
+///   would make `Confirmed` truly final, because upstream never sweeps a
+///   confirmed record. Its only legitimate writer is the adapter's sweep
+///   flip ([`flip_swept_sent_payments_for_store`]); any new writer with
+///   `to = Failed` must run on that same ordered drain.
+pub(crate) fn sent_status_transition_allowed(
+    from: crate::wallet::identity::types::dashpay::payment::PaymentStatus,
+    to: crate::wallet::identity::types::dashpay::payment::PaymentStatus,
+) -> bool {
+    use crate::wallet::identity::types::dashpay::payment::PaymentStatus;
+    matches!(
+        (from, to),
+        (PaymentStatus::Pending, PaymentStatus::Confirmed)
+            | (PaymentStatus::Pending, PaymentStatus::Failed)
+            | (PaymentStatus::Failed, PaymentStatus::Confirmed)
+            | (PaymentStatus::Confirmed, PaymentStatus::Failed)
+    )
+}
+
+/// The reconcile pass's flip: move the `Sent` [`PaymentEntry`] under
+/// `txid` to `to`, in place, preserving amount/memo/counterparty, and
+/// persist it through its own store round — memory advance and store
+/// under ONE continuous hold of the manager write lock, which is what
+/// orders this writer against the adapter's staged rounds (see the
+/// commit-site comment in the wallet-event adapter). (Adapter-applied
+/// verdicts do NOT come through here — they ride their event's atomic
+/// round; see [`SweptPaymentFlips`].)
+///
+/// Eligibility is [`sent_status_transition_allowed`] (shared with the
+/// adapter's flips so the state machine cannot drift) INTERSECTED with
+/// the caller's declared `evidence_from` (see
+/// [`RECONCILE_CONFIRM_EVIDENCE`]); every ineligible combination is a
+/// no-op, which is what keeps repeated passes idempotent, skipping the
+/// persistence round, and a stale reconcile snapshot unable to overrule
+/// a sweep verdict it never saw. Separated from the sweep glue so the
+/// transition is unit-testable without constructing a full
+/// `TransactionRecord`.
+///
+/// A no-op resolution (no entry, not `Sent`, not eligible) is `Ok(())`;
+/// `Err` means the flip was found, attempted, and its store rejected — the
+/// in-memory overwrite has already been rolled back
+/// (`record_dashpay_payment`'s contract), so the caller may retry or
+/// accept per its own signal model (a confirmation is re-driven by every
+/// later signal for its transaction).
+async fn resolve_sent_payment_by_txid(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: &WalletId,
+    persister: &crate::wallet::persister::WalletPersister,
+    txid: &str,
+    to: crate::wallet::identity::types::dashpay::payment::PaymentStatus,
+    evidence_from: &[crate::wallet::identity::types::dashpay::payment::PaymentStatus],
+) -> Result<(), crate::changeset::PersistenceError> {
+    use crate::wallet::identity::types::dashpay::payment::PaymentDirection;
+
+    let mut wm = wallet_manager.write().await;
+    let Some(info) = wm.get_wallet_info_mut(wallet_id) else {
+        return Ok(());
+    };
 
     // The sent transaction belongs to one managed identity; find the
-    // `Pending` `Sent` entry under this txid and confirm it in place.
+    // eligible `Sent` entry under this txid and resolve it in place.
     for owner in info.identity_manager.identity_ids() {
         let Some(managed) = info.identity_manager.managed_identity_mut(&owner) else {
             continue;
         };
-        let confirmed = match managed.dashpay().payments.get(txid) {
-            Some(entry)
-                if entry.direction == PaymentDirection::Sent
-                    && entry.status == PaymentStatus::Pending =>
-            {
+        let resolved = match managed.dashpay().payments.get(txid) {
+            Some(entry) if entry.direction == PaymentDirection::Sent => {
+                // Both gates, deliberately: the table says the machine
+                // permits the move, `evidence_from` says this caller's
+                // evidence supports it. The re-check under this write lock
+                // is what turns a caller's stale snapshot into a safe
+                // no-op — an entry that moved outside the declared set
+                // means the evidence predates another writer's verdict.
+                if !evidence_from.contains(&entry.status)
+                    || !sent_status_transition_allowed(entry.status, to)
+                {
+                    continue;
+                }
                 let mut updated = entry.clone();
-                updated.status = PaymentStatus::Confirmed;
+                updated.status = to;
                 updated
             }
             _ => continue,
         };
-        tracing::info!(owner = %owner, %txid, "Confirming sent DashPay payment");
-        if let Err(e) = managed.record_dashpay_payment(txid.to_string(), confirmed, persister) {
-            tracing::warn!(
-                error = %e,
-                "Failed to persist sent-payment confirmation; will retry on next detection"
-            );
-        }
-        // txid is unique — only one identity can hold this entry.
-        break;
+        tracing::info!(owner = %owner, %txid, status = ?to, "Resolving sent DashPay payment");
+        // txid is unique — only one identity can hold this entry, so the
+        // first eligible hit decides the call's result either way.
+        return managed.record_dashpay_payment(txid.to_string(), resolved, persister);
     }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -1519,6 +1972,9 @@ mod tests {
     #[derive(Default)]
     struct RecordingPersister {
         stores: Mutex<Vec<(WalletId, PlatformWalletChangeSet)>>,
+        /// Fail the next N `store` calls with an injected backend error
+        /// before recording resumes — the shape of a transient rejection.
+        fail_next_stores: Mutex<usize>,
     }
 
     impl PlatformWalletPersistence for RecordingPersister {
@@ -1527,6 +1983,13 @@ mod tests {
             wallet_id: WalletId,
             changeset: PlatformWalletChangeSet,
         ) -> Result<(), PersistenceError> {
+            {
+                let mut budget = self.fail_next_stores.lock().unwrap();
+                if *budget > 0 {
+                    *budget -= 1;
+                    return Err(PersistenceError::backend("injected store failure"));
+                }
+            }
             self.stores.lock().unwrap().push((wallet_id, changeset));
             Ok(())
         }
@@ -2801,13 +3264,20 @@ mod tests {
     }
 
     /// A `Sent` payment must advance `Pending → Confirmed` once its
-    /// transaction confirms on-chain. `send_payment` records it `Pending`
-    /// and nothing else moved it, so before the confirm path was wired the
-    /// entry was stuck `Pending` forever (sent payments never showed
-    /// confirmed). Pins the flip, idempotency on re-detection, and that
-    /// amount/memo are preserved.
+    /// transaction reaches finality. `send_payment` records it `Pending`
+    /// and only the wallet-event adapter's ordered confirm
+    /// ([`confirm_final_sent_payments_for_store`]) moves it live, so
+    /// before that path was wired the entry was stuck `Pending` forever
+    /// (sent payments never showed confirmed). Pins the flip riding the
+    /// event's own round (the `previous`/`updated` pair the adapter
+    /// journals), idempotency on re-delivery, and that amount/memo are
+    /// preserved.
     #[tokio::test]
     async fn confirm_flips_sent_payment_pending_to_confirmed() {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        use key_wallet::WalletCoreBalance;
+        use key_wallet_manager::WalletEvent;
+
         use crate::wallet::identity::types::dashpay::payment::{
             PaymentDirection, PaymentEntry, PaymentStatus,
         };
@@ -2815,7 +3285,8 @@ mod tests {
         let (manager, persister, wallet_id) = make_wallet().await;
         let owner = Identifier::from([0xAA; 32]);
         let contact = Identifier::from([0xBB; 32]);
-        let txid = "a".repeat(64);
+        let txid = dashcore::Txid::from([0x5a; 32]);
+        let txid_key = txid.to_string();
 
         let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
         let iw = wallet.identity();
@@ -2831,7 +3302,7 @@ mod tests {
                 .managed_identity_mut(&owner)
                 .expect("managed")
                 .record_dashpay_payment(
-                    txid.clone(),
+                    txid_key.clone(),
                     PaymentEntry::new_sent(contact, 50_000, Some("dinner".into())),
                     &p,
                 )
@@ -2858,48 +3329,528 @@ mod tests {
         }
 
         assert_eq!(
-            read_entry(iw, &wallet_id, &owner, &txid).await.status,
+            read_entry(iw, &wallet_id, &owner, &txid_key).await.status,
             PaymentStatus::Pending,
             "precondition: entry starts Pending"
         );
 
-        // A confirmed detection flips it to Confirmed, preserving fields.
-        super::confirm_sent_payment_by_txid(&iw.wallet_manager, &wallet_id, &p, &txid).await;
-        let entry = read_entry(iw, &wallet_id, &owner, &txid).await;
+        // The IS-lock event (final for DashPay display) flips it to
+        // Confirmed, staging the row for the event's own store round.
+        let event = WalletEvent::TransactionInstantLocked {
+            wallet_id,
+            txid,
+            instant_lock: InstantLock::default(),
+            balance: WalletCoreBalance::default(),
+            account_balances: std::collections::BTreeMap::new(),
+        };
+        let flips =
+            super::confirm_final_sent_payments_for_store(&iw.wallet_manager, &wallet_id, &event)
+                .await;
+        assert_eq!(flips.flips.len(), 1);
+        assert_eq!(flips.flips[0].owner, owner);
+        assert_eq!(flips.flips[0].txid, txid_key);
+        assert_eq!(
+            flips.flips[0].updated.status,
+            PaymentStatus::Confirmed,
+            "the Confirmed row must ride the event's own round"
+        );
+        assert_eq!(
+            flips.flips[0].previous.status,
+            PaymentStatus::Pending,
+            "the flip records the pre-flip entry its undo may restore"
+        );
+        let entry = read_entry(iw, &wallet_id, &owner, &txid_key).await;
         assert_eq!(
             entry.status,
             PaymentStatus::Confirmed,
-            "a confirmed tx must flip the Sent entry to Confirmed"
+            "a final tx must flip the Sent entry to Confirmed"
         );
         assert_eq!(entry.direction, PaymentDirection::Sent);
         assert_eq!(entry.amount_duffs, 50_000);
         assert_eq!(entry.memo.as_deref(), Some("dinner"), "memo preserved");
 
-        // Idempotent: a second confirmed re-detection changes nothing.
-        super::confirm_sent_payment_by_txid(&iw.wallet_manager, &wallet_id, &p, &txid).await;
+        // Idempotent: re-delivered finality evidence changes nothing and
+        // stages nothing (the same-state move is not a transition).
+        let flips =
+            super::confirm_final_sent_payments_for_store(&iw.wallet_manager, &wallet_id, &event)
+                .await;
+        assert!(
+            flips.is_empty(),
+            "re-delivered evidence must skip the persistence round"
+        );
         assert_eq!(
-            read_entry(iw, &wallet_id, &owner, &txid).await.status,
+            read_entry(iw, &wallet_id, &owner, &txid_key).await.status,
             PaymentStatus::Confirmed
+        );
+    }
+
+    /// A sweep naming a `Pending` sent payment's transaction must fail the
+    /// entry: the transaction was provably beaten to one of its inputs and
+    /// can never confirm, and the same sweep deletes the record that was
+    /// the last thing reconciliation could have resolved the entry from —
+    /// so without this transition the sender's payment sat `Pending`
+    /// forever with no terminal state. Driven through the flip the
+    /// wallet-event adapter stages onto the sweep's own store round. Also
+    /// pins the guard rails: a re-emitted sweep on an already-`Failed`
+    /// entry is an idempotent no-op; the reinstatement reversal — the
+    /// swept transaction re-arriving final — advances `Failed` to
+    /// `Confirmed` on the reinstating event's round; and a sweep
+    /// delivered AFTER a confirmation demotes it (`Confirmed → Failed`):
+    /// on the adapter's ordered drain a delivered sweep always postdates
+    /// every applied confirmation — upstream never sweeps a currently
+    /// final record — so the newer verdict must win.
+    #[tokio::test]
+    async fn swept_sent_payment_fails_and_a_reinstating_confirmation_recovers_it() {
+        use crate::wallet::identity::types::dashpay::payment::{PaymentEntry, PaymentStatus};
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let txid = dashcore::Txid::from([0xAB; 32]);
+        let txid_key = txid.to_string();
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .record_dashpay_payment(
+                    txid_key.clone(),
+                    PaymentEntry::new_sent(contact, 50_000, Some("dinner".into())),
+                    &p,
+                )
+                .expect("record pending sent");
+        }
+
+        async fn status(
+            iw: &crate::wallet::identity::IdentityWallet<crate::broadcaster::SpvBroadcaster>,
+            wallet_id: &WalletId,
+            owner: &Identifier,
+            txid: &str,
+        ) -> PaymentStatus {
+            let wm = iw.wallet_manager.read().await;
+            let info = wm.get_wallet_info(wallet_id).expect("info");
+            info.identity_manager
+                .managed_identity(owner)
+                .unwrap()
+                .dashpay()
+                .payments
+                .get(txid)
+                .expect("entry")
+                .status
+        }
+
+        // The sweep's flip: memory moves to Failed and the overlay carries
+        // exactly the flipped row for the sweep's own store round.
+        let flips =
+            super::flip_swept_sent_payments_for_store(&iw.wallet_manager, &wallet_id, &[txid])
+                .await;
+        assert_eq!(flips.flips.len(), 1);
+        assert_eq!(flips.flips[0].owner, owner);
+        assert_eq!(flips.flips[0].txid, txid_key);
+        assert_eq!(
+            flips.flips[0].updated.status,
+            PaymentStatus::Failed,
+            "the flip must carry the Failed row for the sweep's own round"
+        );
+        assert_eq!(
+            status(iw, &wallet_id, &owner, &txid_key).await,
+            PaymentStatus::Failed,
+            "a swept transaction can never confirm — its sent payment must fail"
+        );
+
+        // Re-emitted sweep: idempotent no-op (nothing eligible, empty flip).
+        let flips =
+            super::flip_swept_sent_payments_for_store(&iw.wallet_manager, &wallet_id, &[txid])
+                .await;
+        assert!(
+            flips.is_empty(),
+            "a re-emitted sweep must find nothing to flip"
+        );
+        assert_eq!(
+            status(iw, &wallet_id, &owner, &txid_key).await,
+            PaymentStatus::Failed
+        );
+
+        // The reinstatement: the swept transaction re-arrives final (here
+        // as its IS-lock event); the ordered confirm must correct the
+        // `Failed` verdict on the reinstating event's own round.
+        let reinstating = {
+            use dashcore::ephemerealdata::instant_lock::InstantLock;
+            use key_wallet::WalletCoreBalance;
+            use key_wallet_manager::WalletEvent;
+            WalletEvent::TransactionInstantLocked {
+                wallet_id,
+                txid,
+                instant_lock: InstantLock::default(),
+                balance: WalletCoreBalance::default(),
+                account_balances: std::collections::BTreeMap::new(),
+            }
+        };
+        let flips = super::confirm_final_sent_payments_for_store(
+            &iw.wallet_manager,
+            &wallet_id,
+            &reinstating,
+        )
+        .await;
+        assert_eq!(
+            flips.flips[0].updated.status,
+            PaymentStatus::Confirmed,
+            "the reinstatement correction must ride the event's own round"
+        );
+        assert_eq!(
+            status(iw, &wallet_id, &owner, &txid_key).await,
+            PaymentStatus::Confirmed,
+            "a reinstated, final transaction must recover the payment"
+        );
+
+        // A sweep delivered AFTER the confirmation demotes it: on the
+        // ordered drain the sweep postdates the applied confirmation, and
+        // upstream never sweeps a currently final record — so this sweep
+        // is genuinely newer truth (the reinstated transaction lost a new
+        // conflict) and must win.
+        let flips =
+            super::flip_swept_sent_payments_for_store(&iw.wallet_manager, &wallet_id, &[txid])
+                .await;
+        assert_eq!(
+            flips.flips[0].updated.status,
+            PaymentStatus::Failed,
+            "a newer sweep must demote a Confirmed entry — its Failed row rides its round"
+        );
+        assert_eq!(
+            status(iw, &wallet_id, &owner, &txid_key).await,
+            PaymentStatus::Failed,
+            "the newer sweep's verdict wins over the older confirmation"
+        );
+    }
+
+    /// The transition table enumerates its legal edges explicitly — every
+    /// same-state pair is a no-op (that skip is what keeps re-delivered
+    /// evidence off the persistence round), `Failed → Pending` and
+    /// `Confirmed → Pending` do not exist, and the four legal edges are
+    /// exactly the machine's verdicts. A wildcard `(Pending, _)` arm — the
+    /// shape this replaces — silently admits `Pending → Pending` and any
+    /// future `PaymentStatus` variant without a state-machine review.
+    #[test]
+    fn sent_status_transition_table_enumerates_exactly_the_legal_edges() {
+        use crate::wallet::identity::types::dashpay::payment::PaymentStatus::*;
+
+        let allowed = [
+            (Pending, Confirmed),
+            (Pending, Failed),
+            (Failed, Confirmed),
+            (Confirmed, Failed),
+        ];
+        for from in [Pending, Confirmed, Failed] {
+            for to in [Pending, Confirmed, Failed] {
+                assert_eq!(
+                    super::sent_status_transition_allowed(from, to),
+                    allowed.contains(&(from, to)),
+                    "transition {from:?} -> {to:?} must be {}",
+                    if allowed.contains(&(from, to)) {
+                        "allowed"
+                    } else {
+                        "rejected — a same-state move is not a transition, and \
+                         nothing returns to Pending"
+                    }
+                );
+            }
+        }
+    }
+
+    /// The rejected-round contract: rolling the flip back returns memory to
+    /// the durable state (`Pending`), which is exactly what lets the
+    /// replayed sweep — re-emitted by the re-scan, because the rejected
+    /// round kept the loser's record too — find the entry eligible and
+    /// recompute the flip. Without the rollback, memory would read `Failed`
+    /// ahead of the store and the replay's eligibility check would skip the
+    /// entry forever. The adapter-level rejection wiring is pinned
+    /// end to end in `core_bridge`.
+    #[tokio::test]
+    async fn a_rolled_back_flip_is_recomputed_by_the_replayed_sweep() {
+        use crate::wallet::identity::types::dashpay::payment::{PaymentEntry, PaymentStatus};
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let txid = dashcore::Txid::from([0xAC; 32]);
+        let txid_key = txid.to_string();
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .record_dashpay_payment(
+                    txid_key.clone(),
+                    PaymentEntry::new_sent(contact, 10_000, None),
+                    &p,
+                )
+                .expect("record pending sent");
+        }
+
+        let flips =
+            super::flip_swept_sent_payments_for_store(&iw.wallet_manager, &wallet_id, &[txid])
+                .await;
+        assert!(!flips.is_empty());
+        super::rollback_payment_flips(&iw.wallet_manager, &wallet_id, flips.into_undos()).await;
+
+        {
+            let wm = iw.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("info");
+            let entry = info
+                .identity_manager
+                .managed_identity(&owner)
+                .unwrap()
+                .dashpay()
+                .payments
+                .get(&txid_key)
+                .expect("entry")
+                .clone();
+            assert_eq!(
+                entry.status,
+                PaymentStatus::Pending,
+                "the rollback must return memory to the durable state"
+            );
+            assert_eq!(
+                entry.amount_duffs, 10_000,
+                "the previous entry is restored whole"
+            );
+        }
+
+        // The replayed sweep finds the entry eligible again and recomputes
+        // the flip — the durability loop closes.
+        let flips =
+            super::flip_swept_sent_payments_for_store(&iw.wallet_manager, &wallet_id, &[txid])
+                .await;
+        assert_eq!(
+            flips.flips[0].updated.status,
+            PaymentStatus::Failed,
+            "the replayed sweep must recompute the flip the rollback undid"
+        );
+    }
+
+    /// The stale-evidence race, frozen at its worst point: the reconcile
+    /// sweep snapshots an entry as `Pending` and reads its persisted
+    /// record, the adapter's sweep flip lands `Failed` mid-flight (the
+    /// reconcile pass runs on its own task, off the adapter's ordered
+    /// drain, and the sweep deletes the record on the adapter), and the
+    /// reconciler then confirms from evidence that predates the verdict —
+    /// landing a dead payment `Confirmed` against a newer sweep, with no
+    /// later sweep re-emission to repair it. The reconciler's declared
+    /// evidence (`RECONCILE_CONFIRM_EVIDENCE`, `Pending`-only) makes the
+    /// resolver's write-lock re-check turn exactly that into a no-op,
+    /// while reinstatement evidence applied on the ordered drain — which
+    /// postdates the sweep by delivery order — still recovers the entry.
+    #[tokio::test]
+    async fn a_stale_reconcile_snapshot_cannot_confirm_a_swept_payment() {
+        use crate::wallet::identity::types::dashpay::payment::{PaymentEntry, PaymentStatus};
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let txid = dashcore::Txid::from([0xAF; 32]);
+        let txid_key = txid.to_string();
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .record_dashpay_payment(
+                    txid_key.clone(),
+                    PaymentEntry::new_sent(contact, 50_000, None),
+                    &p,
+                )
+                .expect("record pending sent");
+        }
+
+        async fn status(
+            iw: &crate::wallet::identity::IdentityWallet<crate::broadcaster::SpvBroadcaster>,
+            wallet_id: &WalletId,
+            owner: &Identifier,
+            txid: &str,
+        ) -> PaymentStatus {
+            let wm = iw.wallet_manager.read().await;
+            let info = wm.get_wallet_info(wallet_id).expect("info");
+            info.identity_manager
+                .managed_identity(owner)
+                .unwrap()
+                .dashpay()
+                .payments
+                .get(txid)
+                .expect("entry")
+                .status
+        }
+
+        // The reconciler snapshotted the entry Pending; before it confirms,
+        // the sweep's verdict lands.
+        let flips =
+            super::flip_swept_sent_payments_for_store(&iw.wallet_manager, &wallet_id, &[txid])
+                .await;
+        assert!(!flips.is_empty());
+        assert_eq!(
+            status(iw, &wallet_id, &owner, &txid_key).await,
+            PaymentStatus::Failed
+        );
+
+        // The racing reconciler now confirms from its stale read, declaring
+        // exactly the evidence the production sweep declares.
+        super::confirm_sent_payment_by_txid(
+            &iw.wallet_manager,
+            &wallet_id,
+            &p,
+            &txid_key,
+            super::RECONCILE_CONFIRM_EVIDENCE,
+        )
+        .await;
+        assert_eq!(
+            status(iw, &wallet_id, &owner, &txid_key).await,
+            PaymentStatus::Failed,
+            "evidence read before the sweep's verdict must not confirm the dead payment"
+        );
+
+        // Reinstatement evidence applied on the ordered drain — which
+        // postdates the sweep by delivery order — still recovers the
+        // entry.
+        let reinstating = {
+            use dashcore::ephemerealdata::instant_lock::InstantLock;
+            use key_wallet::WalletCoreBalance;
+            use key_wallet_manager::WalletEvent;
+            WalletEvent::TransactionInstantLocked {
+                wallet_id,
+                txid,
+                instant_lock: InstantLock::default(),
+                balance: WalletCoreBalance::default(),
+                account_balances: std::collections::BTreeMap::new(),
+            }
+        };
+        super::confirm_final_sent_payments_for_store(&iw.wallet_manager, &wallet_id, &reinstating)
+            .await;
+        assert_eq!(
+            status(iw, &wallet_id, &owner, &txid_key).await,
+            PaymentStatus::Confirmed
+        );
+    }
+
+    /// The rollback may only revert the sweep flip's own still-standing
+    /// `Failed` write. A later flip can land between the sweep flip and
+    /// its undo — the same-fold reinstatement's ordered confirm advancing
+    /// the entry to `Confirmed` before a rejected round replays the
+    /// ledger. An unconditional restore would clobber it back to the
+    /// captured `Pending`, demoting a verdict the undo has no authority
+    /// over.
+    #[tokio::test]
+    async fn rollback_does_not_clobber_a_concurrently_confirmed_entry() {
+        use crate::wallet::identity::types::dashpay::payment::{PaymentEntry, PaymentStatus};
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let txid = dashcore::Txid::from([0xAE; 32]);
+        let txid_key = txid.to_string();
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .record_dashpay_payment(
+                    txid_key.clone(),
+                    PaymentEntry::new_sent(contact, 50_000, None),
+                    &p,
+                )
+                .expect("record pending sent");
+        }
+
+        let flips =
+            super::flip_swept_sent_payments_for_store(&iw.wallet_manager, &wallet_id, &[txid])
+                .await;
+        assert!(!flips.is_empty());
+
+        // The reinstated transaction's ordered confirmation lands before
+        // the undo — Failed → Confirmed, the table's permitted correction.
+        let reinstating = {
+            use dashcore::ephemerealdata::instant_lock::InstantLock;
+            use key_wallet::WalletCoreBalance;
+            use key_wallet_manager::WalletEvent;
+            WalletEvent::TransactionInstantLocked {
+                wallet_id,
+                txid,
+                instant_lock: InstantLock::default(),
+                balance: WalletCoreBalance::default(),
+                account_balances: std::collections::BTreeMap::new(),
+            }
+        };
+        super::confirm_final_sent_payments_for_store(&iw.wallet_manager, &wallet_id, &reinstating)
+            .await;
+
+        // The undo arrives late (rejected round or same-fold retraction);
+        // it must find its own write gone and leave the terminal alone.
+        super::rollback_payment_flips(&iw.wallet_manager, &wallet_id, flips.into_undos()).await;
+
+        let wm = iw.wallet_manager.read().await;
+        let status = wm
+            .get_wallet_info(&wallet_id)
+            .expect("info")
+            .identity_manager
+            .managed_identity(&owner)
+            .expect("managed")
+            .dashpay()
+            .payments
+            .get(&txid_key)
+            .expect("entry")
+            .status;
+        assert_eq!(
+            status,
+            PaymentStatus::Confirmed,
+            "an undo may only revert the sweep's own still-standing Failed write — \
+             never a concurrently confirmed terminal"
         );
     }
 
     /// A sent payment confirmed by a block must flip `Pending → Confirmed`.
     ///
     /// The wallet sees its *own* broadcast in the mempool first
-    /// (`TransactionDetected`, context `Mempool`), where the confirm hook
-    /// early-returns because the transaction is not yet confirmed. The
-    /// transaction reaches a confirmed context only when a block mines it —
-    /// delivered as [`key_wallet_manager::WalletEvent::BlockProcessed`] with
-    /// the record in `updated` (a previously-known record that just
-    /// confirmed). Routing the payment hooks only for `TransactionDetected`
-    /// would leave the entry `Pending` forever. This drives the real adapter
-    /// dispatch
-    /// ([`run_dashpay_payment_hooks`](crate::wallet::identity::network::run_dashpay_payment_hooks))
-    /// with a `BlockProcessed` event and pins the flip end-to-end, so a
-    /// regression that re-narrows the routing to `TransactionDetected` is
-    /// caught here. Also pins idempotency across a repeated block-processing
-    /// round and that the `matured` bucket (coinbase maturity) never
-    /// confirms a payment.
+    /// (`TransactionDetected`, context `Mempool`), which carries no
+    /// finality. The transaction reaches a confirmed context only when a
+    /// block mines it — delivered as
+    /// [`key_wallet_manager::WalletEvent::BlockProcessed`] with the record
+    /// in `updated` (a previously-known record that just confirmed).
+    /// Routing the ordered confirm
+    /// ([`confirm_final_sent_payments_for_store`]) only for
+    /// `TransactionDetected` would leave the entry `Pending` forever;
+    /// this pins the `BlockProcessed.updated` routing, idempotency across
+    /// a repeated block-processing round, and that the `matured` bucket
+    /// (coinbase maturity) never confirms a payment.
     #[tokio::test]
     async fn block_processed_confirms_sent_payment() {
         use dashcore::blockdata::transaction::Transaction;
@@ -2991,13 +3942,7 @@ mod tests {
             addresses_derived: Vec::new(),
         };
 
-        crate::wallet::identity::network::run_dashpay_payment_hooks(
-            &iw.wallet_manager,
-            &wallet_id,
-            &p,
-            &event,
-        )
-        .await;
+        super::confirm_final_sent_payments_for_store(&iw.wallet_manager, &wallet_id, &event).await;
 
         // Read the entry under a short-lived read lock so the re-fire below
         // can take the write lock.
@@ -3029,13 +3974,7 @@ mod tests {
 
         // Idempotent: a repeated block-processing round for the same txid
         // changes nothing (the confirm path skips entries past `Pending`).
-        crate::wallet::identity::network::run_dashpay_payment_hooks(
-            &iw.wallet_manager,
-            &wallet_id,
-            &p,
-            &event,
-        )
-        .await;
+        super::confirm_final_sent_payments_for_store(&iw.wallet_manager, &wallet_id, &event).await;
         assert_eq!(
             read_status(iw, &wallet_id, &owner, &txid.to_string())
                 .await
@@ -3046,7 +3985,7 @@ mod tests {
 
         // A confirmed record arriving only in the `matured` bucket (coinbase
         // maturity) must NOT confirm a payment — `matured` is never a DashPay
-        // payment, so it is excluded from the payment hooks.
+        // payment, so the ordered confirm excludes it.
         let matured_tx = Transaction {
             version: 2,
             lock_time: 0,
@@ -3102,10 +4041,9 @@ mod tests {
             account_balances: std::collections::BTreeMap::new(),
             addresses_derived: Vec::new(),
         };
-        crate::wallet::identity::network::run_dashpay_payment_hooks(
+        super::confirm_final_sent_payments_for_store(
             &iw.wallet_manager,
             &wallet_id,
-            &p,
             &matured_event,
         )
         .await;
@@ -3121,8 +4059,8 @@ mod tests {
     /// An InstantSend lock applied to a previously-seen sent payment
     /// confirms it without waiting for a block. The lock arrives as
     /// `WalletEvent::TransactionInstantLocked` (no record, just a txid); an
-    /// IS lock is final for DashPay display, so the entry flips
-    /// `Pending → Confirmed`. Drives the real adapter dispatch.
+    /// IS lock is final for DashPay display, so the ordered confirm flips
+    /// the entry `Pending → Confirmed`.
     #[tokio::test]
     async fn instant_send_lock_confirms_sent_payment() {
         use dashcore::ephemerealdata::instant_lock::InstantLock;
@@ -3163,13 +4101,7 @@ mod tests {
             balance: WalletCoreBalance::default(),
             account_balances: std::collections::BTreeMap::new(),
         };
-        crate::wallet::identity::network::run_dashpay_payment_hooks(
-            &iw.wallet_manager,
-            &wallet_id,
-            &p,
-            &event,
-        )
-        .await;
+        super::confirm_final_sent_payments_for_store(&iw.wallet_manager, &wallet_id, &event).await;
 
         let wm = iw.wallet_manager.read().await;
         let info = wm.get_wallet_info(&wallet_id).expect("info");
@@ -3269,13 +4201,7 @@ mod tests {
             account_balances: std::collections::BTreeMap::new(),
             addresses_derived: Vec::new(),
         };
-        crate::wallet::identity::network::run_dashpay_payment_hooks(
-            &iw.wallet_manager,
-            &wallet_id,
-            &p,
-            &event,
-        )
-        .await;
+        super::confirm_final_sent_payments_for_store(&iw.wallet_manager, &wallet_id, &event).await;
 
         let wm = iw.wallet_manager.read().await;
         let info = wm.get_wallet_info(&wallet_id).expect("info");
