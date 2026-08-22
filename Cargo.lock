@@ -1706,6 +1706,7 @@ dependencies = [
 name = "dash-platform-queries"
 version = "4.2.0-dev.1"
 dependencies = [
+ "ciborium",
  "dapi-grpc",
  "dash-context-provider",
  "dash-platform-macros",

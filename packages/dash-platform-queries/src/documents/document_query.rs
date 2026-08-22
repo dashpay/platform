@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use super::proto_conversions;
 use crate::error::Error;
 use dapi_grpc::platform::v0::get_documents_request::Version::{V0, V1};
 use dapi_grpc::platform::v0::{
@@ -382,6 +383,272 @@ impl DocumentQuery {
         platform_version: &PlatformVersion,
     ) -> Result<GetDocumentsRequest, Error> {
         GetDocumentsRequest::try_from_platform_versioned(self, platform_version)
+    }
+
+    /// Decode a wire-format [`GetDocumentsRequest`] back into a rich
+    /// [`DocumentQuery`] — the inverse of
+    /// [`Self::try_into_request_for_version`], and the piece that lets
+    /// a client recover the query given only the request bytes it
+    /// sent.
+    ///
+    /// Both wire versions are handled, mirroring how the server
+    /// decodes each:
+    /// - **V0** carries `where` / `order_by` as CBOR-encoded arrays of
+    ///   clause components; they are decoded exactly as
+    ///   rs-drive-abci's `query_documents_v0` does (ciborium →
+    ///   `Value::Array` → `WhereClause::from_components` /
+    ///   `OrderClause::from_components`). V0 has no `select` /
+    ///   `group_by` / `having` / `offset`; those default to the
+    ///   documents-fetch shape.
+    /// - **V1** carries typed proto clauses; they are decoded through
+    ///   the same [`proto_conversions`](super::proto_conversions)
+    ///   functions the server's v1 handler runs, so client and server
+    ///   cannot disagree on what the bytes mean. Multi-projection
+    ///   `selects` (len > 1) is rejected — a `DocumentQuery` carries a
+    ///   single projection, matching what the server evaluates.
+    ///   `limit: Some(0)` is rejected, mirroring the server's uniform
+    ///   `InvalidLimit` contract (`None` = server default → `0`
+    ///   sentinel here; only positive caps are representable).
+    ///
+    /// The `prove` flag is intentionally ignored: `DocumentQuery` has
+    /// no prove field (its encoders always set `prove: true`, because
+    /// the `FromProof` decoders only handle proved responses).
+    ///
+    /// `contract` must be the data contract the request targets — the
+    /// request's `data_contract_id` is checked against `contract.id()`
+    /// and the named document type must exist on it.
+    ///
+    /// Scope caveat: this mirrors the server's *wire-shape* decoding
+    /// (shared clause decoders), not its full `validate_and_route`
+    /// business rules — e.g. SUM/AVG requiring a non-empty field,
+    /// GROUP BY being illegal with SELECT DOCUMENTS, or HAVING being
+    /// unimplemented are enforced server-side only. A request violating
+    /// those decodes here but can never yield a provable response from
+    /// a real server. That gap matters precisely for fabricated
+    /// request/response pairs, so a proof-verifying entry point built
+    /// on this decode must reject every such shape before delegating,
+    /// rather than letting the lowering to [`DriveDocumentQuery`]
+    /// silently drop it.
+    pub fn try_from_request(
+        request: GetDocumentsRequest,
+        contract: Arc<DataContract>,
+    ) -> Result<Self, Error> {
+        match request.version {
+            Some(V0(request_v0)) => Self::try_from_request_v0(request_v0, contract),
+            Some(V1(request_v1)) => Self::try_from_request_v1(request_v1, contract),
+            None => Err(Error::Protocol(ProtocolError::DecodingError(
+                "GetDocumentsRequest has no version set".to_string(),
+            ))),
+        }
+    }
+
+    fn try_from_request_v0(
+        request: GetDocumentsRequestV0,
+        contract: Arc<DataContract>,
+    ) -> Result<Self, Error> {
+        let GetDocumentsRequestV0 {
+            data_contract_id,
+            document_type,
+            r#where,
+            order_by,
+            limit,
+            // See `try_from_request`: DocumentQuery has no prove field.
+            prove: _,
+            start,
+        } = request;
+
+        check_request_targets_contract(&contract, &data_contract_id, &document_type)?;
+
+        let where_clauses = where_clauses_from_cbor(&r#where)?;
+        let order_by_clauses = order_clauses_from_cbor(&order_by)?;
+
+        Ok(Self {
+            select: SelectProjection::documents(),
+            data_contract: contract,
+            document_type_name: document_type,
+            where_clauses,
+            group_by: Vec::new(),
+            having: Vec::new(),
+            order_by_clauses,
+            // V0's plain `uint32` uses the same `0` = "unset" sentinel
+            // as this struct — pass through.
+            limit,
+            offset: None,
+            start,
+        })
+    }
+
+    fn try_from_request_v1(
+        request: GetDocumentsRequestV1,
+        contract: Arc<DataContract>,
+    ) -> Result<Self, Error> {
+        let GetDocumentsRequestV1 {
+            data_contract_id,
+            document_type,
+            where_clauses,
+            order_by,
+            limit,
+            start,
+            // See `try_from_request`: DocumentQuery has no prove field.
+            prove: _,
+            selects,
+            group_by,
+            having,
+            offset,
+        } = request;
+
+        check_request_targets_contract(&contract, &data_contract_id, &document_type)?;
+
+        let where_clauses = proto_conversions::where_clauses_from_proto(where_clauses)?;
+        let order_by_clauses = proto_conversions::order_clauses_from_proto(order_by)?;
+        let having = proto_conversions::having_clauses_from_proto(having)?;
+
+        // Same shape the server's v1 handler accepts: 0 selects →
+        // default documents projection, 1 select → decode it, more →
+        // reject (a `DocumentQuery` carries a single projection;
+        // multi-projection is wire-only today and the server refuses
+        // it too).
+        if selects.len() > 1 {
+            return Err(Error::Protocol(ProtocolError::DecodingError(format!(
+                "multi-projection SELECT is not supported: a DocumentQuery carries a \
+                 single projection, got {} selects",
+                selects.len()
+            ))));
+        }
+        let select = selects
+            .into_iter()
+            .next()
+            .map(proto_conversions::select_from_proto)
+            .transpose()?
+            .unwrap_or_else(SelectProjection::documents);
+
+        // Mirror the server's uniform v1 limit contract: `None` = use
+        // the server default (the `0` sentinel here), positive =
+        // explicit cap, `Some(0)` invalid (and unrepresentable — this
+        // struct's `0` means "unset").
+        let limit = match limit {
+            None => 0,
+            Some(0) => {
+                return Err(Error::Protocol(ProtocolError::DecodingError(
+                    "limit = 0 is not a valid wire value on the v1 `optional uint32` \
+                     field; omit `limit` (None) to use the server's default, or pass \
+                     a positive integer for an explicit cap"
+                        .to_string(),
+                )));
+            }
+            Some(n) => n,
+        };
+
+        // V1 ships its own `Start` enum with the same shape as V0's;
+        // this struct stores the V0 type (see `encode_v1` for the
+        // inverse translation).
+        let start = start.map(|s| match s {
+            V1Start::StartAfter(b) => Start::StartAfter(b),
+            V1Start::StartAt(b) => Start::StartAt(b),
+        });
+
+        Ok(Self {
+            select,
+            data_contract: contract,
+            document_type_name: document_type,
+            where_clauses,
+            group_by,
+            having,
+            order_by_clauses,
+            limit,
+            offset,
+            start,
+        })
+    }
+}
+
+/// Shared request-vs-contract consistency check for both wire
+/// versions: the request must target the supplied contract, and the
+/// named document type must exist on it.
+fn check_request_targets_contract(
+    contract: &DataContract,
+    data_contract_id: &[u8],
+    document_type_name: &str,
+) -> Result<(), Error> {
+    if data_contract_id != contract.id().as_slice() {
+        return Err(Error::Protocol(ProtocolError::DecodingError(format!(
+            "GetDocumentsRequest targets data contract {} but the supplied contract is {}",
+            hex::encode(data_contract_id),
+            contract.id()
+        ))));
+    }
+    contract
+        .document_type_for_name(document_type_name)
+        .map_err(ProtocolError::DataContractError)?;
+    Ok(())
+}
+
+/// Decode a V0 `where` field — CBOR bytes carrying an array of
+/// `[field, operator, value]` component arrays — into structured
+/// clauses. Byte-for-byte mirror of the decode the server's
+/// `query_documents_v0` runs (empty bytes → no clauses; anything
+/// else must be a CBOR array of arrays).
+fn where_clauses_from_cbor(bytes: &[u8]) -> Result<Vec<WhereClause>, Error> {
+    if bytes.is_empty() {
+        return Ok(Vec::new());
+    }
+    let value: Value = ciborium::de::from_reader(bytes).map_err(|_| {
+        Error::Protocol(ProtocolError::DecodingError(
+            "unable to decode 'where' query from cbor".to_string(),
+        ))
+    })?;
+    match value {
+        Value::Null => Ok(Vec::new()),
+        Value::Array(clauses) => clauses
+            .iter()
+            .map(|wc| match wc {
+                Value::Array(components) => {
+                    WhereClause::from_components(components).map_err(Error::Drive)
+                }
+                _ => Err(Error::Protocol(ProtocolError::DecodingError(
+                    "where clause must be an array".to_string(),
+                ))),
+            })
+            .collect(),
+        _ => Err(Error::Protocol(ProtocolError::DecodingError(
+            "where clause must be an array".to_string(),
+        ))),
+    }
+}
+
+/// Decode a V0 `order_by` field — CBOR bytes carrying an array of
+/// `[field, "asc"|"desc"]` component arrays — into structured
+/// clauses. Mirror of the server-side decode, like
+/// [`where_clauses_from_cbor`].
+fn order_clauses_from_cbor(bytes: &[u8]) -> Result<Vec<OrderClause>, Error> {
+    if bytes.is_empty() {
+        return Ok(Vec::new());
+    }
+    let value: Value = ciborium::de::from_reader(bytes).map_err(|_| {
+        Error::Protocol(ProtocolError::DecodingError(
+            "unable to decode 'order_by' query from cbor".to_string(),
+        ))
+    })?;
+    match value {
+        Value::Null => Ok(Vec::new()),
+        Value::Array(clauses) => clauses
+            .iter()
+            .map(|oc| match oc {
+                Value::Array(components) => {
+                    OrderClause::from_components(components).map_err(|_| {
+                        Error::Protocol(ProtocolError::DecodingError(
+                            "invalid order_by clause components".to_string(),
+                        ))
+                    })
+                }
+                _ => Err(Error::Protocol(ProtocolError::DecodingError(
+                    "order_by clause must be an array".to_string(),
+                ))),
+            })
+            .collect(),
+        _ => Err(Error::Protocol(ProtocolError::DecodingError(
+            "order_by must be an array".to_string(),
+        ))),
     }
 }
 
