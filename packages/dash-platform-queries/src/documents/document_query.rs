@@ -394,8 +394,8 @@ impl DocumentQuery {
     /// Decode a wire-format [`GetDocumentsRequest`] back into a rich
     /// [`DocumentQuery`] — the inverse of
     /// [`Self::try_into_request_for_version`], and the piece that lets
-    /// a client recover the query given only the request bytes it
-    /// sent.
+    /// an embedder verify a proved response given only the request
+    /// bytes it sent (see [`verify_documents_response`]).
     ///
     /// Both wire versions are handled, mirroring how the server
     /// decodes each:
@@ -431,10 +431,10 @@ impl DocumentQuery {
     /// unimplemented are enforced server-side only. A request violating
     /// those decodes here but can never yield a provable response from
     /// a real server. That gap matters precisely for fabricated
-    /// request/response pairs, so a proof-verifying entry point built
-    /// on this decode must reject every such shape before delegating,
-    /// rather than letting the lowering to [`DriveDocumentQuery`]
-    /// silently drop it.
+    /// request/response pairs, so the proof-verifying entry point
+    /// [`verify_documents_response`] closes it: it rejects every such
+    /// shape before delegating, rather than letting the lowering to
+    /// [`DriveDocumentQuery`] silently drop it.
     pub fn try_from_request(
         request: GetDocumentsRequest,
         contract: Arc<DataContract>,
@@ -658,6 +658,250 @@ fn order_clauses_from_cbor(bytes: &[u8]) -> Result<Vec<OrderClause>, Error> {
     }
 }
 
+/// Reject a request whose wire version (the `V0`/`V1` oneof arm,
+/// i.e. feature version 0/1) falls outside the supplied platform
+/// version's `drive_abci.query.document_query` bounds.
+///
+/// This is the same `check_version` gate the server runs before it
+/// decodes anything (`Platform::query_documents` in rs-drive-abci,
+/// which answers an out-of-bounds wire version with
+/// `QueryError::UnsupportedQueryVersion`). Without it, an untrusted
+/// transport could pair a request wire-version the supplied platform
+/// version's server refuses to serve with a valid proof produced for
+/// the other wire shape, and verification would accept the pair.
+///
+/// A missing `version` oneof is deliberately let through — the decode
+/// that follows reports it with its established error message.
+fn check_wire_version_is_served(
+    request: &GetDocumentsRequest,
+    platform_version: &PlatformVersion,
+) -> Result<(), drive_proof_verifier::Error> {
+    let Some(version) = &request.version else {
+        return Ok(());
+    };
+    let feature_version: u16 = match version {
+        V0(_) => 0,
+        V1(_) => 1,
+    };
+    let bounds = &platform_version.drive_abci.query.document_query;
+    if !bounds.check_version(feature_version) {
+        return Err(drive_proof_verifier::Error::RequestError {
+            error: format!(
+                "GetDocumentsRequest wire version V{feature_version} is outside the \
+                 document_query feature-version bounds {}..={} served at platform version \
+                 {}; the server answers such a request with UnsupportedQueryVersion, so no \
+                 proved response can belong to it",
+                bounds.min_version, bounds.max_version, platform_version.protocol_version
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// Reject the request shapes that can never have produced the proved
+/// plain-document response being verified.
+///
+/// Each rejection mirrors a gate an honest server runs before it would
+/// ever build such a proof, and each covers a field the
+/// `DocumentQuery` → [`DriveDocumentQuery`] lowering discards — which
+/// is exactly the set an attacker could vary freely while replaying a
+/// genuine proof. See [`verify_documents_response`] for the threat
+/// model.
+///
+/// This runs inside the [`FromProof<DocumentQuery>`] impl itself — the
+/// shared choke point — so every `DocumentQuery`-keyed verification
+/// gets it: `dash-sdk`'s own document fetches talk to the same
+/// untrusted nodes an embedder's transport does, and are protected by
+/// the same gates as the wire-request entry point
+/// [`verify_documents_response`].
+///
+/// Server counterparts, all in
+/// `packages/rs-drive-abci/src/query/document_query/v1/mod.rs`:
+/// `validate_and_route` rejects a non-empty HAVING for any
+/// non-aggregate SELECT and a non-empty GROUP BY under SELECT
+/// DOCUMENTS; `reject_offset_off_the_ranked_path` rejects any OFFSET
+/// that did not route to the ranked executor (a documents fetch never
+/// does).
+fn reject_request_the_server_would_not_have_proved(
+    query: &DocumentQuery,
+) -> Result<(), drive_proof_verifier::Error> {
+    let reject = |error: String| Err(drive_proof_verifier::Error::RequestError { error });
+
+    // This path verifies plain document fetches only. An aggregate
+    // projection (COUNT/SUM/AVG) is proved with a different proof shape;
+    // handing it to the Documents verifier would surface as an opaque
+    // low-level proof error, so reject it up front instead.
+    if query.select != drive::query::SelectProjection::documents() {
+        return reject(format!(
+            "only a plain SELECT DOCUMENTS fetch can be verified here; the request carries \
+             the projection {:?} — aggregate projections are verified by the aggregate \
+             proof helpers",
+            query.select
+        ));
+    }
+    if !query.having.is_empty() {
+        return reject(format!(
+            "request carries {} HAVING clause(s), which the server refuses for a \
+             non-aggregate SELECT; no proved document response can belong to it",
+            query.having.len()
+        ));
+    }
+    if !query.group_by.is_empty() {
+        return reject(format!(
+            "request carries GROUP BY {:?}, which the server refuses under SELECT DOCUMENTS; \
+             no proved document response can belong to it",
+            query.group_by
+        ));
+    }
+    if let Some(offset) = query.offset {
+        return reject(format!(
+            "request carries OFFSET {offset}, which the server accepts only on the ranked \
+             surface, never for a document fetch; no proved document response can belong to it"
+        ));
+    }
+    Ok(())
+}
+
+/// Embedder entry point: verify a proved [`GetDocumentsResponse`]
+/// directly against the wire request that produced it.
+///
+/// This is the transport-free glue an embedder needs when it drives
+/// its own transport: it holds the `GetDocumentsRequest` it sent and
+/// the `GetDocumentsResponse` it got back, and this function does the
+/// rest — decodes the request into a [`DocumentQuery`] (via
+/// [`DocumentQuery::try_from_request`], whose decoders mirror the
+/// server's request decode) and delegates to the existing
+/// [`FromProof<DocumentQuery>`] machinery, which resolves the
+/// [`DriveDocumentQuery`] internally and cryptographically verifies
+/// the proof against it.
+///
+/// `contract` must be the data contract the request targets. If the
+/// embedder's [`ContextProvider`] can resolve contracts, use
+/// [`verify_documents_response_with_provider_contract`] instead and
+/// skip the explicit parameter.
+///
+/// # Binding the proof to the whole request
+///
+/// GroveDB and Tenderdash proofs authenticate the state and the
+/// resolved [`DriveDocumentQuery`] — not the request envelope. The
+/// rich→drive lowering drops request fields that a documents query has
+/// no place for (`group_by`, `having`, `offset`, `prove`), so
+/// delegating without first checking them would let an untrusted
+/// transport pair a request the real server would have *refused* with
+/// a valid proof for the narrower query it lowers to, and this
+/// function would accept it. Every such field is therefore rejected
+/// before any proof machinery runs — `prove` here on the wire request,
+/// and the query-shape fields inside the shared
+/// [`FromProof<DocumentQuery>`] impl (so `dash-sdk`'s own fetches run
+/// the identical gates) — mirroring the server's own gates in
+/// `rs-drive-abci`'s `validate_and_route` /
+/// `reject_offset_off_the_ranked_path`.
+///
+/// The same reasoning covers the request envelope itself: the wire
+/// version (`V0`/`V1` oneof arm) is checked against
+/// `platform_version.drive_abci.query.document_query`'s bounds before
+/// anything is decoded — the server's `query_documents` dispatch
+/// refuses an out-of-bounds wire version with
+/// `UnsupportedQueryVersion`, so a proof can never belong to one — and
+/// the query limit contract is enforced during the
+/// `DriveDocumentQuery` lowering exactly as
+/// `DriveDocumentQuery::from_typed_clauses` enforces it server-side:
+/// an omitted limit resolves to the server default and a limit above
+/// [`DEFAULT_QUERY_LIMIT`] is rejected.
+pub fn verify_documents_response(
+    request: GetDocumentsRequest,
+    contract: Arc<DataContract>,
+    response: platform_proto::GetDocumentsResponse,
+    network: Network,
+    platform_version: &PlatformVersion,
+    provider: &dyn ContextProvider,
+) -> Result<(Option<Documents>, ResponseMetadata, Proof), drive_proof_verifier::Error> {
+    // First gate, mirroring the server's own dispatch order: a wire
+    // version the supplied platform version's server refuses to serve
+    // is rejected before any decoding or proof machinery.
+    check_wire_version_is_served(&request, platform_version)?;
+    // `prove` does not survive decoding (a `DocumentQuery` has no such
+    // field), so read it off the wire request before it is consumed.
+    // `prove: false` is not a server rejection — it makes the server
+    // return an unproved response, so a proved response cannot have
+    // come from one.
+    let prove = match &request.version {
+        Some(V0(v0)) => v0.prove,
+        Some(V1(v1)) => v1.prove,
+        // Missing version is reported by the decode below.
+        None => true,
+    };
+    if !prove {
+        return Err(drive_proof_verifier::Error::RequestError {
+            error: "request carries prove=false, so an honest server would have answered it \
+                    with an unproved response; a proved response cannot belong to this request"
+                .to_string(),
+        });
+    }
+    let query = DocumentQuery::try_from_request(request, contract).map_err(|e| {
+        drive_proof_verifier::Error::RequestError {
+            error: format!("failed to decode GetDocumentsRequest into a DocumentQuery: {e}"),
+        }
+    })?;
+    // The remaining request-shape gates
+    // (`reject_request_the_server_would_not_have_proved`) run inside the
+    // shared `FromProof<DocumentQuery>` impl this delegates to.
+    <Documents as FromProof<DocumentQuery>>::maybe_from_proof_with_metadata(
+        query,
+        response,
+        network,
+        platform_version,
+        provider,
+    )
+}
+
+/// Variant of [`verify_documents_response`] that resolves the data
+/// contract through the [`ContextProvider`]
+/// ([`ContextProvider::get_data_contract`]) instead of taking it as a
+/// parameter — for embedders whose provider already caches or fetches
+/// contracts.
+pub fn verify_documents_response_with_provider_contract(
+    request: GetDocumentsRequest,
+    response: platform_proto::GetDocumentsResponse,
+    network: Network,
+    platform_version: &PlatformVersion,
+    provider: &dyn ContextProvider,
+) -> Result<(Option<Documents>, ResponseMetadata, Proof), drive_proof_verifier::Error> {
+    // Same first gate as `verify_documents_response`, run here as well
+    // so an out-of-bounds wire version is rejected before the provider
+    // is asked for anything (the contract lookup below is already
+    // context-provider machinery).
+    check_wire_version_is_served(&request, platform_version)?;
+    let contract_id_bytes = match &request.version {
+        Some(V0(v0)) => v0.data_contract_id.as_slice(),
+        Some(V1(v1)) => v1.data_contract_id.as_slice(),
+        None => {
+            return Err(drive_proof_verifier::Error::RequestError {
+                error: "GetDocumentsRequest has no version set".to_string(),
+            });
+        }
+    };
+    let contract_id = Identifier::from_bytes(contract_id_bytes).map_err(|e| {
+        drive_proof_verifier::Error::RequestError {
+            error: format!("invalid data_contract_id in GetDocumentsRequest: {e}"),
+        }
+    })?;
+    let contract = provider
+        .get_data_contract(&contract_id, platform_version)
+        .map_err(drive_proof_verifier::Error::ContextProviderError)?
+        .ok_or_else(|| drive_proof_verifier::Error::RequestError {
+            error: format!("context provider has no data contract {contract_id}"),
+        })?;
+    verify_documents_response(
+        request,
+        contract,
+        response,
+        network,
+        platform_version,
+        provider,
+    )
+}
+
 impl FromProof<DocumentQuery> for Document {
     type Request = DocumentQuery;
     type Response = platform_proto::GetDocumentsResponse;
@@ -712,6 +956,12 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
         Self: Sized + 'a,
     {
         let request: Self::Request = request.into();
+        // Server-parity request gates run here, at the shared choke
+        // point, so every `DocumentQuery`-keyed verification — dash-sdk
+        // fetches and the wire-request entry points alike — rejects
+        // request shapes no honest server would have proved before any
+        // proof machinery runs.
+        reject_request_the_server_would_not_have_proved(&request)?;
         let drive_query: DriveDocumentQuery =
             (&request)
                 .try_into()
