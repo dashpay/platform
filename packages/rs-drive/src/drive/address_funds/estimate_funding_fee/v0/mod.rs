@@ -61,36 +61,24 @@ impl Drive {
         // different roots — the API promises pricing from one coherent
         // committed state, so accept an attempt only when the root hash is
         // byte-identical before and after all the reads, retrying otherwise.
-        const SNAPSHOT_ATTEMPTS: usize = 3;
-        let mut parts = None;
-        for _ in 0..SNAPSHOT_ATTEMPTS {
-            let root_before = self
-                .grove
-                .root_hash(None, &platform_version.drive.grove_version)
-                .unwrap()
-                .map_err(Error::from)?;
-            let attempt = self.estimate_address_funding_fee_parts_v0(
-                recipient,
-                asset_lock_outpoint,
-                lock_credits,
-                block_info,
-                platform_version,
+        let (low_level_operations, layer_map, address_levels, outpoint_levels) =
+            stable_committed_read(
+                || {
+                    self.grove
+                        .root_hash(None, &platform_version.drive.grove_version)
+                        .unwrap()
+                        .map_err(Error::from)
+                },
+                || {
+                    self.estimate_address_funding_fee_parts_v0(
+                        recipient,
+                        asset_lock_outpoint,
+                        lock_credits,
+                        block_info,
+                        platform_version,
+                    )
+                },
             )?;
-            let root_after = self
-                .grove
-                .root_hash(None, &platform_version.drive.grove_version)
-                .unwrap()
-                .map_err(Error::from)?;
-            if root_before == root_after {
-                parts = Some(attempt);
-                break;
-            }
-        }
-        let Some((low_level_operations, layer_map, address_levels, outpoint_levels)) = parts else {
-            return Err(Error::Drive(DriveError::CommittedStateChangedDuringOperation(
-                "address funding fee estimation could not observe a stable committed state; retry",
-            )));
-        };
 
         let (grove_batch, mut cost_operations) =
             LowLevelDriveOperation::grovedb_operations_batch_consume_with_leftovers(
@@ -286,6 +274,35 @@ impl Drive {
     }
 }
 
+/// How many times a multi-read committed-state operation may observe an
+/// unstable root before giving up.
+const SNAPSHOT_ATTEMPTS: usize = 3;
+
+/// Runs `attempt` and accepts its output only when `root_sample` returns the
+/// same value before and after it — i.e. no block committed underneath the
+/// attempt's reads. An unstable attempt's output is discarded and the attempt
+/// re-run, up to [`SNAPSHOT_ATTEMPTS`] times; persistent instability fails
+/// with the retriable [`DriveError::CommittedStateChangedDuringOperation`].
+/// Errors from either closure propagate immediately, without a retry.
+fn stable_committed_read<T>(
+    mut root_sample: impl FnMut() -> Result<[u8; 32], Error>,
+    mut attempt: impl FnMut() -> Result<T, Error>,
+) -> Result<T, Error> {
+    for _ in 0..SNAPSHOT_ATTEMPTS {
+        let root_before = root_sample()?;
+        let value = attempt()?;
+        let root_after = root_sample()?;
+        if root_before == root_after {
+            return Ok(value);
+        }
+    }
+    Err(Error::Drive(
+        DriveError::CommittedStateChangedDuringOperation(
+            "address funding fee estimation could not observe a stable committed state; retry",
+        ),
+    ))
+}
+
 fn set_measured_layer_count(
     layer_map: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
     layer: KeyInfoPath,
@@ -414,6 +431,96 @@ mod tests {
     }
 
     const LOCK_CREDITS: Credits = 56_000_000;
+
+    // ---------------------------------------------------------------
+    // The committed-root stability contract, pinned deterministically
+    // with scripted root samples — the drive-backed tests below only
+    // ever exercise the quiescent first-attempt branch.
+    // ---------------------------------------------------------------
+
+    /// A scripted root sampler: returns the next hash from the list on each
+    /// call, counting attempts as pairs of samples.
+    fn scripted_roots(samples: Vec<[u8; 32]>) -> impl FnMut() -> Result<[u8; 32], Error> {
+        let mut remaining = samples.into_iter();
+        move || Ok(remaining.next().expect("script exhausted"))
+    }
+
+    #[test]
+    fn test_stable_read_returns_the_first_stable_attempt() {
+        let mut attempts = 0u32;
+        let value = stable_committed_read(scripted_roots(vec![[1; 32], [1; 32]]), || {
+            attempts += 1;
+            Ok(attempts)
+        })
+        .expect("stable first attempt");
+        assert_eq!(value, 1);
+        assert_eq!(attempts, 1, "a stable attempt must not be re-run");
+    }
+
+    #[test]
+    fn test_stable_read_discards_an_unstable_attempt_and_returns_a_later_stable_one() {
+        // Attempt 1 sees roots 1→2 (unstable), attempt 2 sees 2→2 (stable).
+        let mut attempts = 0u32;
+        let value = stable_committed_read(
+            scripted_roots(vec![[1; 32], [2; 32], [2; 32], [2; 32]]),
+            || {
+                attempts += 1;
+                Ok(attempts)
+            },
+        )
+        .expect("second attempt is stable");
+        assert_eq!(
+            value, 2,
+            "the unstable attempt's value must be discarded, not returned"
+        );
+        assert_eq!(attempts, 2);
+    }
+
+    #[test]
+    fn test_stable_read_fails_after_three_unstable_attempts() {
+        let mut next_root = 0u8;
+        let mut attempts = 0u32;
+        let result = stable_committed_read(
+            || {
+                next_root += 1;
+                Ok([next_root; 32])
+            },
+            || {
+                attempts += 1;
+                Ok(attempts)
+            },
+        );
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(
+                    DriveError::CommittedStateChangedDuringOperation(_)
+                ))
+            ),
+            "persistent instability must fail with the retriable error, got {result:?}"
+        );
+        assert_eq!(attempts, 3, "exactly SNAPSHOT_ATTEMPTS attempts must run");
+    }
+
+    #[test]
+    fn test_stable_read_propagates_attempt_errors_without_retry() {
+        let mut attempts = 0u32;
+        let result: Result<u32, Error> =
+            stable_committed_read(scripted_roots(vec![[1; 32], [1; 32]]), || {
+                attempts += 1;
+                Err(Error::Drive(DriveError::CorruptedDriveState(
+                    "boom".to_string(),
+                )))
+            });
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::CorruptedDriveState(_)))
+            ),
+            "an attempt error must propagate as-is, got {result:?}"
+        );
+        assert_eq!(attempts, 1, "an errored attempt must not be retried");
+    }
 
     /// The estimate must not write anything: the grove root hash is
     /// byte-identical before and after estimating for a new address, an
