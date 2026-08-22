@@ -4,8 +4,8 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use arc_swap::ArcSwap;
 use dash_spv::EventHandler;
-use tokio::sync::RwLock;
 
 use crate::events::{PlatformEventHandler, WalletEvent};
 use crate::wallet::platform_wallet::WalletId;
@@ -23,18 +23,29 @@ use crate::wallet::PlatformWallet;
 ///
 /// Registered in `PlatformWalletManager`'s handler list. The handler
 /// holds an `Arc` clone of the manager's `wallets` map (a *separate*
-/// lock from the heavily-contended `wallet_manager` SPV write lock).
-/// SPV holds the wallet-manager write lock for the entire duration of
-/// block processing — looking the balance up through *that* lock would
-/// silently lose every event during initial sync. The wallets map is
-/// only written by manager lifecycle methods (`create_wallet_from_*`,
-/// `remove_wallet`), so a `try_read()` here essentially never contends.
+/// structure from the heavily-contended `wallet_manager` SPV write
+/// lock). SPV holds the wallet-manager write lock for the entire
+/// duration of block processing — looking the balance up through *that*
+/// lock would silently lose every event during initial sync.
+///
+/// The map is an [`ArcSwap`] so this lookup is wait-free and can never
+/// fail: `load()` always returns the latest published map, even while a
+/// manager lifecycle write (wallet insert / remove / load) is publishing
+/// a new one. That infallibility is load-bearing, not a convenience.
+/// `on_wallet_event` is synchronous and the bus neither retries nor
+/// coalesces, so a snapshot missed here is gone for good — and
+/// `TransactionsSwept` can be the *only* event carrying a corrected
+/// (lower) balance, since the winner that settled the inputs need not be
+/// wallet-relevant and so may never produce a later balance-bearing
+/// event. A fallible lookup (the previous `RwLock::try_read`) dropped
+/// exactly that snapshot when it raced a lifecycle write, leaving
+/// removed funds on display indefinitely.
 pub struct BalanceUpdateHandler {
-    wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
+    wallets: Arc<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
 }
 
 impl BalanceUpdateHandler {
-    pub fn new(wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>) -> Self {
+    pub fn new(wallets: Arc<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>) -> Self {
         Self { wallets }
     }
 }
@@ -69,16 +80,12 @@ impl EventHandler for BalanceUpdateHandler {
             WalletEvent::ChainLockProcessed { .. } => return,
         };
 
-        // try_read on the wallets map (NOT the wallet_manager
-        // SPV-contended lock). The map is only written by manager
-        // lifecycle methods, so this almost never contends.
-        let Ok(wallets) = self.wallets.try_read() else {
-            tracing::debug!(
-                wallet = %hex::encode(wallet_id),
-                "Wallet balance update dropped: wallets-map lock contended"
-            );
-            return;
-        };
+        // Wait-free snapshot of the wallets map; cannot fail or block,
+        // so no balance-bearing event is ever dropped here. A wallet
+        // not in the snapshot is one registered concurrently with this
+        // event — its creation path re-seeds the balance atomics from
+        // the inner wallet after publishing it, covering that window.
+        let wallets = self.wallets.load();
         if let Some(pw) = wallets.get(wallet_id) {
             pw.balance().set(
                 balance.confirmed(),
