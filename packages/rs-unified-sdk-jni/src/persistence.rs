@@ -692,13 +692,21 @@ unsafe fn persist_changeset_sweep_batch(
 
     let txids = slice_or_empty(batch.txids, batch.txids_count);
     let txids_arr = env.new_object_array(txids.len() as i32, &byte_array_cls, &empty)?;
-    let winners = env.new_object_array(txids.len() as i32, &byte_array_cls, &empty)?;
+    // The winner is invariant for the whole batch, so it is allocated once
+    // and every slot is initialised to it — `new_object_array` fills the
+    // array with its initial element, so no per-loser set is needed either.
+    // The loser count is network-influenced and this projection runs
+    // synchronously inside the atomic persistence callback, so a per-loser
+    // allocation is work an attacker can scale. Sharing one array across
+    // the slots is safe because the Kotlin consumer only ever reads these
+    // values: `supersededBy[i]` feeds DAO arguments and entity fields, and
+    // nothing writes into the array.
+    let winner = env.byte_array_from_slice(&batch.superseded_by)?;
+    let winners = env.new_object_array(txids.len() as i32, &byte_array_cls, &winner)?;
     for (i, txid) in txids.iter().enumerate() {
         env.with_local_frame(8, |env| {
             let t = env.byte_array_from_slice(txid)?;
-            env.set_object_array_element(&txids_arr, i as i32, &t)?;
-            let w = env.byte_array_from_slice(&batch.superseded_by)?;
-            env.set_object_array_element(&winners, i as i32, &w)
+            env.set_object_array_element(&txids_arr, i as i32, &t)
         })?;
     }
 
