@@ -42,8 +42,9 @@ struct SubtreeKeyedNodes {
 ///
 /// `proof_bytes` must be the exact output of a single-key
 /// `grove_get_proved_path_query` over `path`/`key` on this node — the decode
-/// is canonical (trailing bytes rejected) and only `GroveDBProof::V1`
-/// envelopes with a plain merk terminal layer are supported.
+/// is canonical (trailing bytes rejected); both legacy `GroveDBProof::V0` and
+/// current `GroveDBProof::V1` envelopes with a plain merk terminal layer are
+/// supported (protocol v11 selects GROVE_V2, whose prove path still emits V0).
 pub(crate) fn single_key_proof_levels(
     proof_bytes: &[u8],
     path: &[&[u8]],

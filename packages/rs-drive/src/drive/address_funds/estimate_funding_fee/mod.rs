@@ -22,10 +22,13 @@ impl Drive {
     /// layer counts are replaced by search-path levels measured from locally
     /// generated proofs.
     ///
-    /// Read-only: no transaction is opened and nothing is written. The whole
-    /// estimate reads committed state (GroveDB proving does not support
-    /// transactions). The result covers the GroveDB batch only — validation
-    /// operations and `user_fee_increase` are the caller's concern.
+    /// Read-only: nothing is written. The whole estimate reads committed
+    /// state, and the reads count only when the GroveDB root hash is
+    /// identical before and after the complete state-dependent operation
+    /// (retried a few times, then failing with
+    /// [`DriveError::CommittedStateChangedDuringOperation`]). The result
+    /// covers the GroveDB batch only — validation operations and
+    /// `user_fee_increase` are the caller's concern.
     ///
     /// Fails with [`DriveError::AssetLockOutpointAlreadyPresent`] when the
     /// outpoint is already in the state: a spent or partially used lock would

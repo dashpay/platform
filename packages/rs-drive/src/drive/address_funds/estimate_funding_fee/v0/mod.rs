@@ -159,9 +159,10 @@ impl Drive {
             }
         }
 
-        // Measured search-path levels from locally generated proofs. GroveDB
-        // proving does not support transactions, so the whole estimate reads
-        // committed state.
+        // Measure search-path levels from locally generated proofs against
+        // committed state. The outer estimator accepts these reads only when
+        // the GroveDB root hash is identical before and after the complete
+        // state-dependent operation.
         let address_query = Drive::balance_for_clear_address_query(recipient);
         let address_proof = self.grove_get_proved_path_query(
             &address_query,
