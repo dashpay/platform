@@ -42,7 +42,7 @@ impl Drive {
 
     /// Runs `query` with a limit of one against the total credits history and decodes the
     /// single entry it yields, if any.
-    fn fetch_first_recorded_total_credits(
+    pub(in crate::drive::identity::withdrawals) fn fetch_first_recorded_total_credits(
         &self,
         query: Query,
         transaction: TransactionArg,

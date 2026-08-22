@@ -353,8 +353,8 @@ where
         // Prune anchors older than the configured retention depth
         self.prune_shielded_pool_anchors(block_proposal.height, transaction, platform_version)?;
 
-        // Record the total credits in Platform for this block: the daily withdrawal limit is a
-        // share of the total credits Platform held a day ago, read from this history
+        // Record the total credits in Platform if this block changed it: the daily withdrawal
+        // limit is a share of the total credits Platform held a day ago, read from this history
         self.record_total_credits_history_for_withdrawals(
             &block_info,
             transaction,

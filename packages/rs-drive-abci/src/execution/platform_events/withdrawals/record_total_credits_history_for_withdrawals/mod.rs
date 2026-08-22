@@ -13,10 +13,13 @@ where
     C: CoreRPCLike,
 {
     /// Records the total credits in Platform for this block in the history the day-lagged
-    /// daily withdrawal limit reads, pruning entries the limit can no longer use.
+    /// daily withdrawal limit reads — only when it differs from the latest recorded total,
+    /// since the limit reads the entry in force a day ago and an entry describes the total
+    /// until the next one — pruning entries the limit can no longer use.
     ///
     /// Runs every block before withdrawals are pooled, so the first block the history exists
-    /// in already has an entry to derive the limit from.
+    /// in already has an entry to derive the limit from; blocks that leave the total untouched
+    /// cost one read and no write.
     pub(in crate::execution) fn record_total_credits_history_for_withdrawals(
         &self,
         block_info: &BlockInfo,

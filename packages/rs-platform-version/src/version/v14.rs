@@ -72,9 +72,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    `daily_withdrawal_limit` v2 through `DPP_METHOD_VERSIONS_V3`). The base is
 ///    the total credits recorded at the latest block at least 24 hours before
 ///    the current one: `DRIVE_ABCI_METHOD_VERSIONS_V10` turns on
-///    `record_total_credits_history_for_withdrawals`, which writes the total
-///    credits under the withdrawals tree keyed by block time every block and
-///    prunes entries older than the one the limit reads, and
+///    `record_total_credits_history_for_withdrawals`, which checks the total
+///    credits every block, writes it under the withdrawals tree keyed by block
+///    time whenever it changed (an entry describes the total until the next
+///    one) and prunes entries older than the one the limit reads, and
 ///    `DRIVE_VERSION_V9`'s identity withdrawal table bumps
 ///    `calculate_current_withdrawal_limit` to 1 to read that lagged value
 ///    (falling back to the oldest recorded one while the history is younger

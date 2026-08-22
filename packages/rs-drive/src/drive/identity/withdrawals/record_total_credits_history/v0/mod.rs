@@ -7,7 +7,7 @@ use crate::error::Error;
 use crate::util::grove_operations::{BatchDeleteApplyType, DirectQueryType};
 use crate::util::object_size_info::PathKeyElementInfo;
 use dpp::block::block_info::BlockInfo;
-use grovedb::{Element, MaybeTree, PathQuery, QueryItem, TransactionArg};
+use grovedb::{Element, MaybeTree, PathQuery, Query, QueryItem, TransactionArg};
 use platform_version::version::PlatformVersion;
 
 impl Drive {
@@ -32,6 +32,20 @@ impl Drive {
             .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
                 "Credits not found in Platform",
             )))?;
+
+        // Only write when the total changed: the limit reads the latest entry at least a day
+        // old, so an entry already describes the total until the next one, and a block that
+        // leaves the total untouched (most blocks: document traffic and fees do not move it)
+        // costs a read here instead of a write.
+        let mut latest = Query::new();
+        latest.insert_all();
+        latest.left_to_right = false;
+        if self
+            .fetch_first_recorded_total_credits(latest, transaction, platform_version)?
+            .is_some_and(|recorded| recorded.total_credits == total_credits_in_platform)
+        {
+            return Ok(());
+        }
 
         // Resolve the reference entry for this block before adding to the history, so the
         // prune below can never remove the entry the limit reads this block (the new entry is
@@ -130,7 +144,11 @@ mod tests {
             .collect()
     }
 
+    /// Adds one credit so the total differs from the last record, then records at `time_ms`.
     fn record(drive: &Drive, time_ms: u64, prune_limit: u16, transaction: &Transaction) {
+        drive
+            .add_to_system_credits(1, Some(transaction), PlatformVersion::latest())
+            .expect("expected to add a credit");
         drive
             .record_total_credits_history(
                 &BlockInfo {
@@ -151,18 +169,57 @@ mod tests {
         let transaction = drive.grove.start_transaction();
 
         drive
-            .add_to_system_credits(5_000, Some(&transaction), platform_version)
+            .add_to_system_credits(4_999, Some(&transaction), platform_version)
             .expect("expected to add credits");
-        record(&drive, 123_456, 64, &transaction);
+        record(&drive, 123_456, 64, &transaction); // 5_000 after the helper's extra credit
 
         drive
-            .add_to_system_credits(2_500, Some(&transaction), platform_version)
+            .add_to_system_credits(2_499, Some(&transaction), platform_version)
             .expect("expected to add credits");
-        record(&drive, 123_457, 64, &transaction);
+        record(&drive, 123_457, 64, &transaction); // 7_500
 
         assert_eq!(
             recorded_entries(&drive, &transaction),
             vec![(123_456, 5_000), (123_457, 7_500)]
+        );
+    }
+
+    #[test]
+    fn should_not_write_when_the_total_is_unchanged() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let transaction = drive.grove.start_transaction();
+
+        drive
+            .add_to_system_credits(5_000, Some(&transaction), platform_version)
+            .expect("expected to add credits");
+        let block = |time_ms: u64| BlockInfo {
+            time_ms,
+            ..Default::default()
+        };
+        for time_ms in [100, 200, 300] {
+            drive
+                .record_total_credits_history(
+                    &block(time_ms),
+                    64,
+                    Some(&transaction),
+                    platform_version,
+                )
+                .expect("expected to record");
+        }
+        // One entry: the blocks that left the total untouched wrote nothing.
+        assert_eq!(recorded_entries(&drive, &transaction), vec![(100, 5_000)]);
+
+        // And the lookup still resolves the total in force from that single entry.
+        drive
+            .add_to_system_credits(1, Some(&transaction), platform_version)
+            .expect("expected to add a credit");
+        drive
+            .record_total_credits_history(&block(400), 64, Some(&transaction), platform_version)
+            .expect("expected to record");
+        assert_eq!(
+            recorded_entries(&drive, &transaction),
+            vec![(100, 5_000), (400, 5_001)]
         );
     }
 

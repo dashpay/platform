@@ -9,10 +9,13 @@ use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Records the current total credits in Platform in the total credits history under the
-    /// withdrawals tree, keyed by the block time, and prunes entries that the day-lagged daily
-    /// withdrawal limit can no longer read: everything older than the entry
+    /// withdrawals tree, keyed by the block time, if it differs from the latest recorded one,
+    /// and on doing so prunes entries that the day-lagged daily withdrawal limit can no longer
+    /// read: everything older than the entry
     /// [`Drive::fetch_total_credits_in_platform_a_day_ago`] resolves to for this block, at most
-    /// `prune_limit` entries per block (`0` disables pruning).
+    /// `prune_limit` entries per call (`0` disables pruning). Called every block; writes only
+    /// when the total changed, since the limit reads the latest entry at least a day old and an
+    /// entry describes the total until the next one.
     pub fn record_total_credits_history(
         &self,
         block_info: &BlockInfo,
