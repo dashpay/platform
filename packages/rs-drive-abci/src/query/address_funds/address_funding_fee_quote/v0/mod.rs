@@ -131,6 +131,15 @@ impl<C> Platform<C> {
                     ),
                 ));
             }
+            Err(drive::error::Error::Drive(
+                error @ DriveError::CommittedStateChangedDuringOperation(_),
+            )) => {
+                // A transient condition on a busy node, not a server fault:
+                // surface it as a client-visible error so the caller retries.
+                return Ok(QueryValidationResult::new_with_error(QueryError::Drive(
+                    drive::error::Error::Drive(error),
+                )));
+            }
             Err(error) => return Err(error.into()),
         };
         let mut fee_result = estimate.fee_result;
