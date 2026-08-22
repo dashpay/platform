@@ -1908,11 +1908,15 @@ mod tests {
         /// per-transition rollback (shipped in 4.1.1), but still a transition that can never
         /// confirm despite paying the quoted fee.
         ///
-        /// Ignored until the estimation gap is closed: the estimated-cost path skips the keyless
-        /// commitment-tree append entirely (dashpay/grovedb#812), so the band is measurably open
-        /// (18,919,200 credits, 10.7% of the fee, at 494 notes). Re-enable with the grovedb pin
-        /// bump that fixes it. Also ~40 full Orchard proving runs, so keep it out of routine CI.
-        #[ignore = "open until the grovedb#812 estimator fix is pinned; ~40 Orchard proving runs"]
+        /// Under protocol version 13 (GROVE_V3) the estimated-cost path skips the keyless
+        /// commitment-tree append entirely (dashpay/grovedb#812, locked for replay), so the band
+        /// is measurably open there (18,919,200 credits, 10.7% of the fee, at 494 notes). From
+        /// protocol version 14 (GROVE_V4) the estimator is a per-append upper bound and the band
+        /// is closed: measured at 494 notes, the first headroom that reaches execution and the
+        /// first that executes coincide at 929,279,120 credits (width 0). Kept out of routine CI
+        /// only for cost — ~60 fresh-platform runs at ~10 s each (the Orchard proof is built
+        /// once); run it by hand after any change to the shielded fee model or the grovedb pin.
+        #[ignore = "band closed at PV14 (width 0); ~60 fresh-platform runs, ~11 min — run by hand"]
         #[tokio::test]
         async fn shield_fee_estimate_and_actual_must_not_leave_a_halting_band() {
             let pv = PlatformVersion::latest();
@@ -1984,11 +1988,20 @@ mod tests {
         /// the block without it compute a different app hash and can never agree.
         ///
         /// This pins the invariant that a dropped transition must not mutate state.
+        ///
+        /// Runs under protocol version 13: the version mainnet was on at the halt, and the last
+        /// one whose estimator leaves the band open — GROVE_V3's estimation path skips the
+        /// keyless commitment-tree append (dashpay/grovedb#812), locked there so historical
+        /// admission decisions replay identically. From protocol version 14 (GROVE_V4) the
+        /// estimator is a per-append upper bound, so no funding level reaches execution
+        /// under-funded and the mid-band shield this test needs cannot be built (see
+        /// `shield_fee_estimate_and_actual_must_not_leave_a_halting_band`).
         #[tokio::test]
         async fn dropped_shield_must_not_mutate_state() {
-            let pv = PlatformVersion::latest();
+            let pv = PlatformVersion::get(13).expect("protocol version 13 should exist");
             let b = build_bundle();
-            // Sits inside the measured band: accepted by validation, rejected by execution.
+            // Sits inside the band measured under protocol version 13: accepted by validation,
+            // rejected by execution.
             let headroom = 177_215_759u64;
 
             let mut platform = setup_platform();
