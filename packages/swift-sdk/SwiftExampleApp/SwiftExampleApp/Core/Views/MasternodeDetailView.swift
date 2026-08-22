@@ -221,28 +221,15 @@ struct MasternodeDetailView: View {
 
                     // Claim is only offered when there's a balance AND this
                     // wallet holds the owner key (the owner-key withdrawal
-                    // path signs with it). The withdrawal FFI itself is still
-                    // a deliberate stub (see `masternodeWithdrawEnabled`), so
-                    // the action is gated off until the verified-signer pass
-                    // lands — the confirmation sheet + claim plumbing below
-                    // stay in place so re-enabling is a one-line flip.
+                    // path signs with it and pays the registered payout
+                    // address).
                     if canClaim {
-                        if Self.masternodeWithdrawEnabled {
-                            Button {
-                                prepareClaim()
-                            } label: {
-                                Label("Claim", systemImage: "arrow.down.circle")
-                            }
-                            .accessibilityIdentifier("masternode.claimButton")
-                        } else {
-                            Label(
-                                "Claim not yet available (pending verified signer)",
-                                systemImage: "clock.badge.exclamationmark"
-                            )
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .accessibilityIdentifier("masternode.claimUnavailable")
+                        Button {
+                            prepareClaim()
+                        } label: {
+                            Label("Claim", systemImage: "arrow.down.circle")
                         }
+                        .accessibilityIdentifier("masternode.claimButton")
                     }
                 }
             }
@@ -258,13 +245,6 @@ struct MasternodeDetailView: View {
             claimConfirmationSheet
         }
     }
-
-    /// Owner-key masternode withdrawal is not yet enabled: the Rust FFI
-    /// `platform_wallet_masternode_withdraw` is a deliberate stub returning
-    /// `ErrorWalletOperation` pending the verified-signer implementation, so
-    /// every confirmed claim would fail. Gate the Claim action off until
-    /// that lands; flip this to re-enable the existing confirmation flow.
-    private static let masternodeWithdrawEnabled = false
 
     /// Claim is enabled only with a positive balance and this wallet's
     /// owner key (the FFI's owner-key path requires it).
@@ -364,15 +344,15 @@ struct MasternodeDetailView: View {
         claiming = true
         claimError = nil
         do {
-            // `PlatformWalletManager` is `@MainActor`; call directly. (When
-            // the network-signing path lands, the whole orchestration runs
-            // in Rust behind this one call — see the FFI doc — so blocking
-            // is bounded to a single FFI round-trip.)
-            _ = try walletManager.masternodeWithdraw(
+            // The whole orchestration (masternode lookup, identity fetch,
+            // owner-key selection, resolver-backed sign, broadcast) runs in
+            // Rust behind this one call; the wrapper hops off the main actor
+            // for the network round-trip.
+            _ = try await walletManager.masternodeWithdraw(
                 walletId: masternode.walletId,
                 proTxHash: masternode.proTxHash,
                 amountCredits: credits,
-                ownerKeyIndex: masternode.ownerKeyIndex
+                signingKey: .owner
             )
             claiming = false
             showClaimSheet = false

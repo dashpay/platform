@@ -372,6 +372,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         wallets.get(wallet_id).cloned()
     }
 
+    /// Blocking twin of [`Self::get_wallet`] for synchronous FFI entry
+    /// points that need to clone the `Arc<PlatformWallet>` out before doing
+    /// network work outside the handle-storage guard.
+    pub fn get_wallet_blocking(&self, wallet_id: &WalletId) -> Option<Arc<PlatformWallet>> {
+        self.wallets.blocking_read().get(wallet_id).cloned()
+    }
+
     /// List all wallet IDs.
     pub async fn wallet_ids(&self) -> Vec<WalletId> {
         let wallets = self.wallets.read().await;

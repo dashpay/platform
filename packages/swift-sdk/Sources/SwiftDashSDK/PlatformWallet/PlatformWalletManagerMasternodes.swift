@@ -154,22 +154,16 @@ extension PlatformWalletManager {
         }
     }
 
-    /// Claim (withdraw) `amountCredits` from a masternode's Platform
-    /// identity using the wallet-held OWNER key. Owner-key withdrawals pay
-    /// the node's registered payout address (no chosen destination). Returns
-    /// the new balance; throws on failure (surfaced to the confirmation UI).
-    ///
-    /// Pure bridge — the whole orchestration (identity fetch, OWNER-key
-    /// guard, owner-key derivation + sign, withdraw broadcast) lives in
-    /// `platform-wallet` behind this one FFI call, per CLAUDE.md.
-    /// `proTxHash` is passed in stored WIRE order; Rust reverses it to the
-    /// display-order identity id.
-    public func masternodeWithdraw(
+    /// Which masternode-withdrawal signing keys this wallet holds for the
+    /// masternode `proTxHash` (stored WIRE order), plus its registered payout
+    /// address. Seedless and local — no resolver, no network. The same
+    /// resolution `masternodeWithdraw` signs with, so a UI that gates its
+    /// Withdraw button / destination field on this can never enable a path
+    /// the claim then refuses.
+    public func masternodeWithdrawalKeys(
         walletId: Data,
-        proTxHash: Data,
-        amountCredits: UInt64,
-        ownerKeyIndex: UInt32
-    ) throws -> UInt64 {
+        proTxHash: Data
+    ) throws -> MasternodeWithdrawalKeys {
         guard isConfigured, handle != NULL_HANDLE,
             walletId.count == 32, proTxHash.count == 32
         else {
@@ -177,26 +171,148 @@ extension PlatformWalletManager {
                 "Manager not configured, or wallet id / proTxHash not 32 bytes")
         }
 
-        var outBalance: UInt64 = 0
+        var out = MasternodeWithdrawalKeysFFI()
         let ffiResult = walletId.withUnsafeBytes { (widRaw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
             proTxHash.withUnsafeBytes { (ptRaw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
-                platform_wallet_manager_masternode_withdraw(
+                platform_wallet_manager_masternode_withdrawal_keys(
                     handle,
                     widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self),
                     ptRaw.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                    amountCredits,
-                    ownerKeyIndex,
-                    nil,  // dest_address: owner-key path pays the registered payout address
-                    true, // use_owner_key
-                    &outBalance
+                    &out
                 )
             }
         }
-
         let result = PlatformWalletResult(ffiResult)
         guard result.isSuccess else {
             throw PlatformWalletError(result: result)
         }
-        return outBalance
+        defer {
+            if let payout = out.payout_address {
+                platform_wallet_string_free(payout)
+            }
+        }
+        return MasternodeWithdrawalKeys(
+            ownerKeyIndex: out.owner_key_in_wallet ? out.owner_key_index : nil,
+            transferKeyInWallet: out.transfer_key_in_wallet,
+            payoutAddress: out.payout_address.map { String(cString: $0) }
+        )
+    }
+
+    /// Claim (withdraw) `amountCredits` from a masternode's Platform
+    /// identity to L1, signed with the wallet key `signingKey` derived
+    /// through the Keychain-backed mnemonic resolver (the seed never becomes
+    /// resident — same path as core sends). Returns the identity's remaining
+    /// balance; throws on failure (surfaced to the confirmation UI).
+    ///
+    /// - `.owner`: Platform pays the registered payout address;
+    ///   `destinationAddress` must be nil.
+    /// - `.transfer`: `destinationAddress` (base58, this wallet's network)
+    ///   is the destination; nil ⇒ the registered payout address.
+    ///
+    /// Pure bridge — the whole orchestration (masternode lookup, identity
+    /// fetch, key selection + guards, derivation, sign, broadcast) lives in
+    /// `platform-wallet` behind this one FFI call, per CLAUDE.md. The FFI
+    /// blocks on the network round-trip, so it runs on a detached task.
+    /// `proTxHash` is passed in stored WIRE order; Rust reverses it to the
+    /// display-order identity id.
+    public func masternodeWithdraw(
+        walletId: Data,
+        proTxHash: Data,
+        amountCredits: UInt64,
+        signingKey: MasternodeWithdrawalSigningKey,
+        destinationAddress: String? = nil
+    ) async throws -> UInt64 {
+        guard isConfigured, handle != NULL_HANDLE,
+            walletId.count == 32, proTxHash.count == 32
+        else {
+            throw PlatformWalletError.invalidParameter(
+                "Manager not configured, or wallet id / proTxHash not 32 bytes")
+        }
+        if signingKey == .owner, destinationAddress != nil {
+            throw PlatformWalletError.invalidParameter(
+                "an owner-key withdrawal pays the registered payout address; no destination can be chosen")
+        }
+
+        let handle = self.handle
+        let useOwnerKey = signingKey == .owner
+        return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
+            // Resolver-backed signer: the mnemonic is fetched from the
+            // Keychain inside the resolver vtable Rust-side. Kept alive
+            // across the synchronous FFI call, whose callback fires during it.
+            let resolver = MnemonicResolver()
+            var outBalance: UInt64 = 0
+            let ffiResult = withExtendedLifetime(resolver) { () -> PlatformWalletFFIResult in
+                walletId.withUnsafeBytes { (widRaw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
+                    proTxHash.withUnsafeBytes { (ptRaw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
+                        func call(_ destPtr: UnsafePointer<CChar>?) -> PlatformWalletFFIResult {
+                            platform_wallet_manager_masternode_withdraw(
+                                handle,
+                                widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                                ptRaw.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                                amountCredits,
+                                useOwnerKey,
+                                destPtr,
+                                resolver.handle,
+                                &outBalance
+                            )
+                        }
+                        if let destinationAddress {
+                            return destinationAddress.withCString { call($0) }
+                        }
+                        return call(nil)
+                    }
+                }
+            }
+            let result = PlatformWalletResult(ffiResult)
+            guard result.isSuccess else {
+                throw PlatformWalletError(result: result)
+            }
+            return outBalance
+        }.value
+    }
+}
+
+/// Which wallet key signs a masternode (evonode) credit withdrawal.
+public enum MasternodeWithdrawalSigningKey: Sendable, Equatable {
+    /// The `ProviderOwnerKeys` key — pays the registered payout address only.
+    case owner
+    /// The payout-script (identity `TRANSFER`) key — any destination.
+    case transfer
+}
+
+/// Preflight for a masternode credit withdrawal: which signing keys this
+/// wallet holds and where an owner-key claim is paid. See
+/// `PlatformWalletManager.masternodeWithdrawalKeys(walletId:proTxHash:)`.
+public struct MasternodeWithdrawalKeys: Sendable, Equatable {
+    /// `ProviderOwnerKeys` index of the masternode's owner key when this
+    /// wallet holds it; `nil` otherwise.
+    public let ownerKeyIndex: UInt32?
+    /// This wallet holds the payout-script key, so the destination may be
+    /// changed.
+    public let transferKeyInWallet: Bool
+    /// Registered payout address, or `nil` when the node has no encodable
+    /// payout script.
+    public let payoutAddress: String?
+
+    public init(ownerKeyIndex: UInt32?, transferKeyInWallet: Bool, payoutAddress: String?) {
+        self.ownerKeyIndex = ownerKeyIndex
+        self.transferKeyInWallet = transferKeyInWallet
+        self.payoutAddress = payoutAddress
+    }
+
+    public var ownerKeyInWallet: Bool { ownerKeyIndex != nil }
+
+    /// At least one wallet-held key can sign a withdrawal.
+    public var canWithdraw: Bool { ownerKeyInWallet || transferKeyInWallet }
+
+    /// The destination may differ from the payout address.
+    public var canChooseDestination: Bool { transferKeyInWallet }
+
+    /// The key a claim should sign with: the transfer key when available
+    /// (it permits any destination), else the owner key.
+    public var preferredSigningKey: MasternodeWithdrawalSigningKey? {
+        if transferKeyInWallet { return .transfer }
+        if ownerKeyInWallet { return .owner }
+        return nil
     }
 }

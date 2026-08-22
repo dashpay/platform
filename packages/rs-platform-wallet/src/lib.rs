@@ -80,6 +80,9 @@ pub use wallet::identity::{
     IdentityManager, IdentityStatus, KeyStorage, ManagedIdentity, PrivateKeyData, ProfileUpdate,
     RegistrationIndex, DEFAULT_CONTACT_GAP_LIMIT,
 };
+pub use wallet::masternode_withdrawal::{
+    MasternodeWithdrawalKey, MasternodeWithdrawalKeys, MasternodeWithdrawalRequest,
+};
 pub use wallet::platform_wallet::PlatformWalletInfo;
 #[cfg(feature = "shielded")]
 pub use wallet::platform_wallet::ShieldedShieldPreflight;
