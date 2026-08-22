@@ -137,6 +137,9 @@ impl From<dash_platform_queries::Error> for Error {
     fn from(value: dash_platform_queries::Error) -> Self {
         match value {
             dash_platform_queries::Error::Config(msg) => Self::Config(msg),
+            // Builder input validation moved to the query core keeps surfacing
+            // as Generic with the exact messages it produced inside this crate.
+            dash_platform_queries::Error::InvalidInput(msg) => Self::Generic(msg),
             dash_platform_queries::Error::Drive(e) => Self::Drive(e),
             dash_platform_queries::Error::Protocol(e) => Self::Protocol(e),
         }
