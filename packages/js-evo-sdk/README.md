@@ -14,6 +14,8 @@ Evo SDK provides a high-level, strongly-typed interface for interacting with [Da
 - [Install](#install)
 - [Usage](#usage)
 - [Facades](#facades)
+- [Ranked queries](#ranked-queries)
+- [Document references (`refersTo`)](#document-references-refersto)
 - [Contributing](#contributing)
 - [License](#license)
 
