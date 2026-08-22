@@ -53,6 +53,13 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// of double-spending; the reservation TTL or a sync reconciles the
     /// outcome. Do NOT auto-retry.
     case errorTransactionBroadcastUnconfirmed = 20
+    /// A masternode (evonode) identity credit withdrawal was broadcast and
+    /// accepted, but its execution result could not be confirmed — it may
+    /// already have executed, and the identity nonce was consumed for it, so
+    /// a blind retry could submit a SECOND withdrawal. Do NOT retry; re-read
+    /// the claimable balance and reconcile first. Definitive rejections keep
+    /// their ordinary codes and stay retryable.
+    case errorMasternodeWithdrawalUnconfirmed = 42
     /// Definitively-failed address-nonce race: Platform rejected an
     /// address-funds transition (shield, or identity top-up-from-addresses)
     /// because the submitted address nonce raced Platform's expected value
@@ -206,6 +213,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorShieldedNoRecordedAnchor
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_TRANSACTION_BROADCAST_UNCONFIRMED:
             self = .errorTransactionBroadcastUnconfirmed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_MASTERNODE_WITHDRAWAL_UNCONFIRMED:
+            self = .errorMasternodeWithdrawalUnconfirmed
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ADDRESS_NONCE_MISMATCH:
             self = .errorAddressNonceMismatch
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_CORE_INSUFFICIENT_FUNDS:
@@ -358,6 +367,11 @@ public enum PlatformWalletError: LocalizedError {
     /// reservation TTL or a later sync reconciles the outcome. Do NOT
     /// auto-retry. Core sibling of `shieldedSpendUnconfirmed`.
     case transactionBroadcastUnconfirmed(String)
+    /// A masternode (evonode) credit withdrawal was broadcast and accepted
+    /// but its result could not be confirmed. It may already have executed
+    /// and the identity nonce was consumed — do NOT retry; re-read the
+    /// claimable balance first (`.errorMasternodeWithdrawalUnconfirmed`).
+    case masternodeWithdrawalUnconfirmed(String)
     /// Core definitively rejected the transaction and its input reservation
     /// was released. Unlike `transactionBroadcastUnconfirmed`, retry is safe.
     case transactionBroadcastRejected(String)
@@ -445,6 +459,7 @@ public enum PlatformWalletError: LocalizedError {
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
              .transactionBroadcastUnconfirmed(let m),
+             .masternodeWithdrawalUnconfirmed(let m),
              .transactionBroadcastRejected(let m),
              .addressNonceMismatch(let m),
              .shutdownIncomplete(let m),
@@ -513,6 +528,8 @@ public enum PlatformWalletError: LocalizedError {
         case .errorShieldedInsufficientBalance: self = .shieldedInsufficientBalance(detail)
         case .errorTransactionBroadcastUnconfirmed:
             self = .transactionBroadcastUnconfirmed(detail)
+        case .errorMasternodeWithdrawalUnconfirmed:
+            self = .masternodeWithdrawalUnconfirmed(detail)
         case .errorTransactionBroadcastRejected:
             self = .transactionBroadcastRejected(detail)
         case .errorAddressNonceMismatch:

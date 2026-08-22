@@ -117,6 +117,13 @@ unsafe fn resolve_masternode(
 /// masternode `pro_tx_hash` (32 bytes, wire order), plus its registered
 /// payout address. Seedless — no resolver needed.
 ///
+/// `owner_key_index_hint` (honoured when `has_owner_key_index_hint`) is a
+/// durable `ProviderOwnerKeys` index the host already knows for this owner
+/// key — the persisted ownership row or its own address join. Rust VERIFIES
+/// it (derives the key at that index and compares hash160s) before falling
+/// back to the pool-depth scan, so restored wallets whose in-memory pool has
+/// no watermark still resolve an owner key above the default window.
+///
 /// # Safety
 /// `wallet_id` / `pro_tx_hash` must point at 32 readable bytes; `out` must
 /// be writable. Free `out.payout_address` with `platform_wallet_string_free`.
@@ -125,6 +132,8 @@ pub unsafe extern "C" fn platform_wallet_manager_masternode_withdrawal_keys(
     manager_handle: Handle,
     wallet_id: *const u8,
     pro_tx_hash: *const u8,
+    has_owner_key_index_hint: bool,
+    owner_key_index_hint: u32,
     out: *mut MasternodeWithdrawalKeysFFI,
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id);
@@ -134,9 +143,11 @@ pub unsafe extern "C" fn platform_wallet_manager_masternode_withdrawal_keys(
 
     let (wallet, mn) =
         unwrap_result_or_return!(resolve_masternode(manager_handle, wallet_id, pro_tx_hash));
-    let keys =
-        unwrap_result_or_return!(wallet
-            .masternode_withdrawal_keys(mn.owner_key_hash.as_ref(), mn.payout_script.as_deref()));
+    let keys = unwrap_result_or_return!(wallet.masternode_withdrawal_keys(
+        mn.owner_key_hash.as_ref(),
+        mn.payout_script.as_deref(),
+        has_owner_key_index_hint.then_some(owner_key_index_hint),
+    ));
 
     let payout_address = match keys.payout_address {
         Some(address) => unwrap_result_or_return!(CString::new(address)).into_raw(),
@@ -168,10 +179,21 @@ pub unsafe extern "C" fn platform_wallet_manager_masternode_withdrawal_keys(
 ///   key. `dest_address` (a base58 address for the wallet's network) is the
 ///   destination; null ⇒ the registered payout address.
 ///
+/// `owner_key_index_hint` / `has_owner_key_index_hint`: as on
+/// `platform_wallet_manager_masternode_withdrawal_keys` — a verified-not-
+/// trusted durable index for the owner key.
+///
 /// Fails WITHOUT broadcasting when the wallet doesn't hold the requested
 /// key, the identity doesn't carry the matching key, or the destination is
 /// invalid. The resolver is invoked exactly once, at signing time; the
 /// handle-storage guard is not held across it.
+///
+/// Outcome codes after the transition leaves the wallet: a definitive
+/// rejection returns an ordinary error (retryable); an AMBIGUOUS outcome —
+/// broadcast accepted (or its ACK lost) and the result wait failed — returns
+/// `ErrorMasternodeWithdrawalUnconfirmed` (42): the claim may have executed
+/// and the identity nonce was consumed, so the host must NOT retry until it
+/// has re-read the claimable balance.
 ///
 /// # Safety
 /// `wallet_id` / `pro_tx_hash` must point at 32 readable bytes;
@@ -188,6 +210,8 @@ pub unsafe extern "C" fn platform_wallet_manager_masternode_withdraw(
     amount_credits: u64,
     use_owner_key: bool,
     dest_address: *const c_char,
+    has_owner_key_index_hint: bool,
+    owner_key_index_hint: u32,
     mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     out_new_balance: *mut u64,
 ) -> PlatformWalletFFIResult {
@@ -219,9 +243,12 @@ pub unsafe extern "C" fn platform_wallet_manager_masternode_withdraw(
     // Key resolution is blocking (wallet-manager read lock + seedless
     // derive-and-compare) — runs here on the caller thread, before the
     // async claim below.
-    let keys: MasternodeWithdrawalKeys =
-        unwrap_result_or_return!(wallet
-            .masternode_withdrawal_keys(mn.owner_key_hash.as_ref(), mn.payout_script.as_deref()));
+    let keys: MasternodeWithdrawalKeys = unwrap_result_or_return!(wallet
+        .masternode_withdrawal_keys(
+            mn.owner_key_hash.as_ref(),
+            mn.payout_script.as_deref(),
+            has_owner_key_index_hint.then_some(owner_key_index_hint),
+        ));
 
     let request = MasternodeWithdrawalRequest {
         pro_tx_hash: mn.pro_tx_hash,
@@ -288,6 +315,8 @@ mod tests {
                 1_000_000,
                 true,
                 dest.as_ptr(),
+                false,
+                0,
                 resolver,
                 &mut out_balance,
             )
@@ -316,6 +345,8 @@ mod tests {
                 1_000_000,
                 false,
                 std::ptr::null(),
+                false,
+                0,
                 resolver,
                 &mut out_balance,
             )
@@ -328,6 +359,8 @@ mod tests {
                 Handle::MAX,
                 wallet_id.as_ptr(),
                 pro_tx_hash.as_ptr(),
+                false,
+                0,
                 &mut out,
             )
         };

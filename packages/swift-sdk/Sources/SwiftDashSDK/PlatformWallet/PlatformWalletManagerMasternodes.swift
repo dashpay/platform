@@ -160,9 +160,17 @@ extension PlatformWalletManager {
     /// resolution `masternodeWithdraw` signs with, so a UI that gates its
     /// Withdraw button / destination field on this can never enable a path
     /// the claim then refuses.
+    ///
+    /// `ownerKeyIndexHint`: a durable `ProviderOwnerKeys` index the host
+    /// already knows for this owner key (the persisted
+    /// `PersistentMasternode.ownerKeyIndex`, or its own address join). Rust
+    /// verifies it by derivation before falling back to the pool-depth scan,
+    /// so restored wallets whose in-memory pool has no watermark still
+    /// resolve an owner key above the default window. Pass `nil` when unknown.
     public func masternodeWithdrawalKeys(
         walletId: Data,
-        proTxHash: Data
+        proTxHash: Data,
+        ownerKeyIndexHint: UInt32? = nil
     ) throws -> MasternodeWithdrawalKeys {
         guard isConfigured, handle != NULL_HANDLE,
             walletId.count == 32, proTxHash.count == 32
@@ -178,6 +186,8 @@ extension PlatformWalletManager {
                     handle,
                     widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self),
                     ptRaw.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                    ownerKeyIndexHint != nil,
+                    ownerKeyIndexHint ?? 0,
                     &out
                 )
             }
@@ -209,18 +219,29 @@ extension PlatformWalletManager {
     /// - `.transfer`: `destinationAddress` (base58, this wallet's network)
     ///   is the destination; nil ⇒ the registered payout address.
     ///
+    /// `ownerKeyIndexHint`: as on `masternodeWithdrawalKeys` — verified, not
+    /// trusted.
+    ///
+    /// Outcomes: a definitive rejection throws an ordinary error and may be
+    /// retried. An AMBIGUOUS outcome — broadcast accepted (or its ACK lost)
+    /// and the result wait failed — throws
+    /// `PlatformWalletError.masternodeWithdrawalUnconfirmed`: the claim may
+    /// have executed and the identity nonce was consumed, so callers must
+    /// NOT retry until they have re-read the claimable balance.
+    ///
     /// Pure bridge — the whole orchestration (masternode lookup, identity
-    /// fetch, key selection + guards, derivation, sign, broadcast) lives in
-    /// `platform-wallet` behind this one FFI call, per CLAUDE.md. The FFI
-    /// blocks on the network round-trip, so it runs on a detached task.
-    /// `proTxHash` is passed in stored WIRE order; Rust reverses it to the
-    /// display-order identity id.
+    /// fetch, key selection + guards, derivation, sign, broadcast, result
+    /// wait) lives in `platform-wallet` behind this one FFI call, per
+    /// CLAUDE.md. The FFI blocks on the network round-trip, so it runs on a
+    /// detached task. `proTxHash` is passed in stored WIRE order; Rust
+    /// reverses it to the display-order identity id.
     public func masternodeWithdraw(
         walletId: Data,
         proTxHash: Data,
         amountCredits: UInt64,
         signingKey: MasternodeWithdrawalSigningKey,
-        destinationAddress: String? = nil
+        destinationAddress: String? = nil,
+        ownerKeyIndexHint: UInt32? = nil
     ) async throws -> UInt64 {
         guard isConfigured, handle != NULL_HANDLE,
             walletId.count == 32, proTxHash.count == 32
@@ -252,6 +273,8 @@ extension PlatformWalletManager {
                                 amountCredits,
                                 useOwnerKey,
                                 destPtr,
+                                ownerKeyIndexHint != nil,
+                                ownerKeyIndexHint ?? 0,
                                 resolver.handle,
                                 &outBalance
                             )

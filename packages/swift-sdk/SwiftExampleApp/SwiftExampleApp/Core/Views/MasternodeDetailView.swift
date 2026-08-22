@@ -17,11 +17,22 @@ struct MasternodeDetailView: View {
     /// Drives the owner-key claim (withdrawal) FFI.
     @EnvironmentObject var walletManager: PlatformWalletManager
 
-    // Claim (owner-key withdrawal) UI state.
+    // Claim (masternode credit withdrawal) UI state.
     @State private var showClaimSheet = false
     @State private var claimAmountText = ""
+    @State private var claimDestinationText = ""
     @State private var claiming = false
     @State private var claimError: String?
+    /// Set when a claim's outcome is ambiguous (`masternodeWithdrawalUnconfirmed`):
+    /// it may have executed and the nonce was consumed, so Confirm stays
+    /// disabled until the balance is refreshed (which clears it).
+    @State private var claimOutcomeUnconfirmed = false
+
+    /// Which withdrawal signing keys this wallet holds (SDK preflight —
+    /// the same seedless resolution the claim signs with). `nil` until
+    /// resolved, or when the preflight failed (`withdrawalKeysError`).
+    @State private var withdrawalKeys: MasternodeWithdrawalKeys?
+    @State private var withdrawalKeysError: String?
 
     /// ~0.005 DASH fee headroom kept back from a max claim, in credits.
     private static let claimFeeHeadroomCredits: UInt64 = 500_000_000
@@ -219,10 +230,10 @@ struct MasternodeDetailView: View {
                     .disabled(balanceLoading)
                     .accessibilityIdentifier("masternode.refreshBalance")
 
-                    // Claim is only offered when there's a balance AND this
-                    // wallet holds the owner key (the owner-key withdrawal
-                    // path signs with it and pays the registered payout
-                    // address).
+                    // Claim is offered when there's a balance AND the SDK
+                    // preflight says this wallet holds a key that can sign
+                    // it: the payout (transfer) key — any destination — or
+                    // the owner key — registered payout address only.
                     if canClaim {
                         Button {
                             prepareClaim()
@@ -231,6 +242,18 @@ struct MasternodeDetailView: View {
                         }
                         .accessibilityIdentifier("masternode.claimButton")
                     }
+                    if let keys = withdrawalKeys {
+                        Text(keys.canChooseDestination
+                            ? "Payout address key in this wallet — withdraw to any address."
+                            : keys.ownerKeyInWallet
+                                ? "Owner key in this wallet — withdrawals pay the registered payout address."
+                                : "Neither the owner key nor the payout address key is in this wallet.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .accessibilityIdentifier("masternode.withdrawalKeysNote")
+                    } else if let err = withdrawalKeysError {
+                        Text(err).font(.caption).foregroundColor(.secondary)
+                    }
                 }
             }
         }
@@ -238,6 +261,7 @@ struct MasternodeDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             if masternode.isEvonode {
+                loadWithdrawalKeys()
                 await fetchClaimableBalance()
             }
         }
@@ -246,10 +270,29 @@ struct MasternodeDetailView: View {
         }
     }
 
-    /// Claim is enabled only with a positive balance and this wallet's
-    /// owner key (the FFI's owner-key path requires it).
+    /// Claim is enabled only with a positive balance and a wallet-held
+    /// signing key per the SDK preflight (never the persisted
+    /// `ownerInWallet`, which can be stale).
     private var canClaim: Bool {
-        (claimableCredits ?? 0) > 0 && masternode.ownerInWallet
+        (claimableCredits ?? 0) > 0 && (withdrawalKeys?.canWithdraw ?? false)
+    }
+
+    /// SDK preflight: which keys this wallet holds for this masternode.
+    /// Local + seedless. The persisted owner index is passed as a VERIFIED
+    /// hint so a restored wallet whose in-memory pool has no watermark still
+    /// resolves an owner key above the default scan window.
+    private func loadWithdrawalKeys() {
+        do {
+            withdrawalKeys = try walletManager.masternodeWithdrawalKeys(
+                walletId: masternode.walletId,
+                proTxHash: masternode.proTxHash,
+                ownerKeyIndexHint: masternode.ownerInWallet ? masternode.ownerKeyIndex : nil
+            )
+            withdrawalKeysError = nil
+        } catch {
+            withdrawalKeys = nil
+            withdrawalKeysError = "Couldn't resolve withdrawal keys: \(error.localizedDescription)"
+        }
     }
 
     /// Default claim amount = full balance minus the fee headroom.
@@ -262,9 +305,29 @@ struct MasternodeDetailView: View {
 
     private func prepareClaim() {
         claimError = nil
+        claimOutcomeUnconfirmed = false
         claimAmountText = Self.creditsAsDash(defaultClaimCredits)
             .replacingOccurrences(of: " DASH", with: "")
+        claimDestinationText = withdrawalKeys?.payoutAddress ?? ""
         showClaimSheet = true
+    }
+
+    /// The key the claim signs with: the transfer key when held (it allows
+    /// any destination), else the owner key.
+    private var claimSigningKey: MasternodeWithdrawalSigningKey? {
+        withdrawalKeys?.preferredSigningKey
+    }
+
+    private var claimSigningKeyLabel: String {
+        switch claimSigningKey {
+        case .transfer: return "Payout address key (TRANSFER)"
+        case .owner:
+            return "Owner key (" + PersistentMasternode.keyOwnershipLabel(
+                inWallet: true,
+                accountType: 9,
+                index: withdrawalKeys?.ownerKeyIndex ?? masternode.ownerKeyIndex) + ")"
+        case nil: return "not in this wallet"
+        }
     }
 
     /// Parsed claim amount (DASH text ⇒ credits), or nil if unparseable / 0.
@@ -295,25 +358,31 @@ struct MasternodeDetailView: View {
                 }
 
                 Section("Destination") {
-                    MasternodeDetailRow(
-                        label: "Payout Address",
-                        value: masternode.payoutAddress ?? "registered payout address"
-                    )
-                    Text("Withdrawals with the owner key pay to the registered "
-                        + "payout address — the destination can't be changed.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    if withdrawalKeys?.canChooseDestination == true {
+                        TextField("Dash address", text: $claimDestinationText)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .accessibilityIdentifier("masternode.claim.destinationField")
+                        Text("This wallet holds the payout address key, so the credits "
+                            + "can be withdrawn to any address (default: the payout address).")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        MasternodeDetailRow(
+                            label: "Payout Address",
+                            value: withdrawalKeys?.payoutAddress
+                                ?? masternode.payoutAddress
+                                ?? "registered payout address"
+                        )
+                        Text("Withdrawals with the owner key pay to the registered "
+                            + "payout address — the destination can't be changed.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
 
                 Section("Signing Key") {
-                    MasternodeDetailRow(
-                        label: "Owner Key",
-                        value: PersistentMasternode.keyOwnershipLabel(
-                            inWallet: masternode.ownerInWallet,
-                            accountType: masternode.ownerAccountType,
-                            index: masternode.ownerKeyIndex
-                        )
-                    )
+                    MasternodeDetailRow(label: "Key", value: claimSigningKeyLabel)
                 }
 
                 if let err = claimError {
@@ -331,7 +400,8 @@ struct MasternodeDetailView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Confirm") { Task { await submitClaim() } }
-                        .disabled(claiming || parsedClaimCredits == nil)
+                        .disabled(claiming || claimOutcomeUnconfirmed || parsedClaimCredits == nil
+                            || claimSigningKey == nil)
                         .accessibilityIdentifier("masternode.claim.confirm")
                 }
             }
@@ -340,7 +410,7 @@ struct MasternodeDetailView: View {
 
     @MainActor
     private func submitClaim() async {
-        guard let credits = parsedClaimCredits else { return }
+        guard let credits = parsedClaimCredits, let signingKey = claimSigningKey else { return }
         claiming = true
         claimError = nil
         do {
@@ -352,12 +422,24 @@ struct MasternodeDetailView: View {
                 walletId: masternode.walletId,
                 proTxHash: masternode.proTxHash,
                 amountCredits: credits,
-                signingKey: .owner
+                signingKey: signingKey,
+                destinationAddress: signingKey == .transfer
+                    ? claimDestinationText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    : nil,
+                ownerKeyIndexHint: masternode.ownerInWallet ? masternode.ownerKeyIndex : nil
             )
             claiming = false
             showClaimSheet = false
             // Reflect the new (reduced) balance.
             await fetchClaimableBalance()
+        } catch PlatformWalletError.masternodeWithdrawalUnconfirmed(let detail) {
+            // Ambiguous: the claim may have executed and the nonce was
+            // consumed — never re-submit blindly. Confirm stays disabled
+            // until the balance is refreshed.
+            claiming = false
+            claimOutcomeUnconfirmed = true
+            claimError = "The withdrawal was submitted but its result couldn't be confirmed — "
+                + "it may have gone through. Refresh the balance before trying again. (\(detail))"
         } catch {
             claiming = false
             claimError = error.localizedDescription
@@ -373,6 +455,8 @@ struct MasternodeDetailView: View {
     /// blocking, so it runs off the main actor (matching `loadPreviewKeys`).
     @MainActor
     private func fetchClaimableBalance() async {
+        // A fresh balance read is the reconciliation an ambiguous claim waits for.
+        claimOutcomeUnconfirmed = false
         guard let sdk = platformState.sdk else {
             balanceError = "Platform SDK not ready"
             return

@@ -13,6 +13,7 @@
 #![allow(clippy::doc_overindented_list_items)]
 
 pub mod address_paths;
+pub(crate) mod broadcast_outcome;
 pub mod broadcaster;
 pub mod changeset;
 pub mod error;

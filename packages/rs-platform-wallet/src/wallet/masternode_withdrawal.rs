@@ -46,8 +46,19 @@ use key_wallet::bip32::{ChildNumber, DerivationPath};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::signer::{Signer as CoreSigner, SignerMethod};
 
+use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::Fetch;
+use dpp::identity::core_script::CoreScript;
+use dpp::state_transition::identity_credit_withdrawal_transition::methods::{
+    IdentityCreditWithdrawalTransitionMethodsV0, PreferredKeyPurposeForSigningWithdrawal,
+};
+use dpp::state_transition::identity_credit_withdrawal_transition::{
+    IdentityCreditWithdrawalTransition, MIN_CORE_FEE_PER_BYTE,
+};
+use dpp::state_transition::proof_result::StateTransitionProofResult;
+use dpp::withdrawal::Pooling;
 
+use crate::broadcast_outcome::{broadcast_definitely_failed, carries_consensus_rejection};
 use crate::error::{PlatformWalletError, SIGNER_KEY_UNAVAILABLE_PREFIX};
 use crate::wallet::core::is_signable_funding_account;
 use crate::wallet::identity::network::{
@@ -131,8 +142,16 @@ impl PlatformWallet {
     /// described by `owner_key_hash` / `payout_script`, plus its payout
     /// address. Seedless: the owner key is found by deriving the
     /// `ProviderOwnerKeys` public keys from the account xpub and comparing
-    /// hash160s over the pool's depth; the transfer key by looking the
-    /// payout address up in the funding accounts' address pools.
+    /// hash160s; the transfer key by looking the payout address up in the
+    /// funding accounts' address pools.
+    ///
+    /// `owner_key_index_hint` is a durable index the caller already knows
+    /// for this owner key (the persisted ownership row, or the host's own
+    /// address join). It is VERIFIED, never trusted: the key at that index is
+    /// derived and compared first, so a restored wallet whose in-memory pool
+    /// has no watermark (and whose owner key sits above the default scan
+    /// window) still resolves. Without a hint — or if the hint doesn't match —
+    /// the pool depth (at least [`PROVIDER_KEY_WINDOW`]) is scanned.
     ///
     /// Blocking (takes the wallet-manager read lock) — call from a plain
     /// thread, not from inside the async runtime.
@@ -140,6 +159,7 @@ impl PlatformWallet {
         &self,
         owner_key_hash: Option<&[u8; 20]>,
         payout_script: Option<&[u8]>,
+        owner_key_index_hint: Option<u32>,
     ) -> Result<MasternodeWithdrawalKeys, PlatformWalletError> {
         let network = self.network();
 
@@ -199,10 +219,13 @@ impl PlatformWallet {
             (owner_scan_max, transfer_key)
         };
 
-        // Owner key: derive-and-compare over the pool depth. Seedless —
-        // `derive_provider_key_at_index` reads the account xpub.
+        // Owner key: verify the caller's hint first, then derive-and-compare
+        // over the pool depth. Seedless — `derive_provider_key_at_index`
+        // reads the account xpub.
         let owner_key = match owner_key_hash {
-            Some(target) => self.find_owner_key(target, owner_scan_max, network)?,
+            Some(target) => {
+                self.find_owner_key(target, owner_scan_max, owner_key_index_hint, network)?
+            }
             None => None,
         };
 
@@ -218,36 +241,63 @@ impl PlatformWallet {
         &self,
         owner_key_hash: &[u8; 20],
         scan_max: u32,
+        index_hint: Option<u32>,
         network: Network,
     ) -> Result<Option<(u32, DerivationPath)>, PlatformWalletError> {
+        if let Some(hint) = index_hint {
+            match self.owner_key_matches_at(hint, owner_key_hash)? {
+                // No provider-owner-keys account at all ⇒ nothing to match.
+                None => return Ok(None),
+                Some(true) => return Ok(Some((hint, provider_owner_key_path(network, hint)?))),
+                Some(false) => {} // stale hint — fall back to the scan
+            }
+        }
         for index in 0..scan_max {
-            let derived =
-                match self.derive_provider_key_at_index(ProviderKeyKind::Owner, index, None, false)
-                {
-                    Ok(derived) => derived,
-                    // No provider-owner-keys account at all ⇒ nothing to match.
-                    Err(PlatformWalletError::AddressNotFound(_)) => return Ok(None),
-                    Err(e) => return Err(e),
-                };
-            let hash: [u8; 20] = hash160::Hash::hash(&derived.public_key_bytes).to_byte_array();
-            if &hash == owner_key_hash {
-                let path = provider_owner_key_path(network, index)?;
-                return Ok(Some((index, path)));
+            match self.owner_key_matches_at(index, owner_key_hash)? {
+                None => return Ok(None),
+                Some(true) => return Ok(Some((index, provider_owner_key_path(network, index)?))),
+                Some(false) => {}
             }
         }
         Ok(None)
+    }
+
+    /// `Some(matches)` for the owner key derived at `index`; `None` when the
+    /// wallet has no provider-owner-keys account to derive from.
+    fn owner_key_matches_at(
+        &self,
+        index: u32,
+        owner_key_hash: &[u8; 20],
+    ) -> Result<Option<bool>, PlatformWalletError> {
+        let derived =
+            match self.derive_provider_key_at_index(ProviderKeyKind::Owner, index, None, false) {
+                Ok(derived) => derived,
+                Err(PlatformWalletError::AddressNotFound(_)) => return Ok(None),
+                Err(e) => return Err(e),
+            };
+        let hash: [u8; 20] = hash160::Hash::hash(&derived.public_key_bytes).to_byte_array();
+        Ok(Some(&hash == owner_key_hash))
     }
 
     /// Submit an Identity Credit Withdrawal from the masternode's owner
     /// identity, signed with the wallet key chosen in `request.signing_key`
     /// and derived through `signer` at the path resolved by
     /// [`Self::masternode_withdrawal_keys`] (`keys`). Returns the identity's
-    /// remaining credit balance.
+    /// remaining credit balance as proven by Platform.
     ///
     /// Guards (all fail WITHOUT broadcasting):
     /// - owner path with a destination, or a key the wallet doesn't hold;
     /// - the identity is missing, or doesn't carry the expected
     ///   `OWNER` / `TRANSFER` key for the wallet's hash160.
+    ///
+    /// Outcomes after the transition leaves this wallet are kept distinct:
+    /// a definitive rejection (consensus error, or a transport verdict that
+    /// rules out delivery) is an ordinary error and may be retried; anything
+    /// ambiguous — broadcast accepted (or its ACK lost) and the result wait
+    /// failed — is [`PlatformWalletError::MasternodeWithdrawalUnconfirmed`]
+    /// and MUST NOT be retried until the claimable balance is re-read: the
+    /// identity nonce was already consumed for this attempt, so a blind retry
+    /// would submit a second withdrawal.
     pub async fn masternode_withdraw<S: CoreSigner + ?Sized>(
         &self,
         request: MasternodeWithdrawalRequest,
@@ -367,23 +417,75 @@ impl PlatformWallet {
             expected_key_hash160: expected_hash160,
         };
 
-        self.identity()
-            .withdraw_credits_with_signer(
-                &identity,
-                destination,
-                request.amount_credits,
-                Some(&identity_key),
-                identity_signer,
-                None,
-            )
-            .await
-            .map_err(|e| {
-                crate::error::preserve_signer_key_unavailable_or(e, |e| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "masternode withdrawal failed: {e}"
-                    ))
-                })
+        let sdk = self.sdk();
+        let definitive = |e: dash_sdk::Error| {
+            crate::error::preserve_signer_key_unavailable_or(e, |e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "masternode withdrawal failed: {e}"
+                ))
             })
+        };
+
+        // Build + sign locally. Nothing has left the wallet yet, so every
+        // error here is definitive and retryable.
+        let nonce = sdk
+            .get_identity_nonce(identity_id, true, None)
+            .await
+            .map_err(definitive)?;
+        let output_script = destination.map(|address| CoreScript::new(address.script_pubkey()));
+        let state_transition = IdentityCreditWithdrawalTransition::try_from_identity(
+            &identity,
+            output_script,
+            request.amount_credits,
+            Pooling::Never,
+            MIN_CORE_FEE_PER_BYTE,
+            0,
+            identity_signer,
+            Some(&identity_key),
+            PreferredKeyPurposeForSigningWithdrawal::TransferPreferred,
+            nonce,
+            sdk.version(),
+            None,
+        )
+        .await
+        .map_err(|e| definitive(dash_sdk::Error::Protocol(e)))?;
+
+        // Broadcast, then wait — split so an ambiguous outcome stays typed.
+        let unconfirmed = |reason: String| PlatformWalletError::MasternodeWithdrawalUnconfirmed {
+            identity_id,
+            amount_credits: request.amount_credits,
+            reason,
+        };
+        match state_transition.broadcast(sdk, None).await {
+            Ok(()) => {}
+            Err(e) if broadcast_definitely_failed(&e) => return Err(definitive(e)),
+            Err(e) => {
+                tracing::warn!(
+                    identity = %identity_id,
+                    error = %e,
+                    "masternode withdrawal broadcast returned no verdict; the transition may \
+                     have been admitted — falling through to the result wait"
+                );
+            }
+        }
+
+        match state_transition
+            .wait_for_affected_state::<StateTransitionProofResult>(sdk, None)
+            .await
+        {
+            Ok(StateTransitionProofResult::VerifiedPartialIdentity(partial)) => {
+                partial.balance.ok_or_else(|| {
+                    unconfirmed("the result proof carried no identity balance".to_string())
+                })
+            }
+            // Proved, but not the shape a withdrawal produces — the transition
+            // landed; only the balance read-back is missing.
+            Ok(_) => Err(unconfirmed(
+                "the result proof did not carry the identity's balance".to_string(),
+            )),
+            Err(e) if carries_consensus_rejection(&e) => Err(definitive(e)),
+            Err(e) => Err(unconfirmed(e.to_string())),
+        }
     }
 }
 
