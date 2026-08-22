@@ -23,6 +23,134 @@ use platform_encryption::{
 };
 use std::collections::BTreeMap;
 
+use dpp::data_contract::DataContract;
+
+/// Already-derived crypto material and metadata for a DIP-15
+/// `contactRequest` document.
+///
+/// Everything here is plain data: the ECDH/encryption that produced
+/// `encrypted_public_key` and `encrypted_account_label`, and the randomness
+/// that produced `entropy`, happen in the caller.
+#[derive(Debug, Clone)]
+pub struct ContactRequestDocumentParams {
+    /// The sender's identity id (the document owner)
+    pub sender_id: Identifier,
+    /// The recipient's identity id (`toUserId`)
+    pub recipient_id: Identifier,
+    /// The sender's encryption key index used for ECDH
+    pub sender_key_index: u32,
+    /// The recipient's key index used for ECDH
+    pub recipient_key_index: u32,
+    /// Reference to the DashPay receiving account
+    pub account_reference: u32,
+    /// ECDH-encrypted extended public key: exactly 96 bytes
+    /// (16-byte IV + 80 bytes of encrypted DIP-15 compact xpub)
+    pub encrypted_public_key: Vec<u8>,
+    /// Optional encrypted account label: 48-80 bytes
+    /// (16-byte IV + 32-64 bytes of encrypted data)
+    pub encrypted_account_label: Option<Vec<u8>>,
+    /// Optional auto-accept proof (38-102 bytes) - not encrypted
+    pub auto_accept_proof: Option<Vec<u8>>,
+    /// The entropy that derives the document id; the same entropy must be
+    /// attached to the create transition, or platform consensus rejects it
+    /// with `InvalidDocumentTransitionIdError`.
+    pub entropy: [u8; 32],
+}
+
+/// Validate the size of a DIP-15 `autoAcceptProof` (38-102 bytes).
+pub fn validate_auto_accept_proof(proof: &[u8]) -> Result<(), Error> {
+    if proof.len() < 38 || proof.len() > 102 {
+        return Err(Error::Generic(format!(
+            "autoAcceptProof must be 38-102 bytes, got {}",
+            proof.len()
+        )));
+    }
+    Ok(())
+}
+
+/// Build the id and property map of a DIP-15 `contactRequest` document from
+/// already-derived crypto material.
+///
+/// This is the pure document-assembly half of [`Sdk::create_contact_request`]:
+/// the document id derives from `params.entropy`, and the property map
+/// carries exactly the fields the DashPay contract defines (`toUserId`,
+/// `encryptedPublicKey`, `senderKeyIndex`, `recipientKeyIndex`,
+/// `accountReference`, plus the optional `encryptedAccountLabel` and
+/// `autoAcceptProof`).
+///
+/// Returns `(document_id, properties)`.
+pub fn build_contact_request_document(
+    contract: &DataContract,
+    params: ContactRequestDocumentParams,
+) -> Result<(Identifier, BTreeMap<String, Value>), Error> {
+    if let Some(ref proof) = params.auto_accept_proof {
+        validate_auto_accept_proof(proof)?;
+    }
+
+    // Validate encrypted public key size (must be exactly 96 bytes: 16-byte IV + 80-byte encrypted data)
+    if params.encrypted_public_key.len() != 96 {
+        return Err(Error::Generic(format!(
+            "Encrypted public key size mismatch: expected 96 bytes, got {}",
+            params.encrypted_public_key.len()
+        )));
+    }
+
+    // Validate encrypted label size (48-80 bytes: 16-byte IV + 32-64 byte encrypted data)
+    if let Some(ref label) = params.encrypted_account_label {
+        if label.len() < 48 || label.len() > 80 {
+            return Err(Error::Generic(format!(
+                "Encrypted account label size out of range: expected 48-80 bytes, got {}",
+                label.len()
+            )));
+        }
+    }
+
+    let contact_request_document_type =
+        contract
+            .document_type_for_name("contactRequest")
+            .map_err(|_| {
+                Error::Generic("DashPay contactRequest document type not found".to_string())
+            })?;
+
+    let document_id = Document::generate_document_id_v0(
+        &contract.id(),
+        &params.sender_id,
+        contact_request_document_type.name(),
+        params.entropy.as_slice(),
+    );
+
+    let mut properties = BTreeMap::new();
+    properties.insert(
+        "toUserId".to_string(),
+        Value::Identifier(params.recipient_id.to_buffer()),
+    );
+    properties.insert(
+        "encryptedPublicKey".to_string(),
+        Value::Bytes(params.encrypted_public_key),
+    );
+    properties.insert(
+        "senderKeyIndex".to_string(),
+        Value::U32(params.sender_key_index),
+    );
+    properties.insert(
+        "recipientKeyIndex".to_string(),
+        Value::U32(params.recipient_key_index),
+    );
+    properties.insert(
+        "accountReference".to_string(),
+        Value::U32(params.account_reference),
+    );
+
+    if let Some(label) = params.encrypted_account_label {
+        properties.insert("encryptedAccountLabel".to_string(), Value::Bytes(label));
+    }
+    if let Some(proof) = params.auto_accept_proof {
+        properties.insert("autoAcceptProof".to_string(), Value::Bytes(proof));
+    }
+
+    Ok((document_id, properties))
+}
+
 /// ECDH provider for contact request encryption
 ///
 /// Supports two modes:
@@ -259,14 +387,11 @@ impl Sdk {
         H: FnOnce(u32) -> Hut,
         Hut: std::future::Future<Output = Result<Vec<u8>, Error>>,
     {
-        // Validate auto accept proof size if provided
+        // Validate auto accept proof size if provided. The builder
+        // validates again, but checking here first keeps the failure local —
+        // before the recipient fetch and ECDH work below.
         if let Some(ref proof) = input.auto_accept_proof {
-            if proof.len() < 38 || proof.len() > 102 {
-                return Err(Error::Generic(format!(
-                    "autoAcceptProof must be 38-102 bytes, got {}",
-                    proof.len()
-                )));
-            }
+            validate_auto_accept_proof(proof)?;
         }
 
         // Fetch recipient identity if only ID was provided
@@ -362,90 +487,45 @@ impl Sdk {
         let mut xpub_iv = [0u8; 16];
         rng.fill_bytes(&mut xpub_iv);
 
-        // Encrypt the extended public key (includes IV prepended)
+        // Encrypt the extended public key (includes IV prepended). The
+        // builder rejects any ciphertext that isn't exactly 96 bytes
+        // (16-byte IV + 80-byte encrypted data).
         let encrypted_public_key =
             encrypt_extended_public_key(&shared_key, &xpub_iv, &extended_public_key);
 
-        // Validate encrypted public key size (must be exactly 96 bytes: 16-byte IV + 80-byte encrypted data)
-        if encrypted_public_key.len() != 96 {
-            return Err(Error::Generic(format!(
-                "Encrypted public key size mismatch: expected 96 bytes, got {}",
-                encrypted_public_key.len()
-            )));
-        }
-
-        // Encrypt the account label if provided (includes IV prepended)
-        let encrypted_account_label = if let Some(ref label) = input.account_label {
+        // Encrypt the account label if provided (includes IV prepended). The
+        // builder rejects any ciphertext outside 48-80 bytes
+        // (16-byte IV + 32-64 byte encrypted data).
+        let encrypted_account_label = input.account_label.as_ref().map(|label| {
             let mut label_iv = [0u8; 16];
             rng.fill_bytes(&mut label_iv);
-            let encrypted = encrypt_account_label(&shared_key, &label_iv, label);
-
-            // Validate encrypted label size (48-80 bytes: 16-byte IV + 32-64 byte encrypted data)
-            if encrypted.len() < 48 || encrypted.len() > 80 {
-                return Err(Error::Generic(format!(
-                    "Encrypted account label size out of range: expected 48-80 bytes, got {}",
-                    encrypted.len()
-                )));
-            }
-            Some(encrypted)
-        } else {
-            None
-        };
+            encrypt_account_label(&shared_key, &label_iv, label)
+        });
 
         // Fetch DashPay contract
         let dashpay_contract = self.fetch_dashpay_contract().await?;
-
-        // Get contactRequest document type
-        let contact_request_document_type = dashpay_contract
-            .document_type_for_name("contactRequest")
-            .map_err(|_| {
-                Error::Generic("DashPay contactRequest document type not found".to_string())
-            })?;
 
         // Generate entropy for document ID
         let mut rng = StdRng::from_entropy();
         let entropy = Bytes32::random_with_rng(&mut rng);
 
-        // Generate document ID
+        // Assemble the document in the pure builder above, keeping document
+        // assembly separate from this networked flow.
         let sender_id = input.sender_identity.id().to_owned();
-        let document_id = Document::generate_document_id_v0(
-            &dashpay_contract.id(),
-            &sender_id,
-            contact_request_document_type.name(),
-            entropy.as_slice(),
-        );
-
-        // Build document properties
-        let mut properties = BTreeMap::new();
-        let recipient_id = recipient_identity.id().to_owned();
-        properties.insert(
-            "toUserId".to_string(),
-            Value::Identifier(recipient_id.to_buffer()),
-        );
-        properties.insert(
-            "encryptedPublicKey".to_string(),
-            Value::Bytes(encrypted_public_key),
-        );
-        properties.insert(
-            "senderKeyIndex".to_string(),
-            Value::U32(input.sender_key_index),
-        );
-        properties.insert(
-            "recipientKeyIndex".to_string(),
-            Value::U32(input.recipient_key_index),
-        );
-        properties.insert(
-            "accountReference".to_string(),
-            Value::U32(input.account_reference),
-        );
-
-        // Add optional fields
-        if let Some(label) = encrypted_account_label {
-            properties.insert("encryptedAccountLabel".to_string(), Value::Bytes(label));
-        }
-        if let Some(proof) = input.auto_accept_proof {
-            properties.insert("autoAcceptProof".to_string(), Value::Bytes(proof));
-        }
+        let (document_id, properties) = build_contact_request_document(
+            &dashpay_contract,
+            ContactRequestDocumentParams {
+                sender_id,
+                recipient_id: recipient_identity.id().to_owned(),
+                sender_key_index: input.sender_key_index,
+                recipient_key_index: input.recipient_key_index,
+                account_reference: input.account_reference,
+                encrypted_public_key,
+                encrypted_account_label,
+                auto_accept_proof: input.auto_accept_proof,
+                entropy: entropy.0,
+            },
+        )?;
 
         // Return the essential fields for the contact request, including the
         // entropy that derived `document_id` so the broadcast path can reuse it.
