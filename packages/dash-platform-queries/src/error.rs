@@ -29,6 +29,22 @@ pub enum Error {
     Protocol(#[from] ProtocolError),
 }
 
+impl From<crate::documents::proto_conversions::DecodeError> for Error {
+    fn from(value: crate::documents::proto_conversions::DecodeError) -> Self {
+        use crate::documents::proto_conversions::DecodeError;
+        match value {
+            // Malformed wire bytes — a decoding failure, not a
+            // misconfiguration.
+            DecodeError::InvalidArgument(msg) => Self::Protocol(ProtocolError::DecodingError(msg)),
+            // Well-formed wire shape the decode target can't express
+            // yet — same classification the server gives it.
+            DecodeError::Unsupported(msg) => Self::Drive(drive::error::Error::Query(
+                drive::error::query::QuerySyntaxError::Unsupported(msg),
+            )),
+        }
+    }
+}
+
 impl From<ConsensusError> for Error {
     fn from(value: ConsensusError) -> Self {
         Self::Protocol(ProtocolError::ConsensusError(Box::new(value)))

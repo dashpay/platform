@@ -17,6 +17,7 @@ mocks = [
 ]
 
 [dependencies]
+ciborium = { version = "0.2.2" }
 dapi-grpc = { path = "../dapi-grpc", default-features = false, features = [
   "platform",
   "client",
