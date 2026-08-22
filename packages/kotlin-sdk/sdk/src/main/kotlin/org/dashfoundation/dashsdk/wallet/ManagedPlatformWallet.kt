@@ -217,6 +217,26 @@ class ManagedPlatformWallet internal constructor(
         val rawTxBytes: ByteArray,
         val feeDuffs: Long,
         val reservationToken: Long,
+        /**
+         * Value in duffs of the sole non-OP_RETURN output of the REGISTERED
+         * transaction — the one [broadcastSigned] will send.
+         *
+         * Computed Rust-side during finalization and carried in the
+         * registration result, NOT re-derived here from [rawTxBytes]: those
+         * bytes are a mutable copy the host owns, while the broadcast uses the
+         * registered transaction referenced by [reservationToken]. Deriving it
+         * here could report a value the broadcast does not pay.
+         *
+         * Needed for a DRAIN ([CoreTransactionBuilder.SelectionStrategy.ALL]),
+         * where the ENGINE sets this output to `total inputs − fee` and the
+         * caller therefore never supplied it. A swap must quote from this and
+         * then broadcast THIS payment, so quote and payment cannot disagree.
+         *
+         * 0 when the payment has no single destination (multi-recipient, or an
+         * OP_RETURN-only build) — read that as "not applicable", not "pays
+         * nothing".
+         */
+        val deliverableAmountDuffs: Long = 0,
     ) : AutoCloseable {
 
         // GC backstop: releases the token if it was neither broadcast nor
@@ -232,6 +252,7 @@ class ManagedPlatformWallet internal constructor(
          * if you never call [close].
          */
         override fun close() = cleanable.clean()
+
 
         override fun equals(other: Any?): Boolean =
             other is SignedCoreTransaction &&
@@ -263,12 +284,16 @@ class ManagedPlatformWallet internal constructor(
             /**
              * Decode the big-endian native BLOB the atomic
              * finalize-and-register FFI returns: `u64 token, u64 feeDuffs,
-             * u32 txidLen, txid utf8, u32 txBytesLen, txBytes`.
+             * u64 deliverableDuffs, u32 txidLen, txid utf8, u32 txBytesLen,
+             * txBytes`. `deliverableDuffs` is computed from the REGISTERED
+             * transaction Rust-side (see
+             * [SignedCoreTransaction.deliverableAmountDuffs]).
              */
             internal fun fromRegisterBlob(blob: ByteArray): SignedCoreTransaction {
                 val buffer = java.nio.ByteBuffer.wrap(blob) // big-endian by default
                 val token = buffer.long
                 val feeDuffs = buffer.long
+                val deliverableDuffs = buffer.long
                 val txidLen = buffer.int
                 val txidBytes = ByteArray(txidLen)
                 buffer.get(txidBytes)
@@ -280,6 +305,7 @@ class ManagedPlatformWallet internal constructor(
                     rawTxBytes = rawTxBytes,
                     feeDuffs = feeDuffs,
                     reservationToken = token,
+                    deliverableAmountDuffs = deliverableDuffs,
                 )
             }
         }
@@ -346,6 +372,32 @@ class ManagedPlatformWallet internal constructor(
      *   output indices, as MAYAChain does.
      * @param changeToFirstInput route change back to the first selected
      *   input's address (VIN0) instead of a fresh change address.
+     * @param selectionStrategy coin-selection strategy, or null to leave the
+     *   builder's default. Pass
+     *   [CoreTransactionBuilder.SelectionStrategy.ALL] to DRAIN the funding
+     *   account: every spendable UTXO is selected, there is no change, and the
+     *   engine sets the single value-carrying output to `total inputs − fee`
+     *   — so the `amount` given in [recipients] is IGNORED (pass 0). A
+     *   zero-value [opReturnData] carrier may accompany the destination (the
+     *   MAYACHAIN "swap my whole balance" case); its bytes are priced into
+     *   the fee. Read what the drain will actually pay from
+     *   [SignedCoreTransaction.deliverableAmountDuffs] BEFORE broadcasting —
+     *   that is the only way to learn the engine-computed amount, and it is
+     *   what a swap quote must be taken from.
+     *
+     *   **A drain's scope is [accountType], which defaults to
+     *   [AccountType.ALL_SPENDABLE].** Combined with `ALL`, a call that does
+     *   not name an account type sweeps BIP44, BIP32 AND every DashPay
+     *   contact-receiving account into one transaction — and, being a drain,
+     *   leaves no change: every selected input becomes the destination output
+     *   plus fee. That is the intended shape: "send everything" means
+     *   everything the wallet can sign for, which before the pooled selector
+     *   required sweeping accounts together on-chain first.
+     *
+     *   Name [AccountType.BIP44] or [AccountType.BIP32] to confine the drain
+     *   to one family. Those are the only single-family scopes this method
+     *   can express — its [AccountType] has no CoinJoin variant, and a
+     *   CoinJoin sweep goes through the dedicated send-all path instead.
      */
     suspend fun buildSignedPayment(
         recipients: List<Pair<String, Long>>,
@@ -356,6 +408,7 @@ class ManagedPlatformWallet internal constructor(
         opReturnData: ByteArray? = null,
         preserveOutputOrder: Boolean = false,
         changeToFirstInput: Boolean = false,
+        selectionStrategy: CoreTransactionBuilder.SelectionStrategy? = null,
     ): SignedCoreTransaction = gate.opWithCleanupOnCancellation(
         // Native finalization mints the token and transfers reservation ownership
         // to it before the blocking JNI call returns, so the token already exists
@@ -369,8 +422,15 @@ class ManagedPlatformWallet internal constructor(
     ) {
         require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
         require(recipients.isNotEmpty()) { "recipients must not be empty" }
-        require(recipients.all { it.second > 0 }) {
-            "every recipient amount must be positive"
+        // A DRAIN has the engine set the destination output to
+        // (total inputs − fee), so the caller's amount is ignored and 0 is the
+        // honest value to pass. Requiring a positive one here would make
+        // "send my whole balance" inexpressible through this API — the caller
+        // would have to invent a placeholder the engine then discards.
+        val draining = selectionStrategy == CoreTransactionBuilder.SelectionStrategy.ALL
+        require(draining || recipients.all { it.second > 0 }) {
+            "every recipient amount must be positive (except under " +
+                "SelectionStrategy.ALL, where the engine computes it)"
         }
         val builderAccountType = when (accountType) {
             AccountType.BIP44 -> CoreTransactionBuilder.AccountType.BIP44
@@ -400,6 +460,12 @@ class ManagedPlatformWallet internal constructor(
                 if (changeToFirstInput) {
                     builder.changeToFirstInput()
                 }
+                // Set LAST so it applies to the fully-composed output set: a
+                // drain (SelectionStrategy.ALL) requires exactly one
+                // value-carrying output, and the engine rejects the build here
+                // — before anything is reserved — if the OP_RETURN above
+                // carries a value or a second spendable output was added.
+                selectionStrategy?.let { builder.setSelectionStrategy(it) }
                 builder.finalizeSignedPayment(
                     this@ManagedPlatformWallet,
                     builderAccountType,

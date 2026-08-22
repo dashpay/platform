@@ -680,8 +680,18 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
             throw_sdk_exception(env, 1, "builder handle is 0");
             return;
         }
-        if amount <= 0 {
-            throw_sdk_exception(env, 1, "amount must be positive");
+        // Negative only. A ZERO output is legitimate for a drain
+        // (SelectionStrategy::All): the engine overwrites the destination
+        // output with (total inputs - fee), so the caller supplies no amount.
+        // Rejecting it here made "send my whole balance" inexpressible and
+        // forced callers to invent a placeholder the engine then discarded.
+        // The positive-amount rule still holds for every other build — it is
+        // enforced one layer up in `ManagedPlatformWallet.buildSignedPayment`,
+        // which knows whether the caller is draining; this boundary does not,
+        // so it must not duplicate a check it cannot qualify. A negative
+        // jlong would bit-cast to a huge u64, so that stays refused here.
+        if amount < 0 {
+            throw_sdk_exception(env, 1, "amount must not be negative");
             return;
         }
         let Some(address_c) = read_cstring_required(env, &address, "address") else {
@@ -1370,16 +1380,20 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
 // nack/abandonment. Backed by the process-global registry in `platform_wallet_ffi`
 // (`core_wallet_signed_payment_*`). See `SignedPaymentRegistry`.
 
-/// `core_wallet_signed_payment_finalize` — atomically fund, reserve, sign, and
-/// register a builder for deferred (BIP70/BIP270) submission in ONE native
-/// operation. Selection and reservation commit as a single unit under the
+/// `core_wallet_signed_payment_finalize_with_deliverable` — atomically fund,
+/// reserve, sign, and register a builder for deferred (BIP70/BIP270) submission
+/// in ONE native operation. Selection and reservation commit as a single unit under the
 /// wallet-manager lock, so concurrent deferred builds (or a deferred build
 /// racing an immediate send) can no longer double-select an input. CONSUMES
 /// [builder]. `accountType`/`accountIndex` are the funding account (0 BIP44,
 /// 1 BIP32, 2 CoinJoin); [coreSignerHandle] is a `MnemonicResolverHandle`.
 ///
 /// Returns a big-endian BLOB decoded into a `SignedCoreTransaction`:
-/// `u64 token, u64 feeDuffs, u32 txidLen, txid utf8, u32 txBytesLen, txBytes`.
+/// `u64 token, u64 feeDuffs, u64 deliverableDuffs, u32 txidLen, txid utf8,
+/// u32 txBytesLen, txBytes`. `deliverableDuffs` is the value of the sole
+/// non-OP_RETURN output of the REGISTERED transaction (0 when the payment has
+/// no single destination) — computed Rust-side so the host never re-derives it
+/// from its own copy of the bytes.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletFinalizeSignedPayment(
@@ -1432,8 +1446,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
         let mut out_txid: *mut c_char = ptr::null_mut();
         let mut out_bytes_ptr: *const u8 = ptr::null();
         let mut out_bytes_len: usize = 0;
+        let mut deliverable: u64 = 0;
         let result = unsafe {
-            platform_wallet_ffi::core_wallet_signed_payment_finalize(
+            platform_wallet_ffi::core_wallet_signed_payment_finalize_with_deliverable(
                 builder as *mut platform_wallet_ffi::FFITransactionBuilder,
                 wallet_handle as Handle,
                 account_type,
@@ -1445,6 +1460,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
                 out_tx,
                 &mut out_bytes_ptr as *mut *const u8,
                 &mut out_bytes_len as *mut usize,
+                &mut deliverable as *mut u64,
             )
         };
         if take_pwffi_error(env, result) {
@@ -1478,9 +1494,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
 
         // Assemble the big-endian BLOB (matches the register decoder).
         let txid_bytes = txid.into_bytes();
-        let mut blob = Vec::with_capacity(8 + 8 + 4 + txid_bytes.len() + 4 + tx_bytes.len());
+        let mut blob = Vec::with_capacity(8 + 8 + 8 + 4 + txid_bytes.len() + 4 + tx_bytes.len());
         blob.extend_from_slice(&token.to_be_bytes());
         blob.extend_from_slice(&fee.to_be_bytes());
+        blob.extend_from_slice(&deliverable.to_be_bytes());
         blob.extend_from_slice(&(txid_bytes.len() as u32).to_be_bytes());
         blob.extend_from_slice(&txid_bytes);
         blob.extend_from_slice(&(tx_bytes.len() as u32).to_be_bytes());

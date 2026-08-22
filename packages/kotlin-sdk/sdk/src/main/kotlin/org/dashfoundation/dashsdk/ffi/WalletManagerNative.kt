@@ -285,16 +285,22 @@ internal object WalletManagerNative {
     external fun coreWalletDestroy(coreHandle: Long)
 
     /**
-     * `core_wallet_signed_payment_finalize` — atomically fund, reserve, sign,
-     * AND register a builder for deferred (BIP70/BIP270) submission in one
-     * native call. Selection and reservation commit as a single unit under the
+     * `core_wallet_signed_payment_finalize_with_deliverable` — atomically fund,
+     * reserve, sign, AND register a builder for deferred (BIP70/BIP270)
+     * submission in one native call. Selection and reservation commit as a single unit under the
      * wallet-manager lock, closing the double-selection window. CONSUMES
      * [builder]. [accountType]/[accountIndex] identify the funding account
      * (0 BIP44, 1 BIP32, 2 CoinJoin); [coreSignerHandle] is a
      * `MnemonicResolverHandle`.
      *
      * Returns a big-endian BLOB decoded into a `SignedCoreTransaction`:
-     * `u64 token, u64 feeDuffs, u32 txidLen, txid utf8, u32 txBytesLen, txBytes`.
+     * `u64 token, u64 feeDuffs, u64 deliverableDuffs, u32 txidLen, txid utf8,
+     * u32 txBytesLen, txBytes`.
+     *
+     * `deliverableDuffs` sits between `feeDuffs` and `txidLen`, so every field
+     * after it shifts by eight bytes against the pre-drain layout. It is the
+     * value of the transaction's sole non-OP_RETURN output, or 0 when there is
+     * no single such output.
      */
     external fun coreWalletFinalizeSignedPayment(
         builder: Long,

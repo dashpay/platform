@@ -6,7 +6,7 @@ use crate::types::{FFINetwork, Network};
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
 use dashcore::hashes::Hash;
-use dashcore::{Address as DashAddress, OutPoint, Txid};
+use dashcore::{Address as DashAddress, OutPoint, TxOut, Txid};
 use key_wallet::account::ManagedAccountCollection;
 use key_wallet::managed_account::ManagedCoreFundsAccount;
 use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
@@ -193,6 +193,24 @@ pub unsafe extern "C" fn core_wallet_tx_builder_finalize(
     PlatformWalletFFIResult::ok()
 }
 
+/// Value of the sole non-OP_RETURN output: what a broadcast of this
+/// transaction actually pays out.
+///
+/// Returns 0 when there is no single such output. A multi-recipient build has
+/// no one deliverable amount, and an OP_RETURN-only build pays no one — hosts
+/// read the 0 as "not applicable" rather than "pays nothing", so the two cases
+/// need not be told apart here.
+///
+/// Output ORDER is deliberately irrelevant: a MAYAChain deposit carries its
+/// memo at VOUT1, while other layouts put the data carrier first.
+fn sole_deliverable_value(outputs: &[TxOut]) -> u64 {
+    let mut carriers = outputs.iter().filter(|out| !out.script_pubkey.is_op_return());
+    match (carriers.next(), carriers.next()) {
+        (Some(only), None) => only.value,
+        _ => 0,
+    }
+}
+
 /// Atomically fund, reserve, and sign a configured builder for DEFERRED
 /// (BIP70/BIP270) submission, then register the built transaction — holding its
 /// UTXO reservation — in one native operation.
@@ -215,6 +233,18 @@ pub unsafe extern "C" fn core_wallet_tx_builder_finalize(
 /// `core_wallet_transaction_free`). `out_bytes_ptr`/`out_bytes_len` borrow
 /// `out_tx`'s buffer — copy them out before freeing `out_tx`.
 ///
+/// Also writes `out_deliverable_duffs`: the value of the sole non-OP_RETURN
+/// output of the REGISTERED transaction — what a later broadcast actually
+/// pays out. Hosts need it for a drain (`SelectionStrategy::All`), where the
+/// engine, not the caller, sets that output to `total inputs - fee`; reading it
+/// from the registered transaction here keeps a quote and its payment from
+/// disagreeing. Writes 0 when there is no single such output (multi-recipient,
+/// or an OP_RETURN-only build) — "not applicable", not "pays nothing".
+///
+/// This is the CURRENT entry point. `core_wallet_signed_payment_finalize` is
+/// the pre-existing eleven-argument symbol, kept so already-compiled callers
+/// keep linking; it forwards here and discards the amount.
+///
 /// # Safety
 /// `builder` must be a valid, non-destroyed pointer; `wallet` a valid
 /// platform-wallet handle; `core_signer_handle` a valid resolver handle; every
@@ -222,7 +252,7 @@ pub unsafe extern "C" fn core_wallet_tx_builder_finalize(
 /// `FFICoreTransaction` (typically zeroed).
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
-pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
+pub unsafe extern "C" fn core_wallet_signed_payment_finalize_with_deliverable(
     builder: *mut FFITransactionBuilder,
     wallet: Handle,
     account_type: CoreAccountTypeFFI,
@@ -234,6 +264,7 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
     out_tx: *mut FFICoreTransaction,
     out_bytes_ptr: *mut *const u8,
     out_bytes_len: *mut usize,
+    out_deliverable_duffs: *mut u64,
 ) -> PlatformWalletFFIResult {
     check_ptr!(builder);
     check_ptr!(core_signer_handle);
@@ -243,6 +274,7 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
     check_ptr!(out_tx);
     check_ptr!(out_bytes_ptr);
     check_ptr!(out_bytes_len);
+    check_ptr!(out_deliverable_duffs);
     // Publish sentinels into EVERY output before any fallible step (wallet
     // resolution, network validation, signing, registration), so an error
     // return never leaves caller-supplied garbage in an out param that a host
@@ -257,6 +289,7 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
     };
     *out_bytes_ptr = std::ptr::null();
     *out_bytes_len = 0;
+    *out_deliverable_duffs = 0;
 
     // `finalize_transaction` consumes the builder: reclaim both heap boxes up
     // front so they are freed on every return path below.
@@ -339,6 +372,17 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
         }
     };
 
+    // The deliverable amount, taken from the transaction that will actually be
+    // broadcast — not re-derived by the host from a copy of the bytes. Under a
+    // drain the ENGINE sets this output (total inputs - fee), so the caller
+    // never supplied it and has no other authoritative source; a host that
+    // re-parsed its own byte array could quote a value the broadcast does not
+    // pay. Defined only for a single-destination payment: exactly one output
+    // that is not an OP_RETURN data carrier. Anything else reports 0, which the
+    // host reads as "not applicable" rather than "pays nothing".
+    let deliverable_duffs = sole_deliverable_value(&finalized.transaction().output);
+    unsafe { *out_deliverable_duffs = deliverable_duffs };
+
     let serialized = dashcore::consensus::serialize(finalized.transaction());
     let len = serialized.len();
 
@@ -383,6 +427,61 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
     *out_bytes_ptr = (*out_tx).tx_bytes as *const u8;
     *out_bytes_len = len;
     PlatformWalletFFIResult::ok()
+}
+
+/// The pre-existing ELEVEN-argument finalize, preserved byte-for-byte in its
+/// C signature. Forwards to
+/// [`core_wallet_signed_payment_finalize_with_deliverable`] and discards the
+/// deliverable amount; behaviour is otherwise identical.
+///
+/// Kept because this symbol is exported across a BINARY boundary: the Swift SDK
+/// consumes `DashSDKFFI.xcframework` as a `binaryTarget`, so a host's compiled
+/// Swift and this library are built and shipped separately and can meet at
+/// different versions. Adding the twelfth out-parameter to this symbol in place
+/// would make the callee write eight bytes through a pointer an eleven-argument
+/// caller never passed — reading whatever occupied that argument slot and
+/// treating it as an address. That corrupts silently rather than failing, so the
+/// old shape stays, and callers that want the amount move to the new symbol.
+///
+/// Do not "simplify" this away by deleting it and updating the in-tree callers:
+/// the callers that matter here are already-compiled binaries, which no
+/// source-tree edit can reach.
+///
+/// # Safety
+/// Identical to [`core_wallet_signed_payment_finalize_with_deliverable`], minus
+/// `out_deliverable_duffs` (supplied internally).
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
+    builder: *mut FFITransactionBuilder,
+    wallet: Handle,
+    account_type: CoreAccountTypeFFI,
+    account_index: u32,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_token: *mut u64,
+    out_fee: *mut u64,
+    out_txid: *mut *mut c_char,
+    out_tx: *mut FFICoreTransaction,
+    out_bytes_ptr: *mut *const u8,
+    out_bytes_len: *mut usize,
+) -> PlatformWalletFFIResult {
+    // A real local, never null: the callee null-checks every out-pointer and
+    // would reject the call outright.
+    let mut discarded_deliverable_duffs: u64 = 0;
+    core_wallet_signed_payment_finalize_with_deliverable(
+        builder,
+        wallet,
+        account_type,
+        account_index,
+        core_signer_handle,
+        out_token,
+        out_fee,
+        out_txid,
+        out_tx,
+        out_bytes_ptr,
+        out_bytes_len,
+        &mut discarded_deliverable_duffs,
+    )
 }
 
 #[repr(C)]
@@ -819,4 +918,118 @@ pub unsafe extern "C" fn core_wallet_transaction_free(tx: *mut FFICoreTransactio
 
     tx.tx_bytes = std::ptr::null_mut();
     tx.tx_len = 0;
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::{sole_deliverable_value, CoreAccountTypeFFI};
+    use dashcore::blockdata::script::ScriptBuf;
+    use dashcore::TxOut;
+    use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
+
+    /// What a DRAIN spans, per selector. `SelectionStrategy::All` takes every
+    /// UTXO each named source offers, so this list IS the sweep scope — the
+    /// claim the Kotlin `SelectionStrategy.ALL` doc makes to callers.
+    ///
+    /// The pooled selector is the DEFAULT for a send, so a caller who asks for
+    /// a drain without naming an account type sweeps all three families at
+    /// once, contact-receiving funds included. Pinned here so that widening
+    /// cannot happen silently: anything added to `SEND_FUNDING_SOURCES`
+    /// enlarges every defaulted drain, and this test is where that shows up.
+    #[test]
+    fn a_drains_scope_is_whatever_the_selector_names() {
+        assert_eq!(
+            CoreAccountTypeFFI::BIP44.funding_sources(),
+            &[AccountTypePreference::BIP44],
+            "a single-family selector drains exactly one account"
+        );
+        assert_eq!(
+            CoreAccountTypeFFI::CoinJoin.funding_sources(),
+            &[AccountTypePreference::CoinJoin],
+            "CoinJoin stays its own privacy domain, never pooled"
+        );
+        assert_eq!(
+            CoreAccountTypeFFI::AllSpendable.funding_sources(),
+            &[
+                AccountTypePreference::BIP44,
+                AccountTypePreference::BIP32,
+                AccountTypePreference::AllDashpayReceivingFunds,
+            ],
+            "the DEFAULT selector drains BIP44 + BIP32 + every DashPay \
+             receiving account; BIP44 must stay first, as it supplies change"
+        );
+    }
+
+    /// A spendable output. The script only has to NOT be an OP_RETURN.
+    fn destination(value: u64) -> TxOut {
+        TxOut {
+            value,
+            script_pubkey: ScriptBuf::from(vec![0x76, 0xa9, 0x14]),
+        }
+    }
+
+    fn op_return(payload: &[u8]) -> TxOut {
+        let data = dashcore::script::PushBytesBuf::try_from(payload.to_vec())
+            .expect("test payload is within push limits");
+        TxOut {
+            value: 0,
+            script_pubkey: ScriptBuf::new_op_return(&data),
+        }
+    }
+
+    #[test]
+    fn a_lone_destination_is_the_deliverable_amount() {
+        assert_eq!(sole_deliverable_value(&[destination(27_442_985)]), 27_442_985);
+    }
+
+    /// The MAYAChain shape: vault output plus a zero-value memo. The memo must
+    /// not be mistaken for a second recipient, in EITHER order — Maya puts the
+    /// memo at VOUT1, but nothing in the calculation may depend on that.
+    #[test]
+    fn a_data_carrier_beside_the_destination_is_ignored_in_both_orders() {
+        let memo = op_return(b"=:MAYA.CACAO:maya1abc");
+        assert_eq!(
+            sole_deliverable_value(&[destination(27_442_985), memo.clone()]),
+            27_442_985,
+            "memo after the destination (the Maya layout)"
+        );
+        assert_eq!(
+            sole_deliverable_value(&[memo, destination(27_442_985)]),
+            27_442_985,
+            "memo before the destination"
+        );
+    }
+
+    /// Two recipients have no single deliverable amount. Reporting either one
+    /// would let a host quote a number the payment does not pay.
+    #[test]
+    fn two_spendable_outputs_report_zero() {
+        assert_eq!(sole_deliverable_value(&[destination(1_000), destination(2_000)]), 0);
+    }
+
+    #[test]
+    fn two_spendable_outputs_report_zero_even_beside_a_data_carrier() {
+        assert_eq!(
+            sole_deliverable_value(&[destination(1_000), op_return(b"x"), destination(2_000)]),
+            0
+        );
+    }
+
+    /// An OP_RETURN-only build pays no one; so does an empty output set.
+    #[test]
+    fn a_transaction_with_no_spendable_output_reports_zero() {
+        assert_eq!(sole_deliverable_value(&[op_return(b"data only")]), 0);
+        assert_eq!(sole_deliverable_value(&[]), 0);
+    }
+
+    /// An asset lock's single output IS an OP_RETURN, so it reports 0 rather
+    /// than its burn value. That is the intended reading: the credits go to an
+    /// identity, not to a payee a host would quote.
+    #[test]
+    fn an_op_return_carrying_value_still_reports_zero() {
+        let mut burn = op_return(b"credits");
+        burn.value = 500_000;
+        assert_eq!(sole_deliverable_value(&[burn]), 0);
+    }
 }
