@@ -17,6 +17,24 @@ export const CERTIFICATE_STATUS = {
   INVALID: 'INVALID',
 };
 
+/**
+ * The verdict in words, for anything a person reads.
+ *
+ * The status values are identifiers for machines and for this code. They stay
+ * in the JSON line, where something is parsing them, and never appear in a
+ * sentence.
+ *
+ * @param {string} status
+ * @return {string}
+ */
+export function describeStatus(status) {
+  if (status === CERTIFICATE_STATUS.CHECKS_PASSED) {
+    return 'passed';
+  }
+
+  return status === CERTIFICATE_STATUS.WARN ? 'passed with warnings' : 'did not pass';
+}
+
 export const CERTIFICATE_REASONS = {
   BUNDLE_MISSING: 'BUNDLE_MISSING',
   NOT_YET_VALID: 'NOT_YET_VALID',
@@ -301,13 +319,13 @@ export default function checkGatewayCertificateFactory(homeDir) {
       // address only in its subject is one every client rejects - accepting it
       // would pass a node that nothing can connect to.
       const named = installed.ipAddresses.length > 0
-        ? `it names ${installed.ipAddresses.join(', ')} instead`
-        : 'it carries no IP address at all';
+        ? `it is issued for ${installed.ipAddresses.join(', ')} instead`
+        : 'it names no address at all';
 
       reasons.push({
         code: CERTIFICATE_REASONS.IP_MISMATCH,
-        message: "The installed certificate does not carry this node's address"
-          + ` ${externalIp} in its subject alternative name - ${named}`,
+        message: "The installed certificate is not issued for this node's address"
+          + ` ${externalIp} - ${named}`,
       });
     }
 

@@ -4,6 +4,7 @@ import { ERRORS as LETSENCRYPT_ERRORS } from '../../ssl/letsencrypt/validateLets
 import { ERRORS as ZEROSSL_ERRORS } from '../../ssl/zerossl/validateZeroSslCertificateFactory.js';
 import { SEVERITY } from '../Prescription.js';
 import Problem from '../Problem.js';
+import renderConfigFlag from '../../util/renderConfigFlag.js';
 
 /**
  * Whether a ZeroSSL certificate can be renewed depends on the operator's plan, which dashmate
@@ -192,7 +193,7 @@ Note that changing it makes renewal register a new account with the authority.`,
                 description: chalk`A renewed Let's Encrypt certificate has not been installed for the gateway.`,
                 solution: chalk`The issued certificate was never copied to where the gateway loads from,
 so the two disagree. Install it - that also signals the gateway, with no
-downtime: {bold.cyanBright dashmate ssl obtain --provider=letsencrypt}
+downtime: {bold.cyanBright dashmate ssl obtain ${renderConfigFlag(config.getName())} --provider=letsencrypt}
 Do not restart Platform to fix this. A restart only reloads the copy the
 gateway already has, which is the out-of-date one, and this node may still
 be serving a valid certificate that a restart would throw away.`,

@@ -20,6 +20,55 @@ import renderConfigFlag from '../../util/renderConfigFlag.js';
  * @param {string} cfg
  * @return {string}
  */
+/**
+ * Plain wording for the connection failures a probe can report.
+ *
+ * The codes come from Node and from OpenSSL, and an operator reading a doctor
+ * report has no way to look them up. Anything not listed falls through to the
+ * code itself rather than being softened into something vaguer - an unfamiliar
+ * code is still searchable, whereas "something went wrong" is not.
+ */
+const CONNECTION_FAILURES = {
+  ETIMEDOUT: 'nothing answered in time',
+  ECONNREFUSED: 'the connection was refused',
+  EHOSTUNREACH: 'the address could not be reached',
+  ENETUNREACH: 'the network could not be reached',
+  ECONNRESET: 'the connection was closed before it finished',
+  NO_PEER_CERTIFICATE: 'it answered but offered no certificate',
+  CONNECT_FAILED: 'the connection could not be made',
+};
+
+/**
+ * Plain wording for why a served certificate is not trusted.
+ *
+ * Same rule as above: translate what is known, pass through what is not.
+ */
+const TRUST_FAILURES = {
+  CERT_HAS_EXPIRED: 'it has expired',
+  DEPTH_ZERO_SELF_SIGNED_CERT: 'it is self-signed, so no certificate authority vouches for it',
+  SELF_SIGNED_CERT_IN_CHAIN: 'it is self-signed, so no certificate authority vouches for it',
+  // Only one certificate arriving is established by this code. Why its issuer
+  // could not be found is not, so both readings are named.
+  UNABLE_TO_VERIFY_LEAF_SIGNATURE: 'only one certificate was sent and its issuer could not be'
+    + ' found - either the ones that vouch for it are missing, or this machine does not trust'
+    + ' the authority that issued it',
+  UNABLE_TO_GET_ISSUER_CERT: 'the certificate that issued it could not be found - either it was'
+    + ' not sent with the others, or this machine does not trust it',
+  // Returned for a complete, correct bundle signed by a root the machine does
+  // not trust just as readily as for one that is genuinely missing
+  // certificates, so it must not be read as either on its own.
+  UNABLE_TO_GET_ISSUER_CERT_LOCALLY: 'no trusted path could be built to it - either certificates'
+    + ' are missing from the bundle, or this machine does not trust the authority that issued it',
+  CERT_NOT_YET_VALID: 'its start date is in the future',
+};
+
+/**
+ * @param {Object} table
+ * @param {string} code
+ * @return {string}
+ */
+const describe = (table, code) => table[code] ?? code;
+
 const restartHint = (cfg) => chalk`Then restart Platform so the gateway picks it up: {bold.cyanBright dashmate restart ${cfg} --platform}`;
 
 /**
@@ -94,7 +143,8 @@ Obtain a new certificate - it signals the gateway itself, so no restart is neede
 
     if (served.state === 'unreachable') {
       problems.push(new Problem(
-        `The gateway did not answer a TLS connection (${served.reason}). Clients may not be able to connect`,
+        "The gateway's own listener did not answer a secure connection:"
+        + ` ${describe(CONNECTION_FAILURES, served.reason)}. Clients may not be able to connect`,
         chalk`Please check that the gateway is running and listening: {bold.cyanBright dashmate status ${cfg} platform}`,
         SEVERITY.MEDIUM,
       ));
@@ -119,7 +169,8 @@ Obtain a new certificate - it signals the gateway itself, so no restart is neede
       // outage and still have the problem. Reissuing is the remedy only once
       // this node's gateway is known to be what answered.
       problems.push(new Problem(
-        `The certificate served on port ${served.port} is not valid for ${externalIp}: ${served.identityError}`,
+        `The certificate being served on port ${served.port} is not issued for this`
+        + ` node's address, ${externalIp}`,
         chalk`Something other than this node's gateway may be answering on that port, or the
 certificate is issued for the wrong address. Find what is listening on ${served.port}
 first - another dashmate config, a reverse proxy, or a second node sharing the
@@ -162,26 +213,27 @@ If this node's gateway is the one answering and the address is simply wrong:
 
     if (isServedExpired && onDiskDiffers && isOnDiskUsable) {
       problems.push(new Problem(
-        `The gateway is serving a certificate that expired on ${served.certificate.validTo}, `
-        + 'while a newer one is already present on disk',
-        chalk`The certificate was renewed but never reached the gateway.
+        `This node is using a certificate that expired on ${served.certificate.validTo}. `
+        + 'A newer one has already been saved and is ready to use',
+        chalk`The new certificate was saved but the node never picked it up. Load it:
 {bold.cyanBright dashmate restart ${cfg} --platform}`,
         SEVERITY.HIGH,
       ));
     } else if (isServedExpired && onDiskDiffers) {
       problems.push(new Problem(
-        `The gateway is serving a certificate that expired on ${served.certificate.validTo}. `
-        + 'The copy on disk is a different one, and is not known to be a usable replacement',
-        chalk`Neither the certificate on the wire nor the one on disk is usable, so restarting
-Platform would not help. Obtain a current certificate, which installs it and
-signals the gateway:
+        `This node is using a certificate that expired on ${served.certificate.validTo}. `
+        + 'A different one has been saved, but dashmate could not confirm it is a working '
+        + 'replacement',
+        chalk`Neither the certificate this node is using nor the saved one is known to work,
+so restarting will not help. Get a current certificate - that installs it and
+tells the node to use it, with no downtime:
 {bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt}`,
         SEVERITY.HIGH,
       ));
     } else if (isServedExpired) {
       problems.push(new Problem(
-        `The gateway is serving a certificate that expired on ${served.certificate.validTo}. `
-        + 'Clients cannot connect to this node',
+        `This node is using a certificate that expired on ${served.certificate.validTo}. `
+        + 'Clients cannot connect to it',
         chalk`Renewal has not succeeded. Check the renewal logs:
 {bold.cyanBright dashmate logs ${cfg} dashmate_helper}
 Then obtain a new certificate, which installs it and signals the gateway:
@@ -193,19 +245,20 @@ Then obtain a new certificate, which installs it and signals the gateway:
         // Still serving a valid certificate, but the renewed one has not been picked up, so this
         // node goes dark when the served certificate expires.
         problems.push(new Problem(
-          'The gateway is serving an older certificate than the one on disk. '
+          'This node is using an older certificate than the one that has been saved. '
           + `It will stop accepting clients on ${served.certificate.validTo}`,
-          chalk`The certificate was renewed but never reached the gateway.
+          chalk`The new certificate was saved but the node never picked it up. Load it:
 {bold.cyanBright dashmate restart ${cfg} --platform}`,
           SEVERITY.HIGH,
         ));
       } else {
         problems.push(new Problem(
-          'The gateway is serving a different certificate from the one on disk, and the one '
-          + 'on disk is not known to be a usable replacement for it',
-          chalk`What is on the wire is working and the file has not been shown to be a safe
-replacement, so do not restart Platform to load it. Obtain a current
-certificate instead, which installs it and signals the gateway:
+          'This node is using a different certificate from the one that has been saved, and '
+          + 'dashmate could not confirm the saved one is a working replacement',
+          chalk`The certificate this node is using now works. The saved one has not been shown
+to be a safe replacement, so do not restart to load it - that would swap a
+working certificate for one that may not be. Get a current certificate
+instead, which installs it and tells the node to use it:
 {bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt}`,
           SEVERITY.HIGH,
         ));
@@ -217,7 +270,8 @@ certificate instead, which installs it and signals the gateway:
     // expiry, and the second fault would otherwise stay hidden until the first was fixed.
     if (!served.chainVerified && !isServedExpired) {
       problems.push(new Problem(
-        `The certificate served by the gateway is not trusted by standard clients (${served.chainError})`,
+        'The certificate this node is serving is not trusted by ordinary clients:'
+        + ` ${describe(TRUST_FAILURES, served.chainError)}`,
         chalk`Clients verifying against public certificate authorities will reject this node.
 If the certificate chain is incomplete, make sure the bundle contains the issuing
 certificates as well as the server certificate.

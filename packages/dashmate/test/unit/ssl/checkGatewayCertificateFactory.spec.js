@@ -423,7 +423,7 @@ describe('checkGatewayCertificateFactory', () => {
         .to.include(CERTIFICATE_REASONS.IP_MISMATCH);
     });
 
-    it('should say the address is missing from the SAN rather than wrong', () => {
+    it('should say the certificate names no address rather than the wrong one', () => {
       const certificate = issueCertificate({ subject: { commonName: EXTERNAL_IP } });
 
       install(certificate.pem, certificate.keyPem);
@@ -431,7 +431,7 @@ describe('checkGatewayCertificateFactory', () => {
       const [reason] = checkGatewayCertificate(config).reasons
         .filter(({ code }) => code === CERTIFICATE_REASONS.IP_MISMATCH);
 
-      expect(reason.message).to.contain('subject alternative name');
+      expect(reason.message).to.contain('names no address at all');
     });
   });
 

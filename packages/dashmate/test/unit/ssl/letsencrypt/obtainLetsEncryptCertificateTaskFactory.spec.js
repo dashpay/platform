@@ -340,6 +340,70 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
       );
     }
 
+    /**
+     * Run a task list and collect what it rendered, so a message meant for the
+     * operator is checked where it actually reaches them.
+     *
+     * @param {Object} sinon
+     * @param {Listr} tasks
+     * @param {Object} [ctx]
+     * @return {Promise<string>} what was rendered, whether or not the run threw
+     */
+    async function render(sinon, tasks, ctx = { force: true }) {
+      let out = '';
+      sinon.stub(process.stdout, 'write').callsFake((chunk) => {
+        out += chunk;
+
+        return true;
+      });
+
+      try {
+        /* eslint-disable-next-line no-param-reassign */
+        tasks.options = { ...tasks.options, renderer: 'verbose' };
+
+        await tasks.run(ctx).catch(() => {});
+      } finally {
+        process.stdout.write.restore();
+      }
+
+      return out;
+    }
+
+    // The operator who opened port 80 for this one migration is the one who
+    // most needs to hear it stays open, and they never see a failure that would
+    // have said so. Said next to the issuance rather than at the end of the
+    // command, so a later step failing cannot swallow it.
+    it('should tell the operator port 80 stays open once a certificate is issued', async function it() {
+      const output = await render(this.sinon, buildTask(this.sinon)(config));
+
+      expect(output).to.contain('LEAVE PORT 80 OPEN');
+      expect(output).to.contain('survives a reboot');
+    });
+
+    // Issuance is recorded before the pair is written, and the notice with it,
+    // so a failure between the two still reaches the operator who is about to
+    // close the port. Pinned at both points a run can fail after the authority
+    // has issued: writing the pair, and finding what lego wrote.
+    it('should tell them even when a later step fails', async function it() {
+      const save = this.sinon.stub().callsFake(() => new Listr([{
+        task: () => { throw new Error('could not write the certificate'); },
+      }]));
+
+      const output = await render(this.sinon, buildTask(this.sinon, { save })(config));
+
+      expect(output).to.contain('LEAVE PORT 80 OPEN');
+    });
+
+    it('should tell them when lego wrote nothing it could find', async function it() {
+      const docker = getDockerMock(this.sinon);
+      const output = await render(this.sinon, buildTask(this.sinon, { docker })(config), {
+        force: true,
+        legoCertPathOverride: '/nonexistent',
+      });
+
+      expect(output).to.contain('LEAVE PORT 80 OPEN');
+    });
+
     // No new node will have an email: nothing prompts for one any more. A
     // throw left anywhere on this path breaks every fresh setup.
     it('should obtain a certificate with no email configured', async function it() {
@@ -513,10 +577,14 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
       // cause rather than asserted as the cause.
       expect(error.message).to.contain('address already in use');
       expect(error.message).to.contain('holding port 80');
-      expect(error.message).to.contain('no request was');
+      // Docker rejected the start, which does not settle whether the helper
+      // ran: a bind conflict and a lost reply look the same from here. So
+      // nothing is claimed about this node's allowance in either direction.
+      expect(error.message).to.not.contain('never contacted');
+      expect(error.message).to.not.contain('allowance');
 
       // And none of the authority-side consequences are claimed.
-      expect(error.message).to.not.contain('PAUSED');
+      expect(error.message).to.not.match(/paused/i);
       expect(error.message).to.not.contain('rate-limit');
       expect(error.message).to.not.contain('failed attempts are shared');
       expect(error.message).to.not.contain('Fix inbound port 80 first');
@@ -557,7 +625,7 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
 
       // Printed once, by the command, not also here.
       expect(error.message).to.not.contain('LEAVE PORT 80 OPEN');
-      expect(error.message).to.not.contain('PAUSED');
+      expect(error.message).to.not.match(/paused/i);
       expect(error.message).to.not.contain('failed attempts are shared');
       expect(error.message).to.not.match(/did not obtain a certificate after/i);
 
@@ -582,7 +650,7 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
         .run({ force: true }).catch((e) => e);
 
       expect(error.message).to.contain('permission denied while removing container');
-      expect(error.message).to.not.contain('PAUSED');
+      expect(error.message).to.not.match(/paused/i);
       expect(error.message).to.not.contain('failed attempts are shared');
       expect(docker.createContainer).to.not.have.been.called();
     });
@@ -605,12 +673,12 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
       expect(error.message).to.not.match(/the port is occupied/i);
       expect(error.message).to.not.match(/is already listening on port 80/i);
       // Nor any of the guidance that belongs to a response from the authority.
-      expect(error.message).to.not.contain('PAUSED');
+      expect(error.message).to.not.match(/paused/i);
       expect(error.message).to.not.contain('failed attempts are shared');
       expect(error.message).to.not.contain('Fix inbound port 80 first');
       // It may say no limit was spent - that is the honest statement. What it
       // must not do is discuss a limit as though one had been.
-      expect(error.message).to.contain('no request was');
+      expect(error.message).to.contain('never contacted');
       expect(error.message).to.not.match(/may be PAUSED|Self-Service Portal/i);
     });
 
@@ -632,7 +700,7 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
 
       expect(error.message).to.contain('connection reset by peer');
       expect(error.message).to.match(/could not read|did not see/i);
-      expect(error.message).to.not.contain('PAUSED');
+      expect(error.message).to.not.match(/paused/i);
     });
 
     // A failure the authority did return keeps the guidance that is about the
@@ -643,8 +711,8 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
       const error = await buildFailingTask(this.sinon, docker)(config)
         .run({ force: true }).catch((e) => e);
 
-      expect(error.message).to.contain('PAUSED');
-      expect(error.message).to.contain('failed attempts are shared');
+      expect(error.message).to.match(/may have\s+paused\s+it/i);
+      expect(error.message).to.contain('uses up that allowance');
     });
 
     // lego fails for reasons that have nothing to do with the firewall - a rate
@@ -688,9 +756,9 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
       const error = await tasks.run({ force: true, interactive: true }).catch((e) => e);
 
       expect(error.message).to.contain('https://letsencrypt.org/docs/rate-limits/');
-      expect(error.message).to.contain('PAUSED');
+      expect(error.message).to.match(/may have\s+paused\s+it/i);
       expect(error.message).to.contain(`--config ${config.getName()}`);
-      expect(error.message).to.contain('renews under the same');
+      expect(error.message).to.contain('renewals dashmate runs for you');
       expect(error.message).to.not.match(/come back in \d/i);
     });
 

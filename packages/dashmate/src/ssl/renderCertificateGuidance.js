@@ -53,13 +53,10 @@ function renderObservation(verdict) {
  * @return {string}
  */
 function renderZeroSslExplanation() {
-  return `  Your certificate provider is ZeroSSL. dashmate's ZeroSSL integration drives
-  ZeroSSL's REST API, and a free ZeroSSL account allows three certificates
-  through the dashboard/API and no REST API access - so dashmate's renewals
-  stop working after about 270 days. (ZeroSSL's ACME service is not a
-  substitute here: it does not issue IP-address certificates.) You did not
-  configure anything wrong - as of August 2026, four out of five ZeroSSL
-  evonodes on mainnet were in this state.
+  return `  Your certificate provider is ZeroSSL. A free ZeroSSL account allows three
+  certificates in total, and dashmate renews from that same allowance - so
+  after about 270 days there is nothing left to renew with and this node stops
+  getting new certificates.
 `;
 }
 
@@ -121,19 +118,15 @@ function renderSwitchIncompleteGuidance(config, cfg) {
  * @return {string}
  */
 function renderLetsEncryptDiagnosis(cfg) {
-  return `  This node is already configured for Let's Encrypt, so there is no provider to
-  switch to - it is the only authority that issues IP-address certificates over
-  ACME. dashmate's helper is configured to retry renewal hourly, so renewal has
-  most likely been failing without anyone being told. dashmate has not inspected
-  the helper's history to confirm that.
+  return `  This node is already set to use Let's Encrypt, so there is no provider to
+  switch to.
 
-  The most likely cause is inbound port 80. Let's Encrypt re-checks it on every
+  Inbound port 80 is the most common cause. Let's Encrypt re-checks it on every
   renewal - roughly every four days, permanently - and a firewall rule that was
   opened once and later closed, or that did not survive a reboot, produces
   exactly this pattern.
 
-  It is not always port 80: half the nodes in this state have port 80 open and
-  stopped renewing regardless. Check the renewal logs as well:
+  It is not always port 80. Check the renewal logs as well:
 
       dashmate doctor ${cfg}
       dashmate logs ${cfg} dashmate_helper
@@ -146,6 +139,21 @@ function renderLetsEncryptDiagnosis(cfg) {
  * @return {string}
  */
 function renderFix(cfg, isNodeRunning, isAlreadyLetsEncrypt) {
+  const DELIVERY = {
+    true: `  That installs the certificate and signals the gateway, so a running node
+  needs nothing further - no restart.
+`,
+    false: `  That installs the certificate and signals the gateway. This node is
+  stopped, so bring it back up:
+
+      dashmate start ${cfg}
+`,
+    // Nothing is claimed about a state that could not be read.
+    unknown: `  That installs the certificate and signals the gateway, so a node that is
+  already running needs nothing further. If this one is stopped, start it.
+`,
+  };
+
   // A node already on Let's Encrypt has nothing to switch to - it is the only
   // authority that issues IP-address certificates over ACME - so the heading
   // that offers a switch would contradict the diagnosis printed above it. The
@@ -172,15 +180,7 @@ function renderFix(cfg, isNodeRunning, isAlreadyLetsEncrypt) {
 
       dashmate ssl obtain ${cfg} --provider letsencrypt
 
-${isNodeRunning
-    ? `  That installs the certificate and signals the gateway, so a running node
-  needs nothing further - no restart.
-`
-    : `  That installs the certificate and signals the gateway. This node is
-  stopped, so bring it back up:
-
-      dashmate start ${cfg}
-`}`;
+${DELIVERY[String(isNodeRunning)] ?? DELIVERY.unknown}`;
 }
 
 /**
@@ -197,7 +197,8 @@ ${isNodeRunning
  * @param {Object} options
  * @param {Config} options.config
  * @param {Object} options.verdict
- * @param {boolean} options.isNodeRunning
+ * @param {boolean|null} options.isNodeRunning - null when it could not be
+ *   determined, in which case nothing is said about the node's state
  * @param {boolean} [options.obtainAttemptFailed] - an obtain was run and threw
  * @param {{ok: boolean, failed: number, total: number}|null} options.pull
  * @return {string}
@@ -224,10 +225,8 @@ export default function renderCertificateGuidance({
   Node:        ${config.get('network')} (config "${config.getName()}", ${config.get('externalIp') ?? 'no external IP set'})
   Certificate: ${renderObservation(verdict)}
 
-  These checks read the files installed for the gateway. dashmate did not open
-  a connection, so it cannot say what this node is actually serving, and it did
-  not validate the certificate against public trust stores either;
-  \`dashmate doctor ${cfg}\` does the first of those.
+  These checks read the certificate files installed on this node. They do not
+  tell you what clients actually see; \`dashmate doctor ${cfg}\` does that.
 
   ${obtainAttemptFailed
     ? `An attempt to obtain a certificate ran just now and did not complete.
@@ -235,8 +234,8 @@ export default function renderCertificateGuidance({
   pair, so the files on disk may not be what they were before this run. The
   status above was read back from disk after the attempt, so it describes
   what is there now.`
-    : `Nothing broke just now. This is the first release of dashmate that checks
-  the certificate, so this is the first time you are being told.`}
+    : `Nothing broke just now. This check is new, so this is the first time you
+  are being told.`}
 `,
   ];
 
@@ -244,7 +243,11 @@ export default function renderCertificateGuidance({
   // procedure stops it before update runs. An operator who reads a certificate
   // complaint, assumes it changed nothing and walks away has left a stopped
   // masternode behind.
-  if (!isNodeRunning) {
+  // Only when the state is actually known. Docker being unreachable, or the
+  // caller not being permitted to ask it, establishes nothing - and a courtesy
+  // line that tells an operator their running node is stopped is worse than no
+  // line at all.
+  if (isNodeRunning === false) {
     // The reassurance holds for a certificate that merely failed the checks:
     // nothing about them gates startup. It does not hold once an obtain has
     // run and failed, because what is on disk may have changed underneath the

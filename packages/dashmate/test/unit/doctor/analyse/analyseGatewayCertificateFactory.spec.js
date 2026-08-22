@@ -101,7 +101,7 @@ describe('analyseGatewayCertificateFactory', () => {
     }));
 
     expect(problems).to.have.lengthOf(1);
-    expect(problems[0].getDescription()).to.include('newer one is already present on disk');
+    expect(problems[0].getDescription()).to.include('newer one has already been saved and is ready to use');
     expect(problems[0].getSolution()).to.include('dashmate restart --config base --platform');
   });
 
@@ -116,7 +116,7 @@ describe('analyseGatewayCertificateFactory', () => {
     }));
 
     expect(problems).to.have.lengthOf(1);
-    expect(problems[0].getDescription()).to.include('older certificate than the one on disk');
+    expect(problems[0].getDescription()).to.include('older certificate than the one that has been saved');
     expect(problems[0].getSeverity()).to.equal(SEVERITY.HIGH);
   });
 
@@ -127,7 +127,46 @@ describe('analyseGatewayCertificateFactory', () => {
     }));
 
     expect(problems).to.have.lengthOf(1);
-    expect(problems[0].getDescription()).to.include('not trusted by standard clients');
+    expect(problems[0].getDescription()).to.include('not trusted by ordinary clients');
+
+    // The raw verification code is what an operator cannot read, so it is
+    // translated rather than printed.
+    expect(problems[0].getDescription()).to.not.include('UNABLE_TO_VERIFY_LEAF_SIGNATURE');
+    expect(problems[0].getDescription()).to.include('only one certificate was sent');
+  });
+
+  // This code is returned for a complete, correct bundle whose root the machine
+  // does not trust, as well as for one that really is missing certificates.
+  // Telling the first operator their bundle is incomplete sends them to repair
+  // something that is not broken.
+  it('should not claim certificates are missing when the issuer is merely untrusted', () => {
+    const problems = analyse(served({
+      chainVerified: false,
+      chainError: 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+    }));
+
+    const description = problems[0].getDescription();
+
+    expect(description).to.not.match(/were not sent/);
+    expect(description).to.contain('does not trust');
+  });
+
+  // Only one certificate arrived, which is established rather than guessed -
+  // but why its issuer could not be found is not, so both readings are named.
+  it('should name both readings when only the certificate itself was sent', () => {
+    const problems = analyse(served({
+      chainVerified: false,
+      chainError: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+    }));
+
+    expect(problems[0].getDescription()).to.contain('only one certificate');
+  });
+
+  // An unrecognised code is still searchable; a vague paraphrase of it is not.
+  it('should pass through a verification code it has no wording for', () => {
+    const problems = analyse(served({ chainVerified: false, chainError: 'SOME_NEW_CODE' }));
+
+    expect(problems[0].getDescription()).to.include('SOME_NEW_CODE');
   });
 
   it('should treat an identity mismatch as not having reached this node and stop there', () => {
@@ -141,7 +180,11 @@ describe('analyseGatewayCertificateFactory', () => {
     }));
 
     expect(problems).to.have.lengthOf(1);
-    expect(problems[0].getDescription()).to.include('not valid for 198.51.100.7');
+    expect(problems[0].getDescription()).to.include('not issued for this node\'s address');
+    expect(problems[0].getDescription()).to.include('198.51.100.7');
+
+    // "altnames" is the certificate's own vocabulary, not the operator's.
+    expect(problems[0].getDescription()).to.not.include('altnames');
   });
 
   it('should judge expiry against the time the samples were taken, not the time of analysis', () => {
@@ -196,9 +239,9 @@ describe('analyseGatewayCertificateFactory', () => {
         onDisk: { fingerprint256: 'CC:DD', validTo: validTo(60) },
       }));
 
-      const [problem] = problems.filter((p) => p.getDescription().includes('on disk'));
+      const [problem] = problems.filter((p) => p.getDescription().includes('has been saved'));
 
-      expect(problem.getDescription()).to.include('older certificate than the one on disk');
+      expect(problem.getDescription()).to.include('older certificate than the one that has been saved');
       expect(problem.getSolution()).to.include('dashmate restart');
     });
 
@@ -208,18 +251,18 @@ describe('analyseGatewayCertificateFactory', () => {
         onDisk: { fingerprint256: 'CC:DD', validTo: validTo(-158) },
       }));
 
-      const [problem] = problems.filter((p) => p.getDescription().includes('disk'));
+      const [problem] = problems.filter((p) => p.getDescription().includes('has been saved'));
 
-      expect(problem.getDescription()).to.not.include('older certificate than the one on disk');
+      expect(problem.getDescription()).to.not.include('older certificate than the one that has been saved');
       expect(problem.getSolution()).to.not.match(/dashmate restart/);
     });
 
     it('should claim no direction when it cannot compare them', () => {
       const problems = analyse(served({ matchesOnDisk: false, onDisk: null }));
 
-      const [problem] = problems.filter((p) => p.getDescription().includes('disk'));
+      const [problem] = problems.filter((p) => p.getDescription().includes('has been saved'));
 
-      expect(problem.getDescription()).to.not.include('older certificate than the one on disk');
+      expect(problem.getDescription()).to.not.include('older certificate than the one that has been saved');
       expect(problem.getSolution()).to.not.match(/dashmate restart/);
     });
   });
@@ -238,7 +281,7 @@ describe('analyseGatewayCertificateFactory', () => {
         onDisk: { fingerprint256: 'CC:DD', validTo: validTo(30) },
       }));
 
-      expect(problem.getDescription()).to.include('newer one is already present on disk');
+      expect(problem.getDescription()).to.include('newer one has already been saved and is ready to use');
       expect(problem.getSolution()).to.include('dashmate restart');
     });
 
@@ -249,7 +292,7 @@ describe('analyseGatewayCertificateFactory', () => {
         onDisk: { fingerprint256: 'CC:DD', validTo: validTo(-158) },
       }));
 
-      expect(problem.getDescription()).to.not.include('newer one is already present on disk');
+      expect(problem.getDescription()).to.not.include('newer one has already been saved and is ready to use');
       expect(problem.getSolution()).to.not.match(/dashmate restart/);
       expect(problem.getSolution()).to.include('dashmate ssl obtain');
     });
@@ -261,7 +304,7 @@ describe('analyseGatewayCertificateFactory', () => {
         onDisk: null,
       }));
 
-      expect(problem.getDescription()).to.not.include('newer one is already present on disk');
+      expect(problem.getDescription()).to.not.include('newer one has already been saved and is ready to use');
       expect(problem.getSolution()).to.not.match(/dashmate restart/);
     });
   });

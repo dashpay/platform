@@ -7,8 +7,11 @@ import ConfigBaseCommand from '../oclif/command/ConfigBaseCommand.js';
 import MuteOneLineError from '../oclif/errors/MuteOneLineError.js';
 import printArrayOfObjects from '../printers/printArrayOfObjects.js';
 import CertificateUnresolvedError from '../ssl/errors/CertificateUnresolvedError.js';
-import { CERTIFICATE_STATUS } from '../ssl/checkGatewayCertificateFactory.js';
-import renderCertificateGuidance from '../ssl/renderCertificateGuidance.js';
+import { describeStatus } from '../ssl/checkGatewayCertificateFactory.js';
+import {
+  reportUnresolved as reportUnresolved_,
+  writeDiagnostics,
+} from '../ssl/certificateReporting.js';
 import isEnvironmentFlagSet from '../util/isEnvironmentFlagSet.js';
 import isInteractiveSession from '../util/isInteractiveSession.js';
 
@@ -22,20 +25,6 @@ export default class UpdateCommand extends ConfigBaseCommand {
   // The certificate check can obtain a certificate and record the provider that
   // issued it, so it holds the configuration lock for its whole run.
   static mutatesConfig = true;
-
-  /**
-   * The preflight changes nothing, and it exists to be run before the node is
-   * stopped - possibly while the helper is renewing. So it takes no lock, saves
-   * no configuration, and does not persist a migration: any of those could make
-   * it fail on a lock acquire timeout, and all of them would break the promise
-   * that it changes nothing.
-   *
-   * @param {Object} flags
-   * @return {boolean}
-   */
-  static isReadOnlyRun(flags) {
-    return flags['check-certificate'] === true;
-  }
 
   static description = 'Update node software';
 
@@ -54,11 +43,6 @@ export default class UpdateCommand extends ConfigBaseCommand {
     'non-interactive': Flags.boolean({
       description: 'never prompt. The certificate is checked and reported, nothing is obtained or'
         + ' changed. Also DASHMATE_NON_INTERACTIVE. Use CI=0 to prompt on a machine that exports CI',
-      default: false,
-    }),
-    'check-certificate': Flags.boolean({
-      description: 'only report on the gateway certificate and exit. Pulls no images, prompts for'
-        + ' nothing and changes nothing. Safe to run before dashmate stop',
       default: false,
     }),
   };
@@ -87,7 +71,6 @@ export default class UpdateCommand extends ConfigBaseCommand {
     const {
       format,
       verbose: isVerbose,
-      'check-certificate': checkCertificateOnly,
     } = flags;
 
     const skipCertificateCheck = flags['skip-certificate-check'] === true
@@ -98,55 +81,13 @@ export default class UpdateCommand extends ConfigBaseCommand {
     const isGated = config.get('platform.enable') === true
       && GATED_NETWORKS.includes(config.get('network'));
 
-    /**
-     * @param {Object} verdict
-     * @param {boolean} [obtainAttemptFailed]
-     * @return {Promise<void>}
-     */
-    const reportUnresolved = async (verdict, obtainAttemptFailed = false) => {
-      let isNodeRunning = false;
-      try {
-        isNodeRunning = await dockerCompose.isServiceRunning(config, 'gateway');
-      } catch {
-        // Docker being unavailable says nothing about the certificate, and the
-        // node-state line is a courtesy rather than part of the verdict.
-      }
-
-      process.stderr.write(renderCertificateGuidance({
-        config,
-        verdict,
-        isNodeRunning,
-        pull: this.pullResult ?? null,
-        obtainAttemptFailed,
-      }));
-    };
-
-    // Reports only. No pull is started, nothing is prompted, obtained, written
-    // or reloaded - this is what an operator can run before stopping the node.
-    if (checkCertificateOnly) {
-      if (!isGated) {
-        return;
-      }
-
-      const verdict = checkGatewayCertificate(config);
-
-      process.stderr.write(`${JSON.stringify({
-        status: verdict.status,
-        reasons: verdict.reasons.map(({ code }) => code),
-        warnings: verdict.warnings.map(({ code }) => code),
-        provider: verdict.provider,
-        config: config.getName(),
-        expiresAt: verdict.installed ? verdict.installed.validTo.toISOString() : null,
-      })}\n`);
-
-      if (verdict.status === CERTIFICATE_STATUS.INVALID) {
-        await reportUnresolved(verdict);
-
-        throw new MuteOneLineError(new CertificateUnresolvedError(verdict));
-      }
-
-      return;
-    }
+    const reportUnresolved = (verdict, obtainAttemptFailed = false) => reportUnresolved_({
+      config,
+      verdict,
+      dockerCompose,
+      pull: this.pullResult ?? null,
+      obtainAttemptFailed,
+    });
 
     // A prompt that leaks past the interactivity guard neither throws nor
     // settles: the event loop simply drains and the process exits 0 with
@@ -260,18 +201,10 @@ export default class UpdateCommand extends ConfigBaseCommand {
     // Under JSON output stdout is exactly one parseable array, so everything a
     // machine might want about the certificate goes to stderr as one line.
     if (format === OUTPUT_FORMATS.JSON && context.certificate) {
-      process.stderr.write(`${JSON.stringify({
-        status: context.certificate.status,
-        reasons: context.certificate.reasons.map(({ code }) => code),
-        warnings: context.certificate.warnings.map(({ code }) => code),
-        provider: context.certificate.provider,
-        config: config.getName(),
-        expiresAt: context.certificate.installed
-          ? context.certificate.installed.validTo.toISOString()
-          : null,
+      writeDiagnostics(context.certificate, config, {
         skipped: context.certificateSkipped === true,
         pull: this.pullResult ?? null,
-      })}\n`);
+      });
     }
 
     (context.certificateWarnings ?? []).forEach((warning) => {
@@ -280,7 +213,7 @@ export default class UpdateCommand extends ConfigBaseCommand {
 
     if (context.certificateSkipped) {
       process.stderr.write(`Gateway certificate enforcement was skipped.`
-        + ` The check still ran and its status is ${context.certificate.status}.\n\n`);
+        + ` The check still ran, and the certificate ${describeStatus(context.certificate.status)}.\n\n`);
     }
 
     if (context.certificateSuccess) {

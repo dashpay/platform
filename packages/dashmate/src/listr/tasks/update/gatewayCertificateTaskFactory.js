@@ -4,6 +4,7 @@ import CertificateUnresolvedError from '../../../ssl/errors/CertificateUnresolve
 import {
   CERTIFICATE_REASONS,
   CERTIFICATE_STATUS,
+  describeStatus,
 } from '../../../ssl/checkGatewayCertificateFactory.js';
 import promptOrThrow from '../../../util/promptOrThrow.js';
 import renderConfigFlag from '../../../util/renderConfigFlag.js';
@@ -267,9 +268,22 @@ export default function gatewayCertificateTaskFactory(
      * @param {Object} ctx
      * @return {Promise<Object>}
      */
-    async function switchToLetsEncrypt(ctx) {
+    async function switchToLetsEncrypt(ctx, verdict) {
+      // Reuse is the default because it saves an issuance from a limited
+      // allowance, but the reuse check is weaker than these checks: it never
+      // looks at the address, and it asks only whether the certificate has
+      // expired, not whether it has started yet. For those two faults it would
+      // hand back the same certificate that was just rejected, so a new one is
+      // obtained instead.
+      //
+      // Every other fault is in the copy installed for the gateway rather than
+      // in the certificate itself, and reinstalling can fix it without
+      // spending anything.
+      const mustReplace = [CERTIFICATE_REASONS.IP_MISMATCH, CERTIFICATE_REASONS.NOT_YET_VALID]
+        .some((code) => hasReason(verdict ?? { reasons: [] }, code));
+
       return attemptObtain(ctx, () => obtainLetsEncryptCertificateTask(config)
-        .run({ ...ctx, interactive }));
+        .run({ ...ctx, interactive, force: ctx.force || mustReplace }));
     }
 
     return async (ctx, task) => {
@@ -282,7 +296,7 @@ export default function gatewayCertificateTaskFactory(
       if (skipCertificateCheck) {
         ctx.certificateSkipped = true;
 
-        task.skip(`Enforcement skipped, status is ${verdict.status}`);
+        task.skip(`Enforcement skipped, the certificate ${describeStatus(verdict.status)}`);
 
         return;
       }
@@ -344,7 +358,7 @@ export default function gatewayCertificateTaskFactory(
           return;
         }
 
-        const after = await switchToLetsEncrypt(ctx);
+        const after = await switchToLetsEncrypt(ctx, verdict);
 
         // Nothing was blocking before this ran, so a failure that left the node
         // as it was is a warning. A failure that damaged the installed pair is
@@ -517,7 +531,7 @@ export default function gatewayCertificateTaskFactory(
         throw new CertificateUnresolvedError(verdict);
       }
 
-      const after = await switchToLetsEncrypt(ctx);
+      const after = await switchToLetsEncrypt(ctx, verdict);
 
       ctx.certificate = after;
 

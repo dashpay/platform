@@ -1,5 +1,3 @@
-import fs from 'fs';
-import path from 'path';
 import UpdateCommand from '../../../src/commands/update.js';
 import HomeDir from '../../../src/config/HomeDir.js';
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
@@ -61,7 +59,6 @@ describe('Update command', () => {
         verbose: false,
         'skip-certificate-check': false,
         'non-interactive': false,
-        'check-certificate': false,
         ...flags,
       },
       mockDocker,
@@ -199,6 +196,26 @@ describe('Update command', () => {
       expect(stderr).to.not.contain('Nothing broke just now');
     });
 
+    // Defaulting an unknown state to stopped told an operator with a running
+    // node the opposite of the truth, and offered them a command for it.
+    it('should not report the node as stopped when Docker cannot be asked', async function it() {
+      const verdict = invalidVerdict();
+
+      dockerCompose.isServiceRunning = this.sinon.stub()
+        .rejects(new Error('permission denied'));
+
+      await expect(runUpdate({
+        checkGatewayCertificate: () => verdict,
+        gatewayCertificateTask: () => async (ctx) => {
+          ctx.certificate = verdict;
+
+          throw new CertificateUnresolvedError(verdict);
+        },
+      })).to.be.rejected();
+
+      expect(stderr).to.not.contain('Your node is currently stopped');
+    });
+
     // Individual images failing is not a rejection: updateNode resolves those
     // as error rows, and that has always exited 0.
     it('should not fail the command when individual pulls fail', async function it() {
@@ -310,64 +327,6 @@ describe('Update command', () => {
     });
   });
 
-  describe('the read-only preflight', () => {
-    it('should not pull, prompt or change anything', async function it() {
-      const gatewayCertificateTask = this.sinon.stub();
-
-      await runUpdate({
-        flags: { 'check-certificate': true },
-        gatewayCertificateTask,
-      });
-
-      expect(mockDocker.pull).to.not.have.been.called();
-      expect(gatewayCertificateTask).to.not.have.been.called();
-    });
-
-    it('should report the verdict and exit non-zero when it is invalid', async () => {
-      const error = await runUpdate({
-        flags: { 'check-certificate': true },
-        checkGatewayCertificate: () => invalidVerdict(),
-      }).catch((e) => e);
-
-      expect(error).to.be.an.instanceOf(MuteOneLineError);
-      expect(stderr).to.contain('"status":"INVALID"');
-      expect(stderr).to.contain('"reasons":["EXPIRED"]');
-    });
-
-    it('should exit zero when the checks pass', async () => {
-      await expect(runUpdate({
-        flags: { 'check-certificate': true },
-        checkGatewayCertificate: () => passingVerdict(),
-      })).to.not.be.rejected();
-
-      expect(stderr).to.contain('"status":"CHECKS_PASSED"');
-    });
-
-    // A read-only preflight is meant to be run before the node is stopped,
-    // possibly while the helper is renewing. Taking a write lock there would
-    // let it fail on a lock timeout for no reason.
-    // A "the check could not run" exit code was considered and dropped: the
-    // configuration lock is taken before the command body runs and the
-    // repository throws a plain Error, so the boundary cannot tell that case
-    // apart without a typed error and central mapping. A lock timeout is an
-    // ordinary failure and exits 1.
-    it('should use no exit code beyond 0, 1 and 2', () => {
-      const source = fs.readFileSync(
-        path.join(process.cwd(), 'src/commands/update.js'),
-        'utf8',
-      );
-
-      expect(source).to.not.match(/exitCode\s*=\s*[3-9]/);
-      expect(source).to.not.match(/process\.exit\(/);
-    });
-
-    it('should declare itself read-only so it neither locks nor writes', () => {
-      expect(UpdateCommand.mutatesConfig).to.be.true();
-      expect(UpdateCommand.isReadOnlyRun({ 'check-certificate': true })).to.be.true();
-      expect(UpdateCommand.isReadOnlyRun({ 'check-certificate': false })).to.be.false();
-    });
-  });
-
   describe('scope', () => {
     ['local', 'devnet'].forEach((network) => {
       it(`should not check the certificate on ${network}`, async function it() {
@@ -403,7 +362,6 @@ describe('Update command', () => {
   describe('flags', () => {
     it('should offer exactly the documented flags', () => {
       expect(Object.keys(UpdateCommand.flags).sort()).to.deep.equal([
-        'check-certificate',
         'config',
         'format',
         'non-interactive',
@@ -429,7 +387,8 @@ describe('Update command', () => {
       });
 
       expect(observed.skipCertificateCheck).to.be.true();
-      expect(stderr).to.contain('status is INVALID');
+      expect(stderr).to.contain('the certificate did not pass');
+      expect(stderr).to.not.contain('status is INVALID');
     });
 
     it('should honour DASHMATE_SKIP_CERTIFICATE_CHECK', async function it() {

@@ -5,14 +5,8 @@ import BaseCommand from '../../../../src/oclif/command/BaseCommand.js';
 import ResetCommand from '../../../../src/commands/reset.js';
 import GroupResetCommand from '../../../../src/commands/group/reset.js';
 
-// Reconfigures a node, but has a mode that only reports - the shape the
-// read-only opt-out exists for.
 class MutatingCommand extends BaseCommand {
   static mutatesConfig = true;
-
-  static isReadOnlyRun(flags) {
-    return flags.report === true;
-  }
 }
 
 describe('BaseCommand', () => {
@@ -103,33 +97,6 @@ describe('BaseCommand', () => {
       expect(configFileRepository.release).to.have.been.calledOnce();
     });
 
-    // A mode that promises to change nothing has to keep that promise all the
-    // way down. Migrating writes and renders under the same lock, and it is due
-    // on exactly the run right after an upgrade - the run this mode exists for.
-    it('should neither lock nor persist a migration on a read-only run', async function it() {
-      const { command, configFileRepository } = createCommandWithContainer(
-        this.sinon,
-      );
-      command.parse.resolves({ args: {}, flags: { report: true } });
-
-      await command.init();
-
-      expect(configFileRepository.acquire).to.not.have.been.called();
-      expect(configFileRepository.readAndMigrate.firstCall.args[0].readOnly).to.be.true();
-    });
-
-    it('should lock and migrate normally in the same command\'s other modes', async function it() {
-      const { command, configFileRepository } = createCommandWithContainer(
-        this.sinon,
-      );
-      command.parse.resolves({ args: {}, flags: { report: false } });
-
-      await command.init();
-
-      expect(configFileRepository.acquire).to.have.been.calledOnce();
-      expect(configFileRepository.readAndMigrate.firstCall.args[0].readOnly).to.be.false();
-    });
-
     it('should not let an unrelated force flag skip config validation', async function it() {
       const { command, configFileRepository } = createCommandWithContainer(
         this.sinon,
@@ -140,7 +107,7 @@ describe('BaseCommand', () => {
       await command.init();
 
       expect(configFileRepository.readAndMigrate.firstCall.args[0])
-        .to.deep.equal({ skipValidation: false, readOnly: false });
+        .to.deep.equal({ skipValidation: false });
     });
 
     it('should skip validation only for the config replaced by a forced total reset', async function it() {
@@ -155,7 +122,7 @@ describe('BaseCommand', () => {
       await platformReset.command.init();
 
       expect(platformReset.configFileRepository.readAndMigrate.firstCall.args[0])
-        .to.deep.equal({ skipValidation: false, readOnly: false });
+        .to.deep.equal({ skipValidation: false });
 
       const totalReset = createCommandWithContainer(this.sinon, ResetCommand);
       totalReset.command.parse.resolves({

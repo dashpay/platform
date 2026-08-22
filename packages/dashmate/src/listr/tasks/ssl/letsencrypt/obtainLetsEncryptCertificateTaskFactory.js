@@ -55,17 +55,29 @@ function renderGiveUpGuidance(config, attempts) {
   return `dashmate did not obtain a certificate after ${attempts} `
     + `attempt${attempts === 1 ? '' : 's'}.
 
-Retrying now also blocks this node's automatic renewal: dashmate's helper
-renews under the same Let's Encrypt account, and failed attempts are shared.
+Do not keep retrying. Let's Encrypt limits how often this node may fail, and
+every further attempt uses up that allowance - including the automatic
+renewals dashmate runs for you in the background.
 
-If this node has been failing for a long time, the address may be PAUSED
-rather than rate-limited - waiting does not clear a pause, and you may need
-Let's Encrypt's Self-Service Portal to unpause it:
+Inbound port 80 is what to fix first. How you open it depends on the host, so
+check both places it can be blocked: the machine's own firewall, and the
+firewall or security group your hosting provider runs in front of it. Both
+have to allow inbound TCP 80 from anywhere, and the rule has to survive a
+reboot.
+
+Once it is open:
+    `
+    + `dashmate ssl obtain ${renderConfigFlag(config.getName())} --provider letsencrypt`
+    + `
+
+If this node has been failing for a long time, Let's Encrypt may have paused
+it rather than slowed it down. Waiting does not clear a pause - see
     https://letsencrypt.org/docs/rate-limits/
 
-Fix inbound port 80 first, then: `
-    + `dashmate ssl obtain ${renderConfigFlag(config.getName())} --provider letsencrypt`
-    + `\n\n${PORT_80_PERMANENCE}`;
+If you are stuck, collect a report and send it to Dash support:
+    dashmate doctor report ${renderConfigFlag(config.getName())}
+
+${PORT_80_PERMANENCE}`;
 }
 
 /**
@@ -78,12 +90,20 @@ Fix inbound port 80 first, then: `
  *
  * @param {Config} config
  * @param {Error} cause
+ * @param {boolean} [neverRan] - whether the helper is known not to have run
  * @return {string}
  */
-function renderHelperDidNotStartGuidance(config, cause) {
-  return `dashmate could not start the certificate helper, so no request was
-made to Let's Encrypt. Nothing was issued, nothing was validated, and no
-rate limit was spent.
+function renderHelperDidNotStartGuidance(config, cause, neverRan = true) {
+  // Nothing is claimed about this node's allowance unless it is known. Failing
+  // to create the helper settles it - there was nothing to make a request. A
+  // start that failed does not: Docker can reject a start it has accepted, and
+  // a bind conflict looks the same from here as a lost reply. Rather than pick
+  // one and be wrong half the time, the sentence is simply not there.
+  return `${neverRan
+    ? `dashmate could not start the certificate helper, so it never contacted
+Let's Encrypt. Nothing was requested and none of this node's allowance was
+used up.`
+    : 'dashmate could not start the certificate helper.'}
 
 Docker reported:
 
@@ -181,20 +201,33 @@ export default function obtainLetsEncryptCertificateTaskFactory(
    * Create and start the lego container, reporting a failure to do either as
    * distinct from a failure the certificate authority returned.
    *
-   * Nothing here has spoken to the authority yet, so a failure means no
-   * validation was attempted and no issuance budget was spent.
+   * A failure to create means the helper never existed. A failure to start one
+   * that was created is ambiguous, and is reported as such.
    *
    * @param {Object} options - Docker create-container options
    * @return {Promise<Object>} the started container
    */
-  async function startLegoContainer(options) {
+  async function startLegoContainer(options, onCreated) {
     let container;
 
     try {
       container = await docker.createContainer(options);
-      await container.start();
     } catch (e) {
       throw new LegoDidNotStartError(e);
+    }
+
+    // Recorded before the start is attempted, not after it succeeds. Docker can
+    // reject a start it has already accepted, and a container nobody recorded
+    // is a container nobody cleans up.
+    onCreated();
+
+    try {
+      await container.start();
+    } catch (e) {
+      // Not known never to have run. If Docker accepted the start before
+      // failing to say so, the helper is running and may already have made its
+      // request.
+      throw new LegoDidNotStartError(e, false);
     }
 
     return container;
@@ -312,6 +345,7 @@ export default function obtainLetsEncryptCertificateTaskFactory(
       },
       {
         title: 'Obtain certificate using lego',
+        options: { persistentOutput: true },
         skip: (ctx) => ctx.certificateValid,
         task: async (ctx, task) => {
           const { uid, gid } = os.userInfo();
@@ -407,7 +441,8 @@ export default function obtainLetsEncryptCertificateTaskFactory(
 
             // From here to the container running, any failure means the helper
             // never ran and nothing reached the authority.
-            const container = await startLegoContainer({
+            const container = await startLegoContainer(
+              {
               name: containerName,
               Image: LEGO_IMAGE,
               Cmd: legoArgs,
@@ -421,9 +456,9 @@ export default function obtainLetsEncryptCertificateTaskFactory(
                 PortBindings: { '80/tcp': [{ HostPort: '80' }] },
                 ...legoContainerOptions.HostConfig,
               },
-            });
-
-            startedContainers.addContainer(containerName);
+              },
+              () => startedContainers.addContainer(containerName),
+            );
 
             // eslint-disable-next-line no-param-reassign
             task.output = `Running lego ${command}...`;
@@ -461,6 +496,13 @@ export default function obtainLetsEncryptCertificateTaskFactory(
             // cannot hide it.
             ctx.certificateObtained = true;
 
+            // Said here, next to the issuance, rather than once the whole
+            // command has succeeded. An operator who opened port 80 for this
+            // one migration has to hear it stays open even if a later step
+            // fails - and they are about to close it either way.
+            // eslint-disable-next-line no-param-reassign
+            task.output = PORT_80_PERMANENCE;
+
             // Verify certificate and key were created
             if (!fs.existsSync(ctx.legoCertPath)) {
               throw new LegoArtifactsMissingError(ctx.legoCertPath);
@@ -480,7 +522,7 @@ export default function obtainLetsEncryptCertificateTaskFactory(
               // The helper never ran, so there is nothing the authority could
               // tell us and nothing to retry against - the fix is local.
               if (e instanceof LegoDidNotStartError) {
-                throw new Error(renderHelperDidNotStartGuidance(config, e.cause));
+                throw new Error(renderHelperDidNotStartGuidance(config, e.cause, e.neverRan));
               }
 
               if (e instanceof LegoResultNotObservedError) {
@@ -536,7 +578,8 @@ export default function obtainLetsEncryptCertificateTaskFactory(
       {
         title: 'Save certificate',
         skip: (ctx) => ctx.certificateValid && ctx.isCertificatePairInstalled,
-        task: async (ctx) => {
+        options: { persistentOutput: true },
+        task: async (ctx, task) => {
           // Read certificate and key from lego output
           ctx.certificateFile = fs.readFileSync(ctx.legoCertPath, 'utf8');
           ctx.privateKeyFile = fs.readFileSync(ctx.legoKeyPath, 'utf8');
@@ -546,6 +589,9 @@ export default function obtainLetsEncryptCertificateTaskFactory(
           // certificate that was already issued - a run recovering from an
           // interrupted one - counts as the gateway's certificate changing.
           ctx.certificateObtained = true;
+
+          // eslint-disable-next-line no-param-reassign
+          task.output = PORT_80_PERMANENCE;
 
           // Save to gateway SSL directory
           return saveCertificateTask(config);

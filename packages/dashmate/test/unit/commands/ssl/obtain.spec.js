@@ -3,16 +3,6 @@ import ObtainCommand from '../../../../src/commands/ssl/obtain.js';
 import ServiceIsNotRunningError from '../../../../src/docker/errors/ServiceIsNotRunningError.js';
 
 describe('SSL obtain command', () => {
-  let stderr;
-
-  beforeEach(function beforeEach() {
-    stderr = '';
-    this.sinon.stub(process.stderr, 'write').callsFake((chunk) => {
-      stderr += chunk;
-      return true;
-    });
-  });
-
   /**
    * @param {Object} sinon
    * @param {string} [provider]
@@ -80,6 +70,28 @@ describe('SSL obtain command', () => {
   // Envoy loads the certificate once at startup. Obtaining a certificate
   // without telling the gateway to reload leaves the operator with a command
   // that reports success while the node keeps serving the old certificate.
+  // The notice belongs to the task that issues the certificate, so it renders
+  // in the task list with everything else. The command writing it directly -
+  // to either stream, from a finally or otherwise - is what this pins against.
+  it('should not print the port 80 notice itself', async function it() {
+    let written = '';
+    ['stdout', 'stderr'].forEach((stream) => {
+      this.sinon.stub(process[stream], 'write').callsFake((chunk) => {
+        written += chunk;
+
+        return true;
+      });
+    });
+
+    const dependencies = obtainDependencies(this.sinon);
+    dependencies.obtainTask = this.sinon.stub().callsFake(() => new Listr([{
+      task: (ctx) => { ctx.certificateObtained = true; },
+    }]));
+
+    await runObtain(dependencies);
+
+    expect(written).to.not.contain('LEAVE PORT 80 OPEN');
+  });
   it('should reload the gateway after obtaining a certificate', async function it() {
     const dependencies = obtainDependencies(this.sinon);
 
@@ -177,67 +189,6 @@ describe('SSL obtain command', () => {
 
     expect(obtainZeroSSLCertificateTask).to.have.been.calledOnce();
     expect(configFileRepository.write).to.have.been.calledOnceWith(configFile);
-  });
-
-  // The gate's own remediation tells the operator to run this command, and
-  // §the permanence requirement is the whole reason the eight dark nodes went
-  // dark. An operator who opens port 80 for one migration, runs this, succeeds
-  // and closes the port again must not be able to do so silently.
-  it('should state that port 80 has to stay open after obtaining', async function it() {
-    const dependencies = obtainDependencies(this.sinon);
-    dependencies.obtainTask = this.sinon.stub().callsFake(() => new Listr([{
-      task: (ctx) => { ctx.certificateObtained = true; },
-    }]));
-
-    await runObtain(dependencies);
-
-    expect(stderr).to.contain('LEAVE PORT 80 OPEN');
-    expect(stderr).to.contain('survives a reboot');
-  });
-
-  // A certificate that was issued and then failed to install is still a
-  // certificate this node now holds against its limits, and the operator who
-  // opened port 80 for it is about to close it again. The failure must not
-  // swallow the one thing that stops the node going dark in six days.
-  it('should state permanence even when a later step fails', async function it() {
-    const dependencies = obtainDependencies(this.sinon);
-    dependencies.obtainTask = this.sinon.stub().callsFake(() => new Listr([{
-      task: (ctx) => { ctx.certificateObtained = true; },
-    }]));
-    dependencies.dockerCompose.execCommand = this.sinon.stub()
-      .rejects(new Error('reload failed'));
-
-    await expect(runObtain(dependencies)).to.be.rejected();
-
-    expect(stderr).to.contain('LEAVE PORT 80 OPEN');
-  });
-
-  // The permanence block belongs to the command, so a task that also carries it
-  // would print it twice on the one path where both run.
-  it('should state permanence once when the issued files never landed', async function it() {
-    const dependencies = obtainDependencies(this.sinon);
-    dependencies.obtainTask = this.sinon.stub().callsFake(() => new Listr([{
-      task: (ctx) => {
-        ctx.certificateObtained = true;
-
-        throw new Error('Let\'s Encrypt issued a certificate, but dashmate could not find'
-          + ' the file it should have written');
-      },
-    }]));
-
-    await expect(runObtain(dependencies)).to.be.rejected();
-
-    expect(stderr.split('LEAVE PORT 80 OPEN')).to.have.lengthOf(2);
-  });
-
-  // Nothing was issued, so there is nothing to warn about and a cron run stays
-  // quiet.
-  it('should stay silent when no new certificate was obtained', async function it() {
-    const dependencies = obtainDependencies(this.sinon);
-
-    await runObtain(dependencies);
-
-    expect(stderr).to.not.contain('LEAVE PORT 80 OPEN');
   });
 
   // The retry loop lives in the shared obtain task, so `ssl obtain` gains it

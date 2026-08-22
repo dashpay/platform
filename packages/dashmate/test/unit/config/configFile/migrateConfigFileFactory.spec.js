@@ -6,7 +6,6 @@ import HomeDir from '../../../../src/config/HomeDir.js';
 import { PACKAGE_ROOT_DIR } from '../../../../src/constants.js';
 import createDIContainer from '../../../../src/createDIContainer.js';
 import getConfigFileDataV0250 from '../../../../src/test/fixtures/getConfigFileDataV0250.js';
-import { FILESYSTEM_MUTATING_MIGRATIONS } from '../../../../configs/getConfigFileMigrationsFactory.js';
 
 describe('migrateConfigFileFactory', () => {
   let mockConfigFileData;
@@ -23,38 +22,6 @@ describe('migrateConfigFileFactory', () => {
     homeDir.change(new HomeDir('/Users/dashmate/.dashmate', true));
 
     mockConfigFileData = getConfigFileDataV0250();
-  });
-
-  // The read-only preflight applies migrations in memory and discards them, so
-  // it may only refuse when one of them would touch the disk. That decision is
-  // driven by a declared list, and a list nobody maintains is worse than none -
-  // so the list is checked against the migrations themselves.
-  it('should declare every migration that touches the filesystem', () => {
-    const source = fs.readFileSync(
-      path.join(PACKAGE_ROOT_DIR, 'configs', 'getConfigFileMigrationsFactory.js'),
-      'utf8',
-    );
-
-    const keys = [...source.matchAll(/^ {6}'([^']+)': \(configFile\)/gm)];
-
-    expect(keys).to.have.length.greaterThan(50);
-
-    // Matched on the operation names rather than on `fs.`, so an aliased
-    // import, a local helper or bracket access cannot slip a filesystem write
-    // past the scan by not spelling the module out.
-    const mutatingCall = new RegExp(`\\b(?:${[
-      'appendFile', 'chmod', 'chown', 'copyFile', 'cp', 'link', 'mkdir', 'mkdtemp',
-      'rename', 'rm', 'rmdir', 'symlink', 'truncate', 'unlink', 'utimes', 'writeFile',
-    ].map((name) => `${name}(?:Sync)?`).join('|')})\\b`);
-
-    const touchesFilesystem = keys.filter(({ index }, position) => {
-      const end = position + 1 < keys.length ? keys[position + 1].index : source.length;
-
-      return mutatingCall.test(source.slice(index, end));
-    }).map(([, version]) => version);
-
-    expect(touchesFilesystem.sort())
-      .to.deep.equal([...FILESYSTEM_MUTATING_MIGRATIONS].sort());
   });
 
   // lego keys its on-disk ACME account directory by the contact address, so

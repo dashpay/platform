@@ -5,10 +5,8 @@ import { randomUUID } from 'crypto';
 import lockfile from 'proper-lockfile';
 import semver from 'semver';
 import writeFileAtomic from 'write-file-atomic';
-import { FILESYSTEM_MUTATING_MIGRATIONS } from '../../../configs/getConfigFileMigrationsFactory.js';
 import Config from '../Config.js';
 import { PACKAGE_ROOT_DIR } from '../../constants.js';
-import ConfigFileMigrationRequiredError from '../errors/ConfigFileMigrationRequiredError.js';
 import ConfigFileNotFoundError from '../errors/ConfigFileNotFoundError.js';
 import InvalidConfigFileFormatError from '../errors/InvalidConfigFileFormatError.js';
 import configFileJsonSchema from './configFileJsonSchema.js';
@@ -254,11 +252,6 @@ export default class ConfigFileJsonRepository {
    * write.
    *
    * @param {Object} [options={}] - passed through to read()
-   * @param {boolean} [options.readOnly=false] - for a caller that has promised
-   *   to change nothing. Migrations that only reshape data are applied in
-   *   memory and discarded; the two that move and delete files on disk are
-   *   refused outright, because running those on such a caller's behalf would
-   *   break the promise and do it without the lock
    * @param {function(Config[]): void} [onMigrated] - runs before the migrated
    *   config file is saved and while the lock is held
    * @returns {{configFile: ConfigFile}}
@@ -270,37 +263,6 @@ export default class ConfigFileJsonRepository {
 
       return { configFile, migrated };
     };
-
-    // Reading is what runs the migrations, and some of them copy TLS material
-    // to a new location, remove the originals, and then delete the legacy ssl
-    // directory outright. A caller that promised to change nothing cannot read
-    // a config file that is not current: declining is the only honest answer,
-    // and it stops a stop-first upgrade before the node goes down rather than
-    // after.
-    //
-    // Only the migrations that touch the filesystem are refused. The rest
-    // reshape the configuration object, which can be applied in memory and
-    // thrown away - and has to be, because the first run after an upgrade is
-    // both the run where a migration is due and the run this mode exists for.
-    //
-    // Answering a different question from the one below. "Take the lock" is
-    // safe to answer yes to whenever the state cannot be read, but "tell the
-    // operator an older dashmate wrote this" has to be true - a file that is
-    // missing or damaged must report itself as missing or damaged, and one of
-    // those errors is what first-run setup catches to create defaults.
-    if (options.readOnly === true) {
-      // Read once. Deciding from one read and then migrating from another
-      // leaves a window in which the file can be swapped for a legacy one
-      // after it has been judged safe, and the destructive migrations would
-      // then run with no lock held.
-      const configFileData = this.#readRawConfigFile();
-
-      if (this.#hasFilesystemMigrationDue(configFileData.configFormatVersion)) {
-        throw new ConfigFileMigrationRequiredError(this.configFilePath);
-      }
-
-      return { configFile: this.#buildConfigFile(configFileData, options) };
-    }
 
     // Decide whether a migration is due from the recorded version alone.
     // Migrations are not all pure - some move service files on disk and delete
@@ -331,34 +293,6 @@ export default class ConfigFileJsonRepository {
 
       return { configFile };
     });
-  }
-
-  /**
-   * Whether the recorded format version is demonstrably older than this build's.
-   *
-   * Narrower than the question below, and deliberately so: this one is only
-   * true when both versions could be read and compared. Anything that defeats
-   * the comparison - no file, unreadable file, a missing or unparseable
-   * version, no target to compare against - is not evidence that an older
-   * dashmate wrote the file, so it answers false and leaves the file to report
-   * its own problem.
-   *
-   * @param {*} rawRecordedVersion - the version recorded in the snapshot being
-   *   judged, so the decision and the migration cannot disagree
-   * @returns {boolean}
-   */
-  #hasFilesystemMigrationDue(rawRecordedVersion) {
-    const recordedVersion = typeof rawRecordedVersion === 'string'
-      && semver.valid(rawRecordedVersion) !== null
-      ? rawRecordedVersion
-      : null;
-
-    if (recordedVersion === null || typeof this.configFormatVersion !== 'string') {
-      return false;
-    }
-
-    return FILESYSTEM_MUTATING_MIGRATIONS.some((version) => semver.gt(version, recordedVersion)
-      && semver.lte(version, this.configFormatVersion));
   }
 
   /**

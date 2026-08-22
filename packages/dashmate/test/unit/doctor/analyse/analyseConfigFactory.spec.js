@@ -87,6 +87,15 @@ describe('analyseConfigFactory', () => {
       expect(problem.getSolution()).to.contain('dashmate ssl obtain');
     });
 
+    // A host commonly runs several configs. A command pasted without one acts
+    // on whichever happens to be the default, so it would obtain and reload a
+    // certificate for a node nobody was diagnosing and leave this one as it is.
+    it('should name the config being diagnosed', () => {
+      const [problem] = notInstalled();
+
+      expect(problem.getSolution()).to.contain(`--config ${config.getName()}`);
+    });
+
     // The report can carry the gateway analyser's finding for the same node,
     // which says in as many words not to restart. Two opposite instructions in
     // one report leave the operator to guess, and one guess breaks the node.

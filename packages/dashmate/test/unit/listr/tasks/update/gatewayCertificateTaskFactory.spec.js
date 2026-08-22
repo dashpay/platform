@@ -272,6 +272,54 @@ describe('gatewayCertificateTaskFactory', () => {
     });
   });
 
+  // Repairing reuses the certificate already issued when it still looks usable,
+  // which saves an issuance from a limited allowance. But that reuse check is
+  // weaker than the gate: it does not look at the address at all, and it only
+  // asks whether the certificate has expired, not whether it has started. So
+  // for the two faults it cannot see, reinstalling the same bytes is a repair
+  // that repairs nothing, and a new certificate has to be obtained.
+  describe('repairing a certificate the gate rejected', () => {
+    /**
+     * @param {Object} ctx - the mocha context, for its sinon sandbox
+     * @param {string} code
+     * @return {Promise<Object>} the context the obtain task was run with
+     */
+    async function repairContext(ctx, code) {
+      let ran = null;
+
+      obtainLetsEncryptCertificateTask = ctx.sinon.stub().callsFake(() => ({
+        run: (runContext) => {
+          ran = runContext;
+
+          return Promise.resolve();
+        },
+      }));
+
+      await run.call(ctx, {
+        checkGatewayCertificate: () => invalid(code),
+        answers: [true, true, true],
+      });
+
+      expect(ran, 'the obtain task was never run').to.not.be.null();
+
+      return ran;
+    }
+
+    [CERTIFICATE_REASONS.IP_MISMATCH, CERTIFICATE_REASONS.NOT_YET_VALID].forEach((code) => {
+      it(`should obtain a new certificate rather than reuse one rejected for ${code}`, async function it() {
+        expect((await repairContext(this, code)).force).to.be.true();
+      });
+    });
+
+    // Where the fault is in the copy installed for the gateway rather than in
+    // the certificate itself, reinstalling can fix it without spending an
+    // issuance, so the allowance is not burned for nothing.
+    it('should not force a new certificate for a fault reinstalling can fix', async function it() {
+      expect((await repairContext(this, CERTIFICATE_REASONS.KEY_MISMATCH)).force)
+        .to.not.be.true();
+    });
+  });
+
   describe('nothing blocks on a certificate that passed', () => {
     it('should say nothing at all for a provider that is working', async function it() {
       config.set('platform.gateway.ssl.provider', 'letsencrypt');

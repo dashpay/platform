@@ -192,7 +192,7 @@ describe('renderCertificateGuidance', () => {
 
     const output = render();
 
-    expect(output).to.contain('already configured for Let\'s Encrypt');
+    expect(output).to.contain('already set to use Let\'s Encrypt');
     expect(output).to.contain('THE FIX - obtain a new certificate');
     expect(output).to.not.contain('THE FIX - switch to');
 
@@ -293,6 +293,29 @@ describe('renderCertificateGuidance', () => {
     });
   });
 
+  // Docker being unreachable, or the caller not being permitted to ask it,
+  // says nothing about whether the node is up. Reporting it as stopped tells
+  // the operator something false about their own node and offers them a
+  // command for a state it may not be in.
+  describe('when the node state could not be determined', () => {
+    it('should not say the node is stopped', () => {
+      const output = render({ isNodeRunning: null });
+
+      expect(output).to.not.contain('Your node is currently stopped');
+      expect(output).to.not.contain('dashmate start --config base');
+    });
+
+    it('should not claim a running node needs nothing further either', () => {
+      const output = render({ isNodeRunning: null });
+
+      expect(output).to.not.contain('needs nothing further - no restart');
+    });
+
+    it('should still give the operator the fix', () => {
+      expect(render({ isNodeRunning: null })).to.contain('dashmate ssl obtain --config base');
+    });
+  });
+
   it('should say when images failed to pull', () => {
     expect(render({ pull: { ok: true, failed: 2, total: 7 } }))
       .to.contain('2 of 7 failed');
@@ -313,11 +336,14 @@ describe('renderCertificateGuidance', () => {
     expect(output).to.contain("This node's installed TLS certificate did not pass");
   });
 
-  it('should explain the ZeroSSL wall without blaming the operator', () => {
+  // The operator's own situation, with no claim about what other providers
+  // offer and no statistics about other people's nodes.
+  it('should explain the ZeroSSL wall in terms of this node', () => {
     const output = render();
 
-    expect(output).to.contain('You did not\n  configure anything wrong');
-    expect(output).to.contain('as of August 2026');
+    expect(output).to.contain('three\n  certificates in total');
+    expect(output).to.not.match(/four out of five|as of August/);
+    expect(output).to.not.match(/does not issue certificates for IP addresses/);
   });
 
   // Half the expired Let's Encrypt nodes measured had port 80 demonstrably
@@ -328,8 +354,12 @@ describe('renderCertificateGuidance', () => {
 
     const output = render({ verdict: verdict({ provider: 'letsencrypt' }) });
 
-    expect(output).to.contain('The most likely cause is inbound port 80');
+    expect(output).to.contain('Inbound port 80 is the most common cause');
     expect(output).to.contain('It is not always port 80');
+
+    // No claim about what any other authority does or does not issue, and no
+    // narration about what dashmate has or has not looked at.
+    expect(output).to.not.match(/only free one|has not read|retries renewal every hour/);
     expect(output).to.contain('dashmate logs --config base dashmate_helper');
   });
 
