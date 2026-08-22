@@ -69,10 +69,12 @@ const local = EvoSDK.devnet('paloma', {
 await local.connect();
 ```
 
-Two static helpers are also exported:
+Static helpers are also exported:
 
 - `await EvoSDK.setLogLevel(filter)` — configure the underlying Wasm SDK's tracing globally.
 - `await EvoSDK.getLatestVersionNumber()` — return the latest Platform protocol version supported by the bundled Wasm SDK.
+- `await EvoSDK.maxRankedLimit()` — the hard ceiling on a [ranked / having-range](#ranked-queries) `limit`.
+- `await EvoSDK.rankedAverageScale()` — the fixed-point divisor for the `avg` axis of a ranked / having-range result.
 
 ## Facades
 
@@ -117,7 +119,7 @@ for (const entry of page.entries) {
 }
 ```
 
-`limit` is required and capped at `EvoSDK`'s `maxRankedLimit()` (a hard reject, not a clamp). `offset` skips ranks — `{ limit: 1, offset: 4 }` is "the 5th best" — and has no ceiling, because the skipped region is attested rather than walked.
+`limit` is required and capped at `await EvoSDK.maxRankedLimit()` (a hard reject, not a clamp). `offset` skips ranks — `{ limit: 1, offset: 4 }` is "the 5th best" — and has no ceiling, because the skipped region is attested rather than walked.
 
 `sdk.documents.having()` bounds the same axis by value instead of by position (`{ operator: '>', value: 100 }`), and `rankedWithProof` / `havingWithProof` return the proof and block metadata alongside the result.
 

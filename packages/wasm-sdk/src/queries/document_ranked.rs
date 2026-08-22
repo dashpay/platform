@@ -47,7 +47,7 @@ use std::sync::Arc;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::identifier::IdentifierWasm;
-use wasm_dpp2::serialization::conversions::platform_value_to_json;
+use wasm_dpp2::serialization::conversions::{js_value_to_platform_value, platform_value_to_json};
 
 #[wasm_bindgen(typescript_custom_section)]
 const DOCUMENTS_RANKED_QUERY_TS: &'static str = r#"
@@ -877,6 +877,89 @@ fn entry_value_to_js(value: RankedEntryValue) -> JsValue {
     }
 }
 
+/// The integer widths that can leave JavaScript's safe-integer range, and
+/// therefore have to cross as exact `BigInt`s.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExactIntegerKey {
+    U64(u64),
+    I64(i64),
+    U128(u128),
+    I128(i128),
+}
+
+/// How a decoded group key crosses to JS.
+///
+/// Classification lives here, in one place, so that
+/// [`group_value_to_js`] cannot drift from what the host tests assert —
+/// the rendering half touches `js_sys` and so is unreachable off-wasm.
+// Not `Eq`: `Value`'s float variant keeps it at `PartialEq`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum GroupValueRepr<'a> {
+    /// An exact `BigInt`.
+    ExactBigInt(ExactIntegerKey),
+    /// The document JSON convention: base58 identifiers, base64 bytes,
+    /// `number` for the narrower integer types, strings and bools as-is.
+    DocumentJson(&'a Value),
+}
+
+/// Decide how a decoded group key should cross to JS.
+///
+/// `u64`, `i64`, `u128` and `i128` are pulled out of the JSON conversion
+/// because that conversion targets a JS `number` and *errors* past
+/// `Number.MAX_SAFE_INTEGER` (`serialize_u64` / `serialize_i64` under
+/// `json_compatible`), so a single large group key would otherwise reject a
+/// whole verified page — and `u128` / `i128` fail earlier still, inside
+/// `serde_json`. All four are reachable:
+/// `DocumentPropertyType::decode_value_for_tree_keys` returns them for the
+/// correspondingly typed properties, and a `Date` group key decodes to
+/// `Value::U64`.
+///
+/// A group key is an identity, not an arithmetic operand, so exactness
+/// matters more than the convenience of a `number`. The narrower integer
+/// types keep the `number` representation the rest of the document JSON
+/// surface uses, which means the JS type follows the property's *declared
+/// type* rather than the magnitude of any particular value — a `u64`
+/// property is always `bigint`, a `u32` property is always `number`.
+fn group_value_repr(value: &Value) -> GroupValueRepr<'_> {
+    match value {
+        Value::U64(inner) => GroupValueRepr::ExactBigInt(ExactIntegerKey::U64(*inner)),
+        Value::I64(inner) => GroupValueRepr::ExactBigInt(ExactIntegerKey::I64(*inner)),
+        Value::U128(inner) => GroupValueRepr::ExactBigInt(ExactIntegerKey::U128(*inner)),
+        Value::I128(inner) => GroupValueRepr::ExactBigInt(ExactIntegerKey::I128(*inner)),
+        other => GroupValueRepr::DocumentJson(other),
+    }
+}
+
+/// A decoded group key as a JS value. See [`group_value_repr`] for why the
+/// wide integer types bypass the JSON conversion.
+fn group_value_to_js(value: &Value) -> Result<JsValue, WasmSdkError> {
+    match group_value_repr(value) {
+        GroupValueRepr::ExactBigInt(ExactIntegerKey::U64(inner)) => Ok(JsValue::from(inner)),
+        GroupValueRepr::ExactBigInt(ExactIntegerKey::I64(inner)) => Ok(JsValue::from(inner)),
+        GroupValueRepr::ExactBigInt(ExactIntegerKey::U128(inner)) => Ok(JsValue::from(inner)),
+        GroupValueRepr::ExactBigInt(ExactIntegerKey::I128(inner)) => Ok(JsValue::from(inner)),
+        GroupValueRepr::DocumentJson(inner) => {
+            platform_value_to_json(inner).map_err(WasmSdkError::from)
+        }
+    }
+}
+
+/// Test-only: run a value through the same conversion `getDocumentsRanked`
+/// and `getDocumentsHaving` apply to a `groupValue`.
+///
+/// Exported because the interesting cases live at the JS boundary and a
+/// host-target test cannot reach them — `js_sys` panics off-wasm, so only a
+/// WASM-runtime spec can prove that an integer past
+/// `Number.MAX_SAFE_INTEGER` comes back exact instead of throwing. Mirrors
+/// `testJsValueToJson` in wasm-dpp2, which exists for the same reason.
+///
+/// Not part of the supported API surface.
+#[wasm_bindgen(js_name = "testRankedGroupValue")]
+pub fn test_ranked_group_value(value: JsValue) -> Result<JsValue, WasmSdkError> {
+    let decoded = js_value_to_platform_value(&value).map_err(WasmSdkError::from)?;
+    group_value_to_js(&decoded)
+}
+
 /// Build one `DocumentsGroupEntry`, optionally carrying an absolute rank.
 fn group_entry_to_js(parts: &GroupEntryParts, rank: Option<u64>) -> Result<JsValue, WasmSdkError> {
     let entry = Object::new();
@@ -884,7 +967,7 @@ fn group_entry_to_js(parts: &GroupEntryParts, rank: Option<u64>) -> Result<JsVal
     set_field(&entry, "groupKeyHex", &JsValue::from_str(&parts.key_hex));
 
     let group_value = match (&parts.decoded, parts.key_absent) {
-        (Some(value), _) => platform_value_to_json(value).map_err(WasmSdkError::from)?,
+        (Some(value), _) => group_value_to_js(value)?,
         // Empty key: the group-by value was absent, which is a real
         // group with a known meaning, not a decode failure.
         (None, true) => JsValue::NULL,
@@ -1694,6 +1777,68 @@ mod tests {
         assert_eq!(parts[0].decoded, None);
         assert!(!parts[0].key_absent);
         assert_eq!(parts[0].key_hex, "0102");
+    }
+
+    /// The four widths that can leave JavaScript's safe-integer range have
+    /// to cross as exact `BigInt`s — the JSON conversion errors on them
+    /// rather than rounding, so a single large group key used to reject a
+    /// whole verified page.
+    #[test]
+    fn wide_integer_group_keys_cross_as_exact_bigints() {
+        let cases = [
+            (Value::U64(u64::MAX), ExactIntegerKey::U64(u64::MAX)),
+            (Value::I64(i64::MIN), ExactIntegerKey::I64(i64::MIN)),
+            (Value::U128(u128::MAX), ExactIntegerKey::U128(u128::MAX)),
+            (Value::I128(i128::MIN), ExactIntegerKey::I128(i128::MIN)),
+        ];
+
+        for (value, expected) in cases {
+            assert_eq!(
+                group_value_repr(&value),
+                GroupValueRepr::ExactBigInt(expected),
+                "{value:?} must not go through the JSON conversion"
+            );
+        }
+    }
+
+    /// A `Date` group key decodes to `Value::U64`, so timestamps take the
+    /// exact path too rather than depending on staying under 2^53.
+    #[test]
+    fn a_date_group_key_crosses_as_an_exact_bigint() {
+        assert_eq!(
+            group_value_repr(&Value::U64(1_760_000_000_000)),
+            GroupValueRepr::ExactBigInt(ExactIntegerKey::U64(1_760_000_000_000))
+        );
+    }
+
+    /// Everything narrow enough to be lossless as a JS `number`, and
+    /// everything non-numeric, keeps the document JSON convention — so the
+    /// JS type follows the property's declared type, not the size of one
+    /// value. These variants are unreachable from the WASM-runtime spec,
+    /// whose input conversion normalizes every JS number to `i64`.
+    #[test]
+    fn narrow_and_non_numeric_group_keys_keep_the_json_convention() {
+        let cases = [
+            Value::U8(7),
+            Value::U16(7),
+            Value::U32(7),
+            Value::I8(-7),
+            Value::I16(-7),
+            Value::I32(-7),
+            Value::Float(1.5),
+            Value::Text("alice".to_string()),
+            Value::Bool(true),
+            Value::Identifier([3u8; 32]),
+            Value::Bytes(vec![1, 2, 3]),
+            Value::Null,
+        ];
+
+        for value in &cases {
+            assert!(
+                matches!(group_value_repr(value), GroupValueRepr::DocumentJson(_)),
+                "{value:?} should keep the document JSON representation"
+            );
+        }
     }
 
     /// The average scale is a build-time constant that has already moved

@@ -301,4 +301,24 @@ describe('EvoSDK', () => {
       expect(sdk.options.devnetName).to.be.undefined();
     });
   });
+
+  describe('ranked query constants', () => {
+    // Documented in the README as the way to discover the ceiling, so the
+    // forwarding statics have to actually exist on EvoSDK.
+    it('should expose the ranked limit ceiling', async () => {
+      const limit = await EvoSDK.maxRankedLimit();
+
+      expect(limit).to.be.a('number');
+      expect(limit).to.be.greaterThan(0);
+    });
+
+    it('should expose the avg fixed-point scale as a bigint', async () => {
+      // Returned rather than documented as a literal precisely so callers
+      // never hardcode it — it has already changed once.
+      const scale = await EvoSDK.rankedAverageScale();
+
+      expect(typeof scale).to.equal('bigint');
+      expect(scale > BigInt(0)).to.equal(true);
+    });
+  });
 });

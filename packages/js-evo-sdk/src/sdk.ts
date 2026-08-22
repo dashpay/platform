@@ -223,6 +223,26 @@ export class EvoSDK {
     return wasm.WasmSdkBuilder.getLatestVersionNumber();
   }
 
+  /**
+   * Hard ceiling on a ranked / having-range `limit`. A request above it is
+   * rejected, not truncated.
+   */
+  static async maxRankedLimit(): Promise<number> {
+    await initWasm();
+    return wasm.WasmSdk.maxRankedLimit();
+  }
+
+  /**
+   * Fixed-point divisor for the `avg` axis of a ranked / having-range
+   * result. Exposed so a caller who persisted a `DocumentsGroupEntry.value`
+   * can re-render it without holding on to the result that produced it.
+   * Never hardcode the number.
+   */
+  static async rankedAverageScale(): Promise<bigint> {
+    await initWasm();
+    return wasm.WasmSdk.rankedAverageScale();
+  }
+
   // Factory helpers that return configured instances (not connected)
   static testnet(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'testnet', ...options }); }
   static mainnet(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'mainnet', ...options }); }
