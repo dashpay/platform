@@ -15,6 +15,12 @@ pub enum Error {
     /// Query is not configured properly for the target platform version
     #[error("SDK misconfigured: {0}")]
     Config(String),
+    /// Input to a document builder failed validation (bad label, wrong
+    /// ciphertext length, unknown document type, ...). `dash-sdk` maps this
+    /// to its `Error::Generic`, preserving the messages these checks
+    /// produced before they moved here.
+    #[error("{0}")]
+    InvalidInput(String),
     /// Drive error
     #[error("Drive error: {0}")]
     Drive(#[from] drive::error::Error),
