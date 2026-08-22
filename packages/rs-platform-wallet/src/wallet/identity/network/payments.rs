@@ -1027,26 +1027,37 @@ async fn confirm_sent_payment_by_txid(
 /// `Confirmed` rows ([`confirm_final_sent_payments_for_store`]).
 #[derive(Debug, Default)]
 pub(crate) struct SweptPaymentFlips {
-    /// `PlatformWalletChangeSet::dashpay_payments_overlay` payload — the
-    /// flipped rows, exactly as memory now holds them.
-    pub overlay: std::collections::BTreeMap<
-        Identifier,
-        std::collections::BTreeMap<String, crate::wallet::identity::PaymentEntry>,
-    >,
-    /// What to restore if the round is rejected, applied by
-    /// [`rollback_payment_flips`] so memory returns to the durable
-    /// state and the replayed event finds the entries eligible again.
-    pub rollback: Vec<PaymentFlipUndo>,
+    /// The flips applied to memory, in application order. Each is the
+    /// SINGLE record of its flip — the store overlay row, the
+    /// rejected-round undo, and the same-fold retraction are all derived
+    /// from it by the wallet-event adapter's round journal (see
+    /// `fold_payment_flips` in the core bridge), never bookkept apart.
+    pub flips: Vec<PaymentFlip>,
+}
+
+/// One applied in-memory sent-payment flip: the entry as it stood before
+/// (`previous`) and as memory now holds it (`updated`). Everything a
+/// round needs is a projection of this pair: the staged overlay row is
+/// `updated`, and the guarded undo is "restore `previous` while
+/// `updated.status` still stands" ([`PaymentFlipUndo`]).
+#[derive(Debug, Clone)]
+pub(crate) struct PaymentFlip {
+    pub owner: Identifier,
+    pub txid: String,
+    /// The entry as it stood before this flip.
+    pub previous: crate::wallet::identity::PaymentEntry,
+    /// The entry as memory holds it after the flip.
+    pub updated: crate::wallet::identity::PaymentEntry,
 }
 
 /// One staged payment flip's undo: what to restore if the store round the
 /// flip rode is rejected, and the status the flip wrote — the undo applies
 /// only while that write still stands (see [`rollback_payment_flips`]).
 ///
-/// Carried by both round-riding flips: the sweep's `→ Failed`
-/// ([`flip_swept_sent_payments_for_store`], `wrote = Failed`) and the
-/// ordered confirm's `→ Confirmed`
-/// ([`confirm_final_sent_payments_for_store`], `wrote = Confirmed`).
+/// Derived, never bookkept: the adapter projects it out of its coalesced
+/// round journal (`previous` = the durable pre-round entry, `wrote` = the
+/// status the round last staged), so an undo can never describe a
+/// different history than the staged row it guards.
 #[derive(Debug, Clone)]
 pub(crate) struct PaymentFlipUndo {
     pub owner: Identifier,
@@ -1059,7 +1070,25 @@ pub(crate) struct PaymentFlipUndo {
 
 impl SweptPaymentFlips {
     pub(crate) fn is_empty(&self) -> bool {
-        self.overlay.is_empty()
+        self.flips.is_empty()
+    }
+
+    /// Project every flip into its guarded undo, in application order —
+    /// what [`rollback_payment_flips`] takes. Production rollbacks go
+    /// through the adapter's coalesced round journal instead (one undo
+    /// per `(owner, txid)`); this uncoalesced projection exists for the
+    /// single-flip unit tests.
+    #[cfg(test)]
+    pub(crate) fn into_undos(self) -> Vec<PaymentFlipUndo> {
+        self.flips
+            .into_iter()
+            .map(|flip| PaymentFlipUndo {
+                owner: flip.owner,
+                txid: flip.txid,
+                wrote: flip.updated.status,
+                previous: flip.previous,
+            })
+            .collect()
     }
 }
 
@@ -1116,16 +1145,11 @@ pub(crate) async fn flip_swept_sent_payments_for_store(
             managed
                 .dashpay_payments_mut()
                 .insert(key.clone(), updated.clone());
-            flips
-                .overlay
-                .entry(owner)
-                .or_default()
-                .insert(key.clone(), updated);
-            flips.rollback.push(PaymentFlipUndo {
+            flips.flips.push(PaymentFlip {
                 owner,
                 txid: key.clone(),
                 previous,
-                wrote: PaymentStatus::Failed,
+                updated,
             });
             // txid is unique — only one identity can hold this entry.
             break 'owners;
@@ -1136,8 +1160,8 @@ pub(crate) async fn flip_swept_sent_payments_for_store(
 
 /// The adapter-owned sent-payment confirmation: flip the `Sent` entries
 /// whose transaction `event` proves final to `Confirmed` in memory, and
-/// return the overlay + rollback for the wallet-event adapter to ride on
-/// the event's OWN store round. Persists NOTHING itself — the caller owns
+/// return the flips for the wallet-event adapter to journal onto the
+/// event's OWN store round. Persists NOTHING itself — the caller owns
 /// the round.
 ///
 /// This is the ONLY live confirmation path. It runs on the adapter's
@@ -1277,16 +1301,11 @@ pub(crate) async fn confirm_final_sent_payments_for_store(
             managed
                 .dashpay_payments_mut()
                 .insert(key.clone(), updated.clone());
-            flips
-                .overlay
-                .entry(owner)
-                .or_default()
-                .insert(key.clone(), updated);
-            flips.rollback.push(PaymentFlipUndo {
+            flips.flips.push(PaymentFlip {
                 owner,
                 txid: key.clone(),
                 previous,
-                wrote: PaymentStatus::Confirmed,
+                updated,
             });
             // txid is unique — only one identity can hold this entry.
             break 'owners;
@@ -3250,8 +3269,9 @@ mod tests {
     /// ([`confirm_final_sent_payments_for_store`]) moves it live, so
     /// before that path was wired the entry was stuck `Pending` forever
     /// (sent payments never showed confirmed). Pins the flip riding the
-    /// event's own round (overlay + rollback), idempotency on
-    /// re-delivery, and that amount/memo are preserved.
+    /// event's own round (the `previous`/`updated` pair the adapter
+    /// journals), idempotency on re-delivery, and that amount/memo are
+    /// preserved.
     #[tokio::test]
     async fn confirm_flips_sent_payment_pending_to_confirmed() {
         use dashcore::ephemerealdata::instant_lock::InstantLock;
@@ -3326,16 +3346,18 @@ mod tests {
         let flips =
             super::confirm_final_sent_payments_for_store(&iw.wallet_manager, &wallet_id, &event)
                 .await;
+        assert_eq!(flips.flips.len(), 1);
+        assert_eq!(flips.flips[0].owner, owner);
+        assert_eq!(flips.flips[0].txid, txid_key);
         assert_eq!(
-            flips.overlay[&owner][&txid_key].status,
+            flips.flips[0].updated.status,
             PaymentStatus::Confirmed,
             "the Confirmed row must ride the event's own round"
         );
-        assert_eq!(flips.rollback.len(), 1);
         assert_eq!(
-            flips.rollback[0].wrote,
-            PaymentStatus::Confirmed,
-            "the undo may only revert this flip's own write"
+            flips.flips[0].previous.status,
+            PaymentStatus::Pending,
+            "the flip records the pre-flip entry its undo may restore"
         );
         let entry = read_entry(iw, &wallet_id, &owner, &txid_key).await;
         assert_eq!(
@@ -3430,12 +3452,14 @@ mod tests {
         let flips =
             super::flip_swept_sent_payments_for_store(&iw.wallet_manager, &wallet_id, &[txid])
                 .await;
+        assert_eq!(flips.flips.len(), 1);
+        assert_eq!(flips.flips[0].owner, owner);
+        assert_eq!(flips.flips[0].txid, txid_key);
         assert_eq!(
-            flips.overlay[&owner][&txid_key].status,
+            flips.flips[0].updated.status,
             PaymentStatus::Failed,
-            "the overlay must carry the Failed row for the sweep's own round"
+            "the flip must carry the Failed row for the sweep's own round"
         );
-        assert_eq!(flips.rollback.len(), 1);
         assert_eq!(
             status(iw, &wallet_id, &owner, &txid_key).await,
             PaymentStatus::Failed,
@@ -3477,7 +3501,7 @@ mod tests {
         )
         .await;
         assert_eq!(
-            flips.overlay[&owner][&txid_key].status,
+            flips.flips[0].updated.status,
             PaymentStatus::Confirmed,
             "the reinstatement correction must ride the event's own round"
         );
@@ -3496,7 +3520,7 @@ mod tests {
             super::flip_swept_sent_payments_for_store(&iw.wallet_manager, &wallet_id, &[txid])
                 .await;
         assert_eq!(
-            flips.overlay[&owner][&txid_key].status,
+            flips.flips[0].updated.status,
             PaymentStatus::Failed,
             "a newer sweep must demote a Confirmed entry — its Failed row rides its round"
         );
@@ -3583,7 +3607,7 @@ mod tests {
             super::flip_swept_sent_payments_for_store(&iw.wallet_manager, &wallet_id, &[txid])
                 .await;
         assert!(!flips.is_empty());
-        super::rollback_payment_flips(&iw.wallet_manager, &wallet_id, flips.rollback).await;
+        super::rollback_payment_flips(&iw.wallet_manager, &wallet_id, flips.into_undos()).await;
 
         {
             let wm = iw.wallet_manager.read().await;
@@ -3614,7 +3638,7 @@ mod tests {
             super::flip_swept_sent_payments_for_store(&iw.wallet_manager, &wallet_id, &[txid])
                 .await;
         assert_eq!(
-            flips.overlay[&owner][&txid_key].status,
+            flips.flips[0].updated.status,
             PaymentStatus::Failed,
             "the replayed sweep must recompute the flip the rollback undid"
         );
@@ -3791,7 +3815,7 @@ mod tests {
 
         // The undo arrives late (rejected round or same-fold retraction);
         // it must find its own write gone and leave the terminal alone.
-        super::rollback_payment_flips(&iw.wallet_manager, &wallet_id, flips.rollback).await;
+        super::rollback_payment_flips(&iw.wallet_manager, &wallet_id, flips.into_undos()).await;
 
         let wm = iw.wallet_manager.read().await;
         let status = wm
