@@ -5,7 +5,7 @@ use crate::version::dpp_versions::dpp_costs_versions::v1::DPP_COSTS_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_document_versions::v3::DOCUMENT_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_factory_versions::v1::DPP_FACTORY_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_identity_versions::v1::IDENTITY_VERSIONS_V1;
-use crate::version::dpp_versions::dpp_method_versions::v3::DPP_METHOD_VERSIONS_V3;
+use crate::version::dpp_versions::dpp_method_versions::v2::DPP_METHOD_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_state_transition_conversion_versions::v2::STATE_TRANSITION_CONVERSION_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_state_transition_method_versions::v1::STATE_TRANSITION_METHOD_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v2::STATE_TRANSITION_SERIALIZATION_VERSIONS_V2;
@@ -25,7 +25,7 @@ use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
 use crate::version::fee::v2::FEE_VERSION2;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v3::SYSTEM_DATA_CONTRACT_VERSIONS_V3;
-use crate::version::system_limits::v3::SYSTEM_LIMITS_V3;
+use crate::version::system_limits::v4::SYSTEM_LIMITS_V4;
 use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
@@ -66,9 +66,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    the contest was created on — which halts the chain when that poll
 ///    ends — or open a contest for a document that is not a contested
 ///    resource at all.
-/// 4. **Daily withdrawal limit 2000 → 4000 Dash**: `DPP_METHOD_VERSIONS_V3`
-///    bumps `daily_withdrawal_limit` 1 → 2, doubling the amount of credits
-///    Platform pools into asset unlock transactions per 24 hours. This
+/// 4. **Daily withdrawal limit 2000 → 4000 Dash**: `SYSTEM_LIMITS_V4` raises
+///    `daily_withdrawal_limit`, doubling the amount of credits Platform pools
+///    into asset unlock transactions per 24 hours (the `daily_withdrawal_limit`
+///    method stays at v1, which reads that system limit). This
 ///    mirrors Core's doubled credit-pool unlock limit (`LimitAmountV24`,
 ///    DIP-0165, dashpay/dash#6662), which Core gates on its own
 ///    `DEPLOYMENT_V24` hard fork. v14 does not have to wait for that fork:
@@ -158,12 +159,12 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         voting_versions: VOTING_VERSION_V2,
         token_versions: TOKEN_VERSIONS_V2,
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
-        methods: DPP_METHOD_VERSIONS_V3, // changed: daily_withdrawal_limit v2 — 4000 Dash per day, matching Core's LimitAmountV24
+        methods: DPP_METHOD_VERSIONS_V2,
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33)
     fee_version: FEE_VERSION2,
-    system_limits: SYSTEM_LIMITS_V3,
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily_withdrawal_limit 2000 → 4000 Dash, matching Core's LimitAmountV24
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

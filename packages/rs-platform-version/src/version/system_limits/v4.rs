@@ -1,15 +1,17 @@
 use crate::version::system_limits::SystemLimits;
 
-/// System limits for protocol version 12.
+/// System limits for protocol version 14 and above.
 ///
-/// Identical to [`super::v1::SYSTEM_LIMITS_V1`] except that `min_withdrawal_amount` is raised
-/// from 190,000 credits (190 duffs) to 1,000,000 credits (1000 duffs): the previous floor was
-/// the bare asset-unlock transaction fee and too low a minimum for a Core `TxOut`.
-pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
+/// Identical to [`super::v3::SYSTEM_LIMITS_V3`] except that `daily_withdrawal_limit` is raised
+/// from 2000 Dash to 4000 Dash, matching Core's doubled credit-pool unlock limit
+/// (`LimitAmountV24`, DIP-0165, dashpay/dash#6662). v13 is already live on networks with the
+/// 2000 Dash limit, so the change gates here.
+pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     estimated_contract_max_serialized_size: 16384,
     max_field_value_size: 5120, //5 KiB
-    // v12 is already active on live networks; the depth limit activates in v13 (see v3).
-    max_document_value_depth: None,
+    // Use the protocol's existing data-contract schema-depth ceiling as the conservative
+    // instance budget, bounding pre-schema work well above known document requirements.
+    max_document_value_depth: Some(256),
     max_state_transition_size: 20480, //20 KiB
     // Load-bearing for state correctness, not just for throughput — see
     // SystemLimits::max_transitions_in_documents_batch and SYSTEM_LIMITS_V1.
@@ -17,7 +19,7 @@ pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     withdrawal_transactions_per_block_limit: 4,
     retry_signing_expired_withdrawal_documents_per_block_limit: 1,
     max_withdrawal_amount: 50_000_000_000_000,   //500 Dash
-    daily_withdrawal_limit: 200_000_000_000_000, //2000 Dash (Core v22 limit)
+    daily_withdrawal_limit: 400_000_000_000_000, //4000 Dash (Core v24 limit; raised from 2000 in v14)
     min_withdrawal_amount: 1_000_000,            //1000 duffs (raised from 190 in v12)
     max_contract_group_size: 256,
     max_token_redemption_cycles: 128,
