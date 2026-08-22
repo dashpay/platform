@@ -66,11 +66,25 @@ public class Wallet {
             }
         }
 
-        guard let handle = walletPtr else {
-            throw KeyWalletError(ffiError: error)
+        if let handle = walletPtr {
+            self.handle = handle
+            self.ownsHandle = true
+            return
         }
 
-        self.handle = handle
+        let ffiFailure = KeyWalletError(ffiError: error)
+        // `wallet_create_from_mnemonic` parses with a hardcoded English
+        // wordlist. A phrase in any other supported language still validates
+        // (`mnemonic_validate` tries every wordlist), and wallet ids and
+        // derived keys are determined by the BIP-39 seed alone, so build the
+        // identical wallet from the seed instead. `Mnemonic.toSeed` handles
+        // every supported language.
+        guard case .invalidMnemonic = ffiFailure, Mnemonic.validate(mnemonic) else {
+            throw ffiFailure
+        }
+        let seed = try Mnemonic.toSeed(mnemonic: mnemonic)
+        self.handle = try Self.createHandle(
+            seed: seed, network: network, accountOptions: accountOptions)
         self.ownsHandle = true
     }
 
@@ -81,8 +95,13 @@ public class Wallet {
     ///   - accountOptions: Account creation options
     public init(seed: Data, network: Network = .mainnet,
                 accountOptions: AccountCreationOption = .default) throws {
+        self.handle = try Self.createHandle(
+            seed: seed, network: network, accountOptions: accountOptions)
         self.ownsHandle = true
+    }
 
+    private static func createHandle(seed: Data, network: Network,
+                                     accountOptions: AccountCreationOption) throws -> OpaquePointer {
         var error = FFIError()
         let walletPtr: OpaquePointer? = seed.withUnsafeBytes { seedBytes in
             let seedPtr = seedBytes.bindMemory(to: UInt8.self).baseAddress
@@ -116,7 +135,7 @@ public class Wallet {
             throw KeyWalletError(ffiError: error)
         }
 
-        self.handle = handle
+        return handle
     }
 
     /// Create a watch-only wallet from extended public key
