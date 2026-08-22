@@ -55,14 +55,42 @@ impl Drive {
         block_info: &BlockInfo,
         platform_version: &PlatformVersion,
     ) -> Result<AddressFundingFeeEstimate, Error> {
-        let (low_level_operations, layer_map, address_levels, outpoint_levels) = self
-            .estimate_address_funding_fee_parts_v0(
+        // The estimation reads committed state several times (outpoint
+        // fetch, two proofs, the stateful conversion) with no transaction. A
+        // block committing in between could make those reads describe
+        // different roots — the API promises pricing from one coherent
+        // committed state, so accept an attempt only when the root hash is
+        // byte-identical before and after all the reads, retrying otherwise.
+        const SNAPSHOT_ATTEMPTS: usize = 3;
+        let mut parts = None;
+        for _ in 0..SNAPSHOT_ATTEMPTS {
+            let root_before = self
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .map_err(Error::from)?;
+            let attempt = self.estimate_address_funding_fee_parts_v0(
                 recipient,
                 asset_lock_outpoint,
                 lock_credits,
                 block_info,
                 platform_version,
             )?;
+            let root_after = self
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .map_err(Error::from)?;
+            if root_before == root_after {
+                parts = Some(attempt);
+                break;
+            }
+        }
+        let Some((low_level_operations, layer_map, address_levels, outpoint_levels)) = parts else {
+            return Err(Error::Drive(DriveError::CommittedStateChangedDuringOperation(
+                "address funding fee estimation could not observe a stable committed state; retry",
+            )));
+        };
 
         let (grove_batch, mut cost_operations) =
             LowLevelDriveOperation::grovedb_operations_batch_consume_with_leftovers(
@@ -169,9 +197,12 @@ impl Drive {
             asset_lock_outpoint.as_slice(),
         )?;
         if outpoint_levels.present {
-            return Err(Error::Drive(DriveError::CorruptedDriveState(
-                "asset lock outpoint reported absent by fetch but present in the local proof"
-                    .to_string(),
+            // Not corruption: a block can commit between the fetch and the
+            // proof, so the outpoint can legitimately appear in between.
+            // Fail closed with what the second read actually observed.
+            return Err(Error::Drive(DriveError::AssetLockOutpointAlreadyPresent(
+                "the asset lock outpoint appeared in the state while the estimate was being \
+                 computed",
             )));
         }
 
@@ -741,6 +772,70 @@ mod tests {
                 estimate.address_layer_levels, estimate.spent_asset_lock_layer_levels,
             );
         }
+    }
+
+    /// Protocol v11 regression: DRIVE_VERSION_V6 pins GROVE_V2, whose prove
+    /// path emits the legacy `GroveDBProof::V0` envelope — the depth decoder
+    /// must accept it, and the estimate must still bracket the real metered
+    /// fee under that protocol version.
+    #[test]
+    fn test_estimate_works_under_protocol_v11_v0_proof_envelope() {
+        let platform_version = PlatformVersion::get(11).expect("protocol v11");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+
+        for n in 1..=4u8 {
+            seed_funding(
+                &drive,
+                &address(n),
+                outpoint(n),
+                LOCK_CREDITS,
+                platform_version,
+            );
+        }
+
+        // Sanity for the regression itself: v11 must actually produce the
+        // legacy V0 envelope, otherwise this test would not be exercising
+        // the V0 decoding path.
+        let probe_query = Drive::balance_for_clear_address_query(&address(200));
+        let probe_proof = drive
+            .grove_get_proved_path_query(&probe_query, None, &mut vec![], &platform_version.drive)
+            .expect("prove under v11");
+        let config = bincode::config::standard()
+            .with_big_endian()
+            .with_limit::<{ 256 * 1024 * 1024 }>();
+        let (envelope, _): (grovedb::operations::proof::GroveDBProof, usize) =
+            bincode::decode_from_slice(&probe_proof, config).expect("decode proof envelope");
+        assert!(
+            matches!(envelope, grovedb::operations::proof::GroveDBProof::V0(_)),
+            "protocol v11 is expected to produce the legacy V0 proof envelope"
+        );
+
+        let estimate = drive
+            .estimate_address_funding_fee(
+                &address(200),
+                outpoint(200),
+                LOCK_CREDITS,
+                &BlockInfo::default(),
+                platform_version,
+            )
+            .expect("the estimate must decode the V0 proof envelope under protocol v11");
+        let actual = actual_fee_probe(
+            &drive,
+            &address(200),
+            outpoint(200),
+            LOCK_CREDITS,
+            platform_version,
+        );
+
+        let estimated = estimate.fee_result.total_base_fee();
+        let actual_total = actual.total_base_fee();
+        assert!(
+            estimated >= actual_total.saturating_mul(85) / 100
+                && estimated <= actual_total.saturating_mul(115) / 100,
+            "protocol v11: estimated {estimated} not within [85%, 115%] of actual {actual_total}"
+        );
+        assert!(!estimate.address_exists);
+        assert!(estimate.address_layer_levels >= 1);
     }
 
     /// The layer map is the server's own model with ONLY the two

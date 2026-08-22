@@ -221,6 +221,11 @@ pub enum DriveError {
     #[error("asset lock outpoint already present in state: {0}")]
     AssetLockOutpointAlreadyPresent(&'static str),
 
+    /// Committed state kept changing underneath a read-only operation that
+    /// needs several reads of one coherent snapshot; the caller should retry
+    #[error("committed state changed during a multi-read operation: {0}")]
+    CommittedStateChangedDuringOperation(&'static str),
+
     /// Checkpoint not found for specified block height
     #[error("checkpoint not found for block height: {0}")]
     CheckpointNotFound(u64),
