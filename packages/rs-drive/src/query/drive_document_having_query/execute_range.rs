@@ -48,7 +48,7 @@ impl DriveDocumentHavingQuery<'_> {
         // but reads like a panicking unwrap at the call site.
         let entries = match self.bounds {
             AxisRangeBounds::Count { lo, hi } => {
-                let CostContext { value, cost: _ } = drive.grove.indexed_count_range(
+                let CostContext { value, cost: _ } = drive.grove.indexed_count_range_keys(
                     path_refs.as_slice(),
                     lo,
                     hi,
@@ -60,7 +60,6 @@ impl DriveDocumentHavingQuery<'_> {
                 value
                     .map_err(|e| Error::GroveDB(Box::new(e)))?
                     .into_iter()
-                    .map(|entry| entry.key_pair())
                     .map(|(count, key)| RankedEntry {
                         key,
                         value: RankedEntryValue::Count(count),
@@ -68,7 +67,7 @@ impl DriveDocumentHavingQuery<'_> {
                     .collect::<Vec<_>>()
             }
             AxisRangeBounds::Sum { lo, hi } => {
-                let CostContext { value, cost: _ } = drive.grove.indexed_sum_range(
+                let CostContext { value, cost: _ } = drive.grove.indexed_sum_range_keys(
                     path_refs.as_slice(),
                     lo,
                     hi,
@@ -80,7 +79,6 @@ impl DriveDocumentHavingQuery<'_> {
                 value
                     .map_err(|e| Error::GroveDB(Box::new(e)))?
                     .into_iter()
-                    .map(|entry| entry.key_pair())
                     .map(|(sum, key)| RankedEntry {
                         key,
                         value: RankedEntryValue::Sum(sum),
@@ -88,7 +86,7 @@ impl DriveDocumentHavingQuery<'_> {
                     .collect::<Vec<_>>()
             }
             AxisRangeBounds::Avg { lo, hi } => {
-                let CostContext { value, cost: _ } = drive.grove.indexed_avg_range(
+                let CostContext { value, cost: _ } = drive.grove.indexed_avg_range_keys(
                     path_refs.as_slice(),
                     lo,
                     hi,
@@ -100,7 +98,6 @@ impl DriveDocumentHavingQuery<'_> {
                 value
                     .map_err(|e| Error::GroveDB(Box::new(e)))?
                     .into_iter()
-                    .map(|entry| entry.key_pair())
                     .map(|(avg, key)| RankedEntry {
                         key,
                         value: RankedEntryValue::AvgFixedPoint(avg),

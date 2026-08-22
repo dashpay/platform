@@ -15,7 +15,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::version::PlatformVersion;
-use grovedb::{IndexedTopKPage, TransactionArg};
+use grovedb::{IndexedTopKKeysPage, TransactionArg};
 use grovedb_costs::CostContext;
 
 impl DriveDocumentRankedQuery<'_> {
@@ -86,20 +86,20 @@ impl DriveDocumentRankedQuery<'_> {
         // because its API always does, and it ends here.
         let (entries, skipped) = match self.axis {
             RankedAxis::Count => {
-                let CostContext { value, cost: _ } = drive.grove.indexed_count_top_k_paginated(
-                    path_refs.as_slice(),
-                    self.k,
-                    offset,
-                    self.descending,
-                    transaction,
-                    grove_version,
-                );
-                let IndexedTopKPage { entries, skipped } =
+                let CostContext { value, cost: _ } =
+                    drive.grove.indexed_count_top_k_paginated_keys(
+                        path_refs.as_slice(),
+                        self.k,
+                        offset,
+                        self.descending,
+                        transaction,
+                        grove_version,
+                    );
+                let IndexedTopKKeysPage { entries, skipped } =
                     value.map_err(|e| Error::GroveDB(Box::new(e)))?;
                 (
                     entries
                         .into_iter()
-                        .map(|entry| entry.key_pair())
                         .map(|(count, key)| RankedEntry {
                             key,
                             value: RankedEntryValue::Count(count),
@@ -109,7 +109,7 @@ impl DriveDocumentRankedQuery<'_> {
                 )
             }
             RankedAxis::Sum => {
-                let CostContext { value, cost: _ } = drive.grove.indexed_sum_top_k_paginated(
+                let CostContext { value, cost: _ } = drive.grove.indexed_sum_top_k_paginated_keys(
                     path_refs.as_slice(),
                     self.k,
                     offset,
@@ -117,12 +117,11 @@ impl DriveDocumentRankedQuery<'_> {
                     transaction,
                     grove_version,
                 );
-                let IndexedTopKPage { entries, skipped } =
+                let IndexedTopKKeysPage { entries, skipped } =
                     value.map_err(|e| Error::GroveDB(Box::new(e)))?;
                 (
                     entries
                         .into_iter()
-                        .map(|entry| entry.key_pair())
                         .map(|(sum, key)| RankedEntry {
                             key,
                             value: RankedEntryValue::Sum(sum),
@@ -132,7 +131,7 @@ impl DriveDocumentRankedQuery<'_> {
                 )
             }
             RankedAxis::Avg => {
-                let CostContext { value, cost: _ } = drive.grove.indexed_avg_top_k_paginated(
+                let CostContext { value, cost: _ } = drive.grove.indexed_avg_top_k_paginated_keys(
                     path_refs.as_slice(),
                     self.k,
                     offset,
@@ -140,12 +139,11 @@ impl DriveDocumentRankedQuery<'_> {
                     transaction,
                     grove_version,
                 );
-                let IndexedTopKPage { entries, skipped } =
+                let IndexedTopKKeysPage { entries, skipped } =
                     value.map_err(|e| Error::GroveDB(Box::new(e)))?;
                 (
                     entries
                         .into_iter()
-                        .map(|entry| entry.key_pair())
                         .map(|(avg, key)| RankedEntry {
                             key,
                             value: RankedEntryValue::AvgFixedPoint(avg),

@@ -384,11 +384,13 @@ impl<C> Platform<C> {
                 // between batches corrupts the in-memory overlay (manifests
                 // as "MMR get_root failed: Inconsistent store" on the next
                 // call). One final `commit_mmr` follows the loop below.
-                ct.save().value.map_err(|e| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
-                        format!("seed: ct.save (batch {batch_index}): {e}").into_boxed_str(),
-                    )))
-                })?;
+                ct.save(&platform_version.drive.grove_version)
+                    .value
+                    .map_err(|e| {
+                        Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
+                            format!("seed: ct.save (batch {batch_index}): {e}").into_boxed_str(),
+                        )))
+                    })?;
 
                 last_sinsemilla_root = append_result.sinsemilla_root;
                 last_bulk_state_root = append_result.bulk_state_root;
@@ -427,11 +429,12 @@ impl<C> Platform<C> {
             // overlay accumulates across `append_many_raw` calls and is
             // persisted only here. See the in-loop comment above and the
             // upstream fix `1340db71` for the rationale.
-            ct.commit_mmr().map_err(|e| {
-                Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
-                    format!("seed: ct.commit_mmr (final): {e}").into_boxed_str(),
-                )))
-            })?;
+            ct.commit_mmr(&platform_version.drive.grove_version)
+                .map_err(|e| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
+                        format!("seed: ct.commit_mmr (final): {e}").into_boxed_str(),
+                    )))
+                })?;
 
             let combined_root = grovedb_commitment_tree::compute_commitment_tree_state_root(
                 &last_sinsemilla_root,

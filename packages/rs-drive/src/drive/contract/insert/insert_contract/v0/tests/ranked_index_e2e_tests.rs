@@ -275,7 +275,7 @@ fn avg_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(
     let path_refs: Vec<&[u8]> = path.iter().map(|v| v.as_slice()).collect();
     drive
         .grove
-        .indexed_avg_top_k(
+        .indexed_avg_top_k_keys(
             path_refs.as_slice(),
             k,
             descending,
@@ -283,17 +283,14 @@ fn avg_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(
             &platform_version().drive.grove_version,
         )
         .unwrap()
-        .expect("indexed_avg_top_k must succeed")
-        .into_iter()
-        .map(|entry| entry.key_pair())
-        .collect()
+        .expect("indexed_avg_top_k_keys must succeed")
 }
 
 fn count_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(u64, Vec<u8>)> {
     let path_refs: Vec<&[u8]> = path.iter().map(|v| v.as_slice()).collect();
     drive
         .grove
-        .indexed_count_top_k(
+        .indexed_count_top_k_keys(
             path_refs.as_slice(),
             k,
             descending,
@@ -301,17 +298,14 @@ fn count_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec
             &platform_version().drive.grove_version,
         )
         .unwrap()
-        .expect("indexed_count_top_k must succeed")
-        .into_iter()
-        .map(|entry| entry.key_pair())
-        .collect()
+        .expect("indexed_count_top_k_keys must succeed")
 }
 
 fn sum_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(i64, Vec<u8>)> {
     let path_refs: Vec<&[u8]> = path.iter().map(|v| v.as_slice()).collect();
     drive
         .grove
-        .indexed_sum_top_k(
+        .indexed_sum_top_k_keys(
             path_refs.as_slice(),
             k,
             descending,
@@ -319,10 +313,7 @@ fn sum_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(
             &platform_version().drive.grove_version,
         )
         .unwrap()
-        .expect("indexed_sum_top_k must succeed")
-        .into_iter()
-        .map(|entry| entry.key_pair())
-        .collect()
+        .expect("indexed_sum_top_k_keys must succeed")
 }
 
 // ---------------------------------------------------------------------------
