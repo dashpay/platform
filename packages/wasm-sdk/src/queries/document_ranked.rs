@@ -47,7 +47,7 @@ use std::sync::Arc;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::identifier::IdentifierWasm;
-use wasm_dpp2::serialization::conversions::{js_value_to_platform_value, platform_value_to_json};
+use wasm_dpp2::serialization::conversions::platform_value_to_json;
 
 #[wasm_bindgen(typescript_custom_section)]
 const DOCUMENTS_RANKED_QUERY_TS: &'static str = r#"
@@ -930,34 +930,31 @@ fn group_value_repr(value: &Value) -> GroupValueRepr<'_> {
     }
 }
 
+/// Render a wide integer key as an exact `BigInt`.
+///
+/// Returns `JsValue`, not `Result<JsValue, _>`, and that is the point: "a
+/// large group key can never reject the page it belongs to" is the property
+/// this whole classification exists to provide, so it is enforced by the
+/// signature rather than left to a test to notice. Making any of these arms
+/// fallible would not compile without changing this return type.
+fn exact_integer_to_js(key: ExactIntegerKey) -> JsValue {
+    match key {
+        ExactIntegerKey::U64(inner) => JsValue::from(inner),
+        ExactIntegerKey::I64(inner) => JsValue::from(inner),
+        ExactIntegerKey::U128(inner) => JsValue::from(inner),
+        ExactIntegerKey::I128(inner) => JsValue::from(inner),
+    }
+}
+
 /// A decoded group key as a JS value. See [`group_value_repr`] for why the
 /// wide integer types bypass the JSON conversion.
 fn group_value_to_js(value: &Value) -> Result<JsValue, WasmSdkError> {
     match group_value_repr(value) {
-        GroupValueRepr::ExactBigInt(ExactIntegerKey::U64(inner)) => Ok(JsValue::from(inner)),
-        GroupValueRepr::ExactBigInt(ExactIntegerKey::I64(inner)) => Ok(JsValue::from(inner)),
-        GroupValueRepr::ExactBigInt(ExactIntegerKey::U128(inner)) => Ok(JsValue::from(inner)),
-        GroupValueRepr::ExactBigInt(ExactIntegerKey::I128(inner)) => Ok(JsValue::from(inner)),
+        GroupValueRepr::ExactBigInt(key) => Ok(exact_integer_to_js(key)),
         GroupValueRepr::DocumentJson(inner) => {
             platform_value_to_json(inner).map_err(WasmSdkError::from)
         }
     }
-}
-
-/// Test-only: run a value through the same conversion `getDocumentsRanked`
-/// and `getDocumentsHaving` apply to a `groupValue`.
-///
-/// Exported because the interesting cases live at the JS boundary and a
-/// host-target test cannot reach them — `js_sys` panics off-wasm, so only a
-/// WASM-runtime spec can prove that an integer past
-/// `Number.MAX_SAFE_INTEGER` comes back exact instead of throwing. Mirrors
-/// `testJsValueToJson` in wasm-dpp2, which exists for the same reason.
-///
-/// Not part of the supported API surface.
-#[wasm_bindgen(js_name = "testRankedGroupValue")]
-pub fn test_ranked_group_value(value: JsValue) -> Result<JsValue, WasmSdkError> {
-    let decoded = js_value_to_platform_value(&value).map_err(WasmSdkError::from)?;
-    group_value_to_js(&decoded)
 }
 
 /// Build one `DocumentsGroupEntry`, optionally carrying an absolute rank.
@@ -1783,6 +1780,12 @@ mod tests {
     /// to cross as exact `BigInt`s — the JSON conversion errors on them
     /// rather than rounding, so a single large group key used to reject a
     /// whole verified page.
+    ///
+    /// Classification is the half that can regress; the rendering half is
+    /// infallible by signature ([`exact_integer_to_js`] returns `JsValue`,
+    /// not `Result`), so pinning the classification here is what guarantees
+    /// a wide key cannot throw. `js_sys` panics off-wasm, which is why the
+    /// two halves are split at all.
     #[test]
     fn wide_integer_group_keys_cross_as_exact_bigints() {
         let cases = [
