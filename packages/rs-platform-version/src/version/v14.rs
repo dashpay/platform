@@ -71,8 +71,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    Platform pools into asset unlock transactions per 24 hours. This
 ///    mirrors Core's doubled credit-pool unlock limit (`LimitAmountV24`,
 ///    DIP-0165, dashpay/dash#6662), which Core gates on its own
-///    `DEPLOYMENT_V24` hard fork — v14 must not activate on a network before
-///    that fork does, or Core rejects the excess unlocks.
+///    `DEPLOYMENT_V24` hard fork. v14 does not have to wait for that fork:
+///    pre-V24 Core caps unlocks at `LimitAmountV22` (2000 Dash) per *block*
+///    (no sliding window — the window only arrives with V24), and its mempool
+///    does not check the amount at all, so a day's 4000 Dash is still fully
+///    minable; unlocks above 2000 in one Core block simply wait for the next
+///    one. After V24, Core enforces 4000 Dash per 576-block window, which
+///    matches this limit.
 ///
 /// The first two are orthogonal by construction: the ranked upgrade decides the
 /// *property-name* tree type, the demotion decides the *value* tree type
