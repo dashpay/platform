@@ -373,7 +373,7 @@ describe('gatewayCertificateTaskFactory', () => {
       const { header } = enquirer.options[0];
 
       expect(header).to.not.match(/clients (are|were|could not|cannot|unable)/i);
-      expect(header).to.contain('nothing changes');
+      expect(header).to.contain('Declining changes nothing');
     });
 
     // The same wording is correct on the failing path, where the certificate
@@ -390,7 +390,7 @@ describe('gatewayCertificateTaskFactory', () => {
       // never the chain to a public root.
       const { header } = enquirer.options[0];
 
-      expect(header).to.contain('still failing the checks');
+      expect(header).to.contain('failing the checks above');
       expect(header).to.not.match(/client (will|would|does not|will not)? ?(accept|reject)/i);
       expect(header).to.not.match(/clients (are|were|could not|cannot|unable)/i);
     });
@@ -442,7 +442,7 @@ describe('gatewayCertificateTaskFactory', () => {
 
       expect(errors).to.be.empty();
       expect(context.certificateWarnings).to.be.undefined();
-      expect(context.certificateSuccess).to.contain('LEAVE PORT 80 OPEN');
+      expect(context.certificateSuccess).to.contain('reachable from the internet permanently');
     });
 
     // Nothing was touched, so nothing regressed - and a certificate that

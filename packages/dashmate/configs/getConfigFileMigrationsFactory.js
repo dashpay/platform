@@ -62,27 +62,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       }
     }
 
-    /**
-     * Drop the Tenderdash Commit timeout overrides Tenderdash itself removed.
-     *
-     * The config schema stopped defining them, and it accepts no property it
-     * does not define, so a config that still carries them cannot be loaded at
-     * all.
-     *
-     * Called from more than one migration on purpose. A config records the
-     * version of the build that wrote it, and a development build records its
-     * own prerelease version - which semver orders above a key named after an
-     * earlier patch release. A config stamped that way skips such a key
-     * entirely, so a deletion the schema depends on has to be repeated at a key
-     * above every stamp still in the field. Repeating it costs nothing: removing
-     * a key that is not there does nothing.
-     *
-     * @param {Object} options - one config's options
-     */
-    function dropRemovedTenderdashCommitOverride(options) {
-      delete options.platform?.drive?.tenderdash?.consensus?.unsafeOverride?.commit;
-    }
-
     function getDefaultConfigByNetwork(network) {
       if (network === NETWORK_MAINNET) {
         return defaultConfigs.get('mainnet');
@@ -1725,9 +1704,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '4.2.0': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            // Also done by the 4.1.1 migration, which a config written by a
-            // development build of this release is stamped above and skips.
-            dropRemovedTenderdashCommitOverride(options);
+            // Repeated from the 4.1.1 migration: a config written by a
+            // development build is stamped above that key and skips it.
+            delete options.platform?.drive?.tenderdash?.consensus?.unsafeOverride?.commit;
 
             const providerConfigs = options.platform?.gateway?.ssl?.providerConfigs;
 
@@ -1778,7 +1757,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               rsDapiDocker.image = base.get('platform.dapi.rsDapi.docker.image');
             }
 
-            dropRemovedTenderdashCommitOverride(options);
+            // The schema no longer defines this and accepts no undefined
+            // property, so a config still carrying it cannot be loaded.
+            delete options.platform?.drive?.tenderdash?.consensus?.unsafeOverride?.commit;
           });
 
         return configFile;

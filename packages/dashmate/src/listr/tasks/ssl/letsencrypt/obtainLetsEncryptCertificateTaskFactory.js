@@ -32,13 +32,8 @@ const MAX_OBTAIN_ATTEMPTS = 3;
  * and nothing reports it. The operator who has just succeeded is the one least
  * likely to hear this otherwise, because they never saw a failure.
  */
-export const PORT_80_PERMANENCE = `LEAVE PORT 80 OPEN. This is not a one-time requirement. Certificates for
-IP addresses last about six days, and dashmate keeps renewing this one for as
-long as the node runs - every renewal needs inbound port 80 again.
-
-If you opened port 80 just to make this work, make the rule permanent and make
-sure it survives a reboot. If it lapses, this node goes dark within six days
-and nothing will tell you.`;
+export const PORT_80_PERMANENCE = 'Keep inbound port 80 reachable from the internet permanently,'
+  + ' for certificate reissue.';
 
 /**
  * What to tell an operator who has run out of attempts.
@@ -52,32 +47,20 @@ and nothing will tell you.`;
  * @return {string}
  */
 function renderGiveUpGuidance(config, attempts) {
-  return `dashmate did not obtain a certificate after ${attempts} `
-    + `attempt${attempts === 1 ? '' : 's'}.
+  const cfg = renderConfigFlag(config.getName());
 
-Do not keep retrying. Let's Encrypt limits how often this node may fail, and
-every further attempt uses up that allowance - including the automatic
-renewals dashmate runs for you in the background.
+  return `No certificate after ${attempts} attempt${attempts === 1 ? '' : 's'}.
 
-Inbound port 80 is what to fix first. How you open it depends on the host, so
-check both places it can be blocked: the machine's own firewall, and the
-firewall or security group your hosting provider runs in front of it. Both
-have to allow inbound TCP 80 from anywhere, and the rule has to survive a
-reboot.
+Do not keep retrying - Let's Encrypt limits how often this node may fail.
 
-Once it is open:
-    `
-    + `dashmate ssl obtain ${renderConfigFlag(config.getName())} --provider letsencrypt`
-    + `
+Open inbound port 80, on the machine's firewall and your hosting provider's.
+Then:
+    dashmate ssl obtain ${cfg} --provider letsencrypt
 
-If this node has been failing for a long time, Let's Encrypt may have paused
-it rather than slowed it down. Waiting does not clear a pause - see
-    https://letsencrypt.org/docs/rate-limits/
+${PORT_80_PERMANENCE}
 
-If you are stuck, collect a report and send it to Dash support:
-    dashmate doctor report ${renderConfigFlag(config.getName())}
-
-${PORT_80_PERMANENCE}`;
+Still stuck? Send a report to Dash support:
+    dashmate doctor report ${cfg}`;
 }
 
 /**
@@ -94,26 +77,17 @@ ${PORT_80_PERMANENCE}`;
  * @return {string}
  */
 function renderHelperDidNotStartGuidance(config, cause, neverRan = true) {
-  // Nothing is claimed about this node's allowance unless it is known. Failing
-  // to create the helper settles it - there was nothing to make a request. A
-  // start that failed does not: Docker can reject a start it has accepted, and
-  // a bind conflict looks the same from here as a lost reply. Rather than pick
-  // one and be wrong half the time, the sentence is simply not there.
-  return `${neverRan
-    ? `dashmate could not start the certificate helper, so it never contacted
-Let's Encrypt. Nothing was requested and none of this node's allowance was
-used up.`
-    : 'dashmate could not start the certificate helper.'}
+  // Nothing is claimed about this node's allowance unless it is known.
+  return `dashmate could not start the certificate helper.${neverRan
+    ? " It never contacted Let's Encrypt."
+    : ''}
 
 Docker reported:
 
 ${cause.message}
 
-That message is the diagnosis - dashmate did not look further than it. One
-common cause is another process already holding port 80, which is the
-opposite of a blocked port: it is reachable and occupied. Others are the
-Docker daemon being unreachable, or the current user not being permitted to
-use it.
+Common causes: another process already using port 80, Docker not running, or
+this user not permitted to use it.
 
     sudo ss -lntp 'sport = :80'
     dashmate ssl obtain ${renderConfigFlag(config.getName())} --provider letsencrypt`;
@@ -553,10 +527,8 @@ export default function obtainLetsEncryptCertificateTaskFactory(
 
   ${e.message}
 
-  Whatever the output above says is the reason - most often inbound port 80,
-  but a rate limit or an account problem looks different and is not fixed by
-  opening a firewall. Retrying without changing anything will fail the same
-  way, so read it first, then answer Yes once something has changed.`,
+  Read the error above. Inbound port 80 being closed is the usual cause - open
+  it, then answer Yes. Retrying without changing anything fails the same way.`,
                 message: `Try again? [attempt ${attempt + 1} of ${MAX_OBTAIN_ATTEMPTS}]`,
                 enabled: 'Yes',
                 disabled: 'No',

@@ -386,7 +386,7 @@ describe('analyseGatewayCertificateFactory', () => {
       const [problem] = analyse(hijacked());
 
       expect(problem.getSolution()).to.not.match(/dashmate restart/);
-      expect(problem.getSolution()).to.contain('what is listening on 443');
+      expect(problem.getSolution()).to.contain('answering on port 443');
     });
 
     // Reissuing is only the remedy once the gateway is known to be the thing
@@ -394,7 +394,7 @@ describe('analyseGatewayCertificateFactory', () => {
     it('should offer reissuing only once the gateway is known to be answering', () => {
       const [problem] = analyse(hijacked());
 
-      expect(problem.getSolution()).to.contain('If this node\'s gateway is the one answering');
+      expect(problem.getSolution()).to.contain('If this node\'s gateway is answering');
       expect(problem.getSolution()).to.contain('dashmate ssl obtain --config base --force');
     });
   });
@@ -531,7 +531,7 @@ describe('analyseGatewayCertificateFactory', () => {
         warnings: [],
       });
 
-      expect(problem.getSolution()).to.include('still pulls new images');
+      expect(problem.getSolution()).to.include('still pulls images');
       expect(problem.getSolution()).to.include('exits non-zero');
     });
 

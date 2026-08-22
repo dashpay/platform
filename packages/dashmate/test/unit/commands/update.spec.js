@@ -192,7 +192,7 @@ describe('Update command', () => {
         },
       })).to.be.rejected();
 
-      expect(stderr).to.contain('did not complete');
+      expect(stderr).to.contain('may have changed');
       expect(stderr).to.not.contain('Nothing broke just now');
     });
 

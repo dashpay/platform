@@ -29,22 +29,16 @@ const ZEROSSL_URGENT_DAYS = 14;
  */
 function renderDeclining(verdict) {
   if (verdict.status === CERTIFICATE_STATUS.CHECKS_PASSED) {
-    return `  The certificate installed for the gateway passed these checks and stays
-  in place, so nothing changes if you decline.
-`;
+    return '  The certificate passed these checks. Declining changes nothing.\n';
   }
 
   if (verdict.status !== CERTIFICATE_STATUS.WARN) {
-    return `  Declining leaves the certificate installed for the gateway exactly as it
-  is: unchanged, and still failing the checks above.
-`;
+    return '  Declining leaves the certificate failing the checks above.\n';
   }
 
-  // Rendered here rather than referred to. This prompt is where the operator
-  // decides, and the warnings are printed only once the command has finished,
-  // so pointing at them would be pointing at something not yet on screen.
-  return `  Declining leaves the certificate installed for the gateway exactly as it
-  is. Nothing about it stopped this update, but these checks did find:
+  // Rendered rather than referred to: the warnings are printed after the
+  // command finishes, so pointing at them would point at a blank screen.
+  return `  Declining changes nothing. These checks found:
 
 ${verdict.warnings.map(({ message }) => `    - ${message}\n`).join('')}`;
 }
@@ -62,23 +56,10 @@ ${verdict.warnings.map(({ message }) => `    - ${message}\n`).join('')}`;
  * @return {string}
  */
 function renderSwitchOffer(config, externalIp, { verdict } = {}) {
-  return `  Switching this node to Let's Encrypt will:
-    - obtain a new certificate now, free, for ${externalIp}
-    - change platform.gateway.ssl.provider from ${config.get('platform.gateway.ssl.provider')} to letsencrypt
-    - leave your existing provider's account and credentials untouched but unused
+  return `  Switch to Let's Encrypt and get a free certificate for ${externalIp}.
 
-  It needs inbound port 80 reachable from the internet right now, and it needs
-  port 80 permanently thereafter - not on a schedule you can plan around.
-  Certificates for IP addresses last about six days and dashmate renews them
-  continuously for as long as this node runs. A rule you open now and close
-  later, or one that does not survive a reboot, takes this node dark within
-  six days.
-
-  It usually takes under a minute. If port 80 is not open yet, answer No, open
-  it permanently, and re-run dashmate update ${renderConfigFlag(config.getName())}.
-
-  Your image pull is running now and will finish either way, so answering No
-  does not hold this node back from protocol upgrades or security patches.
+  You need inbound port 80 reachable from the internet permanently, for
+  certificate reissue. Answer No if it is not open yet.
 ${renderDeclining(verdict ?? { status: CERTIFICATE_STATUS.INVALID, warnings: [] })}`;
 }
 
@@ -98,19 +79,12 @@ function renderSuccess(config, verdict) {
     : 'unknown';
   const days = verdict.expiresInDays === null ? '?' : Math.floor(verdict.expiresInDays);
 
-  return `  Certificate obtained from Let's Encrypt for ${config.get('externalIp')}
-  Valid until ${expiresAt} (about ${days} days).
+  return `  Certificate obtained for ${config.get('externalIp')}, valid until ${expiresAt} (${days} days).
 
-  LEAVE PORT 80 OPEN. This was not a one-time requirement. Certificates for
-  IP addresses last about six days, and dashmate keeps renewing this one for
-  as long as the node runs - every renewal needs inbound port 80 again.
+  Keep inbound port 80 reachable from the internet permanently, for certificate
+  reissue. Nothing will warn you if it lapses.
 
-  If you opened port 80 just now to make this work, make the rule permanent
-  and make sure it survives a reboot. If it lapses, this node goes dark
-  within six days.
-
-  Nothing will warn you: Let's Encrypt stopped sending expiry emails on
-  2025-06-04. Check with: dashmate doctor ${renderConfigFlag(config.getName())}
+      dashmate doctor ${renderConfigFlag(config.getName())}
 `;
 }
 
@@ -327,11 +301,10 @@ export default function gatewayCertificateTaskFactory(
         const warn = () => {
           ctx.certificateWarnings = [
             ...(ctx.certificateWarnings ?? []),
-            `This node is configured to use ZeroSSL, and the certificate it has`
-            + ` installed expires ${remaining}. A free ZeroSSL`
-            + " account allows three certificates in total, so dashmate's renewals stop"
-            + ` working after about 270 days. Switch to Let's Encrypt with:`
-            + `\n    dashmate ssl obtain ${cfg} --provider letsencrypt`,
+            `This node uses ZeroSSL and its certificate expires ${remaining}.`
+            + ' A free ZeroSSL account allows three certificates in total, so renewals'
+            + ' stop working after about 270 days.'
+            + `\n\n    dashmate ssl obtain ${cfg} --provider letsencrypt`,
           ];
         };
 

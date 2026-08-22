@@ -77,9 +77,8 @@ const restartHint = (cfg) => chalk`Then restart Platform so the gateway picks it
  * does, and only refuses to report success. Leaving this out lets a client
  * reachability problem be read as a software delivery one.
  */
-const UPDATE_CONSEQUENCE = 'The certificate installed for the gateway did not pass dashmate\'s'
-  + ' checks. `dashmate update` still pulls new images, so protocol upgrades and security patches'
-  + ' continue to arrive - but it exits non-zero until this is fixed.';
+const UPDATE_CONSEQUENCE = 'The gateway certificate did not pass dashmate\'s checks.'
+  + ' `dashmate update` still pulls images, but exits non-zero until this is fixed.';
 
 export default function analyseGatewayCertificateFactory() {
   /**
@@ -113,7 +112,7 @@ export default function analyseGatewayCertificateFactory() {
           message,
           chalk`${UPDATE_CONSEQUENCE}
 
-Obtain a new certificate - it signals the gateway itself, so no restart is needed:
+Obtain a new certificate. No restart needed:
 {bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt}`,
           SEVERITY.HIGH,
         ));
@@ -171,12 +170,11 @@ Obtain a new certificate - it signals the gateway itself, so no restart is neede
       problems.push(new Problem(
         `The certificate being served on port ${served.port} is not issued for this`
         + ` node's address, ${externalIp}`,
-        chalk`Something other than this node's gateway may be answering on that port, or the
-certificate is issued for the wrong address. Find what is listening on ${served.port}
-first - another dashmate config, a reverse proxy, or a second node sharing the
-address.
+        chalk`Something other than this node's gateway may be answering on port ${served.port} -
+another dashmate config, a reverse proxy, or a second node. Find what is
+listening there first.
 
-If this node's gateway is the one answering and the address is simply wrong:
+If this node's gateway is answering and the address is simply wrong:
 {bold.cyanBright dashmate ssl obtain ${cfg} --force}`,
         SEVERITY.HIGH,
       ));
@@ -224,9 +222,8 @@ If this node's gateway is the one answering and the address is simply wrong:
         `This node is using a certificate that expired on ${served.certificate.validTo}. `
         + 'A different one has been saved, but dashmate could not confirm it is a working '
         + 'replacement',
-        chalk`Neither the certificate this node is using nor the saved one is known to work,
-so restarting will not help. Get a current certificate - that installs it and
-tells the node to use it, with no downtime:
+        chalk`Neither the certificate in use nor the saved one is known to work, so
+restarting will not help. Get a current one:
 {bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt}`,
         SEVERITY.HIGH,
       ));
@@ -234,9 +231,8 @@ tells the node to use it, with no downtime:
       problems.push(new Problem(
         `This node is using a certificate that expired on ${served.certificate.validTo}. `
         + 'Clients cannot connect to it',
-        chalk`Renewal has not succeeded. Check the renewal logs:
+        chalk`Renewal has not succeeded. Check the logs, then obtain a new certificate:
 {bold.cyanBright dashmate logs ${cfg} dashmate_helper}
-Then obtain a new certificate, which installs it and signals the gateway:
 {bold.cyanBright dashmate ssl obtain ${cfg}}`,
         SEVERITY.HIGH,
       ));
@@ -255,10 +251,8 @@ Then obtain a new certificate, which installs it and signals the gateway:
         problems.push(new Problem(
           'This node is using a different certificate from the one that has been saved, and '
           + 'dashmate could not confirm the saved one is a working replacement',
-          chalk`The certificate this node is using now works. The saved one has not been shown
-to be a safe replacement, so do not restart to load it - that would swap a
-working certificate for one that may not be. Get a current certificate
-instead, which installs it and tells the node to use it:
+          chalk`The certificate in use works. The saved one is not known to be a safe
+replacement, so do not restart to load it. Get a current one instead:
 {bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt}`,
           SEVERITY.HIGH,
         ));
@@ -272,9 +266,8 @@ instead, which installs it and tells the node to use it:
       problems.push(new Problem(
         'The certificate this node is serving is not trusted by ordinary clients:'
         + ` ${describe(TRUST_FAILURES, served.chainError)}`,
-        chalk`Clients verifying against public certificate authorities will reject this node.
-If the certificate chain is incomplete, make sure the bundle contains the issuing
-certificates as well as the server certificate.
+        chalk`Standard clients will reject this node. If the chain is incomplete, make sure
+the bundle contains the issuing certificates as well as the server one.
 ${restartHint(cfg)}`,
         SEVERITY.HIGH,
       ));

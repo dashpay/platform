@@ -376,8 +376,8 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
     it('should tell the operator port 80 stays open once a certificate is issued', async function it() {
       const output = await render(this.sinon, buildTask(this.sinon)(config));
 
-      expect(output).to.contain('LEAVE PORT 80 OPEN');
-      expect(output).to.contain('survives a reboot');
+      expect(output).to.contain('reachable from the internet permanently');
+      expect(output).to.contain('for certificate reissue');
     });
 
     // Issuance is recorded before the pair is written, and the notice with it,
@@ -391,7 +391,7 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
 
       const output = await render(this.sinon, buildTask(this.sinon, { save })(config));
 
-      expect(output).to.contain('LEAVE PORT 80 OPEN');
+      expect(output).to.contain('reachable from the internet permanently');
     });
 
     it('should tell them when lego wrote nothing it could find', async function it() {
@@ -401,7 +401,7 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
         legoCertPathOverride: '/nonexistent',
       });
 
-      expect(output).to.contain('LEAVE PORT 80 OPEN');
+      expect(output).to.contain('reachable from the internet permanently');
     });
 
     // No new node will have an email: nothing prompts for one any more. A
@@ -576,7 +576,7 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
       // actually happened, and the port conflict is offered as a possible
       // cause rather than asserted as the cause.
       expect(error.message).to.contain('address already in use');
-      expect(error.message).to.contain('holding port 80');
+      expect(error.message).to.contain('already using port 80');
       // Docker rejected the start, which does not settle whether the helper
       // ran: a bind conflict and a lost reply look the same from here. So
       // nothing is claimed about this node's allowance in either direction.
@@ -624,7 +624,7 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
       expect(error.message).to.not.match(/install what was already issued/i);
 
       // Printed once, by the command, not also here.
-      expect(error.message).to.not.contain('LEAVE PORT 80 OPEN');
+      expect(error.message).to.not.contain('reachable from the internet permanently');
       expect(error.message).to.not.match(/paused/i);
       expect(error.message).to.not.contain('failed attempts are shared');
       expect(error.message).to.not.match(/did not obtain a certificate after/i);
@@ -711,8 +711,8 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
       const error = await buildFailingTask(this.sinon, docker)(config)
         .run({ force: true }).catch((e) => e);
 
-      expect(error.message).to.match(/may have\s+paused\s+it/i);
-      expect(error.message).to.contain('uses up that allowance');
+      expect(error.message).to.match(/Let's Encrypt limits how often/);
+      expect(error.message).to.contain('Do not keep retrying');
     });
 
     // lego fails for reasons that have nothing to do with the firewall - a rate
@@ -755,10 +755,10 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
 
       const error = await tasks.run({ force: true, interactive: true }).catch((e) => e);
 
-      expect(error.message).to.contain('https://letsencrypt.org/docs/rate-limits/');
-      expect(error.message).to.match(/may have\s+paused\s+it/i);
+      expect(error.message).to.contain('doctor report');
+      expect(error.message).to.match(/Let's Encrypt limits how often/);
       expect(error.message).to.contain(`--config ${config.getName()}`);
-      expect(error.message).to.contain('renewals dashmate runs for you');
+      expect(error.message).to.contain('Do not keep retrying');
       expect(error.message).to.not.match(/come back in \d/i);
     });
 
