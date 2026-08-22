@@ -39,6 +39,7 @@ export type GroveElementType =
   | "mmrTree"
   | "bulkAppendTree"
   | "denseAppendOnlyFixedSizeTree"
+  | "privateDocumentStore"
   | "nonCountedItem"
   | "nonCountedReference"
   | "nonCountedTree"
@@ -60,6 +61,7 @@ export type GroveElementType =
   | "nonCountedMmrTree"
   | "nonCountedBulkAppendTree"
   | "nonCountedDenseAppendOnlyFixedSizeTree"
+  | "nonCountedPrivateDocumentStore"
   | "notSummedSumTree"
   | "notSummedBigSumTree"
   | "notSummedCountSumTree"
@@ -1942,6 +1944,14 @@ mod tests {
             (
                 Element::DenseAppendOnlyFixedSizeTree(1, 2, None),
                 "denseAppendOnlyFixedSizeTree",
+            ),
+            (
+                Element::PrivateDocumentStore(0, 32, 2, None),
+                "privateDocumentStore",
+            ),
+            (
+                Element::NonCounted(Box::new(Element::PrivateDocumentStore(0, 32, 2, None))),
+                "nonCountedPrivateDocumentStore",
             ),
             (
                 Element::NonCounted(Box::new(Element::ReferenceWithSumItem(
