@@ -8876,6 +8876,7 @@ dependencies = [
  "tracing-wasm",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "wasm-bindgen-test",
  "wasm-dpp2",
  "wasm-sdk",
 ]
