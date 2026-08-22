@@ -372,6 +372,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         wallets.get(wallet_id).cloned()
     }
 
+    /// Synchronous twin of [`Self::get_wallet`] for FFI entry points that
+    /// need to clone the `Arc<PlatformWallet>` out before doing network
+    /// work outside the handle-storage guard.
+    ///
+    /// The map is an `ArcSwap`, so this load is wait-free and cannot block
+    /// or panic — the name is kept for source compatibility with the
+    /// callers that predate that change.
+    pub fn get_wallet_blocking(&self, wallet_id: &WalletId) -> Option<Arc<PlatformWallet>> {
+        self.wallets.load().get(wallet_id).cloned()
+    }
+
     /// List all wallet IDs.
     pub async fn wallet_ids(&self) -> Vec<WalletId> {
         let wallets = self.wallets.load();

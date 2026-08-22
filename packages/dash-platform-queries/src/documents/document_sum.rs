@@ -18,9 +18,8 @@
 //! can switch to `DocumentSplitSums` (which preserves per-branch
 //! `i64`s and lets the caller pick its own arithmetic).
 
-use crate::platform::documents::document_query::DocumentQuery;
-use crate::platform::documents::sum_proof_helpers::{assert_select_is_sum, verify_sum_query};
-use crate::platform::Fetch;
+use crate::documents::document_query::DocumentQuery;
+use crate::documents::sum_proof_helpers::{assert_select_is_sum, verify_sum_query};
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dash_context_provider::ContextProvider;
 use dpp::dashcore::Network;
@@ -84,11 +83,6 @@ impl FromProof<DocumentQuery> for DocumentSum {
         };
         Ok((sum, mtd, proof))
     }
-}
-
-impl Fetch for DocumentSum {
-    type Query = super::document_query::DocumentQuery;
-    type Request = dapi_grpc::platform::v0::GetDocumentsRequest;
 }
 
 #[cfg(test)]

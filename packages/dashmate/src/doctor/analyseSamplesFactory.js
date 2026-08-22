@@ -5,6 +5,7 @@ import Problem from './Problem.js';
  * @param {analyseSystemResources} analyseSystemResources
  * @param {analyseServiceContainers} analyseServiceContainers
  * @param {analyseConfig} analyseConfig
+ * @param {analyseGatewayCertificate} analyseGatewayCertificate
  * @param {analyseCore} analyseCore
  * @param {analysePlatform} analysePlatform
  * @return {analyseSamples}
@@ -13,6 +14,7 @@ export default function analyseSamplesFactory(
   analyseSystemResources,
   analyseServiceContainers,
   analyseConfig,
+  analyseGatewayCertificate,
   analyseCore,
   analysePlatform,
 ) {
@@ -40,6 +42,8 @@ export default function analyseSamplesFactory(
     problems.push(...analyseServiceContainers(samples));
 
     problems.push(...analyseConfig(samples));
+
+    problems.push(...analyseGatewayCertificate(samples));
 
     problems.push(...analyseCore(samples));
 

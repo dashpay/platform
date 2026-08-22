@@ -18,6 +18,7 @@ import createConfigFileFactory from './config/configFile/createConfigFileFactory
 import migrateConfigFileFactory from './config/configFile/migrateConfigFileFactory.js';
 import DefaultConfigs from './config/DefaultConfigs.js';
 import analyseConfigFactory from './doctor/analyse/analyseConfigFactory.js';
+import analyseGatewayCertificateFactory from './doctor/analyse/analyseGatewayCertificateFactory.js';
 import analyseCoreFactory from './doctor/analyse/analyseCoreFactory.js';
 import analysePlatformFactory from './doctor/analyse/analysePlatformFactory.js';
 import analyseServiceContainersFactory from './doctor/analyse/analyseServiceContainersFactory.js';
@@ -365,6 +366,7 @@ export default async function createDIContainer(options = {}) {
     analyseSystemResources: asFunction(analyseSystemResourcesFactory).singleton(),
     analyseServiceContainers: asFunction(analyseServiceContainersFactory).singleton(),
     analyseConfig: asFunction(analyseConfigFactory).singleton(),
+    analyseGatewayCertificate: asFunction(analyseGatewayCertificateFactory).singleton(),
     analyseCore: asFunction(analyseCoreFactory).singleton(),
     analysePlatform: asFunction(analysePlatformFactory).singleton(),
     unarchiveSamples: asFunction(unarchiveSamplesFactory).singleton(),

@@ -85,7 +85,7 @@
 //!
 //! `SELECT AVG(grade) GROUP BY restaurantId ORDER BY avg(grade) DESC LIMIT 5`
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use dash_sdk::{Sdk, platform::{DataContract, DocumentQuery, Fetch, Identifier}};
 //! use dash_sdk::drive::query::SelectProjection;
 //! use dash_sdk::platform::documents::document_query::RankingDirection;
@@ -132,7 +132,7 @@
 //!
 //! `SELECT AVG(grade) GROUP BY restaurantId ORDER BY avg(grade) DESC LIMIT 1 OFFSET 4`
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! # use dash_sdk::platform::{DataContract, DocumentQuery};
 //! # use dash_sdk::platform::documents::document_query::RankingDirection;
 //! # use dash_sdk::drive::query::SelectProjection;
@@ -147,9 +147,8 @@
 //! # }
 //! ```
 
-use crate::platform::documents::document_query::DocumentQuery;
-use crate::platform::documents::ranked_proof_helpers::verify_ranked_query;
-use crate::platform::Fetch;
+use crate::documents::document_query::DocumentQuery;
+use crate::documents::ranked_proof_helpers::verify_ranked_query;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dash_context_provider::ContextProvider;
 use dpp::dashcore::Network;
@@ -183,11 +182,6 @@ impl FromProof<DocumentQuery> for DocumentRankedEntries {
     }
 }
 
-impl Fetch for DocumentRankedEntries {
-    type Query = DocumentQuery;
-    type Request = dapi_grpc::platform::v0::GetDocumentsRequest;
-}
-
 #[cfg(test)]
 mod tests {
     //! Offline tests for the ranked client surface: the ordering
@@ -206,8 +200,8 @@ mod tests {
     //! not exist offline.
 
     use super::*;
-    use crate::platform::documents::document_query::RankingDirection;
-    use crate::platform::documents::ranked_proof_helpers::assert_ranked_shape;
+    use crate::documents::document_query::RankingDirection;
+    use crate::documents::ranked_proof_helpers::assert_ranked_shape;
     use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::select as proto_select;
     use dapi_grpc::platform::v0::get_documents_request::{
         order_clause, GetDocumentsRequestV1, OrderClause as ProtoOrderClause,

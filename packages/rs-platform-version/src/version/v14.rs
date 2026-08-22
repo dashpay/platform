@@ -25,12 +25,12 @@ use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
 use crate::version::fee::v2::FEE_VERSION2;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v3::SYSTEM_DATA_CONTRACT_VERSIONS_V3;
-use crate::version::system_limits::v3::SYSTEM_LIMITS_V3;
+use crate::version::system_limits::v4::SYSTEM_LIMITS_V4;
 use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 
-/// v14 hosts three consensus changes:
+/// v14 hosts four consensus changes:
 ///
 /// 1. **Contract-level ranked aggregates** (this branch): an index can
 ///    declare that its groups are rankable by an aggregate, so a query like
@@ -66,6 +66,19 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    the contest was created on — which halts the chain when that poll
 ///    ends — or open a contest for a document that is not a contested
 ///    resource at all.
+/// 4. **Daily withdrawal limit 2000 → 4000 Dash**: `SYSTEM_LIMITS_V4` raises
+///    `daily_withdrawal_limit`, doubling the amount of credits Platform pools
+///    into asset unlock transactions per 24 hours (the `daily_withdrawal_limit`
+///    method stays at v1, which reads that system limit). This
+///    mirrors Core's doubled credit-pool unlock limit (`LimitAmountV24`,
+///    DIP-0165, dashpay/dash#6662), which Core gates on its own
+///    `DEPLOYMENT_V24` hard fork. v14 does not have to wait for that fork:
+///    pre-V24 Core caps unlocks at `LimitAmountV22` (2000 Dash) per *block*
+///    (no sliding window — the window only arrives with V24), and its mempool
+///    does not check the amount at all, so a day's 4000 Dash is still fully
+///    minable; unlocks above 2000 in one Core block simply wait for the next
+///    one. After V24, Core enforces 4000 Dash per 576-block window, which
+///    matches this limit.
 ///
 /// The first two are orthogonal by construction: the ranked upgrade decides the
 /// *property-name* tree type, the demotion decides the *value* tree type
@@ -75,8 +88,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// shared-prefix shapes.
 ///
 /// Until a contract uses the ranked grammar, the only v14 behavior changes
-/// are the shared-prefix fix, the contested-index cross-check and the
-/// index-reorder schema-compatibility fix; everything else matches v13:
+/// are the shared-prefix fix, the contested-index cross-check, the
+/// index-reorder schema-compatibility fix and the doubled daily withdrawal
+/// limit; everything else matches v13:
 ///
 /// * `CONTRACT_VERSIONS_V6` points `document_type_schema` at the v3 document
 ///   meta-schema, which hosts the ranked index keywords
@@ -150,7 +164,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33)
     fee_version: FEE_VERSION2,
-    system_limits: SYSTEM_LIMITS_V3,
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily_withdrawal_limit 2000 → 4000 Dash, matching Core's LimitAmountV24
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

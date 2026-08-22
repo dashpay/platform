@@ -27,6 +27,7 @@ members = [
     "packages/wasm-dpp2",
     "packages/rs-dapi-client",
     "packages/rs-dash-async",
+    "packages/dash-platform-queries",
     "packages/rs-sdk",
     "packages/strategy-tests",
     "packages/simple-signer",
@@ -52,14 +53,14 @@ members = [
 ]
 
 [workspace.dependencies]
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "5877d15f26aeb3f6d43b010ed919a9a77f78815d" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "5877d15f26aeb3f6d43b010ed919a9a77f78815d" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "5877d15f26aeb3f6d43b010ed919a9a77f78815d" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "5877d15f26aeb3f6d43b010ed919a9a77f78815d" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "5877d15f26aeb3f6d43b010ed919a9a77f78815d" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "5877d15f26aeb3f6d43b010ed919a9a77f78815d" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "5877d15f26aeb3f6d43b010ed919a9a77f78815d" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "5877d15f26aeb3f6d43b010ed919a9a77f78815d" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "b66db390d71d2065b817ca8eba69f808a01ec37a" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "b66db390d71d2065b817ca8eba69f808a01ec37a" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "b66db390d71d2065b817ca8eba69f808a01ec37a" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "b66db390d71d2065b817ca8eba69f808a01ec37a" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "b66db390d71d2065b817ca8eba69f808a01ec37a" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "b66db390d71d2065b817ca8eba69f808a01ec37a" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "b66db390d71d2065b817ca8eba69f808a01ec37a" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "b66db390d71d2065b817ca8eba69f808a01ec37a" }
 
 tokio-metrics = "0.5"
 
