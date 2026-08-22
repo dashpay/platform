@@ -58,12 +58,15 @@ pub struct SystemLimits {
     pub withdrawal_transactions_per_block_limit: u16,
     pub retry_signing_expired_withdrawal_documents_per_block_limit: u16,
     pub max_withdrawal_amount: u64,
-    /// Flat cap (in credits) on the total amount Platform pools into asset unlock transactions
-    /// per 24 hours. Read by `daily_withdrawal_limit` method version 1 (protocol version 8 and
-    /// later); method version 0 (protocol versions 1–7) derived the limit from the total credits
-    /// in Platform instead and ignores this field. Versioned: see `daily_withdrawal_limit` in
+    /// Daily withdrawal limit as a percentage of the total credits Platform held a day ago.
+    /// From protocol version 14 Platform pools at most this share of the total credits recorded
+    /// at the latest block at least 24 hours before the current one into asset unlock
+    /// transactions per 24 hours (`daily_withdrawal_limit` method version 2; the history is
+    /// kept by `record_total_credits_history_for_withdrawals`). `None` for the protocol versions
+    /// that predate the rule: method version 0 derived the limit from the current total, method
+    /// version 1 applied a flat 2000 Dash. Versioned: see `daily_withdrawal_limit_percent` in
     /// each `SYSTEM_LIMITS_V*`.
-    pub daily_withdrawal_limit: u64,
+    pub daily_withdrawal_limit_percent: Option<u8>,
     /// Minimum net amount (in credits) a withdrawal may send to Core, shared by the
     /// transparent (identity + address) and shielded withdrawal paths. The dust floor that
     /// keeps Core from rejecting the resulting `TxOut`. Versioned: see `min_withdrawal_amount`

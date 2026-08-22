@@ -20,6 +20,8 @@ pub struct DriveIdentityWithdrawalMethodVersions {
     pub document: DriveIdentityWithdrawalDocumentMethodVersions,
     pub transaction: DriveIdentityWithdrawalTransactionMethodVersions,
     pub calculate_current_withdrawal_limit: FeatureVersion,
+    pub record_total_credits_history: FeatureVersion,
+    pub fetch_total_credits_in_platform_a_day_ago: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
