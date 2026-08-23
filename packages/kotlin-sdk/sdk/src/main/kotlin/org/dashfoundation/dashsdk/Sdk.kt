@@ -9,6 +9,7 @@ import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.NativeCleaner
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.SdkNative
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URI
 import java.util.concurrent.atomic.AtomicLong
@@ -155,6 +156,35 @@ class Sdk private constructor(
         ERROR(0), WARN(1), INFO(2), DEBUG(3), TRACE(4)
     }
 
+    /**
+     * Outcome of [installFileLogging]. The native installer returns a
+     * single boolean whose `false` conflates its two failure modes —
+     * field logs showed exactly that: "NOT installed (subscriber already
+     * set or dir unwritable)" with no way to tell which. This type keeps
+     * them apart so the failure is diagnosable from a log line.
+     */
+    enum class FileLoggingInstall {
+        /** This call installed the file-logging subscriber. */
+        INSTALLED,
+
+        /**
+         * A process-global tracing subscriber was already set (first init
+         * wins — e.g. console logging via [enableLogging] ran first, or
+         * another in-process library installed one). The `tracing` API has
+         * no way to attach layers to an already-installed subscriber, so
+         * file logging cannot be added after the fact; install file
+         * logging FIRST if both are wanted.
+         */
+        ALREADY_SET,
+
+        /**
+         * The session root could not be created or written — file logging
+         * was not attempted (the native installer would have failed on the
+         * same directory). The path is named in the logged warning.
+         */
+        SESSION_ROOT_UNWRITABLE,
+    }
+
     @Serializable
     private data class MasternodesEnvelope(
         val success: Boolean,
@@ -197,23 +227,110 @@ class Sdk private constructor(
 
         private val json = Json { ignoreUnknownKeys = true }
 
+        private const val LOG_TAG = "DashSdk"
+
         /** One-time native library load + `dash_sdk_init`. Idempotent. */
         fun initialize() = NativeLoader.ensureLoaded()
+
+        /**
+         * Best-effort record of which call claimed the process-global
+         * tracing subscriber, for the [ALREADY_SET][FileLoggingInstall.ALREADY_SET]
+         * diagnostic. In-process bookkeeping only — a subscriber installed
+         * outside this companion (another library) is invisible here, so a
+         * `null` value means "not through this API", not "none".
+         */
+        @Volatile
+        private var subscriberClaimedBy: String? = null
 
         /** Enable console (logcat) logging for SDK operations. */
         fun enableLogging(level: LogLevel = LogLevel.DEBUG) {
             initialize()
             SdkNative.enableLogging(level.value)
+            // First-wins bookkeeping: the global tracing subscriber can only
+            // be installed once per process, and console logging installs
+            // one — the most common reason a later enableFileLogging finds
+            // the slot taken.
+            if (subscriberClaimedBy == null) {
+                subscriberClaimedBy = "console logging (enableLogging)"
+            }
         }
 
         /**
          * Route the global tracing subscriber to per-bucket files under
-         * [sessionRoot]. Returns false if a subscriber was already
-         * installed or the path is unwritable.
+         * [sessionRoot]. Returns true only when THIS call installed it —
+         * boolean-compat wrapper around [installFileLogging], which callers
+         * should prefer: it reports WHICH condition failed (subscriber
+         * already set vs. session root unwritable, with the path) instead
+         * of an undiagnosable false.
          */
-        fun enableFileLogging(level: LogLevel = LogLevel.DEBUG, sessionRoot: String): Boolean {
+        fun enableFileLogging(level: LogLevel = LogLevel.DEBUG, sessionRoot: String): Boolean =
+            installFileLogging(level, sessionRoot) == FileLoggingInstall.INSTALLED
+
+        /**
+         * [enableFileLogging] with a diagnosable outcome. On failure the
+         * distinguishing condition is also logged as a warning (tag
+         * `DashSdk`), so field logs no longer show the ambiguous
+         * "NOT installed (subscriber already set or dir unwritable)":
+         *
+         * - [FileLoggingInstall.SESSION_ROOT_UNWRITABLE] — [sessionRoot]
+         *   could not be created/written; checked BEFORE touching the
+         *   native installer, and the logged warning names the exact path.
+         * - [FileLoggingInstall.ALREADY_SET] — the directory IS writable
+         *   but a global tracing subscriber already exists (first init
+         *   wins). The `tracing` API cannot re-route an installed
+         *   subscriber, so the fix is ordering: install file logging
+         *   before [enableLogging]. The warning names the in-process
+         *   claimant when it went through this API.
+         */
+        fun installFileLogging(
+            level: LogLevel = LogLevel.DEBUG,
+            sessionRoot: String,
+        ): FileLoggingInstall {
+            val root = File(sessionRoot)
+            if (!sessionRootWritable(root)) {
+                android.util.Log.w(
+                    LOG_TAG,
+                    "SDK file logging NOT installed: session root cannot be " +
+                        "created/written: ${root.absolutePath}",
+                )
+                return FileLoggingInstall.SESSION_ROOT_UNWRITABLE
+            }
             initialize()
-            return SdkNative.enableFileLogging(level.value, sessionRoot)
+            return if (SdkNative.enableFileLogging(level.value, sessionRoot)) {
+                subscriberClaimedBy = "file logging (enableFileLogging)"
+                FileLoggingInstall.INSTALLED
+            } else {
+                val claimant = subscriberClaimedBy
+                    ?: "something outside this API (another in-process library, " +
+                        "or a subscriber surviving from an earlier init)"
+                android.util.Log.w(
+                    LOG_TAG,
+                    "SDK file logging NOT installed at ${root.absolutePath}: the " +
+                        "directory is writable, so a global tracing subscriber was " +
+                        "already set — by $claimant. First init wins and the tracing " +
+                        "API cannot re-route an installed subscriber; call " +
+                        "enableFileLogging before enableLogging to get file logs.",
+                )
+                FileLoggingInstall.ALREADY_SET
+            }
+        }
+
+        /**
+         * Whether [root] exists (or can be created) as a directory we can
+         * write a file into — probed with a real create-and-delete, the
+         * same operation the native installer's `open_file` will perform.
+         * Factored out (and `internal`) so the pre-native gate is
+         * JVM-testable.
+         */
+        internal fun sessionRootWritable(root: File): Boolean = try {
+            root.mkdirs()
+            val probe = File(root, ".dash_sdk_write_probe")
+            probe.delete()
+            val created = probe.createNewFile()
+            probe.delete()
+            created && root.isDirectory
+        } catch (_: Exception) {
+            false
         }
 
         /**
