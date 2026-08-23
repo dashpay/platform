@@ -2195,11 +2195,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn run_chain_withdraw_from_identities_too_many_withdrawals_within_a_day_hitting_relative_limit(
-    ) {
+    async fn should_cap_withdrawals_at_the_relative_daily_limit() {
         // Latest protocol version: the daily withdrawal limit is 15% of the total credits
-        // Platform held a day ago (oldest recorded total while the history is younger than a
-        // day), counted against the amounts pooled in the last 24 hours.
+        // Platform held a day ago (the flat 2000 Dash of the previous rule while no recorded
+        // total is a day old yet), counted against the amounts pooled in the last 24 hours.
         let platform_version = PlatformVersion::latest();
         let start_strategy = NetworkStrategy {
             strategy: Strategy {
@@ -2224,7 +2223,7 @@ mod tests {
                         [(SecurityLevel::CRITICAL, vec![KeyType::ECDSA_SECP256K1])].into(),
                     )]
                     .into(),
-                    start_balance_range: dash_to_duffs!(200)..=dash_to_duffs!(200),
+                    start_balance_range: dash_to_duffs!(500)..=dash_to_duffs!(500),
                 },
                 identity_contract_nonce_gaps: None,
                 signer: None,
@@ -2395,8 +2394,8 @@ mod tests {
 
             assert_eq!(
                 total_credits_balance.total_in_trees().unwrap(),
-                410000000000000
-            ); // Around 4100 Dash.
+                1010000000000000
+            ); // 10100 Dash: 20 identities of 500 Dash plus 10 top-ups of 10 Dash.
 
             let total_credits_in_platform = outcome
                 .abci_app
@@ -2412,7 +2411,7 @@ mod tests {
                 )
                 .expect("expected to get total credits in platform");
 
-            assert_eq!(total_credits_in_platform, Some(410000000000000));
+            assert_eq!(total_credits_in_platform, Some(1010000000000000));
 
             outcome
         };
@@ -2422,10 +2421,10 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![Operation {
                     op_type: OperationType::IdentityWithdrawal(
-                        dash_to_credits!(25)..=dash_to_credits!(25),
+                        dash_to_credits!(50)..=dash_to_credits!(50),
                     ),
                     frequency: Frequency {
-                        times_per_block_range: 4..5, // 25 Dash x 4 Withdrawals = 100 Dash
+                        times_per_block_range: 4..5, // 50 Dash x 4 Withdrawals = 200 Dash
                         chance_per_block: None,
                     },
                 }],
@@ -2553,8 +2552,8 @@ mod tests {
                 )
                 .unwrap();
 
-            // We have 68 out of 80 queued
-            assert_eq!(withdrawal_documents_queued.len(), 68);
+            // We have 40 out of 80 queued
+            assert_eq!(withdrawal_documents_queued.len(), 40);
 
             // Withdrawal documents with queued status should exist.
             let withdrawal_documents_completed = outcome
@@ -2601,17 +2600,12 @@ mod tests {
                 )
                 .unwrap();
 
-            // We have 12 broadcasted (68 queued + 12 broadcasted = 80 total)
-            // 12 broadcasted = 12 * 25 Dash = 300 Dash
-            // This is explained by the relative limit: the whole run is younger than a day, so
-            // the daily maximum derives from the oldest recorded total, the 2000 Dash Platform
-            // held after block 1 (the 10 identities created there), i.e. 15% = 300 Dash, and
-            // the 100 Dash topped up in block 2 and every withdrawal since leave it untouched.
-            // withdrawal block 1 : 4 withdrawals of 25 Dash, limit is 300, 4 pooled
-            // withdrawal block 2 : 4 withdrawals, limit is 300 - 100 = 200, 4 pooled
-            // withdrawal block 3 : 4 withdrawals, limit is 300 - 200 = 100, 4 pooled
-            // withdrawal block 4 onwards : limit is 300 - 300 = 0, nothing pooled
-            assert_eq!(withdrawal_documents_broadcasted.len(), 12);
+            // We have 40 broadcasted (40 queued + 40 broadcasted = 80 total)
+            // 40 broadcasted = 40 * 50 Dash = 2000 Dash
+            // The whole run is younger than a day, so no recorded total is a day old yet and
+            // the flat 2000 Dash of the previous rule still applies: the first ten withdrawal
+            // blocks pool their 4 withdrawals (200 Dash) each, then the limit is exhausted.
+            assert_eq!(withdrawal_documents_broadcasted.len(), 40);
 
             let locked_amount = outcome
                 .abci_app
@@ -2627,7 +2621,7 @@ mod tests {
                 )
                 .expect("expected to get locked amount");
 
-            assert_eq!(locked_amount, dash_to_credits!(300) as i64);
+            assert_eq!(locked_amount, dash_to_credits!(2000) as i64);
 
             outcome
         };
@@ -2684,12 +2678,13 @@ mod tests {
             )
             .await;
 
-            // The 300 Dash pooled in the first three withdrawal blocks unlocked 25 hours
-            // later, at the 26th hourly block. By then the history is older than a day and the
-            // reference total is the 2100 Dash left after all 80 withdrawals were executed
-            // (4100 - 80 * 25), so the daily maximum is 15% = 315 Dash: the next block pooled
-            // 12 more withdrawals (300 Dash, a 13th would exceed 315), which are locked again
-            // for 25 hours.
+            // From the 25th hourly block a recorded total is a day old, and the reference is
+            // the 6100 Dash left after all 80 withdrawals were executed (10100 - 80 * 50), so
+            // the daily maximum is 15% = 915 Dash. The 2000 Dash pooled on the first day
+            // unlocked 25 hours later (cleaned up at the 26th hourly block, after pooling), so
+            // from the 27th hourly block withdrawals pooled again, at most 4 (200 Dash) per
+            // block while they fit: 200, 400, 600, 800 Dash locked, then only two more fit in
+            // the 115 Dash left (900 Dash locked), and those locks outlive this phase.
             let locked_amount = outcome
                 .abci_app
                 .platform
@@ -2704,7 +2699,7 @@ mod tests {
                 )
                 .expect("expected to get locked amount");
 
-            assert_eq!(locked_amount, dash_to_credits!(300) as i64);
+            assert_eq!(locked_amount, dash_to_credits!(900) as i64);
 
             // Withdrawal documents with pooled status should not exist.
             let withdrawal_documents_pooled = outcome
@@ -2735,8 +2730,8 @@ mod tests {
                 )
                 .unwrap();
 
-            // We have 56 out of 80 queued
-            assert_eq!(withdrawal_documents_queued.len(), 56);
+            // We have 22 out of 80 queued
+            assert_eq!(withdrawal_documents_queued.len(), 22);
 
             // Withdrawal documents with queued status should exist.
             let withdrawal_documents_completed = outcome
@@ -2783,8 +2778,8 @@ mod tests {
                 )
                 .unwrap();
 
-            // 12 from the first day plus the 12 pooled once the first locks expired
-            assert_eq!(withdrawal_documents_broadcasted.len(), 24);
+            // 40 from the first day plus the 18 pooled once the first locks expired
+            assert_eq!(withdrawal_documents_broadcasted.len(), 58);
             outcome
         };
 
@@ -2839,9 +2834,9 @@ mod tests {
             )
             .expect("expected to get locked amount");
 
-        // Another 250 hourly blocks: every ~27 hours (25 hours of lock plus the block that
-        // cleans it up) 12 more withdrawals pool at 315 Dash per day, so the remaining 56
-        // drain in five rounds and the last locks expired long before the end.
+        // Another 250 hourly blocks: as each lock expires 25 hours later as many withdrawals
+        // fit again under the 915 Dash daily maximum, so the remaining 22 drain within a few
+        // days and the last locks expired long before the end.
         // We have nothing locked left
         assert_eq!(locked_amount, 0);
 

@@ -17,9 +17,10 @@ where
     /// since the limit reads the entry in force a day ago and an entry describes the total
     /// until the next one — pruning entries the limit can no longer use.
     ///
-    /// Runs every block before withdrawals are pooled, so the first block the history exists
-    /// in already has an entry to derive the limit from; blocks that leave the total untouched
-    /// cost one read and no write.
+    /// Runs every block once fees and epoch rewards are processed (the last things that can
+    /// move the total in a block) and before the app hash is taken; blocks that leave the total
+    /// untouched cost one read and no write. Until an entry is a day old the limit applies its
+    /// bootstrap rule, so pooling never depends on this block's entry.
     pub(in crate::execution) fn record_total_credits_history_for_withdrawals(
         &self,
         block_info: &BlockInfo,

@@ -37,7 +37,9 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::dash_to_credits;
     use dpp::version::PlatformVersion;
-    use drive::drive::identity::withdrawals::fetch_total_credits_in_platform_a_day_ago::RecordedTotalCredits;
+    use drive::drive::identity::withdrawals::fetch_total_credits_in_platform_a_day_ago::{
+        RecordedTotalCredits, DAY_IN_MS,
+    };
 
     /// Every block leaves an entry holding the total credits in Platform at that block.
     #[test]
@@ -72,11 +74,12 @@ mod tests {
             )
             .expect("expected to record the total credits");
 
+        // Readable as the reference a day later
         assert_eq!(
             platform
                 .drive
                 .fetch_total_credits_in_platform_a_day_ago(
-                    block_info.time_ms,
+                    block_info.time_ms + DAY_IN_MS,
                     Some(&transaction),
                     platform_version,
                 )
@@ -120,7 +123,7 @@ mod tests {
             platform
                 .drive
                 .fetch_total_credits_in_platform_a_day_ago(
-                    block_info.time_ms,
+                    block_info.time_ms + DAY_IN_MS,
                     Some(&transaction),
                     &platform_version,
                 )

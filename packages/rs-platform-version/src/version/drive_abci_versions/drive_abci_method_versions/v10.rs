@@ -12,26 +12,6 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::{
     DriveAbciVotingMethodVersions,
 };
 
-// Introduced in Protocol version 13.
-//
-// Identical to DRIVE_ABCI_METHOD_VERSIONS_V8 (the protocol-v12 method set)
-// except TWO fields are bumped from 0 to 1, both serving the same v13 recorded-set
-// expansion — enlarging the per-block address-balance set that v0 dropped:
-//   (1) `record_added_balance_outputs` 0 -> 1: folds shielded-spend transparent
-//       credits (the Unshield net output, the ShieldFromAssetLock surplus, and the
-//       IdentityCreateFromShieldedPool duplicate-key fallback); and
-//   (2) `process_validation_result` 0 -> 1: records the balance effects of
-//       paid-INVALID and unsuccessful-paid transitions (charged fees, adjusted
-//       input/output balances, applied chargeable-failure credits) that pre-v13
-//       nodes never tracked (they passed no map, and PaidConsensusError had no
-//       balance-changes field). Only this helper changed — `process_raw_state_transitions`
-//       (the outer loop) stays at v0 — and it lives in a real _v1, so the _v0
-//       stays byte-identical to old nodes with no version conditional.
-// The storage method `store_address_balances_to_recent_block_storage` is
-// deliberately UNCHANGED (stays Some(0)) — its _v0 implementation did not change;
-// only which changes feed its map did. The expanded recorded set changes the
-// committed state root, so both bumps MUST stay inactive on v12 (see
-// DRIVE_ABCI_METHOD_VERSIONS_V8, which keeps both fields at 0).
 /// Drive ABCI method versions 10. Introduced in protocol v14: turns on
 /// `record_total_credits_history_for_withdrawals` (`Some(0)`), the per-block record of the total
 /// credits in Platform that the day-lagged daily withdrawal limit reads. Everything else matches
@@ -127,21 +107,15 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
     },
     state_transition_processing: DriveAbciStateTransitionProcessingMethodVersions {
         execute_event: 0,
-        // Unchanged: the outer processing loop did not change at v13, so it stays at v0. Only the
-        // `process_validation_result` helper it dispatches to changed (below).
         process_raw_state_transitions: 0,
-        // changed: v1 records the balance effects of paid-INVALID / unsuccessful-paid transitions
-        // (charged fees, adjusted outputs, applied chargeable-failure credits) that v0 dropped. Same
-        // v13 recorded-set expansion as `record_added_balance_outputs` below; kept in a real _v1 so
-        // no version conditional lives inside the _v0 helper.
+        // unchanged from V9: v1 since v13 (records the balance effects of paid-INVALID /
+        // unsuccessful-paid transitions)
         process_validation_result: 1,
         decode_raw_state_transitions: 0,
         validate_fees_of_event: 0,
         store_address_balances_to_recent_block_storage: Some(0),
         cleanup_recent_block_storage_address_balances: Some(0),
-        // changed: v1 records shielded-spend transparent credits (Unshield net output,
-        // ShieldFromAssetLock surplus, identity-create fallback) folded at the executor. The storage
-        // method above is unchanged — only which credits feed its map did.
+        // unchanged from V9: v1 since v13 (records shielded-spend transparent credits)
         record_added_balance_outputs: 1,
     },
     epoch: DriveAbciEpochMethodVersions {

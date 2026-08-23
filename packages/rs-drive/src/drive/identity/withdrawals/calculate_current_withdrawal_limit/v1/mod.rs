@@ -1,9 +1,7 @@
-use crate::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
 use crate::drive::identity::withdrawals::calculate_current_withdrawal_limit::WithdrawalLimitInfo;
 use crate::drive::identity::withdrawals::paths::{
     get_withdrawal_root_path, WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
 };
-use crate::drive::system::misc_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -18,10 +16,11 @@ impl Drive {
     /// and the amount already withdrawn in the last 24 hours.
     ///
     /// Version 1 differs from version 0 only in the base of the daily maximum: instead of the
-    /// current total credits it uses the total credits recorded at the latest block at least
-    /// 24 hours before `block_info` (see `fetch_total_credits_in_platform_a_day_ago`), so a
-    /// sudden jump in the total credits does not raise the limit for a day. While no history
-    /// has been recorded yet the current total is used.
+    /// current total credits it hands `daily_withdrawal_limit` the total credits recorded at the
+    /// latest block at least 24 hours before `block_info` (see
+    /// `fetch_total_credits_in_platform_a_day_ago`), so a sudden jump in the total credits does
+    /// not raise the limit for a day. While no such entry exists (the history is younger than a
+    /// day) the limit method receives `None` and applies its bootstrap rule.
     ///
     /// The formula stays `daily_maximum - withdrawal_amount_in_last_day`, floored at zero.
     pub(super) fn calculate_current_withdrawal_limit_v1(
@@ -32,27 +31,15 @@ impl Drive {
     ) -> Result<WithdrawalLimitInfo, Error> {
         let mut drive_operations = vec![];
 
-        let reference_total_credits = match self.fetch_total_credits_in_platform_a_day_ago(
-            block_info.time_ms,
-            transaction,
-            platform_version,
-        )? {
-            Some(recorded) => recorded.total_credits,
-            None => self
-                .grove_get_raw_value_u64_from_encoded_var_vec(
-                    (&misc_path()).into(),
-                    TOTAL_SYSTEM_CREDITS_STORAGE_KEY,
-                    DirectQueryType::StatefulDirectQuery,
-                    transaction,
-                    &mut drive_operations,
-                    &platform_version.drive,
-                )?
-                .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
-                    "Credits not found in Platform",
-                )))?,
-        };
+        let total_credits_a_day_ago = self
+            .fetch_total_credits_in_platform_a_day_ago(
+                block_info.time_ms,
+                transaction,
+                platform_version,
+            )?
+            .map(|recorded| recorded.total_credits);
 
-        let daily_maximum = daily_withdrawal_limit(reference_total_credits, platform_version)?;
+        let daily_maximum = daily_withdrawal_limit(total_credits_a_day_ago, platform_version)?;
 
         let withdrawal_amount_in_last_day: u64 = self
             .grove_get_sum_tree_total_value(
@@ -86,7 +73,7 @@ mod tests {
     use dpp::version::PlatformVersion;
 
     #[test]
-    fn should_use_the_total_credits_a_day_ago_once_recorded_and_the_current_total_before() {
+    fn should_use_the_total_credits_a_day_ago_once_known_and_the_flat_limit_before() {
         let drive = setup_drive_with_initial_state_structure(None);
         let mut platform_version = PlatformVersion::latest().clone();
         platform_version
@@ -99,6 +86,15 @@ mod tests {
             time_ms,
             ..Default::default()
         };
+        let limit = |time_ms: u64| {
+            drive
+                .calculate_current_withdrawal_limit(
+                    &block(time_ms),
+                    Some(&transaction),
+                    &platform_version,
+                )
+                .expect("expected the limit")
+        };
 
         drive
             .add_to_system_credits(
@@ -108,20 +104,24 @@ mod tests {
             )
             .expect("expected to add credits");
 
-        // Nothing recorded yet: the current total is the base.
-        let info = drive
-            .calculate_current_withdrawal_limit(&block(t0), Some(&transaction), &platform_version)
-            .expect("expected the limit");
-        assert_eq!(info.daily_maximum, dash_to_credits!(4500));
+        // Nothing recorded yet: the flat 2000 Dash of the previous rule applies.
+        let info = limit(t0);
+        assert_eq!(info.daily_maximum, dash_to_credits!(2000));
         assert_eq!(info.withdrawals_amount, 0);
-        assert_eq!(info.available(), dash_to_credits!(4500));
+        assert_eq!(info.available(), dash_to_credits!(2000));
 
         drive
             .record_total_credits_history(&block(t0), 64, Some(&transaction), &platform_version)
             .expect("expected to record");
 
-        // The total jumps to 40000 Dash, but the limit a day later still derives from the
-        // 30000 Dash recorded a day ago.
+        // Recorded, but younger than a day: still the flat limit.
+        assert_eq!(
+            limit(t0 + DAY_IN_MS - 1).daily_maximum,
+            dash_to_credits!(2000)
+        );
+
+        // The total jumps to 40000 Dash, but a day after the first record the limit derives
+        // from the 30000 Dash recorded then.
         drive
             .add_to_system_credits(
                 dash_to_credits!(10000),
@@ -129,14 +129,7 @@ mod tests {
                 &platform_version,
             )
             .expect("expected to add credits");
-        let info = drive
-            .calculate_current_withdrawal_limit(
-                &block(t0 + DAY_IN_MS),
-                Some(&transaction),
-                &platform_version,
-            )
-            .expect("expected the limit");
-        assert_eq!(info.daily_maximum, dash_to_credits!(4500));
+        assert_eq!(limit(t0 + DAY_IN_MS).daily_maximum, dash_to_credits!(4500));
 
         // Once the larger total is a day old it becomes the base.
         drive
@@ -147,13 +140,9 @@ mod tests {
                 &platform_version,
             )
             .expect("expected to record");
-        let info = drive
-            .calculate_current_withdrawal_limit(
-                &block(t0 + 2 * DAY_IN_MS),
-                Some(&transaction),
-                &platform_version,
-            )
-            .expect("expected the limit");
-        assert_eq!(info.daily_maximum, dash_to_credits!(6000));
+        assert_eq!(
+            limit(t0 + 2 * DAY_IN_MS).daily_maximum,
+            dash_to_credits!(6000)
+        );
     }
 }

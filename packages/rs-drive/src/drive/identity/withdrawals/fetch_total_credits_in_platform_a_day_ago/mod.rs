@@ -24,9 +24,10 @@ impl Drive {
     /// Returns the total credits Platform held a day before `time_ms`: the history entry
     /// recorded at the latest block whose time is at least [`DAY_IN_MS`] before `time_ms`.
     ///
-    /// While the history is younger than a day (right after the history started being
-    /// recorded), the oldest entry is returned instead, so the limit is derived from the
-    /// oldest total known. Returns `None` only when nothing has been recorded yet.
+    /// Returns `None` while no such entry exists, i.e. while the history is younger than a
+    /// day (right after it started being recorded); the daily withdrawal limit then falls back
+    /// to its bootstrap rule rather than to a younger total, so the lag cannot be skipped by
+    /// inflating the total before or at activation.
     pub fn fetch_total_credits_in_platform_a_day_ago(
         &self,
         time_ms: TimestampMillis,

@@ -25,19 +25,7 @@ impl Drive {
         ));
         at_least_a_day_old.left_to_right = false;
 
-        if let Some(entry) = self.fetch_first_recorded_total_credits(
-            at_least_a_day_old,
-            transaction,
-            platform_version,
-        )? {
-            return Ok(Some(entry));
-        }
-
-        // The history is younger than a day: fall back to the oldest entry we have.
-        let mut oldest = Query::new();
-        oldest.insert_all();
-
-        self.fetch_first_recorded_total_credits(oldest, transaction, platform_version)
+        self.fetch_first_recorded_total_credits(at_least_a_day_old, transaction, platform_version)
     }
 
     /// Runs `query` with a limit of one against the total credits history and decodes the
@@ -118,7 +106,7 @@ mod tests {
     }
 
     #[test]
-    fn should_return_the_latest_entry_at_least_a_day_old_or_the_oldest_one() {
+    fn should_return_the_latest_entry_at_least_a_day_old_and_none_before() {
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
         let transaction = drive.grove.start_transaction();
@@ -153,9 +141,12 @@ mod tests {
                 .expect("expected to fetch")
         };
 
-        // History younger than a day: the oldest entry.
+        // History younger than a day: nothing qualifies.
+        assert_eq!(fetch(t0 + 10 * HOUR_IN_MS), None);
+        assert_eq!(fetch(t0 + DAY_IN_MS - 1), None);
+        // Exactly a day after the first block it is the reference.
         assert_eq!(
-            fetch(t0 + 10 * HOUR_IN_MS),
+            fetch(t0 + DAY_IN_MS),
             Some(RecordedTotalCredits {
                 time_ms: t0,
                 total_credits: 1_000

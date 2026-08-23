@@ -69,23 +69,26 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// 4. **Relative daily withdrawal limit**: the flat 2000 Dash per 24 hours that
 ///    applied from v8 becomes 15% of the total credits Platform held a day ago
 ///    (`SYSTEM_LIMITS_V4.daily_withdrawal_limit_percent`, read by
-///    `daily_withdrawal_limit` v2 through `DPP_METHOD_VERSIONS_V3`). The base is
+///    `daily_withdrawal_limit` v2 through `DPP_METHOD_VERSIONS_V3`), never below
+///    one maximal withdrawal (`max_withdrawal_amount`) so every accepted
+///    withdrawal eventually fits and cannot block the pooling queue. The base is
 ///    the total credits recorded at the latest block at least 24 hours before
 ///    the current one: `DRIVE_ABCI_METHOD_VERSIONS_V10` turns on
 ///    `record_total_credits_history_for_withdrawals`, which checks the total
-///    credits every block, writes it under the withdrawals tree keyed by block
-///    time whenever it changed (an entry describes the total until the next
-///    one) and prunes entries older than the one the limit reads, and
-///    `DRIVE_VERSION_V9`'s identity withdrawal table bumps
-///    `calculate_current_withdrawal_limit` to 1 to read that lagged value
-///    (falling back to the oldest recorded one while the history is younger
-///    than a day, i.e. right after activation). The lag is the guardrail: a
-///    sudden jump in the total credits does not raise the limit for a day.
-///    Amounts already pooled in the last 24 hours keep counting against the
-///    maximum exactly as before. Core's own unlock limit is unaffected: pre-V24
-///    Core caps unlocks at `LimitAmountV22` (2000 Dash) per *block*, with the
-///    amount checked only at block level, so any daily total is still minable
-///    across blocks; after V24 it enforces 4000 Dash per 576-block window.
+///    credits every block once fees and epoch rewards are in, writes it under
+///    the withdrawals tree keyed by block time whenever it changed (an entry
+///    describes the total until the next one) and prunes entries older than the
+///    one the limit reads, and `DRIVE_VERSION_V9`'s identity withdrawal table
+///    bumps `calculate_current_withdrawal_limit` to 1 to read that lagged
+///    value. Until an entry is a day old — the first day after activation — the
+///    flat 2000 Dash keeps applying, so the lag cannot be skipped by inflating
+///    the total before or at activation. The lag is the guardrail: a sudden
+///    jump in the total credits does not raise the limit for a day. Amounts
+///    already pooled in the last 24 hours keep counting against the maximum
+///    exactly as before. Core's own unlock limit is unaffected: pre-V24 Core
+///    caps unlocks at `LimitAmountV22` (2000 Dash) per *block*, with the amount
+///    checked only at block level, so any daily total is still minable across
+///    blocks; after V24 it enforces 4000 Dash per 576-block window.
 ///
 /// The first two are orthogonal by construction: the ranked upgrade decides the
 /// *property-name* tree type, the demotion decides the *value* tree type

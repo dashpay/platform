@@ -233,7 +233,7 @@ mod tests {
         record(&drive, t0 + HOUR_IN_MS, 64, &transaction);
         record(&drive, t0 + 2 * HOUR_IN_MS, 64, &transaction);
 
-        // Still within the first day: the oldest entry is the reference, nothing is pruned.
+        // Still within the first day: no entry is a day old yet, nothing is pruned.
         record(&drive, t0 + 23 * HOUR_IN_MS, 64, &transaction);
         assert_eq!(
             recorded_entries(&drive, &transaction)

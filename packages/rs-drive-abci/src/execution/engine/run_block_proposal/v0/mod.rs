@@ -353,14 +353,6 @@ where
         // Prune anchors older than the configured retention depth
         self.prune_shielded_pool_anchors(block_proposal.height, transaction, platform_version)?;
 
-        // Record the total credits in Platform if this block changed it: the daily withdrawal
-        // limit is a share of the total credits Platform held a day ago, read from this history
-        self.record_total_credits_history_for_withdrawals(
-            &block_info,
-            transaction,
-            platform_version,
-        )?;
-
         // Pool withdrawals into transactions queue
 
         // Takes queued withdrawals, creates untiled withdrawal transaction payload, saves them to queue
@@ -409,6 +401,16 @@ where
         )?;
 
         tracing::debug!(block_fees = ?processed_block_fees, "block fees are processed");
+
+        // Record the total credits in Platform if this block changed it: the daily withdrawal
+        // limit is a share of the total credits Platform held a day ago, read from this history.
+        // This runs after fees and epoch rewards, the last things in a block that can move the
+        // total, and before the app hash so the entry is part of this block's state.
+        self.record_total_credits_history_for_withdrawals(
+            &block_info,
+            transaction,
+            platform_version,
+        )?;
 
         let root_hash = self
             .drive
