@@ -1,6 +1,7 @@
 pub mod v1;
 pub mod v2;
 pub mod v3;
+pub mod v4;
 
 #[derive(Clone, Debug, Default)]
 pub struct SystemLimits {
@@ -57,6 +58,12 @@ pub struct SystemLimits {
     pub withdrawal_transactions_per_block_limit: u16,
     pub retry_signing_expired_withdrawal_documents_per_block_limit: u16,
     pub max_withdrawal_amount: u64,
+    /// Flat cap (in credits) on the total amount Platform pools into asset unlock transactions
+    /// per 24 hours. Read by `daily_withdrawal_limit` method version 1 (protocol version 8 and
+    /// later); method version 0 (protocol versions 1–7) derived the limit from the total credits
+    /// in Platform instead and ignores this field. Versioned: see `daily_withdrawal_limit` in
+    /// each `SYSTEM_LIMITS_V*`.
+    pub daily_withdrawal_limit: u64,
     /// Minimum net amount (in credits) a withdrawal may send to Core, shared by the
     /// transparent (identity + address) and shielded withdrawal paths. The dust floor that
     /// keeps Core from rejecting the resulting `TxOut`. Versioned: see `min_withdrawal_amount`

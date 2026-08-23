@@ -13,6 +13,7 @@
 #![allow(clippy::doc_overindented_list_items)]
 
 pub mod address_paths;
+pub(crate) mod broadcast_outcome;
 pub mod broadcaster;
 pub mod changeset;
 pub mod error;
@@ -79,6 +80,9 @@ pub use wallet::identity::{
     DashPayProfile, DashPayState, DpnsNameInfo, EstablishedContact, IdentityLocation,
     IdentityManager, IdentityStatus, KeyStorage, ManagedIdentity, PrivateKeyData, ProfileUpdate,
     RegistrationIndex, DEFAULT_CONTACT_GAP_LIMIT,
+};
+pub use wallet::masternode_withdrawal::{
+    MasternodeWithdrawalKey, MasternodeWithdrawalKeys, MasternodeWithdrawalRequest,
 };
 pub use wallet::platform_wallet::PlatformWalletInfo;
 #[cfg(feature = "shielded")]

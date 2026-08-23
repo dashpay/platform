@@ -385,6 +385,17 @@ pub enum PlatformWalletFFIResultCode {
     /// language-surface compatibility; it is a Platform Payment-account
     /// shortfall, not a shielded-note shortfall.
     ErrorShieldedInsufficientBalance = 41,
+    /// Maps `PlatformWalletError::MasternodeWithdrawalUnconfirmed`. A
+    /// masternode (evonode) identity credit withdrawal was broadcast and
+    /// accepted, but its execution result could not be confirmed — it may
+    /// already have executed, and the identity nonce was consumed for it, so
+    /// a blind retry could submit a SECOND withdrawal. The host must NOT
+    /// retry; it must re-read the identity's claimable balance (and the
+    /// payout) and let the user decide from the reconciled state. Definitive
+    /// rejections (consensus errors, transport verdicts) keep their ordinary
+    /// codes and stay retryable. Siblings: [`Self::ErrorShieldedSpendUnconfirmed`],
+    /// [`Self::ErrorTransactionBroadcastUnconfirmed`].
+    ErrorMasternodeWithdrawalUnconfirmed = 42,
 
     /// The named thing does not exist.
     ///
@@ -608,6 +619,11 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // so hosts can distinguish it from a definitive rejection.
             PlatformWalletError::TransactionBroadcastUnconfirmed(..) => {
                 PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
+            }
+            // Evonode claim sibling: the ambiguous "may have executed, nonce
+            // consumed" outcome must reach the host as a typed do-not-retry code.
+            PlatformWalletError::MasternodeWithdrawalUnconfirmed { .. } => {
+                PlatformWalletFFIResultCode::ErrorMasternodeWithdrawalUnconfirmed
             }
             PlatformWalletError::TransactionBroadcast(..) => {
                 PlatformWalletFFIResultCode::ErrorTransactionBroadcastRejected
