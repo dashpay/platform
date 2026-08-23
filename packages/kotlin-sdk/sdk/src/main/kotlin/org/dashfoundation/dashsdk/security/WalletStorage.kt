@@ -4,12 +4,14 @@ import android.app.KeyguardManager
 import android.content.Context
 import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.UserNotAuthenticatedException
+import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -50,7 +52,10 @@ private val Context.secretsStore: DataStore<Preferences> by preferencesDataStore
 class WalletStorage(
     context: Context,
     private val keystore: KeystoreManager =
-        KeystoreManager(deviceSecureProbe = deviceSecureProbe(context)),
+        KeystoreManager(
+            deviceSecureProbe = deviceSecureProbe(context),
+            deviceLockStateProbe = deviceLockStateProbe(context),
+        ),
 ) {
     /**
      * Construct with an explicit identity-key [keySecurityPolicy] —
@@ -59,7 +64,14 @@ class WalletStorage(
      * [KeySecurityPolicy.AUTH_GATED] default.
      */
     constructor(context: Context, keySecurityPolicy: KeySecurityPolicy) :
-        this(context, KeystoreManager(keySecurityPolicy, deviceSecureProbe(context)))
+        this(
+            context,
+            KeystoreManager(
+                keySecurityPolicy,
+                deviceSecureProbe(context),
+                deviceLockStateProbe = deviceLockStateProbe(context),
+            ),
+        )
 
     private val store = context.secretsStore
 
@@ -189,11 +201,73 @@ class WalletStorage(
         }
     }
 
+    // ── Device lock state ─────────────────────────────────────────────
+
+    /**
+     * Fail fast with [KeystoreDeviceLockedException] if `KeyguardManager`
+     * reports the device LOCKED right now (`isDeviceLocked` — locked AND
+     * secured). A [MASTER_ALIAS][KeystoreManager.MASTER_ALIAS] Keystore
+     * operation on a lock-screen device would be denied anyway
+     * (`setUnlockedDeviceRequired`), so callers about to do irreversible
+     * orchestration around such an operation — `PlatformWalletManager.
+     * createWallet`, whose native create precedes [storeMnemonic] — call
+     * this FIRST and fail with nothing created and nothing to roll back.
+     * Prompt-free, no Keystore access; a no-op when the device is unlocked
+     * (including keyguard-showing-but-not-secured states).
+     */
+    fun ensureDeviceUnlocked(operation: String) {
+        val state = keystore.sampleDeviceLockState()
+        if (state.isDeviceLocked) {
+            throw KeystoreDeviceLockedException(
+                alias = KeystoreManager.MASTER_ALIAS,
+                operation = operation,
+                lockState = state,
+            )
+        }
+    }
+
     // ── Mnemonics ─────────────────────────────────────────────────────
 
+    /**
+     * Encrypt and persist the mnemonic under the
+     * [MASTER_ALIAS][KeystoreManager.MASTER_ALIAS] AES key.
+     *
+     * Retries the FALSE-LOCKED Keystore denial only: when the encrypt is
+     * denied as device-locked but the sampled `KeyguardManager` state says
+     * the device is NOT actually locked ([KeystoreDeviceLockedException]
+     * with `deviceReportsLocked == false` — the Keystore2 lock-state
+     * misreporting defect, hit on two QA devices during wallet creation),
+     * the store is retried up to 3 times over ~2s (the
+     * [DEVICE_FALSE_LOCKED_RETRY_DELAYS_MS] backoff schedule) before the
+     * exception propagates. A GENUINELY locked
+     * device (`deviceReportsLocked == true`) fails fast with no retry —
+     * waiting 2s cannot unlock a phone; the caller retries after unlock.
+     */
     suspend fun storeMnemonic(walletId: ByteArray, mnemonic: String) {
-        val blob = keystore.encrypt(mnemonic.encodeToByteArray())
-        store.edit { it[mnemonicKey(walletId)] = encode(blob) }
+        val plaintext = mnemonic.encodeToByteArray()
+        var attempt = 0
+        while (true) {
+            try {
+                val blob = keystore.encrypt(plaintext)
+                store.edit { it[mnemonicKey(walletId)] = encode(blob) }
+                return
+            } catch (e: KeystoreDeviceLockedException) {
+                if (e.deviceReportsLocked || attempt >= DEVICE_FALSE_LOCKED_RETRY_DELAYS_MS.size) {
+                    throw e
+                }
+                val delayMs = DEVICE_FALSE_LOCKED_RETRY_DELAYS_MS[attempt]
+                attempt++
+                Log.w(
+                    TAG,
+                    "storeMnemonic: Keystore denied encrypt as device-locked but " +
+                        "KeyguardManager reports UNLOCKED (${e.lockState}) — the false-locked " +
+                        "Keystore2 defect; retry $attempt/" +
+                        "${DEVICE_FALSE_LOCKED_RETRY_DELAYS_MS.size} in ${delayMs}ms",
+                    e,
+                )
+                delay(delayMs)
+            }
+        }
     }
 
     /**
@@ -971,5 +1045,38 @@ class WalletStorage(
                     ?.isDeviceSecure == true
             }
         }
+
+        /**
+         * A prompt-free sampler of `KeyguardManager`'s CURRENT lock state
+         * (`isDeviceLocked` / `isKeyguardLocked`), captured against the
+         * application context like [deviceSecureProbe] so each call reads
+         * live state. Handed to [KeystoreManager] so a device-locked
+         * Keystore denial can record — at throw time — whether the OS
+         * agreed the device was locked, separating a genuine lock from the
+         * false-locked Keystore2 defect (see
+         * [KeystoreDeviceLockedException]). A missing KeyguardManager
+         * samples as unlocked.
+         */
+        fun deviceLockStateProbe(context: Context): () -> DeviceLockState {
+            val appContext = context.applicationContext
+            return {
+                val keyguard =
+                    appContext.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+                DeviceLockState(
+                    isDeviceLocked = keyguard?.isDeviceLocked == true,
+                    isKeyguardLocked = keyguard?.isKeyguardLocked == true,
+                )
+            }
+        }
+
+        /**
+         * Backoff schedule for [storeMnemonic]'s FALSE-LOCKED retry (the
+         * Keystore denied the master-alias encrypt as device-locked while
+         * `KeyguardManager` reported the device unlocked): 3 retries,
+         * ~2s total. Genuinely-locked denials never retry.
+         */
+        internal val DEVICE_FALSE_LOCKED_RETRY_DELAYS_MS = longArrayOf(250, 750, 1000)
+
+        private const val TAG = "WalletStorage"
     }
 }
