@@ -5,6 +5,7 @@ import {
   CERTIFICATE_REASONS,
   CERTIFICATE_STATUS,
   describeStatus,
+  requiresReplacement,
 } from '../../../ssl/checkGatewayCertificateFactory.js';
 import promptOrThrow from '../../../util/promptOrThrow.js';
 import renderConfigFlag from '../../../util/renderConfigFlag.js';
@@ -243,21 +244,10 @@ export default function gatewayCertificateTaskFactory(
      * @return {Promise<Object>}
      */
     async function switchToLetsEncrypt(ctx, verdict) {
-      // Reuse is the default because it saves an issuance from a limited
-      // allowance, but the reuse check is weaker than these checks: it never
-      // looks at the address, and it asks only whether the certificate has
-      // expired, not whether it has started yet. For those two faults it would
-      // hand back the same certificate that was just rejected, so a new one is
-      // obtained instead.
-      //
-      // Every other fault is in the copy installed for the gateway rather than
-      // in the certificate itself, and reinstalling can fix it without
-      // spending anything.
-      const mustReplace = [CERTIFICATE_REASONS.IP_MISMATCH, CERTIFICATE_REASONS.NOT_YET_VALID]
-        .some((code) => hasReason(verdict ?? { reasons: [] }, code));
-
+      // Shared with the printed remediation, so the command an operator copies
+      // does what this path does.
       return attemptObtain(ctx, () => obtainLetsEncryptCertificateTask(config)
-        .run({ ...ctx, interactive, force: ctx.force || mustReplace }));
+        .run({ ...ctx, interactive, force: ctx.force || requiresReplacement(verdict) }));
     }
 
     return async (ctx, task) => {

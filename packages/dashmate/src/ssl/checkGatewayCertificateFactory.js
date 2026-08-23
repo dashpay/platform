@@ -60,6 +60,25 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * helper renews it, so anything further out is a window renewal clears by
  * itself.
  */
+/**
+ * Whether a repair has to obtain a new certificate rather than reinstall this one.
+ *
+ * The reuse check applied when obtaining is weaker than these checks: it does
+ * not look at the address at all, and it asks only whether the certificate has
+ * expired. For the two faults it cannot see it would hand back the certificate
+ * that was just rejected, so a repair has to replace it.
+ *
+ * Every other fault is in the copy installed for the gateway rather than in the
+ * certificate itself, and reinstalling fixes it without spending an issuance.
+ *
+ * @param {Object} verdict
+ * @return {boolean}
+ */
+export function requiresReplacement(verdict) {
+  return (verdict?.reasons ?? []).some(({ code }) => code === CERTIFICATE_REASONS.IP_MISMATCH
+    || code === CERTIFICATE_REASONS.NOT_YET_VALID);
+}
+
 const EXPIRING_SOON_DAYS = 1;
 
 /**

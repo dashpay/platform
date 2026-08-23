@@ -22,8 +22,12 @@ export default function createCertificateForTest({ ip = '127.0.0.1', days = 30 }
 
   // Anchored to the expiry so an already-expired certificate still starts before it ends
   certificate.validity.notAfter = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+  // Anchored to whichever of now and the expiry comes first, so the window
+  // always starts in the past - as a real certificate's does. Anchoring to the
+  // expiry alone put the start date in the future for anything valid longer
+  // than the window itself.
   certificate.validity.notBefore = new Date(
-    certificate.validity.notAfter.getTime() - 30 * 24 * 60 * 60 * 1000,
+    Math.min(Date.now(), certificate.validity.notAfter.getTime()) - 30 * 24 * 60 * 60 * 1000,
   );
 
   const attributes = [{ name: 'commonName', value: ip }];

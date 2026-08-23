@@ -72,6 +72,30 @@ describe('renderCertificateGuidance', () => {
     });
   });
 
+  // The printed command has to do what the interactive repair does. For a
+  // certificate the checks rejected on its own contents - wrong address, not
+  // valid yet - the archived copy is the rejected copy, and obtaining without
+  // --force hands it straight back. An operator following this would run it
+  // and find nothing changed.
+  it('should force replacement for a certificate that cannot be reinstated', () => {
+    [CERTIFICATE_REASONS.NOT_YET_VALID, CERTIFICATE_REASONS.IP_MISMATCH].forEach((code) => {
+      const output = render({
+        verdict: verdict({ reasons: [{ code, message: `rejected: ${code}` }] }),
+      });
+
+      expect(output, code).to.contain('dashmate ssl obtain --config base --provider letsencrypt --force');
+    });
+  });
+
+  // Every other fault is in the copy installed for the gateway rather than in
+  // the certificate, so reinstalling fixes it without spending an issuance.
+  it('should not force replacement for a fault reinstalling can fix', () => {
+    const output = render();
+
+    expect(output).to.contain('dashmate ssl obtain --config base --provider letsencrypt');
+    expect(output).to.not.contain('--force');
+  });
+
   it('should shell-quote a config name that needs it', function it() {
     this.sinon.stub(config, 'getName').returns('my node');
 

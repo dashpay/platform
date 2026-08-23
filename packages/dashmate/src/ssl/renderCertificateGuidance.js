@@ -1,6 +1,6 @@
 import { SSL_PROVIDERS } from '../constants.js';
 import renderConfigFlag from '../util/renderConfigFlag.js';
-import { CERTIFICATE_REASONS } from './checkGatewayCertificateFactory.js';
+import { CERTIFICATE_REASONS, requiresReplacement } from './checkGatewayCertificateFactory.js';
 
 /**
  * How the run went for the images, said only as far as it was observed.
@@ -110,9 +110,10 @@ function renderLetsEncryptDiagnosis(cfg) {
 /**
  * @param {string} cfg
  * @param {boolean} isAlreadyLetsEncrypt
+ * @param {Object} verdict - decides whether the certificate can be reinstated
  * @return {string}
  */
-function renderFix(cfg, isAlreadyLetsEncrypt) {
+function renderFix(cfg, isAlreadyLetsEncrypt, verdict) {
   // A node already on Let's Encrypt has nothing to switch to, so the heading
   // that offers a switch would contradict the diagnosis above it.
   const heading = isAlreadyLetsEncrypt
@@ -127,7 +128,7 @@ function renderFix(cfg, isAlreadyLetsEncrypt) {
 
   Then:
 
-      dashmate ssl obtain ${cfg} --provider letsencrypt
+      dashmate ssl obtain ${cfg} --provider letsencrypt${requiresReplacement(verdict) ? ' --force' : ''}
 `;
 }
 
@@ -201,7 +202,7 @@ ${obtainAttemptFailed
       blocks.push(renderLetsEncryptDiagnosis(cfg));
     }
 
-    blocks.push(renderFix(cfg, provider === SSL_PROVIDERS.LETSENCRYPT));
+    blocks.push(renderFix(cfg, provider === SSL_PROVIDERS.LETSENCRYPT, verdict));
     blocks.push(renderPortEightyPermanence());
 
     blocks.push(`  Cannot open port 80? There is no other way to get an IP-address

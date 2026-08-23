@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import HomeDir from '../../../../src/config/HomeDir.js';
 import createCertificateForTest from '../../../../src/test/createCertificateForTest.js';
+import LegoCertificate from '../../../../src/ssl/letsencrypt/LegoCertificate.js';
 import validateLetsEncryptCertificateFactory, { ERRORS } from '../../../../src/ssl/letsencrypt/validateLetsEncryptCertificateFactory.js';
 
 const EXTERNAL_IP = '198.51.100.7';
@@ -37,6 +38,31 @@ describe('validateLetsEncryptCertificateFactory', () => {
   });
 
   afterEach(() => homeDir.remove());
+
+  // A certificate whose validity has not started is not servable, and the
+  // gateway checks reject it. Judging it usable here would hand the rejected
+  // certificate back to a repair that was meant to replace it.
+  it('should not treat a certificate that is not valid yet as usable', () => {
+    const notYetValid = new LegoCertificate({
+      expires: new Date(Date.now() + 30 * 864e5),
+      created: new Date(Date.now() + 864e5),
+      commonName: EXTERNAL_IP,
+      ipAddresses: [EXTERNAL_IP],
+    });
+
+    expect(notYetValid.isValid()).to.be.false();
+  });
+
+  it('should treat a certificate already inside its window as usable', () => {
+    const current = new LegoCertificate({
+      expires: new Date(Date.now() + 30 * 864e5),
+      created: new Date(Date.now() - 864e5),
+      commonName: EXTERNAL_IP,
+      ipAddresses: [EXTERNAL_IP],
+    });
+
+    expect(current.isValid()).to.be.true();
+  });
 
   it('should expose the not-installed error so callers can match on it', () => {
     expect(ERRORS.CERTIFICATE_NOT_INSTALLED).to.equal('CERTIFICATE_NOT_INSTALLED');
