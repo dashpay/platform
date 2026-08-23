@@ -73,6 +73,39 @@ describe('analyseGatewayCertificateFactory', () => {
     analyseGatewayCertificate = analyseGatewayCertificateFactory();
   });
 
+  it('should report nothing on a network where update does not enforce', () => {
+    // A local node uses a self-signed certificate by design. Reporting it as a
+    // problem tells an operator their healthy node is broken, and prescribes a
+    // publicly-issued certificate for an address no authority can reach.
+    config.set('network', 'local');
+    config.set('platform.gateway.ssl.provider', 'self-signed');
+
+    samples.setServiceInfo('gateway', 'installedCertificate', {
+      status: 'INVALID',
+      reasons: [{ code: 'SELF_SIGNED', message: 'The certificate is self-signed.' }],
+      warnings: [],
+      fingerprint256: 'AA:BB',
+    });
+
+    expect(analyseGatewayCertificate(samples)).to.be.empty();
+  });
+
+  it('should replace rather than reinstall a certificate issued for another address', () => {
+    // Reinstalling cannot fix an address the certificate does not carry, and
+    // the reuse check is weaker than this one, so an unforced command can hand
+    // back the same rejected certificate.
+    samples.setServiceInfo('gateway', 'installedCertificate', {
+      status: 'INVALID',
+      reasons: [{ code: 'IP_MISMATCH', message: 'The certificate is not valid for this address.' }],
+      warnings: [],
+      fingerprint256: 'AA:BB',
+    });
+
+    const [problem] = analyseGatewayCertificate(samples);
+
+    expect(problem.getSolution()).to.include('--force');
+  });
+
   it('should report no problem for a healthy certificate', () => {
     expect(analyse(served())).to.be.empty();
   });

@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import { SEVERITY } from '../Prescription.js';
 import Problem from '../Problem.js';
 import renderConfigFlag from '../../util/renderConfigFlag.js';
+import { GATED_NETWORKS, requiresReplacement } from '../../ssl/checkGatewayCertificateFactory.js';
 
 /**
  * The manual obtain command writes certificate files but does not signal the gateway, so an
@@ -95,6 +96,14 @@ export default function analyseGatewayCertificateFactory() {
       return [];
     }
 
+    // `update` enforces on these networks and only these. A local or devnet
+    // node serves a self-signed certificate by design, so diagnosing one here
+    // would report a healthy node as broken and prescribe a certificate no
+    // authority can issue for an address it cannot reach.
+    if (!GATED_NETWORKS.includes(config.get('network'))) {
+      return [];
+    }
+
     const cfg = renderConfigFlag(config.getName());
 
     const problems = [];
@@ -107,13 +116,19 @@ export default function analyseGatewayCertificateFactory() {
     const installed = samples.getServiceInfo('gateway', 'installedCertificate');
 
     if (installed) {
+      // Reinstalling cannot fix an address the certificate does not carry, or a
+      // start date still in the future, and the reuse check is weaker than the
+      // one that rejected it - so without this the command hands back the same
+      // certificate and the operator is where they started.
+      const force = requiresReplacement(installed) ? ' --force' : '';
+
       installed.reasons.forEach(({ message }) => {
         problems.push(new Problem(
           message,
           chalk`${UPDATE_CONSEQUENCE}
 
 Obtain a new certificate. No restart needed:
-{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt}`,
+{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${force}}`,
           SEVERITY.HIGH,
         ));
       });

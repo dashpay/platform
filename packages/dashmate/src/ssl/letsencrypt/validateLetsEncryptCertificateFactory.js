@@ -99,13 +99,15 @@ export default function validateLetsEncryptCertificateFactory(homeDir) {
     data.isExpiresSoon = data.certificate.isExpiredInDays(expirationDays);
     data.expirationDays = expirationDays;
 
-    // Check if certificate IP matches external IP
-    // First check SANs (preferred for IP certificates with --disable-cn)
-    // Fall back to commonName if no IP SANs present
-    const certIpAddresses = data.certificate.ipAddresses;
-    const hasMatchingIp = certIpAddresses.length > 0
-      ? certIpAddresses.includes(data.externalIp)
-      : data.certificate.commonName === data.externalIp;
+    // The address has to be in a subject alternative name. No standards-compliant
+    // client reads a common name to verify an IP - Node's tls.checkServerIdentity
+    // does not, and neither do browsers - so a certificate carrying the address
+    // there and nowhere else is not usable, however well it matches.
+    //
+    // The gateway check judges it the same way. Accepting more here than that
+    // check accepts is what let a repair reuse the certificate it had just
+    // rejected, leaving the operator exactly where they started.
+    const hasMatchingIp = data.certificate.ipAddresses.includes(data.externalIp);
 
     if (!hasMatchingIp) {
       return {

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { SSL_PROVIDERS } from '../constants.js';
+import { NETWORK_MAINNET, NETWORK_TESTNET, SSL_PROVIDERS } from '../constants.js';
 import { parseIpAddresses } from './readCertificateBundle.js';
 import isCertificatePairInstalled from './letsencrypt/isCertificatePairInstalled.js';
 import selectLeafCertificate, { LEAF_SELECTION_ERRORS } from './selectLeafCertificate.js';
@@ -74,6 +74,17 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * @param {Object} verdict
  * @return {boolean}
  */
+/**
+ * The networks where a certificate is enforced.
+ *
+ * A local or devnet node is expected to serve a self-signed certificate: no
+ * authority issues for an address that is not reachable, and nothing about
+ * such a node is held back by the certificate it serves. Every consumer of
+ * this module - the update gate and the doctor alike - reads the same list, so
+ * a diagnosis cannot disagree with what enforcement actually does.
+ */
+export const GATED_NETWORKS = [NETWORK_MAINNET, NETWORK_TESTNET];
+
 export function requiresReplacement(verdict) {
   return (verdict?.reasons ?? []).some(({ code }) => code === CERTIFICATE_REASONS.IP_MISMATCH
     || code === CERTIFICATE_REASONS.NOT_YET_VALID);

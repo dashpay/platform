@@ -64,6 +64,23 @@ describe('validateLetsEncryptCertificateFactory', () => {
     expect(current.isValid()).to.be.true();
   });
 
+  // The gateway check requires the address in a subject alternative name,
+  // because no standards-compliant client reads a common name for an IP. This
+  // check deciding otherwise is what let a repair hand back the certificate the
+  // gateway had already rejected.
+  it('should not accept an address carried only in the common name', async () => {
+    const { cert, key } = createCertificateForTest({ ip: EXTERNAL_IP, days: 60, withIpSan: false });
+
+    fs.writeFileSync(path.join(legoDir, `${EXTERNAL_IP}.crt`), cert, 'utf8');
+    fs.writeFileSync(path.join(legoDir, `${EXTERNAL_IP}.key`), key, 'utf8');
+    fs.writeFileSync(path.join(sslDir, 'bundle.crt'), cert, 'utf8');
+    fs.writeFileSync(path.join(sslDir, 'private.key'), key, 'utf8');
+
+    const { error } = await validateLetsEncryptCertificate(config);
+
+    expect(error).to.equal(ERRORS.CERTIFICATE_IP_MISMATCH);
+  });
+
   it('should expose the not-installed error so callers can match on it', () => {
     expect(ERRORS.CERTIFICATE_NOT_INSTALLED).to.equal('CERTIFICATE_NOT_INSTALLED');
   });
