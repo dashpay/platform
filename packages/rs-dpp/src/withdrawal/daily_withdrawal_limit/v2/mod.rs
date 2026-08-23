@@ -81,11 +81,11 @@ mod tests {
                 .expect("expected limit"),
             dash_to_credits!(3000)
         );
-        // Rounds down to whole credits.
+        // Rounds down to whole credits: 15% of 4000 Dash + 7 credits is 600 Dash + 1.05 credits.
         assert_eq!(
-            daily_withdrawal_limit_v2(Some(dash_to_credits!(500) + 7), &platform_version)
+            daily_withdrawal_limit_v2(Some(dash_to_credits!(4000) + 7), &platform_version)
                 .expect("expected limit"),
-            dash_to_credits!(500)
+            dash_to_credits!(600) + 1
         );
     }
 
