@@ -30,6 +30,7 @@ jobs:
             drive-abci,
             drive-proof-verifier,
             dash-platform-queries,
+            dash-platform-cxx,
           ]
     steps:
       - name: Check out repo
