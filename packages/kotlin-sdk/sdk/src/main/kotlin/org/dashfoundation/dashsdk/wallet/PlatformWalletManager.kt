@@ -743,6 +743,13 @@ class PlatformWalletManager(
      *   seen (`Some(h)` pins a specific height). Mirror of Swift
      *   `PlatformWalletManager.createWallet(..., birthHeight:)`
      *   (`birthHeight: showImportOption ? 0 : nil`).
+     * @throws org.dashfoundation.dashsdk.security.KeystoreDeviceLockedException
+     *   (RETRYABLE after unlock) if `KeyguardManager` reports the device
+     *   locked at entry — thrown BEFORE the native create, so nothing was
+     *   created and nothing needs rolling back — or if the Keystore denies
+     *   the mnemonic store as device-locked after the false-locked bounded
+     *   retry in [WalletStorage.storeMnemonic] is exhausted (that path runs
+     *   the full rollback below first).
      */
     suspend fun createWallet(
         mnemonic: String,
@@ -750,6 +757,15 @@ class PlatformWalletManager(
         createDefaultAccounts: Boolean = true,
         birthHeight: UInt? = null,
     ): ManagedPlatformWallet = withContext(Dispatchers.IO) {
+        // Fail-fast pre-check BEFORE the native create: on a genuinely
+        // locked device (KeyguardManager.isDeviceLocked) the storeMnemonic
+        // step below is guaranteed to be denied by the lock-bound
+        // MASTER_ALIAS key (setUnlockedDeviceRequired), which would force
+        // the full rollback dance. Failing here instead means no native
+        // wallet was created, no Room rows were written, and there is
+        // nothing to roll back — the typed KeystoreDeviceLockedException
+        // tells the caller to retry after unlock.
+        walletStorage.ensureDeviceUnlocked(operation = "createWallet")
         // Caller-allocated out-buffers: the JNI side validates both BEFORE
         // the native create so no fallible allocation follows the
         // persistence commit (a post-commit publish failure would strand

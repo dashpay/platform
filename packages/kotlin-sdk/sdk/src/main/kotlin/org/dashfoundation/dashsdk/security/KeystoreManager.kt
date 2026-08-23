@@ -97,6 +97,19 @@ open class KeystoreManager(
      * with the degradation surfaced via [effectiveKeySecurityPolicy].
      */
     private val requireAuthGated: Boolean = false,
+    /**
+     * Prompt-free sampler of `KeyguardManager`'s CURRENT lock state
+     * (`isDeviceLocked` / `isKeyguardLocked`). Supplied by [WalletStorage]
+     * (which holds a `Context`); defaults to "unlocked" for the
+     * no-`Context` / unit-test construction path. Sampled AT THROW TIME
+     * when a lock-bound Keystore operation is denied as device-locked, so
+     * [KeystoreDeviceLockedException] can distinguish a genuinely-locked
+     * device from the false-locked Keystore2 defect (device demonstrably
+     * unlocked, Keystore still denying — observed in the field on two QA
+     * devices during wallet creation).
+     */
+    private val deviceLockStateProbe: () -> DeviceLockState =
+        { DeviceLockState(isDeviceLocked = false, isKeyguardLocked = false) },
 ) {
 
     /**
@@ -111,6 +124,16 @@ open class KeystoreManager(
             KeySecurityPolicy.AUTH_GATED -> KEYS_ALIAS_AUTH_GATED
             KeySecurityPolicy.DEVICE_BOUND -> KEYS_ALIAS_DEVICE_BOUND
         }
+
+    /**
+     * `KeyguardManager`'s CURRENT lock state via [deviceLockStateProbe] —
+     * one prompt-free sample, no Keystore access. Used at throw time by the
+     * device-locked denial mapping (so [KeystoreDeviceLockedException]
+     * records whether the OS agreed the device was locked) and by
+     * [WalletStorage.ensureDeviceUnlocked]'s createWallet pre-check.
+     * `open` purely as a unit-test seam, like the rest of this class.
+     */
+    open fun sampleDeviceLockState(): DeviceLockState = deviceLockStateProbe()
 
     /**
      * The [KeySecurityPolicy] identity keys are EFFECTIVELY protected with
@@ -240,9 +263,13 @@ open class KeystoreManager(
         require(alias != KEYS_ALIAS) {
             "the legacy identity-keys alias is read-only (migration fallback only)"
         }
-        val cipher = Cipher.getInstance(AES_TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, secretKey(alias))
-        return EncryptedBlob(iv = cipher.iv, ciphertext = cipher.doFinal(plaintext))
+        return try {
+            val cipher = Cipher.getInstance(AES_TRANSFORMATION)
+            cipher.init(Cipher.ENCRYPT_MODE, secretKey(alias))
+            EncryptedBlob(iv = cipher.iv, ciphertext = cipher.doFinal(plaintext))
+        } catch (e: Exception) {
+            rethrowClassifyingDeviceLockedDenial(e, alias, operation = "encrypt")
+        }
     }
 
     /**
@@ -318,13 +345,50 @@ open class KeystoreManager(
             "the legacy identity-keys alias is decrypted only via decryptLegacyKeysBlob / " +
                 "decryptLegacyRsaKeysBlob"
         }
-        val cipher = Cipher.getInstance(AES_TRANSFORMATION)
-        cipher.init(
-            Cipher.DECRYPT_MODE,
-            secretKey(alias),
-            GCMParameterSpec(GCM_TAG_BITS, blob.iv),
-        )
-        return cipher.doFinal(blob.ciphertext)
+        return try {
+            val cipher = Cipher.getInstance(AES_TRANSFORMATION)
+            cipher.init(
+                Cipher.DECRYPT_MODE,
+                secretKey(alias),
+                GCMParameterSpec(GCM_TAG_BITS, blob.iv),
+            )
+            cipher.doFinal(blob.ciphertext)
+        } catch (e: Exception) {
+            rethrowClassifyingDeviceLockedDenial(e, alias, operation = "decrypt")
+        }
+    }
+
+    /**
+     * Map a Keystore device-locked denial on a lock-bound NON-auth-gated
+     * alias (the [MASTER_ALIAS] AES path — `setUnlockedDeviceRequired(true)`
+     * on lock-screen devices, no `setUserAuthenticationRequired`) to the
+     * typed, retryable [KeystoreDeviceLockedException]; every other
+     * exception is rethrown unchanged. The `KeyguardManager` lock state is
+     * sampled HERE, at throw time, so the exception records whether the OS
+     * agreed the device was locked (genuinely locked) or not (the
+     * false-locked Keystore2 defect — device demonstrably unlocked, its
+     * lock-state tracking stuck; hit on two QA devices during wallet
+     * creation).
+     *
+     * MUST NOT be applied to the auth-gated identity-key aliases: their
+     * `UserNotAuthenticatedException` means "auth window closed" and drives
+     * the `BiometricGate` prompt-and-retry contract (see [decrypt]) — both
+     * RSA branches return before reaching this mapping.
+     */
+    internal fun rethrowClassifyingDeviceLockedDenial(
+        e: Exception,
+        alias: String,
+        operation: String,
+    ): Nothing {
+        if (isDeviceLockedKeystoreDenial(e)) {
+            throw KeystoreDeviceLockedException(
+                alias = alias,
+                operation = operation,
+                lockState = sampleDeviceLockState(),
+                cause = e,
+            )
+        }
+        throw e
     }
 
     /**
@@ -930,6 +994,51 @@ open class KeystoreManager(
             }
             return false
         }
+
+        /**
+         * Whether [t]'s cause chain is a Keystore "device is locked" denial
+         * of an operation on a lock-bound key (`setUnlockedDeviceRequired`).
+         * Two authoritative signals, mirroring the deliberately-narrow
+         * [isNoSecureLockScreenKeyGenFailure] style:
+         *
+         *  - any `UserNotAuthenticatedException` in the chain. Correct ONLY
+         *    for keys with no `setUserAuthenticationRequired` gate (the
+         *    [MASTER_ALIAS] AES key): with no auth gate to be "not
+         *    authenticated" against, Keystore throws it solely for the
+         *    unlocked-device requirement. The call sites guarantee this —
+         *    the classification is applied to the non-identity (AES) branch
+         *    of [encrypt]/[decrypt] only, never to the auth-gated RSA
+         *    aliases where the same exception means "auth window closed".
+         *  - a `KeyStoreException` / `InvalidKeyException` in the chain
+         *    whose message explicitly names the locked device ("device
+         *    locked" / "device is locked" / "unlocked device") — the
+         *    Keystore2 wording of the same denial on API levels that wrap
+         *    it differently.
+         *
+         * Anything else (BadPadding, transient internal errors, …) does NOT
+         * classify and must surface unchanged. Pure and JVM-testable —
+         * matches by type name and message, no Android classes
+         * (the [isNoSecureLockScreenKeyGenFailure] discipline).
+         */
+        internal fun isDeviceLockedKeystoreDenial(t: Throwable): Boolean {
+            var cur: Throwable? = t
+            while (cur != null) {
+                val name = cur::class.java.name
+                if (name.endsWith("UserNotAuthenticatedException")) return true
+                if ((name.endsWith("KeyStoreException") || name.endsWith("InvalidKeyException")) &&
+                    keyStoreMessageNamesLockedDevice(cur.message.orEmpty())
+                ) {
+                    return true
+                }
+                cur = cur.cause
+            }
+            return false
+        }
+
+        private fun keyStoreMessageNamesLockedDevice(msg: String): Boolean =
+            msg.contains("device locked", ignoreCase = true) ||
+                msg.contains("device is locked", ignoreCase = true) ||
+                msg.contains("unlocked device", ignoreCase = true)
 
         private fun keyStoreMessageNamesLockScreen(msg: String): Boolean =
             // Only the explicit lock-screen requirement is authoritative. A
