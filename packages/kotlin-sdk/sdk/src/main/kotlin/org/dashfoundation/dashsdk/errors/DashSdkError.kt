@@ -149,6 +149,23 @@ sealed class DashSdkError(
             )
 
         /**
+         * `ErrorMasternodeWithdrawalUnconfirmed` (native code 42). A
+         * masternode (evonode) identity credit withdrawal was broadcast and
+         * accepted, but its execution result couldn't be confirmed — it may
+         * already have executed, and the identity nonce was consumed for it,
+         * so a blind retry could submit a SECOND withdrawal. Do NOT retry;
+         * re-read the identity's claimable balance and reconcile first. The
+         * Android analog of Swift's
+         * `PlatformWalletError.masternodeWithdrawalUnconfirmed`.
+         */
+        class MasternodeWithdrawalUnconfirmed(message: String, cause: Throwable? = null) :
+            PlatformWallet(
+                "$message (do NOT retry: the withdrawal may already have executed; " +
+                    "re-read the claimable balance first)",
+                cause,
+            )
+
+        /**
          * `ErrorShieldedBroadcastFailed` (native code 16). A DEFINITIVE
          * non-execution outcome — relay/CheckTx rejected the transaction
          * before it entered the chain, and any note reservations were
@@ -541,6 +558,7 @@ sealed class DashSdkError(
             18 -> PlatformWallet.ShieldedSpendUnconfirmed(message, cause) // ErrorShieldedSpendUnconfirmed
             19 -> PlatformWallet.ShieldedNoRecordedAnchor(message, cause) // ErrorShieldedNoRecordedAnchor
             20 -> PlatformWallet.TransactionBroadcastUnconfirmed(message, cause) // ErrorTransactionBroadcastUnconfirmed
+            42 -> PlatformWallet.MasternodeWithdrawalUnconfirmed(message, cause) // ErrorMasternodeWithdrawalUnconfirmed
             22 -> PlatformWallet.CoreInsufficientFunds(message, cause) // ErrorCoreInsufficientFunds
             23 -> PlatformWallet.AssetLockNotTracked(message, cause) // ErrorAssetLockNotTracked
             24 -> PlatformWallet.AssetLockAlreadyConsumed(message, cause) // ErrorAssetLockAlreadyConsumed

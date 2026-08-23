@@ -1050,7 +1050,13 @@ pub(crate) struct MasternodeAggregate {
     /// Latest known service endpoint `"ip:port"` (latest-height update
     /// wins; seeded by the ProRegTx address).
     pub service_address: Option<String>,
-    /// Height that set `service_address` (drives latest-wins).
+    /// Platform HTTP (DAPI gRPC) port from the same ProRegTx / ProUpServTx
+    /// that set `service_address` — evonodes only, `None` for a regular
+    /// masternode or a pre-v19 payload without platform fields. With the
+    /// service IP this addresses the node's DAPI (`https://<ip>:<port>`).
+    pub platform_http_port: Option<u16>,
+    /// Height that set `service_address` / `platform_http_port` (drives
+    /// latest-wins).
     service_height: u32,
     /// evonode / HPMN flag from the ProRegTx `masternode_type`.
     pub is_evonode: bool,
@@ -1183,6 +1189,7 @@ where
                 // treat both as updates observed at this height.
                 if agg.service_address.is_none() || height >= agg.service_height {
                     agg.service_address = Some(p.service_address.to_string());
+                    agg.platform_http_port = p.platform_http_port;
                     agg.service_height = height;
                 }
                 if agg.voting_key_hash.is_none() || height >= agg.voting_height {
@@ -1217,6 +1224,7 @@ where
             Some(TransactionPayload::ProviderUpdateServicePayloadType(p)) => {
                 if agg.service_address.is_none() || height >= agg.service_height {
                     agg.service_address = Some(provider_ip_port(p.ip_address, p.port));
+                    agg.platform_http_port = p.platform_http_port;
                     agg.service_height = height;
                 }
                 // ProUpServ's `platform_node_id` is now `Option<PlatformNodeId>`
@@ -1331,6 +1339,11 @@ pub struct MasternodeEntryFFI {
     pub has_voting_key_hash: bool,
     /// Service endpoint `"ip:port"`, or null.
     pub service_address: *mut c_char,
+    /// Platform HTTP (DAPI gRPC) port from the latest ProRegTx / ProUpServTx,
+    /// gated by `has_platform_http_port` (evonodes only). Together with the
+    /// `service_address` host this addresses the node's DAPI.
+    pub platform_http_port: u16,
+    pub has_platform_http_port: bool,
     /// Base58 owner / voting P2PKH addresses for the wallet's network
     /// (null when the hash is absent) — the app-layer join key against a
     /// provider-key account's persisted base58 address, so Swift never
@@ -1497,6 +1510,8 @@ pub(crate) fn masternode_entry_ffi(
         voting_key_hash: mn.voting_key_hash.unwrap_or([0u8; 20]),
         has_voting_key_hash: mn.voting_key_hash.is_some(),
         service_address,
+        platform_http_port: mn.platform_http_port.unwrap_or(0),
+        has_platform_http_port: mn.platform_http_port.is_some(),
         owner_address,
         voting_address,
         operator_public_key: mn.operator_public_key.unwrap_or([0u8; 48]),
@@ -1989,6 +2004,10 @@ mod tests {
             mn.platform_node_id.is_none(),
             "legacy regular-MN fixture has no platform node id"
         );
+        assert!(
+            mn.platform_http_port.is_none(),
+            "legacy regular-MN fixture has no platform HTTP port"
+        );
         assert_eq!(mn.tx_count, 1);
     }
 
@@ -2202,5 +2221,83 @@ mod tests {
             );
             assert_eq!(mns[0].tx_count, 2, "both updates counted");
         }
+    }
+
+    /// The platform HTTP port travels with the service endpoint: the ProRegTx
+    /// seeds it and a later ProUpServTx replaces it (latest-wins), so the
+    /// DAPI address the wallet builds follows the node's current config.
+    #[test]
+    fn platform_http_port_follows_the_service_update() {
+        use dashcore::blockdata::transaction::special_transaction::provider_update_service::ProviderUpdateServicePayload;
+        use dashcore::transaction::special_transaction::provider_registration::ProviderMasternodeType;
+        use dashcore::transaction::TransactionPayload;
+
+        let mut reg = decode_tx(PROREG_HEX);
+        if let Some(TransactionPayload::ProviderRegistrationPayloadType(p)) =
+            &mut reg.special_transaction_payload
+        {
+            p.masternode_type = ProviderMasternodeType::HighPerformance;
+            p.platform_http_port = Some(443);
+        }
+        let pro_tx_hash = reg.txid();
+
+        let upserv = dashcore::Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: Some(
+                TransactionPayload::ProviderUpdateServicePayloadType(
+                    ProviderUpdateServicePayload {
+                        version: 2,
+                        mn_type: Some(1), // HighPerformance (evonode)
+                        pro_tx_hash,
+                        ip_address: 42,
+                        port: 19999,
+                        script_payout: dashcore::ScriptBuf::new(),
+                        inputs_hash: [7u8; 32].into(),
+                        platform_node_id: None,
+                        platform_p2p_port: Some(36656),
+                        platform_http_port: Some(1443),
+                        payload_sig: [0u8; 96].into(),
+                    },
+                ),
+            ),
+        };
+
+        // Registration alone ⇒ the ProRegTx port.
+        let mns = aggregate_masternodes([(100u32, 0u32, &reg)].into_iter(), unavailable_dml);
+        assert_eq!(mns.len(), 1);
+        assert_eq!(mns[0].platform_http_port, Some(443));
+
+        // A later ProUpServTx replaces it along with the service address.
+        let mns = aggregate_masternodes(
+            [(100u32, 0u32, &reg), (200u32, 0u32, &upserv)].into_iter(),
+            unavailable_dml,
+        );
+        assert_eq!(mns.len(), 1, "same proTxHash ⇒ one bucket");
+        assert_eq!(mns[0].platform_http_port, Some(1443));
+        assert!(
+            mns[0]
+                .service_address
+                .as_deref()
+                .unwrap_or_default()
+                .ends_with(":19999"),
+            "service address and platform port move together"
+        );
+
+        // The FFI entry carries it gated by `has_platform_http_port`.
+        let entry = masternode_entry_ffi(
+            &mns[0],
+            0,
+            dashcore::Network::Testnet,
+            &std::collections::HashMap::new(),
+            &std::collections::HashMap::new(),
+        );
+        assert!(entry.has_platform_http_port);
+        assert_eq!(entry.platform_http_port, 1443);
+        // Release the entry's heap C strings through the public free routine.
+        let entries = Box::into_raw(vec![entry].into_boxed_slice()) as *mut MasternodeEntryFFI;
+        unsafe { crate::wallet::platform_wallet_manager_free_masternodes(entries, 1) };
     }
 }

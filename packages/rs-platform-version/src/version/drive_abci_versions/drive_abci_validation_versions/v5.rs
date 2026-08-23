@@ -104,6 +104,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V5: DriveAbciValidationVersions =
                 state: 0,
                 transform_into_action: 0,
             },
+            data_contract_reference_validation: 0,
             batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions {
                 basic_structure: 0,
                 advanced_structure: 0,
@@ -140,6 +141,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V5: DriveAbciValidationVersions =
                 document_transfer_transition_state_validation: 0,
                 document_purchase_transition_state_validation: 0,
                 document_update_price_transition_state_validation: 0,
+                document_reference_validation: 0,
                 token_mint_transition_structure_validation: 0,
                 token_burn_transition_structure_validation: 0,
                 token_transfer_transition_structure_validation: 0,

@@ -11,11 +11,14 @@ pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     // v12 is already active on live networks; the depth limit activates in v13 (see v3).
     max_document_value_depth: None,
     max_state_transition_size: 20480, //20 KiB
+    // Load-bearing for state correctness, not just for throughput — see
+    // SystemLimits::max_transitions_in_documents_batch and SYSTEM_LIMITS_V1.
     max_transitions_in_documents_batch: 1,
     withdrawal_transactions_per_block_limit: 4,
     retry_signing_expired_withdrawal_documents_per_block_limit: 1,
-    max_withdrawal_amount: 50_000_000_000_000, //500 Dash
-    min_withdrawal_amount: 1_000_000,          //1000 duffs (raised from 190 in v12)
+    max_withdrawal_amount: 50_000_000_000_000,   //500 Dash
+    daily_withdrawal_limit: 200_000_000_000_000, //2000 Dash (Core v22 limit)
+    min_withdrawal_amount: 1_000_000,            //1000 duffs (raised from 190 in v12)
     max_contract_group_size: 256,
     max_token_redemption_cycles: 128,
     // NOTE: the Halo 2 proof grows with the action count (~2,273 B/action on

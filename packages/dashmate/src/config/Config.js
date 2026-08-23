@@ -39,9 +39,15 @@ export default class Config {
     assertSafeConfigName(name);
 
     this.name = name;
-    this.changed = false;
 
     this.setOptions(options, skipValidation);
+
+    // Hydration is not a mutation. setOptions() marks the config changed because
+    // it is a genuine edit when called on an existing config, but a config that
+    // was just loaded has nothing unsaved. Callers that build a config which must
+    // reach disk - the default set for a new config file, createConfig() - mark it
+    // changed themselves.
+    this.changed = false;
   }
 
   /**
@@ -360,4 +366,4 @@ export default class Config {
 }
 
 Config.ajv = new Ajv({ coerceTypes: true });
-addFormats(Config.ajv, { mode: 'fast', formats: ['ipv4'] });
+addFormats(Config.ajv, { mode: 'fast', formats: ['ipv4', 'uri'] });

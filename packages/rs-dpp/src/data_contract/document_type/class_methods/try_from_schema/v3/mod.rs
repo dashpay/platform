@@ -34,6 +34,9 @@ use crate::consensus::basic::data_contract::InvalidIndexedPropertyConstraintErro
 
 use super::common;
 
+mod ranked_prefix_overlap;
+use ranked_prefix_overlap::validate_no_ranked_prefix_overlap;
+
 /// grovedb's ceiling on the key of an entry stored directly under an
 /// *indexed* tree's primary when the tree carries only the Count and/or Sum
 /// axes (`grovedb::operations::indexed_tree::MAX_CIDX_ITEM_KEY_LEN`).
@@ -110,6 +113,15 @@ fn validate_ranked_index_property_key_length(
     property_type: &DocumentPropertyType,
     platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
+    // Only the **terminal** property's encoded value becomes an
+    // indexed-tree item key, mirrored into the ordered secondary behind
+    // the sort key — that is where the tightened ceiling comes from.
+    // Leading properties of a compound ranked index are ordinary grovedb
+    // path segments, bound by the generic limits checked after this.
+    if index.properties.last().map(|p| p.name.as_str()) != Some(index_property_name) {
+        return Ok(());
+    }
+
     let Some(limit) = ranked_index_key_length_limit(index) else {
         return Ok(());
     };
@@ -246,6 +258,7 @@ fn try_from_schema_generation_3(
             // RANKED: the constants that make this generation 3.
             admit_ranked: true,
             ranked_index_key_length_check: RANKED_INDEX_KEY_LENGTH_CHECK,
+            ranked_index_structure_check: validate_no_ranked_prefix_overlap,
         },
         platform_version,
     )?;
@@ -872,6 +885,122 @@ mod tests {
         );
     }
 
+    /// A compound `[region, restaurantId]` avg-ranked index over the same
+    /// doctype shape as [`ranked_bound_schema`], with independent control
+    /// of the leading and terminal string properties' `maxLength`.
+    fn compound_ranked_bound_schema(leading: Value, terminal: Value) -> Value {
+        let mut index_entry: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("byRegionRestaurant".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![
+                    Value::Map(vec![(
+                        Value::Text("region".to_string()),
+                        Value::Text("asc".to_string()),
+                    )]),
+                    Value::Map(vec![(
+                        Value::Text("restaurantId".to_string()),
+                        Value::Text("asc".to_string()),
+                    )]),
+                ]),
+            ),
+        ];
+        index_entry.extend(
+            avg_ranked_extras()
+                .into_iter()
+                .map(|(key, value)| (Value::Text(key.to_string()), value)),
+        );
+
+        Value::Map(vec![
+            (
+                Value::Text("type".to_string()),
+                Value::Text("object".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Map(vec![
+                    (Value::Text("region".to_string()), leading),
+                    (Value::Text("restaurantId".to_string()), terminal),
+                    (
+                        Value::Text("grade".to_string()),
+                        platform_value!({
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 100,
+                            "position": 2,
+                        }),
+                    ),
+                ]),
+            ),
+            (
+                Value::Text("required".to_string()),
+                Value::Array(vec![
+                    Value::Text("region".to_string()),
+                    Value::Text("restaurantId".to_string()),
+                    Value::Text("grade".to_string()),
+                ]),
+            ),
+            (
+                Value::Text("additionalProperties".to_string()),
+                Value::Bool(false),
+            ),
+            (
+                Value::Text("indices".to_string()),
+                Value::Array(vec![Value::Map(index_entry)]),
+            ),
+        ])
+    }
+
+    fn string_property_at(max_length: u32, position: u32) -> Value {
+        platform_value!({
+            "type": "string",
+            "maxLength": max_length,
+            "position": position,
+        })
+    }
+
+    /// The ranked ceiling binds only the **terminal** property — the one
+    /// whose encoded value becomes the indexed tree's item key. A leading
+    /// prefix property is an ordinary grovedb path segment: the generic
+    /// 63-character indexed-string limit is what binds it, not the
+    /// 59-character avg-ranked ceiling.
+    #[test]
+    fn ranked_ceiling_binds_the_terminal_property_not_the_leading_prefix() {
+        // Leading at 63 (over the 59 ranked bound, at the generic bound)
+        // with a terminal that fits the ranked bound: accepted.
+        parse_bound(compound_ranked_bound_schema(
+            string_property_at(63, 0),
+            string_property_at(59, 1),
+        ))
+        .expect("a 63-character leading prefix is a path segment, not an item key");
+
+        // The same 60-character string the single-property tests reject is
+        // still rejected when it is the terminal property of a compound
+        // ranked index.
+        let error = parse_bound(compound_ranked_bound_schema(
+            string_property_at(30, 0),
+            string_property_at(60, 1),
+        ))
+        .expect_err("the terminal property keeps the 239-byte avg ceiling");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("maxLength") && msg.contains("59") && msg.contains("239"),
+            "the error must still name the ranked bound for the terminal; got {msg}"
+        );
+
+        // And the generic indexed-string limit still binds the leading
+        // property: 64 characters is over the 63-character cap whether or
+        // not the index is ranked.
+        parse_bound(compound_ranked_bound_schema(
+            string_property_at(64, 0),
+            string_property_at(59, 1),
+        ))
+        .expect_err("the generic 63-character limit still binds the leading prefix");
+    }
+
     /// Avg is strictly tighter than Count/Sum, and an index carrying Avg
     /// *alongside* the other axes has to satisfy the tightest of them: the
     /// 60-character string that a count-only ranked index accepts is refused
@@ -981,5 +1110,193 @@ mod tests {
         range_only.retain(|(key, _)| *key != "rankedAverageable");
         parse_bound(ranked_bound_schema(string_property(63), range_only))
             .expect("a range-averageable index without a ranking axis keeps the generic limit");
+    }
+
+    // -------------------------------------------------------------------
+    // Compound ranked indexes (per-prefix semantics) and the
+    // prefix-overlap conflict
+    // -------------------------------------------------------------------
+
+    /// One extra single-property index for [`compound_ranked_schema`]:
+    /// `(name, property, keys)`.
+    type ExtraIndexSpec<'a> = (&'a str, &'a str, Vec<(&'a str, Value)>);
+
+    /// A doctype with a compound ranked index `[region, restaurantId]`
+    /// (avg axis on `grade`), plus optional extra single-property
+    /// indexes to provoke — or fail to provoke — the prefix-overlap
+    /// conflict.
+    fn compound_ranked_schema(extra_indexes: Vec<ExtraIndexSpec>) -> Value {
+        let compound_entry: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("byRegionRestaurant".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![
+                    Value::Map(vec![(
+                        Value::Text("region".to_string()),
+                        Value::Text("asc".to_string()),
+                    )]),
+                    Value::Map(vec![(
+                        Value::Text("restaurantId".to_string()),
+                        Value::Text("asc".to_string()),
+                    )]),
+                ]),
+            ),
+            (
+                Value::Text("averageable".to_string()),
+                Value::Text("grade".to_string()),
+            ),
+            (
+                Value::Text("rangeAverageable".to_string()),
+                Value::Bool(true),
+            ),
+            (
+                Value::Text("rankedAverageable".to_string()),
+                Value::Bool(true),
+            ),
+        ];
+        let mut indices = vec![Value::Map(compound_entry)];
+        for (name, property, keys) in extra_indexes {
+            let mut entry: Vec<(Value, Value)> = vec![
+                (
+                    Value::Text("name".to_string()),
+                    Value::Text(name.to_string()),
+                ),
+                (
+                    Value::Text("properties".to_string()),
+                    Value::Array(vec![Value::Map(vec![(
+                        Value::Text(property.to_string()),
+                        Value::Text("asc".to_string()),
+                    )])]),
+                ),
+            ];
+            entry.extend(
+                keys.into_iter()
+                    .map(|(key, value)| (Value::Text(key.to_string()), value)),
+            );
+            indices.push(Value::Map(entry));
+        }
+
+        Value::Map(vec![
+            (
+                Value::Text("type".to_string()),
+                Value::Text("object".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                platform_value!({
+                    "region": {
+                        "type": "string",
+                        "maxLength": 32,
+                        "position": 0,
+                    },
+                    "restaurantId": {
+                        "type": "string",
+                        "maxLength": 32,
+                        "position": 1,
+                    },
+                    "grade": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100,
+                        "position": 2,
+                    },
+                }),
+            ),
+            (
+                Value::Text("required".to_string()),
+                Value::Array(vec![
+                    Value::Text("region".to_string()),
+                    Value::Text("restaurantId".to_string()),
+                    Value::Text("grade".to_string()),
+                ]),
+            ),
+            (
+                Value::Text("additionalProperties".to_string()),
+                Value::Bool(false),
+            ),
+            (Value::Text("indices".to_string()), Value::Array(indices)),
+        ])
+    }
+
+    /// A compound ranked index is accepted at PV14 with per-prefix
+    /// semantics — on both the validating and the structural parse
+    /// paths — and the ranked flags land on the index alongside the
+    /// range axes they require.
+    #[test]
+    fn compound_ranked_index_accepted_at_pv14() {
+        for full_validation in [true, false] {
+            let v2 = parse_with(compound_ranked_schema(vec![]), pv14(), full_validation)
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "a compound ranked index must parse \
+                         (full_validation: {full_validation}): {e}"
+                    )
+                });
+            let index = v2
+                .indices
+                .get("byRegionRestaurant")
+                .expect("index parsed under its name");
+            assert!(index.ranked_averageable);
+            assert!(index.range_countable && index.range_summable);
+            assert_eq!(index.properties.len(), 2);
+            assert_eq!(index.properties[1].name, "restaurantId");
+        }
+    }
+
+    /// The one structurally impossible shape: a countable/summable
+    /// index terminating at the compound ranked index's full leading
+    /// prefix. The ranked terminal tree would sit inside aggregating
+    /// value trees and need the NonCounted/NotSummed shell the storage
+    /// layer rejects for indexed trees — so the contract is refused at
+    /// parse time, on the validating AND the structural path (a
+    /// contract smuggled through check_tx would brick document inserts).
+    #[test]
+    fn compound_ranked_with_aggregating_prefix_index_rejected() {
+        let schema = compound_ranked_schema(vec![(
+            "byRegion",
+            "region",
+            vec![("countable", Value::Text("countable".to_string()))],
+        )]);
+        for full_validation in [true, false] {
+            let error = parse_with(schema.clone(), pv14(), full_validation).expect_err(
+                "an aggregating index on the ranked compound's full prefix must be rejected",
+            );
+            let message = format!("{error:?}");
+            assert!(
+                message.contains("byRegionRestaurant")
+                    && message.contains("byRegion")
+                    && message.contains("NonCounted"),
+                "the rejection must name both indexes and the structural conflict \
+                 (full_validation: {full_validation}); got {message}"
+            );
+        }
+    }
+
+    /// Only the **exact** leading prefix conflicts: an aggregating
+    /// index over a different property — same arity as the prefix, but
+    /// not the prefix — coexists with the compound ranked index, as
+    /// does a plain (non-aggregating) index on the prefix property.
+    #[test]
+    fn compound_ranked_with_non_conflicting_indexes_accepted() {
+        // Countable over the *trailing* property's own single-property
+        // index: terminates at [restaurantId], not at the ranked
+        // index's [region] prefix.
+        let aggregating_elsewhere = compound_ranked_schema(vec![(
+            "byRestaurant",
+            "restaurantId",
+            vec![("countable", Value::Text("countable".to_string()))],
+        )]);
+        parse_with(aggregating_elsewhere, pv14(), true)
+            .expect("an aggregating index off the prefix must not conflict");
+
+        // A plain index on the prefix property: terminates at [region]
+        // but carries no aggregates, so its value trees stay normal and
+        // no wrapper shell is ever needed.
+        let plain_prefix = compound_ranked_schema(vec![("byRegion", "region", vec![])]);
+        parse_with(plain_prefix, pv14(), true)
+            .expect("a non-aggregating index on the prefix must not conflict");
     }
 }

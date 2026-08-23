@@ -17,6 +17,8 @@ const WAIT_FOR_NODES_TIMEOUT = 60 * 5 * 1000;
  * @param {waitForNodeToBeReadyTask} waitForNodeToBeReadyTask
  * @param {buildServicesTask} buildServicesTask
  * @param {getConnectionHost} getConnectionHost
+ * @param {ConfigFileJsonRepository} configFileRepository
+ * @param {writeConfigTemplates} writeConfigTemplates
  * @return {startGroupNodesTask}
  */
 export default function startGroupNodesTaskFactory(
@@ -29,6 +31,8 @@ export default function startGroupNodesTaskFactory(
   waitForNodeToBeReadyTask,
   buildServicesTask,
   getConnectionHost,
+  configFileRepository,
+  writeConfigTemplates,
 ) {
   /**
    * @typedef {startGroupNodesTask}
@@ -103,9 +107,25 @@ export default function startGroupNodesTaskFactory(
           let minerAddress = minerConfig.get('core.miner.address');
 
           if (minerAddress === null) {
-            const privateKey = new PrivateKey();
-            minerAddress = privateKey.toAddress('regtest').toString();
+            configFileRepository.update((configFile) => {
+              const freshMinerConfig = configFile.getConfig(minerConfig.getName());
 
+              minerAddress = freshMinerConfig.get('core.miner.address');
+
+              if (minerAddress === null) {
+                const privateKey = new PrivateKey();
+                minerAddress = privateKey.toAddress('regtest').toString();
+
+                freshMinerConfig.set('core.miner.address', minerAddress);
+              }
+            }, {
+              onSaved: (configFile) => writeConfigTemplates(
+                configFile.getConfig(minerConfig.getName()),
+              ),
+            });
+
+            // The running task keeps the object loaded at command startup, so
+            // copy the value selected from fresh state back into it.
             minerConfig.set('core.miner.address', minerAddress);
           }
 

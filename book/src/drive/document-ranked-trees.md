@@ -91,7 +91,7 @@ One asymmetry is worth knowing when authoring: **the meta-schema demands the lit
 
 Two structural rules, both enforced at contract-parse time in rs-dpp:
 
-- **Single-property indexes only.** `ranked aggregates are only supported on single-property indexes in this protocol version`. Two reasons, both relaxable at a future protocol version. First, a compound index whose *prefix* level also terminates an aggregating index would need its ranked terminal tree wrapped in a `NonCounted` / `NotSummed` shell so it contributes zero to the parent's aggregate — and the storage layer structurally rejects any wrapper around an indexed tree, because the wrapper would neutralise the very aggregates the secondaries order by. (Drive's fail-closed guard for this is `INDEXED_INNER_UNWRAPPABLE`.) Second, the ranked query surface has no equality-prefix routing: with more than one property there would be a prefix to fix before ranking, and nothing to express it with.
+- **No aggregating index on a compound ranked index's full prefix.** Ranked flags are allowed on compound indexes, with **per-prefix** semantics: a ranked `[identityId, class]` puts the indexed tree at each prefix value's terminal `class` property-name level — one ordered secondary per `identityId`, each ranking only that identity's `class` groups. There is deliberately no global cross-prefix ordering; the query surfaces require every leading property to be pinned by an equality `where` clause. The one shape that stays impossible — and is rejected per document type, where all indexes are visible (`validate_no_ranked_prefix_overlap`) — is a countable/summable index terminating at exactly the compound's leading prefix: its aggregating value trees would demand the `NonCounted` / `NotSummed` shell around the ranked terminal tree, and the storage layer structurally rejects any wrapper around an indexed tree, because the wrapper would neutralise the very aggregates the secondaries order by. (Drive's fail-closed guard behind the parse-time check is `INDEXED_INNER_UNWRAPPABLE`.) Only the exact `n-1` prefix conflicts: an aggregating index at a shorter prefix wraps a plain intermediate tree, and one extending past the ranked terminal lives inside its value trees — both supported.
 - **Non-unique indexes only.** `ranked aggregates are not supported on unique indexes: each group of a unique index contains at most one document, so there is nothing meaningful to rank`. Contested indexes are covered transitively — a contested index is unique by construction, so it hits the same check rather than needing its own.
 
 ### Version Gate
@@ -231,9 +231,9 @@ Every ranked read — and, on the prove path, every ranked proof — is issued a
   / <last_index_property_name: utf-8>       // e.g. b"restaurantId"
 ```
 
-The children of that tree are the *groups*: one value tree per distinct value of the last index property, keyed by the raw index-key bytes of that value (for a `string` property, its UTF-8 bytes — e.g. `b"alpha"`). The secondary entries a top-k read returns are keyed by those same group keys. A compound index `[a, b]` inserts `<a> / <value_of_a>` between the doctype and the terminal `<b>` level — which is exactly the shape ranked indexes don't support yet.
+The children of that tree are the *groups*: one value tree per distinct value of the last index property, keyed by the raw index-key bytes of that value (for a `string` property, its UTF-8 bytes — e.g. `b"alpha"`). The secondary entries a top-k read returns are keyed by those same group keys. A compound index `[a, b]` inserts `<a> / <encoded pinned value of a>` between the doctype and the terminal `<b>` level — the value segment comes from the request's equality `where` pin on `a`, encoded with the same `serialize_value_for_key` the write path used to key that prefix's value tree, so the walk lands on **that prefix's own** indexed tree and secondary.
 
-Prover and verifier build this path through the same function, `DriveDocumentRankedQuery::indexed_property_name_tree_path`, which is why they agree on the root hash by construction.
+Prover and verifier build this path through the same function, `DriveDocumentRankedQuery::indexed_property_name_tree_path` (with the pinned prefix values encoded by the shared resolver, `resolve_ranked_query_for_mode`), which is why they agree on the root hash by construction.
 
 ## Write-Path Cost: The Grove v4 Cleanup Gates
 
@@ -265,7 +265,7 @@ A demoted `CountSumTree` value tree contributes its `(count, sum)` to a ranked i
 - each group's value tree demotes from `ProvableCountProvableSumTree` to `CountSumTree`;
 - the `chefId` continuation inside it goes in `Element::NonCounted`, contributing zero to the group's count and sum.
 
-The one place the two changes genuinely collide is the case the single-property rule already forbids: a ranked *terminal* level sitting inside an aggregating value tree would need a wrapper, and an indexed tree can never be wrapped. That is the `INDEXED_INNER_UNWRAPPABLE` guard, and it fails closed.
+The one place the two changes genuinely collide is the case the prefix-overlap rule already forbids at contract-parse time: a ranked *terminal* level sitting inside an aggregating value tree would need a wrapper, and an indexed tree can never be wrapped. That is the `INDEXED_INNER_UNWRAPPABLE` guard, and it fails closed.
 
 ## Storage-Layout Invariants
 
@@ -337,11 +337,11 @@ Note that the fixture puts each shape on its **own document type**. That's not a
 
 | You want | Set |
 |---|---|
-| Top / bottom K groups by document count | `rankedCountable: true` on a single-property, non-unique index that already has `countable` + `rangeCountable: true` |
+| Top / bottom K groups by document count | `rankedCountable: true` on a non-unique index that already has `countable` + `rangeCountable: true` |
 | Top / bottom K groups by sum of a property | `rankedSummable: true` on an index with `summable: "<prop>"` + `rangeSummable: true` |
 | Top / bottom K groups by average of a property | `rankedAverageable: true` on an index with `averageable: "<prop>"` + `rangeAverageable: true` (or the count+sum longhand) |
 | Two rankings on one index (e.g. by count *and* by average) | Both keywords. The tree is a PCPSIT carrying both axes in its TLV; you pay one secondary Merk per axis on every write. |
-| A ranking filtered by another property (`top 5 restaurants in London`) | Not available. Ranked indexes are single-property and ranked queries take no `where` clause — the secondary is sorted by aggregate, not by group key, so it cannot express a filtered subset. Model the filter as part of the grouping property, or rank client-side over a range query. |
+| A ranking filtered by another property (`top 5 restaurants in London`) | A **compound ranked index** with the filter property leading: `[city, restaurantId]` with the ranked flags. Each city gets its own secondary; the query pins the prefix with an equality `where` (`WHERE city == "London" GROUP BY restaurantId ORDER BY <agg> DESC LIMIT 5`). Only equality pins — a range or `IN` on the prefix is rejected, and there is no cross-prefix (global) ordering on a compound ranked index. |
 | A ranking on a unique or contested index | Not available, and not meaningful: every group holds at most one document. |
 | Range aggregates without ranking (the 4.0 surface) | Just the `range*` flags. Ranking is strictly additive — adding it never changes what a range query returns. |
 | Nothing ranking-aware (default) | Don't set any `ranked*` flag. The terminal property-name tree keeps the type its range flags give it. |

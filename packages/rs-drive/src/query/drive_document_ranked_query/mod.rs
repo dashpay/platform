@@ -38,15 +38,20 @@
 //! secondary Merk, keyed by `(sort_key ‖ group_key)`. Three consequences
 //! shape the API:
 //!
-//! 1. **No `where` clauses.** Ranked indexes are single-property only
-//!    (compound ones are rejected at contract-parse time in rs-dpp —
-//!    their terminal level is created lazily by the same batch that
-//!    populates it, which grovedb rejects for indexed trees). With one
-//!    property there is no equality prefix to narrow, and a `where` on
-//!    the ranked property itself would ask for a *filtered* ranking,
-//!    which the secondary cannot express — it is sorted by aggregate,
-//!    not by group key. Non-empty `where` is therefore rejected rather
-//!    than silently ignored.
+//! 1. **`where` clauses are equality pins on a compound prefix — or
+//!    absent.** A single-property ranked index has no prefix to narrow,
+//!    so its requests carry no `where`. A compound ranked index
+//!    `[p1, …, pn]` maintains one secondary **per prefix value**
+//!    (per-prefix semantics: each terminal `pn` property-name tree,
+//!    inside the `[p1, …, pn-1]` value trees, is its own indexed tree
+//!    — grovedb creates and populates it in the same document batch),
+//!    so a request must pin every leading property with an equality
+//!    clause to name which prefix's secondary the walk reads. A `where`
+//!    on the grouped (terminal) property itself would ask for a
+//!    *filtered* ranking, which no secondary can express — it is sorted
+//!    by aggregate, not by group key — and is rejected rather than
+//!    silently ignored, as is any non-equality prefix clause (`IN`
+//!    included: one walk per element is a future multi-`IN` capability).
 //! 2. **`limit` is mandatory, `offset` is free, `start_at` is refused.**
 //!    `limit` is the `k` of the walk and the ranked surface has no
 //!    server default for it, so it must be supplied. `offset` is the
@@ -63,6 +68,8 @@
 
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::platform_value::Value;
 
 /// The fixed-point scale grovedb's Avg axis sorts by:
 /// `avg_fixed_point = floor(sum * RANKED_AVG_SCALE / count)` with
@@ -268,10 +275,19 @@ pub struct DriveDocumentRankedQuery<'a> {
     pub contract_id: [u8; 32],
     /// The document type name — a path segment.
     pub document_type_name: String,
-    /// The covering ranked index. Single-property by construction; its
-    /// one property is both the `GROUP BY` property and the last path
-    /// segment.
+    /// The covering ranked index. Its **last** property is the `GROUP
+    /// BY` property and the final path segment; any leading properties
+    /// are pinned by [`Self::equality_prefix_values`].
     pub index: &'a Index,
+    /// Encoded index-key bytes of each leading index property's pinned
+    /// value, in index-property order — empty for a single-property
+    /// index. Together with `index` these determine the grove path
+    /// (each leading property contributes a name segment and a value
+    /// segment), so they are as much a part of the prover/verifier
+    /// agreement as the path builder itself. Produced by
+    /// [`index_picker::encode_equality_prefix_values`] from the
+    /// request's equality `where` pins.
+    pub equality_prefix_values: Vec<Vec<u8>>,
     /// Which aggregate the groups are ranked by. Must be covered by
     /// `index`'s matching `ranked_*` flag.
     pub axis: RankedAxis,
@@ -371,8 +387,11 @@ pub struct RankedPaginationInputs {
 /// the versioned classification of a request — but carries data rather
 /// than being a bare discriminant, because the ranked surface has exactly
 /// one executor pair (no-proof / proof) and all of its variation is in
-/// these five values.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// these values.
+///
+/// Not `Eq`: the equality pins carry [`Value`]s, whose float variant
+/// keeps the type at `PartialEq`.
+#[derive(Debug, Clone, PartialEq)]
 #[cfg(any(feature = "server", feature = "verify"))]
 pub struct DocumentRankedMode {
     /// The ranking axis, from the `SELECT` function.
@@ -383,11 +402,19 @@ pub struct DocumentRankedMode {
     pub k: u16,
     /// Ranks to skip — the `OFFSET`, `0` when unset.
     pub offset: u32,
-    /// The single `GROUP BY` property; must be the ranked index's only
-    /// property.
+    /// The single `GROUP BY` property; must be the covering ranked
+    /// index's **last** property.
     pub group_by_property: String,
     /// The field the aggregate applies to. Empty for
     /// [`RankedAxis::Count`] (`COUNT(*)`); the index's `summable`
     /// property for [`RankedAxis::Sum`] / [`RankedAxis::Avg`].
     pub aggregate_field: String,
+    /// The equality `where` pins, `(property, value)` per clause —
+    /// exactly one per leading property of the covering compound index,
+    /// in whatever order the request supplied them (the resolver
+    /// re-orders them into index-property order when it encodes the
+    /// path). Empty for the single-property form. Shape-validated only:
+    /// the index-aware checks (does a compound index exist whose leading
+    /// properties these pin?) live in [`index_picker`].
+    pub equality_pins: Vec<(String, Value)>,
 }
