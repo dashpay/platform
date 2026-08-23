@@ -57,6 +57,7 @@ pub mod logging;
 pub mod managed_identity;
 pub mod manager;
 pub mod manager_diagnostics;
+pub mod masternode_locator;
 pub mod masternode_withdrawal;
 pub mod memory_explorer;
 pub mod mnemonic_words;

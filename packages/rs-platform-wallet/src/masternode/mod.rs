@@ -8,8 +8,18 @@
 //!   the operator / platform-node keys. Both FFI crates and the withdrawal
 //!   path read through it, so every host renders the same records.
 
+pub mod list;
+pub mod locator;
 pub mod record;
 
+pub use list::{find_in_summaries, MasternodeListQuery, MasternodeListSummary};
+pub use locator::{
+    locate_in_summaries, parse_locator_input, parse_secret_for_role, verify_masternode_key,
+    verify_masternode_key_text, KeyVerification, LocateOptions, LocatorMatchKind,
+    LocatorParseError, LocatorSecret, MasternodeKeyReference, MasternodeKeyRole,
+    MasternodeLocateError, MasternodeLocateMatch, MasternodeLocateResult, MasternodeLocator,
+    MasternodeLocatorInput, ParsedLocatorInput, PlatformLookup,
+};
 pub use record::{
     aggregate_masternodes, provider_payload_fields, ListMembership, MasternodeRecord,
     MasternodeSource, MasternodeStatus, ProviderPayloadFields,
@@ -86,5 +96,68 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         }
 
         Some(WalletMasternodes { network, records })
+    }
+
+    /// proTxHash (wire) ⇒ wallet id for every loaded wallet's masternodes —
+    /// the "already in wallet" index the locator marks matches with.
+    /// Blocking (see [`Self::wallet_masternodes_blocking`]).
+    pub fn wallet_masternode_index_blocking(
+        &self,
+    ) -> std::collections::HashMap<[u8; 32], WalletId> {
+        let mut index = std::collections::HashMap::new();
+        for wallet_id in self.list_wallet_ids_blocking() {
+            if let Some(masternodes) = self.wallet_masternodes_blocking(&wallet_id) {
+                for record in masternodes.records {
+                    index.entry(record.pro_tx_hash).or_insert(wallet_id);
+                }
+            }
+        }
+        index
+    }
+
+    /// Snapshot everything a locate needs (SPV, SDK, network, the wallets'
+    /// own masternodes) into a `Send + Sync` [`MasternodeLocator`] that can
+    /// run on a worker without holding the manager. Blocking.
+    pub fn masternode_locator_blocking(&self) -> MasternodeLocator {
+        MasternodeLocator {
+            spv: self.spv_arc(),
+            sdk: self.sdk_arc(),
+            network: self.sdk().network,
+            in_wallet: self.wallet_masternode_index_blocking(),
+        }
+    }
+
+    /// The key references known for `pro_tx_hash` (wire order): the DML
+    /// summary (voting / operator / platform node) merged with the owning
+    /// wallet's record (owner / payout) when it is one of a loaded wallet's
+    /// masternodes. `None` when neither the list nor any wallet knows it.
+    /// Blocking.
+    pub fn masternode_key_reference_blocking(
+        &self,
+        pro_tx_hash: &[u8; 32],
+    ) -> Option<MasternodeKeyReference> {
+        let from_list = self
+            .spv()
+            .masternode_list_summaries_blocking()
+            .and_then(|summaries| {
+                summaries
+                    .iter()
+                    .find(|s| &s.pro_tx_hash == pro_tx_hash)
+                    .map(MasternodeKeyReference::from_summary)
+            });
+        let from_wallet = self
+            .list_wallet_ids_blocking()
+            .into_iter()
+            .find_map(|wallet_id| {
+                self.wallet_masternodes_blocking(&wallet_id)?
+                    .find(pro_tx_hash)
+                    .map(MasternodeKeyReference::from_record)
+            });
+        match (from_list, from_wallet) {
+            (Some(list), Some(wallet)) => Some(list.merged_with(&wallet)),
+            (Some(list), None) => Some(list),
+            (None, Some(wallet)) => Some(wallet),
+            (None, None) => None,
+        }
     }
 }

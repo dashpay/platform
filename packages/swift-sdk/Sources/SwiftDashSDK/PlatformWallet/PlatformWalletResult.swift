@@ -60,6 +60,11 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// the claimable balance and reconcile first. Definitive rejections keep
     /// their ordinary codes and stay retryable.
     case errorMasternodeWithdrawalUnconfirmed = 42
+    /// The deterministic masternode list isn't available yet (SPV not
+    /// running or masternode sync incomplete), so a list-backed query such
+    /// as `locateMasternode` has nothing to search. Transient: retry once
+    /// `spvProgress.masternodes` reports the list synced.
+    case errorMasternodeListUnavailable = 43
     /// Definitively-failed address-nonce race: Platform rejected an
     /// address-funds transition (shield, or identity top-up-from-addresses)
     /// because the submitted address nonce raced Platform's expected value
@@ -215,6 +220,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorTransactionBroadcastUnconfirmed
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_MASTERNODE_WITHDRAWAL_UNCONFIRMED:
             self = .errorMasternodeWithdrawalUnconfirmed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_MASTERNODE_LIST_UNAVAILABLE:
+            self = .errorMasternodeListUnavailable
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ADDRESS_NONCE_MISMATCH:
             self = .errorAddressNonceMismatch
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_CORE_INSUFFICIENT_FUNDS:
@@ -372,6 +379,10 @@ public enum PlatformWalletError: LocalizedError {
     /// and the identity nonce was consumed — do NOT retry; re-read the
     /// claimable balance first (`.errorMasternodeWithdrawalUnconfirmed`).
     case masternodeWithdrawalUnconfirmed(String)
+    /// The masternode list hasn't synced yet, so there is nothing to look a
+    /// masternode up in (`.errorMasternodeListUnavailable`). Retry after
+    /// masternode sync completes.
+    case masternodeListUnavailable(String)
     /// Core definitively rejected the transaction and its input reservation
     /// was released. Unlike `transactionBroadcastUnconfirmed`, retry is safe.
     case transactionBroadcastRejected(String)
@@ -460,6 +471,7 @@ public enum PlatformWalletError: LocalizedError {
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
              .transactionBroadcastUnconfirmed(let m),
              .masternodeWithdrawalUnconfirmed(let m),
+             .masternodeListUnavailable(let m),
              .transactionBroadcastRejected(let m),
              .addressNonceMismatch(let m),
              .shutdownIncomplete(let m),
@@ -530,6 +542,8 @@ public enum PlatformWalletError: LocalizedError {
             self = .transactionBroadcastUnconfirmed(detail)
         case .errorMasternodeWithdrawalUnconfirmed:
             self = .masternodeWithdrawalUnconfirmed(detail)
+        case .errorMasternodeListUnavailable:
+            self = .masternodeListUnavailable(detail)
         case .errorTransactionBroadcastRejected:
             self = .transactionBroadcastRejected(detail)
         case .errorAddressNonceMismatch:
