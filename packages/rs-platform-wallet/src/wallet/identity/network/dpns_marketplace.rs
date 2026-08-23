@@ -529,6 +529,50 @@ fn domain_by_normalized_label_query(
     }
 }
 
+/// One server page of the Document History `byDocument` query behind
+/// [`IdentityWallet::fetch_history_documents`]: history documents of one
+/// type for one source document, in ascending creation order.
+///
+/// A named builder for the same reason as
+/// [`domain_by_normalized_label_query`]: a mock-SDK expectation is keyed
+/// by the encoded request, so a test priming the history lookup must
+/// construct the exact query the production path issues, and a
+/// hand-copied duplicate that drifted would silently stop matching.
+fn history_by_source_document_query(
+    contract: Arc<DataContract>,
+    history_doc_type: &str,
+    source_contract_id: &Identifier,
+    source_document_id: &Identifier,
+    start: Option<Start>,
+) -> DocumentQuery {
+    DocumentQuery {
+        select: SelectProjection::documents(),
+        data_contract: contract,
+        document_type_name: history_doc_type.to_string(),
+        where_clauses: vec![
+            WhereClause {
+                field: "dataContractId".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(source_contract_id.to_buffer()),
+            },
+            WhereClause {
+                field: "documentId".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(source_document_id.to_buffer()),
+            },
+        ],
+        group_by: vec![],
+        having: vec![],
+        order_by_clauses: vec![OrderClause {
+            field: "$createdAt".to_string(),
+            ascending: true,
+        }],
+        limit: HISTORY_QUERY_LIMIT,
+        offset: None,
+        start,
+    }
+}
+
 fn direct_departure_candidate(
     event: DpnsNameHistoryEvent,
     departing_identity: &Identifier,
@@ -1416,32 +1460,13 @@ impl IdentityWallet {
         let mut cursor: Option<Identifier> = None;
 
         loop {
-            let query = DocumentQuery {
-                select: SelectProjection::documents(),
-                data_contract: Arc::clone(&contract),
-                document_type_name: history_doc_type.to_string(),
-                where_clauses: vec![
-                    WhereClause {
-                        field: "dataContractId".to_string(),
-                        operator: WhereOperator::Equal,
-                        value: Value::Identifier(source_contract_id.to_buffer()),
-                    },
-                    WhereClause {
-                        field: "documentId".to_string(),
-                        operator: WhereOperator::Equal,
-                        value: Value::Identifier(source_document_id.to_buffer()),
-                    },
-                ],
-                group_by: vec![],
-                having: vec![],
-                order_by_clauses: vec![OrderClause {
-                    field: "$createdAt".to_string(),
-                    ascending: true,
-                }],
-                limit: HISTORY_QUERY_LIMIT,
-                offset: None,
-                start: cursor.map(|id| Start::StartAfter(id.to_vec())),
-            };
+            let query = history_by_source_document_query(
+                Arc::clone(&contract),
+                history_doc_type,
+                source_contract_id,
+                source_document_id,
+                cursor.map(|id| Start::StartAfter(id.to_vec())),
+            );
             let documents = Document::fetch_many(&self.sdk, query).await.map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
                     "Failed to fetch {history_doc_type} history documents: {e}"
@@ -1708,6 +1733,14 @@ impl IdentityWallet {
     /// transport/query error requests a retry and leaves both the label
     /// and local row untouched.
     ///
+    /// A live document whose history never departs this identity removes
+    /// the identity's own RECOVERED row, which is the live document only
+    /// when the two ids match: DPNS domain documents are deletable, and
+    /// a label re-registered under a fresh document id leaves the live
+    /// document belonging to the replacement owner, so the removal must
+    /// target the recovered prior incarnation and leave the replacement
+    /// untouched.
+    ///
     /// The removal delta needs the departed name's `document_id`, which
     /// [`previous_document_id_for`] resolves from the in-memory snapshot
     /// and — when that is empty, as it always is on the first pass after
@@ -1731,8 +1764,11 @@ impl IdentityWallet {
     /// park the departure queue — but it does not establish that no
     /// durable row exists, either. The error is HELD until the pass
     /// learns whether the id is actually needed: a Sold/Transferred
-    /// departure never reads it and resolves normally, while a
-    /// confirmed-absent domain document turns the held error into a
+    /// departure never reads it and resolves normally, while either
+    /// branch whose removal delta the id feeds — a confirmed-absent
+    /// domain document, or a live one whose history never departs this
+    /// identity (where the recovered id decides WHICH row is removed) —
+    /// turns the held error into a
     /// terminal per-item failure ([`DepartureResolution::Failed`]) —
     /// the label and the durable row are preserved and the failure is
     /// surfaced on the sync summary, so the still-present label lets a
@@ -1772,10 +1808,11 @@ impl IdentityWallet {
                 }
                 // Non-retryable: HOLD the error instead of acting on it.
                 // Whether it matters depends on what Platform says next —
-                // the id is load-bearing only for the confirmed-absent
-                // branch, and failing a Sold/Transferred departure (which
-                // never reads it) over a broken read slot would be
-                // gratuitous.
+                // the id is load-bearing only where it feeds the removal
+                // delta (the confirmed-absent branch, and a live document
+                // whose history never departs this identity), and failing
+                // a Sold/Transferred departure (which never reads it)
+                // over a broken read slot would be gratuitous.
                 Err(error) => Err(error),
             };
         let state = match self.dpns_name_state(label).await {
@@ -1874,15 +1911,78 @@ impl IdentityWallet {
                 };
             }
         };
+        let Some(sale_status) = status else {
+            // No history event departs THIS identity from the live
+            // document. Usually the live document IS the identity's own
+            // row with its ownership rewritten out from under it, and
+            // removing the live id retires the right row. But DPNS
+            // domain documents are deletable, and a label can be
+            // re-registered under a fresh document id: when the
+            // RECOVERED prior id differs from the live document's, the
+            // live document is that replacement — a document this
+            // identity never held — while the identity's own durable
+            // row still sits under the prior id. Removing the live id
+            // would drop the wrong row AND orphan the durable one for
+            // good, because the label this removal resolves is the only
+            // trigger that would ever revisit it. Resolve the prior
+            // incarnation instead: report and remove the recovered id,
+            // and leave the replacement untouched.
+            let departed_document_id = match previous_document_id {
+                Ok(previous_id) => previous_id.unwrap_or(state.document_id),
+                // The held non-retryable persistence error turns out to
+                // be load-bearing: with a live, history-unrelated
+                // document on the label, WHICH row departs depends on
+                // the recovered id, so resolving without it would
+                // either remove the replacement's document id or orphan
+                // the identity's durable row. Fail this one departure
+                // exactly like the confirmed-absent branch: the label
+                // and the durable row survive, the failure is surfaced
+                // on the summary, and a later pass finishes the removal
+                // once the backend is repaired.
+                Err(error) => {
+                    tracing::warn!(
+                        identity = %identity_id,
+                        name = label,
+                        document = %state.document_id,
+                        "persisted DPNS row lookup failed unrecoverably for a departed \
+                         name whose label carries a live, history-unrelated domain \
+                         document; preserving the label and any durable row rather \
+                         than guessing which row the removal delta targets: {error}"
+                    );
+                    return ResolvedDepartedName {
+                        summary: DepartedDpnsName {
+                            identity_id: *identity_id,
+                            label: label.to_string(),
+                            document_id: None,
+                            status: None,
+                        },
+                        entry: None,
+                        remove_document_id: None,
+                        resolution: DepartureResolution::Failed(error),
+                    };
+                }
+            };
+            return ResolvedDepartedName {
+                summary: DepartedDpnsName {
+                    identity_id: *identity_id,
+                    label: label.to_string(),
+                    document_id: Some(departed_document_id),
+                    status: None,
+                },
+                entry: None,
+                remove_document_id: Some(departed_document_id),
+                resolution: DepartureResolution::Resolved,
+            };
+        };
         ResolvedDepartedName {
             summary: DepartedDpnsName {
                 identity_id: *identity_id,
                 label: label.to_string(),
                 document_id: Some(state.document_id),
-                status,
+                status: Some(sale_status),
             },
-            entry: status.map(|sale_status| state.to_entry(*identity_id, sale_status, now)),
-            remove_document_id: status.is_none().then_some(state.document_id),
+            entry: Some(state.to_entry(*identity_id, sale_status, now)),
+            remove_document_id: None,
             resolution: DepartureResolution::Resolved,
         }
     }
@@ -2814,6 +2914,162 @@ mod tests {
         );
     }
 
+    /// THE ROUND-5 REGRESSION. DPNS domain documents are deletable, and
+    /// a label can be re-registered under a fresh document id: persisted
+    /// document A (the identity's own row) was deleted and an unrelated
+    /// identity registered document B under the same normalized label.
+    /// The domain query answers with B, whose history never departs the
+    /// wallet identity, so classification yields no sale status. The old
+    /// code then reported and removed B — the replacement owner's
+    /// document, never a row of this departure — while the identity's
+    /// durable row A survived with no label left to ever trigger its
+    /// reconciliation. The removal delta must target the RECOVERED prior
+    /// incarnation A and leave the replacement B untouched.
+    #[tokio::test]
+    async fn resolve_departed_name_removes_the_prior_incarnation_when_the_label_was_re_registered()
+    {
+        let prior_document_id = Identifier::from([0xC1; 32]);
+        let identity_id = Identifier::from([0xC2; 32]);
+        let replacement_document_id = Identifier::from([0xC3; 32]);
+        let replacement_owner = Identifier::from([0xC4; 32]);
+
+        let mirror = Arc::new(MirrorPersister::hydrated(vec![mirrored_row(
+            prior_document_id,
+            identity_id,
+        )]));
+        let mut documents = dash_sdk::query_types::Documents::new();
+        documents.insert(
+            replacement_document_id,
+            Some(listed_domain_document(
+                replacement_document_id,
+                replacement_owner,
+                None,
+            )),
+        );
+        let wallet = mirror_backed_identity_wallet_with_sdk(
+            Arc::clone(&mirror),
+            sdk_with_history_unrelated_dpns_domain(
+                DEPARTED_LABEL,
+                documents,
+                replacement_document_id,
+            )
+            .await,
+        );
+
+        // Post-restart in-memory state: empty, so the prior incarnation
+        // is recovered through the persister — the restart shape in which
+        // the orphan was originally reported.
+        let resolved = wallet
+            .resolve_departed_name(&identity_id, DEPARTED_LABEL, &BTreeMap::new(), 1_000)
+            .await;
+
+        assert!(
+            matches!(resolved.resolution, DepartureResolution::Resolved),
+            "test precondition: with the domain and history lookups primed and the \
+             mirror healthy, the departure must resolve, got {:?}",
+            resolved.resolution
+        );
+        assert_eq!(
+            resolved.remove_document_id,
+            Some(prior_document_id),
+            "the removal delta must target the identity's recovered prior \
+             incarnation, not the re-registered replacement"
+        );
+        assert_eq!(
+            resolved.summary.document_id,
+            Some(prior_document_id),
+            "the departed document is the prior incarnation, not the replacement"
+        );
+        assert_eq!(
+            resolved.summary.status, None,
+            "a deleted-and-re-registered name departs without a sale"
+        );
+        assert!(
+            resolved.entry.is_none(),
+            "the replacement belongs to an unrelated identity — no row may be \
+             written for it"
+        );
+    }
+
+    /// The companion failure arm of the round-5 regression: with a live,
+    /// history-unrelated document on the label, the recovered prior id
+    /// decides WHICH row the removal delta targets, so the held
+    /// non-retryable persistence error is load-bearing here exactly as it
+    /// is under a confirmed-absent document. Resolving anyway would
+    /// either remove the replacement's document id or orphan the
+    /// identity's durable row; the departure must fail terminally,
+    /// preserving the label, and complete once the backend is repaired.
+    #[tokio::test]
+    async fn resolve_departed_name_fails_terminally_when_a_re_registered_label_needs_the_failed_lookup(
+    ) {
+        let prior_document_id = Identifier::from([0xC5; 32]);
+        let identity_id = Identifier::from([0xC6; 32]);
+        let replacement_document_id = Identifier::from([0xC7; 32]);
+        let replacement_owner = Identifier::from([0xC8; 32]);
+
+        let mirror = Arc::new(MirrorPersister::hydrated_but_failing(
+            vec![mirrored_row(prior_document_id, identity_id)],
+            PersistenceErrorKind::Fatal,
+        ));
+        let mut documents = dash_sdk::query_types::Documents::new();
+        documents.insert(
+            replacement_document_id,
+            Some(listed_domain_document(
+                replacement_document_id,
+                replacement_owner,
+                None,
+            )),
+        );
+        let wallet = mirror_backed_identity_wallet_with_sdk(
+            Arc::clone(&mirror),
+            sdk_with_history_unrelated_dpns_domain(
+                DEPARTED_LABEL,
+                documents,
+                replacement_document_id,
+            )
+            .await,
+        );
+
+        let resolved = wallet
+            .resolve_departed_name(&identity_id, DEPARTED_LABEL, &BTreeMap::new(), 1_000)
+            .await;
+
+        match &resolved.resolution {
+            DepartureResolution::Failed(error) => assert!(
+                !error.is_transient(),
+                "the terminal failure must carry the non-retryable error: {error}"
+            ),
+            other => panic!(
+                "an unrecoverable read under a live, history-unrelated document \
+                 must be a terminal per-item failure — resolving would remove the \
+                 wrong row or orphan the durable one, got {other:?}"
+            ),
+        }
+        assert_eq!(
+            resolved.remove_document_id, None,
+            "nothing may be removed while WHICH row departs is unknown"
+        );
+        assert!(resolved.entry.is_none());
+        assert_eq!(
+            resolved.summary.document_id, None,
+            "the summary must not claim an id the lookup never produced"
+        );
+
+        // Backend repaired: the SAME departure — re-detected through the
+        // label the failure preserved — resolves against the prior
+        // incarnation and leaves the replacement untouched.
+        mirror.heal();
+        let healed = wallet
+            .resolve_departed_name(&identity_id, DEPARTED_LABEL, &BTreeMap::new(), 1_000)
+            .await;
+        assert!(
+            matches!(healed.resolution, DepartureResolution::Resolved),
+            "a repaired backend must let the preserved departure resolve"
+        );
+        assert_eq!(healed.remove_document_id, Some(prior_document_id));
+        assert_eq!(healed.summary.document_id, Some(prior_document_id));
+    }
+
     /// The labels `identity_id` currently carries in the wallet manager —
     /// the departure trigger the Failed arm must preserve.
     async fn dpns_labels(wallet: &IdentityWallet, identity_id: &Identifier) -> Vec<String> {
@@ -3011,6 +3267,15 @@ mod tests {
         label: &str,
         documents: dash_sdk::query_types::Documents,
     ) -> Arc<dash_sdk::Sdk> {
+        Arc::new(mock_sdk_answering_dpns_domain_query(label, documents).await)
+    }
+
+    /// [`sdk_answering_dpns_domain_query`] before the `Arc` wrap, for
+    /// helpers that need to register further expectations.
+    async fn mock_sdk_answering_dpns_domain_query(
+        label: &str,
+        documents: dash_sdk::query_types::Documents,
+    ) -> dash_sdk::Sdk {
         // Pin the protocol version. Expectations are keyed by the ENCODED
         // request, and an unpinned SDK seeds at the network minimum and
         // ratchets up on the first response it sees — so the contract
@@ -3041,6 +3306,53 @@ mod tests {
             )
             .await
             .expect("domain-document expectation");
+        sdk
+    }
+
+    /// A mock SDK primed like [`sdk_answering_dpns_domain_query`] and
+    /// additionally answering the Document History contract fetch and the
+    /// purchase/transfer history lookups for `history_document_id` with
+    /// EMPTY pages — a live domain document whose history never departs
+    /// any wallet identity, which is exactly what
+    /// [`IdentityWallet::classify_departure`] sees when a label was
+    /// deleted and re-registered by an unrelated party. Without these
+    /// expectations the history fetch errors and resolution can only take
+    /// its retry arm, never reaching the branch under test.
+    async fn sdk_with_history_unrelated_dpns_domain(
+        label: &str,
+        documents: dash_sdk::query_types::Documents,
+        history_document_id: Identifier,
+    ) -> Arc<dash_sdk::Sdk> {
+        let mut sdk = mock_sdk_answering_dpns_domain_query(label, documents).await;
+        let history_contract = dpp::system_data_contracts::load_system_data_contract(
+            dpp::data_contracts::SystemDataContract::DocumentHistory,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .expect("bundled Document History contract");
+        sdk.mock()
+            .expect_fetch(
+                document_history_contract_id(),
+                Some(history_contract.clone()),
+            )
+            .await
+            .expect("Document History contract expectation");
+        let history_contract = Arc::new(history_contract);
+        for doc_type in [HISTORY_TYPE_PURCHASE, HISTORY_TYPE_TRANSFER] {
+            let query = history_by_source_document_query(
+                Arc::clone(&history_contract),
+                doc_type,
+                &dpns_contract_id(),
+                &history_document_id,
+                None,
+            );
+            sdk.mock()
+                .expect_fetch_many::<Identifier, Document, _, dash_sdk::query_types::Documents>(
+                    query,
+                    Some(dash_sdk::query_types::Documents::new()),
+                )
+                .await
+                .expect("history-document expectation");
+        }
         Arc::new(sdk)
     }
 
