@@ -8,28 +8,9 @@ import ContainerIsNotPresentError from '../../docker/errors/ContainerIsNotPresen
 import ServiceIsNotRunningError from '../../docker/errors/ServiceIsNotRunningError.js';
 
 function parseProtocolVersion(protocolVersion) {
-  if (protocolVersion === null || typeof protocolVersion === 'undefined') {
-    return null;
-  }
+  const parsedProtocolVersion = parseInt(protocolVersion, 10);
 
-  const protocolVersionString = protocolVersion.toString().trim();
-
-  if (!/^\d+$/.test(protocolVersionString)) {
-    return null;
-  }
-
-  const parsedProtocolVersion = Number(protocolVersionString);
-
-  if (!Number.isSafeInteger(parsedProtocolVersion) || parsedProtocolVersion < 0) {
-    return null;
-  }
-
-  return parsedProtocolVersion;
-}
-
-function getConsensusParamsAppVersion(tenderdashConsensusParams) {
-  return tenderdashConsensusParams?.result?.consensus_params?.version?.app_version
-    ?? tenderdashConsensusParams?.consensus_params?.version?.app_version;
+  return Number.isNaN(parsedProtocolVersion) ? null : parsedProtocolVersion;
 }
 
 /**
@@ -177,8 +158,11 @@ export default function getPlatformScopeFactory(
         }
 
         info.version = version;
+        // Tenderdash GET RPC responses are unwrapped (writeHTTPResponse sends
+        // the bare result). node_info.protocol_version.app is snapshotted at
+        // process start, so it is only a fallback for the live consensus value.
         const activeProtocolVersion = parseProtocolVersion(
-          getConsensusParamsAppVersion(tenderdashConsensusParams),
+          tenderdashConsensusParams?.consensus_params?.version?.app_version,
         );
         const nodeInfoProtocolVersion = parseProtocolVersion(
           tenderdashStatus.node_info.protocol_version.app,
