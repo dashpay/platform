@@ -30,6 +30,11 @@ public struct PlatformMasternode: Sendable {
     public let ownerKeyHash: Data?
     public let votingKeyHash: Data?
     public let serviceAddress: String?
+    /// Platform HTTP (DAPI gRPC) port from the latest ProRegTx / ProUpServTx
+    /// — evonodes only, `nil` for a regular masternode. With the
+    /// `serviceAddress` host this addresses the node's own DAPI; see
+    /// `platformDAPIAddress`.
+    public let platformHTTPPort: UInt16?
     /// Base58 owner / voting P2PKH addresses (Rust-encoded for the
     /// network) — the join key for a provider-key account's address rows.
     public let ownerAddress: String?
@@ -63,6 +68,35 @@ public struct PlatformMasternode: Sendable {
     /// clobbering it. When true, `platformInWallet` is definitive (true OR
     /// false), so an on-chain rotation to an external key correctly clears it.
     public let platformOwnershipChecked: Bool
+}
+
+extension PlatformMasternode {
+    /// The node's own DAPI endpoint, `https://<service host>:<platformHTTPPort>`
+    /// — the same shape the SDK builds for its seed address list — or `nil`
+    /// when either half is unknown (regular masternode, no service address
+    /// seen, or a payload without platform fields). The Core P2P port in
+    /// `serviceAddress` is intentionally dropped: DAPI listens on the
+    /// platform HTTP port.
+    public var platformDAPIAddress: String? {
+        guard let platformHTTPPort, let host = serviceHost else { return nil }
+        // An IPv6 literal must be bracketed in a URI authority.
+        let authorityHost = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
+        return "https://\(authorityHost):\(platformHTTPPort)"
+    }
+
+    /// Host half of `serviceAddress` (`"1.2.3.4:9999"` → `"1.2.3.4"`,
+    /// `"[2001:db8::1]:9999"` → `"[2001:db8::1]"`, `"2001:db8::1:9999"` →
+    /// `"2001:db8::1"`), or `nil`.
+    public var serviceHost: String? {
+        guard let serviceAddress else { return nil }
+        if serviceAddress.hasPrefix("[") {
+            // Bracketed IPv6 literal — the host is everything through `]`.
+            guard let close = serviceAddress.firstIndex(of: "]") else { return nil }
+            return String(serviceAddress[...close])
+        }
+        guard let colon = serviceAddress.lastIndex(of: ":") else { return serviceAddress }
+        return String(serviceAddress[..<colon])
+    }
 }
 
 extension PlatformWalletManager {
@@ -132,6 +166,7 @@ extension PlatformWalletManager {
                 ownerKeyHash: ownerHash,
                 votingKeyHash: votingHash,
                 serviceAddress: entry.service_address.map { String(cString: $0) },
+                platformHTTPPort: entry.has_platform_http_port ? entry.platform_http_port : nil,
                 ownerAddress: entry.owner_address.map { String(cString: $0) },
                 votingAddress: entry.voting_address.map { String(cString: $0) },
                 operatorPublicKey: entry.has_operator_key
