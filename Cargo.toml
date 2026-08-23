@@ -7,6 +7,7 @@ members = [
     "packages/rs-dash-platform-macros",
     "packages/rs-dpp",
     "packages/rs-drive",
+    "packages/rs-platform-query-wire",
     "packages/rs-platform-value",
     "packages/rs-platform-serialization",
     "packages/rs-platform-serialization-derive",

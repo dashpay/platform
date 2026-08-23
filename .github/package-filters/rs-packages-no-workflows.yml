@@ -86,11 +86,16 @@ strategy-tests: &strategy-tests
   - *simple-signer
   - *drive
 
+platform-query-wire: &platform_query_wire
+  - packages/rs-platform-query-wire/**
+  - *drive
+
 drive-abci:
   - packages/rs-drive-abci/**
   - *drive
   - *simple-signer
   - *strategy-tests
+  - *platform_query_wire
 
 dash-async: &dash_async
   - packages/rs-dash-async/**

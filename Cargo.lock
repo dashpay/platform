@@ -2254,6 +2254,7 @@ dependencies = [
  "metrics-exporter-prometheus",
  "mockall",
  "nonempty",
+ "platform-query-wire",
  "platform-version",
  "prost 0.14.4",
  "rand 0.8.6",
@@ -5142,6 +5143,16 @@ dependencies = [
  "secp256k1",
  "sha2",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "platform-query-wire"
+version = "4.2.0-dev.1"
+dependencies = [
+ "dapi-grpc",
+ "dpp",
+ "drive",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

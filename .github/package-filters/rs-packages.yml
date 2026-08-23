@@ -102,12 +102,18 @@ strategy-tests: &strategy-tests
   - *simple-signer
   - *drive
 
+platform-query-wire: &platform_query_wire
+  - .github/workflows/tests*
+  - packages/rs-platform-query-wire/**
+  - *drive
+
 drive-abci:
   - .github/workflows/tests*
   - packages/rs-drive-abci/**
   - *drive
   - *simple-signer
   - *strategy-tests
+  - *platform_query_wire
 
 dash-async: &dash_async
   - .github/workflows/tests*
