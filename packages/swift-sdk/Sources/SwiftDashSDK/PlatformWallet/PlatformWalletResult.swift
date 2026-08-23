@@ -53,6 +53,13 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// of double-spending; the reservation TTL or a sync reconciles the
     /// outcome. Do NOT auto-retry.
     case errorTransactionBroadcastUnconfirmed = 20
+    /// A masternode (evonode) identity credit withdrawal was broadcast and
+    /// accepted, but its execution result could not be confirmed — it may
+    /// already have executed, and the identity nonce was consumed for it, so
+    /// a blind retry could submit a SECOND withdrawal. Do NOT retry; re-read
+    /// the claimable balance and reconcile first. Definitive rejections keep
+    /// their ordinary codes and stay retryable.
+    case errorMasternodeWithdrawalUnconfirmed = 42
     /// Definitively-failed address-nonce race: Platform rejected an
     /// address-funds transition (shield, or identity top-up-from-addresses)
     /// because the submitted address nonce raced Platform's expected value
@@ -113,6 +120,34 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// set. The call did NOT touch the network and did NOT consume the rightful
     /// owner's token. NOT retryable through this handle: rebuild the payment.
     case errorReservationWalletMismatch = 36
+    // DPNS username-marketplace trade rejections (37-40) — a fresh
+    // contiguous block above every prior claim, for the same reason the
+    // 34-36 trio moved there.
+    /// The document carries no `$price`, so it cannot be purchased (and a
+    /// DPNS delist has nothing to clear). Raised by the wallet's pre-flight
+    /// read and by the consensus `DocumentNotForSaleError` (40108). The
+    /// transition did NOT execute.
+    case errorDocumentNotForSale = 37
+    /// The listing no longer matches the price the user confirmed — either
+    /// the pre-flight read disagreed, or consensus rejected the broadcast
+    /// (40109) because the listing changed in between. The purchase did NOT
+    /// execute; re-confirm at the new price. The message is a stable JSON
+    /// detail object carrying both prices.
+    case errorDocumentPriceChanged = 38
+    /// The identity's credit balance cannot cover the operation (purchase
+    /// price + fee reserve, or Platform's own arithmetic). Nothing executed;
+    /// top the identity up and retry. The message is a stable JSON detail
+    /// object carrying the required and available amounts.
+    case errorInsufficientIdentityCredits = 39
+    /// The DPNS name is inside an active contested-name vote, so its domain
+    /// document is not in the documents tree and no trade transition can
+    /// reference it. Retry after the contest resolves. The message is a
+    /// stable JSON detail object carrying the label and the vote end time.
+    case errorContestedNameNotTradable = 40
+    /// A Platform-to-shielded operation can no longer cover the requested
+    /// amount plus input 0's retained fee reserve. Refresh the shield
+    /// preflight and ask the user to confirm the new capacity.
+    case errorShieldedInsufficientBalance = 41
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -178,6 +213,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorShieldedNoRecordedAnchor
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_TRANSACTION_BROADCAST_UNCONFIRMED:
             self = .errorTransactionBroadcastUnconfirmed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_MASTERNODE_WITHDRAWAL_UNCONFIRMED:
+            self = .errorMasternodeWithdrawalUnconfirmed
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ADDRESS_NONCE_MISMATCH:
             self = .errorAddressNonceMismatch
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_CORE_INSUFFICIENT_FUNDS:
@@ -200,6 +237,16 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorReservationTokenConsumed
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_RESERVATION_WALLET_MISMATCH:
             self = .errorReservationWalletMismatch
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_DOCUMENT_NOT_FOR_SALE:
+            self = .errorDocumentNotForSale
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_DOCUMENT_PRICE_CHANGED:
+            self = .errorDocumentPriceChanged
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_INSUFFICIENT_IDENTITY_CREDITS:
+            self = .errorInsufficientIdentityCredits
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_CONTESTED_NAME_NOT_TRADABLE:
+            self = .errorContestedNameNotTradable
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_INSUFFICIENT_BALANCE:
+            self = .errorShieldedInsufficientBalance
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -279,6 +326,9 @@ public enum PlatformWalletError: LocalizedError {
     case noSelectableInputs(String)
     case coreInsufficientFunds(String)
     case assetLockNotTracked(String)
+    /// The one-shot output cannot be reused. This may come from a retained
+    /// local tombstone or an unauthenticated Platform report, so it does not
+    /// prove that the requested operation completed.
     case assetLockAlreadyConsumed(String)
     case assetLockFundingMismatch(String)
     case walletAlreadyExists(String)
@@ -306,12 +356,22 @@ public enum PlatformWalletError: LocalizedError {
     /// sync reaches a confirmed state. Distinct from `shieldedSpendUnconfirmed`,
     /// which must NOT be retried.
     case shieldedNoRecordedAnchor(String)
+    /// The cached Platform Payment-account input set cannot cover a shield's
+    /// requested amount plus the fee reserve retained on input 0. Despite the
+    /// retained public Swift/FFI name, this is not a shielded-pool balance
+    /// failure.
+    case shieldedInsufficientBalance(String)
     /// A core transaction broadcast was submitted but its outcome is
     /// unknown — the transaction may already be on the network. The wallet
     /// keeps the spent inputs reserved so a retry cannot double-spend; the
     /// reservation TTL or a later sync reconciles the outcome. Do NOT
     /// auto-retry. Core sibling of `shieldedSpendUnconfirmed`.
     case transactionBroadcastUnconfirmed(String)
+    /// A masternode (evonode) credit withdrawal was broadcast and accepted
+    /// but its result could not be confirmed. It may already have executed
+    /// and the identity nonce was consumed — do NOT retry; re-read the
+    /// claimable balance first (`.errorMasternodeWithdrawalUnconfirmed`).
+    case masternodeWithdrawalUnconfirmed(String)
     /// Core definitively rejected the transaction and its input reservation
     /// was released. Unlike `transactionBroadcastUnconfirmed`, retry is safe.
     case transactionBroadcastRejected(String)
@@ -351,6 +411,27 @@ public enum PlatformWalletError: LocalizedError {
     /// the same id). Nothing was broadcast and the rightful owner's token was
     /// not consumed. NOT retryable through this handle; rebuild the payment.
     case reservationWalletMismatch(String)
+    /// The DPNS name / document is not listed for sale, so it cannot be
+    /// purchased and has no price to clear. Raised by the wallet's
+    /// pre-flight read and by the consensus not-for-sale rejection; the
+    /// transition did NOT execute.
+    case notForSale(String)
+    /// The listing no longer matches the price the user confirmed. Rebuilt
+    /// from the FFI's JSON detail, so the UI can show both numbers and
+    /// re-prompt at `actual`. Nothing was purchased — a purchase is only
+    /// ever broadcast at the confirmed price, and consensus rejects it if
+    /// the listing moved.
+    case priceChanged(documentId: String, expected: UInt64, actual: UInt64)
+    /// The identity's credit balance cannot cover the operation. Both
+    /// amounts are in credits (1 duff = 1000 credits) and include the fee
+    /// reserve the wallet requires on top of a purchase price. Nothing
+    /// executed; top the identity up and retry.
+    case insufficientIdentityCredits(identityId: String, required: UInt64, available: UInt64)
+    /// The DPNS name is inside an active contested-name vote and cannot be
+    /// listed, transferred, or purchased until the contest resolves.
+    /// `endsAtMs == 0` means the vote's end time was unavailable — show it
+    /// as unknown rather than as "ends at the epoch".
+    case contestedNameNotTradable(label: String, endsAtMs: UInt64)
     /// The named thing does not exist. For the deferred payment calls this is
     /// the wallet-was-REMOVED case: the token's wallet (or the wallet a payment
     /// was just signed against) is no longer registered in the manager, so there
@@ -376,25 +457,50 @@ public enum PlatformWalletError: LocalizedError {
              .assetLockFundingMismatch(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
-             .shieldedNoRecordedAnchor(let m),
+             .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
              .transactionBroadcastUnconfirmed(let m),
+             .masternodeWithdrawalUnconfirmed(let m),
              .transactionBroadcastRejected(let m),
              .addressNonceMismatch(let m),
              .shutdownIncomplete(let m),
              .signingKeyUnavailable(let m),
              .staleReservationToken(let m), .reservationTokenConsumed(let m),
              .reservationWalletMismatch(let m),
+             .notForSale(let m),
              .notFound(let m), .unknown(let m):
             return m
+        // The three value-carrying marketplace rejections compose their
+        // description from the typed values, because their FFI message is
+        // the machine-readable JSON detail — showing that raw would be
+        // gibberish in a UI alert.
+        case .priceChanged(_, let expected, let actual):
+            return "The price changed from \(expected) to \(actual) credits before the purchase "
+                + "could be confirmed. Nothing was purchased."
+        case .insufficientIdentityCredits(let identityId, let required, let available):
+            return "Identity \(identityId) has \(available) credits but \(required) are required."
+        case .contestedNameNotTradable(let label, let endsAtMs):
+            if endsAtMs == 0 {
+                return "\"\(label)\" is in an active contested-name vote and cannot be traded "
+                    + "until the contest resolves."
+            }
+            return "\"\(label)\" is in an active contested-name vote (ends at \(endsAtMs) ms) "
+                + "and cannot be traded until the contest resolves."
         }
     }
 
     init(result: PlatformWalletResult) {
-        let detail = result.message ?? "<no detail from Rust>"
-        switch result.code {
+        self.init(code: result.code, message: result.message)
+    }
+
+    /// Internal seam for exercising the stable error-code/detail contract
+    /// without manufacturing a Rust-owned `PlatformWalletFFIResult` string.
+    /// Production callers continue to enter through `init(result:)`.
+    init(code: PlatformWalletResultCode, message: String?) {
+        let detail = message ?? "<no detail from Rust>"
+        switch code {
         case .success:
             // Constructing an error from a success result is a caller bug
-            self = .unknown(result.message
+            self = .unknown(message
                 ?? "PlatformWalletError built from a success result")
         case .errorInvalidHandle:     self = .invalidHandle(detail)
         case .errorInvalidParameter:  self = .invalidParameter(detail)
@@ -419,8 +525,11 @@ public enum PlatformWalletError: LocalizedError {
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)
         case .errorShieldedSpendUnconfirmed: self = .shieldedSpendUnconfirmed(detail)
         case .errorShieldedNoRecordedAnchor: self = .shieldedNoRecordedAnchor(detail)
+        case .errorShieldedInsufficientBalance: self = .shieldedInsufficientBalance(detail)
         case .errorTransactionBroadcastUnconfirmed:
             self = .transactionBroadcastUnconfirmed(detail)
+        case .errorMasternodeWithdrawalUnconfirmed:
+            self = .masternodeWithdrawalUnconfirmed(detail)
         case .errorTransactionBroadcastRejected:
             self = .transactionBroadcastRejected(detail)
         case .errorAddressNonceMismatch:
@@ -435,9 +544,90 @@ public enum PlatformWalletError: LocalizedError {
             self = .reservationTokenConsumed(detail)
         case .errorReservationWalletMismatch:
             self = .reservationWalletMismatch(detail)
+        case .errorDocumentNotForSale:
+            self = .notForSale(detail)
+        // Codes 38/39/40 carry a stable JSON detail object instead of a
+        // human message (see `PlatformWalletFFIResultCode` in
+        // packages/rs-platform-wallet-ffi/src/error.rs). Decode it into the
+        // typed case; if the payload is ever absent or reshaped, degrade to
+        // `.unknown(detail)` rather than trapping — a malformed message must
+        // not crash the host on an error path.
+        case .errorDocumentPriceChanged:
+            if let d = TradeErrorDetail.priceChanged(detail) {
+                self = .priceChanged(
+                    documentId: d.documentId,
+                    expected: d.expected,
+                    actual: d.actual
+                )
+            } else {
+                self = .unknown(detail)
+            }
+        case .errorInsufficientIdentityCredits:
+            if let d = TradeErrorDetail.insufficientCredits(detail) {
+                self = .insufficientIdentityCredits(
+                    identityId: d.identityId,
+                    required: d.required,
+                    available: d.available
+                )
+            } else {
+                self = .unknown(detail)
+            }
+        case .errorContestedNameNotTradable:
+            if let d = TradeErrorDetail.contestedName(detail) {
+                self = .contestedNameNotTradable(label: d.label, endsAtMs: d.endsAtMs)
+            } else {
+                self = .unknown(detail)
+            }
         case .notFound:               self = .notFound(detail)
         case .errorUnknown:           self = .unknown(detail)
         }
+    }
+}
+
+// MARK: - Marketplace trade-error detail decoding
+
+/// Decoders for the stable JSON detail objects that FFI result codes
+/// 38/39/40 put in the result `message`.
+///
+/// `PlatformWalletFFIResult` is ABI-frozen at `{ code, message }`, so the
+/// wallet layer's typed values (both prices, both credit amounts, the
+/// contest end time) can only cross as a documented JSON object. Each
+/// decoder returns `nil` on anything that isn't that object, and the
+/// caller degrades to `.unknown(message)` — never a trap and never a
+/// fabricated zero.
+private enum TradeErrorDetail {
+    struct PriceChanged: Decodable {
+        let documentId: String
+        let expected: UInt64
+        let actual: UInt64
+    }
+
+    struct InsufficientCredits: Decodable {
+        let identityId: String
+        let required: UInt64
+        let available: UInt64
+    }
+
+    struct ContestedName: Decodable {
+        let label: String
+        let endsAtMs: UInt64
+    }
+
+    static func priceChanged(_ message: String?) -> PriceChanged? {
+        decode(PriceChanged.self, from: message)
+    }
+
+    static func insufficientCredits(_ message: String?) -> InsufficientCredits? {
+        decode(InsufficientCredits.self, from: message)
+    }
+
+    static func contestedName(_ message: String?) -> ContestedName? {
+        decode(ContestedName.self, from: message)
+    }
+
+    private static func decode<T: Decodable>(_ type: T.Type, from message: String?) -> T? {
+        guard let data = message?.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(type, from: data)
     }
 }
 

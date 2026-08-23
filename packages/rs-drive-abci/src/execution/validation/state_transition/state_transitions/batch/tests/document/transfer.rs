@@ -350,6 +350,7 @@ mod transfer_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -360,6 +361,7 @@ mod transfer_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -604,6 +606,7 @@ mod transfer_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -614,6 +617,7 @@ mod transfer_tests {
             creator_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -624,6 +628,7 @@ mod transfer_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -918,6 +923,7 @@ mod transfer_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -928,6 +934,7 @@ mod transfer_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1169,6 +1176,7 @@ mod transfer_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1179,6 +1187,7 @@ mod transfer_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1332,6 +1341,7 @@ mod transfer_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1342,6 +1352,7 @@ mod transfer_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1573,6 +1584,7 @@ mod transfer_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1583,6 +1595,7 @@ mod transfer_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1876,6 +1889,7 @@ mod transfer_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1886,6 +1900,7 @@ mod transfer_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -2260,6 +2275,7 @@ mod transfer_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -2474,6 +2490,7 @@ mod transfer_tests {
             creator_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -2492,6 +2509,7 @@ mod transfer_tests {
             creator_id_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -3049,6 +3067,7 @@ mod transfer_tests {
             creator_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -3066,6 +3085,7 @@ mod transfer_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 

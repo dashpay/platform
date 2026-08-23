@@ -117,6 +117,7 @@ mod tests {
             &contract,
             document_type.as_ref(),
             &DriveConfig::default(),
+            platform_version,
         )
         .expect("query should be valid");
         let index = query
@@ -139,6 +140,7 @@ mod tests {
             &contract,
             document_type.as_ref(),
             &DriveConfig::default(),
+            platform_version,
         )
         .expect("query should be valid");
         let index = query
@@ -166,6 +168,7 @@ mod tests {
             &contract,
             document_type.as_ref(),
             &DriveConfig::default(),
+            platform_version,
         )
         .expect("query should be valid");
         let error = query

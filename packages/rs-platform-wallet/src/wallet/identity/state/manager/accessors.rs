@@ -12,6 +12,68 @@ use dpp::identity::Identity;
 use dpp::prelude::Identifier;
 
 impl IdentityManager {
+    /// Look up an identity only when it is signing-capable and belongs to
+    /// `wallet_id`. Observed identities deliberately do not match.
+    pub fn wallet_identity(
+        &self,
+        wallet_id: &WalletId,
+        identity_id: &Identifier,
+    ) -> Option<&ManagedIdentity> {
+        let IdentityLocation::InWallet {
+            wallet_id: located_wallet,
+            registration_index,
+        } = self.location_index().get(identity_id).copied()?
+        else {
+            return None;
+        };
+        if located_wallet != *wallet_id {
+            return None;
+        }
+        self.wallet_identities
+            .get(wallet_id)?
+            .get(&registration_index)
+    }
+
+    /// Mutable counterpart to [`Self::wallet_identity`].
+    pub fn wallet_identity_mut(
+        &mut self,
+        wallet_id: &WalletId,
+        identity_id: &Identifier,
+    ) -> Option<&mut ManagedIdentity> {
+        let IdentityLocation::InWallet {
+            wallet_id: located_wallet,
+            registration_index,
+        } = self.location_index().get(identity_id).copied()?
+        else {
+            return None;
+        };
+        if located_wallet != *wallet_id {
+            return None;
+        }
+        self.wallet_identities
+            .get_mut(wallet_id)?
+            .get_mut(&registration_index)
+    }
+
+    /// Iterate only identities owned by `wallet_id`. Unlike
+    /// [`Self::managed_identities`], this never includes observed contacts.
+    pub fn wallet_managed_identities(
+        &self,
+        wallet_id: &WalletId,
+    ) -> impl Iterator<Item = &ManagedIdentity> {
+        self.wallet_identities
+            .get(wallet_id)
+            .into_iter()
+            .flat_map(|identities| identities.values())
+    }
+
+    /// Snapshot the identifiers owned by `wallet_id`.
+    pub fn wallet_identity_ids(&self, wallet_id: &WalletId) -> Vec<Identifier> {
+        self.wallet_managed_identities(wallet_id)
+            .map(|managed| managed.identity.id())
+            .collect()
+    }
+
     /// Look up a managed identity by id across both buckets.
     ///
     /// O(log n): hits the side-index for the bucket discriminant +

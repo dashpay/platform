@@ -254,6 +254,7 @@ pub(crate) async fn funded_wallet_manager_with_outputs(
         generation: Arc::clone(&generation),
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
+        dpns_name_states: BTreeMap::new(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
@@ -323,6 +324,7 @@ pub(crate) async fn funded_wallet_manager_dual_standard(
         generation: Arc::clone(&generation),
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
+        dpns_name_states: BTreeMap::new(),
     };
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
@@ -424,6 +426,7 @@ pub(crate) async fn funded_wallet_manager_with_contact(
         generation: Arc::clone(&generation),
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
+        dpns_name_states: BTreeMap::new(),
     };
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
@@ -499,6 +502,7 @@ pub(crate) async fn funded_coinjoin_wallet_manager() -> (
         generation: Arc::clone(&generation),
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
+        dpns_name_states: BTreeMap::new(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
@@ -670,6 +674,7 @@ pub(crate) async fn mnemonic_wallet_manager(
         generation: Arc::new(WalletGeneration::new()),
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
+        dpns_name_states: BTreeMap::new(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);

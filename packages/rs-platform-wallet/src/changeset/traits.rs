@@ -205,6 +205,16 @@ impl PersistenceError {
 /// to guarantee a batch flush, it should call `flush` explicitly after all
 /// `store` calls and treat `store` as a best-effort buffer hint.
 pub trait PlatformWalletPersistence: Send + Sync {
+    /// Whether a successful [`store`](Self::store) makes its changeset
+    /// durable before [`flush`](Self::flush) is called.
+    ///
+    /// The default is conservative for buffered backends. Inline-committing
+    /// implementations override this so callers do not roll back live state
+    /// after a later, post-commit flush-notification failure.
+    fn store_commits_inline(&self) -> bool {
+        false
+    }
+
     /// Feature-specific contracts this backend can persist and, where the
     /// capability requires it, restore after process restart.
     ///

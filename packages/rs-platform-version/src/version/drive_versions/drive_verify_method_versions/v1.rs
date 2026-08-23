@@ -41,6 +41,7 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
     },
     document_ranked: DriveVerifyDocumentRankedMethodVersions {
         verify_ranked_top_k_proof: 0,
+        verify_having_range_proof: 0,
     },
     identity: DriveVerifyIdentityMethodVersions {
         verify_full_identities_by_public_key_hashes: 0,

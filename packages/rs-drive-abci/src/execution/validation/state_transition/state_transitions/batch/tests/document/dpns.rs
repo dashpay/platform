@@ -442,7 +442,7 @@ mod dpns_tests {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: None,
+                in_clauses: Vec::new(),
                 range_clause: Some(WhereClause {
                     field: "records.identity".to_string(),
                     operator: WhereOperator::LessThanOrEquals,
@@ -486,7 +486,7 @@ mod dpns_tests {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: None,
+                in_clauses: Vec::new(),
                 range_clause: None,
                 equal_clauses: BTreeMap::from([(
                     "records.identity".to_string(),
@@ -897,7 +897,7 @@ mod dpns_tests {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: None,
+                in_clauses: Vec::new(),
                 range_clause: Some(WhereClause {
                     field: "records.identity".to_string(),
                     operator: WhereOperator::LessThanOrEquals,
@@ -928,7 +928,7 @@ mod dpns_tests {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: None,
+                in_clauses: Vec::new(),
                 range_clause: None,
                 equal_clauses: BTreeMap::from([(
                     "records.identity".to_string(),
@@ -1161,7 +1161,7 @@ mod dpns_username_transfer_tests {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: None,
+                in_clauses: Vec::new(),
                 range_clause: None,
                 equal_clauses: BTreeMap::from([(
                     "records.identity".to_string(),
@@ -1399,7 +1399,7 @@ mod dpns_username_transfer_tests {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: None,
+                in_clauses: Vec::new(),
                 range_clause: None,
                 equal_clauses: BTreeMap::from([
                     (

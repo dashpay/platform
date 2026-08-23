@@ -1,3 +1,4 @@
+use dpp::platform_value::string_encoding::Encoding;
 use platform_wallet::PlatformWalletError;
 use std::ffi::CString;
 use std::os::raw::c_char;
@@ -109,9 +110,9 @@ pub enum PlatformWalletFFIResultCode {
     ErrorInvalidIdentifier = 10,
     ErrorMemoryAllocation = 11,
     ErrorUtf8Conversion = 12,
-    /// Reserved slot for the arithmetic-overflow mapping arriving via #3549 —
-    /// no in-tree producer today. Holding the slot here keeps language-mirror
-    /// enums (Swift, Kotlin) numerically aligned with the eventual producer.
+    /// Maps `PlatformWalletError::InputSumOverflow`: summing candidate input
+    /// balances overflowed `u64`. Nothing was built or broadcast; retrying the
+    /// same inconsistent wallet state cannot succeed.
     ErrorArithmeticOverflow = 13,
     /// Auto-select had no candidate inputs. Covers all three "can't-select-inputs"
     /// wallet variants: `NoSpendableInputs` (account has nothing spendable),
@@ -196,7 +197,8 @@ pub enum PlatformWalletFFIResultCode {
     ErrorCoreInsufficientFunds = 22,
     /// Existing-lock recovery referenced an outpoint not owned/tracked by the wallet.
     ErrorAssetLockNotTracked = 23,
-    /// Existing-lock recovery referenced a one-shot output already consumed.
+    /// Asset-lock funding cannot reuse this one-shot output; Platform
+    /// completion for the requested operation is unconfirmed.
     ErrorAssetLockAlreadyConsumed = 24,
     /// Existing-lock recovery attempted to use a lock for the wrong funding
     /// family or bound identity index.
@@ -256,6 +258,18 @@ pub enum PlatformWalletFFIResultCode {
     // This trio previously sat at 26-28, then 27/28/30. It moved to 34-36 after
     // #4268 merged `ErrorShutdownIncomplete = 27` into the v4.2-dev ABI; the
     // contiguous block above every current claim ends the renumbering churn.
+    //
+    // Claimed after the trio, same rule (fresh block above every claim):
+    //
+    //   37  ErrorDocumentNotForSale         DPNS username marketplace
+    //   38  ErrorDocumentPriceChanged       DPNS username marketplace
+    //   39  ErrorInsufficientIdentityCredits DPNS username marketplace
+    //   40  ErrorContestedNameNotTradable   DPNS username marketplace
+    //
+    // 38/39/40 carry a STABLE JSON detail object in the result `message`
+    // instead of the typed `Display` rendering — see each variant's doc for
+    // the exact object. `PlatformWalletFFIResult` is ABI-frozen (code +
+    // message only), so structured values ride the message or not at all.
     /// Maps `SignedPaymentError::StaleReservationToken` from the deferred
     /// build → broadcast/release core-send lifecycle (`core_wallet_signed_payment_*`):
     /// the token has outlived the registry's `RESERVATION_MAX_AGE_BLOCKS` bound
@@ -287,6 +301,84 @@ pub enum PlatformWalletFFIResultCode {
     /// retryable through this handle (rebuild the payment).
     ///
     ErrorReservationWalletMismatch = 36,
+
+    // -----------------------------------------------------------------
+    // DPNS username-marketplace trade rejections (37-40).
+    //
+    // A fresh contiguous block ABOVE every current claim, for the same
+    // reason the 34-36 trio moved there: 28 and 30 are nominally free but
+    // reusing a vacated slot re-opens the renumbering churn the registry
+    // note above exists to end.
+    // -----------------------------------------------------------------
+    /// Maps `PlatformWalletError::DocumentNotForSale`. The document
+    /// carries no `$price`, so it cannot be purchased (and a DPNS delist
+    /// has nothing to clear). Raised by the wallet's pre-flight read and
+    /// by the downcast of the consensus `DocumentNotForSaleError` (DPP
+    /// code 40108). The transition did NOT execute.
+    ///
+    /// Message: the typed `Display` rendering (no structured detail —
+    /// the only value is the document id, which the caller already has).
+    ErrorDocumentNotForSale = 37,
+
+    /// Maps `PlatformWalletError::DocumentPriceChanged`. The listing no
+    /// longer matches the price the user confirmed — either the wallet's
+    /// pre-flight read disagreed, or consensus rejected the broadcast
+    /// with `DocumentIncorrectPurchasePriceError` (DPP code 40109)
+    /// because the listing changed between read and broadcast. The
+    /// purchase did NOT execute in either case; re-confirm at the new
+    /// price and retry.
+    ///
+    /// Message: a STABLE JSON detail object so hosts recover the typed
+    /// values without parsing prose —
+    /// `{"documentId":"<base58>","expected":<u64>,"actual":<u64>}`
+    /// (credits). Swift mirror: `PlatformWalletError.priceChanged`.
+    ErrorDocumentPriceChanged = 38,
+
+    /// Maps `PlatformWalletError::InsufficientIdentityCredits`. The
+    /// identity's credit balance cannot cover the operation — the
+    /// wallet's purchase pre-flight (price + fee reserve against the
+    /// local balance snapshot) or the downcast of the consensus
+    /// `IdentityInsufficientBalanceError`. Nothing executed; top the
+    /// identity up and retry.
+    ///
+    /// Message: a STABLE JSON detail object —
+    /// `{"identityId":"<base58>","required":<u64>,"available":<u64>}`
+    /// (credits). Swift mirror:
+    /// `PlatformWalletError.insufficientIdentityCredits`.
+    ErrorInsufficientIdentityCredits = 39,
+
+    /// Maps `PlatformWalletError::ContestedNameNotTradable`. The DPNS
+    /// name is inside an active contested-name vote, so its domain
+    /// document is not in the documents tree and no trade transition can
+    /// reference it. Without this typed code the network's bare
+    /// `DocumentNotFoundError` (40101) would read as "no such name".
+    /// Retry after the contest resolves.
+    ///
+    /// Message: a STABLE JSON detail object —
+    /// `{"label":"<string>","endsAtMs":<u64>}`, where `endsAtMs == 0`
+    /// means the vote's end time was unavailable. Swift mirror:
+    /// `PlatformWalletError.contestedNameNotTradable`.
+    ErrorContestedNameNotTradable = 40,
+
+    /// Maps `PlatformWalletError::PlatformShieldCapacityExceeded`. A shield's
+    /// selected Platform-address set cannot cover the requested claim plus the
+    /// fee reserve retained on input 0. The transition was not built or
+    /// broadcast; refresh preflight capacity and ask the user to confirm the
+    /// new amount. The public C spelling is retained for numeric ABI and
+    /// language-surface compatibility; it is a Platform Payment-account
+    /// shortfall, not a shielded-note shortfall.
+    ErrorShieldedInsufficientBalance = 41,
+    /// Maps `PlatformWalletError::MasternodeWithdrawalUnconfirmed`. A
+    /// masternode (evonode) identity credit withdrawal was broadcast and
+    /// accepted, but its execution result could not be confirmed — it may
+    /// already have executed, and the identity nonce was consumed for it, so
+    /// a blind retry could submit a SECOND withdrawal. The host must NOT
+    /// retry; it must re-read the identity's claimable balance (and the
+    /// payout) and let the user decide from the reconciled state. Definitive
+    /// rejections (consensus errors, transport verdicts) keep their ordinary
+    /// codes and stay retryable. Siblings: [`Self::ErrorShieldedSpendUnconfirmed`],
+    /// [`Self::ErrorTransactionBroadcastUnconfirmed`].
+    ErrorMasternodeWithdrawalUnconfirmed = 42,
 
     /// The named thing does not exist.
     ///
@@ -400,8 +492,69 @@ impl<T> From<Option<T>> for PlatformWalletFFIResult {
     }
 }
 
+/// The value-carrying DPNS-marketplace rejections, rendered as
+/// `(code, JSON detail)` instead of `(code, Display)`.
+///
+/// `PlatformWalletFFIResult` is ABI-frozen at `{ code, message }`, so a
+/// host that needs the *values* — not prose naming them — can only get
+/// them through the message. These three therefore put a stable JSON
+/// object there; the exact shape is documented on each
+/// [`PlatformWalletFFIResultCode`] variant and parsed back by the Swift
+/// mirror. Returns `None` for every other error, leaving the `Display`
+/// rendering in charge.
+///
+/// `DocumentNotForSale` (37) is deliberately absent: its only value is
+/// the document id the caller supplied, so its `Display` is enough.
+fn trade_error_json_detail(
+    error: &PlatformWalletError,
+) -> Option<(PlatformWalletFFIResultCode, String)> {
+    match error {
+        PlatformWalletError::DocumentPriceChanged {
+            document_id,
+            expected,
+            actual,
+        } => Some((
+            PlatformWalletFFIResultCode::ErrorDocumentPriceChanged,
+            serde_json::json!({
+                "documentId": document_id.to_string(Encoding::Base58),
+                "expected": expected,
+                "actual": actual,
+            })
+            .to_string(),
+        )),
+        PlatformWalletError::InsufficientIdentityCredits {
+            identity_id,
+            required,
+            available,
+        } => Some((
+            PlatformWalletFFIResultCode::ErrorInsufficientIdentityCredits,
+            serde_json::json!({
+                "identityId": identity_id.to_string(Encoding::Base58),
+                "required": required,
+                "available": available,
+            })
+            .to_string(),
+        )),
+        PlatformWalletError::ContestedNameNotTradable { label, ends_at_ms } => Some((
+            PlatformWalletFFIResultCode::ErrorContestedNameNotTradable,
+            serde_json::json!({
+                "label": label,
+                "endsAtMs": ends_at_ms,
+            })
+            .to_string(),
+        )),
+        _ => None,
+    }
+}
+
 impl From<PlatformWalletError> for PlatformWalletFFIResult {
     fn from(error: PlatformWalletError) -> Self {
+        // The three value-carrying marketplace rejections replace the
+        // Display rendering with a stable JSON detail object; everything
+        // else keeps Display as the message.
+        if let Some((code, detail)) = trade_error_json_detail(&error) {
+            return PlatformWalletFFIResult::err(code, detail);
+        }
         // Map the typed wallet error variants explicitly so they
         // don't flatten to ErrorUnknown at the FFI boundary. The
         // catch-all ErrorUnknown remains for variants the FFI hasn't
@@ -412,6 +565,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             | PlatformWalletError::OnlyOutputAddressesFunded { .. }
             | PlatformWalletError::OnlyDustInputs { .. } => {
                 PlatformWalletFFIResultCode::ErrorNoSelectableInputs
+            }
+            PlatformWalletError::InputSumOverflow => {
+                PlatformWalletFFIResultCode::ErrorArithmeticOverflow
             }
             PlatformWalletError::WalletAlreadyExists(..) => {
                 PlatformWalletFFIResultCode::ErrorWalletAlreadyExists
@@ -438,11 +594,19 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::ShieldedNoRecordedAnchor(..) => {
                 PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor
             }
+            PlatformWalletError::PlatformShieldCapacityExceeded { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance
+            }
             // The core-transaction sibling of the shielded pair above: the
             // do-not-retry signal must survive the boundary as a typed code
             // so hosts can distinguish it from a definitive rejection.
             PlatformWalletError::TransactionBroadcastUnconfirmed(..) => {
                 PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
+            }
+            // Evonode claim sibling: the ambiguous "may have executed, nonce
+            // consumed" outcome must reach the host as a typed do-not-retry code.
+            PlatformWalletError::MasternodeWithdrawalUnconfirmed { .. } => {
+                PlatformWalletFFIResultCode::ErrorMasternodeWithdrawalUnconfirmed
             }
             PlatformWalletError::TransactionBroadcast(..) => {
                 PlatformWalletFFIResultCode::ErrorTransactionBroadcastRejected
@@ -531,6 +695,17 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::MessageSigningKeyUnavailable { .. } => {
                 PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
             }
+            // DPNS marketplace: the one trade rejection whose Display is
+            // sufficient (the other three are handled by
+            // `trade_error_json_detail` above and never reach this match).
+            PlatformWalletError::DocumentNotForSale { .. } => {
+                PlatformWalletFFIResultCode::ErrorDocumentNotForSale
+            }
+            // An exact-label DPNS lookup that came back empty IS the
+            // "does not exist" case this code has always covered, so it
+            // rides `NotFound` rather than spending a fifth marketplace
+            // code hosts would handle identically.
+            PlatformWalletError::DpnsNameNotFound { .. } => PlatformWalletFFIResultCode::NotFound,
             // NOTE: `MessageSigningFailed` is deliberately NOT matched, so it
             // falls to the `ErrorUnknown` catch-all below. Its causes are
             // internal invariant breaks (a public key that does not own the
@@ -1013,6 +1188,37 @@ mod tests {
         assert_eq!(msg, rendered, "Display payload must survive verbatim");
     }
 
+    #[test]
+    fn platform_shield_capacity_maps_to_dedicated_code_without_claiming_note_shortfalls() {
+        let error = PlatformWalletError::PlatformShieldCapacityExceeded {
+            available: 3_623_849_220,
+            required: 3_623_849_221,
+        };
+        let rendered = error.to_string();
+        let result: PlatformWalletFFIResult = error.into();
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance
+        );
+        let message = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(message, rendered);
+
+        let note_shortfall: PlatformWalletFFIResult =
+            PlatformWalletError::ShieldedInsufficientBalance {
+                available: 100,
+                required: 200,
+            }
+            .into();
+        assert_eq!(
+            note_shortfall.code,
+            PlatformWalletFFIResultCode::ErrorUnknown,
+            "shielded-note selection must not claim the Platform funding code"
+        );
+    }
+
     /// The ambiguous core-broadcast outcome keeps its typed code across the
     /// boundary — flattening it to `ErrorUnknown` would erase the
     /// do-not-retry signal the variant exists to carry.
@@ -1241,6 +1447,159 @@ mod tests {
         );
     }
 
+    /// The four DPNS-marketplace trade rejections each map to their own
+    /// dedicated code rather than flattening to `ErrorUnknown`, and the
+    /// not-found case rides the existing `NotFound`. Hosts branch on these
+    /// to distinguish "re-confirm the price" from "top up credits" from
+    /// "wait for the contest".
+    #[test]
+    fn dpns_marketplace_errors_map_to_dedicated_codes() {
+        let document_id = dpp::prelude::Identifier::from([9u8; 32]);
+        let identity_id = dpp::prelude::Identifier::from([8u8; 32]);
+        let cases: Vec<(PlatformWalletError, PlatformWalletFFIResultCode)> = vec![
+            (
+                PlatformWalletError::DocumentNotForSale { document_id },
+                PlatformWalletFFIResultCode::ErrorDocumentNotForSale,
+            ),
+            (
+                PlatformWalletError::DocumentPriceChanged {
+                    document_id,
+                    expected: 1_000,
+                    actual: 2_000,
+                },
+                PlatformWalletFFIResultCode::ErrorDocumentPriceChanged,
+            ),
+            (
+                PlatformWalletError::InsufficientIdentityCredits {
+                    identity_id,
+                    required: 100_001_000,
+                    available: 7,
+                },
+                PlatformWalletFFIResultCode::ErrorInsufficientIdentityCredits,
+            ),
+            (
+                PlatformWalletError::ContestedNameNotTradable {
+                    label: "alice".to_string(),
+                    ends_at_ms: 1_800_000_000_000,
+                },
+                PlatformWalletFFIResultCode::ErrorContestedNameNotTradable,
+            ),
+            (
+                PlatformWalletError::DpnsNameNotFound {
+                    name: "nobody".to_string(),
+                },
+                PlatformWalletFFIResultCode::NotFound,
+            ),
+        ];
+        for (error, expected_code) in cases {
+            let rendered = error.to_string();
+            let result: PlatformWalletFFIResult = error.into();
+            assert_eq!(
+                result.code, expected_code,
+                "variant should map to {expected_code:?} (rendered: {rendered})"
+            );
+        }
+    }
+
+    /// Code 37 keeps the typed `Display` rendering as its message — it
+    /// carries no value the caller doesn't already have, so it is NOT in
+    /// the JSON-detail set.
+    #[test]
+    fn document_not_for_sale_message_is_the_display_rendering() {
+        let err = PlatformWalletError::DocumentNotForSale {
+            document_id: dpp::prelude::Identifier::from([9u8; 32]),
+        };
+        let rendered = err.to_string();
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(message_of(&result), rendered);
+    }
+
+    /// Codes 38/39/40 put a STABLE JSON detail object in the message so
+    /// the Swift mirror can rebuild typed cases. Pin the exact keys and
+    /// values — a rename or a transposed pair silently degrades every host
+    /// to `.unknown`, which no compiler catches across the ABI.
+    #[test]
+    fn price_changed_message_is_the_documented_json_detail() {
+        let document_id = dpp::prelude::Identifier::from([9u8; 32]);
+        let result: PlatformWalletFFIResult = PlatformWalletError::DocumentPriceChanged {
+            document_id,
+            expected: 1_000,
+            actual: 2_000,
+        }
+        .into();
+        let parsed: serde_json::Value =
+            serde_json::from_str(&message_of(&result)).expect("code 38 message must parse as JSON");
+        assert_eq!(
+            parsed["documentId"],
+            document_id.to_string(Encoding::Base58)
+        );
+        assert_eq!(parsed["expected"], 1_000u64);
+        assert_eq!(parsed["actual"], 2_000u64);
+    }
+
+    #[test]
+    fn insufficient_credits_message_is_the_documented_json_detail() {
+        let identity_id = dpp::prelude::Identifier::from([8u8; 32]);
+        let result: PlatformWalletFFIResult = PlatformWalletError::InsufficientIdentityCredits {
+            identity_id,
+            required: 100_001_000,
+            available: 7,
+        }
+        .into();
+        let parsed: serde_json::Value =
+            serde_json::from_str(&message_of(&result)).expect("code 39 message must parse as JSON");
+        assert_eq!(
+            parsed["identityId"],
+            identity_id.to_string(Encoding::Base58)
+        );
+        assert_eq!(parsed["required"], 100_001_000u64);
+        assert_eq!(parsed["available"], 7u64);
+    }
+
+    #[test]
+    fn contested_name_message_is_the_documented_json_detail() {
+        let result: PlatformWalletFFIResult = PlatformWalletError::ContestedNameNotTradable {
+            label: "alice".to_string(),
+            ends_at_ms: 1_800_000_000_000,
+        }
+        .into();
+        let parsed: serde_json::Value =
+            serde_json::from_str(&message_of(&result)).expect("code 40 message must parse as JSON");
+        assert_eq!(parsed["label"], "alice");
+        assert_eq!(parsed["endsAtMs"], 1_800_000_000_000u64);
+    }
+
+    /// The numeric values are the ABI contract with the Swift/Kotlin
+    /// mirrors (there is no compile-time check across the boundary), so
+    /// pin them explicitly rather than trusting declaration order.
+    #[test]
+    fn dpns_marketplace_codes_are_pinned_at_37_through_40() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorDocumentNotForSale as i32,
+            37
+        );
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorDocumentPriceChanged as i32,
+            38
+        );
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorInsufficientIdentityCredits as i32,
+            39
+        );
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorContestedNameNotTradable as i32,
+            40
+        );
+    }
+
+    #[test]
+    fn shielded_insufficient_balance_code_is_pinned_at_41() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance as i32,
+            41
+        );
+    }
+
     /// `MessageSigningFailed` is intentionally unmapped: its causes are
     /// internal invariant breaks, which should read as a bug rather than as a
     /// key-repair prompt, so it falls through to ErrorUnknown carrying the
@@ -1267,5 +1626,15 @@ mod tests {
         };
         let result: PlatformWalletFFIResult = internal.into();
         assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorUnknown);
+    }
+
+    /// Read a result's message back as an owned `String`. Every
+    /// marketplace assertion below inspects the message, and the raw
+    /// `CStr::from_ptr` dance is noise at each site.
+    fn message_of(result: &PlatformWalletFFIResult) -> String {
+        assert!(!result.message.is_null(), "result carries no message");
+        unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned()
     }
 }

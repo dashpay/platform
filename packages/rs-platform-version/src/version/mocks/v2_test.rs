@@ -502,10 +502,14 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_field_value_size: 5000,
         max_document_value_depth: None,
         max_state_transition_size: 20000, // Is different in this test version, not sure if this was a mistake
+        // Load-bearing for state correctness, not just for throughput — see
+        // SystemLimits::max_transitions_in_documents_batch. Raising it here
+        // arms the defect inside drive-abci's own protocol-upgrade suite.
         max_transitions_in_documents_batch: 1,
         withdrawal_transactions_per_block_limit: 4,
         retry_signing_expired_withdrawal_documents_per_block_limit: 1,
         max_withdrawal_amount: 50_000_000_000_000,
+        daily_withdrawal_limit: 200_000_000_000_000, //2000 Dash
         min_withdrawal_amount: 190_000,
         max_contract_group_size: 256,
         max_token_redemption_cycles: 128,

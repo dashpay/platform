@@ -179,3 +179,71 @@ dashmate config get <option>
 # Enable debug logging
 dashmate config set core.log.debug.enabled true
 ```
+
+## Running Dashmate commands concurrently
+
+Dashmate keeps all configuration in a single `config.json` inside its home directory
+(`~/.dashmate` by default).
+
+Commands that change a configuration option — `dashmate config set` and friends — read,
+change and save that file as one locked step. Two of them running at once cannot lose each
+other's work: if one sets a Core RPC port while another pins a Drive image, both settings
+survive. When no long-running operation owns the lock, a command waits only for the locked
+read and write.
+
+Read-only commands such as `dashmate config get`, `dashmate status` and `dashmate core cli`
+normally do not write configuration. The first command after an upgrade may migrate and save
+`config.json`; that migration needs the same lock and can time out behind a long-running
+configuration change.
+
+### While a node is being reconfigured
+
+`dashmate setup`, `dashmate reset`, `dashmate group reset`, `dashmate ssl obtain`,
+`dashmate core reindex` and `dashmate group core reindex` change or render configuration
+while doing long work, so they take the lock for their whole run. Another command that
+needs the lock waits briefly and then reports that something else is modifying it — nothing
+is lost, and running it again once the first command finishes works normally.
+
+The Dashmate helper uses the same whole-operation lock while renewing an SSL certificate.
+For ZeroSSL this includes HTTP validation and may take minutes. A configuration-changing
+command started during background renewal can therefore reach its 15-second timeout and
+report that another Dashmate command is modifying configuration. Retry it after renewal
+finishes. Keeping the lock for issuance is intentional: releasing it earlier would require
+replaying selected renewal fields later, which could undo an operator's provider switch or
+SSL disable.
+
+Ordinary reads remain available: `dashmate status`, `dashmate config get` and
+`dashmate core cli` do not take the lock unless loading the configuration discovers a
+migration that must be saved.
+
+Graceful termination releases the lock. After `SIGKILL` or a power loss, the next writer
+takes over after about a minute.
+
+### Recovering interrupted filesystem work
+
+`config.json` is the authoritative configuration. For normal configuration changes and
+certificate renewal, Dashmate saves it before writing the derived service files. If a
+command reports a service-file rendering error, or is killed after saving, those files can
+still describe the previous configuration. Repair the affected config explicitly:
+
+```bash
+dashmate config render --config=<name>
+```
+
+Removing a config also saves `config.json` before deleting its service directory. If the
+directory deletion fails, Dashmate leaves the orphan in place and will refuse to create a
+new config with that name. Inspect `~/.dashmate/<name>` for keys or other state that must be
+kept, then move or delete the directory manually before retrying `dashmate config create`.
+An absent name passed to `dashmate config remove` is rejected; it is not an orphan-cleanup
+command.
+
+If a command loses its lock before saving, Dashmate preserves the pending JSON in a private
+`~/.dashmate/.config.json.rescue-<id>` file and reports that path. Compare it with
+`config.json` and retain any needed values. Delete the rescue file manually only after its
+contents have been acknowledged; Dashmate does not remove rescue files automatically.
+
+The lock coordinates versions of Dashmate that implement this protocol. An older Dashmate
+process that does not use the lock can still write concurrently, so finish rolling out the
+new version before relying on this guarantee. The protocol is intended for a Dashmate home
+directory on a local filesystem; network filesystems may not provide the required lock and
+atomic-replacement semantics.

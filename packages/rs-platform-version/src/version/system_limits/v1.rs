@@ -14,6 +14,11 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     //     failed transition only, for all transitions, or for none — and the
     //     transformer/dispatch code does not consistently express any of
     //     those policies (see issue #2867).
+    //   - The transitions of one batch are flattened into a single GroveDB
+    //     batch whose document operations cannot see each other, so two of
+    //     them that jointly empty an index group leave the group tree behind
+    //     — a document-less group that still ranks, and still proves. See
+    //     SystemLimits::max_transitions_in_documents_batch.
     // Before lifting this cap above 1, the whole batch validation +
     // transformer + nonce-bump path must be reviewed and the atomicity /
     // nonce semantics fixed. Pulling the cap higher today would expose
@@ -21,7 +26,8 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     max_transitions_in_documents_batch: 1,
     withdrawal_transactions_per_block_limit: 4,
     retry_signing_expired_withdrawal_documents_per_block_limit: 1,
-    max_withdrawal_amount: 50_000_000_000_000, //500 Dash
+    max_withdrawal_amount: 50_000_000_000_000,   //500 Dash
+    daily_withdrawal_limit: 200_000_000_000_000, //2000 Dash (Core v22 limit; unused before protocol version 8)
     // = dpp MIN_WITHDRAWAL_AMOUNT: ASSET_UNLOCK_TX_SIZE(190) * MIN_CORE_FEE_PER_BYTE(1)
     // * CREDITS_PER_DUFF(1000) = 190_000 credits = 190 duffs.
     min_withdrawal_amount: 190_000,

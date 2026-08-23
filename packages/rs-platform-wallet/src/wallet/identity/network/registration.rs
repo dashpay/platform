@@ -224,7 +224,7 @@ impl IdentityWallet {
         // CL-height retry also iterates inside the IS→CL fallback branch
         // so a freshly-upgraded CL proof gets the same patience.
         let proof_out_point = out_point_from_proof(&proof);
-        let identity = match submit_with_cl_height_retry(settings, |s| {
+        let (submit_result, effective_proof) = match submit_with_cl_height_retry(settings, |s| {
             placeholder.put_to_platform_and_wait_for_response_with_signer(
                 &self.sdk,
                 proof.clone(),
@@ -236,7 +236,7 @@ impl IdentityWallet {
         })
         .await
         {
-            Ok(identity) => identity,
+            Ok(identity) => (Ok(identity), proof.clone()),
             Err(e) if is_instant_lock_proof_invalid(&e) => {
                 let out_point = proof_out_point;
                 tracing::warn!(
@@ -248,7 +248,7 @@ impl IdentityWallet {
                     .asset_locks
                     .upgrade_to_chain_lock_proof(&out_point, None)
                     .await?;
-                submit_with_cl_height_retry(settings, |s| {
+                let submit_result = submit_with_cl_height_retry(settings, |s| {
                     placeholder.put_to_platform_and_wait_for_response_with_signer(
                         &self.sdk,
                         chain_proof.clone(),
@@ -258,11 +258,20 @@ impl IdentityWallet {
                         s,
                     )
                 })
-                .await
-                .map_err(PlatformWalletError::Sdk)?
+                .await;
+                (submit_result, chain_proof)
             }
-            Err(e) => return Err(PlatformWalletError::Sdk(e)),
+            Err(e) => (Err(e), proof.clone()),
         };
+        let identity = self
+            .asset_locks
+            .reconcile_asset_lock_submit_result(
+                submit_result,
+                &proof_out_point,
+                &effective_proof,
+                None,
+            )
+            .await?;
 
         // Step 4 (best-effort): bookkeeping — add to local
         // IdentityManager + record key derivation breadcrumbs.
@@ -457,7 +466,7 @@ impl IdentityWallet {
         // cache, and IS-lock rejection triggers an IS→CL upgrade on the
         // same outpoint.
         let proof_out_point = out_point_from_proof(&proof);
-        let new_balance = match submit_with_cl_height_retry(settings, |s| {
+        let (submit_result, effective_proof) = match submit_with_cl_height_retry(settings, |s| {
             identity.top_up_identity_with_signer(
                 &self.sdk,
                 proof.clone(),
@@ -468,7 +477,7 @@ impl IdentityWallet {
         })
         .await
         {
-            Ok(balance) => balance,
+            Ok(balance) => (Ok(balance), proof.clone()),
             Err(e) if is_instant_lock_proof_invalid(&e) => {
                 let out_point = proof_out_point;
                 tracing::warn!(
@@ -480,7 +489,7 @@ impl IdentityWallet {
                     .asset_locks
                     .upgrade_to_chain_lock_proof(&out_point, None)
                     .await?;
-                submit_with_cl_height_retry(settings, |s| {
+                let submit_result = submit_with_cl_height_retry(settings, |s| {
                     identity.top_up_identity_with_signer(
                         &self.sdk,
                         chain_proof.clone(),
@@ -489,11 +498,20 @@ impl IdentityWallet {
                         s,
                     )
                 })
-                .await
-                .map_err(PlatformWalletError::Sdk)?
+                .await;
+                (submit_result, chain_proof)
             }
-            Err(e) => return Err(PlatformWalletError::Sdk(e)),
+            Err(e) => (Err(e), proof.clone()),
         };
+        let new_balance = self
+            .asset_locks
+            .reconcile_asset_lock_submit_result(
+                submit_result,
+                &proof_out_point,
+                &effective_proof,
+                None,
+            )
+            .await?;
 
         // Step 4 (best-effort): persist the new balance + clean up the
         // tracked lock.

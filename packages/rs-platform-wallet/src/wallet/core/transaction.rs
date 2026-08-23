@@ -242,6 +242,23 @@ pub const SEND_FUNDING_SOURCES: [AccountTypePreference; 3] = [
     AccountTypePreference::AllDashpayReceivingFunds,
 ];
 
+/// The funding sources an **asset lock** pools by default — the same set, and
+/// for the same reasons, as [`SEND_FUNDING_SOURCES`]: an invitation, identity
+/// registration or top-up draws from the union of the standard families and
+/// every DashPay contact-receiving account, with change returning to BIP44.
+///
+/// Before this, an asset lock could only be funded from one BIP44 account, so a
+/// wallet holding its balance across several accounts had to sweep them into
+/// that account first and lock out of it — an extra on-chain hop, an extra fee,
+/// and a transparent address reused for the privilege. Pooling ends that
+/// sweep-then-lock shape.
+///
+/// CoinJoin is absent here for a second reason on top of the linkage one:
+/// upstream rejects a CoinJoin source pooled with any other, and CoinJoin
+/// asset-lock funding is drain-only. That flow keeps naming its single account,
+/// through `AssetLockBuildAmount::DrainAll`.
+pub const ASSET_LOCK_FUNDING_SOURCES: [AccountTypePreference; 3] = SEND_FUNDING_SOURCES;
+
 /// The concrete accounts `preference` resolves to at `source_index` — the
 /// platform mirror of key-wallet's private `account_types_for`: the single
 /// account at `source_index` for the standard families, and every DashPay
@@ -249,7 +266,7 @@ pub const SEND_FUNDING_SOURCES: [AccountTypePreference; 3] = [
 /// DashPay source. A set selector matching nothing resolves to an empty list,
 /// not an error — a wallet with no contacts still sends from its standard
 /// accounts.
-fn resolve_source_accounts(
+pub(crate) fn resolve_source_accounts(
     accounts: &key_wallet::account::ManagedAccountCollection,
     preference: AccountTypePreference,
     source_index: u32,

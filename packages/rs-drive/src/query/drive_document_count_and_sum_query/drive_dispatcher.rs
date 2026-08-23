@@ -109,7 +109,8 @@ impl Drive {
         // clause whose presence changes the routing decision. See
         // [`validate_and_canonicalize_where_clauses`]'s docstring for
         // the catalog of rejections.
-        let where_clauses = validate_and_canonicalize_where_clauses(request.where_clauses)?;
+        let where_clauses =
+            validate_and_canonicalize_where_clauses(request.where_clauses, platform_version)?;
 
         // Convert AverageMode → SumMode (1:1 by construction); sum's
         // routing table is the single source of truth for the

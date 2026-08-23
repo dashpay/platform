@@ -40,8 +40,8 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use crate::events::{build_event_vtable, KotlinEventCtx};
-use crate::persistence::{build_vtable, KotlinPersistenceCtx};
+use crate::events::{build_event_extension, build_event_vtable, KotlinEventCtx};
+use crate::persistence::{build_extension, build_vtable, KotlinPersistenceCtx};
 use crate::support::{guard, take_pwffi_error, throw_sdk_exception, PWFFI_CODE_OFFSET};
 use jni::objects::{JByteArray, JClass, JObject, JObjectArray, JString, JValue};
 use jni::sys::{
@@ -52,7 +52,7 @@ use jni::JNIEnv;
 use platform_wallet_ffi::error::{
     platform_wallet_ffi_result_free, PlatformWalletFFIResult, PlatformWalletFFIResultCode,
 };
-use platform_wallet_ffi::event_handler::EventHandlerCallbacks;
+use platform_wallet_ffi::event_handler::{EventHandlerCallbacks, EventHandlerCallbacksExtension};
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::persistence::{PersistenceCallbacks, PersistenceCapabilitiesFFI};
 use platform_wallet_ffi::types::IdentifierArray;
@@ -155,6 +155,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
         let persistence_ctx =
             Box::into_raw(Box::new(KotlinPersistenceCtx::new(persistence_global)));
         let persistence: PersistenceCallbacks = build_vtable(persistence_ctx as *mut c_void);
+        let persistence_extension = build_extension();
         let persistence_capabilities = PersistenceCapabilitiesFFI {
             version: declared_capabilities_version,
             reserved: 0,
@@ -174,16 +175,19 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
         let event_ctx = Box::into_raw(Box::new(KotlinEventCtx::new(event_global)));
         let mut event_callbacks: EventHandlerCallbacks =
             build_event_vtable(event_ctx as *mut c_void);
+        let event_extension: EventHandlerCallbacksExtension = build_event_extension();
 
         let mut manager_handle: Handle = 0;
         // SAFETY: `inner` is a live Sdk pointer for the duration of this
         // call; the manager clones the Sdk and reads both vtables by value.
         let result = unsafe {
-            platform_wallet_ffi::platform_wallet_manager_create_with_persistence_capabilities(
+            platform_wallet_ffi::platform_wallet_manager_create_with_extensions(
                 inner,
                 &persistence as *const PersistenceCallbacks,
                 &mut event_callbacks as *const EventHandlerCallbacks,
                 &persistence_capabilities as *const PersistenceCapabilitiesFFI,
+                &persistence_extension,
+                &event_extension,
                 &mut manager_handle as *mut Handle,
             )
         };

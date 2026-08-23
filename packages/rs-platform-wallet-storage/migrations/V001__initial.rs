@@ -50,8 +50,22 @@ pub fn migration() -> String {
     let account_type_check =
         build_check_in(crate::sqlite::schema::accounts::ACCOUNT_TYPE_LABELS);
     let pool_type_check = build_check_in(crate::sqlite::schema::accounts::POOL_TYPE_LABELS);
-    let asset_lock_status_check =
-        build_check_in(crate::sqlite::schema::asset_locks::ASSET_LOCK_STATUS_LABELS);
+    // FROZEN as of V004: the asset-lock status domain must no longer be
+    // interpolated from the live `ASSET_LOCK_STATUS_LABELS` const — a
+    // later variant addition would silently rewrite this migration's
+    // generated SQL and break its Refinery checksum on every database
+    // that already applied it (`abort_divergent` default). New status
+    // labels are introduced by APPENDING a migration that rebuilds the
+    // table with the widened CHECK (see
+    // `V004__asset_lock_recovered_status.rs`); this list stays
+    // byte-identical to what V001 shipped with.
+    let asset_lock_status_check = build_check_in(&[
+        "built",
+        "broadcast",
+        "is_locked",
+        "chain_locked",
+        "consumed",
+    ]);
     let contact_state_check =
         build_check_in(crate::sqlite::schema::contacts::CONTACT_STATE_LABELS);
     let pending_contact_crypto_kind_check =

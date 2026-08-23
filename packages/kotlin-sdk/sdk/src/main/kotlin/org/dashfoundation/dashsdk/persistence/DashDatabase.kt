@@ -114,9 +114,14 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * the Swift `PersistentInvitation` model — push-persisted by the
  * `on_persist_invitations_fn` callback, no Rust rehydrate, no secret
  * column; the "Sent invitations" list reads it via a Room `Flow`).
+ *
+ * Version 10 (DPNS marketplace): enriches `dpns_names` with the stable
+ * document id, ownership/sale state, counterparty, document timestamps and
+ * marketplace reconciliation watermark. Defaults keep every legacy label an
+ * owned, unlisted row until the first native marketplace sync refreshes it.
  */
 @Database(
-    version = 9,
+    version = 10,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -514,6 +519,43 @@ abstract class DashDatabase : RoomDatabase() {
             }
         }
 
+        /** v9 → v10: additive DPNS marketplace state on legacy label rows. */
+        val MIGRATION_9_10: Migration = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `dpns_names` ADD COLUMN `documentId` BLOB")
+                db.execSQL(
+                    "ALTER TABLE `dpns_names` ADD COLUMN `isOwned` " +
+                        "INTEGER NOT NULL DEFAULT 1",
+                )
+                db.execSQL("ALTER TABLE `dpns_names` ADD COLUMN `priceCredits` INTEGER")
+                db.execSQL(
+                    "ALTER TABLE `dpns_names` ADD COLUMN `saleStatusRaw` " +
+                        "INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL("ALTER TABLE `dpns_names` ADD COLUMN `counterpartyIdentityId` BLOB")
+                db.execSQL(
+                    "ALTER TABLE `dpns_names` ADD COLUMN `documentCreatedAtMs` " +
+                        "INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE `dpns_names` ADD COLUMN `documentUpdatedAtMs` " +
+                        "INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE `dpns_names` ADD COLUMN `documentTransferredAtMs` " +
+                        "INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE `dpns_names` ADD COLUMN `marketplaceUpdatedAt` " +
+                        "INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_dpns_names_documentId` " +
+                        "ON `dpns_names` (`documentId`)",
+                )
+            }
+        }
+
         /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
@@ -531,6 +573,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_6_7,
                     MIGRATION_7_8,
                     MIGRATION_8_9,
+                    MIGRATION_9_10,
                 )
                 .build()
 

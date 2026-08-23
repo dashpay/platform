@@ -151,10 +151,15 @@ platform-encryption: &platform_encryption
   - .github/workflows/tests*
   - packages/rs-platform-encryption/**
 
+dash-platform-queries: &platform_queries
+  - .github/workflows/tests*
+  - packages/dash-platform-queries/**
+
 dash-sdk: &sdk
   - .github/workflows/tests*
   - packages/rs-drive-proof-verifier/**
   - packages/rs-sdk/**
+  - *platform_queries
   - *dash_async
   - *context_provider
   - *sdk_trusted_context_provider

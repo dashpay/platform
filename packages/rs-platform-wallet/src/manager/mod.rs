@@ -2,11 +2,13 @@
 
 pub mod accessors;
 pub mod dashpay_sync;
+pub mod dpns_sync;
 pub mod identity_sync;
 mod load;
 pub mod platform_address_sync;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
+pub mod startup;
 mod wallet_lifecycle;
 
 use std::sync::Arc;
@@ -22,6 +24,7 @@ use key_wallet_manager::WalletManager;
 use crate::changeset::{spawn_wallet_event_adapter, PlatformWalletPersistence};
 use crate::events::{PlatformEventHandler, PlatformEventManager};
 use crate::manager::dashpay_sync::DashPaySyncManager;
+use crate::manager::dpns_sync::DpnsSyncManager;
 use crate::manager::identity_sync::IdentitySyncManager;
 use crate::manager::platform_address_sync::PlatformAddressSyncManager;
 #[cfg(feature = "shielded")]
@@ -49,6 +52,8 @@ pub enum WalletWorker {
     IdentitySync,
     /// DashPay (contact requests + profiles) sync coordinator.
     DashPaySync,
+    /// DPNS username-marketplace sync coordinator.
+    DpnsSync,
     /// Shielded (Orchard) note sync coordinator.
     ShieldedSync,
     /// SPV runtime — the network event source feeding every persister-
@@ -347,6 +352,12 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// auto-started — call `start` after wallets are registered. See
     /// [`DashPaySyncManager`].
     pub(super) dashpay_sync_manager: Arc<DashPaySyncManager>,
+    /// Periodic DPNS username-marketplace sync coordinator. Drives
+    /// `sync_dpns_marketplace()` (owned-name sale state + departure
+    /// detection) on **every** registered wallet each sweep; shares the
+    /// same `wallets` map as [`DashPaySyncManager`]. Not auto-started —
+    /// call `start` after wallets are registered. See [`DpnsSyncManager`].
+    pub(super) dpns_sync_manager: Arc<DpnsSyncManager>,
     /// Tracks asynchronous payment hooks so manager shutdown can close
     /// admission and drain every task before host callback contexts are freed.
     pub(super) dashpay_payment_handler: Arc<DashPayPaymentHandler>,
@@ -492,6 +503,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             Arc::clone(&wallets),
             Arc::clone(&registry),
         ));
+        // DPNS marketplace sync also sweeps the `wallets` map; it takes
+        // the event manager to dispatch its pass-completion event.
+        let dpns_sync = Arc::new(DpnsSyncManager::new(
+            Arc::clone(&wallets),
+            Arc::clone(&registry),
+            Arc::clone(&event_manager),
+        ));
         #[cfg(feature = "shielded")]
         let shielded_coordinator: Arc<
             RwLock<Option<Arc<crate::wallet::shielded::NetworkShieldedCoordinator>>>,
@@ -511,6 +529,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             platform_address_sync_manager: platform_address_sync,
             identity_sync_manager: identity_sync,
             dashpay_sync_manager: dashpay_sync,
+            dpns_sync_manager: dpns_sync,
             dashpay_payment_handler,
             #[cfg(feature = "shielded")]
             shielded_sync_manager: shielded_sync,
@@ -855,23 +874,27 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // run a full pass — and fire persister / completion callbacks —
         // after `destroy` returned and the host freed those contexts.
         #[cfg(feature = "shielded")]
-        let (pa_drained, id_drained, dp_drained, sh_drained) = tokio::join!(
+        let (pa_drained, id_drained, dp_drained, dpns_drained, sh_drained) = tokio::join!(
             self.platform_address_sync_manager
                 .quiesce_sealed_within(COORDINATOR_DRAIN_BUDGET),
             self.identity_sync_manager
                 .quiesce_sealed_within(COORDINATOR_DRAIN_BUDGET),
             self.dashpay_sync_manager
+                .quiesce_sealed_within(COORDINATOR_DRAIN_BUDGET),
+            self.dpns_sync_manager
                 .quiesce_sealed_within(COORDINATOR_DRAIN_BUDGET),
             self.shielded_sync_manager
                 .quiesce_sealed_within(COORDINATOR_DRAIN_BUDGET),
         );
         #[cfg(not(feature = "shielded"))]
-        let (pa_drained, id_drained, dp_drained) = tokio::join!(
+        let (pa_drained, id_drained, dp_drained, dpns_drained) = tokio::join!(
             self.platform_address_sync_manager
                 .quiesce_sealed_within(COORDINATOR_DRAIN_BUDGET),
             self.identity_sync_manager
                 .quiesce_sealed_within(COORDINATOR_DRAIN_BUDGET),
             self.dashpay_sync_manager
+                .quiesce_sealed_within(COORDINATOR_DRAIN_BUDGET),
+            self.dpns_sync_manager
                 .quiesce_sealed_within(COORDINATOR_DRAIN_BUDGET),
         );
 
@@ -889,6 +912,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             (WalletWorker::PlatformAddressSync, pa_drained),
             (WalletWorker::IdentitySync, id_drained),
             (WalletWorker::DashPaySync, dp_drained),
+            (WalletWorker::DpnsSync, dpns_drained),
             #[cfg(feature = "shielded")]
             (WalletWorker::ShieldedSync, sh_drained),
         ];
