@@ -367,7 +367,23 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // immediately from the SPV/persisted record.
                 //
                 // A DEFINITE `Rejected` ends the resume early — but it says
-                // NOTHING about the row, and must not be read as one.
+                // NOTHING about the row, and must not be read as one. In
+                // fact the row's RECORD may already hold the answer: a lock
+                // can sit at `Broadcast` while its transaction record
+                // carries an IS lock or a chain-locked context, because
+                // finality that arrives with no waiter active enriches the
+                // record without advancing the tracked status
+                // (`LockNotifyHandler` only wakes waiters, and
+                // `enrich_from_record` upgrades only chain-locked records
+                // on scan paths). So before surfacing the rejection, probe
+                // the record once, without waiting — `wait_for_proof` with
+                // a zero bound performs exactly one local record/persister
+                // check and expires before touching the network. On the
+                // canonical trigger (`catchUpStuckAssetLocks` resuming
+                // rows at launch before SPV connects) that probe is the
+                // difference between completing an already-final lock
+                // entirely offline and failing it every launch until
+                // connectivity returns.
                 //
                 // `Rejected` is scoped to the attempt that produced it. With
                 // the production `SpvBroadcaster` it is reachable from
@@ -395,27 +411,46 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // successful broadcast too (app killed between the send and
                 // the status advance), which is precisely why the `Built` arm
                 // above also only surfaces the error and leaves its row alone.
+                let mut local_proof = None;
                 if let Err(e) = self.broadcaster.broadcast(&tx).await {
                     if matches!(e, BroadcastError::Rejected { .. }) {
-                        tracing::warn!(
+                        match self.wait_for_proof(out_point, Some(Duration::ZERO)).await {
+                            Ok(proof) => {
+                                tracing::info!(
+                                    outpoint = %out_point,
+                                    error = %e,
+                                    "resume_asset_lock: defensive re-broadcast of a \
+                                     Broadcast-status lock was rejected, but the \
+                                     local record already holds finality — \
+                                     completing the resume from the local proof"
+                                );
+                                local_proof = Some(proof);
+                            }
+                            Err(probe_err) => {
+                                tracing::warn!(
+                                    outpoint = %out_point,
+                                    error = %e,
+                                    probe = %probe_err,
+                                    "resume_asset_lock: defensive re-broadcast of a \
+                                     Broadcast-status lock was definitively rejected \
+                                     and no local proof exists — this attempt never \
+                                     left the device, which proves nothing about the \
+                                     original broadcast; leaving the row tracked at \
+                                     Broadcast and failing the resume"
+                                );
+                                return Err(e.into());
+                            }
+                        }
+                    } else {
+                        tracing::debug!(
                             outpoint = %out_point,
                             error = %e,
                             "resume_asset_lock: defensive re-broadcast of a \
-                             Broadcast-status lock was definitively rejected — \
-                             this attempt never left the device, which proves \
-                             nothing about the original broadcast; leaving the \
-                             row tracked at Broadcast and failing the resume"
+                             Broadcast-status lock returned an unknown outcome (likely \
+                             already in a mempool or mined); proceeding to wait \
+                             for proof"
                         );
-                        return Err(e.into());
                     }
-                    tracing::debug!(
-                        outpoint = %out_point,
-                        error = %e,
-                        "resume_asset_lock: defensive re-broadcast of a \
-                         Broadcast-status lock returned an unknown outcome (likely \
-                         already in a mempool or mined); proceeding to wait \
-                         for proof"
-                    );
                 }
                 // Bounded like the `Built` arm, and for the same reason. This
                 // arm is only entered on a RESUME, i.e. for a transaction
@@ -439,19 +474,25 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // having asked for an unbounded wait. The shielded seed pool
                 // reads `FinalityTimeout` as a pacing signal, so re-typing it
                 // for everyone would break a working flow to fix another.
-                let bounded = timeout.or(Some(UNCONFIRMED_BROADCAST_PROOF_TIMEOUT));
-                let proof = match self.wait_for_proof(out_point, bounded).await {
-                    Ok(proof) => proof,
-                    Err(PlatformWalletError::FinalityTimeout(_)) if timeout.is_none() => {
-                        let reason = format!(
-                            "asset lock {} is tracked as broadcast but no \
-                             InstantSend/ChainLock proof arrived within {:?}; the \
-                             lock remains tracked and resumable",
-                            out_point, UNCONFIRMED_BROADCAST_PROOF_TIMEOUT
-                        );
-                        return Err(PlatformWalletError::TransactionBroadcastUnconfirmed(reason));
+                let proof = if let Some(proof) = local_proof {
+                    proof
+                } else {
+                    let bounded = timeout.or(Some(UNCONFIRMED_BROADCAST_PROOF_TIMEOUT));
+                    match self.wait_for_proof(out_point, bounded).await {
+                        Ok(proof) => proof,
+                        Err(PlatformWalletError::FinalityTimeout(_)) if timeout.is_none() => {
+                            let reason = format!(
+                                "asset lock {} is tracked as broadcast but no \
+                                 InstantSend/ChainLock proof arrived within {:?}; the \
+                                 lock remains tracked and resumable",
+                                out_point, UNCONFIRMED_BROADCAST_PROOF_TIMEOUT
+                            );
+                            return Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
+                                reason,
+                            ));
+                        }
+                        Err(e) => return Err(e),
                     }
-                    Err(e) => return Err(e),
                 };
                 self.validate_or_upgrade_proof(proof, account_index, out_point)
                     .await?
@@ -1286,6 +1327,122 @@ mod tests {
             Some(AssetLockStatus::Broadcast),
             "a re-broadcast that never left the device says nothing about the \
              original send — the row must survive, unchanged, for a later resume"
+        );
+    }
+
+    /// A definite rejection must consult the LOCAL record before failing
+    /// the resume.
+    ///
+    /// A row can sit at `Broadcast` while its transaction record already
+    /// carries finality: `LockNotifyHandler` only wakes waiters, so an
+    /// IS/CL event that arrives with no waiter active enriches the record
+    /// but never advances the tracked status, and `enrich_from_record`
+    /// upgrades only `InChainLockedBlock` records on scan paths — an
+    /// `InstantSend` context is invisible to it. On the next launch
+    /// `catchUpStuckAssetLocks` resumes the row before SPV connects, the
+    /// defensive re-broadcast draws `Rejected` (unstarted client / zero
+    /// peers), and the pre-fix arm failed the resume even though
+    /// `wait_for_proof` would have returned the proof on its first
+    /// iteration, straight from the record, without any network at all.
+    #[tokio::test]
+    async fn definite_rejection_on_a_broadcast_lock_yields_the_local_proof() {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::managed_account::transaction_record::{
+            TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::{TransactionContext, TransactionType};
+
+        let (wallet_manager, wallet_id, _balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_network(Network::Testnet)
+                .build()
+                .expect("mock sdk"),
+        );
+        let manager = AssetLockManager::new(
+            sdk,
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::new(AlwaysRejectedBroadcaster),
+            WalletPersister::new(wallet_id, Arc::new(RecordingPersistence::default())),
+        );
+        let (transaction, _path) = manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::AssetLockAddressTopUp,
+                4,
+                &signer,
+            )
+            .await
+            .expect("build asset lock");
+        let out_point = OutPoint::new(transaction.txid(), 0);
+        {
+            let mut wm = wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&wallet_id)
+                .expect("wallet must remain registered");
+            // The finality that arrived while nobody was waiting: an
+            // IS-locked record for the funding tx, filed under the BIP44
+            // account the lock was built from.
+            let record = TransactionRecord::new(
+                transaction.clone(),
+                AccountType::Standard {
+                    index: 0,
+                    standard_account_type: StandardAccountType::BIP44Account,
+                },
+                TransactionContext::InstantSend(InstantLock::default()),
+                TransactionType::Standard,
+                TransactionDirection::Outgoing,
+                Vec::new(),
+                Vec::new(),
+                0,
+            );
+            info.core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .expect("funded wallet has BIP44 account 0")
+                .transactions_mut()
+                .insert(record.txid, record);
+            info.tracked_asset_locks.insert(
+                out_point,
+                TrackedAssetLock {
+                    out_point,
+                    transaction,
+                    account_index: 0,
+                    funding_type: AssetLockFundingType::AssetLockAddressTopUp,
+                    identity_index: 4,
+                    amount: 1_000_000,
+                    status: AssetLockStatus::Broadcast,
+                    proof: None,
+                },
+            );
+        }
+
+        let (proof, _path) = manager
+            .resume_asset_lock(&out_point, None)
+            .await
+            .expect("a locally-proven lock must survive a rejected re-broadcast");
+        assert!(
+            matches!(proof, dpp::prelude::AssetLockProof::Instant(_)),
+            "the proof must come from the record's InstantSend context: {proof:?}"
+        );
+        assert_eq!(
+            wallet_manager
+                .read()
+                .await
+                .get_wallet_info(&wallet_id)
+                .expect("wallet")
+                .tracked_asset_locks
+                .get(&out_point)
+                .expect("lock stays tracked")
+                .status,
+            AssetLockStatus::InstantSendLocked,
+            "the resume must advance the row exactly as a waited-for proof would"
         );
     }
 
