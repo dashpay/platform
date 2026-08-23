@@ -38,48 +38,51 @@ where
             // We were not the proposer, and we should process something new
             drop_block_execution_context = true;
         } else if let Some(current_block_hash) = block_state_info.block_hash() {
-            // There is also the possibility that this block already came in, but tenderdash crashed
-            // Now tenderdash is sending it again
-            if let Some(proposal_info) = block_execution_context.proposer_results() {
-                tracing::debug!(
-                    method = "process_proposal",
-                    "we knew block hash, block execution context already had a proposer result",
-                );
-                // We were the proposer as well, so we have the result in cache
-                return Ok(proto::ResponseProcessProposal {
-                    status: proto::response_process_proposal::ProposalStatus::Accept.into(),
-                    app_hash: proposal_info.app_hash.clone(),
-                    tx_results: proposal_info.tx_results.clone(),
-                    consensus_param_updates: proposal_info.consensus_param_updates.clone(),
-                    validator_set_update: proposal_info.validator_set_update.clone(),
-                    events: Vec::new(),
-                });
-            }
-
             if current_block_hash.as_slice() == request.hash {
+                // There is also the possibility that this block already came in, but tenderdash crashed
+                // Now tenderdash is sending it again
+                if let Some(proposal_info) = block_execution_context.proposer_results() {
+                    tracing::debug!(
+                        method = "process_proposal",
+                        "we knew block hash, block execution context already had a proposer result",
+                    );
+                    // We were the proposer as well, so we have the result in cache
+                    return Ok(proto::ResponseProcessProposal {
+                        status: proto::response_process_proposal::ProposalStatus::Accept.into(),
+                        app_hash: proposal_info.app_hash.clone(),
+                        tx_results: proposal_info.tx_results.clone(),
+                        consensus_param_updates: proposal_info.consensus_param_updates.clone(),
+                        validator_set_update: proposal_info.validator_set_update.clone(),
+                        events: Vec::new(),
+                    });
+                }
+
                 // We were not the proposer, just drop the execution context
                 tracing::warn!(
-                        method = "process_proposal",
-                        "block execution context already existed, but we are running it again for same height {}/round {}",
-                        request.height,
-                        request.round,
-                    );
-                drop_block_execution_context = true;
-            } else {
-                // We are getting a different block hash for a block of the same round
-                // This is a terrible issue
-                tracing::error!(
                     method = "process_proposal",
-                    block_state_info = ?block_state_info,
-                    "received a process proposal request twice with different hash for height {}/round {}: existing hash {:?}, new hash {:?}",
+                    "block execution context already existed, but we are running it again for same height {}/round {}",
                     request.height,
                     request.round,
-                    current_block_hash,
-                    request.hash,
                 );
-                Err(Error::Abci(AbciError::BadRequest(
-                    "received a process proposal request twice with different hash".to_string(),
-                )))?;
+                drop_block_execution_context = true;
+            } else {
+                // A different block for the same height and round. With a single honest
+                // proposer per round this only happens when the block we hold is stale:
+                // typically our own proposal, built while we were still catching up, and
+                // now the block the network actually committed at this height and round
+                // arrives through consensus catch-up. The cached result belongs to the
+                // other block, so it must neither be served nor block execution; the only
+                // correct answer is to execute the block we were asked about.
+                tracing::warn!(
+                    method = "process_proposal",
+                    block_state_info = ?block_state_info,
+                    "received a process proposal request for a different block at the same height {}/round {}: existing hash {}, new hash {}; dropping the existing block execution context and executing the new block",
+                    request.height,
+                    request.round,
+                    hex::encode(current_block_hash),
+                    hex::encode(&request.hash),
+                );
+                drop_block_execution_context = true;
             }
         } else {
             // we were the proposer
