@@ -47,13 +47,22 @@ pub fn daily_withdrawal_limit_v2(
             )
         })?;
 
+    let max_withdrawal_amount = platform_version.system_limits.max_withdrawal_amount;
+    if max_daily_withdrawal_amount < max_withdrawal_amount {
+        // A cap below one maximal withdrawal would let an accepted withdrawal never fit the
+        // daily maximum; that is a contradictory configuration, not a limit to apply.
+        return Err(ProtocolError::CorruptedCodeExecution(format!(
+            "daily_withdrawal_limit v2 requires system_limits.max_daily_withdrawal_amount ({max_daily_withdrawal_amount}) to be at least max_withdrawal_amount ({max_withdrawal_amount})"
+        )));
+    }
+
     // u128 keeps `total * percent` from overflowing for any u64 total.
     let relative_limit = (total_credits_a_day_ago as u128) * (percent as u128) / 100;
     let relative_limit = Credits::try_from(relative_limit)
         .map_err(|_| ProtocolError::Overflow("daily withdrawal limit overflow"))?;
 
     Ok(relative_limit
-        .max(platform_version.system_limits.max_withdrawal_amount)
+        .max(max_withdrawal_amount)
         .min(max_daily_withdrawal_amount))
 }
 
@@ -158,5 +167,28 @@ mod tests {
             daily_withdrawal_limit_v2(Some(dash_to_credits!(100)), &platform_version),
             Err(ProtocolError::CorruptedCodeExecution(_))
         ));
+    }
+
+    #[test]
+    fn should_fail_when_the_cap_is_below_one_maximal_withdrawal() {
+        let mut platform_version = platform_version_with(Some(15));
+        platform_version.system_limits.max_daily_withdrawal_amount =
+            Some(dash_to_credits!(500) - 1);
+
+        // Whatever the total, a cap below the floor is a contradictory configuration.
+        for total in [0, dash_to_credits!(100), dash_to_credits!(30000)] {
+            assert!(matches!(
+                daily_withdrawal_limit_v2(Some(total), &platform_version),
+                Err(ProtocolError::CorruptedCodeExecution(_))
+            ));
+        }
+
+        // Exactly the floor is allowed and the limit is that floor.
+        platform_version.system_limits.max_daily_withdrawal_amount = Some(dash_to_credits!(500));
+        assert_eq!(
+            daily_withdrawal_limit_v2(Some(dash_to_credits!(30000)), &platform_version)
+                .expect("expected limit"),
+            dash_to_credits!(500)
+        );
     }
 }
