@@ -67,6 +67,13 @@ pub struct SystemLimits {
     /// version 1 applied a flat 2000 Dash. Versioned: see `daily_withdrawal_limit_percent` in
     /// each `SYSTEM_LIMITS_V*`.
     pub daily_withdrawal_limit_percent: Option<u8>,
+    /// Upper bound (in credits) of the relative daily withdrawal limit from protocol version 14:
+    /// Core's credit-pool unlock capacity per day, `LimitAmountV24` = 4000 Dash per 576-block
+    /// window (Core v24). Platform cannot usefully pool more than Core will mine — the excess
+    /// only cycles through expiry and re-signing — so the limit never exceeds this whatever the
+    /// total credits are; raise it together with Core. Must be at least `max_withdrawal_amount`.
+    /// `None` for the protocol versions that predate the relative rule.
+    pub max_daily_withdrawal_amount: Option<u64>,
     /// Minimum net amount (in credits) a withdrawal may send to Core, shared by the
     /// transparent (identity + address) and shielded withdrawal paths. The dust floor that
     /// keeps Core from rejecting the resulting `TxOut`. Versioned: see `min_withdrawal_amount`

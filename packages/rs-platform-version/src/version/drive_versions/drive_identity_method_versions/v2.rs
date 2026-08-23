@@ -168,7 +168,7 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V2: DriveIdentityMethodVersions =
                 },
             },
             calculate_current_withdrawal_limit: 1, // changed in v14: daily maximum is a percentage of the total credits a day ago
-            record_total_credits_history: 0,
-            fetch_total_credits_in_platform_a_day_ago: 0,
+            record_total_credits_history: Some(0), // new in v14: total credits history for the day-lagged daily withdrawal limit
+            fetch_total_credits_in_platform_a_day_ago: Some(0), // new in v14
         },
     };

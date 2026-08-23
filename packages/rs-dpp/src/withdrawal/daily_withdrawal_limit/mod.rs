@@ -14,8 +14,8 @@ mod v2;
 /// total credits in Platform for version 0 (10% of it, bounded; required), ignored
 /// by version 1 (a flat 2000 Dash), and the total credits Platform held a day ago
 /// for version 2 (`daily_withdrawal_limit_percent` of it, never below one maximal
-/// withdrawal; the flat limit of version 1 while that day-old total is not known
-/// yet).
+/// withdrawal nor above `max_daily_withdrawal_amount`; the flat limit of version 1
+/// while that day-old total is not known yet).
 pub fn daily_withdrawal_limit(
     reference_total_credits: Option<Credits>,
     platform_version: &PlatformVersion,
@@ -51,8 +51,10 @@ mod tests {
             // Below one maximal withdrawal (500 Dash) the limit is floored there.
             (dash_to_credits!(50), dash_to_credits!(500)),
             (dash_to_credits!(2000), dash_to_credits!(500)),
-            (dash_to_credits!(30000), dash_to_credits!(4500)),
-            (dash_to_credits!(1000000), dash_to_credits!(150000)),
+            (dash_to_credits!(20000), dash_to_credits!(3000)),
+            // Above Core's unlock capacity per day (4000 Dash) the limit is capped there.
+            (dash_to_credits!(30000), dash_to_credits!(4000)),
+            (dash_to_credits!(1000000), dash_to_credits!(4000)),
         ] {
             // v13 keeps the flat 2000 Dash whatever the total is.
             assert_eq!(

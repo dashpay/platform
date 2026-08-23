@@ -41,15 +41,19 @@ impl Drive {
             .withdrawals
             .fetch_total_credits_in_platform_a_day_ago
         {
-            0 => self.fetch_total_credits_in_platform_a_day_ago_v0(
+            Some(0) => self.fetch_total_credits_in_platform_a_day_ago_v0(
                 time_ms,
                 transaction,
                 platform_version,
             ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_total_credits_in_platform_a_day_ago".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "fetch_total_credits_in_platform_a_day_ago".to_string(),
+                known_versions: vec![0],
             })),
         }
     }

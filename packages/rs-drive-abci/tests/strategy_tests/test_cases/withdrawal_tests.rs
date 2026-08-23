@@ -1,5 +1,6 @@
 mod tests {
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy, GENESIS_TIME_MS};
+    use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
     use crate::strategy::{
         ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness,
     };
@@ -14,6 +15,7 @@ mod tests {
     use dpp::{dash_to_credits, dash_to_duffs};
     use drive::config::DEFAULT_QUERY_LIMIT;
     use drive::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
+    use drive::drive::identity::withdrawals::fetch_total_credits_in_platform_a_day_ago::DAY_IN_MS;
     use drive::drive::identity::withdrawals::paths::{
         get_withdrawal_root_path, WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
     };
@@ -3486,5 +3488,119 @@ mod tests {
             .unwrap();
 
         assert_eq!(withdrawal_documents_broadcasted.len(), 400);
+    }
+
+    /// Core rewards reach Platform at an epoch change, inside block fee processing. The total
+    /// credits history the daily withdrawal limit reads must be written after that, keyed by the
+    /// epoch change block itself; written before it, the reward would only show up a block later
+    /// (or a day later across a halt) and the limit would derive from a stale total.
+    #[tokio::test]
+    async fn should_record_the_total_credits_history_after_epoch_core_rewards() {
+        let platform_version = PlatformVersion::latest();
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![],
+                start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+            // One Core block per Platform block, so the first epoch accrues Core rewards.
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
+                times_per_block_range: 1..2,
+                chance_per_block: None,
+            }),
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+
+        let hour_in_ms = 1000 * 60 * 60;
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                epoch_time_length_s: 60 * 60 * 24,
+                ..Default::default()
+            },
+            block_spacing_ms: hour_in_ms,
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        // Hourly blocks with one-day epochs: block 25, at genesis + 24h, opens epoch 1 and
+        // distributes the Core rewards of epoch 0 — the only credits entering Platform here.
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            30,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        )
+        .await;
+
+        assert_eq!(outcome.end_epoch_index, 1);
+
+        let drive = &outcome.abci_app.platform.drive;
+
+        let total_credits_in_platform = drive
+            .grove_get_raw_value_u64_from_encoded_var_vec(
+                (&misc_path()).into(),
+                TOTAL_SYSTEM_CREDITS_STORAGE_KEY,
+                DirectQueryType::StatefulDirectQuery,
+                None,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected to get total credits in platform")
+            .expect("expected total credits in platform");
+
+        let epoch_change_time_ms = GENESIS_TIME_MS + 24 * hour_in_ms;
+
+        // The entry keyed by the epoch change block carries the post-reward total ...
+        let after_rewards = drive
+            .fetch_total_credits_in_platform_a_day_ago(
+                epoch_change_time_ms + DAY_IN_MS,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch the history")
+            .expect("expected an entry keyed by the epoch change block");
+        assert_eq!(after_rewards.time_ms, epoch_change_time_ms);
+        assert_eq!(after_rewards.total_credits, total_credits_in_platform);
+
+        // ... and it is the first change since genesis, where Platform held nothing yet.
+        let before_rewards = drive
+            .fetch_total_credits_in_platform_a_day_ago(
+                epoch_change_time_ms + DAY_IN_MS - 1,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch the history")
+            .expect("expected the genesis entry");
+        assert_eq!(before_rewards.time_ms, GENESIS_TIME_MS);
+        assert!(
+            before_rewards.total_credits < total_credits_in_platform,
+            "epoch 0 must have paid Core rewards into Platform"
+        );
     }
 }

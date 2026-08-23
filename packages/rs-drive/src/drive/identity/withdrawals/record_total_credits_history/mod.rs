@@ -30,16 +30,20 @@ impl Drive {
             .withdrawals
             .record_total_credits_history
         {
-            0 => self.record_total_credits_history_v0(
+            Some(0) => self.record_total_credits_history_v0(
                 block_info,
                 prune_limit,
                 transaction,
                 platform_version,
             ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "record_total_credits_history".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "record_total_credits_history".to_string(),
+                known_versions: vec![0],
             })),
         }
     }

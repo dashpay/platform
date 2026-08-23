@@ -98,7 +98,7 @@ mod tests {
 
         drive
             .add_to_system_credits(
-                dash_to_credits!(30000),
+                dash_to_credits!(20000),
                 Some(&transaction),
                 &platform_version,
             )
@@ -120,16 +120,16 @@ mod tests {
             dash_to_credits!(2000)
         );
 
-        // The total jumps to 40000 Dash, but a day after the first record the limit derives
-        // from the 30000 Dash recorded then.
+        // The total jumps to 24000 Dash, but a day after the first record the limit derives
+        // from the 20000 Dash recorded then.
         drive
             .add_to_system_credits(
-                dash_to_credits!(10000),
+                dash_to_credits!(4000),
                 Some(&transaction),
                 &platform_version,
             )
             .expect("expected to add credits");
-        assert_eq!(limit(t0 + DAY_IN_MS).daily_maximum, dash_to_credits!(4500));
+        assert_eq!(limit(t0 + DAY_IN_MS).daily_maximum, dash_to_credits!(3000));
 
         // Once the larger total is a day old it becomes the base.
         drive
@@ -142,7 +142,7 @@ mod tests {
             .expect("expected to record");
         assert_eq!(
             limit(t0 + 2 * DAY_IN_MS).daily_maximum,
-            dash_to_credits!(6000)
+            dash_to_credits!(3600)
         );
     }
 }

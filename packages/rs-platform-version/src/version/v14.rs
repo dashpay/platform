@@ -71,7 +71,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    (`SYSTEM_LIMITS_V4.daily_withdrawal_limit_percent`, read by
 ///    `daily_withdrawal_limit` v2 through `DPP_METHOD_VERSIONS_V3`), never below
 ///    one maximal withdrawal (`max_withdrawal_amount`) so every accepted
-///    withdrawal eventually fits and cannot block the pooling queue. The base is
+///    withdrawal eventually fits and cannot block the pooling queue, and never
+///    above `max_daily_withdrawal_amount` (4000 Dash, Core's unlock capacity per
+///    day under V24) since pooling more than Core mines only cycles through
+///    expiry and re-signing. The base is
 ///    the total credits recorded at the latest block at least 24 hours before
 ///    the current one: `DRIVE_ABCI_METHOD_VERSIONS_V10` turns on
 ///    `record_total_credits_history_for_withdrawals`, which checks the total
@@ -88,7 +91,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    exactly as before. Core's own unlock limit is unaffected: pre-V24 Core
 ///    caps unlocks at `LimitAmountV22` (2000 Dash) per *block*, with the amount
 ///    checked only at block level, so any daily total is still minable across
-///    blocks; after V24 it enforces 4000 Dash per 576-block window.
+///    blocks; after V24 it enforces 4000 Dash per 576-block window, which the
+///    cap above never exceeds.
 ///
 /// The first two are orthogonal by construction: the ranked upgrade decides the
 /// *property-name* tree type, the demotion decides the *value* tree type

@@ -20,8 +20,9 @@ pub struct DriveIdentityWithdrawalMethodVersions {
     pub document: DriveIdentityWithdrawalDocumentMethodVersions,
     pub transaction: DriveIdentityWithdrawalTransactionMethodVersions,
     pub calculate_current_withdrawal_limit: FeatureVersion,
-    pub record_total_credits_history: FeatureVersion,
-    pub fetch_total_credits_in_platform_a_day_ago: FeatureVersion,
+    /// The total credits history under the withdrawals tree exists from protocol version 14.
+    pub record_total_credits_history: OptionalFeatureVersion,
+    pub fetch_total_credits_in_platform_a_day_ago: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

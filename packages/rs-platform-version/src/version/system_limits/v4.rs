@@ -4,9 +4,11 @@ use crate::version::system_limits::SystemLimits;
 ///
 /// Identical to [`super::v3::SYSTEM_LIMITS_V3`] except that the daily withdrawal limit becomes
 /// relative: `daily_withdrawal_limit_percent` is set to 15, so Platform pools at most 15% of the
-/// total credits it held a day ago into asset unlock transactions per 24 hours, instead of the
-/// flat 2000 Dash that applied from v8 (matching Core v22's `LimitAmountV22`). v13 is already
-/// live on networks with the flat limit, so the change gates here.
+/// total credits it held a day ago into asset unlock transactions per 24 hours — never below one
+/// maximal withdrawal and never above `max_daily_withdrawal_amount`, Core's 4000 Dash unlock
+/// capacity per day — instead of the flat 2000 Dash that applied from v8 (matching Core v22's
+/// `LimitAmountV22`). v13 is already live on networks with the flat limit, so the change gates
+/// here.
 pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     estimated_contract_max_serialized_size: 16384,
     max_field_value_size: 5120, //5 KiB
@@ -21,7 +23,8 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     retry_signing_expired_withdrawal_documents_per_block_limit: 1,
     max_withdrawal_amount: 50_000_000_000_000, //500 Dash
     daily_withdrawal_limit_percent: Some(15), // 15% of the total credits a day ago (replaces the flat 2000 Dash in v14)
-    min_withdrawal_amount: 1_000_000,         //1000 duffs (raised from 190 in v12)
+    max_daily_withdrawal_amount: Some(400_000_000_000_000), // 4000 Dash: Core's unlock capacity per day (LimitAmountV24)
+    min_withdrawal_amount: 1_000_000,                       //1000 duffs (raised from 190 in v12)
     max_contract_group_size: 256,
     max_token_redemption_cycles: 128,
     // NOTE: the Halo 2 proof grows with the action count (~2,273 B/action on
