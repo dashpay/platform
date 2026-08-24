@@ -309,6 +309,34 @@ pub trait PlatformWalletPersistence: Send + Sync {
     // instead; a sentinel-scope flush path is still to be designed.
     fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError>;
 
+    /// Replace the persisted tracked-masternode set for `network` with
+    /// `records` (whole-set write; the set is user-curated and small).
+    ///
+    /// Default: a successful no-op — tracking then works but is
+    /// session-scoped. Backends that persist AND restore the rows attest
+    /// [`PersistenceCapabilities::TRACKED_MASTERNODES`] so hosts can tell
+    /// the difference; the default deliberately does not.
+    ///
+    /// The same reentrancy contract as [`Self::store`] applies.
+    fn persist_tracked_masternodes(
+        &self,
+        network: dashcore::Network,
+        records: &[crate::masternode::TrackedMasternode],
+    ) -> Result<(), PersistenceError> {
+        let _ = (network, records);
+        Ok(())
+    }
+
+    /// Load the persisted tracked-masternode set for `network`. Default:
+    /// empty (see [`Self::persist_tracked_masternodes`]).
+    fn load_tracked_masternodes(
+        &self,
+        network: dashcore::Network,
+    ) -> Result<Vec<crate::masternode::TrackedMasternode>, PersistenceError> {
+        let _ = network;
+        Ok(Vec::new())
+    }
+
     /// Load the full client state from storage.
     ///
     /// Returns a [`ClientStartState`] — a ready-to-boot snapshot covering
