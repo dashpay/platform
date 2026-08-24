@@ -189,9 +189,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             }
 
             let platform_wallet = Arc::new(platform_wallet);
-            let mut wallets_guard = self.wallets.write().await;
-            wallets_guard.insert(wallet_id, platform_wallet);
-            drop(wallets_guard);
+            self.wallets.rcu(|wallets| {
+                let mut wallets = std::collections::BTreeMap::clone(wallets);
+                wallets.insert(wallet_id, Arc::clone(&platform_wallet));
+                wallets
+            });
             inserted_in_wallets.push(wallet_id);
         }
 
@@ -201,10 +203,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // remove from `self.wallets` first (UI surface), then
             // from the inner `wallet_manager`.
             if !inserted_in_wallets.is_empty() {
-                let mut wallets_guard = self.wallets.write().await;
-                for id in &inserted_in_wallets {
-                    wallets_guard.remove(id);
-                }
+                self.wallets.rcu(|wallets| {
+                    let mut wallets = std::collections::BTreeMap::clone(wallets);
+                    for id in &inserted_in_wallets {
+                        wallets.remove(id);
+                    }
+                    wallets
+                });
             }
             if !inserted_in_manager.is_empty() {
                 let mut wm = self.wallet_manager.write().await;

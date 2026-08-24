@@ -52,8 +52,7 @@ use std::sync::{
 };
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use tokio::sync::RwLock;
-
+use arc_swap::ArcSwap;
 use dash_async::{ThreadRegistry, WorkerConfig};
 
 use crate::error::PlatformWalletError;
@@ -132,7 +131,7 @@ impl DashPaySyncSummary {
 /// without any re-registration — and crucially without consulting the
 /// token registry, so DashPay-only identities are never skipped.
 pub struct DashPaySyncManager {
-    wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
+    wallets: Arc<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
     /// Shared registry that owns this loop's lifecycle: it spawns the
     /// OS thread (with the deep-stack config below), owns its cancellation
     /// token, and joins it at shutdown. A generation-guarded slot handles a
@@ -154,7 +153,7 @@ pub struct DashPaySyncManager {
 
 impl DashPaySyncManager {
     pub fn new(
-        wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
+        wallets: Arc<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
         registry: Arc<ThreadRegistry<WalletWorker>>,
     ) -> Self {
         Self {
@@ -364,7 +363,7 @@ impl DashPaySyncManager {
         }
 
         let snapshot: Vec<(WalletId, Arc<PlatformWallet>)> = {
-            let wallets = self.wallets.read().await;
+            let wallets = self.wallets.load();
             wallets.iter().map(|(id, w)| (*id, Arc::clone(w))).collect()
         };
 

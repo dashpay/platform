@@ -3,6 +3,7 @@ package org.dashfoundation.dashsdk.persistence.dao
 import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Query
+import androidx.room.Update
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 import org.dashfoundation.dashsdk.persistence.entities.DocumentEntity
@@ -173,6 +174,93 @@ interface DocumentDao {
     /** Per-wallet pending-input scan (cleanup / diagnostics). */
     @Query("SELECT * FROM pending_inputs WHERE walletId = :walletId")
     fun observePendingInputsByWallet(walletId: ByteArray): Flow<List<PendingInputEntity>>
+
+    /**
+     * This wallet's live pending inputs staged by [txid], for the sweep to
+     * partition in memory.
+     *
+     * The released set is not bound into SQL. It is bounded only by the
+     * input count of a transaction a remote sender can choose, so binding
+     * it one variable per outpoint can cross the 999-variable limit that
+     * API 29's framework SQLite still carries — the statement then throws,
+     * the whole atomic round fails, and the wallet's watermark freezes on a
+     * loser that will be re-swept into the same failure after every restart.
+     * Fetching by the two fixed keys and comparing outpoints against a
+     * `Set` keeps the arity constant no matter how large the sweep is.
+     */
+    @Query(
+        "SELECT * FROM pending_inputs " +
+            "WHERE spendingTransactionTxid = :txid AND walletId = :walletId",
+    )
+    suspend fun pendingInputsStagedBy(txid: ByteArray, walletId: ByteArray): List<PendingInputEntity>
+
+    /**
+     * This wallet's tombstones already repointed at [txid] by an earlier
+     * sweep, found by the scalar `spendingTxid` — the only link left once
+     * the first tombstoning detached them from the relationship. Same
+     * fixed-arity discipline as [pendingInputsStagedBy].
+     *
+     * A tombstone names one specific wallet's coin, so [walletId] must be
+     * the same wallet whose release decision is about to be applied;
+     * otherwise this would hand one wallet's claim to another's verdict.
+     */
+    @Query(
+        "SELECT * FROM pending_inputs " +
+            "WHERE spendingTxid = :txid AND isSweptTombstone = 1 AND walletId = :walletId",
+    )
+    suspend fun sweptTombstonesTargeting(
+        txid: ByteArray,
+        walletId: ByteArray,
+    ): List<PendingInputEntity>
+
+    /** Per-row update; Room binds one row at a time, so arity is fixed. */
+    @Update
+    suspend fun updatePendingInputs(rows: List<PendingInputEntity>)
+
+    /** Per-row delete, same fixed-arity reason as [updatePendingInputs]. */
+    @Delete
+    suspend fun deletePendingInputs(rows: List<PendingInputEntity>)
+
+    /**
+     * Whether some wallet other than [walletId] still has a live pending
+     * input pointing at [txid] as its spending transaction.
+     *
+     * Mirrors [TxoDao.hasOtherWalletSpender] for the pending-input side of
+     * the same shared-row problem: [txid]'s `transactions` row is a
+     * statement about the transaction as a whole, so only the callback that
+     * finds no other wallet's claim left on it — TXO or pending input — is
+     * allowed to delete it.
+     */
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM pending_inputs " +
+            "WHERE spendingTransactionTxid = :txid AND walletId != :walletId)",
+    )
+    suspend fun hasOtherWalletPendingInput(txid: ByteArray, walletId: ByteArray): Boolean
+
+    /**
+     * Bounded tombstone lifetime: delete this wallet's swept tombstones
+     * whose winner's mined height the chainlock finality boundary has
+     * reached (`:boundary` = `min(chainlockHeight, syncedHeight)`,
+     * computed by the caller) — key-wallet's
+     * `prune_finalized_observed_spends` condition verbatim, no
+     * observation-age margin: the stamp IS the winner's height, so at the
+     * boundary the funding transaction (mined at or below it) has been
+     * filter-scanned with no false negatives. A tombstone still
+     * collectible here never drained — its funding TXO never arrived — so
+     * the junk case (a foreign input of a swept incoming payment) is
+     * exactly what this removes; a genuine claim's row was already
+     * deleted by the drain that moved the hold onto the TXO. Unstamped
+     * rows are never collected — no current writer produces one (a
+     * mempool-context sweep creates no tombstone, an IS-locked re-point
+     * keeps the existing stamp), so an unstamped row is legacy or foreign
+     * data and holding it forever is the safe reading.
+     */
+    @Query(
+        "DELETE FROM pending_inputs " +
+            "WHERE walletId = :walletId AND isSweptTombstone = 1 " +
+            "AND winnerMinedHeight IS NOT NULL AND winnerMinedHeight <= :boundary",
+    )
+    suspend fun collectFinalizedSweptTombstones(walletId: ByteArray, boundary: Int)
 
     @Upsert
     suspend fun upsertPendingInput(pendingInput: PendingInputEntity)

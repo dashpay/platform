@@ -220,6 +220,24 @@ public enum DashMigrationPlan: SchemaMigrationPlan {
 ///     migrate with a nil `documentIdBase58`, which is the documented
 ///     "no marketplace state tracked" signal — the next marketplace
 ///     sync pass fills them in.
+///   - `PersistentTxo` gained the optional `supersededByTxid`, and
+///     `PersistentPendingInput` gained `isSweptTombstone` (defaulted
+///     `false`). Together they let a sweep's claim on an input whose
+///     funding TXO hasn't arrived yet survive the loser transaction's
+///     deletion — previously that claim lived only on the doomed row's
+///     `PersistentPendingInput`, which cascades away with it. Both
+///     additive with defaults ⇒ lightweight migration; existing rows
+///     migrate as ordinary (non-tombstone, non-superseded) entries.
+///   - `PersistentPendingInput` gained the optional `winnerMinedHeight`
+///     (a block-context sweep tombstone's finality stamp — the winner's
+///     own mined height) and `PersistentWallet` gained the optional
+///     `lastAppliedChainLockHeight` (the numeric chainlock watermark
+///     delivered by `on_persist_wallet_changeset_chain_lock_height_fn`,
+///     stored monotonic-max). Together they drive the bounded tombstone
+///     lifetime: a tombstone is collected exactly when
+///     `min(chainlockHeight, syncedHeight)` reaches its stamp. Both
+///     optional ⇒ lightweight migration; pre-existing rows read as
+///     unstamped (held forever) over a wallet with no boundary yet.
 /// Each of those is a destructive change to a unique-attribute
 /// column or to relationship topology, so any pre-existing dev
 /// store will fail to open and get rebuilt from scratch on next

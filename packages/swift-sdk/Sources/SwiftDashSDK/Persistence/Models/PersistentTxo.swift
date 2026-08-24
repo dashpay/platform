@@ -86,6 +86,27 @@ public final class PersistentTxo {
     /// the spending tx must not cascade-delete this row.
     public var spendingTransaction: PersistentTransaction?
 
+    /// 32-byte txid of the transaction a sweep's winner is known to have
+    /// beaten this coin to — the durable carrier of a sweep hold,
+    /// mirroring the SQLite store's `spent_in_txid`. Two writers set it:
+    /// `applySweptTransaction` holding an already-materialized input, and
+    /// `upsertUtxo` resolving a `PersistentPendingInput` tombstone
+    /// (`isSweptTombstone`) — the funding output arrived only after its
+    /// loser was already swept and deleted. The winner named here need not
+    /// have a row of its own (it can pay only outside addresses), which is
+    /// why the stamp is a bare txid rather than a relationship.
+    ///
+    /// `upsertUtxo`'s recovery clear keys on it: a coin the wallet
+    /// re-delivers as unspent lifts `isSpent` only when both
+    /// `spendingTransaction` and this are nil — a rescan re-finds the
+    /// funding output precisely because it is blind to an unconfirmed
+    /// winner no block carries yet, so re-delivery cannot outrank the
+    /// sweep's verdict. Cleared only by the sweep release pass, when a
+    /// later sweep proves the coin came free after all; a pre-stamp row
+    /// (written before holds named their winner) still frees on
+    /// re-delivery.
+    public var supersededByTxid: Data?
+
     /// Position of this output within `spendingTransaction.input`
     /// (i.e. the canonical "vin index"). Captured at the moment the
     /// spend is reconciled — sourced from

@@ -108,8 +108,18 @@ interface AssetLockDao {
     @Delete
     suspend fun delete(assetLock: AssetLockEntity)
 
-    /** Consumed-lock removal path (`$0.outPointHex == hex`). */
-    @Query("DELETE FROM asset_locks WHERE outPointHex = :outPointHex")
+    /**
+     * Asset-lock removal path (`onPersistAssetLockRemoval`). The
+     * `statusRaw != 4` guard is the same terminal rule SQLite's DELETE
+     * (`status != 'consumed'`) and Swift's `statusRaw == 4` skip apply: a
+     * Consumed row is deliberately retained for historical lookup, and
+     * neither removal producer can legitimately name one — a Built row
+     * rejected at broadcast never got that far, and a sweep of the funding
+     * transaction only tombstones entries still tracked, which a consumed
+     * lock no longer is — so a removal reaching a consumed row is by
+     * construction a stale write.
+     */
+    @Query("DELETE FROM asset_locks WHERE outPointHex = :outPointHex AND statusRaw != 4")
     suspend fun deleteByOutPointHex(outPointHex: String)
 
     /** Wallet teardown mirror of `deleteWalletData`'s asset-lock pass. */

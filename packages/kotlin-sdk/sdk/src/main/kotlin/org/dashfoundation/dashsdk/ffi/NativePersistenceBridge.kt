@@ -60,6 +60,19 @@ abstract class NativePersistenceBridge {
 
     open fun persistenceCapabilitiesBits(): Long = 0L
 
+    companion object {
+        /**
+         * `PersistenceCapabilities::CORE_SWEEP_REMOVAL` (bit 11, `0x800`).
+         * Declared here — on the class whose
+         * [onWalletChangesetTransactionsSwept] default consults it — so the
+         * fail-closed guard and the declaration a subclass makes through
+         * [persistenceCapabilitiesBits] can never drift apart.
+         * `PlatformWalletPersistenceHandler`'s capability constants alias
+         * this value.
+         */
+        const val CAPABILITY_CORE_SWEEP_REMOVAL: Long = 0x800
+    }
+
     // ── Transactional bracketing ──────────────────────────────────────
 
     /** `on_changeset_begin_fn` — descriptor `([B)I`. */
@@ -293,6 +306,78 @@ abstract class NativePersistenceBridge {
 
     /** Close the current account bucket. Descriptor `([BI)I`. */
     open fun onWalletChangesetAccountEnd(walletId: ByteArray, accountIndex: Int): Int = 0
+
+    /**
+     * Transactions the wallet removed this round, as raw 32-byte txids,
+     * each paired by index with the transaction that settled its inputs,
+     * plus the outpoints the removals actually freed. Fired once after the
+     * per-account decomposition, and only when the round swept something.
+     * Descriptor `([B[[B[[B[[BI)I`.
+     *
+     * [winnerMinedHeight] is the winner's own mined block height for a
+     * block-context sweep, or -1 for an InstantSend-locked winner not yet
+     * mined (the sentinel is unambiguous — block heights are
+     * non-negative — and the handler maps it back to null). It keys the
+     * whole lifetime rule of a pending-input tombstone: no height, no
+     * tombstone.
+     *
+     * Each removed transaction was a recorded spend that its winner beat to
+     * one of its inputs, so it can never confirm. Every other slot on this
+     * bus is additive; this is the only removal, and an implementation that
+     * ignores it keeps dead rows that are handed back at the next load and
+     * re-create a balance the wallet has already corrected.
+     *
+     * [releasedOutpoints] holds 36-byte keys (raw txid followed by a
+     * little-endian vout) and is wallet-scoped, not attributed per removal:
+     * an implementation holds every input of every row it deletes, so it
+     * only needs to know which of them came free. Everything else it holds
+     * was taken by the transaction that won those inputs and must stay
+     * spent. The set cannot be inferred from [supersededBy] — that
+     * transaction may pay entirely to outside addresses and never be
+     * reported here at all.
+     *
+     * Native delivers these through the persistence extension's
+     * size-negotiated sweep callback (not the wallet-changeset struct, whose
+     * bare-pointer ABI cannot version itself), immediately after the
+     * changeset's own slots in the same round — and unconditionally: the
+     * trampoline is wired for every subclass, so "slot present" proves
+     * nothing about whether removals are actually applied. What Rust trusts
+     * is [persistenceCapabilitiesBits] carrying
+     * [CAPABILITY_CORE_SWEEP_REMOVAL]; a subclass overriding this must add
+     * that bit, and the default body below is what encodes the other half
+     * of that contract structurally. A subclass that declares the bit
+     * WITHOUT overriding has promised removals it silently swallows — and
+     * because the declaration also stops Rust stripping the watermark, the
+     * sync height would advance past a removal that never happened, the
+     * one permanent corruption the capability exists to prevent. The
+     * default therefore refuses the round in exactly that case (non-zero
+     * return, so `onChangesetEnd` rolls it back and the watermark cannot
+     * move). A subclass that declares nothing keeps the benign ignore:
+     * Rust already strips the watermark before its `store()`, so returning
+     * success costs nothing and preserves the round's additive slots.
+     */
+    open fun onWalletChangesetTransactionsSwept(
+        walletId: ByteArray,
+        txids: Array<ByteArray>,
+        supersededBy: Array<ByteArray>,
+        releasedOutpoints: Array<ByteArray>,
+        winnerMinedHeight: Int,
+    ): Int =
+        if (persistenceCapabilitiesBits() and CAPABILITY_CORE_SWEEP_REMOVAL != 0L) 1 else 0
+
+    /**
+     * The round's numeric chainlock height, fired on chainlock-advancing
+     * persistence rounds after the header slot. Descriptor `([BI)I`.
+     *
+     * The bincode chainlock blob on the header call is opaque to Kotlin,
+     * and this scalar is the half of the swept-tombstone collection
+     * boundary `min(chainlockHeight, syncedHeight)` an implementation
+     * cannot otherwise know. Purely additive: a host that ignores it
+     * simply never collects tombstones, which is the safe direction —
+     * holding a tombstone forever is junk, collecting one early is a
+     * wrongly-freed claim.
+     */
+    open fun onWalletChangesetChainLockHeight(walletId: ByteArray, height: Int): Int = 0
 
     // ── Identities ────────────────────────────────────────────────────
 

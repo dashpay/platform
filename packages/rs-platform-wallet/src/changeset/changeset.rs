@@ -62,10 +62,10 @@ use crate::wallet::identity::{
 /// `WalletEvent` bus delivers.
 ///
 /// Built by the platform-wallet event adapter from `WalletEvent` variants
-/// emitted by `WalletManager`. Every field is purely additive — the
-/// merge implementation uses last-write-wins for the height watermarks
-/// (monotonic-max), `extend` for the records / utxos vecs, and
-/// last-write-wins for the IS-lock map.
+/// emitted by `WalletManager`. Every field is additive except
+/// [`Self::sweeps`] — the merge implementation uses last-write-wins for
+/// the height watermarks (monotonic-max), `extend` for the records / utxos
+/// vecs, and last-write-wins for the IS-lock map.
 ///
 /// # Why a projection instead of the upstream type
 ///
@@ -197,6 +197,80 @@ pub struct CoreChangeSet {
     /// lower height never overwrites a higher one — chain locks are
     /// strictly forward-advancing per upstream's contract).
     pub last_applied_chain_lock: Option<ChainLock>,
+
+    /// Sweeps this batch carries, in the order the wallet emitted them.
+    ///
+    /// The one subtractive part of this type. Every other field is additive,
+    /// which is exactly why this one has to exist: a persister that only ever
+    /// appends keeps the dead rows and replays them on the next load,
+    /// re-creating a balance the wallet has already corrected.
+    ///
+    /// Kept as ordered batches rather than folded into one removal list plus
+    /// one release set. Each sweep describes the wallet at the moment it
+    /// fired, and those descriptions can disagree: an early sweep frees a
+    /// coin, something later spends it, and a later sweep removes that
+    /// spender while keeping the coin spent because its own winner took it.
+    /// Union the release sets and the first answer outlives the last one that
+    /// is actually true. Applied in order, each batch corrects the one before
+    /// it, which is what the wallet itself did.
+    /// `serde(default)`: this field postdates the serialized representation,
+    /// so a payload written before it necessarily omits it. An empty vec is
+    /// the exact backward-compatible reading — a changeset from then could
+    /// not have carried a sweep.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub sweeps: Vec<SweepBatch>,
+}
+
+/// One `TransactionsSwept` event: the transactions it removed, the
+/// transaction that beat them, and the coins its removal actually freed.
+///
+/// The grouping is what makes ordering expressible. `released_outpoints` is
+/// only true relative to the wallet as this event saw it, so it belongs with
+/// the removals it came from rather than in a set shared with every other
+/// sweep in the batch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct SweepBatch {
+    /// The removed transactions. Their rows and every UTXO they created go.
+    pub txids: Vec<Txid>,
+    /// The transaction whose arrival settled the inputs — final, and
+    /// therefore the reason the removed ones can never confirm. Not
+    /// necessarily wallet-relevant: it can pay entirely to outside addresses
+    /// and still sweep, which is why it cannot be looked up to work out what
+    /// it took.
+    pub superseded_by: Txid,
+    /// Mined height of `superseded_by` when the sweep was triggered by its
+    /// arrival in a block; `None` when it was triggered by an
+    /// InstantSend-locked winner still waiting to be mined (upstream's only
+    /// two triggers — an unlocked mempool arrival never sweeps).
+    ///
+    /// This is the winner's finality context, straight from the event: the
+    /// winner need not be wallet-relevant, so no persister can look its
+    /// height up in its own records. A held-but-unfunded input is mirrored
+    /// as a durable placeholder in EITHER case; this field decides the
+    /// placeholder's lifetime. `Some` stamps the winner's own block height
+    /// — the projection of upstream's `observed_spent_outpoints` — and the
+    /// placeholder is collectible once `min(chainlock_height,
+    /// synced_height)` reaches it, exactly upstream's
+    /// `prune_finalized_observed_spends` boundary. `None` (IS-locked
+    /// winner, unmined) leaves the placeholder UNSTAMPED and never
+    /// collectible: under DIP-10 the lock alone settles the input —
+    /// upstream retains it in the account's `spent_outpoints`, a hold with
+    /// no height that no record survives to rebuild — and an IS-locked
+    /// winner has no mining deadline, so no watermark can ever prove the
+    /// funding output delivered-or-never. An unstamped placeholder
+    /// resolves only through proof: funding materialisation, a later
+    /// block-context sweep's re-stamp, or a release.
+    ///
+    /// `serde(default)`: a journaled payload written before this field
+    /// existed reads back as `None` — the conservative reading (no new
+    /// placeholder, existing stamps kept).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub winner_mined_height: Option<u32>,
+    /// Of the inputs those removed transactions claimed, the ones that came
+    /// free — no surviving transaction spends them too. Everything else they
+    /// claimed was taken by `superseded_by` and stays spent.
+    pub released_outpoints: Vec<OutPoint>,
 }
 
 /// Highest-used derivation index per pool slot for one account, as
@@ -232,6 +306,29 @@ impl HighestUsedIndexes {
 
 impl Merge for CoreChangeSet {
     fn merge(&mut self, other: Self) {
+        // A record arriving after a sweep that removed the same transaction
+        // reinstates it, and every persister writes records before replaying
+        // sweeps — so without this the sweep would delete a row the wallet
+        // has since brought back. Reachable through IS-lock precedence: an
+        // unconfirmed transaction is swept when an IS-locked conflict lands,
+        // then returns chainlocked and sweeps that conflict in turn.
+        //
+        // The release set stays as it is. It is the aggregate for every loser
+        // in the batch, so dropping it when one of them is reinstated would
+        // discard coins freed by the losers that are still going. Entries
+        // belonging to the reinstated transaction are inert on every backend:
+        // each scopes its release to the remaining losers' own inputs, or
+        // withholds any outpoint a surviving record claims — and the
+        // reinstating record is exactly such a claim.
+        if !other.records.is_empty() && !self.sweeps.is_empty() {
+            let reinstated: std::collections::HashSet<Txid> =
+                other.records.iter().map(|record| record.txid).collect();
+            for batch in &mut self.sweeps {
+                batch.txids.retain(|txid| !reinstated.contains(txid));
+            }
+            self.sweeps.retain(|batch| !batch.txids.is_empty());
+        }
+
         // Records / utxo deltas: append-only. The event adapter never
         // produces duplicates within a single batch (each event covers
         // a distinct moment); cross-batch dedup is the persister's
@@ -332,10 +429,17 @@ impl Merge for CoreChangeSet {
                 .or_default()
                 .merge_max(indexes);
         }
+
+        // Sweeps: appended, never folded. Order is the whole point — a later
+        // batch's decision to keep a coin spent has to survive an earlier
+        // batch's decision to free it, and only replaying them in sequence
+        // preserves that.
+        self.sweeps.extend(other.sweeps);
     }
 
     fn is_empty(&self) -> bool {
         self.records.is_empty()
+            && self.sweeps.is_empty()
             && self.spent_utxos.is_empty()
             && self.new_utxos.is_empty()
             && self.instant_locks_for_non_final_records.is_empty()
@@ -968,32 +1072,47 @@ impl Merge for AssetLockChangeSet {
         // swift-sdk `persistAssetLocks`), making the store order of
         // racing snapshots immaterial.
         for (out_point, entry) in other.asset_locks {
-            if entry.status == AssetLockStatus::Consumed {
-                // A Consumed write supersedes any earlier-folded
-                // tombstone for the outpoint — Consumed rows are
-                // deliberately retained for historical lookup (see the
-                // variant doc), so the terminal write wins over a stale
-                // removal exactly as it wins over a stale status.
-                self.removed.remove(&out_point);
-            } else if let Some(existing) = self.asset_locks.get(&out_point) {
-                if existing.status == AssetLockStatus::Consumed {
-                    continue;
+            if entry.status != AssetLockStatus::Consumed {
+                if let Some(existing) = self.asset_locks.get(&out_point) {
+                    if existing.status == AssetLockStatus::Consumed {
+                        continue;
+                    }
                 }
             }
+            // Every ACCEPTED upsert supersedes an earlier-folded tombstone
+            // for its outpoint, not just a Consumed one. Sweeps are a
+            // removal producer now (`remove_tracked_asset_locks_for_swept`),
+            // and a swept funding transaction can return chainlocked in the
+            // same folded drain — the reinstating record re-inserts the
+            // entry through reconstruction at a non-Consumed status, and
+            // letting the sweep's tombstone ride along would have the store
+            // delete the row it just reinstated (SQLite applies upserts
+            // before removals) while the in-memory wallet keeps it. This is
+            // the asset-lock mirror of `CoreChangeSet::merge`'s
+            // reinstated-txid retraction. For Consumed the same line also
+            // covers the historical rule: the terminal write wins over a
+            // stale removal exactly as it wins over a stale status.
+            self.removed.remove(&out_point);
             self.asset_locks.insert(out_point, entry);
         }
-        // Tombstones folded after a Consumed upsert are dropped for the
-        // same reason. The only removal emitter (`untrack_asset_lock`)
-        // fires exclusively for Built rows whose broadcast was
-        // definitively rejected, so a Consumed/removed pair for one
-        // outpoint has no legitimate producer — this is defense in
-        // depth matching the upsert guard.
+        // Tombstones folded after a Consumed upsert are dropped — Consumed
+        // rows are deliberately retained for historical lookup (see the
+        // variant doc). Any other pending upsert is dropped WITH the
+        // tombstone landing: a removal is upstream's newer word for the
+        // outpoint (a lock tracked and then swept, or a Built row rejected
+        // at broadcast, inside one fold), and carrying the dead upsert
+        // alongside the tombstone would make every store's correctness
+        // depend on applying upserts before removals. Together with the
+        // retraction above this keeps the invariant every backend relies
+        // on: a merged changeset never carries both an upsert and a
+        // tombstone for the same outpoint.
         for out_point in other.removed {
             let consumed = self
                 .asset_locks
                 .get(&out_point)
                 .is_some_and(|entry| entry.status == AssetLockStatus::Consumed);
             if !consumed {
+                self.asset_locks.remove(&out_point);
                 self.removed.insert(out_point);
             }
         }
@@ -1795,6 +1914,36 @@ impl Merge for PlatformWalletChangeSet {
     }
 }
 
+#[cfg(all(test, feature = "serde"))]
+mod serde_compat_tests {
+    use super::*;
+
+    /// A changeset serialized before `sweeps` existed must still load. The
+    /// field postdates the representation, so an older payload simply omits
+    /// it — and an empty vec is the exact reading, since nothing back then
+    /// could have carried a sweep. Without `serde(default)` the whole
+    /// deserialization fails and every pre-sweep payload becomes unreadable.
+    #[test]
+    fn a_pre_sweep_payload_deserializes_with_no_sweeps() {
+        let json = r#"{
+            "records": [],
+            "spent_utxos": [],
+            "new_utxos": [],
+            "instant_locks_for_non_final_records": {},
+            "last_processed_height": 1000,
+            "synced_height": 900,
+            "account_highest_used": {},
+            "last_applied_chain_lock": null
+        }"#;
+
+        let cs: CoreChangeSet =
+            serde_json::from_str(json).expect("a pre-sweep payload must still deserialize");
+        assert!(cs.sweeps.is_empty());
+        assert_eq!(cs.last_processed_height, Some(1000));
+        assert_eq!(cs.synced_height, Some(900));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1914,10 +2063,38 @@ mod tests {
             folded.asset_locks[&outpoint].status,
             AssetLockStatus::Consumed
         );
-        // …and a legitimate removal (rejected Built row) still folds.
+        // …and a legitimate removal (rejected Built row, or a sweep of the
+        // funding tx) still folds — taking the now-dead upsert with it, so
+        // no store ever sees an upsert/tombstone pair whose outcome would
+        // hinge on which it applies first.
         let mut folded = cs_with(AssetLockStatus::Built);
         folded.merge(removal());
         assert!(folded.removed.contains(&outpoint));
+        assert!(
+            !folded.asset_locks.contains_key(&outpoint),
+            "a tombstone folding in must not leave the dead upsert beside it"
+        );
+
+        // The coalesced sweep-then-chainlocked-reinstatement fold: the
+        // sweep removes the tracked entry and contributes a tombstone, then
+        // the reinstating record re-inserts through reconstruction at a
+        // non-Consumed status — in the SAME drain. The accepted upsert must
+        // cancel the earlier tombstone (the asset-lock mirror of
+        // `CoreChangeSet::merge`'s reinstated-txid retraction); otherwise
+        // SQLite — upserts before removals — deletes the row it just
+        // reinstated while the in-memory wallet keeps it, and the durable
+        // tracked lock is gone after restart even though its funding
+        // transaction survived.
+        let mut folded = removal();
+        folded.merge(cs_with(AssetLockStatus::RecoveredFromChain));
+        assert!(
+            folded.removed.is_empty(),
+            "a reinstating reconstruction must cancel the folded sweep tombstone"
+        );
+        assert_eq!(
+            folded.asset_locks[&outpoint].status,
+            AssetLockStatus::RecoveredFromChain
+        );
     }
 
     #[test]

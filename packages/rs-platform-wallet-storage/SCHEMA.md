@@ -93,7 +93,7 @@ erDiagram
         INTEGER height "NULL if unconfirmed"
         INTEGER account_index
         INTEGER spent "0 | 1"
-        BLOB spent_in_txid "NULL until spend; cleared by trigger on tx delete"
+        BLOB spent_in_txid "set by apply_sweep for an unresolved held input; else NULL"
     }
 
     CORE_INSTANT_LOCKS {
@@ -381,10 +381,16 @@ is `1` once block context is present.
 
 ### `core_utxos`
 
-One row per UTXO, spent or unspent. `spent_in_txid` is set to NULL
-by a trigger when its referenced `core_transactions` row is deleted
-(instead of a native `ON DELETE SET NULL`, which would also null the
-NOT NULL `wallet_id` column).
+One row per UTXO, spent or unspent. `spent_in_txid` is written only by
+`apply_sweep`, naming the winner that took an input a swept loser claimed
+but this store had no released record for. Its presence gates the funding
+UTXO's own later upsert (`execute_upsert_utxo`): a coin held spent with a
+`spent_in_txid` stays spent when the wallet redelivers it, unlike a coin
+held spent with none (the ordinary "sweep couldn't resolve it" state, which
+does clear on redelivery). It is set to NULL by a trigger when its
+referenced `core_transactions` row is deleted (instead of a native
+`ON DELETE SET NULL`, which would also null the NOT NULL `wallet_id`
+column) — and by a later sweep that releases the same outpoint.
 
 - PK: `(wallet_id, outpoint)`.
 - FK: `wallet_id → wallet_metadata(wallet_id) ON DELETE CASCADE`.
