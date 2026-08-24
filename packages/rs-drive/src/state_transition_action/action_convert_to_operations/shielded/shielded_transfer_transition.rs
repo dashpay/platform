@@ -211,5 +211,33 @@ mod tests {
              ({fee_one}), or `min(actual_storage, flat)` would zero the proposer's share",
             epoch.boundary_storage
         );
+
+        // Component independence: the fee's resource reservations must each
+        // cover their own cost, with nothing subsidized by the compute
+        // budget. The proof-verification fee is reserved for Halo 2 CPU and
+        // takes part in NO database assertion here.
+        let constants = &platform_version
+            .drive_abci
+            .validation_and_processing
+            .event_constants;
+        let storage = &platform_version.fee_version.storage;
+        let per_byte_rate =
+            storage.storage_disk_usage_credit_per_byte + storage.storage_processing_credit_per_byte;
+        let storage_component = constants.shielded_storage_bytes_per_action * per_byte_rate;
+        assert!(
+            storage_component >= epoch.avg_storage,
+            "the per-action storage allowance alone ({} bytes = {storage_component} credits) \
+             must cover the amortized real storage per append ({}); raise \
+             `shielded_storage_bytes_per_action`",
+            constants.shielded_storage_bytes_per_action,
+            epoch.avg_storage
+        );
+        assert!(
+            constants.shielded_per_action_processing_fee >= epoch.avg_total - epoch.avg_storage,
+            "the per-action processing fee ({}) must cover the amortized metered GroveDB \
+             processing per append ({}) on top of its verification work",
+            constants.shielded_per_action_processing_fee,
+            epoch.avg_total - epoch.avg_storage
+        );
     }
 }
