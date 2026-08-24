@@ -77,8 +77,7 @@ describe('getPlatformScopeFactory', () => {
       mockDockerCompose.execCommand.withArgs(config, 'drive_abci', 'drive-abci version').resolves({ exitCode: 0, out: '1.4.1' });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
 
-      // node_info.protocol_version.app can be stale after in-process upgrades;
-      // protocolVersion must come from live consensus params.
+      // node_info app differs from consensus params so the expectation pins the live source
       const mockStatus = {
         node_info: {
           protocol_version: {
