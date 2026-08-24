@@ -52,7 +52,8 @@
 //!    by aggregate, not by group key — and is rejected rather than
 //!    silently ignored, as is any non-equality prefix clause (`IN`
 //!    included: one walk per element is a future multi-`IN` capability).
-//! 2. **`limit` is mandatory, `offset` is free, `start_at` is refused.**
+//! 2. **`limit` is mandatory, `offset` is depth-bounded, `start_at` is
+//!    refused.**
 //!    `limit` is the `k` of the walk and the ranked surface has no
 //!    server default for it, so it must be supplied. `offset` is the
 //!    rank the page starts at and is unbounded above: grovedb counts

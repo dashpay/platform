@@ -291,7 +291,8 @@ pub fn detect_ranked_mode_v0(
              proof commits one secondary entry per returned group, so its size grows \
              linearly in the limit. Narrow the request — the ceiling is a hard limit, not \
              a clamp, because `k` is echoed in the proof envelope and re-checked by the \
-             verifier. Deep results are reached with `OFFSET`, which costs nothing."
+             verifier. Deep results are reached with `OFFSET`, whose skip work is bounded by \
+             tree depth and does not grow with the offset."
         ))));
     }
     // Bounded by MAX_RANKED_LIMIT (a u16) immediately above.

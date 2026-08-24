@@ -160,7 +160,8 @@ fn offset_is_optional_defaults_to_zero_and_is_uncapped() {
     assert!(fifth_best.descending);
 
     // Far past any plausible population, and far past MAX_RANKED_LIMIT:
-    // still accepted, because offset costs nothing to prove.
+    // still accepted, because the skip is counted from subtree
+    // aggregates — work bounded by tree depth, not by the offset.
     let deep = detect_avg(false, Some(10), Some(u32::MAX)).expect("a huge OFFSET is well-formed");
     assert_eq!(deep.offset, u32::MAX);
     assert_eq!(deep.k, 10);

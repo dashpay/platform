@@ -279,10 +279,10 @@ pub(super) fn validate_and_route(
 /// The `OFFSET` gate, applied **after** routing.
 ///
 /// Offset pagination exists on exactly one path: the ranked executor,
-/// where `OFFSET m` is the rank the returned page starts at and costs
-/// nothing to skip on either `prove` setting: grovedb counts the
-/// skipped region from the subtree aggregates rather than walking it,
-/// and both executors take that descent. Only the proved result
+/// where `OFFSET m` is the rank the returned page starts at; skipping
+/// is a counted tree descent on either `prove` setting — grovedb counts
+/// the skipped region from the subtree aggregates rather than walking
+/// it, so the work is bounded by tree depth and does not grow with `m`. Only the proved result
 /// additionally *attests* the count. Every other v1 shape —
 /// documents, and the grouped count / sum / average modes — has no
 /// offset primitive behind it and keeps the rejection it has always
