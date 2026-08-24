@@ -5,6 +5,9 @@ mod compute_minimum_shielded_fee;
 pub mod memo;
 mod sighash;
 
+#[cfg(all(test, feature = "shielded-client"))]
+mod wire_cost_measured_tests;
+
 pub use memo::{ShieldedMemo, MEMO_PAYLOAD_SIZE, MEMO_SIZE};
 
 use bincode::{Decode, Encode};
