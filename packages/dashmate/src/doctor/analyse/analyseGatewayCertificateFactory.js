@@ -139,7 +139,7 @@ Obtain a new certificate. No restart needed:
         problems.push(new Problem(
           message,
           chalk`Nothing is broken yet. If it needs attention, obtain a new certificate:
-{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt}`,
+{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${installedForce}}`,
           SEVERITY.LOW,
         ));
       });
@@ -241,7 +241,7 @@ If this node's gateway is answering and the address is simply wrong:
         + 'replacement',
         chalk`Neither the certificate in use nor the saved one is known to work, so
 restarting will not help. Get a current one:
-{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt}`,
+{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${installedForce}}`,
         SEVERITY.HIGH,
       ));
     } else if (isServedExpired) {
@@ -250,7 +250,7 @@ restarting will not help. Get a current one:
         + 'Clients cannot connect to it',
         chalk`Renewal has not succeeded. Check the logs, then obtain a new certificate:
 {bold.cyanBright dashmate logs ${cfg} dashmate_helper}
-{bold.cyanBright dashmate ssl obtain ${cfg}}`,
+{bold.cyanBright dashmate ssl obtain ${cfg}${installedForce}}`,
         SEVERITY.HIGH,
       ));
     } else if (onDiskDiffers) {

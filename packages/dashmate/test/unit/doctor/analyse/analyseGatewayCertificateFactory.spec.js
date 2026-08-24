@@ -633,4 +633,53 @@ describe('analyseGatewayCertificateFactory', () => {
       expect(problems[0].getDescription()).to.include('expired');
     });
   });
+
+  describe('when the installed certificate cannot be reinstated', () => {
+    // One report must not prescribe two different commands for one certificate.
+    // Each remedy below is reached by a different combination of what the wire
+    // serves and what is on disk, and an operator reading a forced command
+    // beside an unforced one has no way to tell which one their node needs.
+    const SERVED_STATES = {
+      'a sound certificate': served(),
+      'an expired certificate matching the disk copy': served({
+        certificate: { fingerprint256: 'AA:BB', validTo: validTo(-1) },
+      }),
+      'an expired certificate the disk copy differs from': served({
+        certificate: { fingerprint256: 'CC:DD', validTo: validTo(-1) },
+        matchesOnDisk: false,
+        onDisk: { fingerprint256: 'AA:BB', validTo: validTo(-5) },
+      }),
+      'a live certificate the disk copy differs from': served({
+        matchesOnDisk: false,
+        onDisk: { fingerprint256: 'EE:FF', validTo: validTo(-5) },
+      }),
+    };
+
+    Object.entries(SERVED_STATES).forEach(([state, servedCertificate]) => {
+      it(`should force every repair it prescribes while serving ${state}`, () => {
+        // Carries a reason that reinstalling cannot fix alongside a warning:
+        // a stale-address certificate that is also close to expiry is the
+        // ordinary shape of the problem, not a contrived one.
+        samples.setServiceInfo('gateway', 'installedCertificate', {
+          status: 'INVALID',
+          reasons: [{
+            code: 'IP_MISMATCH',
+            message: 'The certificate is not valid for this address.',
+          }],
+          warnings: [{
+            code: 'EXPIRING_SOON',
+            message: 'The installed certificate expires in less than 7 days.',
+          }],
+          fingerprint256: 'AA:BB',
+        });
+
+        const prescribed = analyse(servedCertificate)
+          .map((problem) => problem.getSolution())
+          .filter((solution) => solution.includes('ssl obtain'));
+
+        expect(prescribed).not.to.be.empty();
+        prescribed.forEach((solution) => expect(solution).to.include('--force'));
+      });
+    });
+  });
 });
