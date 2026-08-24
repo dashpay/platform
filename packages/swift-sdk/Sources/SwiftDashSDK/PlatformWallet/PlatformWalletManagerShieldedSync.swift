@@ -481,8 +481,14 @@ extension PlatformWalletManager {
                 "PlatformWalletManager not configured"
             )
         }
+        // `num_actions` is `usize` on the Rust side → imported as `UInt`,
+        // whose checked initializer traps on a negative Int.
+        guard numActions >= 0 else {
+            throw PlatformWalletError.invalidParameter(
+                "numActions must be non-negative, got \(numActions)"
+            )
+        }
         var fee: UInt64 = 0
-        // `num_actions` is `usize` on the Rust side → imported as `UInt`.
         try platform_wallet_shielded_estimate_fee(
             handle,
             kind.rawValue,
