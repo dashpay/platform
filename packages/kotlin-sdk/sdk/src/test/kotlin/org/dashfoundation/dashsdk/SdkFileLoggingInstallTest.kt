@@ -52,4 +52,69 @@ class SdkFileLoggingInstallTest {
     fun shouldProbeFileAsSessionRootFalse() {
         assertFalse(Sdk.sessionRootWritable(tmp.newFile("plain-file")))
     }
+
+    @Test
+    fun shouldNotDeleteACallerOwnedEntryNamedLikeTheProbe() {
+        // The probe once used the fixed name `.dash_sdk_write_probe` and
+        // deleted that path first — destroying a caller-owned file of the
+        // same name in the caller-selected session root (PR review). The
+        // probe must be uniquely named and delete only what it created.
+        val callerOwned = File(tmp.root, ".dash_sdk_write_probe")
+        callerOwned.writeText("caller data")
+
+        assertTrue(Sdk.sessionRootWritable(tmp.root))
+
+        assertTrue(callerOwned.exists())
+        assertEquals("caller data", callerOwned.readText())
+    }
+
+    @Test
+    fun shouldLeaveNoProbeResidueBehind() {
+        assertTrue(Sdk.sessionRootWritable(tmp.root))
+
+        val leftovers = tmp.root.walkTopDown()
+            .filter { it.isFile && it.name.startsWith(".dash_sdk_write_probe") }
+            .toList()
+        assertEquals(emptyList<File>(), leftovers)
+    }
+
+    @Test
+    fun shouldReportABlockedFixedLogDestinationWithoutTouchingTheNativeInstaller() {
+        // The ALREADY_SET misattribution shape (PR review): the root itself
+        // probes writable, but the native create_dir_all("dash_sdk") would
+        // fail on this regular FILE — previously reported as ALREADY_SET
+        // with no subscriber in sight. Returning SESSION_ROOT_UNWRITABLE
+        // (rather than throwing UnsatisfiedLinkError from the native
+        // loader) also proves the check ran pre-native.
+        tmp.newFile("dash_sdk")
+
+        val outcome = Sdk.installFileLogging(
+            level = Sdk.LogLevel.INFO,
+            sessionRoot = tmp.root.absolutePath,
+        )
+
+        assertEquals(Sdk.FileLoggingInstall.SESSION_ROOT_UNWRITABLE, outcome)
+    }
+
+    @Test
+    fun shouldNameTheBlockedDestinationNotJustTheRoot() {
+        tmp.newFile("platform_wallet")
+
+        assertEquals(
+            File(tmp.root, "platform_wallet"),
+            Sdk.firstUnwritableLogDestination(tmp.root),
+        )
+    }
+
+    @Test
+    fun shouldRejectADirectorySquattingOnADestinationFile() {
+        // create(true).append(true).open on a path that is a directory
+        // fails natively; the probe must catch it up front.
+        File(tmp.root, "dash_sdk/run.log").mkdirs()
+
+        assertEquals(
+            File(tmp.root, "dash_sdk/run.log"),
+            Sdk.firstUnwritableLogDestination(tmp.root),
+        )
+    }
 }

@@ -144,6 +144,49 @@ class KeystoreDeviceLockedDenialTest {
     }
 
     @Test
+    fun shouldRethrowAuthGatedAliasUserNotAuthenticatedUnclassified() {
+        // The auth-gated identity-keys alias' NORMAL pre-prompt contract:
+        // UserNotAuthenticatedException means "auth window closed" and must
+        // reach the BiometricGate prompt-and-retry untouched — even while
+        // the device IS locked. Classifying it as the retryable
+        // device-locked type would strand the biometric path.
+        val manager = managerSampling(
+            DeviceLockState(isDeviceLocked = true, isKeyguardLocked = true),
+        )
+        val authWindowClosed = SimulatedUserNotAuthenticatedException()
+
+        val thrown = assertThrows(SimulatedUserNotAuthenticatedException::class.java) {
+            manager.rethrowClassifyingDeviceLockedDenial(
+                authWindowClosed,
+                KeystoreManager.KEYS_ALIAS_AUTH_GATED,
+                operation = "decrypt",
+            )
+        }
+        assertSame(authWindowClosed, thrown)
+    }
+
+    @Test
+    fun shouldRethrowCustomAliasDenialUnclassified() {
+        // encrypt/decrypt accept arbitrary AES aliases, and a
+        // host-provisioned alias may carry setUserAuthenticationRequired —
+        // its UserNotAuthenticatedException is ambiguous, so only
+        // MASTER_ALIAS (contractually never auth-gated) may classify.
+        val manager = managerSampling(
+            DeviceLockState(isDeviceLocked = true, isKeyguardLocked = true),
+        )
+        val denial = SimulatedUserNotAuthenticatedException()
+
+        val thrown = assertThrows(SimulatedUserNotAuthenticatedException::class.java) {
+            manager.rethrowClassifyingDeviceLockedDenial(
+                denial,
+                "com.example.host.customAlias",
+                operation = "encrypt",
+            )
+        }
+        assertSame(denial, thrown)
+    }
+
+    @Test
     fun shouldRethrowNonDenialExceptionsUnchanged() {
         val manager = managerSampling(
             DeviceLockState(isDeviceLocked = false, isKeyguardLocked = false),

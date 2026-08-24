@@ -370,17 +370,24 @@ open class KeystoreManager(
      * lock-state tracking stuck; hit on two QA devices during wallet
      * creation).
      *
-     * MUST NOT be applied to the auth-gated identity-key aliases: their
-     * `UserNotAuthenticatedException` means "auth window closed" and drives
-     * the `BiometricGate` prompt-and-retry contract (see [decrypt]) — both
-     * RSA branches return before reaching this mapping.
+     * ONLY [MASTER_ALIAS] classifies — its key's contract guarantees no
+     * `setUserAuthenticationRequired` gate, which is what makes a
+     * `UserNotAuthenticatedException` from it unambiguous. Every other
+     * alias rethrows unchanged, enforced HERE and not just at the call
+     * sites: the generic AES branches of [encrypt]/[decrypt] accept
+     * arbitrary aliases, and a host-provisioned auth-gated AES alias
+     * throws the same `UserNotAuthenticatedException` to mean "auth window
+     * closed" — classifying that as device-locked would strand the
+     * caller's prompt-and-retry handling (exactly the `BiometricGate`
+     * contract the auth-gated RSA aliases depend on; those return before
+     * reaching this mapping, see [decrypt]).
      */
     internal fun rethrowClassifyingDeviceLockedDenial(
         e: Exception,
         alias: String,
         operation: String,
     ): Nothing {
-        if (isDeviceLockedKeystoreDenial(e)) {
+        if (alias == MASTER_ALIAS && isDeviceLockedKeystoreDenial(e)) {
             throw KeystoreDeviceLockedException(
                 alias = alias,
                 operation = operation,
@@ -1005,10 +1012,12 @@ open class KeystoreManager(
          *    for keys with no `setUserAuthenticationRequired` gate (the
          *    [MASTER_ALIAS] AES key): with no auth gate to be "not
          *    authenticated" against, Keystore throws it solely for the
-         *    unlocked-device requirement. The call sites guarantee this —
-         *    the classification is applied to the non-identity (AES) branch
-         *    of [encrypt]/[decrypt] only, never to the auth-gated RSA
-         *    aliases where the same exception means "auth window closed".
+         *    unlocked-device requirement.
+         *    [rethrowClassifyingDeviceLockedDenial] guarantees this — it
+         *    classifies [MASTER_ALIAS] only, never an arbitrary caller
+         *    alias (which may carry an auth gate) and never the auth-gated
+         *    RSA aliases, where the same exception means "auth window
+         *    closed".
          *  - a `KeyStoreException` / `InvalidKeyException` in the chain
          *    whose message explicitly names the locked device ("device
          *    locked" / "device is locked" / "unlocked device") — the
