@@ -4,6 +4,8 @@ import path from 'path';
 import ConfigIsNotPresentError from '../config/errors/ConfigIsNotPresentError.js';
 import LegoCertificate from '../ssl/letsencrypt/LegoCertificate.js';
 import isCertificatePairInstalled from '../ssl/letsencrypt/isCertificatePairInstalled.js';
+import { RENEWAL_FAILURE_CODES } from '../ssl/renewalFailure.js';
+import { recordRenewalFailure } from './recordRenewalOutcome.js';
 import scheduleRenewalJob from './scheduleRenewalJob.js';
 
 /**
@@ -71,6 +73,17 @@ export default function scheduleRenewLetsEncryptCertificateFactory(
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error(`Failed to read Let's Encrypt certificate from ${certPath}: ${e.message}`);
+
+      // Renewal never reaches an attempt from here - it re-checks hourly for a
+      // file that will not appear on its own - so without recording it, a node
+      // in this state renews nothing and says nothing about why.
+      recordRenewalFailure({
+        homeDir,
+        configName,
+        provider: 'letsencrypt',
+        code: RENEWAL_FAILURE_CODES.CERTIFICATE_FILE_MISSING,
+      });
+
       // Schedule a check in 1 hour to see if certificate appears
       const retryAt = new Date(Date.now() + 60 * 60 * 1000);
 
@@ -118,6 +131,7 @@ export default function scheduleRenewLetsEncryptCertificateFactory(
       configFileRepository,
       writeConfigTemplates,
       dockerCompose,
+      homeDir,
       onConfigurationChanged,
       reschedule: (nextConfig) => scheduleRenewLetsEncryptCertificate(
         nextConfig,

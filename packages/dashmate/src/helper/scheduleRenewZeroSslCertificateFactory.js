@@ -1,5 +1,6 @@
 import ConfigIsNotPresentError from '../config/errors/ConfigIsNotPresentError.js';
 import Certificate from '../ssl/zerossl/Certificate.js';
+import { recordRenewalFailure } from './recordRenewalOutcome.js';
 import scheduleRenewalJob from './scheduleRenewalJob.js';
 
 /**
@@ -9,6 +10,7 @@ import scheduleRenewalJob from './scheduleRenewalJob.js';
  * @param {DockerCompose} dockerCompose
  * @param {ConfigFileJsonRepository} configFileRepository
  * @param {writeConfigTemplates} writeConfigTemplates
+ * @param {HomeDir} homeDir
  * @return {scheduleRenewZeroSslCertificate}
  */
 export default function scheduleRenewZeroSslCertificateFactory(
@@ -17,6 +19,7 @@ export default function scheduleRenewZeroSslCertificateFactory(
   dockerCompose,
   configFileRepository,
   writeConfigTemplates,
+  homeDir,
 ) {
   /**
    * @typedef scheduleRenewZeroSslCertificate
@@ -69,6 +72,17 @@ export default function scheduleRenewZeroSslCertificateFactory(
       // eslint-disable-next-line no-console
       console.error(`Failed to read ZeroSSL certificate, retrying in 1 hour: ${e.message}`);
 
+      // An account ZeroSSL refuses, or a certificate id it no longer knows,
+      // stops renewal here permanently - no attempt is ever made, so nothing
+      // downstream records anything. This is the state most of the expired
+      // nodes on mainnet are in.
+      recordRenewalFailure({
+        homeDir,
+        configName,
+        provider: 'zerossl',
+        error: e,
+      });
+
       setTimeout(() => {
         scheduleRenewZeroSslCertificate(config, onConfigurationChanged);
       }, 60 * 60 * 1000);
@@ -108,6 +122,7 @@ export default function scheduleRenewZeroSslCertificateFactory(
       configFileRepository,
       writeConfigTemplates,
       dockerCompose,
+      homeDir,
       onConfigurationChanged,
       reschedule: (nextConfig) => scheduleRenewZeroSslCertificate(
         nextConfig,

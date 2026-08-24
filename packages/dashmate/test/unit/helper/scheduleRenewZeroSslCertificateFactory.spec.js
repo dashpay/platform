@@ -1,4 +1,5 @@
 import scheduleRenewZeroSslCertificateFactory from '../../../src/helper/scheduleRenewZeroSslCertificateFactory.js';
+import HomeDir from '../../../src/config/HomeDir.js';
 import ConfigIsNotPresentError from '../../../src/config/errors/ConfigIsNotPresentError.js';
 import Certificate from '../../../src/ssl/zerossl/Certificate.js';
 import { CONFIG_REFRESH_INTERVAL_MS } from '../../../src/helper/watchCertificateConfig.js';
@@ -10,9 +11,12 @@ describe('scheduleRenewZeroSslCertificateFactory', () => {
   let dockerCompose;
   let configFileRepository;
   let writeConfigTemplates;
+  let homeDir;
   let scheduleRenewZeroSslCertificate;
 
   beforeEach(function beforeEach() {
+    homeDir = HomeDir.createTemp();
+
     config = {
       get: this.sinon.stub(),
       getName: this.sinon.stub().returns('base'),
@@ -51,7 +55,12 @@ describe('scheduleRenewZeroSslCertificateFactory', () => {
       dockerCompose,
       configFileRepository,
       writeConfigTemplates,
+      homeDir,
     );
+  });
+
+  afterEach(() => {
+    homeDir.remove();
   });
 
   describe('certificate read failure', () => {

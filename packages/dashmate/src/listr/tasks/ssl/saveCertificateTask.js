@@ -2,6 +2,7 @@ import { Listr } from 'listr2';
 import path from 'path';
 import fs from 'fs';
 
+import { clearRenewalRecord } from '../../../ssl/renewalRecord.js';
 import selectLeafCertificate from '../../../ssl/selectLeafCertificate.js';
 import renderConfigFlag from '../../../util/renderConfigFlag.js';
 
@@ -88,6 +89,15 @@ export default function saveCertificateTaskFactory(homeDir) {
           }
 
           config.set('platform.gateway.ssl.enabled', true);
+
+          // A usable pair is installed, so any earlier failure has been
+          // overtaken. The helper cannot notice this on its own: after a failed
+          // renewal it stops watching the configuration until it retries an
+          // hour later, and installing a certificate changes none of the values
+          // it watches anyway. Without this an operator who has just repaired
+          // their node is told renewal is failing, at the moment they run the
+          // command to check their work.
+          clearRenewalRecord(homeDir, config.getName());
         },
       }]);
   }
