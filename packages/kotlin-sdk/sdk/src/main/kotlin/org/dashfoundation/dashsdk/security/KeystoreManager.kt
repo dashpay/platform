@@ -130,7 +130,7 @@ open class KeystoreManager(
      * one prompt-free sample, no Keystore access. Used at throw time by the
      * device-locked denial mapping (so [KeystoreDeviceLockedException]
      * records whether the OS agreed the device was locked) and by
-     * [WalletStorage.ensureDeviceUnlocked]'s createWallet pre-check.
+     * [WalletStorage.ensureMasterKeyNotLockBlocked]'s createWallet pre-check.
      * `open` purely as a unit-test seam, like the rest of this class.
      */
     open fun sampleDeviceLockState(): DeviceLockState = deviceLockStateProbe()
