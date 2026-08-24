@@ -1896,29 +1896,26 @@ mod tests {
             }
         }
 
-        /// Binary-search both edges of the funding range to measure the band where
-        /// `validate_fees_of_event` accepts a shield that execution then rejects.
+        /// Measure the lower edge of the funding range — the least headroom
+        /// `validate_fees_of_event` accepts — and require that exact headroom to EXECUTE.
         ///
-        /// * lower edge = the ESTIMATED fee (below it, validation rejects cleanly)
-        /// * upper edge = the ACTUAL metered fee (at or above it, the shield executes)
-        ///
-        /// If the two cost models agreed, the edges would coincide and the band would be empty.
-        /// Any width is a range of funding levels where the transition is accepted by validation
+        /// If the two cost models agreed everywhere, the least accepted headroom would execute;
+        /// any gap is a band of funding levels where the transition is accepted by validation
         /// and then dropped at execution — no longer a chain halt since the proposer-side
         /// per-transition rollback (shipped in 4.1.1), but still a transition that can never
-        /// confirm despite paying the quoted fee.
+        /// confirm despite paying the quoted fee. Because execution's metered cost is a fixed
+        /// function of the state, "the least accepted headroom executes" is equivalent to the
+        /// band being empty at every funding level, so one edge search plus one execution probe
+        /// replaces the old two-edge search at half the cost.
         ///
         /// Under protocol version 13 (GROVE_V3) the estimated-cost path skips the keyless
         /// commitment-tree append entirely (dashpay/grovedb#812, locked for replay), so the band
         /// is measurably open there (18,919,200 credits, 10.7% of the fee, at 494 notes). From
         /// protocol version 14 (GROVE_V4) the estimator prices the fixed per-append model
-        /// (grovedb #829/#830) and the band is closed EXACTLY: measured at 494 notes, the first
-        /// headroom that reaches execution and the first that executes coincide at 179,978,640
-        /// credits (width 0 — the estimate IS the metered fee, so an address funds precisely
-        /// what it is charged). Kept out of routine CI only for cost — ~60 fresh-platform runs
-        /// (the Orchard proof is built once), ~4.5 min; run it by hand after any change to the
-        /// shielded fee model or the grovedb pin.
-        #[ignore = "band closed at PV14 (width 0, estimate == actual); ~60 fresh-platform runs, ~4.5 min — run by hand"]
+        /// (grovedb #829/#830) and the band is closed EXACTLY: measured at 494 notes, the least
+        /// accepted headroom and the metered fee coincide (the estimate IS the metered fee, so
+        /// an address funds precisely what it is charged). ~30 fresh-platform runs; the Orchard
+        /// proof is built once.
         #[tokio::test]
         async fn shield_fee_estimate_and_actual_must_not_leave_a_halting_band() {
             let pv = PlatformVersion::latest();
@@ -1932,54 +1929,40 @@ mod tests {
                 "sanity: the upper bound must comfortably fund the shield ({top_msg})"
             );
 
-            // Upper edge: least headroom that actually executes == the ACTUAL metered fee.
+            // Least headroom that validation lets through to execution: below it the outcome
+            // is a clean NotEnoughFunds (or a structural-minimum rejection further down).
             let (mut lo, mut hi) = (0u64, CEILING);
             while lo + 1 < hi {
                 let mid = lo + (hi - lo) / 2;
-                if run_at(mid, &b, pv).await.0 == Outcome::Success {
-                    hi = mid;
-                } else {
+                if run_at(mid, &b, pv).await.0 == Outcome::NotEnoughFunds {
                     lo = mid;
-                }
-            }
-            let actual_fee = hi;
-
-            // Lower edge: below the flat structural minimum shielded fee the transition is
-            // rejected in BASIC validation (`ShieldedInvalidValueBalanceError`) before any write,
-            // which is safe. The dangerous band starts where that gate stops rejecting.
-            let (mut lo2, mut hi2) = (0u64, actual_fee);
-            while lo2 + 1 < hi2 {
-                let mid = lo2 + (hi2 - lo2) / 2;
-                if run_at(mid, &b, pv).await.0 == Outcome::Internal {
-                    hi2 = mid;
                 } else {
-                    lo2 = mid;
+                    hi = mid;
                 }
             }
-            let band_start = hi2;
+            let admission = hi;
 
-            let (edge_outcome, edge_msg) = run_at(band_start - 1, &b, pv).await;
+            let (at_admission, at_msg) = run_at(admission, &b, pv).await;
+            let (below, below_msg) = run_at(admission - 1, &b, pv).await;
 
-            println!("shield_amount   = {}", b.shield_amount);
-            println!("band start      = {band_start}  (first headroom that reaches execution)");
-            println!("actual fee      = {actual_fee}  (execution, apply=true)");
-            println!("just below band = {edge_outcome:?} :: {edge_msg}");
-            println!(
-                "HALTING BAND    = [{band_start}, {actual_fee})  width = {} credits ({:.1}% of the fee)",
-                actual_fee - band_start,
-                100.0 * (actual_fee - band_start) as f64 / actual_fee as f64
-            );
+            println!("shield_amount      = {}", b.shield_amount);
+            println!("admission headroom = {admission}");
+            println!("at admission       = {at_admission:?} :: {at_msg}");
+            println!("just below         = {below:?} :: {below_msg}");
 
             assert_eq!(
-                band_start, actual_fee,
-                "HALTING BAND: any shield whose fee headroom falls in [{band_start}, {actual_fee}) \
-                 clears both the structural minimum-fee gate and validate_fees_of_event (which \
-                 prices the batch with the synthetic apply=false cost model, and which SKIPS the \
-                 keyless commitment-tree append entirely), and is then REJECTED by \
-                 paid_from_address_inputs_and_outputs on the real apply=true cost — after its drive \
-                 operations were already written to the block transaction. Such a transition is \
-                 stripped from the block as TxAction::Removed while its writes remain in the \
-                 proposer's app hash, so no validator can reproduce that hash."
+                below,
+                Outcome::NotEnoughFunds,
+                "just below the admission threshold must be a clean validation rejection \
+                 ({below_msg})"
+            );
+            assert_eq!(
+                at_admission,
+                Outcome::Success,
+                "HALTING BAND: the least headroom validation accepts ({admission}) must \
+                 execute. A different outcome means validation under-quotes execution's real \
+                 cost, and every funding level in the gap is accepted by validation and then \
+                 dropped at execution — the mainnet-halt band. Got {at_admission:?}: {at_msg}"
             );
         }
 
