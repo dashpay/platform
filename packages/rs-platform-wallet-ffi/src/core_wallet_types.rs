@@ -994,6 +994,12 @@ pub struct MasternodeEntryFFI {
     pub platform_in_wallet: bool,
     pub platform_account_type: u8,
     pub platform_key_index: u32,
+    /// Where this record came from: 0 = one of the wallet's own masternodes
+    /// (aggregated from its provider transactions), 1 = tracked by the user
+    /// independently of every wallet.
+    pub source: u8,
+    /// User label of a tracked masternode, or null.
+    pub label: *mut c_char,
     /// Whether the platform-node ownership check was actually *possible* for
     /// this query: `true` when the wallet's derived platform-node index had
     /// entries to compare against, `false` when it was empty/unavailable (no
@@ -1132,6 +1138,13 @@ pub(crate) fn masternode_entry_ffi(
         platform_in_wallet,
         platform_account_type,
         platform_key_index,
+        source: mn.source.as_u8(),
+        label: mn
+            .label
+            .clone()
+            .and_then(|l| CString::new(l).ok())
+            .map(CString::into_raw)
+            .unwrap_or(std::ptr::null_mut()),
         platform_ownership_checked: mn.platform_ownership_checked,
     }
 }

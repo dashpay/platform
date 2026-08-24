@@ -48,6 +48,9 @@ pub struct MasternodeLocateMatchFFI {
     /// hosts say "already in wallet" rather than offering to track it.
     pub in_wallet: bool,
     pub wallet_id: [u8; 32],
+    /// Already in the tracked-masternode registry — hosts jump to it
+    /// instead of tracking twice.
+    pub already_tracked: bool,
 }
 
 fn roles_mask(roles: &[MasternodeKeyRole]) -> u8 {
@@ -82,6 +85,7 @@ fn match_ffi(m: &MasternodeLocateMatch) -> MasternodeLocateMatchFFI {
         matched_key_roles: roles_mask(&m.matched_keys),
         in_wallet: m.in_wallet.is_some(),
         wallet_id: m.in_wallet.unwrap_or([0u8; 32]),
+        already_tracked: m.already_tracked,
     }
 }
 
@@ -326,6 +330,7 @@ mod tests {
             matched_by: LocatorMatchKind::Key,
             matched_keys: vec![MasternodeKeyRole::Owner, MasternodeKeyRole::Voting],
             in_wallet: Some([9u8; 32]),
+            already_tracked: true,
         };
         let ffi = match_ffi(&m);
         assert_eq!(ffi.pro_tx_hash, [1u8; 32]);
@@ -343,6 +348,7 @@ mod tests {
         assert_eq!(ffi.matched_key_roles, 0b11);
         assert!(ffi.in_wallet);
         assert_eq!(ffi.wallet_id, [9u8; 32]);
+        assert!(ffi.already_tracked);
         let entries = Box::into_raw(vec![ffi].into_boxed_slice()) as *mut MasternodeLocateMatchFFI;
         unsafe { platform_wallet_manager_free_masternode_matches(entries, 1) };
     }

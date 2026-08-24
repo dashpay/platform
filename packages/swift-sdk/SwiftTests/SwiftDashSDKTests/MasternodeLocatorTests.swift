@@ -20,7 +20,8 @@ final class MasternodeLocatorTests: XCTestCase {
             isEvonode: platformHTTPPort != nil,
             matchedBy: matchedKeys.isEmpty ? .serviceAddress : .key,
             matchedKeys: matchedKeys,
-            inWalletId: nil
+            inWalletId: nil,
+            alreadyTracked: false
         )
     }
 

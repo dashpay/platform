@@ -69,8 +69,8 @@ pub use wallet::signed_payment_registry::{
 // domain (they live under `identity::types::dashpay::*` and
 // `identity::crypto::*` internally).
 pub use masternode::{
-    aggregate_masternodes, ListMembership, MasternodeRecord, MasternodeSource, MasternodeStatus,
-    WalletMasternodes,
+    aggregate_masternodes, ListMembership, MasternodeKeyRole, MasternodeRecord, MasternodeSource,
+    MasternodeStatus, TrackedMasternode, TrackedMasternodeSnapshot, WalletMasternodes,
 };
 pub use wallet::core_address_key::CoreAddressPrivateKey;
 pub use wallet::identity::network::{

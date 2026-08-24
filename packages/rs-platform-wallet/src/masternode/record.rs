@@ -154,7 +154,7 @@ pub struct MasternodeRecord {
     pub platform_http_port: Option<u16>,
     /// Height that set `service_address` / `platform_http_port` (drives
     /// latest-wins).
-    service_height: u32,
+    pub(crate) service_height: u32,
     /// evonode / HPMN flag from the ProRegTx `masternode_type`.
     pub is_evonode: bool,
     /// Owner key hash (hash160) from the ProRegTx.
@@ -162,20 +162,20 @@ pub struct MasternodeRecord {
     /// Voting key hash (hash160) — follows the latest ProRegTx / ProUpReg.
     pub voting_key_hash: Option<[u8; 20]>,
     /// Height that set `voting_key_hash` (drives latest-wins).
-    voting_height: u32,
+    pub(crate) voting_height: u32,
     /// Operator BLS public key (48 bytes) — follows the latest ProRegTx /
     /// ProUpReg.
     pub operator_public_key: Option<[u8; 48]>,
-    operator_height: u32,
+    pub(crate) operator_height: u32,
     /// Platform node id (SHA256[..20] Tenderdash, #884, 20 bytes) for evonodes — follows the
     /// latest ProRegTx / ProUpServ.
     pub platform_node_id: Option<[u8; 20]>,
-    platform_node_height: u32,
+    pub(crate) platform_node_height: u32,
     /// Payout script (raw bytes) — follows the latest ProRegTx / ProUpReg
     /// (owner payout). Encoded to a base58 address by `masternode_entry_ffi`
     /// where the network is available.
     pub payout_script: Option<Vec<u8>>,
-    payout_height: u32,
+    pub(crate) payout_height: u32,
     /// Collateral outpoint (`txid` wire bytes, `vout`) from the ProRegTx.
     pub collateral: Option<([u8; 32], u32)>,
     /// A ProUpRevTx was seen ⇒ the masternode was revoked ("previously
@@ -210,6 +210,9 @@ pub struct MasternodeRecord {
     /// `ProviderPlatformKeys` index whose Tenderdash node id equals
     /// `platform_node_id`. `None` when not in the wallet or unresolved.
     pub platform_key_index: Option<u32>,
+    /// Host-facing display label. Only tracked records carry one; wallet
+    /// aggregation always leaves it `None`.
+    pub label: Option<String>,
     /// Whether the platform-node ownership check was actually *possible*:
     /// `true` when the wallet's derived platform-node index had entries to
     /// compare against, `false` when it was empty / unavailable (no platform
@@ -227,6 +230,19 @@ pub enum MasternodeSource {
     /// the masternode is registered with (some of) that wallet's keys.
     #[default]
     Wallet,
+    /// Deliberately tracked by the user, independent of every wallet
+    /// (see [`super::tracked`]).
+    Tracked,
+}
+
+impl MasternodeSource {
+    /// FFI wire value: 0 wallet, 1 tracked.
+    pub fn as_u8(self) -> u8 {
+        match self {
+            Self::Wallet => 0,
+            Self::Tracked => 1,
+        }
+    }
 }
 
 /// Aggregate a wallet's provider special transactions into masternode

@@ -416,6 +416,9 @@ pub struct MasternodeLocateMatch {
     /// with that wallet's keys) — hosts show "already in wallet" instead of
     /// offering to track it.
     pub in_wallet: Option<WalletId>,
+    /// Already in the tracked-masternode registry — hosts jump to it
+    /// instead of tracking twice.
+    pub already_tracked: bool,
 }
 
 /// Outcome of the optional Platform step.
@@ -485,6 +488,7 @@ pub fn locate_in_summaries(
     parsed: &ParsedLocatorInput,
     summaries: &[MasternodeListSummary],
     in_wallet: &HashMap<[u8; 32], WalletId>,
+    tracked: &BTreeSet<[u8; 32]>,
 ) -> (Vec<MasternodeLocateMatch>, Vec<EcdsaKeyCandidate>) {
     let mut matches: Vec<MasternodeLocateMatch> = Vec::new();
     let mut ecdsa = Vec::new();
@@ -509,6 +513,7 @@ pub fn locate_in_summaries(
             matched_by: kind,
             matched_keys: role.into_iter().collect(),
             in_wallet: in_wallet.get(&summary.pro_tx_hash).copied(),
+            already_tracked: tracked.contains(&summary.pro_tx_hash),
         });
     };
 
@@ -668,6 +673,8 @@ pub struct MasternodeLocator {
     pub network: Network,
     /// proTxHash (wire) ⇒ wallet id, for every loaded wallet's masternodes.
     pub in_wallet: HashMap<[u8; 32], WalletId>,
+    /// Wire proTxHashes already in the tracked-masternode registry.
+    pub tracked: BTreeSet<[u8; 32]>,
 }
 
 impl MasternodeLocator {
@@ -685,7 +692,8 @@ impl MasternodeLocator {
             .masternode_list_summaries()
             .await
             .ok_or(MasternodeLocateError::ListUnavailable)?;
-        let (mut matches, ecdsa) = locate_in_summaries(&parsed, &summaries, &self.in_wallet);
+        let (mut matches, ecdsa) =
+            locate_in_summaries(&parsed, &summaries, &self.in_wallet, &self.tracked);
 
         let (platform_lookup, platform_error) = if ecdsa.is_empty() {
             (PlatformLookup::NotNeeded, None)
@@ -715,6 +723,7 @@ impl MasternodeLocator {
                                 matched_by: LocatorMatchKind::Key,
                                 matched_keys: vec![found.role],
                                 in_wallet: self.in_wallet.get(&found.pro_tx_hash).copied(),
+                                already_tracked: self.tracked.contains(&found.pro_tx_hash),
                             });
                         }
                     }
@@ -1174,7 +1183,7 @@ mod tests {
         let mut display = [5u8; 32];
         display.reverse();
         let parsed = parse_locator_input(&hex::encode(display), Network::Mainnet).unwrap();
-        let (matches, _) = locate_in_summaries(&parsed, &list(), &HashMap::new());
+        let (matches, _) = locate_in_summaries(&parsed, &list(), &HashMap::new(), &BTreeSet::new());
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].summary.pro_tx_hash, [5u8; 32]);
         assert_eq!(matches[0].matched_by, LocatorMatchKind::ProTxHash);
@@ -1186,7 +1195,7 @@ mod tests {
         let parsed = parse_locator_input("10.0.0.5", Network::Mainnet).unwrap();
         let mut in_wallet = HashMap::new();
         in_wallet.insert([5u8; 32], [9u8; 32]);
-        let (matches, _) = locate_in_summaries(&parsed, &list(), &in_wallet);
+        let (matches, _) = locate_in_summaries(&parsed, &list(), &in_wallet, &BTreeSet::new());
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].matched_by, LocatorMatchKind::ServiceAddress);
         assert_eq!(matches[0].in_wallet, Some([9u8; 32]));
@@ -1195,7 +1204,8 @@ mod tests {
     #[test]
     fn voting_key_resolves_locally_and_is_remembered_for_platform() {
         let parsed = parse_locator_input(&wif(Network::Mainnet), Network::Mainnet).unwrap();
-        let (matches, ecdsa) = locate_in_summaries(&parsed, &list(), &HashMap::new());
+        let (matches, ecdsa) =
+            locate_in_summaries(&parsed, &list(), &HashMap::new(), &BTreeSet::new());
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].summary.pro_tx_hash, [1u8; 32]);
         assert_eq!(matches[0].matched_by, LocatorMatchKind::Key);
@@ -1211,7 +1221,7 @@ mod tests {
     #[test]
     fn operator_secret_matches_basic_and_legacy_entries() {
         let parsed = parse_locator_input(&hex::encode([0x33u8; 32]), Network::Mainnet).unwrap();
-        let (matches, _) = locate_in_summaries(&parsed, &list(), &HashMap::new());
+        let (matches, _) = locate_in_summaries(&parsed, &list(), &HashMap::new(), &BTreeSet::new());
         let hashes: Vec<[u8; 32]> = matches.iter().map(|m| m.summary.pro_tx_hash).collect();
         assert_eq!(hashes, vec![[2u8; 32], [3u8; 32]]);
         for m in &matches {
@@ -1222,7 +1232,7 @@ mod tests {
     #[test]
     fn platform_node_seed_matches_the_evonode() {
         let parsed = parse_locator_input(&hex::encode([0x42u8; 32]), Network::Mainnet).unwrap();
-        let (matches, _) = locate_in_summaries(&parsed, &list(), &HashMap::new());
+        let (matches, _) = locate_in_summaries(&parsed, &list(), &HashMap::new(), &BTreeSet::new());
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].summary.pro_tx_hash, [4u8; 32]);
         assert_eq!(
@@ -1239,7 +1249,7 @@ mod tests {
         both.voting_key_id = secp_key_id();
         both.platform_node_id = Some(ed25519_node_id(&SECP_SECRET));
         let parsed = parse_locator_input(&hex::encode(SECP_SECRET), Network::Mainnet).unwrap();
-        let (matches, _) = locate_in_summaries(&parsed, &[both], &HashMap::new());
+        let (matches, _) = locate_in_summaries(&parsed, &[both], &HashMap::new(), &BTreeSet::new());
         assert_eq!(matches.len(), 1);
         assert_eq!(
             matches[0].matched_keys,
@@ -1250,7 +1260,8 @@ mod tests {
     #[test]
     fn nothing_found_is_an_empty_match_list() {
         let parsed = parse_locator_input("192.168.9.9", Network::Mainnet).unwrap();
-        let (matches, ecdsa) = locate_in_summaries(&parsed, &list(), &HashMap::new());
+        let (matches, ecdsa) =
+            locate_in_summaries(&parsed, &list(), &HashMap::new(), &BTreeSet::new());
         assert!(matches.is_empty());
         assert!(ecdsa.is_empty());
         let _ = ip(1);

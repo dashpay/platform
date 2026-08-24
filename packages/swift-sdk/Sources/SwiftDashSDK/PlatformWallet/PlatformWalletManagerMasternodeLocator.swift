@@ -74,6 +74,9 @@ public struct MasternodeLocateMatch: Sendable, Hashable {
     /// Set when this masternode is already one of a loaded wallet's own —
     /// show "already in wallet" instead of offering to track it.
     public let inWalletId: Data?
+    /// Already in the tracked-masternode registry — jump to it instead of
+    /// tracking twice.
+    public let alreadyTracked: Bool
 
     /// proTxHash in display (explorer / Tenderdash / identity id) order.
     public var proTxHashHex: String {
@@ -192,7 +195,8 @@ extension PlatformWalletManager {
                     matchedKeys: MasternodeKeyRole.roles(fromMask: entry.matched_key_roles),
                     inWalletId: entry.in_wallet
                         ? withUnsafeBytes(of: &entry.wallet_id) { Data($0) }
-                        : nil
+                        : nil,
+                    alreadyTracked: entry.already_tracked
                 )
             }
             return MasternodeLocateResult(

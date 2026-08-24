@@ -79,6 +79,7 @@ pub mod sign_with_mnemonic_resolver;
 pub mod spv;
 pub mod token_persistence;
 pub mod tokens;
+pub mod tracked_masternode;
 pub mod types;
 pub mod utils;
 pub mod wallet;

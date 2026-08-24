@@ -11,6 +11,7 @@
 pub mod list;
 pub mod locator;
 pub mod record;
+pub mod tracked;
 
 pub use list::{find_in_summaries, MasternodeListQuery, MasternodeListSummary};
 pub use locator::{
@@ -23,6 +24,10 @@ pub use locator::{
 pub use record::{
     aggregate_masternodes, provider_payload_fields, ListMembership, MasternodeRecord,
     MasternodeSource, MasternodeStatus, ProviderPayloadFields,
+};
+pub use tracked::{
+    capabilities_for_roles, snapshot_from_json, snapshot_to_json, MasternodeCapabilities,
+    PlatformKeySnapshot, RegistrationDetails, TrackedMasternode, TrackedMasternodeSnapshot,
 };
 
 use crate::changeset::PlatformWalletPersistence;
@@ -124,14 +129,16 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             sdk: self.sdk_arc(),
             network: self.sdk().network,
             in_wallet: self.wallet_masternode_index_blocking(),
+            tracked: self.tracked_masternode_hashes(),
         }
     }
 
     /// The key references known for `pro_tx_hash` (wire order): the DML
     /// summary (voting / operator / platform node) merged with the owning
     /// wallet's record (owner / payout) when it is one of a loaded wallet's
-    /// masternodes. `None` when neither the list nor any wallet knows it.
-    /// Blocking.
+    /// masternodes, and with the tracked-registry snapshot (owner / payout
+    /// from Platform, registration keys) when it is tracked. `None` when
+    /// nobody knows it. Blocking.
     pub fn masternode_key_reference_blocking(
         &self,
         pro_tx_hash: &[u8; 32],
@@ -153,11 +160,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     .find(pro_tx_hash)
                     .map(MasternodeKeyReference::from_record)
             });
-        match (from_list, from_wallet) {
-            (Some(list), Some(wallet)) => Some(list.merged_with(&wallet)),
-            (Some(list), None) => Some(list),
-            (None, Some(wallet)) => Some(wallet),
-            (None, None) => None,
-        }
+        let from_tracked = self
+            .tracked_masternode(pro_tx_hash)
+            .map(|tracked| tracked.key_reference());
+        [from_list, from_wallet, from_tracked]
+            .into_iter()
+            .flatten()
+            .reduce(|merged, next| merged.merged_with(&next))
     }
 }
