@@ -537,7 +537,7 @@ describe('analyseGatewayCertificateFactory', () => {
 
       expect(problem.getSolution()).to.not.match(/clients? rejects?/i);
       expect(problem.getSolution()).to.not.match(/clients (are|were|could not|cannot|unable)/i);
-      expect(problem.getSolution()).to.contain('did not pass');
+      expect(problem.getSolution()).to.contain('not usable');
     });
 
     // `dashmate ssl obtain` signals the gateway itself once it has the files,
@@ -564,8 +564,7 @@ describe('analyseGatewayCertificateFactory', () => {
         warnings: [],
       });
 
-      expect(problem.getSolution()).to.include('still pulls images');
-      expect(problem.getSolution()).to.include('exits non-zero');
+      expect(problem.getSolution()).to.include('Updates still work');
     });
 
     // Doctor is run against a named node, and a solution pasted without one

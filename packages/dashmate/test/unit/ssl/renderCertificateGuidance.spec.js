@@ -219,7 +219,7 @@ describe('renderCertificateGuidance', () => {
     const output = render();
 
     expect(output).to.contain('already uses Let\'s Encrypt');
-    expect(output).to.contain('THE FIX - obtain a new certificate');
+    expect(output).to.contain("To fix it, get a new certificate");
     expect(output).to.not.contain('THE FIX - switch to');
 
     // The remediation itself is still the right next step and stays.
@@ -358,7 +358,7 @@ describe('renderCertificateGuidance', () => {
     expect(output).to.not.contain('Images could not be pulled');
     expect(output).to.not.contain('pulled images');
     expect(output).to.not.contain('Images pulled');
-    expect(output).to.contain("This node's TLS certificate did not pass");
+    expect(output).to.contain("This node's TLS certificate is not valid.");
   });
 
   // The operator's own situation, with no claim about what other providers
@@ -410,7 +410,7 @@ describe('renderCertificateGuidance', () => {
     expect(output).to.contain(
       'dashmate config set --config base platform.gateway.ssl.provider letsencrypt',
     );
-    expect(output).to.not.contain('THE FIX');
+    expect(output).to.not.contain('To fix it');
   });
 
   // The installed pair being the one lego produced says nothing about whether
@@ -428,7 +428,7 @@ describe('renderCertificateGuidance', () => {
     });
 
     expect(output).to.not.contain('Nothing needs to be obtained');
-    expect(output).to.contain('THE FIX');
+    expect(output).to.contain('To fix it');
   });
 
   it('should name the bypass and say it is not a playbook line', () => {

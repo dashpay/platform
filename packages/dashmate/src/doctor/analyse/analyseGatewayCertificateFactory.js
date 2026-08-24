@@ -78,8 +78,8 @@ const restartHint = (cfg) => chalk`Then restart Platform so the gateway picks it
  * does, and only refuses to report success. Leaving this out lets a client
  * reachability problem be read as a software delivery one.
  */
-const UPDATE_CONSEQUENCE = 'The gateway certificate did not pass dashmate\'s checks.'
-  + ' `dashmate update` still pulls images, but exits non-zero until this is fixed.';
+const UPDATE_CONSEQUENCE = 'The certificate saved for the gateway is not usable.'
+  + ' Updates still work.';
 
 export default function analyseGatewayCertificateFactory() {
   /**
@@ -115,20 +115,22 @@ export default function analyseGatewayCertificateFactory() {
     // doctor on.
     const installed = samples.getServiceInfo('gateway', 'installedCertificate');
 
-    if (installed) {
-      // Reinstalling cannot fix an address the certificate does not carry, or a
-      // start date still in the future, and the reuse check is weaker than the
-      // one that rejected it - so without this the command hands back the same
-      // certificate and the operator is where they started.
-      const force = requiresReplacement(installed) ? ' --force' : '';
+    // Reinstalling cannot fix an address the certificate does not carry, or a
+    // start date still ahead, and the reuse check is weaker than the one that
+    // rejected it - so an unforced command hands the same certificate back.
+    // Every remedy in this analyser reads this one decision: printing a forced
+    // command beside an unforced one tells an operator two different things
+    // about the same certificate.
+    const installedForce = requiresReplacement(installed) ? ' --force' : '';
 
+    if (installed) {
       installed.reasons.forEach(({ message }) => {
         problems.push(new Problem(
           message,
           chalk`${UPDATE_CONSEQUENCE}
 
 Obtain a new certificate. No restart needed:
-{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${force}}`,
+{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${installedForce}}`,
           SEVERITY.HIGH,
         ));
       });
@@ -268,7 +270,7 @@ restarting will not help. Get a current one:
           + 'dashmate could not confirm the saved one is a working replacement',
           chalk`The certificate in use works. The saved one is not known to be a safe
 replacement, so do not restart to load it. Get a current one instead:
-{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt}`,
+{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${installedForce}}`,
           SEVERITY.HIGH,
         ));
       }

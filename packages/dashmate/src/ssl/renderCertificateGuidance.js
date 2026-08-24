@@ -18,20 +18,18 @@ import { CERTIFICATE_REASONS, requiresReplacement } from './checkGatewayCertific
  */
 function renderOpening(pull) {
   if (pull === null || pull === undefined) {
-    return "  This node's TLS certificate did not pass dashmate's checks.";
+    return "  This node's TLS certificate is not valid.";
   }
 
   if (!pull.ok) {
-    return `  Images could not be pulled, and this node's TLS certificate did not pass
-  dashmate's checks.`;
+    return "  Images could not be pulled, and this node's TLS certificate is not valid.";
   }
 
   const pulled = pull.failed > 0
     ? `Images pulled, ${pull.failed} of ${pull.total} failed - see the table above.`
     : 'Images pulled.';
 
-  return `  ${pulled} This node's TLS certificate did not pass
-  dashmate's checks.`;
+  return `  ${pulled} This node's TLS certificate is not valid.`;
 }
 
 /**
@@ -41,7 +39,7 @@ function renderOpening(pull) {
 function renderObservation(verdict) {
   const [first] = verdict.reasons;
 
-  return first ? first.message : 'the installed certificate did not pass the checks';
+  return first ? first.message : 'the installed certificate is not usable';
 }
 
 /**
@@ -117,8 +115,8 @@ function renderFix(cfg, isAlreadyLetsEncrypt, verdict) {
   // A node already on Let's Encrypt has nothing to switch to, so the heading
   // that offers a switch would contradict the diagnosis above it.
   const heading = isAlreadyLetsEncrypt
-    ? "  THE FIX - obtain a new certificate from Let's Encrypt."
-    : "  THE FIX - switch to Let's Encrypt. Certificates are free.";
+    ? "  To fix it, get a new certificate from Let's Encrypt."
+    : "  To fix it, switch to Let's Encrypt. Certificates are free.";
 
   return `${heading}
 

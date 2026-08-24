@@ -171,7 +171,7 @@ describe('Update command', () => {
         },
       })).to.be.rejectedWith(rejection);
 
-      expect(stderr).to.contain('did not pass');
+      expect(stderr).to.contain('is not valid');
     });
 
     // The renderer can only tell the truth about a failed attempt if the
@@ -298,7 +298,7 @@ describe('Update command', () => {
       this.sinon.stub(console, 'log').callsFake(() => order.push('table'));
       process.stderr.write.callsFake((chunk) => {
         stderr += chunk;
-        if (String(chunk).includes('did not pass')) {
+        if (String(chunk).includes('is not valid')) {
           order.push('guidance');
         }
         return true;
@@ -387,7 +387,7 @@ describe('Update command', () => {
       });
 
       expect(observed.skipCertificateCheck).to.be.true();
-      expect(stderr).to.contain('the certificate did not pass');
+      expect(stderr).to.contain('certificate is not valid');
       expect(stderr).to.not.contain('status is INVALID');
     });
 

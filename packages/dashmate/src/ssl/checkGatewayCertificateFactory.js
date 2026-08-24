@@ -29,10 +29,10 @@ export const CERTIFICATE_STATUS = {
  */
 export function describeStatus(status) {
   if (status === CERTIFICATE_STATUS.CHECKS_PASSED) {
-    return 'passed';
+    return 'is valid';
   }
 
-  return status === CERTIFICATE_STATUS.WARN ? 'passed with warnings' : 'did not pass';
+  return status === CERTIFICATE_STATUS.WARN ? 'is valid, with warnings' : 'is not valid';
 }
 
 export const CERTIFICATE_REASONS = {
