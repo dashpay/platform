@@ -174,8 +174,11 @@ pub(super) mod fee_floor_support {
             }
             TransferEpoch {
                 appends,
-                avg_total: total / appends,
-                avg_storage: storage / appends,
+                // Ceiling division: a truncated average could let a flat fee
+                // marginally below the exact epoch-wide cost slip past the
+                // floor assertions.
+                avg_total: total.div_ceil(appends),
+                avg_storage: storage.div_ceil(appends),
                 boundary_storage,
                 boundary_total,
                 ordinary_total,
