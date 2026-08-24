@@ -127,7 +127,8 @@ private const val MEMO_BYTE_LIMIT = 32
  *
  * The shielded flows settle in credits (1 DASH = 1e11) and block through a
  * ~30s Halo 2 proof; their consensus-pinned fee comes from
- * [ShieldedProver.estimateFee]. A `ShieldedSpendUnconfirmed` outcome is
+ * `PlatformWalletManager.estimateShieldedFee` (computed at the manager's
+ * network-tracked platform version). A `ShieldedSpendUnconfirmed` outcome is
  * surfaced through the SUCCESS path ("may have gone through — do not
  * retry"), mirroring iOS SendViewModel.swift:790.
  */
@@ -288,24 +289,22 @@ fun SendTransactionScreen(
             }
         }
     }
-    val shieldedFeeEstimate by produceState<Long?>(initialValue = null, flow) {
-        value = when (flow) {
+    val shieldedFeeEstimate by produceState<Long?>(initialValue = null, flow, manager) {
+        val activeManager = manager
+        val kind = when (flow) {
             // Type 15 Shield reserves the same compute_minimum_shielded_fee(2)
             // base as a shielded→shielded transfer (← iOS estimateFee: .transfer
             // for .platformToShielded), so they share the TransferOrShield kind.
             SendFlow.SHIELDED_TO_SHIELDED, SendFlow.PLATFORM_TO_SHIELDED ->
-                runCatching {
-                    ShieldedProver.estimateFee(ShieldedProver.FeeKind.TransferOrShield, 2)
-                }.getOrNull()
-            SendFlow.SHIELDED_TO_PLATFORM ->
-                runCatching {
-                    ShieldedProver.estimateFee(ShieldedProver.FeeKind.Unshield, 2)
-                }.getOrNull()
-            SendFlow.SHIELDED_TO_CORE ->
-                runCatching {
-                    ShieldedProver.estimateFee(ShieldedProver.FeeKind.Withdrawal, 2)
-                }.getOrNull()
+                ShieldedProver.FeeKind.TransferOrShield
+            SendFlow.SHIELDED_TO_PLATFORM -> ShieldedProver.FeeKind.Unshield
+            SendFlow.SHIELDED_TO_CORE -> ShieldedProver.FeeKind.Withdrawal
             SendFlow.CORE_TO_CORE, null -> null
+        }
+        value = if (activeManager != null && kind != null) {
+            runCatching { activeManager.estimateShieldedFee(kind, 2) }.getOrNull()
+        } else {
+            null
         }
     }
 

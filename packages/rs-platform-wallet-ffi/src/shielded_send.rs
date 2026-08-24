@@ -156,6 +156,24 @@ pub unsafe extern "C" fn platform_wallet_shielded_prover_is_ready() -> bool {
     CachedOrchardProver::new().is_ready()
 }
 
+/// Map a fee `kind` byte to its consensus fee formula, or `None` for an
+/// unknown kind. All three formulas share the `(num_actions, version) →
+/// credits` shape, so the selection is version-independent and testable
+/// against any explicit [`PlatformVersion`].
+#[allow(clippy::type_complexity)]
+fn shielded_fee_formula(
+    kind: u8,
+) -> Option<
+    fn(usize, &dpp::version::PlatformVersion) -> Result<dpp::fee::Credits, dpp::ProtocolError>,
+> {
+    match kind {
+        0 => Some(compute_minimum_shielded_fee),
+        1 => Some(compute_shielded_unshield_fee),
+        2 => Some(compute_shielded_withdrawal_fee),
+        _ => None,
+    }
+}
+
 /// Estimate the consensus-pinned flat shielded fee (in credits) for a
 /// pool-paid shielded transition.
 ///
@@ -169,40 +187,47 @@ pub unsafe extern "C" fn platform_wallet_shielded_prover_is_ready() -> bool {
 ///   the flat Core withdrawal-document cost).
 ///
 /// `num_actions` is the Orchard action count of the bundle the host will
-/// build (a single-note spend with change is 2 actions). The version is
-/// pinned to [`PlatformVersion::latest()`] — the same version the shielded
-/// builders in `platform-wallet` resolve via `sdk.version()`, so the
-/// estimate can't drift from the fee the builder carves and the consensus
-/// gate validates.
+/// build (a single-note spend with change is 2 actions). The fee is
+/// computed at `handle`'s manager's network-tracked platform version
+/// (`sdk.version()`) — the same version the shielded builders in
+/// `platform-wallet` resolve — so the estimate can't drift from the fee
+/// the builder carves and the consensus gate validates, even when the
+/// connected network hasn't activated the client's latest protocol
+/// version yet.
 ///
-/// Pure computation: no wallet handle, no network. Writes the fee to
-/// `out_fee` and returns `ok()`. An unknown `kind` returns
-/// `ErrorInvalidParameter`; a fee-formula overflow returns
-/// `ErrorArithmeticOverflow`.
+/// No network round-trip and no wallet resolution — just the handle →
+/// version lookup and a pure computation. Writes the fee to `out_fee` and
+/// returns `ok()`. An unknown `kind` returns `ErrorInvalidParameter` (and
+/// is checked before the handle, so it fails the same way regardless of
+/// handle validity); an unknown `handle` returns `ErrorInvalidHandle`; a
+/// fee-formula overflow returns `ErrorArithmeticOverflow`.
 ///
 /// # Safety
 /// `out_fee` must point to 8 writable bytes (a `u64`).
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_shielded_estimate_fee(
+    handle: Handle,
     kind: u8,
     num_actions: usize,
     out_fee: *mut u64,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_fee);
 
-    let platform_version = dpp::version::PlatformVersion::latest();
-    let fee = match kind {
-        0 => compute_minimum_shielded_fee(num_actions, platform_version),
-        1 => compute_shielded_unshield_fee(num_actions, platform_version),
-        2 => compute_shielded_withdrawal_fee(num_actions, platform_version),
-        other => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                format!("unknown shielded fee kind {other} (expected 0/1/2)"),
-            );
-        }
+    let Some(formula) = shielded_fee_formula(kind) else {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!("unknown shielded fee kind {kind} (expected 0/1/2)"),
+        );
     };
-    match fee {
+    let Some(platform_version) =
+        PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.sdk().version())
+    else {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+            format!("invalid manager handle: {handle}"),
+        );
+    };
+    match formula(num_actions, platform_version) {
         Ok(credits) => {
             *out_fee = credits;
             PlatformWalletFFIResult::ok()
@@ -1637,47 +1662,90 @@ mod tests {
         );
     }
 
-    /// Pin the fee estimator to the on-chain ground-truth values observed at the current platform
-    /// version with 2 actions (single-note spend + change). These are the exact credits the
-    /// builder carves and the consensus gate validates, so the host's "Estimated Fee" must match.
+    /// Resolve the 2-action fee for `kind` at an explicit protocol version
+    /// through the same formula table the FFI dispatches on.
+    fn estimate_at(kind: u8, protocol_version: u32) -> u64 {
+        let version = dpp::version::PlatformVersion::get(protocol_version)
+            .expect("protocol version must exist");
+        shielded_fee_formula(kind).expect("known kind")(2, version)
+            .expect("fee formula must not overflow at 2 actions")
+    }
+
+    /// Pin the fee estimator to the on-chain ground-truth values observed at protocol 13 (the
+    /// released fee constants) with 2 actions (single-note spend + change). The estimator resolves
+    /// the version from the manager's network-tracked `sdk.version()`, so on a protocol-13 network
+    /// these are the exact credits the builder carves and the consensus gate validates.
     #[test]
-    fn estimate_fee_matches_observed_onchain_values_for_2_actions() {
-        unsafe {
-            let estimate = |kind: u8| {
-                let mut fee: u64 = 0;
-                let result = platform_wallet_shielded_estimate_fee(kind, 2, &mut fee);
-                assert_eq!(
-                    result.code,
-                    PlatformWalletFFIResultCode::Success,
-                    "kind {kind} must succeed"
-                );
-                fee
-            };
-            // kind 0 — ShieldedTransfer / Shield base.
-            assert_eq!(
-                estimate(0),
-                114_140_000,
-                "shielded transfer fee (2 actions)"
-            );
-            // kind 1 — Unshield.
-            assert_eq!(estimate(1), 120_222_800, "unshield fee (2 actions)");
-            // kind 2 — ShieldedWithdrawal.
-            assert_eq!(
-                estimate(2),
-                226_480_000,
-                "shielded withdrawal fee (2 actions)"
-            );
-        }
+    fn estimate_fee_matches_observed_onchain_values_at_protocol_13() {
+        // kind 0 — ShieldedTransfer / Shield base.
+        assert_eq!(
+            estimate_at(0, 13),
+            162_851_200,
+            "shielded transfer fee (2 actions, protocol 13)"
+        );
+        // kind 1 — Unshield.
+        assert_eq!(
+            estimate_at(1, 13),
+            168_934_000,
+            "unshield fee (2 actions, protocol 13)"
+        );
+        // kind 2 — ShieldedWithdrawal.
+        assert_eq!(
+            estimate_at(2, 13),
+            275_191_200,
+            "shielded withdrawal fee (2 actions, protocol 13)"
+        );
+    }
+
+    /// The protocol-14 side of the boundary: the rebalanced constants
+    /// (40M proof verification + 550 storage bytes/action). A network that
+    /// has activated protocol 14 must quote these, and a network still on
+    /// protocol 13 must NOT — the pre-fix estimator pinned
+    /// `PlatformVersion::latest()` and silently under-quoted protocol-13
+    /// networks by ~30%.
+    #[test]
+    fn estimate_fee_matches_rebalanced_values_at_protocol_14() {
+        assert_eq!(
+            estimate_at(0, 14),
+            114_140_000,
+            "shielded transfer fee (2 actions, protocol 14)"
+        );
+        assert_eq!(
+            estimate_at(1, 14),
+            120_222_800,
+            "unshield fee (2 actions, protocol 14)"
+        );
+        assert_eq!(
+            estimate_at(2, 14),
+            226_480_000,
+            "shielded withdrawal fee (2 actions, protocol 14)"
+        );
     }
 
     #[test]
     fn estimate_fee_rejects_unknown_kind() {
         unsafe {
             let mut fee: u64 = 0;
-            let result = platform_wallet_shielded_estimate_fee(7, 2, &mut fee);
+            // The kind check runs before handle resolution, so a bogus kind
+            // fails identically with or without a live manager handle.
+            let result = platform_wallet_shielded_estimate_fee(0, 7, 2, &mut fee);
             assert_eq!(
                 result.code,
                 PlatformWalletFFIResultCode::ErrorInvalidParameter
+            );
+        }
+    }
+
+    #[test]
+    fn estimate_fee_rejects_unknown_manager_handle() {
+        unsafe {
+            let mut fee: u64 = 0;
+            let result = platform_wallet_shielded_estimate_fee(0, 0, 2, &mut fee);
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorInvalidHandle,
+                "a versionless fallback here would silently mis-quote — an \
+                 unknown handle must be a hard error"
             );
         }
     }

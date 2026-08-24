@@ -47,7 +47,9 @@ import org.dashfoundation.example.util.toHex
  * Shield funds from an asset lock — port of `ShieldedFundFromAssetLockView.swift`.
  * Gated on shielded support ([ShieldedGate]). Shows the Halo 2 prover
  * readiness (via [ShieldedProver.isReady], warming it on entry) and the
- * consensus-pinned shield fee ([ShieldedProver.estimateFee]).
+ * consensus-pinned shield fee
+ * ([org.dashfoundation.dashsdk.wallet.PlatformWalletManager.estimateShieldedFee],
+ * computed at the manager's network-tracked platform version).
  *
  * Submit is wired to the real shield FFI: the recipient defaults to the
  * wallet's own bound shielded address ("shield to self", via
@@ -77,10 +79,12 @@ fun ShieldedFundScreen(walletIdHex: String, navController: NavHostController) {
             runCatching { ShieldedProver.warmUp() }
             value = runCatching { ShieldedProver.isReady() }.getOrDefault(false)
         }
-        val feeEstimate by produceState<Long?>(initialValue = null) {
-            value = runCatching {
-                ShieldedProver.estimateFee(ShieldedProver.FeeKind.TransferOrShield, 2)
-            }.getOrNull()
+        val feeEstimate by produceState<Long?>(initialValue = null, manager) {
+            value = manager?.let { m ->
+                runCatching {
+                    m.estimateShieldedFee(ShieldedProver.FeeKind.TransferOrShield, 2)
+                }.getOrNull()
+            }
         }
 
         // Default "shield to self" recipient — the wallet's bound shielded

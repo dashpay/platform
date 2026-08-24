@@ -346,6 +346,11 @@ struct SendTransactionView: View {
                 // `canSend` can reject a sub-`min_output_amount` platform
                 // transfer up front instead of after submit.
                 resolvePlatformLimits()
+                // Same push pattern for the consensus-pinned shielded fees:
+                // the estimator needs the manager handle (it resolves the
+                // network-tracked platform version), which the view model
+                // deliberately doesn't hold.
+                resolveShieldedFees()
             }
             .onChange(of: viewModel.detectedAddressType) { _, _ in
                 autoSelectSource()
@@ -512,6 +517,28 @@ struct SendTransactionView: View {
         }
         if viewModel.platformMinOutputAmount == nil {
             viewModel.platformMinOutputAmount = try? addressWallet.minOutputAmount()
+        }
+    }
+
+    /// Resolve the consensus-pinned shielded fee estimates (2 Orchard
+    /// actions — single-note spend with change) once on appear and push
+    /// them into the view model, mirroring `resolvePlatformLimits()`. The
+    /// estimator computes at the manager's network-tracked platform
+    /// version, so a network still on an older protocol version quotes the
+    /// fee its consensus gate actually validates. A kind that fails to
+    /// resolve is simply absent — `estimateFee(for:)` falls back to the
+    /// static placeholder.
+    private func resolveShieldedFees() {
+        guard viewModel.shieldedFeeEstimates.isEmpty else { return }
+        var fees: [PlatformWalletManager.ShieldedFeeKind: UInt64] = [:]
+        for kind: PlatformWalletManager.ShieldedFeeKind in [.transfer, .unshield, .withdrawal] {
+            fees[kind] = try? walletManager.estimateShieldedFee(kind: kind, numActions: 2)
+        }
+        viewModel.shieldedFeeEstimates = fees
+        // A flow detected before the push (e.g. a prefilled recipient)
+        // computed its fee from the placeholder — recompute it.
+        if viewModel.detectedFlow != nil {
+            viewModel.updateFlow()
         }
     }
 
