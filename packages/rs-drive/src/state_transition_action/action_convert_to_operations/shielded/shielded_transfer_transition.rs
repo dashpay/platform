@@ -158,14 +158,14 @@ mod tests {
     /// (`storage_fee = min(actual_storage, flat)`, `processing = flat -
     /// storage_fee`) never starves the proposer.
     ///
-    /// Amortized, because the fee is flat and pool-paid: the note appends that
-    /// compact a full dense-buffer epoch into a chunk blob cost far more than
-    /// the others (the epoch's bytes are rewritten as replaced storage, at the
-    /// processing rate), and the pool absorbs that by design — the other
-    /// `epoch - 1` appends overpay it, and a client cannot land on the
-    /// compaction more than once per epoch. The per-append worst-case
-    /// *estimate* is therefore not the floor for a pool-paid fee; the
-    /// measured epoch average is. Measured on a real pool, one epoch of real
+    /// Amortized, because the fee is flat and pool-paid: whatever the
+    /// epoch-boundary append that compacts the dense buffer into a chunk
+    /// blob meters, the pool absorbs it by design, and a client cannot land
+    /// on it more than once per epoch. Under the GROVE_V4 fixed per-append
+    /// model (grovedb #829/#830) every append — the compacting one included —
+    /// meters the same figure, so the epoch average IS the per-append cost;
+    /// the measurement spans a full epoch anyway so the floor stays honest
+    /// under any cost model. Measured on a real pool, one epoch of real
     /// appends including the compacting one (see `fee_floor_support`).
     ///
     /// The booking split is checked at its worst point too: even the

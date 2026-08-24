@@ -57,12 +57,15 @@ pub(super) fn update_balance<'a>(ops: &mut Vec<DriveOperation<'a>>, new_total_ba
 /// storage_fee`; they never validate affordability against a per-transition
 /// estimate. The invariant such a fee has to satisfy is therefore an
 /// **amortized** one: over a whole commitment-tree epoch — including the one
-/// append per epoch that compacts the dense buffer into a chunk blob, by far
-/// the most expensive append — the flat fee must cover the average real
-/// write cost, and must stay above the average real storage so the booking
-/// split never starves the proposer. The compaction append is the pool's to
-/// absorb: the other `epoch - 1` appends overpay it by design, and a client
-/// cannot choose to land on it more often than once per epoch.
+/// append per epoch that compacts the dense buffer into a chunk blob — the
+/// flat fee must cover the average real write cost, and must stay above the
+/// average real storage so the booking split never starves the proposer.
+/// Under the GROVE_V4 fixed per-append model (grovedb #829/#830) the
+/// compaction is amortized inside GroveDB itself, so the epoch average and
+/// the boundary append coincide; measuring the full epoch keeps the
+/// invariant honest under any model — whatever a boundary append meters,
+/// the pool absorbs it, and a client cannot land on it more than once per
+/// epoch.
 ///
 /// Measured once per test binary (an epoch is 2048 real appends).
 #[cfg(test)]

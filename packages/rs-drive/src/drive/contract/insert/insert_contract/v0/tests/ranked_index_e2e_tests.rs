@@ -1295,6 +1295,136 @@ fn estimated_mode_insert_on_ranked_indexes_produces_fees_and_does_not_undercharg
     }
 }
 
+/// Run one document update twice — estimated (`apply: false`) then applied —
+/// and return `(estimated, actual)` fees. The document must already be
+/// inserted; the estimate runs against the same committed state the applied
+/// run will see.
+fn estimated_and_actual_update_fees(
+    drive: &Drive,
+    contract: &DataContract,
+    document_type_name: &str,
+    updated: &Document,
+) -> (
+    dpp::fee::fee_result::FeeResult,
+    dpp::fee::fee_result::FeeResult,
+) {
+    use std::borrow::Cow;
+
+    let pv = platform_version();
+    let document_type = contract
+        .document_type_for_name(document_type_name)
+        .unwrap_or_else(|_| panic!("{document_type_name} doctype exists"));
+    let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+
+    let run = |apply: bool| {
+        drive
+            .update_document_for_contract(
+                updated,
+                contract,
+                document_type,
+                None,
+                BlockInfo::default(),
+                apply,
+                storage_flags.clone(),
+                None,
+                pv,
+                None,
+            )
+            .unwrap_or_else(|e| {
+                panic!("expected the {document_type_name} update (apply={apply}) to succeed: {e}")
+            })
+    };
+
+    let estimated = run(false);
+    let actual = run(true);
+    (estimated, actual)
+}
+
+/// Updates under a ranked index are write-amplified by design: an axis row
+/// binds the immediate primary node's committed value hash (grovedb #817), so
+/// ANY update of an indexed document refreshes every configured axis row —
+/// an in-place payload change rewrites the rows where they stand, and a
+/// group move deletes the old row and inserts a new one. Both must be priced
+/// by the dry-run estimate at least as high as the applied run meters, or the
+/// fee gate admits transitions that execution rejects. Both update shapes are
+/// exercised per axis family, and the canonical-row integrity walk must be
+/// clean afterwards (no stale rows left by the refresh paths).
+#[test]
+fn estimated_mode_update_on_ranked_indexes_does_not_undercharge() {
+    for (document_type_name, aggregated_property) in [
+        ("review", "grade"), // PCPSIT, Avg axis
+        ("visit", "guests"), // PCIT, Count axis
+        ("tip", "amount"),   // PSIT, Sum axis
+    ] {
+        let (drive, contract) = setup_restaurants();
+        let doc = build_doc(
+            &contract,
+            document_type_name,
+            aggregated_property,
+            "alpha",
+            42,
+            7,
+        );
+        insert_doc(&drive, &contract, document_type_name, &doc);
+
+        // Phase 1: in-place update — same group, new aggregated payload.
+        let mut in_place = doc.clone();
+        let mut props = std::collections::BTreeMap::new();
+        props.insert(GROUP_PROPERTY.to_string(), Value::Text("alpha".to_string()));
+        props.insert(aggregated_property.to_string(), Value::I64(43));
+        in_place.set_properties(props);
+        let (estimated, actual) =
+            estimated_and_actual_update_fees(&drive, &contract, document_type_name, &in_place);
+        for (kind, est, act) in [
+            ("storage", estimated.storage_fee, actual.storage_fee),
+            (
+                "processing",
+                estimated.processing_fee,
+                actual.processing_fee,
+            ),
+        ] {
+            assert!(
+                est >= act,
+                "{document_type_name}: in-place update estimated {kind} fee {est} is BELOW the \
+                 applied {kind} fee {act} (short by {}) — the axis row refresh under-charges",
+                act.saturating_sub(est),
+            );
+        }
+        assert!(
+            actual.processing_fee > 0,
+            "{document_type_name}: the applied in-place update must meter work"
+        );
+
+        // Phase 2: group move — the sort key changes, so the old row is
+        // deleted and a new one inserted under the new prefix.
+        let mut moved = doc.clone();
+        let mut props = std::collections::BTreeMap::new();
+        props.insert(GROUP_PROPERTY.to_string(), Value::Text("beta".to_string()));
+        props.insert(aggregated_property.to_string(), Value::I64(43));
+        moved.set_properties(props);
+        let (estimated, actual) =
+            estimated_and_actual_update_fees(&drive, &contract, document_type_name, &moved);
+        for (kind, est, act) in [
+            ("storage", estimated.storage_fee, actual.storage_fee),
+            (
+                "processing",
+                estimated.processing_fee,
+                actual.processing_fee,
+            ),
+        ] {
+            assert!(
+                est >= act,
+                "{document_type_name}: group-move update estimated {kind} fee {est} is BELOW \
+                 the applied {kind} fee {act} (short by {}) — the row move under-charges",
+                act.saturating_sub(est),
+            );
+        }
+
+        // No stale or non-canonical rows may survive either refresh path.
+        assert_grovedb_is_consistent(&drive);
+    }
+}
+
 /// The PSIT arm: a sum-only ranked index ranks its groups by running sum.
 #[test]
 fn sum_axis_ranks_groups_by_running_sum() {
