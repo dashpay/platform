@@ -2231,22 +2231,24 @@ mod shield_input_selection_tests {
 
     #[test]
     fn regression_reports_max_from_usable_suffix_not_total_account_balance() {
-        // Real account snapshot: the leading address is below the reserve, so
-        // capacity must come from the usable suffix, not the account total.
-        assert!(
-            297_264_780 <= reserve(),
-            "regression shape requires the leading address to stay below the reserve; \
-             re-seed the balances if the versioned reserve drops under 297_264_780"
-        );
+        // Real account snapshot shape: the leading address must not qualify as
+        // the fee-paying input 0 (eligibility requires strictly exceeding the
+        // reserve), so capacity must come from the usable suffix, not the
+        // account total. Seed it AT the versioned reserve — deriving it keeps
+        // the shape valid across fee rebalances, where the old 297_264_780
+        // literal broke the moment protocol 14 dropped the reserve under it.
         let candidates = vec![
-            (addr(1), 297_264_780),
+            (addr(1), reserve()),
             (addr(2), 2_000_000_000),
             (addr(3), 1_623_849_220),
         ];
         let plan = plan(candidates).unwrap();
         let expected_max = 3_623_849_220 - reserve();
 
-        assert_eq!(plan.preflight.account_balance_credits, 3_921_114_000);
+        assert_eq!(
+            plan.preflight.account_balance_credits,
+            reserve() + 3_623_849_220
+        );
         assert_eq!(plan.preflight.usable_balance_credits, 3_623_849_220);
         assert_eq!(plan.preflight.fee_reserve_credits, reserve());
         assert_eq!(plan.preflight.max_shieldable_credits, expected_max);
