@@ -79,10 +79,24 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 /// Folding every event *already buffered* in the channel into one changeset
 /// per wallet collapses a burst of N events into a single store, so the
 /// drain keeps pace with the producer at projection speed. This is
-/// exactly the fold [`Merge`] was specified for — `CoreChangeSet` merging
-/// is commutative and associative, and its doc comment already anticipates
-/// "a flush can fold multiple events together (TransactionDetected +
-/// BlockProcessed for the same wallet over a sync round)".
+/// exactly the fold [`Merge`] was specified for — an ORDERED left fold in
+/// channel-arrival order. `CoreChangeSet` merging is associative but NOT
+/// commutative, so regrouping the fold is safe but reordering or
+/// parallelizing it is not: sweep-aware merging deliberately depends on
+/// operand order in two ways. A record arriving after a sweep of the same
+/// txid retracts that sweep (reinstatement), while a sweep arriving after
+/// the record survives the merge and deletes the row at apply time —
+/// swapping the operands swaps which of those happens. And sweep batches
+/// append in emission order because each release set is only true of the
+/// wallet as that sweep saw it, so a later batch keeping a coin spent must
+/// replay after the earlier batch that freed it. (The IS-lock map's
+/// last-write-wins and the chain-lock equal-height tie-break also take the
+/// later operand.) A reordered fold can therefore persist a different
+/// spend decision, not just a differently-arranged changeset. The doc
+/// comment on [`Merge`] states the same contract and already anticipates
+/// this fold: "a flush can fold multiple events together
+/// (TransactionDetected + BlockProcessed for the same wallet over a sync
+/// round)".
 ///
 /// The cap bounds the worst-case size of a single merged changeset (and
 /// hence one Room transaction), and keeps a saturated producer from
