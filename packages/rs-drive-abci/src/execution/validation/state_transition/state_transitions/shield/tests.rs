@@ -1984,11 +1984,17 @@ mod tests {
         /// the block without it compute a different app hash and can never agree.
         ///
         /// This pins the invariant that a dropped transition must not mutate state.
+        ///
+        /// Runs under protocol version 13 — the version mainnet was on at the halt, whose fee
+        /// constants the band edges were measured under. Protocol 14 rebalances the shielded
+        /// fee constants (40M proof verification, 550-byte storage allowance), which moves the
+        /// funding band; the mainnet reproduction belongs to the mainnet protocol version.
         #[tokio::test]
         async fn dropped_shield_must_not_mutate_state() {
-            let pv = PlatformVersion::latest();
+            let pv = PlatformVersion::get(13).expect("protocol version 13 should exist");
             let b = build_bundle();
-            // Sits inside the measured band: accepted by validation, rejected by execution.
+            // Sits inside the band measured under protocol version 13: accepted by validation,
+            // rejected by execution.
             let headroom = 177_215_759u64;
 
             let mut platform = setup_platform();

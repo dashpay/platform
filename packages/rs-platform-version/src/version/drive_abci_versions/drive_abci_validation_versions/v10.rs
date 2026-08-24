@@ -333,11 +333,25 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
             minimum_pool_notes_for_outgoing: 250,
             shielded_anchor_retention_blocks: 1000,
             shielded_anchor_pruning_interval: 100,
-            shielded_proof_verification_fee: 100_000_000,
+            // Rebalanced for protocol 14: one Halo 2 bundle verification is
+            // ~5 ms; at the fee model's ~8M credits/ms of CPU this prices it
+            // at ~27x a BLS signature verification — reserved for compute
+            // alone, never for database work (the storage allowance below
+            // covers that independently).
+            shielded_proof_verification_fee: 40_000_000,
             // Per-action processing prices the ~1.1 ms/action Halo 2 verification CPU at the
             // same rate the flat fee prices the ~5 ms base (100M ≈ 4.5× this), so the fee
             // tracks the per-action cost and the margin stays uniform as actions grow.
             shielded_per_action_processing_fee: 22_000_000,
+            // Rebalanced for protocol 14 alongside the proof fee: the
+            // GROVE_V4 fixed per-append model meters a 1-action transfer at
+            // 17,882,707 credits total, 14,337,000 of it storage — 523
+            // bytes at the full 27,400 credits/byte rate, the declared
+            // 344-byte payload plus Merk framing, dense path records and
+            // the amortized chunk framing. 550 covers that with headroom,
+            // so the storage component alone pays for the database work and
+            // the compute fees above stay reserved for compute.
+            shielded_storage_bytes_per_action: 550,
             shielded_implicit_fee_cap: 20_000_000_000,
             // 0.1, 0.3, 0.5, 1.0 DASH in credits (1 DASH = 10^8 duffs, CREDITS_PER_DUFF = 1000).
             // v13 revises the v8 set: adds 0.03 and 0.25 DASH, retires 0.3 DASH.
