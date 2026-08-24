@@ -495,20 +495,32 @@ export default function obtainLetsEncryptCertificateTaskFactory(
 
               break;
             } catch (e) {
+              // Each of these replaces the typed error with guidance written
+              // for a terminal, so the original is carried as the cause. How
+              // far the attempt got - whether the certificate check ever ran,
+              // whether an issuance was spent - cannot be recovered by reading
+              // that prose, and an unattended renewal has to record it.
+              //
               // The helper never ran, so there is nothing the authority could
               // tell us and nothing to retry against - the fix is local.
               if (e instanceof LegoDidNotStartError) {
-                throw new Error(renderHelperDidNotStartGuidance(config, e.cause, e.neverRan));
+                throw new Error(
+                  renderHelperDidNotStartGuidance(config, e.cause, e.neverRan),
+                  { cause: e },
+                );
               }
 
               if (e instanceof LegoResultNotObservedError) {
-                throw new Error(renderResultNotObservedGuidance(config, e.cause));
+                throw new Error(renderResultNotObservedGuidance(config, e.cause), { cause: e });
               }
 
               // A certificate exists. Retrying would ask for another one for a
               // problem that is entirely local to this machine.
               if (e instanceof LegoArtifactsMissingError) {
-                throw new Error(renderArtifactsMissingGuidance(config, e.missingPath));
+                throw new Error(
+                  renderArtifactsMissingGuidance(config, e.missingPath),
+                  { cause: e },
+                );
               }
 
               // Prompting needs a positive opt-in from the entry point. The
