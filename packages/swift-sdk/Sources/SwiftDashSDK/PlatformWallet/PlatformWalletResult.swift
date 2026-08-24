@@ -64,7 +64,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// running or masternode sync incomplete), so a list-backed query such
     /// as `locateMasternode` has nothing to search. Transient: retry once
     /// `spvProgress.masternodes` reports the list synced.
-    case errorMasternodeListUnavailable = 43
+    /// (46 — 43/44/45 are held by the shielded-invite error trio, #4313.)
+    case errorMasternodeListUnavailable = 46
     /// Definitively-failed address-nonce race: Platform rejected an
     /// address-funds transition (shield, or identity top-up-from-addresses)
     /// because the submitted address nonce raced Platform's expected value
