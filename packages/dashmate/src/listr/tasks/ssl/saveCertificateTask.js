@@ -97,7 +97,15 @@ export default function saveCertificateTaskFactory(homeDir) {
           // it watches anyway. Without this an operator who has just repaired
           // their node is told renewal is failing, at the moment they run the
           // command to check their work.
-          clearRenewalRecord(homeDir, config.getName());
+          try {
+            clearRenewalRecord(homeDir, config.getName());
+          } catch (e) {
+            // Bookkeeping must not fail an install. The pair is already on
+            // disk and the provider is already set; throwing here would report
+            // a renewal that fully succeeded as a failure.
+            // eslint-disable-next-line no-console
+            console.warn(`Could not clear the renewal record: ${e.message}`);
+          }
         },
       }]);
   }

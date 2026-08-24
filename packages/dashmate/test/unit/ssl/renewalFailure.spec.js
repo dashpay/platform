@@ -222,6 +222,30 @@ describe('renewalFailure', () => {
         expect(detail).to.contain('[email]');
       });
 
+      it('should redact an API key the provider echoed back, whatever its own client missed', () => {
+        // The provider's client redacts before throwing, but by exact substring
+        // only - a key echoed back altered survives that pass.
+        const { detail } = classifyRenewalFailure(
+          Object.assign(new Error('rejected key SECRETKEY123 for this account'), { code: 2801 }),
+          { apiKey: 'SECRETKEY123' },
+        );
+
+        expect(detail).to.not.contain('SECRETKEY123');
+        expect(detail).to.contain('[REDACTED]');
+      });
+
+      it('should not carry back whatever page answered on port 80', () => {
+        // The authority quotes what it fetched, and on the wrong-responder case
+        // that is arbitrary content from a machine exposed to the internet.
+        const { detail } = classifyRenewalFailure(new Error(
+          '[1.2.3.4] acme: error: 403 :: urn:ietf:params:acme:error:unauthorized :: '
+          + 'Invalid response from http://1.2.3.4/.well-known/x: "<html>session=SECRETCOOKIE</html>"',
+        ));
+
+        expect(detail).to.not.contain('SECRETCOOKIE');
+        expect(detail).to.contain('unauthorized');
+      });
+
       it('should stay within its length bound and on one line', () => {
         const { detail } = classifyRenewalFailure(new Error(
           `acme: error: 400 :: urn:ietf:params:acme:error:connection :: ${'x'.repeat(5000)}`,

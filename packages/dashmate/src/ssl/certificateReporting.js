@@ -82,6 +82,7 @@ export async function reportUnresolved({
   // a collected report does.
   const { state, record } = readRenewalRecord(homeDir, config.getName());
   const renewal = state === RENEWAL_RECORD_STATES.PRESENT
+    && config.get('platform.gateway.ssl.enabled') === true
     && record.outcome === RENEWAL_OUTCOMES.FAILED
     && isRenewalRecordCurrent(record, {
       provider: config.get('platform.gateway.ssl.provider'),

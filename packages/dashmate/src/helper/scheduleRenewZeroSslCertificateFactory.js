@@ -81,6 +81,7 @@ export default function scheduleRenewZeroSslCertificateFactory(
         configName,
         provider: 'zerossl',
         error: e,
+        apiKey: currentConfig.get('platform.gateway.ssl.providerConfigs.zerossl.apiKey', false),
       });
 
       setTimeout(() => {

@@ -114,15 +114,16 @@ export function recordRenewalSuccess({ homeDir, configName, provider }) {
  * @param {string} options.provider
  * @param {*} [options.error] - classified here, never by the caller
  * @param {string} [options.code] - when the caller already knows the cause
+ * @param {string} [options.apiKey] - redacted defensively out of the excerpt
  */
 export function recordRenewalFailure({
-  homeDir, configName, provider, error, code,
+  homeDir, configName, provider, error, code, apiKey,
 }) {
   attempt(() => {
     const previous = readPrevious(homeDir, configName);
     const classified = code
       ? { code, detail: null }
-      : classifyRenewalFailure(error, { homeDirPath: homeDir.getPath() });
+      : classifyRenewalFailure(error, { homeDirPath: homeDir.getPath(), apiKey });
 
     const issuanceSpentAt = classified.code === 'CERTIFICATE_ISSUED_NOT_SAVED'
       ? new Date().toISOString()

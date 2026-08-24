@@ -268,7 +268,13 @@ function selectEvidence(message, providerCode) {
   const acmeLine = lines.find((line) => ACME_PROBLEM_PATTERN.test(line));
 
   if (acmeLine) {
-    return acmeLine;
+    // The authority quotes back what it fetched from port 80, which on the
+    // wrong-responder case is whatever page answered - arbitrary content, from
+    // a machine that is by definition exposed. The classification lives before
+    // that quote, so the echo is not worth carrying into a support ticket.
+    const [beforeEcho] = acmeLine.split('"');
+
+    return beforeEcho.trim();
   }
 
   // ZeroSSL answers with a code, and the message beside it is the provider's
@@ -389,7 +395,7 @@ export function sanitizeDetail(text) {
  * @param {string|null} [options.homeDirPath] - collapsed out of the excerpt
  * @return {{code: string, detail: string|null}}
  */
-export default function classifyRenewalFailure(error, { homeDirPath = null } = {}) {
+export default function classifyRenewalFailure(error, { homeDirPath = null, apiKey = null } = {}) {
   // Bounded once, before anything examines it. lego writes single lines of
   // unbounded length and these patterns run on the helper's event loop - the
   // same loop that refreshes the configuration lock's lease, so a stall here
@@ -406,8 +412,15 @@ export default function classifyRenewalFailure(error, { homeDirPath = null } = {
     return { code, detail: null };
   }
 
+  // Defence in depth: the provider's own client redacts its key before
+  // throwing, but that pass is exact-substring only, so a key echoed back
+  // altered would survive it.
+  const withoutKey = apiKey
+    ? evidence.split(apiKey).join('[REDACTED]')
+    : evidence;
+
   return {
     code,
-    detail: sanitizeDetail(redact(evidence)).slice(0, MAX_DETAIL_CHARS),
+    detail: sanitizeDetail(redact(withoutKey)).slice(0, MAX_DETAIL_CHARS),
   };
 }
