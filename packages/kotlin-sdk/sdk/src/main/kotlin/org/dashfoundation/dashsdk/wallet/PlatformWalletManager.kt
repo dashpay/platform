@@ -743,6 +743,17 @@ class PlatformWalletManager(
      *   seen (`Some(h)` pins a specific height). Mirror of Swift
      *   `PlatformWalletManager.createWallet(..., birthHeight:)`
      *   (`birthHeight: showImportOption ? 0 : nil`).
+     * @throws org.dashfoundation.dashsdk.security.KeystoreDeviceLockedException
+     *   (RETRYABLE after unlock) if the device is locked at entry AND the
+     *   master key is actually lock-bound — decided by the Keystore itself
+     *   via [WalletStorage.ensureMasterKeyNotLockBlocked]'s preflight
+     *   encrypt, and thrown BEFORE the native create, so nothing was
+     *   created and nothing needs rolling back — or if the Keystore denies
+     *   the mnemonic store as device-locked after the false-locked bounded
+     *   retry in [WalletStorage.storeMnemonic] is exhausted (that path runs
+     *   the full rollback below first). A locked device whose master key is
+     *   NOT lock-bound (generated before a PIN was enrolled) proceeds
+     *   normally.
      */
     suspend fun createWallet(
         mnemonic: String,
@@ -750,6 +761,18 @@ class PlatformWalletManager(
         createDefaultAccounts: Boolean = true,
         birthHeight: UInt? = null,
     ): ManagedPlatformWallet = withContext(Dispatchers.IO) {
+        // Fail-fast pre-check BEFORE the native create: on a locked device
+        // whose MASTER_ALIAS key is lock-bound (setUnlockedDeviceRequired)
+        // the storeMnemonic step below is guaranteed to be denied, which
+        // would force the full rollback dance. The pre-check preflights one
+        // master-alias encrypt so the Keystore itself renders that verdict
+        // (a key generated before any PIN existed carries no lock binding
+        // and keeps working while locked — creation must proceed then).
+        // Failing here instead means no native wallet was created, no Room
+        // rows were written, and there is nothing to roll back — the typed
+        // KeystoreDeviceLockedException tells the caller to retry after
+        // unlock.
+        walletStorage.ensureMasterKeyNotLockBlocked(operation = "createWallet")
         // Caller-allocated out-buffers: the JNI side validates both BEFORE
         // the native create so no fallible allocation follows the
         // persistence commit (a post-commit publish failure would strand
