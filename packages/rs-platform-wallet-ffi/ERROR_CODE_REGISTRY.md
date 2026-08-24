@@ -108,11 +108,13 @@ These are shipped ABI. Do not renumber.
 | 39 | `ErrorInsufficientIdentityCredits` | Merged 2026-08-09 by **#4348** (`6373e00f0c`) |
 | 40 | `ErrorContestedNameNotTradable` | Merged 2026-08-09 by **#4348** (`6373e00f0c`) |
 | 41 | `ErrorShieldedInsufficientBalance` | Merged 2026-08-11 by **#4360** (`e0b8baa850`) |
+| 42 | `ErrorMasternodeWithdrawalUnconfirmed` | Merged 2026-08-22 by **#4451** (masternode-credit claiming). **Took the number active #4356 had claimed** for `ErrorAssetLockInputConflict` — see the proposed table's 42 note; #4356 renumbers via the frontier |
+| 46 | `ErrorMasternodeListUnavailable` | Merged 2026-08-24 by **#4465** (`8dd964277`). Initially minted as 43 (already held by active #4313's `ErrorShieldedInviteAlreadyClaimed` across all three layers) — collision flagged in review and renumbered to the then-frontier same day, Rust and Swift together |
 | 98 | `NotFound` | Sentinel — `Option` returned as an error |
 | 99 | `ErrorUnknown` | Sentinel — unmapped/flattened errors |
 
-**Next allocatable integer: 46** — 27–45 are all claimed (27, 31, 34–41
-merged; 29 proposed by active #4361; 42 proposed by active #4356; 43–45
+**Next allocatable integer: 47** — 27–46 are all claimed (27, 31, 34–42, 46
+merged; 29 proposed by active #4361; 43–45
 proposed by active #4313 at head `0302b188ab`; 28, 30,
 32 and 33 reserved). **28, 30,
 32 and 33 are RESERVED, not free**: 28 and 30 were vacated when the
@@ -121,7 +123,10 @@ reservation trio moved to 34–36; 32 and 33 lapsed when their in-repo owners
 unclaimed rather than back-filled, so no number is reused within a single
 review cycle. Rule 1's "do not reuse a gap unless this file marks it free"
 applies — this file does **not** mark any of them free, so the frontier is
-the only allocation source and a new code takes 46.
+the only allocation source and a new code takes 47. (42 is a cautionary tale:
+merged #4451 minted it while active #4356 held the claim — merged ABI wins,
+the open PR renumbers. 46's near-miss went the other way: caught in review,
+renumbered before merge.)
 
 ## Proposed allocations (open PRs)
 
@@ -143,7 +148,7 @@ Fork-era numbers remain in the collision history, which is immutable record.
 | ---: | --- | --- | --- |
 | 28 | *(reserved — vacated)* | — | Vacated by #4185/#4256 on 2026-08-02; RESERVED, not reissuable — the next-free frontier is the only allocation source |
 | 29 | `ErrorAssetLockInsufficientFunds` | #4361 | In review — **keeps 29**. Lineage: fork-era #4184 → #4316 (closed unmerged) → carried live by #4361's typed asset-lock shortfall (`ErrorAssetLockInsufficientFunds = 29` at its head). **Rule 5 is satisfied as of `15aa2caea1`, and was not before it.** Kotlin has mirrored 29 since the branch's binding commit `a711c55eca` (`fromPlatformWalletNative` plus a `DashSdkErrorTest` pin); Swift carried none of rule 5's three edits until `15aa2caea1`, so 29 fell to `init(ffi:)`'s `default:` and lost its identity as `.errorUnknown` — the rule-5 failure this file exists to catch, one host typed and the other blind. That commit adds the raw case, the `init(ffi:)` arm, and the typed `PlatformWalletError` case with its `init(result:)` arm, plus an `ErrorHandlingTests` case pinning the raw value. Its Rust sibling `2eac8a897e` is what lets the code reach either host on the exact-amount funding path, which flattened the variant to `ErrorWalletOperation` (6) in `map_asset_lock_funding_result` before the blanket `From` arm could run |
-| 42 | `ErrorAssetLockInputConflict` | #4356 | In review — claimed from the frontier with complete Swift/Kotlin mappings at head `7d9be71a08` |
+| 42 | `ErrorAssetLockInputConflict` | #4356 | **COLLIDED — must renumber to the frontier (47)**: merged #4451 shipped `ErrorMasternodeWithdrawalUnconfirmed = 42` on 2026-08-22 while this claim (complete Swift/Kotlin mappings at head `7d9be71a08`) was still in review. Merged ABI wins; this PR's three-layer mappings all move together |
 | 30 | *(reserved — vacated)* | — | Vacated by #4185/#4256 on 2026-08-02; RESERVED, not reissuable — the next-free frontier is the only allocation source |
 | 32 | *(reserved — lapsed)* | — | Owner #4310 (successor of fork-era #4247) closed without merging; RESERVED, not reissuable |
 | 33 | *(reserved — lapsed)* | — | Owner #4311 (successor of fork-era #4256) closed without merging; RESERVED, not reissuable |
