@@ -19,8 +19,8 @@ use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
 };
 use drive::drive::identity::withdrawals::paths::{
-    get_withdrawal_root_path, WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY,
-    WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
+    get_withdrawal_root_path, WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
+    WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY, WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
 };
 use drive::drive::prefunded_specialized_balances::prefunded_specialized_balances_for_voting_path_vec;
 use drive::drive::saved_block_transactions::{
@@ -712,6 +712,17 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
+        // Total credits history under the withdrawals tree: the daily withdrawal limit becomes
+        // a share of the total credits Platform held a day ago, recorded here every block.
+        self.drive.grove_insert_if_not_exists(
+            get_withdrawal_root_path().as_slice().into(),
+            &WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
         Ok(())
     }
 }
@@ -1375,6 +1386,71 @@ mod tests {
         assert!(
             element.value.is_ok(),
             "AddressBalances root tree should exist"
+        );
+    }
+
+    #[test]
+    fn test_transition_to_version_14_creates_total_credits_history_tree() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        use drive::grovedb_path::SubtreePath;
+
+        // Not there on a v13 genesis state
+        assert!(platform
+            .drive
+            .grove
+            .get(
+                SubtreePath::from(&get_withdrawal_root_path()),
+                &WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
+                Some(&transaction),
+                &platform_version.drive.grove_version,
+            )
+            .value
+            .is_err());
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 10,
+            epoch: Epoch::default(),
+        };
+        platform
+            .transition_to_version_14(&block_info, &transaction, platform_version)
+            .expect("expected the transition to succeed");
+
+        let element = platform
+            .drive
+            .grove
+            .get(
+                SubtreePath::from(&get_withdrawal_root_path()),
+                &WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
+                Some(&transaction),
+                &platform_version.drive.grove_version,
+            )
+            .value
+            .expect("total credits history tree should exist after the v14 transition");
+        assert!(element.is_any_tree());
+
+        // Running it again is harmless and the tree stays usable
+        platform
+            .transition_to_version_14(&block_info, &transaction, platform_version)
+            .expect("expected the transition to be idempotent");
+        assert_eq!(
+            platform
+                .drive
+                .fetch_total_credits_in_platform_a_day_ago(
+                    block_info.time_ms,
+                    Some(&transaction),
+                    platform_version,
+                )
+                .expect("expected to read an empty history"),
+            None
         );
     }
 

@@ -12,6 +12,10 @@ pub const WITHDRAWAL_TRANSACTIONS_QUEUE_KEY: [u8; 1] = [1];
 pub const WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY: [u8; 1] = [2];
 /// constant id for subtree containing the untied withdrawal transactions after they were broadcasted
 pub const WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY: [u8; 1] = [3];
+/// constant id for the subtree recording the total credits in Platform per block (key: block
+/// time in milliseconds, big-endian; value: total credits, big-endian), which the day-lagged
+/// daily withdrawal limit reads. Exists from protocol version 14.
+pub const WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY: [u8; 1] = [4];
 
 impl Drive {
     /// Add operations for creating initial withdrawal state structure
@@ -38,6 +42,13 @@ impl Drive {
             batch.add_insert_empty_sum_tree(
                 vec![vec![RootTree::WithdrawalTransactions as u8]],
                 WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY.to_vec(),
+            );
+        }
+
+        if platform_version.protocol_version >= 14 {
+            batch.add_insert_empty_tree(
+                vec![vec![RootTree::WithdrawalTransactions as u8]],
+                WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY.to_vec(),
             );
         }
     }
@@ -98,5 +109,21 @@ pub fn get_withdrawal_transactions_broadcasted_path() -> [&'static [u8]; 2] {
     [
         Into::<&[u8; 1]>::into(RootTree::WithdrawalTransactions),
         &WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY,
+    ]
+}
+
+/// Helper function to get the total credits history path as Vec
+pub fn get_withdrawal_total_credits_history_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::WithdrawalTransactions as u8],
+        WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY.to_vec(),
+    ]
+}
+
+/// Helper function to get the total credits history path as [u8]
+pub fn get_withdrawal_total_credits_history_path() -> [&'static [u8]; 2] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::WithdrawalTransactions),
+        &WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
     ]
 }

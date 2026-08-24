@@ -1974,20 +1974,69 @@ mod tests {
         ///
         /// This pins the invariant that a dropped transition must not mutate state.
         ///
-        /// Runs under protocol version 13: the version mainnet was on at the halt, and the last
-        /// one whose estimator leaves the band open — GROVE_V3's estimation path skips the
-        /// keyless commitment-tree append (dashpay/grovedb#812), locked there so historical
-        /// admission decisions replay identically. From protocol version 14 (GROVE_V4) the
-        /// estimator prices the fixed per-append model exactly (grovedb #829/#830), so no
-        /// funding level reaches execution under-funded and the mid-band shield this test needs
-        /// cannot be built (see `shield_fee_estimate_and_actual_must_not_leave_a_halting_band`).
+        /// Runs under protocol version 13 — the version mainnet was on at the halt, the one
+        /// whose estimation path leaves the funding band open (the estimated-cost model skips
+        /// the keyless commitment-tree append, dashpay/grovedb#812). The band's absolute edges
+        /// move whenever fee constants or grovedb cost models move — and parts of execution
+        /// resolve constants through the platform state's own version rather than the passed
+        /// one — so a hardcoded headroom goes stale. The test therefore calibrates itself: it
+        /// binary-searches the least headroom validation lets through and the least headroom
+        /// that executes, asserts the band between them is still open, and drops a shield
+        /// funded at the midpoint.
+        /// From protocol version 14 (GROVE_V4) the estimator prices the fixed per-append
+        /// model exactly (grovedb #829/#830), so the mid-band shield this test needs cannot be
+        /// built there — see `shield_fee_estimate_and_actual_must_not_leave_a_halting_band`.
         #[tokio::test]
         async fn dropped_shield_must_not_mutate_state() {
             let pv = PlatformVersion::get(13).expect("protocol version 13 should exist");
             let b = build_bundle();
-            // Sits inside the band measured under protocol version 13: accepted by validation,
-            // rejected by execution.
-            let headroom = 177_215_759u64;
+
+            // Least headroom validation lets through to execution.
+            const CEILING: u64 = 5_000_000_000;
+            let (top, top_msg) = run_at(CEILING, &b, pv).await;
+            assert_eq!(
+                top,
+                Outcome::Success,
+                "sanity: the ceiling must comfortably fund the shield ({top_msg})"
+            );
+            // "Accepted" means validation let the transition through to
+            // execution: the outcome is either a successful execution or the
+            // mid-band InternalError drop. Everything below the band is a
+            // clean rejection — the structural-minimum gate at tiny
+            // headroom, then AddressesNotEnoughFunds — so the predicate is
+            // monotone across the funding range.
+            let is_accepted =
+                |outcome: Outcome| matches!(outcome, Outcome::Internal | Outcome::Success);
+            let (mut lo, mut hi) = (0u64, CEILING);
+            while lo + 1 < hi {
+                let mid = lo + (hi - lo) / 2;
+                if is_accepted(run_at(mid, &b, pv).await.0) {
+                    hi = mid;
+                } else {
+                    lo = mid;
+                }
+            }
+            let accepted = hi;
+            // Least headroom that actually executes.
+            let (mut lo, mut hi) = (accepted, CEILING);
+            while lo + 1 < hi {
+                let mid = lo + (hi - lo) / 2;
+                if run_at(mid, &b, pv).await.0 == Outcome::Success {
+                    hi = mid;
+                } else {
+                    lo = mid;
+                }
+            }
+            let executes = hi;
+            println!("band at protocol 13: [{accepted}, {executes})");
+            assert!(
+                accepted < executes,
+                "the protocol-13 funding band must be open (its estimator skips the keyless \
+                 commitment-tree append); if it has closed, this reproduction is no longer \
+                 constructible and should be retired deliberately"
+            );
+            // Mid-band: accepted by validation, rejected by execution.
+            let headroom = accepted + (executes - accepted) / 2;
 
             let mut platform = setup_platform();
             insert_dummy_encrypted_notes(&platform, MAINNET_NOTES);
