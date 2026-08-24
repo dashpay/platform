@@ -20,8 +20,10 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::version::PlatformVersion;
+use grovedb::PathQuery;
 use grovedb::TransactionArg;
 use grovedb_costs::CostContext;
+use grovedb_query::AxisQuery;
 
 impl DriveDocumentHavingQuery<'_> {
     /// Read the matching groups directly from the axis secondary: every
@@ -215,18 +217,21 @@ impl DriveDocumentHavingQuery<'_> {
                 .map(|branch| self.indexed_property_name_tree_path(branch))
                 .collect::<Result<Vec<_>, Error>>()?;
             let (prefix, keys, suffix) = decompose_branch_paths(&paths)?;
-            let prefix_refs: Vec<&[u8]> = prefix.iter().map(|s| s.as_slice()).collect();
-            let suffix_refs: Vec<&[u8]> = suffix.iter().map(|s| s.as_slice()).collect();
-            let CostContext { value, cost: _ } = drive.grove.prove_indexed_axis_query_branched(
-                &prefix_refs,
-                &keys,
-                &suffix_refs,
-                self.bounds.axis().into(),
-                self.bounds.merk_query(self.descending),
-                Some(self.limit),
-                transaction,
-                grove_version,
+            let (lo, hi) = self.bounds.inclusive_bounds_i128();
+            let path_query = PathQuery::new_branched_axis(
+                prefix,
+                keys,
+                suffix,
+                AxisQuery::bounded(
+                    self.bounds.axis().into(),
+                    lo,
+                    hi,
+                    self.limit,
+                    self.descending,
+                ),
             );
+            let CostContext { value, cost: _ } =
+                drive.grove.prove_query(&path_query, None, grove_version);
             return value.map_err(|e| Error::GroveDB(Box::new(e)));
         }
         self.execute_range_with_proof_branch(0, drive, transaction, platform_version)

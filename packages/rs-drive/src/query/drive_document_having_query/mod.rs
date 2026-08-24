@@ -163,6 +163,18 @@ impl AxisRangeBounds {
         }
     }
 
+    /// The bounds as inclusive `i128` values in the axis's own domain —
+    /// the form `AxisTraversal::Bounded` carries in the unified
+    /// `PathQuery`. Count and sum widen losslessly; avg is already
+    /// `i128` fixed point.
+    pub fn inclusive_bounds_i128(&self) -> (i128, i128) {
+        match *self {
+            AxisRangeBounds::Count { lo, hi } => (lo as i128, hi as i128),
+            AxisRangeBounds::Sum { lo, hi } => (lo as i128, hi as i128),
+            AxisRangeBounds::Avg { lo, hi } => (lo, hi),
+        }
+    }
+
     /// The bounds as a byte range over the axis secondary's keyspace:
     /// `(inclusive_lower, exclusive_upper)`, with `None` for an upper
     /// bound at the axis's type maximum (no representable successor —

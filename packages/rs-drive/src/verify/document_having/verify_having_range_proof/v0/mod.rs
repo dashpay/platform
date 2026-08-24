@@ -7,7 +7,10 @@ use crate::query::{DriveDocumentHavingQuery, RankedAxis, RankedEntry, RankedEntr
 use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
 use grovedb::operations::proof::indexed_axis::AxisEntries;
+use grovedb::operations::proof::VerifiedPathQuery;
 use grovedb::GroveDb;
+use grovedb::PathQuery;
+use grovedb_query::AxisQuery;
 
 impl DriveDocumentHavingQuery<'_> {
     /// v0 of [`Self::verify_having_range_proof`].
@@ -56,24 +59,46 @@ impl DriveDocumentHavingQuery<'_> {
                 .map(|branch| self.indexed_property_name_tree_path(branch))
                 .collect::<Result<Vec<_>, Error>>()?;
             let (prefix, keys, suffix) = decompose_branch_paths(&paths)?;
-            let prefix_refs: Vec<&[u8]> = prefix.iter().map(|s| s.as_slice()).collect();
-            let suffix_refs: Vec<&[u8]> = suffix.iter().map(|s| s.as_slice()).collect();
             let axis = self.bounds.axis();
-            let result = grovedb::GroveDb::verify_indexed_axis_query_branched(
+            let (lo, hi) = self.bounds.inclusive_bounds_i128();
+            let path_query = PathQuery::new_branched_axis(
+                prefix,
+                keys.clone(),
+                suffix,
+                AxisQuery::bounded(axis.into(), lo, hi, self.limit, self.descending),
+            );
+            let verified = GroveDb::verify_path_query(
                 proof,
-                &prefix_refs,
-                &keys,
-                &suffix_refs,
-                axis.into(),
-                self.bounds.merk_query(self.descending),
-                Some(self.limit),
+                &path_query,
+                &platform_version.drive.grove_version,
             )
             .map_err(|e| Error::GroveDB(Box::new(e)))?;
-            let per_branch = result
-                .branches
+            let VerifiedPathQuery::BranchedAxisEntries {
+                root_hash,
+                branches,
+            } = verified
+            else {
+                return Err(Error::Drive(DriveError::CorruptedDriveState(
+                    "a branched having range proof verified to a non-branched shape".to_string(),
+                )));
+            };
+            if branches.len() != keys.len() || branches.iter().map(|(key, _)| key).ne(keys.iter()) {
+                return Err(Error::Drive(DriveError::CorruptedDriveState(
+                    "a branched having range proof verified a different branch set than the \
+                     request resolved"
+                        .to_string(),
+                )));
+            }
+            let per_branch = branches
                 .into_iter()
-                .map(|entries| {
-                    let entries = axis_entries_to_ranked(axis, entries)?;
+                .map(|(_key, entries)| {
+                    // Authenticated absence of a branch key = an empty page,
+                    // the same reading the unproved path gives an absent
+                    // `IN` element.
+                    let entries = match entries {
+                        None => Vec::new(),
+                        Some(entries) => axis_entries_to_ranked(axis, entries)?,
+                    };
                     if entries.len() > self.limit as usize {
                         return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
                             "a branch of a having range proof verified to {} entries for \
@@ -91,9 +116,9 @@ impl DriveDocumentHavingQuery<'_> {
                 self.descending,
                 self.limit as usize,
             )?;
-            return Ok((result.root_hash, entries));
+            return Ok((root_hash, entries));
         }
-        self.verify_having_range_proof_v0_branch(0, proof)
+        self.verify_having_range_proof_v0_branch(0, proof, platform_version)
     }
 
     /// One branch's verification — the entire pre-`IN` verifier,
@@ -102,6 +127,7 @@ impl DriveDocumentHavingQuery<'_> {
         &self,
         branch: usize,
         proof: &[u8],
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<RankedEntry>), Error> {
         let path = self.indexed_property_name_tree_path(branch)?;
         let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();

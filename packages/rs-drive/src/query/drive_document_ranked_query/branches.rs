@@ -126,14 +126,16 @@ pub fn merge_branch_pages(
     Ok(merged)
 }
 
+/// The `(shared prefix, branch keys, shared suffix)` decomposition of a
+/// branch path set — the triple `PathQuery::new_branched_axis` takes.
+pub type BranchPathDecomposition = (Vec<Vec<u8>>, Vec<Vec<u8>>, Vec<Vec<u8>>);
+
 /// Decompose per-branch grove paths into the `(shared prefix, branch
 /// keys, shared suffix)` triple grovedb's branched proof primitives
 /// take. The paths differ at exactly one segment position by
 /// construction (one `IN` pin); anything else is an internal
 /// resolution error.
-pub fn decompose_branch_paths(
-    paths: &[Vec<Vec<u8>>],
-) -> Result<(Vec<Vec<u8>>, Vec<Vec<u8>>, Vec<Vec<u8>>), Error> {
+pub fn decompose_branch_paths(paths: &[Vec<Vec<u8>>]) -> Result<BranchPathDecomposition, Error> {
     let first = paths.first().ok_or_else(|| {
         Error::Drive(DriveError::CorruptedDriveState(
             "branch decomposition over zero paths".to_string(),
@@ -184,6 +186,7 @@ pub fn axis_entries_to_ranked(
     match (axis, entries) {
         (RankedAxis::Count, AxisEntries::Count(entries)) => Ok(entries
             .into_iter()
+            .map(|entry| entry.key_pair())
             .map(|(count, key)| RankedEntry {
                 in_key: None,
                 key,
@@ -192,6 +195,7 @@ pub fn axis_entries_to_ranked(
             .collect()),
         (RankedAxis::Sum, AxisEntries::Sum(entries)) => Ok(entries
             .into_iter()
+            .map(|entry| entry.key_pair())
             .map(|(sum, key)| RankedEntry {
                 in_key: None,
                 key,
@@ -200,6 +204,7 @@ pub fn axis_entries_to_ranked(
             .collect()),
         (RankedAxis::Avg, AxisEntries::Avg(entries)) => Ok(entries
             .into_iter()
+            .map(|entry| entry.key_pair())
             .map(|(avg, key)| RankedEntry {
                 in_key: None,
                 key,

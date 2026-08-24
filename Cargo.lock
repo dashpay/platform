@@ -2195,6 +2195,7 @@ dependencies = [
  "grovedb-costs",
  "grovedb-epoch-based-storage-flags",
  "grovedb-path",
+ "grovedb-query",
  "grovedb-storage",
  "grovedb-version",
  "hex",

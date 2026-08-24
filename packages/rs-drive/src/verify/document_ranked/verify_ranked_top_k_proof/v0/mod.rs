@@ -9,7 +9,10 @@ use crate::query::{
 use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
 use grovedb::operations::proof::indexed_axis::AxisEntries;
+use grovedb::operations::proof::VerifiedPathQuery;
 use grovedb::GroveDb;
+use grovedb::PathQuery;
+use grovedb_query::AxisQuery;
 
 impl DriveDocumentRankedQuery<'_> {
     /// v0 of [`Self::verify_ranked_top_k_proof`].
@@ -67,24 +70,50 @@ impl DriveDocumentRankedQuery<'_> {
                 .map(|branch| self.indexed_property_name_tree_path(branch))
                 .collect::<Result<Vec<_>, Error>>()?;
             let (prefix, keys, suffix) = decompose_branch_paths(&paths)?;
-            let prefix_refs: Vec<&[u8]> = prefix.iter().map(|s| s.as_slice()).collect();
-            let suffix_refs: Vec<&[u8]> = suffix.iter().map(|s| s.as_slice()).collect();
-            let result = grovedb::GroveDb::verify_indexed_axis_top_k_paginated_branched(
+            let path_query = PathQuery::new_branched_axis(
+                prefix,
+                keys.clone(),
+                suffix,
+                AxisQuery::top_k(
+                    self.axis.into(),
+                    self.k,
+                    self.offset as u64,
+                    self.descending,
+                ),
+            );
+            let verified = GroveDb::verify_path_query(
                 proof,
-                &prefix_refs,
-                &keys,
-                &suffix_refs,
-                self.axis.into(),
-                self.k,
-                self.offset as u64,
-                self.descending,
+                &path_query,
+                &platform_version.drive.grove_version,
             )
             .map_err(|e| Error::GroveDB(Box::new(e)))?;
-            let per_branch = result
-                .branches
+            let VerifiedPathQuery::BranchedAxisEntries {
+                root_hash,
+                branches,
+            } = verified
+            else {
+                return Err(Error::Drive(DriveError::CorruptedDriveState(
+                    "a branched ranked top-k proof verified to a non-branched shape".to_string(),
+                )));
+            };
+            if branches.len() != keys.len() || branches.iter().map(|(key, _)| key).ne(keys.iter()) {
+                return Err(Error::Drive(DriveError::CorruptedDriveState(
+                    "a branched ranked top-k proof verified a different branch set than the \
+                     request resolved"
+                        .to_string(),
+                )));
+            }
+            let per_branch = branches
                 .into_iter()
-                .map(|(_skipped, entries)| {
-                    let entries = axis_entries_to_ranked(self.axis, entries)?;
+                .map(|(_key, entries)| {
+                    // A branch key whose absence the branching-level Merk
+                    // proof authenticates contributes an empty page — the
+                    // same reading the unproved path gives an absent `IN`
+                    // element.
+                    let entries = match entries {
+                        None => Vec::new(),
+                        Some(entries) => axis_entries_to_ranked(self.axis, entries)?,
+                    };
                     if entries.len() > self.k as usize {
                         return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
                             "a branch of a ranked top-k proof verified to {} entries for \
@@ -103,14 +132,14 @@ impl DriveDocumentRankedQuery<'_> {
                 self.k as usize,
             )?;
             return Ok((
-                result.root_hash,
+                root_hash,
                 RankedPage {
                     skipped: 0,
                     entries,
                 },
             ));
         }
-        self.verify_ranked_top_k_proof_v0_branch(0, proof)
+        self.verify_ranked_top_k_proof_v0_branch(0, proof, platform_version)
     }
 
     /// One branch's verification — the entire pre-`IN` verifier,
@@ -119,6 +148,7 @@ impl DriveDocumentRankedQuery<'_> {
         &self,
         branch: usize,
         proof: &[u8],
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, RankedPage), Error> {
         let path = self.indexed_property_name_tree_path(branch)?;
         let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();

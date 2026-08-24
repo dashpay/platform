@@ -16,8 +16,9 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::version::PlatformVersion;
-use grovedb::{IndexedTopKKeysPage, TransactionArg};
+use grovedb::{IndexedTopKKeysPage, PathQuery, TransactionArg};
 use grovedb_costs::CostContext;
+use grovedb_query::AxisQuery;
 
 impl DriveDocumentRankedQuery<'_> {
     /// Read one page of the ranking directly from the axis secondary:
@@ -300,20 +301,19 @@ impl DriveDocumentRankedQuery<'_> {
                 .map(|branch| self.indexed_property_name_tree_path(branch))
                 .collect::<Result<Vec<_>, Error>>()?;
             let (prefix, keys, suffix) = decompose_branch_paths(&paths)?;
-            let prefix_refs: Vec<&[u8]> = prefix.iter().map(|s| s.as_slice()).collect();
-            let suffix_refs: Vec<&[u8]> = suffix.iter().map(|s| s.as_slice()).collect();
-            let CostContext { value, cost: _ } =
-                drive.grove.prove_indexed_axis_top_k_paginated_branched(
-                    &prefix_refs,
-                    &keys,
-                    &suffix_refs,
+            let path_query = PathQuery::new_branched_axis(
+                prefix,
+                keys,
+                suffix,
+                AxisQuery::top_k(
                     self.axis.into(),
                     self.k,
                     self.offset as u64,
                     self.descending,
-                    transaction,
-                    grove_version,
-                );
+                ),
+            );
+            let CostContext { value, cost: _ } =
+                drive.grove.prove_query(&path_query, None, grove_version);
             return value.map_err(|e| Error::GroveDB(Box::new(e)));
         }
         self.execute_top_k_with_proof_branch(0, drive, transaction, platform_version)
