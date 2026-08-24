@@ -2,6 +2,7 @@ import { Listr } from 'listr2';
 
 import chalk from 'chalk';
 import fs from 'fs';
+import path from 'path';
 import lodash from 'lodash';
 import wait from '../../../../util/wait.js';
 import { ERRORS } from '../../../../ssl/zerossl/validateZeroSslCertificateFactory.js';
@@ -45,6 +46,43 @@ export default function obtainZeroSSLCertificateTaskFactory(
   function obtainZeroSSLCertificateTask(config) {
     const tasks = new Listr([
       {
+        title: 'Initialize configuration',
+        task: async (ctx) => {
+          // Always load configuration and paths, even under --force.
+          // The existing-certificate check below is the only step --force should
+          // skip. Skipping this init left ctx.externalIp/ctx.apiKey undefined,
+          // which propagated into generateCsr and crashed node-forge with
+          // "Attribute value not specified." See dashpay/platform#3803 / #4249.
+          ctx.apiKey = config.get('platform.gateway.ssl.providerConfigs.zerossl.apiKey');
+
+          if (!ctx.apiKey) {
+            throw new Error('ZeroSSL API key is not set. Please set it in the config file');
+          }
+
+          ctx.externalIp = config.get('externalIp');
+
+          if (!ctx.externalIp) {
+            throw new Error('External IP is not set. Please set it in the config file');
+          }
+
+          ctx.sslConfigDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl');
+          ctx.csrFilePath = path.join(ctx.sslConfigDir, 'csr.pem');
+          ctx.privateKeyFilePath = path.join(ctx.sslConfigDir, 'private.key');
+          ctx.bundleFilePath = path.join(ctx.sslConfigDir, 'bundle.crt');
+
+          fs.mkdirSync(ctx.sslConfigDir, { recursive: true });
+
+          if (ctx.force) {
+            // Force a clean regeneration: ignore any existing keypair, CSR, bundle,
+            // or certificate state so the generate/create/save tasks all run.
+            ctx.isCsrFilePresent = false;
+            ctx.isPrivateKeyFilePresent = false;
+            ctx.isBundleFilePresent = false;
+            ctx.certificate = null;
+          }
+        },
+      },
+      {
         title: 'Check if certificate already exists and not expiring soon',
         // Skips the check if force flag is set
         skip: (ctx) => ctx.force,
@@ -52,9 +90,6 @@ export default function obtainZeroSSLCertificateTaskFactory(
           const { error, data } = await validateZeroSslCertificate(config, ctx.expirationDays);
 
           lodash.merge(ctx, data);
-
-          // Ensure we have config dir created
-          fs.mkdirSync(ctx.sslConfigDir, { recursive: true });
 
           switch (error) {
             case undefined:
@@ -141,13 +176,8 @@ export default function obtainZeroSSLCertificateTaskFactory(
             ctx.externalIp,
             ctx.apiKey,
           );
-
-          config.set('platform.gateway.ssl.enabled', true);
-          config.set('platform.gateway.ssl.provider', 'zerossl');
-          config.set('platform.gateway.ssl.providerConfigs.zerossl.id', ctx.certificate.id);
-
-          // Save config file
-          configFileRepository.write(configFile);
+          // Publish the replacement ID only after its key, CSR, and bundle are ready.
+          ctx.isCertificateCreated = true;
         },
       },
       {
@@ -269,33 +299,137 @@ and all Dash service ports listed above.`);
         },
       },
       {
-        title: 'Save certificate private key file',
-        enabled: (ctx) => !ctx.isPrivateKeyFilePresent,
+        title: 'Save certificate files and configuration',
+        enabled: (ctx) => ctx.isCertificateCreated
+          || !ctx.isPrivateKeyFilePresent
+          || !ctx.isCsrFilePresent
+          || !ctx.isBundleFilePresent,
         task: async (ctx, task) => {
-          fs.writeFileSync(ctx.privateKeyFilePath, ctx.privateKeyFile, 'utf8');
+          const artifacts = [
+            {
+              shouldSave: !ctx.isPrivateKeyFilePresent,
+              filePath: ctx.privateKeyFilePath,
+              content: ctx.privateKeyFile,
+              // Owner-only: renameSync replaces the destination inode, so the
+              // staged mode is what the installed private key ends up with
+              mode: 0o600,
+            },
+            {
+              shouldSave: !ctx.isCsrFilePresent,
+              filePath: ctx.csrFilePath,
+              content: ctx.csr,
+            },
+            {
+              shouldSave: !ctx.isBundleFilePresent,
+              filePath: ctx.bundleFilePath,
+              content: ctx.certificateFile,
+            },
+          ].filter(({ shouldSave }) => shouldSave);
+
+          const stagingDir = fs.mkdtempSync(path.join(ctx.sslConfigDir, '.zerossl-'));
+          const configPaths = [
+            'platform.gateway.ssl.enabled',
+            'platform.gateway.ssl.provider',
+            'platform.gateway.ssl.providerConfigs.zerossl.id',
+          ];
+          let previousConfig;
+          let stagedArtifacts;
+          let artifactInstallStarted = false;
+          let configWasUpdated = false;
+
+          try {
+            stagedArtifacts = artifacts.map(({ filePath, content, mode }) => {
+              const stagedFilePath = path.join(stagingDir, path.basename(filePath));
+              const wasPresent = fs.existsSync(filePath);
+              const previousContent = wasPresent
+                ? fs.readFileSync(filePath, 'utf8')
+                : undefined;
+
+              fs.writeFileSync(stagedFilePath, content, { encoding: 'utf8', mode });
+
+              return {
+                stagedFilePath,
+                filePath,
+                content,
+                wasPresent,
+                previousContent,
+              };
+            });
+
+            artifactInstallStarted = true;
+            stagedArtifacts.forEach(({
+              stagedFilePath, filePath, content, wasPresent,
+            }) => {
+              if (wasPresent) {
+                // The gateway container bind mounts bundle.crt and private.key
+                // as single files, so it stays attached to the mounted inode
+                // for its lifetime. Overwrite in place so the renewal SIGHUP
+                // hot restart reads the new contents; renameSync would install
+                // a new inode the running container never sees.
+                fs.writeFileSync(filePath, content, 'utf8');
+                fs.rmSync(stagedFilePath, { force: true });
+              } else {
+                fs.renameSync(stagedFilePath, filePath);
+              }
+            });
+
+            if (ctx.isCertificateCreated) {
+              previousConfig = configPaths.map((configPath) => [
+                configPath,
+                config.get(configPath),
+              ]);
+              configWasUpdated = true;
+
+              config.set('platform.gateway.ssl.enabled', true);
+              config.set('platform.gateway.ssl.provider', 'zerossl');
+              config.set(
+                'platform.gateway.ssl.providerConfigs.zerossl.id',
+                ctx.certificate.id,
+              );
+              configFileRepository.write(configFile);
+            }
+          } catch (error) {
+            let rollbackError;
+
+            if (artifactInstallStarted) {
+              stagedArtifacts.forEach(({ filePath, wasPresent, previousContent }) => {
+                try {
+                  if (wasPresent) {
+                    fs.writeFileSync(filePath, previousContent, 'utf8');
+                  } else {
+                    fs.rmSync(filePath, { force: true });
+                  }
+                } catch (artifactRollbackError) {
+                  rollbackError = rollbackError || artifactRollbackError;
+                }
+              });
+            }
+
+            if (configWasUpdated) {
+              previousConfig.forEach(([configPath, value]) => config.set(configPath, value));
+
+              try {
+                configFileRepository.write(configFile);
+              } catch (configRollbackError) {
+                rollbackError = rollbackError || configRollbackError;
+              }
+            }
+
+            if (rollbackError) {
+              error.rollbackError = rollbackError;
+            }
+
+            throw error;
+          } finally {
+            try {
+              fs.rmSync(stagingDir, { recursive: true, force: true });
+            } catch {
+              // A leftover staging directory is safe and must not mask the transaction result.
+            }
+          }
 
           // eslint-disable-next-line no-param-reassign
-          task.output = ctx.privateKeyFilePath;
-        },
-      },
-      {
-        title: 'Save certificate request file',
-        enabled: (ctx) => !ctx.isCsrFilePresent,
-        task: async (ctx, task) => {
-          fs.writeFileSync(ctx.csrFilePath, ctx.csr, 'utf8');
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = ctx.csrFilePath;
-        },
-      },
-      {
-        title: 'Save certificate file',
-        skip: (ctx) => ctx.isBundleFilePresent,
-        task: async (ctx, task) => {
-          fs.writeFileSync(ctx.bundleFilePath, ctx.certificateFile, 'utf8');
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = ctx.bundleFilePath;
+          task.output = artifacts.map(({ filePath }) => filePath).join(', ');
         },
       },
       {
