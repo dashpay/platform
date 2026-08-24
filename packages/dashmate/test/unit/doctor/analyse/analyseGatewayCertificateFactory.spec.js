@@ -735,4 +735,251 @@ describe('analyseGatewayCertificateFactory', () => {
       });
     });
   });
+
+  describe('renewal record', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+
+    /**
+     * @param {Object} overrides
+     */
+    function renewalFailed(overrides = {}) {
+      samples.setServiceInfo('gateway', 'certificateRenewal', {
+        state: 'PRESENT',
+        path: '~/.dashmate/base/platform/gateway/ssl/renewal.json',
+        error: null,
+        provider: 'letsencrypt',
+        outcome: 'failed',
+        code: 'PORT_80_UNREACHABLE',
+        detail: 'acme: error: 400 :: urn:ietf:params:acme:error:connection :: timeout',
+        attemptedAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+        lastSuccessAt: new Date(Date.now() - 5 * DAY_MS).toISOString(),
+        consecutiveFailures: 37,
+        issuanceSpentAt: null,
+        gatewayReloadFailedAt: null,
+        ...overrides,
+      });
+    }
+
+    /**
+     * @param {Object} overrides
+     */
+    function installedValid(overrides = {}) {
+      samples.setServiceInfo('gateway', 'installedCertificate', {
+        status: 'CHECKS_PASSED',
+        reasons: [],
+        warnings: [],
+        fingerprint256: 'AA:BB',
+        validTo: validTo(2),
+        validFrom: new Date(Date.now() - 4 * DAY_MS).toUTCString(),
+        ...overrides,
+      });
+    }
+
+    beforeEach(() => {
+      config.set('platform.gateway.ssl.enabled', true);
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+    });
+
+    it('should warn a node that works today and goes dark in days', () => {
+      // The whole point of the record. Every other check calls this node
+      // healthy - the certificate is valid and being served - and it is the
+      // last certificate this node will get unless the cause is repaired.
+      installedValid();
+      renewalFailed();
+
+      const problems = analyse(served());
+
+      const renewal = problems.find((p) => p.getDescription().includes('not being renewed'));
+
+      expect(renewal).to.exist();
+      expect(renewal.getSeverity()).to.equal(SEVERITY.HIGH);
+      expect(renewal.getDescription()).to.contain('could not reach this node on port 80');
+    });
+
+    it('should tell the operator when it stops working, which is the only number that matters', () => {
+      installedValid({ validTo: validTo(2) });
+      renewalFailed();
+
+      const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
+
+      expect(renewal.getDescription())
+        .to.contain(new Date(Date.now() + 2 * DAY_MS).toISOString().slice(0, 10));
+    });
+
+    it('should not prescribe a command that spends an attempt while the node still works', () => {
+      // Renewal comes back around by itself once the cause is gone, and the
+      // authority allows only a handful of failures an hour. A problem ending
+      // in a runnable command is an instruction to run it.
+      installedValid();
+      renewalFailed();
+
+      const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
+
+      expect(renewal.getSolution()).to.not.contain('ssl obtain');
+      expect(renewal.getSolution()).to.contain('tries again by itself');
+    });
+
+    it('should never claim renewal has been failing since it last succeeded', () => {
+      // The record knows when renewal last worked and that everything since
+      // has failed. It does not know when the failures started, and on a
+      // ninety-day certificate those are months apart.
+      installedValid();
+      renewalFailed();
+
+      const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
+
+      expect(renewal.getDescription()).to.contain('Last renewed');
+      expect(renewal.getDescription()).to.not.contain('failing since');
+      // The counter counts scheduler wake-ups, not attempts.
+      expect(renewal.getDescription()).to.not.contain('37');
+    });
+
+    it('should name the cause instead of sending an operator to the logs', () => {
+      // The sentence this work exists to delete.
+      installedValid({ status: 'INVALID', validTo: validTo(-1) });
+      renewalFailed();
+
+      const problems = analyse(served({ certificate: { fingerprint256: 'AA:BB', validTo: validTo(-1) } }));
+
+      const expired = problems.find((p) => p.getDescription().includes('expired'));
+
+      expect(expired.getSolution()).to.not.contain('dashmate logs');
+      expect(expired.getSolution()).to.contain('port 80');
+    });
+
+    it('should still send an operator to the logs when nothing was recorded', () => {
+      installedValid({ status: 'INVALID', validTo: validTo(-1) });
+
+      const problems = analyse(served({ certificate: { fingerprint256: 'AA:BB', validTo: validTo(-1) } }));
+
+      const expired = problems.find((p) => p.getDescription().includes('expired'));
+
+      expect(expired.getSolution()).to.contain('dashmate logs');
+    });
+
+    it('should ignore a failure the installed certificate has already outlived', () => {
+      // The operator opened port 80 and ran the obtain command. The helper
+      // cannot notice - it stops watching configuration until it retries, and
+      // installing a certificate changes nothing it watches - so the reader
+      // has to. Reporting here would tell an operator their repair failed at
+      // the exact moment they ran the command to check it.
+      installedValid({ validFrom: new Date().toUTCString() });
+      renewalFailed({ attemptedAt: new Date(Date.now() - DAY_MS).toISOString() });
+
+      const problems = analyse(served());
+
+      expect(problems.filter((p) => p.getDescription().includes('not being renewed'))).to.have.lengthOf(0);
+    });
+
+    it('should ignore a record left behind by the previous provider', () => {
+      installedValid();
+      renewalFailed({ provider: 'zerossl' });
+
+      const problems = analyse(served());
+
+      expect(problems.filter((p) => p.getDescription().includes('not being renewed'))).to.have.lengthOf(0);
+    });
+
+    it('should say nothing when renewal is not dashmate\'s to do', () => {
+      // The shipped default names a provider with SSL turned off, so reading
+      // the provider alone would speak on every node that never obtained one.
+      config.set('platform.gateway.ssl.enabled', false);
+      installedValid();
+      renewalFailed();
+
+      const problems = analyse(served());
+
+      expect(problems.filter((p) => p.getDescription().includes('not being renewed'))).to.have.lengthOf(0);
+    });
+
+    it('should say nothing at all when nothing was recorded and the certificate is fine', () => {
+      // A healthy node right after an upgrade has no record yet. A problem
+      // with nothing wrong and nothing to do trains an operator to stop
+      // reading them.
+      installedValid();
+
+      const problems = analyse(served());
+
+      expect(problems).to.have.lengthOf(0);
+    });
+
+    it('should forbid another certificate while an issuance is spent but unaccounted for', () => {
+      // That certificate counts against a weekly limit whether or not it
+      // arrived, so asking again spends a second one to fix a local problem.
+      installedValid();
+      renewalFailed({ code: 'CERTIFICATE_FILE_MISSING', issuanceSpentAt: new Date().toISOString() });
+
+      const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
+
+      expect(renewal.getSolution()).to.contain('Do not obtain another certificate yet');
+    });
+
+    it('should not invite a retry that the authority has already refused', () => {
+      installedValid();
+      renewalFailed({ code: 'RATE_LIMITED' });
+
+      const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
+
+      expect(renewal.getSolution()).to.contain('Do not obtain a certificate right now');
+    });
+
+    it('should offer the switch, not a retry, when the provider will never issue again', () => {
+      config.set('platform.gateway.ssl.provider', 'zerossl');
+      installedValid();
+      renewalFailed({ provider: 'zerossl', code: 'QUOTA_EXHAUSTED' });
+
+      const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
+
+      expect(renewal.getDescription()).to.contain('all three of its certificates');
+      expect(renewal.getSolution()).to.contain("Switch to Let's Encrypt");
+    });
+
+    it('should send an operator upstream when something else answered on port 80', () => {
+      // `ss` lists this machine only, and the answer is as often a router or a
+      // hosting provider. An operator who sees an empty table and stops has
+      // nowhere else to look.
+      installedValid();
+      renewalFailed({ code: 'PORT_80_WRONG_RESPONDER' });
+
+      const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
+
+      expect(renewal.getSolution()).to.contain('router');
+      expect(renewal.getSolution()).to.contain('hosting provider');
+    });
+
+    it('should report a certificate that renewed but never reached the gateway', () => {
+      installedValid();
+      samples.setServiceInfo('gateway', 'certificateRenewal', {
+        state: 'PRESENT',
+        provider: 'letsencrypt',
+        outcome: 'succeeded',
+        attemptedAt: new Date().toISOString(),
+        lastSuccessAt: new Date().toISOString(),
+        consecutiveFailures: 0,
+        issuanceSpentAt: null,
+        gatewayReloadFailedAt: new Date().toISOString(),
+      });
+
+      const [reload] = analyse(served()).filter((p) => p.getDescription().includes('still using the old one'));
+
+      expect(reload).to.exist();
+      // Not a restart: the signal costs no outage, and a restart on a gateway
+      // that could not be signalled is the expensive guess.
+      expect(reload.getSolution()).to.not.contain('restart');
+      expect(reload.getSolution()).to.contain('ssl obtain');
+    });
+
+    it('should judge the retry against when the samples were taken, not when they are read', () => {
+      // A report is opened days after it was collected. At the moment it was
+      // collected the helper was already overdue to try again, and that is what
+      // the reader has to judge - not how long the report has sat since.
+      installedValid({ validFrom: new Date(Date.now() - 12 * DAY_MS).toUTCString() });
+      renewalFailed({ attemptedAt: new Date(Date.now() - 11 * DAY_MS).toISOString() });
+      samples.date = new Date(Date.now() - 10 * DAY_MS);
+
+      const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
+
+      expect(renewal.getSolution()).to.contain('may not be running');
+    });
+  });
 });
