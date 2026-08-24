@@ -459,6 +459,35 @@ pub struct TrackedMasternodes {
     network: Network,
 }
 
+/// Apply one registry mutation and durably replace the persisted set as one
+/// linearizable operation.
+fn mutate_registry_and_persist<T>(
+    registry: &std::sync::RwLock<TrackedMasternodeMap>,
+    persister: &dyn PlatformWalletPersistence,
+    network: Network,
+    mutation: impl FnOnce(&mut TrackedMasternodeMap) -> Result<T, PlatformWalletError>,
+) -> Result<T, PlatformWalletError> {
+    let mut guard = registry
+        .write()
+        .expect("tracked masternode registry lock poisoned");
+    let before = guard.clone();
+    let result = match mutation(&mut guard) {
+        Ok(result) => result,
+        Err(error) => {
+            *guard = before;
+            return Err(error);
+        }
+    };
+    let records: Vec<TrackedMasternode> = guard.values().cloned().collect();
+    if let Err(e) = persister.persist_tracked_masternodes(network, &records) {
+        *guard = before;
+        return Err(PlatformWalletError::WalletCreation(format!(
+            "failed to persist tracked masternodes: {e}"
+        )));
+    }
+    Ok(result)
+}
+
 impl std::fmt::Debug for TrackedMasternodes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TrackedMasternodes")
@@ -477,23 +506,25 @@ impl TrackedMasternodes {
             .contains(PersistenceCapabilities::TRACKED_MASTERNODES)
     }
 
-    /// Write the whole registry through the persister (whole-set replace
-    /// for this network — the set is small and user-curated).
-    fn persist(&self) -> Result<(), PlatformWalletError> {
-        let records: Vec<TrackedMasternode> = {
-            let guard = self
-                .registry
-                .read()
-                .expect("tracked masternode registry lock poisoned");
-            guard.values().cloned().collect()
-        };
-        self.persister
-            .persist_tracked_masternodes(self.network, &records)
-            .map_err(|e| {
-                PlatformWalletError::WalletCreation(format!(
-                    "failed to persist tracked masternodes: {e}"
-                ))
-            })
+    /// Apply one registry mutation and durably replace the persisted set as
+    /// one linearizable operation. The write guard deliberately spans the
+    /// persistence call: every backend is bound by the trait's non-reentrant
+    /// callback contract, and releasing it earlier would let an older
+    /// snapshot overwrite a newer concurrent mutation.
+    ///
+    /// The registry is user-curated and small, so retaining a complete
+    /// before-image is cheap and lets a rejected write restore exactly the
+    /// in-memory state the caller observed before the operation.
+    fn mutate_and_persist<T>(
+        &self,
+        mutation: impl FnOnce(&mut TrackedMasternodeMap) -> Result<T, PlatformWalletError>,
+    ) -> Result<T, PlatformWalletError> {
+        mutate_registry_and_persist(
+            self.registry.as_ref(),
+            self.persister.as_ref(),
+            self.network,
+            mutation,
+        )
     }
 
     /// Hydrate the registry from the persister. A load failure logs and
@@ -549,11 +580,7 @@ impl TrackedMasternodes {
             .as_ref()
             .map(|summaries| summaries.iter().find(|s| s.pro_tx_hash == pro_tx_hash));
 
-        let tracked = {
-            let mut guard = self
-                .registry
-                .write()
-                .expect("tracked masternode registry lock poisoned");
+        let tracked = self.mutate_and_persist(|guard| {
             if guard.contains_key(&pro_tx_hash) {
                 return Err(PlatformWalletError::InvalidParameter(
                     "this masternode is already tracked".to_string(),
@@ -571,10 +598,9 @@ impl TrackedMasternodes {
                 },
             };
             guard.insert(pro_tx_hash, tracked.clone());
-            tracked
-        };
+            Ok(tracked)
+        })?;
 
-        self.persist()?;
         Ok(tracked.record(entry))
     }
 
@@ -582,19 +608,7 @@ impl TrackedMasternodes {
     /// host owns any attached keys (secure storage) and deletes them
     /// itself. Blocking.
     pub fn untrack_blocking(&self, pro_tx_hash: &[u8; 32]) -> Result<bool, PlatformWalletError> {
-        let removed = {
-            let mut guard = self
-                .registry
-                .write()
-                .expect("tracked masternode registry lock poisoned");
-            guard.remove(pro_tx_hash).is_some()
-        };
-        // Persist unconditionally: an earlier call may have removed the row
-        // from memory and then failed the write, so a retry arrives with
-        // `removed == false` while the stale row still sits on disk — a
-        // skipped persist would resurrect the node on the next start.
-        self.persist()?;
-        Ok(removed)
+        self.mutate_and_persist(|guard| Ok(guard.remove(pro_tx_hash).is_some()))
     }
 
     /// Rename a tracked masternode (`None` / blank clears the label).
@@ -604,17 +618,13 @@ impl TrackedMasternodes {
         pro_tx_hash: &[u8; 32],
         label: Option<String>,
     ) -> Result<(), PlatformWalletError> {
-        {
-            let mut guard = self
-                .registry
-                .write()
-                .expect("tracked masternode registry lock poisoned");
+        self.mutate_and_persist(|guard| {
             let tracked = guard
                 .get_mut(pro_tx_hash)
                 .ok_or_else(|| not_tracked(pro_tx_hash))?;
             tracked.label = label.filter(|l| !l.trim().is_empty());
-        }
-        self.persist()
+            Ok(())
+        })
     }
 
     /// Every tracked masternode as a display record, with the CURRENT list
@@ -771,24 +781,14 @@ impl TrackedMasternodes {
         // but only while the node is STILL tracked: an untrack that raced
         // the network calls must win (no resurrection), and a concurrent
         // relabel keeps its label (only the snapshot is refreshed here).
-        let still_tracked = {
-            let mut guard = self
-                .registry
-                .write()
-                .expect("tracked masternode registry lock poisoned");
-            match guard.get_mut(pro_tx_hash) {
-                Some(live) => {
-                    live.snapshot = tracked.snapshot.clone();
-                    tracked.label = live.label.clone();
-                    true
-                }
-                None => false,
+        let label = self.mutate_and_persist(|guard| match guard.get_mut(pro_tx_hash) {
+            Some(live) => {
+                live.snapshot = tracked.snapshot.clone();
+                Ok(live.label.clone())
             }
-        };
-        if !still_tracked {
-            return Err(not_tracked(pro_tx_hash));
-        }
-        self.persist()?;
+            None => Err(not_tracked(pro_tx_hash)),
+        })?;
+        tracked.label = label;
 
         match first_error {
             Some(e) => Err(e),
@@ -871,7 +871,7 @@ impl TrackedMasternodes {
             _ => {
                 return Err(PlatformWalletError::InvalidParameter(
                     "a withdrawal signs with the owner key or the payout-address key".to_string(),
-                ))
+                ));
             }
         };
 
@@ -985,6 +985,10 @@ pub(crate) type TrackedMasternodeMap = BTreeMap<[u8; 32], TrackedMasternode>;
 mod tests {
     use super::super::list::test_support::{evonode, masternode};
     use super::*;
+    use crate::changeset::{ClientStartState, PersistenceError, PlatformWalletChangeSet};
+    use crate::wallet::platform_wallet::WalletId;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex, RwLock};
 
     fn snapshot_full() -> TrackedMasternodeSnapshot {
         TrackedMasternodeSnapshot {
@@ -1047,6 +1051,112 @@ mod tests {
             added_at: 1,
             snapshot: snapshot_full(),
         }
+    }
+
+    struct RegistryPersister {
+        registry: Arc<RwLock<TrackedMasternodeMap>>,
+        reject: AtomicBool,
+        saw_exclusive_registry_lock: AtomicBool,
+        writes: Mutex<Vec<Vec<TrackedMasternode>>>,
+    }
+
+    impl PlatformWalletPersistence for RegistryPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn persist_tracked_masternodes(
+            &self,
+            _network: Network,
+            records: &[TrackedMasternode],
+        ) -> Result<(), PersistenceError> {
+            self.saw_exclusive_registry_lock
+                .store(self.registry.try_read().is_err(), Ordering::SeqCst);
+            if self.reject.load(Ordering::SeqCst) {
+                return Err(PersistenceError::backend("tracked write rejected"));
+            }
+            self.writes.lock().unwrap().push(records.to_vec());
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    fn registry_persister(
+        initial: TrackedMasternodeMap,
+    ) -> (Arc<RwLock<TrackedMasternodeMap>>, Arc<RegistryPersister>) {
+        let registry = Arc::new(RwLock::new(initial));
+        let persister = Arc::new(RegistryPersister {
+            registry: Arc::clone(&registry),
+            reject: AtomicBool::new(false),
+            saw_exclusive_registry_lock: AtomicBool::new(false),
+            writes: Mutex::new(Vec::new()),
+        });
+        (registry, persister)
+    }
+
+    #[test]
+    fn registry_mutation_remains_exclusive_until_whole_set_is_persisted() {
+        let (registry, persister) = registry_persister(TrackedMasternodeMap::new());
+        let row = tracked();
+
+        mutate_registry_and_persist(
+            registry.as_ref(),
+            persister.as_ref(),
+            Network::Testnet,
+            |rows| {
+                rows.insert(row.pro_tx_hash, row.clone());
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        assert!(persister.saw_exclusive_registry_lock.load(Ordering::SeqCst));
+        assert_eq!(persister.writes.lock().unwrap().as_slice(), &[vec![row]]);
+    }
+
+    #[test]
+    fn rejected_whole_set_write_restores_the_complete_registry() {
+        let original = tracked();
+        let mut initial = TrackedMasternodeMap::new();
+        initial.insert(original.pro_tx_hash, original.clone());
+        let (registry, persister) = registry_persister(initial.clone());
+        persister.reject.store(true, Ordering::SeqCst);
+
+        let error = mutate_registry_and_persist(
+            registry.as_ref(),
+            persister.as_ref(),
+            Network::Testnet,
+            |rows| {
+                rows.get_mut(&original.pro_tx_hash).unwrap().label = Some("changed".to_string());
+                rows.insert(
+                    [8; 32],
+                    TrackedMasternode {
+                        pro_tx_hash: [8; 32],
+                        label: None,
+                        added_at: 2,
+                        snapshot: TrackedMasternodeSnapshot::default(),
+                    },
+                );
+                Ok(())
+            },
+        )
+        .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("failed to persist tracked masternodes"));
+        assert_eq!(*registry.read().unwrap(), initial);
     }
 
     #[test]
