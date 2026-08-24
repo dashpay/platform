@@ -298,6 +298,32 @@ mod tests {
         }
     }
 
+    /// Independent boundary goldens across the protocol-14 rebalance: the released protocol-12
+    /// and protocol-13 tables must keep producing the shipped 162,851,200-credit two-action fee
+    /// byte-for-byte (100M proof + 2 × 22M processing + 2 × 344 B × 27,400), and protocol 14
+    /// must produce exactly 114,140,000 (40M proof + 2 × 22M + 2 × 550 B × 27,400). Hardcoded
+    /// on purpose — deriving the expectation from the same table field the implementation
+    /// reads would pass even if a released table were accidentally given the new allowance.
+    #[test]
+    fn minimum_shielded_fee_changes_only_at_protocol_14() {
+        for protocol_version in [12, 13] {
+            let platform_version = PlatformVersion::get(protocol_version)
+                .expect("released shielded protocol version should exist");
+            assert_eq!(
+                compute_minimum_shielded_fee_v0(2, platform_version)
+                    .expect("released minimum shielded fee"),
+                162_851_200,
+                "protocol {protocol_version} must keep the shipped two-action fee byte-for-byte"
+            );
+        }
+        let platform_version = PlatformVersion::get(14).expect("protocol version 14 exists");
+        assert_eq!(
+            compute_minimum_shielded_fee_v0(2, platform_version).expect("minimum shielded fee"),
+            114_140_000,
+            "protocol 14 must price a two-action bundle at the rebalanced constants"
+        );
+    }
+
     /// Pin the exact relationship between the ShieldedWithdrawal fee and the base shielded fee:
     /// the withdrawal fee MUST be `compute_minimum_shielded_fee_v0(n)` plus exactly one flat
     /// `SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES × per_byte_rate` document component (the same

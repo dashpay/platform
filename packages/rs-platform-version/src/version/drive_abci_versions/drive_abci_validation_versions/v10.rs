@@ -339,9 +339,14 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
             // alone, never for database work (the storage allowance below
             // covers that independently).
             shielded_proof_verification_fee: 40_000_000,
-            // Per-action processing prices the ~1.1 ms/action Halo 2 verification CPU at the
-            // same rate the flat fee prices the ~5 ms base (100M ≈ 4.5× this), so the fee
-            // tracks the per-action cost and the margin stays uniform as actions grow.
+            // Retained from protocol 13, versioned independently of the
+            // rebalanced bundle proof fee above: it prices the per-action
+            // work — the marginal Halo 2 verification CPU (~1.1 ms/action),
+            // the RedPallas spend-auth check, the nullifier duplicate check
+            // and the tree-insertion processing — and its ~18M headroom over
+            // the ~3.5M credits of metered per-append GroveDB processing is
+            // deliberate, not a shared calibration rate with the 40M bundle
+            // fee.
             shielded_per_action_processing_fee: 22_000_000,
             // Rebalanced for protocol 14 alongside the proof fee: the
             // GROVE_V4 fixed per-append model meters a 1-action transfer at
