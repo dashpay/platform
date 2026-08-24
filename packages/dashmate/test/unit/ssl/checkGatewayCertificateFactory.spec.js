@@ -398,7 +398,10 @@ describe('checkGatewayCertificateFactory', () => {
       expect(codes(verdict.reasons)).to.deep.equal([CERTIFICATE_REASONS.IP_MISMATCH]);
     });
 
-    it('should record the identity check as skipped when no address is configured', () => {
+    // Whether the certificate names this node decides whether anything can
+    // connect to it. Recording that as merely skipped let an enforced
+    // masternode pass with the decisive question never asked.
+    it('should fail a masternode whose address is not configured', () => {
       const { leaf, intermediate } = issueChain({ ip: '9.9.9.9' });
 
       config.set('externalIp', null);
@@ -406,8 +409,22 @@ describe('checkGatewayCertificateFactory', () => {
 
       const verdict = checkGatewayCertificate(config);
 
+      expect(verdict.status).to.equal(CERTIFICATE_STATUS.INVALID);
+      expect(codes(verdict.reasons)).to.include(CERTIFICATE_REASONS.NO_EXTERNAL_IP);
+    });
+
+    it('should skip the address check for a node that serves no public identity', () => {
+      const { leaf, intermediate } = issueChain({ ip: '9.9.9.9' });
+
+      config.set('core.masternode.enable', false);
+      config.set('externalIp', null);
+      install(leaf.pem + intermediate.pem, leaf.keyPem);
+
+      const verdict = checkGatewayCertificate(config);
+
       expect(verdict.skipped).to.deep.equal(['IDENTITY']);
       expect(codes(verdict.reasons)).to.not.include(CERTIFICATE_REASONS.IP_MISMATCH);
+      expect(codes(verdict.reasons)).to.not.include(CERTIFICATE_REASONS.NO_EXTERNAL_IP);
     });
 
     // Node's own tls.checkServerIdentity does not consult the common name for

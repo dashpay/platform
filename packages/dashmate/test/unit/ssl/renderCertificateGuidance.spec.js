@@ -413,6 +413,23 @@ describe('renderCertificateGuidance', () => {
     expect(output).to.not.contain('To fix it');
   });
 
+  // lego installed this certificate and only the saved provider still
+  // disagrees, so the certificate itself is sound. Opening with the flat claim
+  // that it is not valid sends an operator hunting a problem that is not there.
+  it('should not call the certificate invalid when only the switch is unfinished', () => {
+    const output = render({
+      verdict: verdict({
+        reasons: [{
+          code: CERTIFICATE_REASONS.SWITCH_INCOMPLETE,
+          message: 'A switch was interrupted before it finished',
+        }],
+      }),
+    });
+
+    expect(output).to.not.contain("This node's TLS certificate is not valid");
+    expect(output).to.contain("This node's certificate setup is unfinished");
+  });
+
   // The installed pair being the one lego produced says nothing about whether
   // it is still valid. When something else is wrong with it too, saving the
   // setting is not the repair, and offering it as one sends the operator away

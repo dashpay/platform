@@ -13,23 +13,34 @@ import { CERTIFICATE_REASONS, requiresReplacement } from './checkGatewayCertific
  * opening then says nothing about images at all, rather than reporting a
  * failure that never happened.
  *
+ * The interrupted switch is the one state where the certificate itself is
+ * sound - lego installed it and only the saved provider still disagrees - so
+ * calling it invalid would send an operator hunting a certificate problem that
+ * is not there.
+ *
  * @param {{ok: boolean, failed: number, total: number}|null} pull
+ * @param {boolean} isSwitchIncomplete
  * @return {string}
  */
-function renderOpening(pull) {
+function renderOpening(pull, isSwitchIncomplete) {
+  const subject = isSwitchIncomplete
+    ? "this node's certificate setup is unfinished"
+    : "this node's TLS certificate is not valid";
+  const sentence = subject.charAt(0).toUpperCase() + subject.slice(1);
+
   if (pull === null || pull === undefined) {
-    return "  This node's TLS certificate is not valid.";
+    return `  ${sentence}.`;
   }
 
   if (!pull.ok) {
-    return "  Images could not be pulled, and this node's TLS certificate is not valid.";
+    return `  Images could not be pulled, and ${subject}.`;
   }
 
   const pulled = pull.failed > 0
     ? `Images pulled, ${pull.failed} of ${pull.total} failed - see the table above.`
     : 'Images pulled.';
 
-  return `  ${pulled} This node's TLS certificate is not valid.`;
+  return `  ${pulled} ${sentence}.`;
 }
 
 /**
@@ -167,7 +178,7 @@ export default function renderCertificateGuidance({
     && verdict.reasons[0].code === CERTIFICATE_REASONS.SWITCH_INCOMPLETE;
 
   const blocks = [
-    `${renderOpening(pull)}
+    `${renderOpening(pull, isSwitchIncomplete)}
 
   Node:        ${config.get('network')} (config "${config.getName()}", ${config.get('externalIp') ?? 'no external IP set'})
   Certificate: ${renderObservation(verdict)}

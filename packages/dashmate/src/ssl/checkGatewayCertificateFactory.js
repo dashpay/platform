@@ -47,6 +47,7 @@ export const CERTIFICATE_REASONS = {
   EXPIRING_SOON: 'EXPIRING_SOON',
   SELF_SIGNED: 'SELF_SIGNED',
   IP_MISMATCH: 'IP_MISMATCH',
+  NO_EXTERNAL_IP: 'NO_EXTERNAL_IP',
   SWITCH_INCOMPLETE: 'SWITCH_INCOMPLETE',
   PROVIDER_MISMATCH: 'PROVIDER_MISMATCH',
   SSL_UNMANAGED: 'SSL_UNMANAGED',
@@ -341,7 +342,20 @@ export default function checkGatewayCertificateFactory(homeDir) {
     }
 
     if (!externalIp) {
-      skipped.push('IDENTITY');
+      // Whether the certificate names this node is the one question that
+      // decides if clients can connect, so a masternode that cannot be asked
+      // it has not passed - reporting otherwise would hand an operator a
+      // healthy verdict dashmate never established. A node that serves no
+      // public identity is a different case and keeps the skip.
+      if (config.get('core.masternode.enable') === true) {
+        reasons.push({
+          code: CERTIFICATE_REASONS.NO_EXTERNAL_IP,
+          message: "This node's public address is not set, so dashmate cannot tell whether"
+            + ' the certificate is issued for this node',
+        });
+      } else {
+        skipped.push('IDENTITY');
+      }
     } else if (!installed.ipAddresses.includes(externalIp)) {
       // Only the subject alternative name counts. Node's own
       // tls.checkServerIdentity does not consult the common name for an IP

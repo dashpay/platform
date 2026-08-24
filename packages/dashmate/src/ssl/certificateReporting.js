@@ -25,6 +25,9 @@ export function writeDiagnostics(verdict, config, extra = {}) {
     status: verdict.status,
     reasons: verdict.reasons.map(({ code }) => code),
     warnings: verdict.warnings.map(({ code }) => code),
+    // What could not be established is as decisive as what failed: a check
+    // that never ran is invisible to an unattended operator otherwise.
+    skipped: verdict.skipped ?? [],
     provider: verdict.provider,
     config: config.getName(),
     expiresAt: verdict.installed ? verdict.installed.validTo.toISOString() : null,
