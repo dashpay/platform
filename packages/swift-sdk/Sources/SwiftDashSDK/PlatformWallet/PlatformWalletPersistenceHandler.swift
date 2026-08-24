@@ -6184,12 +6184,18 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             let allocation = TrackedMasternodeLoadAllocation()
             let buf = UnsafeMutablePointer<TrackedMasternodeFFI>.allocate(capacity: rows.count)
             allocation.entries = buf
-            allocation.count = rows.count
-            for (i, row) in rows.enumerated() {
+            var written = 0
+            for row in rows {
+                // A proTxHash that is not 32 bytes has no usable identity —
+                // skip the row (same convention as the shielded loaders)
+                // rather than keying a phantom masternode on zeros.
+                guard row.proTxHash.count == 32 else {
+                    print("⚠️ loadTrackedMasternodes: skipping a row with a \(row.proTxHash.count)-byte proTxHash")
+                    continue
+                }
                 var entry = TrackedMasternodeFFI()
                 withUnsafeMutableBytes(of: &entry.pro_tx_hash) { dst in
-                    let hash = row.proTxHash.count == 32 ? row.proTxHash : Data(count: 32)
-                    hash.withUnsafeBytes { src in
+                    row.proTxHash.withUnsafeBytes { src in
                         dst.copyMemory(from: src)
                     }
                 }
@@ -6202,10 +6208,16 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     allocation.strings.append(dup)
                     entry.snapshot_json = UnsafePointer(dup)
                 }
-                buf[i] = entry
+                buf[written] = entry
+                written += 1
+            }
+            allocation.count = written
+            guard written > 0 else {
+                allocation.release()
+                return (nil, 0, false)
             }
             trackedMasternodeLoadAllocations[UnsafeRawPointer(buf)] = allocation
-            return (UnsafePointer(buf), rows.count, false)
+            return (UnsafePointer(buf), written, false)
         }
     }
 

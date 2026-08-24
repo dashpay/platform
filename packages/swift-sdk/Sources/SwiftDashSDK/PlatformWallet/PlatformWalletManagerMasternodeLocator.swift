@@ -87,7 +87,12 @@ public struct MasternodeLocateMatch: Sendable, Hashable {
     /// routable service address.
     public var platformDAPIAddress: String? {
         guard let port = platformHTTPPort, let host = serviceHost else { return nil }
-        return "https://\(host):\(port)"
+        // An IPv6 literal must be bracketed in a URI authority. Locator
+        // matches carry Rust `SocketAddr` strings (already bracketed), but
+        // mirror `PlatformMasternode.platformDAPIAddress` so the two can
+        // never diverge on a bare literal.
+        let authorityHost = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
+        return "https://\(authorityHost):\(port)"
     }
 
     /// Host part of `serviceAddress` (IPv6 keeps its brackets).

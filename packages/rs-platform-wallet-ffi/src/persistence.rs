@@ -1279,6 +1279,18 @@ impl PlatformWalletPersistence for FFIPersister {
         let Some(load) = self.tracked_masternodes_callbacks.load_tracked_masternodes else {
             return Ok(Vec::new());
         };
+        // Fail closed on a half-wired pair: without the free callback the
+        // host-allocated rows could never be returned, so every load would
+        // leak. Same rule as the shielded load/free arms.
+        let Some(free) = self
+            .tracked_masternodes_callbacks
+            .load_tracked_masternodes_free
+        else {
+            return Err(PersistenceError::backend(
+                "on_load_tracked_masternodes_fn requires on_load_tracked_masternodes_free_fn; \
+                 wire both or neither",
+            ));
+        };
         let network_c =
             CString::new(network.to_string()).expect("network names contain no interior NUL");
         let mut rows_ptr: *const TrackedMasternodeFFI = std::ptr::null();
@@ -1325,12 +1337,7 @@ impl PlatformWalletPersistence for FFIPersister {
                 });
             }
         }
-        if let Some(free) = self
-            .tracked_masternodes_callbacks
-            .load_tracked_masternodes_free
-        {
-            unsafe { free(self.callbacks.context, rows_ptr, count) };
-        }
+        unsafe { free(self.callbacks.context, rows_ptr, count) };
         Ok(out)
     }
 

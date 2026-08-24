@@ -589,9 +589,11 @@ impl TrackedMasternodes {
                 .expect("tracked masternode registry lock poisoned");
             guard.remove(pro_tx_hash).is_some()
         };
-        if removed {
-            self.persist()?;
-        }
+        // Persist unconditionally: an earlier call may have removed the row
+        // from memory and then failed the write, so a retry arrives with
+        // `removed == false` while the stale row still sits on disk — a
+        // skipped persist would resurrect the node on the next start.
+        self.persist()?;
         Ok(removed)
     }
 
@@ -765,13 +767,26 @@ impl TrackedMasternodes {
             tracked.snapshot.refreshed_at = Some(now_unix());
         }
 
-        // Keep + persist whatever was learned, even on a partial failure.
-        {
+        // Keep + persist whatever was learned, even on a partial failure —
+        // but only while the node is STILL tracked: an untrack that raced
+        // the network calls must win (no resurrection), and a concurrent
+        // relabel keeps its label (only the snapshot is refreshed here).
+        let still_tracked = {
             let mut guard = self
                 .registry
                 .write()
                 .expect("tracked masternode registry lock poisoned");
-            guard.insert(*pro_tx_hash, tracked.clone());
+            match guard.get_mut(pro_tx_hash) {
+                Some(live) => {
+                    live.snapshot = tracked.snapshot.clone();
+                    tracked.label = live.label.clone();
+                    true
+                }
+                None => false,
+            }
+        };
+        if !still_tracked {
+            return Err(not_tracked(pro_tx_hash));
         }
         self.persist()?;
 
