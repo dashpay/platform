@@ -8,6 +8,15 @@ import DashSDKFFI
 ///
 /// All aggregation / DIP-3 decoding happens in Rust — this is pure
 /// bridging.
+/// Provenance of a [`PlatformMasternode`] record. Raw values are the FFI
+/// wire values.
+public enum MasternodeSource: UInt8, Sendable, Hashable {
+    /// Aggregated from a wallet's own retained provider transactions.
+    case wallet = 0
+    /// Deliberately tracked by the user, independent of every wallet.
+    case tracked = 1
+}
+
 public struct PlatformMasternode: Sendable {
     /// proTxHash (32 raw wire bytes) — the group key / registration txid.
     public let proTxHash: Data
@@ -30,6 +39,11 @@ public struct PlatformMasternode: Sendable {
     public let ownerKeyHash: Data?
     public let votingKeyHash: Data?
     public let serviceAddress: String?
+    /// Platform HTTP (DAPI gRPC) port from the latest ProRegTx / ProUpServTx
+    /// — evonodes only, `nil` for a regular masternode. With the
+    /// `serviceAddress` host this addresses the node's own DAPI; see
+    /// `platformDAPIAddress`.
+    public let platformHTTPPort: UInt16?
     /// Base58 owner / voting P2PKH addresses (Rust-encoded for the
     /// network) — the join key for a provider-key account's address rows.
     public let ownerAddress: String?
@@ -63,6 +77,41 @@ public struct PlatformMasternode: Sendable {
     /// clobbering it. When true, `platformInWallet` is definitive (true OR
     /// false), so an on-chain rotation to an external key correctly clears it.
     public let platformOwnershipChecked: Bool
+    /// Where this record came from: one of the wallet's own masternodes,
+    /// or a node the user tracks independently of every wallet.
+    public let source: MasternodeSource
+    /// User label of a tracked masternode (`nil` for wallet records and
+    /// unnamed tracked ones).
+    public let label: String?
+}
+
+extension PlatformMasternode {
+    /// The node's own DAPI endpoint, `https://<service host>:<platformHTTPPort>`
+    /// — the same shape the SDK builds for its seed address list — or `nil`
+    /// when either half is unknown (regular masternode, no service address
+    /// seen, or a payload without platform fields). The Core P2P port in
+    /// `serviceAddress` is intentionally dropped: DAPI listens on the
+    /// platform HTTP port.
+    public var platformDAPIAddress: String? {
+        guard let platformHTTPPort, let host = serviceHost else { return nil }
+        // An IPv6 literal must be bracketed in a URI authority.
+        let authorityHost = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
+        return "https://\(authorityHost):\(platformHTTPPort)"
+    }
+
+    /// Host half of `serviceAddress` (`"1.2.3.4:9999"` → `"1.2.3.4"`,
+    /// `"[2001:db8::1]:9999"` → `"[2001:db8::1]"`, `"2001:db8::1:9999"` →
+    /// `"2001:db8::1"`), or `nil`.
+    public var serviceHost: String? {
+        guard let serviceAddress else { return nil }
+        if serviceAddress.hasPrefix("[") {
+            // Bracketed IPv6 literal — the host is everything through `]`.
+            guard let close = serviceAddress.firstIndex(of: "]") else { return nil }
+            return String(serviceAddress[...close])
+        }
+        guard let colon = serviceAddress.lastIndex(of: ":") else { return serviceAddress }
+        return String(serviceAddress[..<colon])
+    }
 }
 
 extension PlatformWalletManager {
@@ -104,7 +153,18 @@ extension PlatformWalletManager {
             )
         }
 
-        return (0..<Int(outCount)).map { i in
+        return Self.masternodeModels(from: entries, count: Int(outCount))
+    }
+
+    /// Decode a Rust-owned `MasternodeEntryFFI` array into value models —
+    /// shared by the wallet list, the tracked list, and the tracked
+    /// track/refresh calls. `nonisolated` so detached marshalling tasks can
+    /// run it off the main actor.
+    nonisolated static func masternodeModels(
+        from entries: UnsafePointer<MasternodeEntryFFI>,
+        count: Int
+    ) -> [PlatformMasternode] {
+        (0..<count).map { i in
             var entry = entries[i]
             let proTx = withUnsafeBytes(of: &entry.pro_tx_hash) { Data($0) }
             let collateralTxid = entry.has_collateral
@@ -132,6 +192,7 @@ extension PlatformWalletManager {
                 ownerKeyHash: ownerHash,
                 votingKeyHash: votingHash,
                 serviceAddress: entry.service_address.map { String(cString: $0) },
+                platformHTTPPort: entry.has_platform_http_port ? entry.platform_http_port : nil,
                 ownerAddress: entry.owner_address.map { String(cString: $0) },
                 votingAddress: entry.voting_address.map { String(cString: $0) },
                 operatorPublicKey: entry.has_operator_key
@@ -149,7 +210,9 @@ extension PlatformWalletManager {
                 platformInWallet: entry.platform_in_wallet,
                 platformAccountType: entry.platform_account_type,
                 platformKeyIndex: entry.platform_key_index,
-                platformOwnershipChecked: entry.platform_ownership_checked
+                platformOwnershipChecked: entry.platform_ownership_checked,
+                source: MasternodeSource(rawValue: entry.source) ?? .wallet,
+                label: entry.label.map { String(cString: $0) }
             )
         }
     }

@@ -19,6 +19,7 @@ pub mod changeset;
 pub mod error;
 pub mod events;
 pub mod manager;
+pub mod masternode;
 pub mod spv;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_support;
@@ -67,6 +68,10 @@ pub use wallet::signed_payment_registry::{
 // DashPay types + crypto helpers re-exported through the identity
 // domain (they live under `identity::types::dashpay::*` and
 // `identity::crypto::*` internally).
+pub use masternode::{
+    aggregate_masternodes, ListMembership, MasternodeKeyRole, MasternodeRecord, MasternodeSource,
+    MasternodeStatus, TrackedMasternode, TrackedMasternodeSnapshot, WalletMasternodes,
+};
 pub use wallet::core_address_key::CoreAddressPrivateKey;
 pub use wallet::identity::network::{
     derive_identity_auth_keypair, AutoAcceptProofSource, ContactCryptoProvider, ContactInfoOpened,

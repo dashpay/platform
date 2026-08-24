@@ -8,9 +8,11 @@ use crate::event_handler::{
 };
 use crate::handle::*;
 use crate::persistence::{
-    FFIPersister, PersistDpnsNameStatesFn, PersistWalletChangesetChainLockHeightFn,
+    FFIPersister, FreeTrackedMasternodesFn, LoadTrackedMasternodesFn, PersistDpnsNameStatesFn,
+    PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
     PersistWalletChangesetSweepsFn, PersistenceCallbacks, PersistenceCallbacksExtension,
-    PersistenceCapabilitiesFFI, PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
+    PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
+    PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
@@ -75,9 +77,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create(
         persistence,
         event_handler,
         PersistenceCapabilities::NONE,
-        None,
-        None,
-        None,
+        PersistenceExtensionCallbacks::default(),
         None,
         out_handle,
     )
@@ -103,9 +103,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_persistence_capabil
         persistence,
         event_handler,
         declaration,
-        None,
-        None,
-        None,
+        PersistenceExtensionCallbacks::default(),
         None,
         out_handle,
     )
@@ -132,18 +130,13 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_persistence_extensi
     check_ptr!(persistence_capabilities);
     check_ptr!(persistence_extension);
     let declaration = persistence_capabilities_declaration(&*persistence_capabilities);
-    let dpns_callback = persistence_extension_dpns_callback(persistence_extension);
-    let sweeps_callback = persistence_extension_sweeps_callback(persistence_extension);
-    let chain_lock_height_callback =
-        persistence_extension_chain_lock_height_callback(persistence_extension);
+    let extensions = persistence_extension_callbacks(persistence_extension);
     platform_wallet_manager_create_impl(
         sdk_ptr,
         persistence,
         event_handler,
         declaration,
-        dpns_callback,
-        sweeps_callback,
-        chain_lock_height_callback,
+        extensions,
         None,
         out_handle,
     )
@@ -167,19 +160,14 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_extensions(
     check_ptr!(persistence_extension);
     check_ptr!(event_extension);
     let declaration = persistence_capabilities_declaration(&*persistence_capabilities);
-    let dpns_persistence_callback = persistence_extension_dpns_callback(persistence_extension);
-    let sweeps_persistence_callback = persistence_extension_sweeps_callback(persistence_extension);
-    let chain_lock_height_persistence_callback =
-        persistence_extension_chain_lock_height_callback(persistence_extension);
+    let persistence_extensions = persistence_extension_callbacks(persistence_extension);
     let dpns_event_callback = event_extension_dpns_callback(event_extension);
     platform_wallet_manager_create_impl(
         sdk_ptr,
         persistence,
         event_handler,
         declaration,
-        dpns_persistence_callback,
-        sweeps_persistence_callback,
-        chain_lock_height_persistence_callback,
+        persistence_extensions,
         dpns_event_callback,
         out_handle,
     )
@@ -216,40 +204,45 @@ macro_rules! negotiated_extension_slot {
     }};
 }
 
-unsafe fn persistence_extension_dpns_callback(
+/// Read every negotiated persistence-extension slot through
+/// [`negotiated_extension_slot!`] — one gate authority, applied per slot,
+/// so a host whose `struct_size` stops mid-struct keeps exactly the
+/// earlier slots it allocated.
+unsafe fn persistence_extension_callbacks(
     extension: *const PersistenceCallbacksExtension,
-) -> Option<PersistDpnsNameStatesFn> {
-    negotiated_extension_slot!(
-        extension,
-        PersistenceCallbacksExtension,
-        PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
-        on_persist_dpns_name_states_fn,
-        PersistDpnsNameStatesFn
-    )
-}
+) -> PersistenceExtensionCallbacks {
+    macro_rules! slot {
+        ($field:ident, $fn_ty:ty) => {
+            negotiated_extension_slot!(
+                extension,
+                PersistenceCallbacksExtension,
+                PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
+                $field,
+                $fn_ty
+            )
+        };
+    }
 
-unsafe fn persistence_extension_sweeps_callback(
-    extension: *const PersistenceCallbacksExtension,
-) -> Option<PersistWalletChangesetSweepsFn> {
-    negotiated_extension_slot!(
-        extension,
-        PersistenceCallbacksExtension,
-        PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
-        on_persist_wallet_changeset_sweeps_fn,
-        PersistWalletChangesetSweepsFn
-    )
-}
-
-unsafe fn persistence_extension_chain_lock_height_callback(
-    extension: *const PersistenceCallbacksExtension,
-) -> Option<PersistWalletChangesetChainLockHeightFn> {
-    negotiated_extension_slot!(
-        extension,
-        PersistenceCallbacksExtension,
-        PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
-        on_persist_wallet_changeset_chain_lock_height_fn,
-        PersistWalletChangesetChainLockHeightFn
-    )
+    PersistenceExtensionCallbacks {
+        dpns_name_states: slot!(on_persist_dpns_name_states_fn, PersistDpnsNameStatesFn),
+        persist_tracked_masternodes: slot!(
+            on_persist_tracked_masternodes_fn,
+            PersistTrackedMasternodesFn
+        ),
+        load_tracked_masternodes: slot!(on_load_tracked_masternodes_fn, LoadTrackedMasternodesFn),
+        load_tracked_masternodes_free: slot!(
+            on_load_tracked_masternodes_free_fn,
+            FreeTrackedMasternodesFn
+        ),
+        wallet_changeset_sweeps: slot!(
+            on_persist_wallet_changeset_sweeps_fn,
+            PersistWalletChangesetSweepsFn
+        ),
+        wallet_changeset_chain_lock_height: slot!(
+            on_persist_wallet_changeset_chain_lock_height_fn,
+            PersistWalletChangesetChainLockHeightFn
+        ),
+    }
 }
 
 unsafe fn event_extension_dpns_callback(
@@ -273,9 +266,7 @@ unsafe fn platform_wallet_manager_create_impl(
     persistence: *const PersistenceCallbacks,
     event_handler: *const EventHandlerCallbacks,
     declared_capabilities: PersistenceCapabilities,
-    dpns_name_states_callback: Option<PersistDpnsNameStatesFn>,
-    wallet_changeset_sweeps_callback: Option<PersistWalletChangesetSweepsFn>,
-    wallet_changeset_chain_lock_height_callback: Option<PersistWalletChangesetChainLockHeightFn>,
+    persistence_extensions: PersistenceExtensionCallbacks,
     dpns_event_callback: Option<DpnsMarketplaceSyncCompletedFn>,
     out_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
@@ -313,12 +304,10 @@ unsafe fn platform_wallet_manager_create_impl(
 
     let sdk = Arc::new((*(sdk_ptr as *const Sdk)).clone());
     let persister = Arc::new(
-        FFIPersister::new_with_persistence_capabilities_and_all_extension_callbacks(
+        FFIPersister::new_with_persistence_capabilities_and_extensions(
             std::ptr::read(persistence),
             declared_capabilities,
-            dpns_name_states_callback,
-            wallet_changeset_sweeps_callback,
-            wallet_changeset_chain_lock_height_callback,
+            persistence_extensions,
         ),
     );
     let handler: Arc<dyn platform_wallet::PlatformEventHandler> = Arc::new(FFIEventHandler::new(
@@ -848,6 +837,31 @@ mod tests {
         0
     }
 
+    unsafe extern "C" fn persist_tracked_masternodes(
+        _context: *mut c_void,
+        _network: *const std::os::raw::c_char,
+        _rows: *const crate::persistence::TrackedMasternodeFFI,
+        _rows_count: usize,
+    ) -> i32 {
+        0
+    }
+
+    unsafe extern "C" fn load_tracked_masternodes(
+        _context: *mut c_void,
+        _network: *const std::os::raw::c_char,
+        _out_rows: *mut *const crate::persistence::TrackedMasternodeFFI,
+        _out_count: *mut usize,
+    ) -> i32 {
+        0
+    }
+
+    unsafe extern "C" fn load_tracked_masternodes_free(
+        _context: *mut c_void,
+        _rows: *const crate::persistence::TrackedMasternodeFFI,
+        _count: usize,
+    ) {
+    }
+
     fn persistence_callbacks() -> PersistenceCallbacks {
         PersistenceCallbacks {
             on_changeset_begin_fn: Some(begin_changeset),
@@ -1169,27 +1183,57 @@ mod tests {
             on_persist_wallet_changeset_sweeps_fn: Some(persist_wallet_changeset_sweeps),
             ..Default::default()
         };
-        assert!(unsafe { persistence_extension_dpns_callback(&short) }.is_none());
-        assert!(unsafe { persistence_extension_dpns_callback(&unknown) }.is_none());
-        assert!(unsafe { persistence_extension_sweeps_callback(&short) }.is_none());
-        assert!(unsafe { persistence_extension_sweeps_callback(&unknown) }.is_none());
-        assert!(unsafe { persistence_extension_chain_lock_height_callback(&short) }.is_none());
-        assert!(unsafe { persistence_extension_chain_lock_height_callback(&unknown) }.is_none());
+        let read_short = unsafe { persistence_extension_callbacks(&short) };
+        assert!(read_short.dpns_name_states.is_none());
+        assert!(read_short.persist_tracked_masternodes.is_none());
+        assert!(read_short.wallet_changeset_sweeps.is_none());
+        assert!(read_short.wallet_changeset_chain_lock_height.is_none());
+        let read_unknown = unsafe { persistence_extension_callbacks(&unknown) };
+        assert!(read_unknown.dpns_name_states.is_none());
+        assert!(read_unknown.load_tracked_masternodes.is_none());
+        assert!(read_unknown.wallet_changeset_sweeps.is_none());
+        assert!(read_unknown.wallet_changeset_chain_lock_height.is_none());
     }
 
-    /// The exact cross-version pairing the sweep transport exists for: a
-    /// host built when the extension ended at the DPNS slot declares that
-    /// smaller `struct_size` — bytes it filled with a live callback are
-    /// still bytes, so nothing but the declared size distinguishes this
-    /// from a current struct. The sweeps slot must be refused, never read
-    /// (reading it here would be exactly the past-the-allocation
-    /// dereference the changeset struct could not prevent), while the
-    /// DPNS slot the size does prove keeps working.
+    /// A caller whose `struct_size` covers only the dpns field (an
+    /// older host recompiled before the tracked-masternode trio existed)
+    /// yields the dpns callback and nothing else — additive size gating.
+    #[test]
+    fn dpns_only_sized_extension_reads_only_the_dpns_field() {
+        let dpns_only_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_persist_tracked_masternodes_fn
+        );
+        let ext = PersistenceCallbacksExtension {
+            struct_size: dpns_only_size,
+            on_persist_dpns_name_states_fn: Some(persist_dpns_name_states),
+            ..Default::default()
+        };
+        let read = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(read.dpns_name_states.is_some());
+        assert!(read.persist_tracked_masternodes.is_none());
+        assert!(read.load_tracked_masternodes.is_none());
+        assert!(read.load_tracked_masternodes_free.is_none());
+        assert!(read.wallet_changeset_sweeps.is_none());
+        assert!(read.wallet_changeset_chain_lock_height.is_none());
+    }
+
+    /// The exact cross-version pairing the size-negotiated extension
+    /// exists for: a host built when the extension ended at an earlier
+    /// slot declares that smaller `struct_size` — bytes it filled with a
+    /// live callback are still bytes, so nothing but the declared size
+    /// distinguishes it from a current struct. Every later slot must be
+    /// refused, never read (reading it would be exactly the
+    /// past-the-allocation dereference the changeset struct could not
+    /// prevent), while every slot the size does prove keeps working.
+    /// Walks each historical boundary: DPNS-only, the tracked-masternode
+    /// trio, the sweeps slot, and the terminal chainlock-height slot.
     #[test]
     fn a_legacy_sized_extension_refuses_the_sweeps_slot_but_keeps_dpns() {
+        // DPNS-era host: everything after the DPNS slot is refused.
         let legacy_size = std::mem::offset_of!(
             PersistenceCallbacksExtension,
-            on_persist_wallet_changeset_sweeps_fn
+            on_persist_tracked_masternodes_fn
         );
         let legacy = PersistenceCallbacksExtension {
             struct_size: legacy_size,
@@ -1197,12 +1241,41 @@ mod tests {
             // Set in the fixture to prove the gate never LOOKS: were the
             // size check wrong, the read would find a live pointer and the
             // assertion below would catch it.
+            on_persist_tracked_masternodes_fn: Some(persist_tracked_masternodes),
             on_persist_wallet_changeset_sweeps_fn: Some(persist_wallet_changeset_sweeps),
             ..Default::default()
         };
-        assert!(unsafe { persistence_extension_dpns_callback(&legacy) }.is_some());
-        assert!(unsafe { persistence_extension_sweeps_callback(&legacy) }.is_none());
-        assert!(unsafe { persistence_extension_chain_lock_height_callback(&legacy) }.is_none());
+        let read = unsafe { persistence_extension_callbacks(&legacy) };
+        assert!(read.dpns_name_states.is_some());
+        assert!(read.persist_tracked_masternodes.is_none());
+        assert!(read.load_tracked_masternodes.is_none());
+        assert!(read.load_tracked_masternodes_free.is_none());
+        assert!(read.wallet_changeset_sweeps.is_none());
+        assert!(read.wallet_changeset_chain_lock_height.is_none());
+
+        // A host built when the extension ended at the tracked-masternode
+        // trio: the trio negotiates, the sweeps and chainlock-height
+        // slots are refused, never read.
+        let masternodes_era_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_persist_wallet_changeset_sweeps_fn
+        );
+        let masternodes_era = PersistenceCallbacksExtension {
+            struct_size: masternodes_era_size,
+            on_persist_dpns_name_states_fn: Some(persist_dpns_name_states),
+            on_persist_tracked_masternodes_fn: Some(persist_tracked_masternodes),
+            on_load_tracked_masternodes_fn: Some(load_tracked_masternodes),
+            on_load_tracked_masternodes_free_fn: Some(load_tracked_masternodes_free),
+            on_persist_wallet_changeset_sweeps_fn: Some(persist_wallet_changeset_sweeps),
+            ..Default::default()
+        };
+        let read = unsafe { persistence_extension_callbacks(&masternodes_era) };
+        assert!(read.dpns_name_states.is_some());
+        assert!(read.persist_tracked_masternodes.is_some());
+        assert!(read.load_tracked_masternodes.is_some());
+        assert!(read.load_tracked_masternodes_free.is_some());
+        assert!(read.wallet_changeset_sweeps.is_none());
+        assert!(read.wallet_changeset_chain_lock_height.is_none());
 
         // A host built when the extension ended at the sweeps slot: sweeps
         // negotiate, the chainlock-height slot is refused, never read.
@@ -1219,20 +1292,26 @@ mod tests {
             ),
             ..Default::default()
         };
-        assert!(unsafe { persistence_extension_dpns_callback(&sweeps_era) }.is_some());
-        assert!(unsafe { persistence_extension_sweeps_callback(&sweeps_era) }.is_some());
-        assert!(unsafe { persistence_extension_chain_lock_height_callback(&sweeps_era) }.is_none());
+        let read = unsafe { persistence_extension_callbacks(&sweeps_era) };
+        assert!(read.dpns_name_states.is_some());
+        assert!(read.wallet_changeset_sweeps.is_some());
+        assert!(read.wallet_changeset_chain_lock_height.is_none());
 
         let current = PersistenceCallbacksExtension {
             on_persist_dpns_name_states_fn: Some(persist_dpns_name_states),
+            on_persist_tracked_masternodes_fn: Some(persist_tracked_masternodes),
+            on_load_tracked_masternodes_fn: Some(load_tracked_masternodes),
+            on_load_tracked_masternodes_free_fn: Some(load_tracked_masternodes_free),
             on_persist_wallet_changeset_sweeps_fn: Some(persist_wallet_changeset_sweeps),
             on_persist_wallet_changeset_chain_lock_height_fn: Some(
                 persist_wallet_changeset_chain_lock_height,
             ),
             ..Default::default()
         };
-        assert!(unsafe { persistence_extension_sweeps_callback(&current) }.is_some());
-        assert!(unsafe { persistence_extension_chain_lock_height_callback(&current) }.is_some());
+        let read = unsafe { persistence_extension_callbacks(&current) };
+        assert!(read.persist_tracked_masternodes.is_some());
+        assert!(read.wallet_changeset_sweeps.is_some());
+        assert!(read.wallet_changeset_chain_lock_height.is_some());
     }
 }
 

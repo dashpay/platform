@@ -62,7 +62,7 @@ abstract class NativePersistenceBridge {
 
     companion object {
         /**
-         * `PersistenceCapabilities::CORE_SWEEP_REMOVAL` (bit 10, `0x400`).
+         * `PersistenceCapabilities::CORE_SWEEP_REMOVAL` (bit 11, `0x800`).
          * Declared here — on the class whose
          * [onWalletChangesetTransactionsSwept] default consults it — so the
          * fail-closed guard and the declaration a subclass makes through
@@ -70,7 +70,7 @@ abstract class NativePersistenceBridge {
          * `PlatformWalletPersistenceHandler`'s capability constants alias
          * this value.
          */
-        const val CAPABILITY_CORE_SWEEP_REMOVAL: Long = 0x400
+        const val CAPABILITY_CORE_SWEEP_REMOVAL: Long = 0x800
     }
 
     // ── Transactional bracketing ──────────────────────────────────────

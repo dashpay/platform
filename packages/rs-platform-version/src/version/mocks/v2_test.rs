@@ -509,7 +509,8 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         withdrawal_transactions_per_block_limit: 4,
         retry_signing_expired_withdrawal_documents_per_block_limit: 1,
         max_withdrawal_amount: 50_000_000_000_000,
-        daily_withdrawal_limit: 200_000_000_000_000, //2000 Dash
+        daily_withdrawal_limit_percent: None,
+        max_daily_withdrawal_amount: None,
         min_withdrawal_amount: 190_000,
         max_contract_group_size: 256,
         max_token_redemption_cycles: 128,

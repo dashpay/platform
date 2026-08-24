@@ -33,7 +33,10 @@
 //! `held_since_height`) under the same pre-release policy V001's test
 //! documents: nothing shipped has applied this migration, and a dev
 //! database that did apply the old shape fails refinery's divergence
-//! check and must be recreated.
+//! check and must be recreated. Renumbered `V006` → `V007` when the
+//! mainline's `V006__tracked_masternodes` merged in ahead of this
+//! unmerged branch: version numbers, like capability bits, are
+//! append-only and the already-merged assignment keeps its slot.
 
 pub fn migration() -> String {
     "ALTER TABLE core_utxos ADD COLUMN winner_mined_height INTEGER;

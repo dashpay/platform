@@ -1,7 +1,6 @@
 use crate::fee::Credits;
 use crate::shielded::{
-    SHIELDED_STORAGE_BYTES_PER_ACTION, SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES,
-    SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES,
+    SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES, SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES,
 };
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
@@ -50,12 +49,11 @@ pub fn compute_shielded_verification_fee_v0(
 ///
 /// where `compute_fee = proof_verification_fee + num_actions × processing_fee`
 /// (see [`compute_shielded_verification_fee_v0`]) and
-/// `storage_fee_per_action = SHIELDED_STORAGE_BYTES_PER_ACTION × (disk + processing) credits/byte`.
-///
-/// Expanding, this equals the historical formula
-/// `proof_verification_fee + num_actions × (processing_fee + 312×rate)`: the compute fee already
-/// contributes `proof + num_actions × processing`, and this function adds
-/// `num_actions × (312×rate)` storage on top, so the returned numeric value is unchanged.
+/// `storage_fee_per_action = shielded_storage_bytes_per_action × (disk + processing) credits/byte`,
+/// with the byte allowance a versioned event constant beside the compute fees — so the compute
+/// and storage components of the flat fee are calibrated independently per protocol version
+/// (compute reserved for compute; the allowance sized to what the metering actually charges a
+/// note/nullifier write under the GroveVersion in force).
 ///
 /// This is the fee carved from the shielded **pool** by the pool-paid transitions
 /// (ShieldedTransfer / Unshield / ShieldedWithdrawal), which cannot meter their writes against an
@@ -69,6 +67,10 @@ pub fn compute_minimum_shielded_fee_v0(
     platform_version: &PlatformVersion,
 ) -> Result<Credits, ProtocolError> {
     let storage = &platform_version.fee_version.storage;
+    let constants = &platform_version
+        .drive_abci
+        .validation_and_processing
+        .event_constants;
 
     let compute_fee = compute_shielded_verification_fee_v0(num_actions, platform_version)?;
 
@@ -78,7 +80,8 @@ pub fn compute_minimum_shielded_fee_v0(
         .ok_or(ProtocolError::Overflow(
             "shielded storage per-byte rate overflow",
         ))?;
-    let storage_fee_per_action = SHIELDED_STORAGE_BYTES_PER_ACTION
+    let storage_fee_per_action = constants
+        .shielded_storage_bytes_per_action
         .checked_mul(per_byte_rate)
         .ok_or(ProtocolError::Overflow(
             "shielded per-action storage fee overflow",
@@ -251,10 +254,11 @@ pub fn compute_shielded_identity_create_fee_v0(
 mod tests {
     use super::*;
 
-    /// The refactored `compute_minimum_shielded_fee_v0` must return the EXACT same value as the
-    /// historical formula `proof + num_actions × (processing + 312×rate)`. The refactor splits the
-    /// computation into `compute_fee + num_actions × (312×rate)`; this asserts the two are equal
-    /// across a range of action counts so the consensus fee is byte-for-byte unchanged.
+    /// `compute_minimum_shielded_fee_v0` must equal
+    /// `proof + num_actions × (processing + allowance×rate)` with every term read from the
+    /// version's own constant tables, and must decompose as
+    /// `compute_fee + num_actions × storage_allowance` — the component split the pool-paid
+    /// booking and the fee-floor tests rely on.
     #[test]
     fn compute_minimum_shielded_fee_v0_equals_historical_formula() {
         let platform_version = PlatformVersion::latest();
@@ -267,9 +271,9 @@ mod tests {
             storage.storage_disk_usage_credit_per_byte + storage.storage_processing_credit_per_byte;
 
         for num_actions in [0usize, 1, 2, 5, 16] {
-            // Historical: proof + num_actions × (processing + 312×rate)
+            // Structure: proof + num_actions × (processing + allowance×rate)
             let per_action = constants.shielded_per_action_processing_fee
-                + SHIELDED_STORAGE_BYTES_PER_ACTION * per_byte_rate;
+                + constants.shielded_storage_bytes_per_action * per_byte_rate;
             let historical =
                 constants.shielded_proof_verification_fee + (num_actions as u64) * per_action;
 
@@ -286,10 +290,38 @@ mod tests {
             assert_eq!(
                 refactored,
                 compute_fee
-                    + (num_actions as u64) * SHIELDED_STORAGE_BYTES_PER_ACTION * per_byte_rate,
+                    + (num_actions as u64)
+                        * constants.shielded_storage_bytes_per_action
+                        * per_byte_rate,
                 "minimum fee must equal compute fee plus the per-action storage estimate"
             );
         }
+    }
+
+    /// Independent boundary goldens across the protocol-14 rebalance: the released protocol-12
+    /// and protocol-13 tables must keep producing the shipped 162,851,200-credit two-action fee
+    /// byte-for-byte (100M proof + 2 × 22M processing + 2 × 344 B × 27,400), and protocol 14
+    /// must produce exactly 114,140,000 (40M proof + 2 × 22M + 2 × 550 B × 27,400). Hardcoded
+    /// on purpose — deriving the expectation from the same table field the implementation
+    /// reads would pass even if a released table were accidentally given the new allowance.
+    #[test]
+    fn minimum_shielded_fee_changes_only_at_protocol_14() {
+        for protocol_version in [12, 13] {
+            let platform_version = PlatformVersion::get(protocol_version)
+                .expect("released shielded protocol version should exist");
+            assert_eq!(
+                compute_minimum_shielded_fee_v0(2, platform_version)
+                    .expect("released minimum shielded fee"),
+                162_851_200,
+                "protocol {protocol_version} must keep the shipped two-action fee byte-for-byte"
+            );
+        }
+        let platform_version = PlatformVersion::get(14).expect("protocol version 14 exists");
+        assert_eq!(
+            compute_minimum_shielded_fee_v0(2, platform_version).expect("minimum shielded fee"),
+            114_140_000,
+            "protocol 14 must price a two-action bundle at the rebalanced constants"
+        );
     }
 
     /// Pin the exact relationship between the ShieldedWithdrawal fee and the base shielded fee:

@@ -39,7 +39,8 @@ public enum DashModelContainer {
             PersistentShieldedViewingKey.self,
             PersistentAssetLock.self,
             PersistentInvitation.self,
-            PersistentMasternode.self
+            PersistentMasternode.self,
+            PersistentTrackedMasternode.self
         ]
     }
 

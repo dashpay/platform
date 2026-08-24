@@ -65,6 +65,10 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// Tracked asset-lock rows, including status and proof updates, can be
     /// persisted. Restart hydration is separately attested by `walletRestore`.
     public static let trackedAssetLocks: UInt64 = 1 << 9
+    /// Tracked (wallet-independent) masternodes are persisted and restored
+    /// across restarts. Mirrors
+    /// `PersistenceCapabilities::TRACKED_MASTERNODES`.
+    public static let trackedMasternodes: UInt64 = 1 << 10
     /// A round's sweep batches — delivered through the persistence
     /// extension's size-negotiated sweep callback — are durably applied
     /// batch by batch and in order: swept transactions and their outputs
@@ -74,7 +78,7 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// are retained durably. Mirrors
     /// `PersistenceCapabilities::CORE_SWEEP_REMOVAL`; Rust only honours
     /// the declaration when the extension actually carries the callback.
-    public static let coreSweepRemoval: UInt64 = 1 << 10
+    public static let coreSweepRemoval: UInt64 = 1 << 11
     /// DashPay payment rows delivered on a store round
     /// (`dashpay_payments_overlay`) are durably applied. This is what the
     /// wallet-event adapter keys on before coupling a sweep's
@@ -84,7 +88,7 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// round-coupled. Mirrors `PersistenceCapabilities::DASHPAY_PAYMENTS`;
     /// Rust only honours the declaration when the payments callback is
     /// actually wired.
-    public static let dashpayPayments: UInt64 = 1 << 11
+    public static let dashpayPayments: UInt64 = 1 << 12
 
     public let version: UInt32
     public let bits: UInt64

@@ -26,6 +26,7 @@ pub mod invitations;
 pub mod pending_contact_crypto;
 pub mod platform_addrs;
 pub mod token_balances;
+pub mod tracked_masternodes;
 pub mod wallet_meta;
 
 /// Defensive check that every `identity_id` in `touched` exists in

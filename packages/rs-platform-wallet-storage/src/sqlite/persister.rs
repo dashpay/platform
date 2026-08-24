@@ -850,8 +850,32 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::PENDING_CONTACT_CRYPTO)
             .union(PersistenceCapabilities::DPNS_NAME_STATES)
             .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
+            .union(PersistenceCapabilities::TRACKED_MASTERNODES)
             .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
             .union(PersistenceCapabilities::DASHPAY_PAYMENTS)
+    }
+
+    fn persist_tracked_masternodes(
+        &self,
+        network: dashcore::Network,
+        records: &[platform_wallet::masternode::TrackedMasternode],
+    ) -> Result<(), PersistenceError> {
+        let mut conn = self.conn().map_err(PersistenceError::from)?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| PersistenceError::from(WalletStorageError::from(e)))?;
+        schema::tracked_masternodes::replace_all(&tx, network, records)
+            .map_err(PersistenceError::from)?;
+        tx.commit()
+            .map_err(|e| PersistenceError::from(WalletStorageError::from(e)))
+    }
+
+    fn load_tracked_masternodes(
+        &self,
+        network: dashcore::Network,
+    ) -> Result<Vec<platform_wallet::masternode::TrackedMasternode>, PersistenceError> {
+        let conn = self.conn().map_err(PersistenceError::from)?;
+        schema::tracked_masternodes::load_all(&conn, network).map_err(PersistenceError::from)
     }
 
     /// Merge `changeset` into the per-wallet buffer.

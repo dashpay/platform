@@ -51,6 +51,12 @@ impl PersistenceCapabilities {
     /// Tracked asset-lock rows, including status and proof updates, can be
     /// persisted. Restart hydration is the separate `WALLET_RESTORE` contract.
     pub const TRACKED_ASSET_LOCKS: Self = Self(1 << 9);
+    /// Tracked (wallet-independent) masternodes are persisted AND restored
+    /// across restarts
+    /// ([`persist_tracked_masternodes`](super::PlatformWalletPersistence::persist_tracked_masternodes)
+    /// / [`load_tracked_masternodes`](super::PlatformWalletPersistence::load_tracked_masternodes)).
+    /// Without this bit, tracking is session-scoped.
+    pub const TRACKED_MASTERNODES: Self = Self(1 << 10);
     /// A stored `CoreChangeSet` whose `sweeps` are non-empty is durably
     /// applied batch by batch and in order: each swept transaction and its
     /// outputs are excluded from every restore and enumeration path (whether
@@ -68,7 +74,7 @@ impl PersistenceCapabilities {
     /// and never sees the sweeps at all; this bit tells the wallet that the
     /// complete sweep contract was implemented rather than silently
     /// truncated.
-    pub const CORE_SWEEP_REMOVAL: Self = Self(1 << 10);
+    pub const CORE_SWEEP_REMOVAL: Self = Self(1 << 11);
     /// A stored changeset's `dashpay_payments_overlay` rows are durably
     /// applied. This is what lets the wallet-event adapter couple a sweep's
     /// payment consequence (`Pending → Failed` for the losers' sent
@@ -84,7 +90,7 @@ impl PersistenceCapabilities {
     /// `CORE_SWEEP_REMOVAL`. On the FFI surface Rust honours the
     /// declaration only when `on_persist_dashpay_payments_fn` is actually
     /// wired.
-    pub const DASHPAY_PAYMENTS: Self = Self(1 << 11);
+    pub const DASHPAY_PAYMENTS: Self = Self(1 << 12);
 
     /// Capabilities required before exporting and funding an invitation voucher.
     pub const INVITATION_CREATION: Self = Self(
@@ -166,6 +172,10 @@ impl PersistenceCapabilities {
                 "tracked_asset_locks",
             ),
             (
+                PersistenceCapabilities::TRACKED_MASTERNODES,
+                "tracked_masternodes",
+            ),
+            (
                 PersistenceCapabilities::CORE_SWEEP_REMOVAL,
                 "core_sweep_removal",
             ),
@@ -202,8 +212,9 @@ mod tests {
         assert_eq!(PersistenceCapabilities::WALLET_RESTORE.bits(), 0x80);
         assert_eq!(PersistenceCapabilities::DPNS_NAME_STATES.bits(), 0x100);
         assert_eq!(PersistenceCapabilities::TRACKED_ASSET_LOCKS.bits(), 0x200);
-        assert_eq!(PersistenceCapabilities::CORE_SWEEP_REMOVAL.bits(), 0x400);
-        assert_eq!(PersistenceCapabilities::DASHPAY_PAYMENTS.bits(), 0x800);
+        assert_eq!(PersistenceCapabilities::TRACKED_MASTERNODES.bits(), 0x400);
+        assert_eq!(PersistenceCapabilities::CORE_SWEEP_REMOVAL.bits(), 0x800);
+        assert_eq!(PersistenceCapabilities::DASHPAY_PAYMENTS.bits(), 0x1000);
         assert_eq!(
             PersistenceCapabilities::ASSET_LOCK_RECONCILIATION.bits(),
             0x281
@@ -228,7 +239,7 @@ mod tests {
     /// — which is exactly what `DASHPAY_PAYMENTS` did until this test.
     #[test]
     fn every_declared_bit_has_a_stable_name() {
-        for shift in 0..12u32 {
+        for shift in 0..13u32 {
             let bit = PersistenceCapabilities::from_bits_retain(1 << shift);
             assert_eq!(
                 bit.names().len(),

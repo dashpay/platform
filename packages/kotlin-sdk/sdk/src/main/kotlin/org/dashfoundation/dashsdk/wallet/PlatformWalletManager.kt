@@ -61,12 +61,20 @@ data class PlatformWalletPersistenceCapabilities(
         const val DPNS_NAME_STATES: Long = 1L shl 8
         const val TRACKED_ASSET_LOCKS: Long = 1L shl 9
         /**
+         * Tracked (wallet-independent) masternodes are persisted and
+         * restored across restarts. Mirrors
+         * `PersistenceCapabilities::TRACKED_MASTERNODES`. Android does not
+         * wire the trio and never attests this bit; the constant exists so
+         * the diagnostic mirror stays bit-for-bit with Rust.
+         */
+        const val TRACKED_MASTERNODES: Long = 1L shl 10
+        /**
          * A stored core changeset's swept transactions are durably removed:
          * the loser's row (and any tombstoned pending-input claim standing
          * in for a not-yet-materialized UTXO) actually leaves Room. Mirrors
          * `PersistenceCapabilities::CORE_SWEEP_REMOVAL`.
          */
-        const val CORE_SWEEP_REMOVAL: Long = 1L shl 10
+        const val CORE_SWEEP_REMOVAL: Long = 1L shl 11
     }
 }
 

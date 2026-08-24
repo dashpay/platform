@@ -57,6 +57,10 @@ final class InvitationPersistenceTests: XCTestCase {
             // `PersistentDPNSName`, so this bit is genuinely attested.
             | PlatformWalletPersistenceCapabilities.dpnsNameStates
             | PlatformWalletPersistenceCapabilities.trackedAssetLocks
+            // Tracked (wallet-independent) masternodes: the handler wires
+            // the persist/load/free trio onto `PersistentTrackedMasternode`,
+            // so restart survival is genuinely attested.
+            | PlatformWalletPersistenceCapabilities.trackedMasternodes
             | PlatformWalletPersistenceCapabilities.coreSweepRemoval
             // DashPay payment rows: the handler wires
             // `on_persist_dashpay_payments_fn` and lands the overlay on
