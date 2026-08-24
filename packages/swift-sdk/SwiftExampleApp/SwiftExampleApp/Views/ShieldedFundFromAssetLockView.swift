@@ -662,6 +662,13 @@ struct ShieldedFundFromAssetLockView: View {
         // locks default to the same wallet-owned shielded recipient, so
         // the coordinator's slot key alone cannot tell two locks apart
         // and would silently reuse the first lock's controller.
+        // A fresh shield mints a NEW id per submission: the coordinator
+        // retains a completed controller for ~30s, and a fixed marker
+        // would match it and rebind — reopening the old result instead
+        // of running this submission's body. Minted here, at submission
+        // time, so dismissing a completed sheet and shielding again is
+        // always a new operation ("resume:<outpoint>" stays stable so a
+        // re-tap of the SAME lock still rebinds).
         let operationId: String
         let body: () async throws -> Void
         if let lock = resumeFromLock {
@@ -687,7 +694,7 @@ struct ShieldedFundFromAssetLockView: View {
                 let fundingAccountIndex = fundingCoreAccountIndex,
                 let duffs = parsedDuffs
             else { return }
-            operationId = "shield"
+            operationId = "shield:\(UUID().uuidString)"
             body = {
                 try await manager.shieldedFundFromAssetLock(
                     walletId: walletId,

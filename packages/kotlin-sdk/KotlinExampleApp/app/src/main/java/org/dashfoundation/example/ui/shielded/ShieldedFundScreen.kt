@@ -47,6 +47,7 @@ import org.dashfoundation.example.ui.funding.shortOutPointDisplay
 import org.dashfoundation.example.ui.funding.statusLabel
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.toHex
+import java.util.UUID
 
 /**
  * Shield funds from an asset lock — port of `ShieldedFundFromAssetLockView.swift`.
@@ -270,6 +271,14 @@ fun ShieldedFundScreen(
                     // default to the same wallet-owned shielded recipient, so
                     // the coordinator's slot key alone cannot tell two locks
                     // apart and would silently reuse the first controller.
+                    // A fresh shield mints a NEW id per submission: the
+                    // coordinator retains a completed controller for ~30s,
+                    // and a fixed marker would match it and rebind — showing
+                    // the old result instead of running this submission's
+                    // body. Minted here, at submission time, so returning to
+                    // this form and shielding again is always a new
+                    // operation ("resume:<outpoint>" stays stable so a
+                    // re-tap of the SAME lock still rebinds).
                     val (operationId, submitBody) = if (isResume) {
                         val lock = resumeLock ?: return@SubmitButton
                         val parsed = parseOutPoint(lock.outPointHex)
@@ -296,7 +305,7 @@ fun ShieldedFundScreen(
                                 amountDuffs = amountDuffs,
                             )
                         }
-                        "shield" to body
+                        "shield:${UUID.randomUUID()}" to body
                     }
 
                     isSubmitting = true

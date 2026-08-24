@@ -96,14 +96,17 @@ final class ShieldedFundFromAssetLockCoordinator: ObservableObject {
     ///    second tap on the same operation during the FFI window
     ///    re-presents the existing controller, never races a
     ///    duplicate FFI call. The operation id (the resumed lock's
-    ///    outpoint, or the fresh-shield marker) is required because
-    ///    resumable locks normally default to the same wallet-owned
-    ///    shielded recipient — two different locks share one slot
-    ///    key, and reusing the first lock's controller would
-    ///    silently drop the second lock's resume body. A DIFFERENT
-    ///    operation is `.blockedByOtherWalletFunding` while the slot
-    ///    is in flight, and replaces the retained controller once it
-    ///    has completed.
+    ///    outpoint, or a unique per-submission fresh-shield id) is
+    ///    required because resumable locks normally default to the
+    ///    same wallet-owned shielded recipient — two different locks
+    ///    share one slot key, and reusing the first lock's controller
+    ///    would silently drop the second lock's resume body. A
+    ///    DIFFERENT operation is `.blockedByOtherWalletFunding` while
+    ///    the slot is in flight, and replaces the retained controller
+    ///    once it has completed. Fresh shields mint a NEW id per
+    ///    submission for the same reason: a fixed marker would match
+    ///    the retained completed controller and suppress the next
+    ///    fresh shield's body.
     /// 2. **Per-wallet**: if any controller on the same wallet is
     ///    `.inFlight` for a *different* recipient, reject with
     ///    `.blockedByOtherWalletFunding`. Mirrors the Rust-side

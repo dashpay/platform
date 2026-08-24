@@ -24,13 +24,15 @@ import kotlinx.coroutines.launch
  * race the note-commitment tree).
  *
  * Reuse of a controller additionally requires a matching **operation
- * identity** (`operationId` — the resumed lock's outpoint, or the
- * fresh-shield marker): resumable locks normally default to the same
- * wallet-owned shielded recipient, so two different locks share one slot
- * key, and reusing the first lock's controller would silently drop the
- * second lock's resume body. A different operation is blocked while the
- * slot is in flight and replaces the retained controller once it has
- * completed.
+ * identity** (`operationId` — the resumed lock's outpoint, or a unique
+ * per-submission fresh-shield id): resumable locks normally default to
+ * the same wallet-owned shielded recipient, so two different locks share
+ * one slot key, and reusing the first lock's controller would silently
+ * drop the second lock's resume body. A different operation is blocked
+ * while the slot is in flight and replaces the retained controller once
+ * it has completed. Fresh shields mint a NEW id per submission for the
+ * same reason: a fixed marker would match the retained completed
+ * controller and suppress the next fresh shield's body.
  */
 class ShieldedFundFromAssetLockCoordinator(
     private val scope: CoroutineScope,
@@ -93,9 +95,11 @@ class ShieldedFundFromAssetLockCoordinator(
      * ← Swift `startFunding`.
      *
      * [operationId] is the identity of the requested operation: the
-     * resumed lock's outpoint for a resume, a fixed marker for a fresh
-     * shield. Wallet-wide serialization is unchanged — at most one
-     * shield-class operation runs per wallet either way.
+     * resumed lock's outpoint for a resume (stable, so a re-tap of the
+     * same lock rebinds), a unique per-submission id for a fresh shield
+     * (so a second fresh shield never rebinds to the previous one's
+     * retained result). Wallet-wide serialization is unchanged — at most
+     * one shield-class operation runs per wallet either way.
      */
     fun startFunding(
         walletId: ByteArray,
