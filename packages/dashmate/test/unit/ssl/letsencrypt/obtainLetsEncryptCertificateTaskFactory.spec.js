@@ -6,6 +6,8 @@ import obtainLetsEncryptCertificateTaskFactory from '../../../../src/listr/tasks
 import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFactory.js';
 import getEnquirerMock from '../../../../src/test/mock/getEnquirerMock.js';
 import { ERRORS } from '../../../../src/ssl/letsencrypt/validateLetsEncryptCertificateFactory.js';
+import LegoDidNotStartError from '../../../../src/ssl/errors/LegoDidNotStartError.js';
+import LegoArtifactsMissingError from '../../../../src/ssl/errors/LegoArtifactsMissingError.js';
 
 describe('obtainLetsEncryptCertificateTaskFactory', () => {
   it('should reject a plaintext ACME directory before lego starts', async function it() {
@@ -588,6 +590,13 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
       expect(error.message).to.not.contain('rate-limit');
       expect(error.message).to.not.contain('failed attempts are shared');
       expect(error.message).to.not.contain('Fix inbound port 80 first');
+
+      // The typed error travels as the cause. This message is written for a
+      // terminal, and how far the attempt got - whether the check ever ran,
+      // whether an issuance was spent - cannot be recovered by reading it. An
+      // unattended renewal records that, and without the cause it degrades to
+      // "could not work out why" and loses the advice against retrying.
+      expect(error.cause).to.be.an.instanceOf(LegoDidNotStartError);
     });
 
     // lego exited successfully, so a certificate was issued and counts against
@@ -628,6 +637,12 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
       expect(error.message).to.not.match(/paused/i);
       expect(error.message).to.not.contain('failed attempts are shared');
       expect(error.message).to.not.match(/did not obtain a certificate after/i);
+
+      // Carried as the cause so an unattended renewal can record that an
+      // issuance is already spent. Without it the record falls back to
+      // "could not work out why" and the next attempt is invited, spending a
+      // second certificate against a weekly limit.
+      expect(error.cause).to.be.an.instanceOf(LegoArtifactsMissingError);
 
       // And the operator still hears the requirement that keeps the node up.
       expect(context.certificateObtained).to.be.true();

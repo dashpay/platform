@@ -10,8 +10,10 @@ import {
 import { isRenewalRecordCurrent, RENEWAL_OUTCOMES, RENEWAL_RECORD_STATES } from '../../ssl/renewalRecord.js';
 import {
   describeRenewalFailure,
+  MAX_DETAIL_CHARS,
   REMEDY_CLASS,
   RENEWAL_FAILURE_CODES,
+  sanitizeDetail,
 } from '../../ssl/renewalFailure.js';
 import { RETRY_INTERVAL_MS } from '../../helper/scheduleRenewalJob.js';
 import { SSL_PROVIDERS } from '../../constants.js';
@@ -126,7 +128,19 @@ const isRenewalManaged = (config) => config.get('platform.gateway.ssl.enabled') 
  * @param {string|null} value
  * @return {string|null}
  */
-const asDay = (value) => (value ? new Date(value).toISOString().slice(0, 10) : null);
+const asDay = (value) => {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+
+  // A report can arrive from someone else, and `doctor --samples` reads its
+  // JSON straight into the sample set without passing through the reader that
+  // validates a local record. An unusable date would throw out of the analyser
+  // and take the whole diagnosis with it.
+  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+};
 
 /**
  * When the certificate in use stops working, which is the only number that
@@ -179,7 +193,13 @@ function renderHistory(record) {
  * @return {string}
  */
 function renderNextAttempt(record, now, cfg) {
-  const nextAt = new Date(record.attemptedAt).getTime() + RETRY_INTERVAL_MS;
+  const attemptedAt = new Date(record.attemptedAt).getTime();
+
+  if (Number.isNaN(attemptedAt)) {
+    return '';
+  }
+
+  const nextAt = attemptedAt + RETRY_INTERVAL_MS;
 
   if (nextAt <= now) {
     return chalk`dashmate should have tried again by now and has not, so the part of dashmate
@@ -289,6 +309,13 @@ certificate for an IP address.
 ${obtain}`;
   }
 
+  // Nothing actionable was established, so asking the authority again is a
+  // guess with a cost. Send the evidence somewhere it can be read instead.
+  if (remedy === REMEDY_CLASS.SUPPORT && isCertificateUsable) {
+    return chalk`Send a report to Dash support:
+{bold.cyanBright dashmate doctor report ${cfg}}`;
+  }
+
   // The node still works and renewal comes back around on its own once the
   // cause is gone. Ending here with a command spends one of the few failed
   // attempts this node is allowed, on a repair that has not been made yet.
@@ -365,7 +392,13 @@ export default function analyseGatewayCertificateFactory() {
       ? renewalSample
       : null;
 
-    const failedRenewal = renewal?.outcome === RENEWAL_OUTCOMES.FAILED ? renewal : null;
+    // A record with no usable attempt time cannot be judged against the samples
+    // or against the certificate, so it is treated as absent rather than
+    // reasoned about.
+    const failedRenewal = renewal?.outcome === RENEWAL_OUTCOMES.FAILED
+      && !Number.isNaN(new Date(renewal.attemptedAt).getTime())
+      ? renewal
+      : null;
 
     // Let's Encrypt issues IP certificates on a six-day profile, so port 80 has
     // to stay open permanently. ZeroSSL's last ninety days, and telling its
@@ -416,8 +449,15 @@ export default function analyseGatewayCertificateFactory() {
       // Whatever the provider actually said, whenever it said anything. It is
       // already bounded, redacted and stripped, and it is the only account of
       // the failure that did not come from dashmate.
-      if (failedRenewal.detail) {
-        blocks.push(`It reported: ${failedRenewal.detail}`);
+      // Stripped and bounded here rather than only where a local record is
+      // read: `doctor --samples` analyses an archive handed over by someone
+      // else, and this is the first free text either surface prints verbatim.
+      // Left intact, a terminal escape in it could erase everything printed
+      // above and repaint attacker text as dashmate's own output.
+      const detail = sanitizeDetail(failedRenewal.detail).slice(0, MAX_DETAIL_CHARS);
+
+      if (detail) {
+        blocks.push(`It reported: ${detail}`);
       }
 
       blocks.push(renderHistory(failedRenewal));

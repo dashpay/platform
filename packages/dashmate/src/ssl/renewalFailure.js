@@ -153,7 +153,7 @@ const MAX_EXAMINED_CHARS = 2048;
  * an account address, which is why the selection below is an allow-list rather
  * than a slice of whatever came back.
  */
-const MAX_DETAIL_CHARS = 200;
+export const MAX_DETAIL_CHARS = 200;
 
 /**
  * The problem types RFC 8555 registers, as lego prints them.
@@ -184,7 +184,7 @@ const ZEROSSL_AUTH_CODES = [101, 102, 2801, 2841];
  * certificate check might not start: the two have opposite repairs, and
  * confusing them sends an operator to open a port that is already open.
  */
-const PORT_BIND_PATTERN = /port is already allocated|address already in use|bind for .* failed/i;
+const PORT_BIND_PATTERN = /port is already allocated|address already in use|bind for \S+ failed/i;
 
 /**
  * Dashmate's own account of losing the configuration lock.
@@ -294,7 +294,7 @@ function readProviderCode(error) {
  * @param {*} error
  * @return {string}
  */
-function classifyCode(error) {
+function classifyCode(error, message) {
   // The typed errors describe how far the attempt got, which no amount of
   // reading the text can establish: whether the certificate check ever ran,
   // and whether an issuance was spent. They arrive as the cause because the
@@ -310,12 +310,14 @@ function classifyCode(error) {
   }
 
   if (cause instanceof LegoDidNotStartError) {
-    return PORT_BIND_PATTERN.test(readMessage(cause.cause))
+    // Bounded like everything else: this one comes from the Docker daemon,
+    // which is the only message here that is not dashmate's or a certificate
+    // authority's, and the pattern below is the one that is not linear.
+    return PORT_BIND_PATTERN.test(readMessage(cause.cause).slice(0, MAX_EXAMINED_CHARS))
       ? RENEWAL_FAILURE_CODES.PORT_80_IN_USE
       : RENEWAL_FAILURE_CODES.HELPER_DID_NOT_START;
   }
 
-  const message = readMessage(error);
   const acmeProblem = message.match(ACME_PROBLEM_PATTERN);
 
   if (acmeProblem) {
@@ -334,6 +336,14 @@ function classifyCode(error) {
     }
 
     return RENEWAL_FAILURE_CODES.PROVIDER_REJECTED;
+  }
+
+  // Only an absent file. The same read also throws for a permission denial and
+  // for a corrupt certificate, and telling an operator to obtain a new one
+  // spends an issuance against a weekly limit on a problem a new certificate
+  // cannot fix.
+  if (error?.code === 'ENOENT') {
+    return RENEWAL_FAILURE_CODES.CERTIFICATE_FILE_MISSING;
   }
 
   if (LOCK_PATTERN.test(message)) {
@@ -380,9 +390,13 @@ export function sanitizeDetail(text) {
  * @return {{code: string, detail: string|null}}
  */
 export default function classifyRenewalFailure(error, { homeDirPath = null } = {}) {
-  const code = classifyCode(error);
-
+  // Bounded once, before anything examines it. lego writes single lines of
+  // unbounded length and these patterns run on the helper's event loop - the
+  // same loop that refreshes the configuration lock's lease, so a stall here
+  // is a lease that stops being renewed while the helper still looks alive.
   const examined = readMessage(error).slice(0, MAX_EXAMINED_CHARS);
+
+  const code = classifyCode(error, examined);
   const evidence = selectEvidence(
     collapseHomeDir(examined, homeDirPath),
     readProviderCode(error),

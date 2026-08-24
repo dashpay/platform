@@ -4,7 +4,6 @@ import path from 'path';
 import ConfigIsNotPresentError from '../config/errors/ConfigIsNotPresentError.js';
 import LegoCertificate from '../ssl/letsencrypt/LegoCertificate.js';
 import isCertificatePairInstalled from '../ssl/letsencrypt/isCertificatePairInstalled.js';
-import { RENEWAL_FAILURE_CODES } from '../ssl/renewalFailure.js';
 import { recordRenewalFailure } from './recordRenewalOutcome.js';
 import scheduleRenewalJob from './scheduleRenewalJob.js';
 
@@ -77,11 +76,15 @@ export default function scheduleRenewLetsEncryptCertificateFactory(
       // Renewal never reaches an attempt from here - it re-checks hourly for a
       // file that will not appear on its own - so without recording it, a node
       // in this state renews nothing and says nothing about why.
+      //
+      // The error itself decides the cause. This read throws for an absent
+      // file, for a permission denial and for a corrupt certificate alike, and
+      // only the first of those is repaired by obtaining a new one.
       recordRenewalFailure({
         homeDir,
         configName,
         provider: 'letsencrypt',
-        code: RENEWAL_FAILURE_CODES.CERTIFICATE_FILE_MISSING,
+        error: e,
       });
 
       // Schedule a check in 1 hour to see if certificate appears

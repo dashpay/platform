@@ -78,13 +78,16 @@ export default function scheduleRenewalJob({
       nextConfig = renewal.config;
 
       if (!renewal.renewed) {
-        await onConfigurationChanged(renewal.config);
-
-        // Renewal is no longer this provider's concern - SSL was turned off, or
-        // the provider changed. Nothing will write here again, so anything left
-        // behind would be reported forever against a node whose operator
-        // deliberately stopped renewing.
+        // Cleared before the handover, not after it. This record belongs to a
+        // provider that no longer renews here - SSL was turned off, or the
+        // provider changed - and it is stale the moment that is known. The
+        // handover below hands the file to whoever renews next, and both
+        // providers write to it synchronously while it runs, so clearing
+        // afterwards would delete the incoming provider's first record and
+        // leave a switched node reporting nothing until its next attempt.
         clearRenewalRecord({ homeDir, configName });
+
+        await onConfigurationChanged(renewal.config);
 
         completion = 'stop';
       } else {

