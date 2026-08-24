@@ -144,11 +144,7 @@ export default function getPlatformScopeFactory(
             .catch(() => null),
         ]);
 
-        const [
-          tenderdashStatus,
-          tenderdashNetInfo,
-          tenderdashAbciInfo,
-        ] = await Promise.all([
+        const [tenderdashStatus, tenderdashNetInfo, tenderdashAbciInfo] = await Promise.all([
           tenderdashStatusResponse.json(),
           tenderdashNetInfoResponse.json(),
           tenderdashAbciInfoResponse.json(),
