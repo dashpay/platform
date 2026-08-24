@@ -1722,6 +1722,85 @@ mod tests {
         );
     }
 
+    /// The heart of the fix, exercised end-to-end through the exported
+    /// estimator: the version is resolved from the manager handle's
+    /// network-tracked `sdk.version()`, so managers pinned to protocol 13
+    /// and protocol 14 quote different fees through the SAME entry point.
+    /// Reverting the lookup to `PlatformVersion::latest()` fails the
+    /// protocol-13 half of this test.
+    #[test]
+    fn estimate_fee_resolves_version_through_manager_handle() {
+        unsafe extern "C" fn begin_changeset(
+            _context: *mut std::os::raw::c_void,
+            _wallet_id: *const u8,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn end_changeset(
+            _context: *mut std::os::raw::c_void,
+            _wallet_id: *const u8,
+            _success: bool,
+        ) -> i32 {
+            0
+        }
+
+        for (protocol_version, expected_transfer_fee) in
+            [(13u32, 162_851_200u64), (14, 114_140_000)]
+        {
+            let version = dpp::version::PlatformVersion::get(protocol_version)
+                .expect("protocol version must exist");
+            let sdk = dash_sdk::SdkBuilder::new_mock()
+                .with_version(version)
+                .build()
+                .expect("mock sdk");
+
+            let persistence = crate::persistence::PersistenceCallbacks {
+                on_changeset_begin_fn: Some(begin_changeset),
+                on_changeset_end_fn: Some(end_changeset),
+                ..Default::default()
+            };
+            let events = crate::event_handler::EventHandlerCallbacks {
+                context: std::ptr::null_mut(),
+                on_wallet_event_fn: None,
+                on_error_fn: None,
+                on_platform_address_sync_completed_fn: None,
+                on_shielded_sync_completed_fn: None,
+                on_shielded_sync_progress_fn: None,
+                on_shielded_tree_progress_fn: None,
+                release_fn: None,
+            };
+            let mut handle: Handle = 0;
+            let create = unsafe {
+                crate::manager::platform_wallet_manager_create(
+                    &sdk as *const dash_sdk::Sdk as *const std::os::raw::c_void,
+                    &persistence,
+                    &events,
+                    &mut handle,
+                )
+            };
+            assert_eq!(
+                create.code,
+                PlatformWalletFFIResultCode::Success,
+                "manager create must succeed at protocol {protocol_version}"
+            );
+
+            let mut fee: u64 = 0;
+            let result = unsafe { platform_wallet_shielded_estimate_fee(handle, 0, 2, &mut fee) };
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::Success,
+                "estimate must succeed at protocol {protocol_version}"
+            );
+            assert_eq!(
+                fee, expected_transfer_fee,
+                "2-action transfer fee quoted through a protocol-{protocol_version} manager"
+            );
+
+            let destroy = unsafe { crate::manager::platform_wallet_manager_destroy(handle) };
+            assert_eq!(destroy.code, PlatformWalletFFIResultCode::Success);
+        }
+    }
+
     #[test]
     fn estimate_fee_rejects_unknown_kind() {
         unsafe {
