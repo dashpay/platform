@@ -113,6 +113,26 @@ final class PlatformWalletShutdownTests: XCTestCase {
         XCTAssertTrue(again.steps.isEmpty)
     }
 
+    /// A no-op before configuration must not occupy the idempotency slot: if
+    /// the same manager is configured later, its live handle still tears down.
+    func testShutdownBeforeConfigurationDoesNotSuppressLaterTeardown() async {
+        let recorder = TeardownRecorder()
+        let manager = PlatformWalletManager()
+
+        let noOp = await manager.shutdown()
+        XCTAssertTrue(noOp.steps.isEmpty)
+
+        manager.configureForTesting(handle: 17) { handle in
+            recorder.record(handle: handle)
+            return Self.makeMetrics()
+        }
+
+        let metrics = await manager.shutdown()
+        XCTAssertEqual(recorder.count, 1)
+        XCTAssertEqual(recorder.recordedHandles, [17])
+        XCTAssertEqual(metrics.steps.map(\.name), ["destroy"])
+    }
+
     // MARK: - Caller cancellation
 
     /// Cancelling the calling task does not interrupt the native teardown:

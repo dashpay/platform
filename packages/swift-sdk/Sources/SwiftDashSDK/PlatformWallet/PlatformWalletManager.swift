@@ -311,10 +311,11 @@ public class PlatformWalletManager: ObservableObject {
     private var progressPollTask: Task<Void, Never>?
 
     /// The single in-flight (or completed) [`shutdown()`] operation. Set
-    /// exactly once by the first `shutdown()` caller; later callers await the
-    /// same task and receive the same metrics. MainActor isolation serializes
-    /// the check-and-set (no suspension point between them), so no lock is
-    /// needed.
+    /// exactly once by the first caller that takes a live handle; later
+    /// callers await the same task and receive the same metrics. MainActor
+    /// isolation serializes the check-and-set (no suspension point between
+    /// them), so no lock is needed. A shutdown before configuration remains
+    /// an uncached no-op because the manager can still be configured later.
     private var shutdownTask: Task<PlatformWalletShutdownMetrics, Never>?
 
     /// Test seam: replaces [`performNativeTeardown(_:)`] when set. Internal,
@@ -408,11 +409,12 @@ public class PlatformWalletManager: ObservableObject {
         }
         guard handle != NULL_HANDLE else {
             // Never configured (or a test double without a handle): nothing
-            // to tear down. Record the no-op so repeat callers stay uniform;
-            // the empty `steps` marks it (no thread claim — no teardown ran).
-            let task = Task { PlatformWalletShutdownMetrics(steps: [], totalMilliseconds: 0, ranOffMainThread: false) }
-            shutdownTask = task
-            return await task.value
+            // to tear down. Do not cache this no-op: a manager may still be
+            // configured later, and that live handle must then be torn down.
+            return PlatformWalletShutdownMetrics(
+                steps: [],
+                totalMilliseconds: 0,
+                ranOffMainThread: false)
         }
 
         // Take-once: from this point every FFI entry gated on
@@ -505,10 +507,20 @@ public class PlatformWalletManager: ObservableObject {
         teardown: @escaping @Sendable (Handle) -> PlatformWalletShutdownMetrics
     ) -> PlatformWalletManager {
         let manager = PlatformWalletManager()
-        manager.handle = handle
-        manager.isConfigured = true
-        manager.nativeTeardownOverride = teardown
+        manager.configureForTesting(handle: handle, teardown: teardown)
         return manager
+    }
+
+    /// Test-only equivalent of a successful native configuration. Keeping it
+    /// separate from the factory lets tests cover shutdown-before-configure.
+    func configureForTesting(
+        handle: Handle,
+        teardown: @escaping @Sendable (Handle) -> PlatformWalletShutdownMetrics
+    ) {
+        precondition(handle != NULL_HANDLE)
+        self.handle = handle
+        isConfigured = true
+        nativeTeardownOverride = teardown
     }
 
     // MARK: - Configuration
