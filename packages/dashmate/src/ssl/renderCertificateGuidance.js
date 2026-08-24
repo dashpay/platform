@@ -1,6 +1,7 @@
 import { SSL_PROVIDERS } from '../constants.js';
 import renderConfigFlag from '../util/renderConfigFlag.js';
 import { CERTIFICATE_REASONS, requiresReplacement } from './checkGatewayCertificateFactory.js';
+import { describeRenewalFailure } from './renewalFailure.js';
 
 /**
  * @param {Object} verdict
@@ -82,7 +83,15 @@ function renderObservation(verdict) {
  *
  * @return {string}
  */
-function renderZeroSslExplanation() {
+function renderZeroSslExplanation(renewal) {
+  // Once ZeroSSL has actually said so, this stops being background about how
+  // the free tier works and becomes what happened to this node.
+  if (renewal?.code === 'QUOTA_EXHAUSTED') {
+    return `  This node uses ZeroSSL, and its free account has used all three of its
+  certificates - so ZeroSSL will not issue another one.
+`;
+  }
+
   return `  This node uses ZeroSSL. A free ZeroSSL account allows three certificates in
   total, so renewals stop working after about 270 days.
 `;
@@ -133,7 +142,16 @@ function renderSwitchIncompleteGuidance(config, cfg) {
  * @param {string} cfg
  * @return {string}
  */
-function renderLetsEncryptDiagnosis(cfg) {
+function renderLetsEncryptDiagnosis(cfg, renewal) {
+  // Only a guess while nothing recorded what happened. With a record there is
+  // no reason to name a likely cause, and no reason to send an operator to a
+  // log stream that a container recreation may already have discarded.
+  if (renewal) {
+    return `  This node already uses Let's Encrypt, so there is no provider to switch to.
+  Renewal is failing: ${describeRenewalFailure(renewal.code).sentence}.
+`;
+  }
+
   return `  This node already uses Let's Encrypt, so there is no provider to switch to.
   Inbound port 80 is the most common cause. Check the renewal logs:
 
@@ -202,6 +220,8 @@ function renderFix(cfg, isAlreadyLetsEncrypt, verdict) {
  *   determined, in which case nothing is said about the node's state
  * @param {boolean} [options.obtainAttemptFailed] - an obtain was run and threw
  * @param {{ok: boolean, failed: number, total: number}|null} options.pull
+ * @param {Object|null} [options.renewal] - the recorded renewal failure, when
+ *   one applies to the certificate this node is using
  * @return {string}
  */
 export default function renderCertificateGuidance({
@@ -210,6 +230,7 @@ export default function renderCertificateGuidance({
   isNodeRunning,
   pull,
   obtainAttemptFailed = false,
+  renewal = null,
 }) {
   const cfg = renderConfigFlag(config.getName());
   const provider = config.get('platform.gateway.ssl.provider');
@@ -256,11 +277,11 @@ ${obtainAttemptFailed
     blocks.push(renderSwitchIncompleteGuidance(config, cfg));
   } else {
     if (provider === SSL_PROVIDERS.ZEROSSL) {
-      blocks.push(renderZeroSslExplanation());
+      blocks.push(renderZeroSslExplanation(renewal));
     }
 
     if (provider === SSL_PROVIDERS.LETSENCRYPT) {
-      blocks.push(renderLetsEncryptDiagnosis(cfg));
+      blocks.push(renderLetsEncryptDiagnosis(cfg, renewal));
     }
 
     if (hasReason(verdict, CERTIFICATE_REASONS.NO_EXTERNAL_IP)) {

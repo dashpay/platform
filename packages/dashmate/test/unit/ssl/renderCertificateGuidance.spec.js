@@ -516,4 +516,55 @@ describe('renderCertificateGuidance', () => {
     expect(output).to.contain('dashmate update --config base --skip-certificate-check');
     expect(output).to.contain('--skip-certificate-check');
   });
+
+  describe('when a renewal failure was recorded', () => {
+    it('should name the cause instead of the most likely one', () => {
+      // The guess was honest while nothing recorded what happened. It is not
+      // honest once something did - and half the nodes measured in this state
+      // had port 80 demonstrably open.
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+      const output = render({
+        verdict: verdict({ provider: 'letsencrypt' }),
+        renewal: { code: 'PORT_80_WRONG_RESPONDER' },
+      });
+
+      expect(output).to.contain("something answered on port 80, but not this node's certificate check");
+      expect(output).to.not.contain('most common cause');
+      // No log stream to interpret, and a container recreation during an
+      // update may already have discarded it anyway.
+      expect(output).to.not.contain('dashmate logs');
+    });
+
+    it('should state the ZeroSSL limit as what happened once ZeroSSL has said so', () => {
+      const output = render({
+        verdict: verdict({ provider: 'zerossl' }),
+        renewal: { code: 'QUOTA_EXHAUSTED' },
+      });
+
+      expect(output).to.contain('ZeroSSL will not issue another one');
+    });
+
+    it('should keep the existing text when nothing was recorded', () => {
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+      const output = render({ verdict: verdict({ provider: 'letsencrypt' }) });
+
+      expect(output).to.contain('Inbound port 80 is the most common cause');
+      expect(output).to.contain('dashmate logs');
+    });
+
+    it('should never render the excerpt the helper stored', () => {
+      // Nothing on this path masks the operator's identity the way a collected
+      // report does, so only the cause crosses over.
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+      const output = render({
+        verdict: verdict({ provider: 'letsencrypt' }),
+        renewal: { code: 'PORT_80_UNREACHABLE', detail: 'SHOULD-NOT-APPEAR' },
+      });
+
+      expect(output).to.not.contain('SHOULD-NOT-APPEAR');
+    });
+  });
 });

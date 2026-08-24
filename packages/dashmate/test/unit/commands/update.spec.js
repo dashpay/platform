@@ -14,6 +14,7 @@ describe('Update command', () => {
   let mockDockerStream;
   let mockDockerResponse;
   let dockerCompose;
+  let homeDir;
   let stderr;
   let exitCode;
 
@@ -67,11 +68,17 @@ describe('Update command', () => {
       checkGatewayCertificate,
       gatewayCertificateTask,
       dockerCompose,
+      homeDir,
     );
   }
 
   beforeEach(function it() {
-    const getBaseConfig = getBaseConfigFactory(HomeDir.createTemp());
+    // The command reads the recorded renewal outcome from here, so it needs a
+    // real directory rather than a stub - an absent record is a state the
+    // guidance handles, and it is the one these tests are in.
+    homeDir = HomeDir.createTemp();
+
+    const getBaseConfig = getBaseConfigFactory(homeDir);
 
     config = getBaseConfig();
     config.set('network', 'mainnet');
