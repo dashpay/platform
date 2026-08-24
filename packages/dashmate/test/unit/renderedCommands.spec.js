@@ -68,6 +68,11 @@ const RESTART_ADVICE_ALLOWED = {
     + 'served, and only the gateway has not picked it up - re-reading the files is the entire '
     + 'remedy; and the incomplete-chain case, where the operator edits the bundle by hand and '
     + 'nothing else signals the gateway afterwards',
+  'src/ssl/renderCertificateGuidance.js':
+    'the interrupted switch, and only that state: the pair lego installed is already on disk and '
+    + 'is the sole reason on the verdict, so every other check passed on it - saving the provider '
+    + 'setting leaves a running gateway serving the older certificate, and the interactive repair '
+    + 'signals it for exactly this reason',
 };
 
 const PRE_EXISTING_BARE_COMMANDS = [

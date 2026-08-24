@@ -828,6 +828,25 @@ describe('gatewayCertificateTaskFactory', () => {
 
       expect(errors[0].message).to.contain('docker daemon is unreachable');
     });
+
+    // By the time the signal is sent the new pair is already on disk, so the
+    // bare signalling error reads as though the certificate work failed. It did
+    // not, and the recovery is different: load what is already installed.
+    it('should say the certificate is installed but not loaded', async function it() {
+      dockerCompose.execCommand.rejects(new Error('docker daemon is unreachable'));
+
+      let checked = 0;
+      const { errors } = await run.call(this, {
+        checkGatewayCertificate: () => {
+          checked += 1;
+          return checked === 1 ? invalid() : verdict();
+        },
+        answers: [true],
+      });
+
+      expect(errors[0].message).to.contain('installed, but the gateway could not be signalled');
+      expect(errors[0].message).to.contain('dashmate restart --config base --platform');
+    });
   });
 
   describe('the bypass suppresses enforcement, never the check', () => {

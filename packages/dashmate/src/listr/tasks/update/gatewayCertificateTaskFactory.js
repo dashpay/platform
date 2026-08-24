@@ -190,7 +190,14 @@ export default function gatewayCertificateTaskFactory(
       await dockerCompose.execCommand(config, 'gateway', 'kill -SIGHUP 1');
     } catch (e) {
       if (!(e instanceof ServiceIsNotRunningError)) {
-        throw e;
+        // The files are already in place by the time this runs, so the raw
+        // signalling error on its own reads as though the certificate work
+        // failed. It did not: what is installed is good and the running gateway
+        // simply has not been told, which is a different thing to recover from.
+        throw new Error(`The certificate is installed, but the gateway could not be signalled`
+          + ` to load it: ${e.message}\n`
+          + 'The node keeps serving the certificate it had until it is loaded:\n'
+          + `    dashmate restart ${renderConfigFlag(config.getName())} --platform`);
       }
     }
   }

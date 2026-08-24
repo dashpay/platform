@@ -203,7 +203,7 @@ another dashmate config, a reverse proxy, or a second node. Find what is
 listening there first.
 
 If this node's gateway is answering and the address is simply wrong:
-{bold.cyanBright dashmate ssl obtain ${cfg} --force}`,
+{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt --force}`,
         SEVERITY.HIGH,
       ));
 
@@ -261,7 +261,7 @@ restarting will not help. Get a current one:
         + 'Clients cannot connect to it',
         chalk`Renewal has not succeeded. Check the logs, then obtain a new certificate:
 {bold.cyanBright dashmate logs ${cfg} dashmate_helper}
-{bold.cyanBright dashmate ssl obtain ${cfg}${installedForce}}`,
+{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${installedForce}}`,
         SEVERITY.HIGH,
       ));
     } else if (onDiskDiffers) {
@@ -294,9 +294,14 @@ replacement, so do not restart to load it. Get a current one instead:
       problems.push(new Problem(
         'The certificate this node is serving is not trusted by ordinary clients:'
         + ` ${describe(TRUST_FAILURES, served.chainError)}`,
-        chalk`Standard clients will reject this node. If the chain is incomplete, make sure
-the bundle contains the issuing certificates as well as the server one.
-${restartHint(cfg)}`,
+        chalk`Standard clients will reject this node.
+
+If the bundle is missing the certificates that vouch for the server one, add them.
+${restartHint(cfg)}
+
+If the bundle is already complete, the authority that issued it is not one clients
+trust, and no restart changes that. Get a publicly trusted certificate:
+{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt}`,
         SEVERITY.HIGH,
       ));
     }

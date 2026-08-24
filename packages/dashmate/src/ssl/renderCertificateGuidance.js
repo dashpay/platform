@@ -10,6 +10,22 @@ import { CERTIFICATE_REASONS, requiresReplacement } from './checkGatewayCertific
 const hasReason = (verdict, code) => verdict.reasons.some((reason) => reason.code === code);
 
 /**
+ * Faults in the files themselves. The gateway is handed the pair as-is, so any
+ * of these stops it loading - `saveCertificateTask` refuses to leave such a
+ * pair behind for exactly this reason. Everything else (expiry, a wrong
+ * address, a self-signed authority) is a certificate clients reject, on a
+ * gateway that starts and serves it perfectly well.
+ */
+const GATEWAY_CANNOT_LOAD = [
+  CERTIFICATE_REASONS.BUNDLE_MISSING,
+  CERTIFICATE_REASONS.BUNDLE_UNREADABLE,
+  CERTIFICATE_REASONS.BUNDLE_ORDER,
+  CERTIFICATE_REASONS.KEY_MISSING,
+  CERTIFICATE_REASONS.KEY_UNUSABLE,
+  CERTIFICATE_REASONS.KEY_MISMATCH,
+];
+
+/**
  * How the run went for the images, said only as far as it was observed.
  *
  * A registry outage plus a bad certificate must not report that patches were
@@ -97,9 +113,11 @@ function renderPortEightyPermanence() {
  */
 function renderSwitchIncompleteGuidance(config, cfg) {
   return `  A Let's Encrypt certificate is installed, but the configuration still says
-  ${config.get('platform.gateway.ssl.provider')}. Nothing needs to be obtained - finish the switch:
+  ${config.get('platform.gateway.ssl.provider')}. Nothing needs to be obtained - save the setting,
+  then load the certificate that is already there:
 
       dashmate config set ${cfg} platform.gateway.ssl.provider letsencrypt
+      dashmate restart ${cfg} --platform
 `;
 }
 
@@ -219,7 +237,16 @@ ${obtainAttemptFailed
   // and telling an operator their running node is stopped is worse than
   // saying nothing.
   if (isNodeRunning === false) {
-    blocks.push(`  Your node is stopped. The certificate does not prevent it starting:
+    // Only when the files themselves are sound. Telling an operator to start a
+    // node whose gateway cannot load the pair sends them to a command that
+    // fails, at the moment they are already dealing with a broken certificate.
+    const cannotLoad = verdict.reasons.some(({ code }) => GATEWAY_CANNOT_LOAD.includes(code));
+
+    blocks.push(cannotLoad
+      ? `  Your node is stopped, and the gateway cannot start until the certificate
+  files are repaired.
+`
+      : `  Your node is stopped. The certificate does not prevent it starting:
 
       dashmate start ${cfg}
 `);

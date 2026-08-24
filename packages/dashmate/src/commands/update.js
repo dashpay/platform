@@ -202,7 +202,9 @@ export default class UpdateCommand extends ConfigBaseCommand {
     // machine might want about the certificate goes to stderr as one line.
     if (format === OUTPUT_FORMATS.JSON && context.certificate) {
       writeDiagnostics(context.certificate, config, {
-        skipped: context.certificateSkipped === true,
+        // Not `skipped`: that name belongs to the verdict's list of checks that
+        // could not run, and an extra field of the same name overwrites it.
+        enforcementSkipped: context.certificateSkipped === true,
         pull: this.pullResult ?? null,
       });
     }

@@ -177,6 +177,18 @@ describe('analyseGatewayCertificateFactory', () => {
     expect(problems[0].getSeverity()).to.equal(SEVERITY.HIGH);
   });
 
+  // A restart re-reads the same bundle, so where the chain is already complete
+  // and simply signed by an authority clients do not trust, it changes nothing
+  // and the operator is left with no way forward.
+  it('should offer a trusted certificate, not only a restart, for an untrusted chain', () => {
+    const [problem] = analyse(served({
+      chainVerified: false,
+      chainError: 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+    }));
+
+    expect(problem.getSolution()).to.include('dashmate ssl obtain --config base --provider letsencrypt');
+  });
+
   it('should report an untrusted certificate separately from expiry', () => {
     const problems = analyse(served({
       chainVerified: false,
@@ -452,7 +464,11 @@ describe('analyseGatewayCertificateFactory', () => {
       const [problem] = analyse(hijacked());
 
       expect(problem.getSolution()).to.contain('If this node\'s gateway is answering');
-      expect(problem.getSolution()).to.contain('dashmate ssl obtain --config base --force');
+      // The provider is named because obtain otherwise falls back to the
+      // configured one - which on a ZeroSSL node retries the free-tier wall
+      // that caused the outage, and on a file node is refused outright.
+      expect(problem.getSolution())
+        .to.contain('dashmate ssl obtain --config base --provider letsencrypt --force');
     });
   });
 

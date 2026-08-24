@@ -430,6 +430,51 @@ describe('renderCertificateGuidance', () => {
     expect(output).to.not.contain('To fix it, switch to');
   });
 
+  // The gateway is handed the pair as-is, so a fault in the files themselves
+  // stops it loading them. Telling an operator to start such a node sends them
+  // to a command that fails while they are already dealing with a certificate.
+  it('should not promise a stopped node will start when the files are unusable', () => {
+    const output = render({
+      isNodeRunning: false,
+      verdict: verdict({
+        reasons: [{
+          code: CERTIFICATE_REASONS.KEY_MISMATCH,
+          message: 'The certificate and private key do not match',
+        }],
+      }),
+    });
+
+    expect(output).to.not.contain('does not prevent it starting');
+    expect(output).to.contain('cannot start until the certificate');
+  });
+
+  it('should still offer to start a stopped node the files cannot stop', () => {
+    const output = render({
+      isNodeRunning: false,
+      verdict: verdict({
+        reasons: [{ code: CERTIFICATE_REASONS.EXPIRED, message: 'expired' }],
+      }),
+    });
+
+    expect(output).to.contain('does not prevent it starting');
+  });
+
+  // Saving the provider leaves a running gateway on the certificate it already
+  // had; the interactive repair signals it for exactly this reason, so the
+  // printed one has to say so too or the node never picks the pair up.
+  it('should load the certificate after finishing an interrupted switch', () => {
+    const output = render({
+      verdict: verdict({
+        reasons: [{
+          code: CERTIFICATE_REASONS.SWITCH_INCOMPLETE,
+          message: 'A switch was interrupted before it finished',
+        }],
+      }),
+    });
+
+    expect(output).to.contain('dashmate restart --config base --platform');
+  });
+
   // lego installed this certificate and only the saved provider still
   // disagrees, so the certificate itself is sound. Opening with the flat claim
   // that it is not valid sends an operator hunting a problem that is not there.

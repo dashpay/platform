@@ -192,6 +192,27 @@ describe('Update command', () => {
       expect(stderr).to.contain('service list is broken');
     });
 
+    // The bypass flag and the verdict's list of checks that could not run are
+    // two different things. Merging them under one name meant a machine reading
+    // the line was told nothing was skipped on a node where the decisive
+    // identity check never ran.
+    it('should not let the bypass flag overwrite the skipped checks', async () => {
+      const verdict = { ...invalidVerdict(), status: 'CHECKS_PASSED', reasons: [], skipped: ['IDENTITY'] };
+
+      await runUpdate({
+        flags: { format: 'json' },
+        checkGatewayCertificate: () => verdict,
+        gatewayCertificateTask: () => async (ctx) => {
+          ctx.certificate = verdict;
+          ctx.certificateSkipped = true;
+        },
+      });
+
+      const line = stderr.split('\n').find((l) => l.trim().startsWith('{'));
+
+      expect(JSON.parse(line).skipped).to.deep.equal(['IDENTITY']);
+    });
+
     // The renderer can only tell the truth about a failed attempt if the
     // command actually tells it one happened, so the wiring is pinned here
     // rather than left to the renderer's own tests.
