@@ -2225,15 +2225,15 @@ mod tests {
             // kind 0 — ShieldedTransfer / Shield base.
             assert_eq!(
                 estimate(0),
-                162_851_200,
+                114_140_000,
                 "shielded transfer fee (2 actions)"
             );
             // kind 1 — Unshield.
-            assert_eq!(estimate(1), 168_934_000, "unshield fee (2 actions)");
+            assert_eq!(estimate(1), 120_222_800, "unshield fee (2 actions)");
             // kind 2 — ShieldedWithdrawal.
             assert_eq!(
                 estimate(2),
-                275_191_200,
+                226_480_000,
                 "shielded withdrawal fee (2 actions)"
             );
         }

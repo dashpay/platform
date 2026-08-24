@@ -27,6 +27,8 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     withdrawal_transactions_per_block_limit: 4,
     retry_signing_expired_withdrawal_documents_per_block_limit: 1,
     max_withdrawal_amount: 50_000_000_000_000, //500 Dash
+    daily_withdrawal_limit_percent: None,      // relative daily withdrawal limit arrives in v14
+    max_daily_withdrawal_amount: None,
     // = dpp MIN_WITHDRAWAL_AMOUNT: ASSET_UNLOCK_TX_SIZE(190) * MIN_CORE_FEE_PER_BYTE(1)
     // * CREDITS_PER_DUFF(1000) = 190_000 credits = 190 duffs.
     min_withdrawal_amount: 190_000,

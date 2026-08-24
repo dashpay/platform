@@ -12,6 +12,7 @@ export const ERRORS = {
   CERTIFICATE_EXPIRES_SOON: 'CERTIFICATE_EXPIRES_SOON',
   CERTIFICATE_IP_MISMATCH: 'CERTIFICATE_IP_MISMATCH',
   CERTIFICATE_NOT_VALID: 'CERTIFICATE_NOT_VALID',
+  CERTIFICATE_NOT_INSTALLED: 'CERTIFICATE_NOT_INSTALLED',
 };
 
 /**
@@ -129,6 +130,16 @@ export default function validateLetsEncryptCertificateFactory(homeDir) {
     if (data.isExpiresSoon) {
       return {
         error: ERRORS.CERTIFICATE_EXPIRES_SOON,
+        data,
+      };
+    }
+
+    // The certificate is valid, but the gateway loads its own copy rather than the issued
+    // file. Until the two match the node keeps serving whatever was installed last, which
+    // stays invisible to every check that only looks at the issued certificate.
+    if (!data.isCertificatePairInstalled) {
+      return {
+        error: ERRORS.CERTIFICATE_NOT_INSTALLED,
         data,
       };
     }

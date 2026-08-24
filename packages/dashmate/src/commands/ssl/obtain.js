@@ -1,5 +1,6 @@
 import { Listr } from 'listr2';
 import { Flags } from '@oclif/core';
+import ServiceIsNotRunningError from '../../docker/errors/ServiceIsNotRunningError.js';
 import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
 import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
 import Certificate from '../../ssl/zerossl/Certificate.js';
@@ -40,6 +41,7 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
    * @param {obtainLetsEncryptCertificateTask} obtainLetsEncryptCertificateTask
    * @param {ConfigFileJsonRepository} configFileRepository
    * @param {ConfigFile} configFile
+   * @param {DockerCompose} dockerCompose
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -56,6 +58,7 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
     obtainLetsEncryptCertificateTask,
     configFileRepository,
     configFile,
+    dockerCompose,
   ) {
     const provider = providerFlag || config.get('platform.gateway.ssl.provider');
 
@@ -87,6 +90,37 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
         {
           title: taskTitle,
           task: () => task(config, taskOptions),
+        },
+        {
+          // Envoy reads the certificate files once at startup, so a gateway that
+          // is already up keeps serving the previous certificate until it is
+          // told to reload. Without this the command reports success while
+          // nothing changes on the wire.
+          //
+          // This runs whenever the gateway is up, including when the obtain
+          // wrote no new files: providers install the pair by different routes,
+          // and nothing on disk reveals which certificate Envoy currently
+          // holds, so an obtain that skipped the write is also how an operator
+          // retries a reload that failed earlier.
+          //
+          // The gateway is signalled without asking first whether it is running.
+          // execCommand makes that check itself, and asking separately leaves a
+          // gap in which the answer can change - the certificate has already
+          // been obtained by then, so failing there would report the whole
+          // command as failed and send the operator back to a provider that may
+          // have nothing left to issue.
+          title: 'Reload gateway',
+          task: async (ctx, listrTask) => {
+            try {
+              await dockerCompose.execCommand(config, 'gateway', 'kill -SIGHUP 1');
+            } catch (e) {
+              if (!(e instanceof ServiceIsNotRunningError)) {
+                throw e;
+              }
+
+              listrTask.skip('Gateway is not running');
+            }
+          },
         },
       ],
       {

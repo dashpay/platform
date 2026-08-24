@@ -127,9 +127,13 @@ rs-dapi-client: &dapi_client
 platform-encryption: &platform_encryption
   - packages/rs-platform-encryption/**
 
+dash-platform-queries: &platform_queries
+  - packages/dash-platform-queries/**
+
 dash-sdk: &sdk
   - packages/rs-drive-proof-verifier/**
   - packages/rs-sdk/**
+  - *platform_queries
   - *dash_async
   - *context_provider
   - *sdk_trusted_context_provider

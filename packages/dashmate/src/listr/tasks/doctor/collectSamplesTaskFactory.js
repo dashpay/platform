@@ -7,6 +7,8 @@ import obfuscateConfig from '../../../config/obfuscateConfig.js';
 import { DASHMATE_VERSION } from '../../../constants.js';
 import LegoCertificate from '../../../ssl/letsencrypt/LegoCertificate.js';
 import Certificate from '../../../ssl/zerossl/Certificate.js';
+import probeServedCertificate, { STATE as PROBE_STATE } from '../../../ssl/probeServedCertificate.js';
+import readCertificateBundle from '../../../ssl/readCertificateBundle.js';
 import providers from '../../../status/providers.js';
 import hideString from '../../../util/hideString.js';
 import obfuscateObjectRecursive from '../../../util/obfuscateObjectRecursive.js';
@@ -105,7 +107,10 @@ export default function collectSamplesTaskFactory(
                       const {
                         error,
                         data,
-                      } = validateZeroSslCertificate(config, Certificate.EXPIRATION_LIMIT_DAYS);
+                      } = await validateZeroSslCertificate(
+                        config,
+                        Certificate.EXPIRATION_LIMIT_DAYS,
+                      );
 
                       obfuscateObjectRecursive(data, (_field, value) => (typeof value === 'string' ? value.replaceAll(
                         process.env.USER,
@@ -185,6 +190,65 @@ export default function collectSamplesTaskFactory(
                     default:
                       throw new Error('Unknown SSL provider');
                   }
+                },
+              },
+              {
+                // Every other certificate check reads a file or the provider's API, so a
+                // certificate that was renewed on disk but never reached the gateway looks
+                // healthy to all of them. This connects to the gateway and records what it
+                // actually serves. Doctor is run by an operator on the node, so the gateway's
+                // listener is reached at the address it is published on.
+                enabled: () => config.get('platform.enable')
+                  && config.get('platform.gateway.ssl.provider') !== 'self-signed',
+                title: 'Gateway served certificate',
+                task: async () => {
+                  const listenerHost = config.get('platform.gateway.listeners.dapiAndDrive.host');
+                  const port = config.get('platform.gateway.listeners.dapiAndDrive.port');
+
+                  const result = await probeServedCertificate({
+                    host: listenerHost === '0.0.0.0' ? '127.0.0.1' : listenerHost,
+                    port,
+                    externalIp: config.get('externalIp'),
+                  });
+
+                  result.port = port;
+
+                  if (result.state === PROBE_STATE.SERVED) {
+                    // Read beside the probe rather than at analysis time: renewal replaces the
+                    // file and signals the gateway moments apart, and the rest of the sample
+                    // collection takes long enough that the two would routinely be read from
+                    // either side of a renewal and reported as a mismatch.
+                    const onDisk = readCertificateBundle(path.join(
+                      homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl'),
+                      'bundle.crt',
+                    ));
+
+                    result.onDisk = onDisk && {
+                      fingerprint256: onDisk.fingerprint256,
+                      validTo: onDisk.validTo.toUTCString(),
+                    };
+
+                    result.matchesOnDisk = onDisk
+                      ? onDisk.fingerprint256 === result.certificate.fingerprint256
+                      : null;
+                  }
+
+                  ctx.samples.setServiceInfo('gateway', 'servedCertificate', result);
+                },
+              },
+              {
+                // Both obtainable providers reach this node on port 80 to prove it controls
+                // its address before issuing: Let's Encrypt over ACME, ZeroSSL over its own
+                // verification server. A self-signed or operator-supplied certificate is
+                // never validated, so the port means nothing for those.
+                enabled: () => config.get('platform.enable')
+                  && ['zerossl', 'letsencrypt'].includes(config.get('platform.gateway.ssl.provider')),
+                title: 'Certificate validation port',
+                task: async () => {
+                  const response = await providers.mnowatch.checkPortStatus(80, config.get('externalIp'))
+                    .catch((e) => e.toString());
+
+                  ctx.samples.setServiceInfo('gateway', 'validationHttpPort', response);
                 },
               },
               {
@@ -311,7 +375,7 @@ export default function collectSamplesTaskFactory(
 
               const url = `http://${config.get('platform.drive.tenderdash.rpc.host')}:${config.get('platform.drive.tenderdash.rpc.port')}/metrics`;
 
-              const result = fetchTextOrError(url);
+              const result = await fetchTextOrError(url);
 
               ctx.samples.setServiceInfo('drive_tenderdash', 'metrics', result);
             }
@@ -322,7 +386,7 @@ export default function collectSamplesTaskFactory(
 
               const url = `http://${config.get('platform.drive.abci.metrics.host')}:${config.get('platform.drive.abci.metrics.port')}/metrics`;
 
-              const result = fetchTextOrError(url);
+              const result = await fetchTextOrError(url);
 
               ctx.samples.setServiceInfo('drive_abci', 'metrics', result);
             }
@@ -333,7 +397,7 @@ export default function collectSamplesTaskFactory(
 
               const url = `http://${config.get('platform.gateway.metrics.host')}:${config.get('platform.gateway.metrics.port')}/metrics`;
 
-              const result = fetchTextOrError(url);
+              const result = await fetchTextOrError(url);
 
               ctx.samples.setServiceInfo('gateway', 'metrics', result);
             }
