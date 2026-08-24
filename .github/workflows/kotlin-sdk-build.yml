@@ -55,7 +55,7 @@ jobs:
           set -euo pipefail
 
           MISSING=()
-          for pkg in build-essential cmake curl jq libgmp-dev libssl-dev pkg-config python3 unzip zip; do
+          for pkg in build-essential cmake curl jq libgmp-dev libpulse0 libssl-dev libx11-xcb1 pkg-config python3 unzip zip; do
             dpkg -s "$pkg" >/dev/null 2>&1 || MISSING+=("$pkg")
           done
           if [ ${#MISSING[@]} -gt 0 ]; then
