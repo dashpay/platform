@@ -254,16 +254,32 @@ describe('getPlatformScopeFactory', () => {
       expect(scope.tenderdash.desiredProtocolVersion).to.equal(4);
     });
 
-    it('should fall back to node_info app version when consensus params app_version is not numeric', async () => {
+    it('should fall back to node_info app version when consensus params app_version is not a plain integer', async () => {
+      // '3.5' would parseInt to 3 and mask the fallback; it must be rejected
+      // whole. node_info is 2 here so a leaked prefix-parse (3) fails the test.
       mockHealthyPlatform({
-        nodeInfoApp: '3',
+        nodeInfoApp: '2',
         abciAppVersion: 4,
-        consensusParams: { consensus_params: { version: { app_version: 'not-a-number' } } },
+        consensusParams: { consensus_params: { version: { app_version: '3.5' } } },
       });
 
       const scope = await getPlatformScope(config);
 
-      expect(scope.tenderdash.protocolVersion).to.equal(3);
+      expect(scope.tenderdash.protocolVersion).to.equal(2);
+      expect(scope.tenderdash.desiredProtocolVersion).to.equal(4);
+    });
+
+    it('should fall back to node_info app version when consensus params app_version is not a primitive', async () => {
+      // [3] would coerce to '3' via String(); non-primitives must be rejected.
+      mockHealthyPlatform({
+        nodeInfoApp: '2',
+        abciAppVersion: 4,
+        consensusParams: { consensus_params: { version: { app_version: [3] } } },
+      });
+
+      const scope = await getPlatformScope(config);
+
+      expect(scope.tenderdash.protocolVersion).to.equal(2);
       expect(scope.tenderdash.desiredProtocolVersion).to.equal(4);
     });
 

@@ -8,9 +8,21 @@ import ContainerIsNotPresentError from '../../docker/errors/ContainerIsNotPresen
 import ServiceIsNotRunningError from '../../docker/errors/ServiceIsNotRunningError.js';
 
 function parseProtocolVersion(protocolVersion) {
-  const parsedProtocolVersion = parseInt(protocolVersion, 10);
+  // The value is Tenderdash serializing a uint64. Accept only a primitive
+  // that is entirely a plain decimal integer: prefix parsing ('3.5' -> 3) or
+  // array coercion (['3'] -> '3') would mask the node_info fallback with a
+  // bogus active version.
+  if (typeof protocolVersion !== 'string' && typeof protocolVersion !== 'number') {
+    return null;
+  }
 
-  return Number.isNaN(parsedProtocolVersion) ? null : parsedProtocolVersion;
+  if (!/^\d+$/.test(String(protocolVersion).trim())) {
+    return null;
+  }
+
+  const parsedProtocolVersion = Number(protocolVersion);
+
+  return Number.isSafeInteger(parsedProtocolVersion) ? parsedProtocolVersion : null;
 }
 
 /**
