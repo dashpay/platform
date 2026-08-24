@@ -1929,40 +1929,45 @@ mod tests {
                 "sanity: the upper bound must comfortably fund the shield ({top_msg})"
             );
 
-            // Least headroom that validation lets through to execution: below it the outcome
-            // is a clean NotEnoughFunds (or a structural-minimum rejection further down).
+            // Least headroom that EXECUTES. Success is the one monotone
+            // predicate over the whole funding range — below it the outcome
+            // is some rejection whose error class varies with the gate that
+            // fires (the input-minimum gate at tiny headroom, the structural
+            // fee minimum, then the metered-affordability rejection), so
+            // searching on any single rejection class would not converge.
             let (mut lo, mut hi) = (0u64, CEILING);
             while lo + 1 < hi {
                 let mid = lo + (hi - lo) / 2;
-                if run_at(mid, &b, pv).await.0 == Outcome::NotEnoughFunds {
-                    lo = mid;
-                } else {
+                if run_at(mid, &b, pv).await.0 == Outcome::Success {
                     hi = mid;
+                } else {
+                    lo = mid;
                 }
             }
             let admission = hi;
 
-            let (at_admission, at_msg) = run_at(admission, &b, pv).await;
             let (below, below_msg) = run_at(admission - 1, &b, pv).await;
 
             println!("shield_amount      = {}", b.shield_amount);
-            println!("admission headroom = {admission}");
-            println!("at admission       = {at_admission:?} :: {at_msg}");
+            println!("least executing    = {admission}");
             println!("just below         = {below:?} :: {below_msg}");
 
-            assert_eq!(
+            // One credit below the least headroom that executes must be a
+            // VALIDATION rejection. If it is instead the InternalError drop,
+            // validation accepted a transition execution then rejected — the
+            // mainnet-halt band is open at every funding level in the gap
+            // between the two thresholds.
+            assert_ne!(
                 below,
-                Outcome::NotEnoughFunds,
-                "just below the admission threshold must be a clean validation rejection \
-                 ({below_msg})"
+                Outcome::Internal,
+                "HALTING BAND: headroom {} is accepted by validation and dropped at \
+                 execution ({below_msg})",
+                admission - 1
             );
-            assert_eq!(
-                at_admission,
+            assert_ne!(
+                below,
                 Outcome::Success,
-                "HALTING BAND: the least headroom validation accepts ({admission}) must \
-                 execute. A different outcome means validation under-quotes execution's real \
-                 cost, and every funding level in the gap is accepted by validation and then \
-                 dropped at execution — the mainnet-halt band. Got {at_admission:?}: {at_msg}"
+                "binary search must have found the least executing headroom"
             );
         }
 
