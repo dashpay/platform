@@ -545,6 +545,33 @@ describe('renderCertificateGuidance', () => {
       expect(output).to.contain('ZeroSSL will not issue another one');
     });
 
+    it('should withhold the obtain command when the recorded cause forbids it', () => {
+      // The doctor withholds the same command for the same reason. Printing it
+      // here made the two surfaces disagree about the one thing the shared
+      // vocabulary exists to keep consistent.
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+      const output = render({
+        verdict: verdict({ provider: 'letsencrypt' }),
+        renewal: { code: 'RATE_LIMITED' },
+      });
+
+      expect(output).to.contain('temporarily refused this address');
+      expect(output).to.not.contain('ssl obtain');
+    });
+
+    it('should not invite another certificate while one is spent and unsaved', () => {
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+      const output = render({
+        verdict: verdict({ provider: 'letsencrypt' }),
+        renewal: { code: 'CERTIFICATE_ISSUED_NOT_SAVED' },
+      });
+
+      expect(output).to.contain('already spent');
+      expect(output).to.not.contain('ssl obtain');
+    });
+
     it('should keep the existing text when nothing was recorded', () => {
       config.set('platform.gateway.ssl.provider', 'letsencrypt');
 

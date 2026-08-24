@@ -828,10 +828,12 @@ describe('analyseGatewayCertificateFactory', () => {
 
       const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
 
-      expect(renewal.getDescription()).to.contain('Last renewed');
+      expect(renewal.getSolution()).to.contain('Last renewed');
       expect(renewal.getDescription()).to.not.contain('failing since');
+      expect(renewal.getSolution()).to.not.contain('failing since');
       // The counter counts scheduler wake-ups, not attempts.
       expect(renewal.getDescription()).to.not.contain('37');
+      expect(renewal.getSolution()).to.not.contain('37');
     });
 
     it('should name the cause instead of sending an operator to the logs', () => {
@@ -903,15 +905,37 @@ describe('analyseGatewayCertificateFactory', () => {
       expect(problems).to.have.lengthOf(0);
     });
 
-    it('should forbid another certificate while an issuance is spent but unaccounted for', () => {
+    it('should say a spent issuance could not be saved, and how to make room for the next one', () => {
       // That certificate counts against a weekly limit whether or not it
       // arrived, so asking again spends a second one to fix a local problem.
       installedValid();
-      renewalFailed({ code: 'CERTIFICATE_FILE_MISSING', issuanceSpentAt: new Date().toISOString() });
+      renewalFailed({
+        code: 'CERTIFICATE_ISSUED_NOT_SAVED',
+        issuanceSpentAt: new Date().toISOString(),
+      });
 
       const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
 
       expect(renewal.getSolution()).to.contain('Do not obtain another certificate yet');
+      expect(renewal.getSolution()).to.contain('free space');
+    });
+
+    it('should not answer a port 80 failure with disk advice just because an issuance was spent', () => {
+      // The spend is carried forward until a certificate arrives, so it
+      // outlives the failure that caused it. It still forbids asking again -
+      // but it does not get to describe a different failure, and it must not
+      // send an operator to check free space for a firewall problem.
+      installedValid();
+      renewalFailed({
+        code: 'PORT_80_UNREACHABLE',
+        issuanceSpentAt: new Date(Date.now() - 5 * DAY_MS).toISOString(),
+      });
+
+      const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
+
+      expect(renewal.getSolution()).to.contain('port 80');
+      expect(renewal.getSolution()).to.not.contain('free space');
+      expect(renewal.getSolution()).to.not.contain('ssl obtain');
     });
 
     it('should not invite a retry that the authority has already refused', () => {
@@ -920,7 +944,8 @@ describe('analyseGatewayCertificateFactory', () => {
 
       const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
 
-      expect(renewal.getSolution()).to.contain('Do not obtain a certificate right now');
+      expect(renewal.getSolution()).to.contain('Do not obtain a certificate now');
+      expect(renewal.getSolution()).to.contain('refused the same way');
     });
 
     it('should offer the switch, not a retry, when the provider will never issue again', () => {
@@ -960,13 +985,129 @@ describe('analyseGatewayCertificateFactory', () => {
         gatewayReloadFailedAt: new Date().toISOString(),
       });
 
-      const [reload] = analyse(served()).filter((p) => p.getDescription().includes('still using the old one'));
+      // No wire sample: the gateway is down, which is exactly when a failed
+      // signal is the only evidence there is.
+      const [reload] = analyseGatewayCertificate(samples)
+        .filter((p) => p.getDescription().includes('still using the old one'));
 
       expect(reload).to.exist();
       // Not a restart: the signal costs no outage, and a restart on a gateway
       // that could not be signalled is the expensive guess.
       expect(reload.getSolution()).to.not.contain('restart');
       expect(reload.getSolution()).to.contain('ssl obtain');
+    });
+
+    it('should not prescribe an obtain the recorded cause says will be refused, even on a broken certificate', () => {
+      // The path an operator reaches most often: certificate expired, gateway
+      // stopped for the documented upgrade. It printed one bold command and
+      // the reason it was wrong underneath it, so the command got run - and
+      // spent one of the few failed validations this node is allowed.
+      installedValid({
+        status: 'INVALID',
+        validTo: validTo(-1),
+        reasons: [{ code: 'EXPIRED', message: 'The installed certificate expired on 2026-08-20' }],
+      });
+      renewalFailed({ code: 'RATE_LIMITED' });
+
+      const [expired] = analyseGatewayCertificate(samples)
+        .filter((p) => p.getDescription().includes('expired'));
+
+      expect(expired.getSolution()).to.not.contain('ssl obtain');
+      // And the cause is read before anything else, because an operator stops
+      // at the first thing that looks runnable.
+      expect(expired.getSolution().indexOf('Renewal is failing'))
+        .to.be.below(expired.getSolution().indexOf('Last renewed'));
+    });
+
+    it('should not claim a refusal when it does not know whether anything was requested', () => {
+      installedValid();
+      renewalFailed({ code: 'RESULT_UNKNOWN' });
+
+      const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
+
+      expect(renewal.getSolution()).to.not.contain('refused');
+      expect(renewal.getSolution()).to.contain('may already have been issued');
+    });
+
+    it('should send a failure to start the check to Docker, not to the firewall', () => {
+      // Nothing reached the certificate authority, so rewriting firewall rules
+      // that were never wrong changes nothing and the operator never reaches
+      // the one place the answer lives.
+      installedValid();
+      renewalFailed({ code: 'HELPER_DID_NOT_START' });
+
+      const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
+
+      expect(renewal.getSolution()).to.not.contain('firewall');
+      expect(renewal.getSolution()).to.contain('Docker');
+    });
+
+    it('should show whatever the certificate authority actually said', () => {
+      // Already bounded, redacted and stripped, and the only account of the
+      // failure that did not come from dashmate.
+      installedValid();
+      renewalFailed({ code: 'PROVIDER_REJECTED', detail: 'acme: error: 400 :: badNonce' });
+
+      const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
+
+      expect(renewal.getSolution()).to.contain('badNonce');
+    });
+
+    it('should not tell a node one day from dark that nothing is broken yet', () => {
+      // The warning also hands back the obtain command the renewal problem
+      // deliberately withheld, which would fail on the same shut port.
+      installedValid({
+        warnings: [{ code: 'EXPIRING_SOON', message: "This node's certificate expires in 1 day" }],
+      });
+      renewalFailed();
+
+      const problems = analyse(served());
+
+      expect(problems.filter((p) => p.getSolution().includes('Nothing is broken yet')))
+        .to.have.lengthOf(0);
+    });
+
+    it('should not tell a ZeroSSL operator their certificate renews every few days', () => {
+      // True of a six-day Let's Encrypt IP certificate, false of a ninety-day
+      // ZeroSSL one.
+      config.set('platform.gateway.ssl.provider', 'zerossl');
+      installedValid();
+      renewalFailed({ provider: 'zerossl' });
+
+      const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
+
+      expect(renewal.getSolution()).to.not.contain('every few days');
+    });
+
+    it('should name the repair for a retry that never came', () => {
+      installedValid({ validFrom: new Date(Date.now() - 12 * DAY_MS).toUTCString() });
+      renewalFailed({ attemptedAt: new Date(Date.now() - 11 * DAY_MS).toISOString() });
+      samples.date = new Date(Date.now() - 10 * DAY_MS);
+
+      const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
+
+      expect(renewal.getSolution()).to.contain('dashmate start');
+    });
+
+    it('should not raise a second reload problem beside the one that carries the deadline', () => {
+      // Both fire on the same fault, and they prescribe opposite commands -
+      // one promising no outage, the other taking one.
+      installedValid();
+      samples.setServiceInfo('gateway', 'certificateRenewal', {
+        state: 'PRESENT',
+        provider: 'letsencrypt',
+        outcome: 'succeeded',
+        attemptedAt: new Date().toISOString(),
+        lastSuccessAt: new Date().toISOString(),
+        consecutiveFailures: 0,
+        issuanceSpentAt: null,
+        gatewayReloadFailedAt: new Date().toISOString(),
+      });
+
+      const problems = analyse(served({ matchesOnDisk: false }));
+
+      expect(problems.filter((p) => p.getDescription().includes('still using the old one')))
+        .to.have.lengthOf(0);
     });
 
     it('should judge the retry against when the samples were taken, not when they are read', () => {

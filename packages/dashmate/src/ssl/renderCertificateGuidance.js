@@ -1,7 +1,7 @@
 import { SSL_PROVIDERS } from '../constants.js';
 import renderConfigFlag from '../util/renderConfigFlag.js';
 import { CERTIFICATE_REASONS, requiresReplacement } from './checkGatewayCertificateFactory.js';
-import { describeRenewalFailure } from './renewalFailure.js';
+import { describeRenewalFailure, REMEDY_CLASS } from './renewalFailure.js';
 
 /**
  * @param {Object} verdict
@@ -178,6 +178,40 @@ function renderNoExternalIpGuidance(cfg) {
 }
 
 /**
+ * The causes where asking for another certificate cannot help and can cost.
+ *
+ * A refusal repeats, and an issuance that was spent but never landed is spent
+ * whether or not it arrived - so both endings have to withhold the command
+ * rather than merely explain around it.
+ */
+const WITHHOLDS_OBTAIN = [REMEDY_CLASS.DO_NOT_RETRY];
+
+/**
+ * What to say when the recorded cause forbids the usual repair.
+ *
+ * @param {string} cfg
+ * @param {Object} renewal
+ * @return {string}
+ */
+function renderWithheldObtain(cfg, renewal) {
+  if (renewal.code === 'CERTIFICATE_ISSUED_NOT_SAVED') {
+    return `  A certificate was issued and could not be saved, so it is already spent
+  against this node's limit and asking again spends another. Check free space
+  and permissions where dashmate saves certificates first:
+
+      dashmate doctor ${cfg}
+`;
+  }
+
+  return `  Do not obtain a certificate right now - it would not succeed, and each
+  attempt counts against this node's limits. Check again once the cause above
+  has cleared:
+
+      dashmate doctor ${cfg}
+`;
+}
+
+/**
  * @param {string} cfg
  * @param {boolean} isAlreadyLetsEncrypt
  * @param {Object} verdict - decides whether the certificate can be reinstated
@@ -286,6 +320,12 @@ ${obtainAttemptFailed
 
     if (hasReason(verdict, CERTIFICATE_REASONS.NO_EXTERNAL_IP)) {
       blocks.push(renderNoExternalIpGuidance(cfg));
+    } else if (renewal && WITHHOLDS_OBTAIN.includes(describeRenewalFailure(renewal.code).remedy)) {
+      // The recorded cause says asking again cannot work, so this surface must
+      // not prescribe it either. The doctor withholds the same command for the
+      // same reason; printing it here would make the two disagree about the
+      // one thing the shared vocabulary exists to keep consistent.
+      blocks.push(renderWithheldObtain(cfg, renewal));
     } else {
       blocks.push(renderFix(cfg, provider === SSL_PROVIDERS.LETSENCRYPT, verdict));
     }

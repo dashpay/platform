@@ -8,7 +8,11 @@ import {
   requiresReplacement,
 } from '../../ssl/checkGatewayCertificateFactory.js';
 import { isRenewalRecordCurrent, RENEWAL_OUTCOMES, RENEWAL_RECORD_STATES } from '../../ssl/renewalRecord.js';
-import { describeRenewalFailure, REMEDY_CLASS } from '../../ssl/renewalFailure.js';
+import {
+  describeRenewalFailure,
+  REMEDY_CLASS,
+  RENEWAL_FAILURE_CODES,
+} from '../../ssl/renewalFailure.js';
 import { RETRY_INTERVAL_MS } from '../../helper/scheduleRenewalJob.js';
 import { SSL_PROVIDERS } from '../../constants.js';
 
@@ -146,6 +150,9 @@ function renderDeadline(installed) {
  * not shown either - it counts scheduler wake-ups, which mix hourly re-checks
  * with attempts days apart, so a number here would be read as attempts.
  *
+ * Kept out of the description and put with the remedy: it is the least
+ * actionable sentence of the three, and doctor does not wrap descriptions.
+ *
  * @param {Object} record
  * @return {string}
  */
@@ -153,7 +160,7 @@ function renderHistory(record) {
   const lastSuccess = asDay(record.lastSuccessAt);
 
   return lastSuccess
-    ? `Last renewed ${lastSuccess}. Every attempt since has failed.`
+    ? `Last renewed ${lastSuccess}; every attempt since has failed.`
     : 'dashmate does not know when this node last renewed successfully.';
 }
 
@@ -162,22 +169,70 @@ function renderHistory(record) {
  *
  * Derived rather than stored, so it cannot promise a retry that was recorded
  * before anything decided there would be one. A time already past is reported
- * as such - it is also the plainest evidence available that the part of
- * dashmate which renews certificates is not running.
+ * as such, with the repair that follows from it - an overdue attempt is the
+ * plainest evidence available that the part of dashmate which renews
+ * certificates is not running.
  *
  * @param {Object} record
  * @param {number} now
+ * @param {string} cfg
  * @return {string}
  */
-function renderNextAttempt(record, now) {
+function renderNextAttempt(record, now, cfg) {
   const nextAt = new Date(record.attemptedAt).getTime() + RETRY_INTERVAL_MS;
 
   if (nextAt <= now) {
-    return 'dashmate was due to try again and has not, so the part of dashmate that renews'
-      + ' certificates may not be running.';
+    return chalk`dashmate should have tried again by now and has not, so the part of dashmate
+that renews certificates may not be running. Start it:
+{bold.cyanBright dashmate start ${cfg}}`;
   }
 
-  return `dashmate tries again by itself at ${new Date(nextAt).toISOString().slice(11, 16)} UTC.`;
+  // Dated, not just timed: an archived report is read days after it was
+  // collected, which is the whole reason these are judged against the sample.
+  return `dashmate tries again by itself at ${new Date(nextAt).toISOString().slice(0, 16).replace('T', ' ')} UTC.`;
+}
+
+/**
+ * Where to look for whatever is holding port 80, or for whatever else stopped
+ * the certificate check from running.
+ *
+ * `ss` lists what is listening on this machine, which is the whole answer only
+ * when dashmate's own check could not bind. When something answered the
+ * certificate authority instead, it is as likely to be a router forwarding the
+ * port elsewhere, or a hosting provider's page - and an operator who sees an
+ * empty table and stops has nowhere else to look.
+ *
+ * @param {string} code
+ * @param {string} cfg
+ * @param {boolean} isShortLived - whether this provider reissues every few days
+ * @return {string}
+ */
+function renderPortEightyHint(code, cfg, isShortLived) {
+  if (code === RENEWAL_FAILURE_CODES.PORT_80_IN_USE) {
+    return chalk`Find what is using port 80 on this machine and move it off that port:
+{bold.cyanBright sudo ss -lntp 'sport = :80'}`;
+  }
+
+  if (code === RENEWAL_FAILURE_CODES.PORT_80_WRONG_RESPONDER) {
+    return chalk`Another web server, a proxy, or your router is answering instead of this
+node. Check this machine first:
+{bold.cyanBright sudo ss -lntp 'sport = :80'}
+Nothing listed? Then it is answered before it reaches this machine - check
+your router's port forwarding and your hosting provider.`;
+  }
+
+  // Nothing reached the certificate authority, so none of the above is where
+  // the answer lives. Sending an operator to rewrite firewall rules that were
+  // never wrong is the failure this whole change exists to stop.
+  if (code === RENEWAL_FAILURE_CODES.HELPER_DID_NOT_START) {
+    return chalk`Check that Docker is running, then look at what it reported:
+{bold.cyanBright dashmate logs ${cfg} dashmate_helper}`;
+  }
+
+  return `Open inbound port 80 - on the machine's firewall, at your hosting provider,
+and on your router if this node is behind one.${isShortLived
+  ? '\nIt has to stay open: the certificate is renewed every few days.'
+  : ''}`;
 }
 
 /**
@@ -185,30 +240,45 @@ function renderNextAttempt(record, now) {
  *
  * A cause that cannot be repaired by asking again must never end in a command
  * that asks again: the certificate authority limits how often this node may
- * fail, and an issuance that was spent but never landed is spent whether or not
- * it arrived. This is why the remedy is carried with the cause rather than
- * written beside it.
+ * fail, and an issuance that was spent but never landed is spent whether or
+ * not it arrived. Every path that prints a repair goes through here, including
+ * the one for a certificate that is already broken - that path is the one an
+ * operator reaches most often, and printing a command it forbids is worse than
+ * printing none.
  *
  * @param {Object} options
- * @return {string}
+ * @return {string|null} null when there is nothing for the operator to do
  */
 function renderRemedy({
-  remedy, cfg, force, isIssuanceSpent, isCertificateUsable,
+  code, remedy, cfg, force, isIssuanceSpent, isCertificateUsable,
 }) {
   const obtain = chalk`{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${force}}`;
 
+  // The spent issuance outranks everything except its own cause's wording: it
+  // is the one state where asking again has a cost that is already incurred
+  // and cannot be undone.
   if (isIssuanceSpent) {
-    return chalk`Do not obtain another certificate yet - one was already issued and is spent
-against this node's limit of five a week, so asking again spends another.
-
-Check free space and permissions where dashmate saves certificates, then:
+    if (code === RENEWAL_FAILURE_CODES.CERTIFICATE_ISSUED_NOT_SAVED) {
+      return chalk`Do not obtain another certificate yet - one was already issued and could not
+be saved, so asking again spends another. Check free space and permissions
+where dashmate saves certificates, then:
 ${obtain}`;
+    }
+
+    // A different cause now, but that earlier certificate is still spent, so
+    // the repair for this cause must not end in another request.
+    return null;
   }
 
   if (remedy === REMEDY_CLASS.DO_NOT_RETRY) {
-    return chalk`Do not obtain a certificate right now - it would be refused the same way and
-count against this node's limits. Wait, then check again:
-{bold.cyanBright dashmate doctor ${cfg}}`;
+    if (code === RENEWAL_FAILURE_CODES.RATE_LIMITED) {
+      return 'Do not obtain a certificate now - it would be refused the same way and count'
+        + ' against this node\'s limits.';
+    }
+
+    // Nothing was refused, and saying so would contradict the cause directly
+    // above: dashmate does not know whether a certificate was issued.
+    return 'Do not obtain one yet - a certificate may already have been issued.';
   }
 
   if (remedy === REMEDY_CLASS.SWITCH_PROVIDER) {
@@ -219,50 +289,21 @@ certificate for an IP address.
 ${obtain}`;
   }
 
-  if (remedy === REMEDY_CLASS.FIX_LOCALLY && isCertificateUsable) {
-    // The node still works, and renewal comes back around on its own once the
-    // cause is gone. Ending here with a command spends one of the few failed
-    // attempts this node is allowed, on a fix that has not been made yet.
+  // The node still works and renewal comes back around on its own once the
+  // cause is gone. Ending here with a command spends one of the few failed
+  // attempts this node is allowed, on a repair that has not been made yet.
+  if (isCertificateUsable
+    && (remedy === REMEDY_CLASS.FIX_LOCALLY || remedy === REMEDY_CLASS.WAIT)) {
     return null;
   }
 
-  if (remedy === REMEDY_CLASS.WAIT && isCertificateUsable) {
-    return null;
+  if (remedy === REMEDY_CLASS.WAIT) {
+    return chalk`Wait for the other command to finish, then get a working certificate:
+${obtain}`;
   }
 
   return chalk`Get a working certificate:
 ${obtain}`;
-}
-
-/**
- * Where to look for whatever is holding port 80.
- *
- * `ss` lists what is listening on this machine, which is the whole answer only
- * when dashmate's own check could not bind. When something answered the
- * certificate authority instead, it is as likely to be a router forwarding the
- * port elsewhere, or a hosting provider's page - and an operator who sees an
- * empty table and stops has nowhere else to look.
- *
- * @param {string} code
- * @return {string}
- */
-function renderPortEightyHint(code) {
-  if (code === 'PORT_80_IN_USE') {
-    return chalk`Find what is using port 80 on this machine and move it off that port:
-{bold.cyanBright sudo ss -lntp 'sport = :80'}`;
-  }
-
-  if (code === 'PORT_80_WRONG_RESPONDER') {
-    return chalk`Another web server, a proxy, or your router is answering instead of this node.
-Check this machine first:
-{bold.cyanBright sudo ss -lntp 'sport = :80'}
-Nothing listed? Then it is answered before it reaches this machine - check your
-router's port forwarding and your hosting provider.`;
-  }
-
-  return `Open inbound port 80 - on the machine's firewall, at your hosting provider, and on
-your router if this node is behind one. It has to stay open: the certificate is
-renewed every few days.`;
 }
 
 export default function analyseGatewayCertificateFactory() {
@@ -326,6 +367,12 @@ export default function analyseGatewayCertificateFactory() {
 
     const failedRenewal = renewal?.outcome === RENEWAL_OUTCOMES.FAILED ? renewal : null;
 
+    // Let's Encrypt issues IP certificates on a six-day profile, so port 80 has
+    // to stay open permanently. ZeroSSL's last ninety days, and telling its
+    // operators the same thing is simply false.
+    const isShortLivedProvider = config.get('platform.gateway.ssl.provider')
+      === SSL_PROVIDERS.LETSENCRYPT;
+
     /**
      * What the record says went wrong, and what to do about it.
      *
@@ -333,15 +380,24 @@ export default function analyseGatewayCertificateFactory() {
      * @return {string}
      */
     const renderRenewalCause = (isCertificateUsable) => {
-      const { remedy } = describeRenewalFailure(failedRenewal.code);
+      const { remedy, sentence } = describeRenewalFailure(failedRenewal.code);
+      // Only the cause that actually produced this state may claim the
+      // issuance. Carried forward from an earlier attempt it still forbids
+      // asking again, but it does not get to describe a different failure.
       const isIssuanceSpent = Boolean(failedRenewal.issuanceSpentAt);
-      const blocks = [];
+      // Led with the cause only where the description above is about the
+      // certificate rather than the renewal. An operator reads until they find
+      // something to run and stops, so a repair printed above the reason it is
+      // wrong is a repair they will run - but saying it twice in six lines
+      // reads as padding and pushes the repair off the screen.
+      const blocks = isCertificateUsable ? [] : [`Renewal is failing: ${sentence}.`];
 
       if (remedy === REMEDY_CLASS.FIX_LOCALLY) {
-        blocks.push(renderPortEightyHint(failedRenewal.code));
+        blocks.push(renderPortEightyHint(failedRenewal.code, cfg, isShortLivedProvider));
       }
 
       const ending = renderRemedy({
+        code: failedRenewal.code,
         remedy,
         cfg,
         force: installedForce,
@@ -354,13 +410,17 @@ export default function analyseGatewayCertificateFactory() {
       }
 
       if (isCertificateUsable) {
-        blocks.push(chalk`${renderNextAttempt(failedRenewal, sampledAt)} Then check it worked:
-{bold.cyanBright dashmate doctor ${cfg}}`);
+        blocks.push(renderNextAttempt(failedRenewal, sampledAt, cfg));
       }
 
-      if (failedRenewal.detail && failedRenewal.code === 'UNKNOWN') {
+      // Whatever the provider actually said, whenever it said anything. It is
+      // already bounded, redacted and stripped, and it is the only account of
+      // the failure that did not come from dashmate.
+      if (failedRenewal.detail) {
         blocks.push(`It reported: ${failedRenewal.detail}`);
       }
+
+      blocks.push(renderHistory(failedRenewal));
 
       return blocks.join('\n\n');
     };
@@ -384,7 +444,7 @@ Obtain a new certificate. No restart needed:
         problems.push(new Problem(
           message,
           failedRenewal
-            ? `${remedy}\n\nRenewal is failing: ${describeRenewalFailure(failedRenewal.code).sentence}.`
+            ? `${UPDATE_CONSEQUENCE}\n\n${renderRenewalCause(false)}`
             : remedy,
           SEVERITY.HIGH,
         ));
@@ -398,18 +458,21 @@ Obtain a new certificate. No restart needed:
 
       if (failedRenewal && isCertificateUsable) {
         problems.push(new Problem(
-          `This node's certificate is not being renewed:`
-          + ` ${describeRenewalFailure(failedRenewal.code).sentence}.`
-          + `${renderDeadline(installed)} ${renderHistory(failedRenewal)}`,
+          `This node's certificate is not being renewed: `
+          + `${describeRenewalFailure(failedRenewal.code).sentence}.${renderDeadline(installed)}`,
           renderRenewalCause(true),
           SEVERITY.HIGH,
         ));
       }
 
-      if (renewal?.gatewayReloadFailedAt) {
+      // Only when nothing on the wire was sampled. With a served sample the
+      // branch below reports the same fault with the deadline attached, and
+      // two problems about one certificate send an operator to arbitrate
+      // between a signal and a restart.
+      if (renewal?.gatewayReloadFailedAt && !samples.getServiceInfo('gateway', 'servedCertificate')) {
         problems.push(new Problem(
-          `This node's certificate was renewed on ${asDay(renewal.lastSuccessAt)}, but the gateway`
-          + ' is still using the old one',
+          `This node's certificate was renewed${asDay(renewal.lastSuccessAt)
+            ? ` on ${asDay(renewal.lastSuccessAt)}` : ''}, but the gateway is still using the old one`,
           chalk`Load it without an outage:
 {bold.cyanBright dashmate ssl obtain ${cfg}}`,
           SEVERITY.HIGH,
@@ -417,6 +480,14 @@ Obtain a new certificate. No restart needed:
       }
 
       installed.warnings.forEach(({ message }) => {
+        // Suppressed entirely while renewal is failing. The problem above
+        // already says what is wrong and what to do, and this one would
+        // contradict it twice over - calling the node fine, and handing back
+        // the command the cause forbids.
+        if (failedRenewal) {
+          return;
+        }
+
         problems.push(new Problem(
           message,
           chalk`Nothing is broken yet. If it needs attention, obtain a new certificate:
@@ -525,9 +596,7 @@ restarting will not help. Get a current one:
         `This node is using a certificate that expired on ${served.certificate.validTo}. `
         + 'Clients cannot connect to it',
         failedRenewal
-          ? chalk`Renewal is failing: ${describeRenewalFailure(failedRenewal.code).sentence}.
-
-${renderRenewalCause(false)}`
+          ? renderRenewalCause(false)
           : chalk`Renewal has not succeeded. Check the logs, then obtain a new certificate:
 {bold.cyanBright dashmate logs ${cfg} dashmate_helper}
 {bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${installedForce}}`,
