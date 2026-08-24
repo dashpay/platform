@@ -189,6 +189,19 @@ describe('analyseGatewayCertificateFactory', () => {
     expect(problem.getSolution()).to.include('dashmate ssl obtain --config base --provider letsencrypt');
   });
 
+  // A certificate can fail verification with a sound chain, because its dates
+  // do not hold. Telling that operator the authority is untrusted is false, and
+  // sends them to replace a certificate when the clock is what is wrong.
+  it('should not blame the authority when the dates are what failed', () => {
+    const [problem] = analyse(served({
+      chainVerified: false,
+      chainError: 'CERT_NOT_YET_VALID',
+    }));
+
+    expect(problem.getSolution()).to.not.include('the authority that issued it is not one');
+    expect(problem.getSolution()).to.include("clock");
+  });
+
   it('should report an untrusted certificate separately from expiry', () => {
     const problems = analyse(served({
       chainVerified: false,

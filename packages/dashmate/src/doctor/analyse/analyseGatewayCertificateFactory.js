@@ -74,6 +74,21 @@ const TRUST_FAILURES = {
  */
 const describe = (table, code) => table[code] ?? code;
 
+/**
+ * The verification failures that are about the chain of trust itself - a
+ * missing issuer, or an authority nothing vouches for. A certificate can also
+ * fail verification while its chain is perfectly sound, because the dates do
+ * not hold; saying the authority is untrusted there is simply false, and sends
+ * an operator to replace a certificate when the clock is what is wrong.
+ */
+const TRUST_PATH_FAILURES = [
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'UNABLE_TO_GET_ISSUER_CERT',
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+];
+
 const restartHint = (cfg) => chalk`Then restart Platform so the gateway picks it up: {bold.cyanBright dashmate restart ${cfg} --platform}`;
 
 /**
@@ -294,14 +309,20 @@ replacement, so do not restart to load it. Get a current one instead:
       problems.push(new Problem(
         'The certificate this node is serving is not trusted by ordinary clients:'
         + ` ${describe(TRUST_FAILURES, served.chainError)}`,
-        chalk`Standard clients will reject this node.
+        TRUST_PATH_FAILURES.includes(served.chainError)
+          ? chalk`Standard clients will reject this node.
 
 If the bundle is missing the certificates that vouch for the server one, add them.
 ${restartHint(cfg)}
 
 If the bundle is already complete, the authority that issued it is not one clients
 trust, and no restart changes that. Get a publicly trusted certificate:
-{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt}`,
+{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt}`
+          : chalk`Standard clients will reject this node. The chain itself is not the
+problem, so adding certificates to the bundle will not help. Check this node's
+clock first. If the clock is right, the certificate's own dates are wrong and it
+has to be replaced:
+{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt --force}`,
         SEVERITY.HIGH,
       ));
     }
