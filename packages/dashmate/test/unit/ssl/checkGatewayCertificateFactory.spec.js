@@ -413,6 +413,28 @@ describe('checkGatewayCertificateFactory', () => {
       expect(codes(verdict.reasons)).to.include(CERTIFICATE_REASONS.NO_EXTERNAL_IP);
     });
 
+    // The repair for a broken bundle is an obtain, and obtain refuses to start
+    // with no address to issue for. A verdict that reports only the bundle
+    // therefore prescribes a command that cannot run.
+    it('should report the missing address even when the bundle is unusable', () => {
+      config.set('externalIp', null);
+      install('not a certificate', 'not a key');
+
+      const verdict = checkGatewayCertificate(config);
+
+      expect(verdict.status).to.equal(CERTIFICATE_STATUS.INVALID);
+      expect(codes(verdict.reasons)).to.include(CERTIFICATE_REASONS.NO_EXTERNAL_IP);
+    });
+
+    it('should report the missing address when the bundle is absent', () => {
+      config.set('externalIp', null);
+
+      const verdict = checkGatewayCertificate(config);
+
+      expect(verdict.status).to.equal(CERTIFICATE_STATUS.INVALID);
+      expect(codes(verdict.reasons)).to.include(CERTIFICATE_REASONS.NO_EXTERNAL_IP);
+    });
+
     it('should skip the address check for a node that serves no public identity', () => {
       const { leaf, intermediate } = issueChain({ ip: '9.9.9.9' });
 

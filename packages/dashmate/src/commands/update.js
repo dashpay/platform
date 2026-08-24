@@ -224,6 +224,15 @@ export default class UpdateCommand extends ConfigBaseCommand {
     // must not be reduced to a certificate message. exitOnError would otherwise
     // have swallowed it.
     if (unexpected) {
+      // A pull that fetched nothing renders no table and carries no message of
+      // its own - it is raised further down instead. Only one error can be
+      // thrown, so without saying it here the operator is told the certificate
+      // failed and never learns their images never arrived. One Docker daemon
+      // being down produces both at once.
+      if (this.pullError) {
+        process.stderr.write(`Images could not be pulled: ${this.pullError.message}\n\n`);
+      }
+
       throw unexpected;
     }
 

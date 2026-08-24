@@ -174,6 +174,24 @@ describe('Update command', () => {
       expect(stderr).to.contain('is not valid');
     });
 
+    // One Docker daemon being down fails the pull and the gateway reload at
+    // once. Only one error can be thrown, and a total pull failure renders no
+    // table of its own, so throwing the certificate error alone tells the
+    // operator their certificate broke and never that no image arrived.
+    it('should report the failed pull even when the certificate throws', async () => {
+      const rejection = new Error('service list is broken');
+      const unexpected = new Error('gateway reload failed');
+
+      await expect(runUpdate({
+        updateNode: () => Promise.reject(rejection),
+        gatewayCertificateTask: () => async () => {
+          throw unexpected;
+        },
+      })).to.be.rejectedWith(unexpected);
+
+      expect(stderr).to.contain('service list is broken');
+    });
+
     // The renderer can only tell the truth about a failed attempt if the
     // command actually tells it one happened, so the wiring is pinned here
     // rather than left to the renderer's own tests.

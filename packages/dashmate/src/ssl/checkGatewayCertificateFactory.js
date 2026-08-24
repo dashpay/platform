@@ -156,6 +156,25 @@ export default function checkGatewayCertificateFactory(homeDir) {
     const warnings = [];
     const skipped = [];
 
+    // Asked before a byte is read from disk. Whether the certificate names this
+    // node is the one question that decides if clients can connect, so a
+    // masternode that cannot be asked it has not passed. Every verdict has to
+    // carry this, including the ones that return early on a missing or broken
+    // bundle: without it their repair is an obtain, and obtain refuses to start
+    // with no address to issue for. A node that serves no public identity is a
+    // different case and keeps the skip.
+    if (!externalIp) {
+      if (config.get('core.masternode.enable') === true) {
+        reasons.push({
+          code: CERTIFICATE_REASONS.NO_EXTERNAL_IP,
+          message: "This node's public address is not set, so dashmate cannot tell whether"
+            + ' the certificate is issued for this node',
+        });
+      } else {
+        skipped.push('IDENTITY');
+      }
+    }
+
     /**
      * @param {Object|null} installed
      * @param {number|null} expiresInDays
@@ -341,22 +360,7 @@ export default function checkGatewayCertificateFactory(homeDir) {
       });
     }
 
-    if (!externalIp) {
-      // Whether the certificate names this node is the one question that
-      // decides if clients can connect, so a masternode that cannot be asked
-      // it has not passed - reporting otherwise would hand an operator a
-      // healthy verdict dashmate never established. A node that serves no
-      // public identity is a different case and keeps the skip.
-      if (config.get('core.masternode.enable') === true) {
-        reasons.push({
-          code: CERTIFICATE_REASONS.NO_EXTERNAL_IP,
-          message: "This node's public address is not set, so dashmate cannot tell whether"
-            + ' the certificate is issued for this node',
-        });
-      } else {
-        skipped.push('IDENTITY');
-      }
-    } else if (!installed.ipAddresses.includes(externalIp)) {
+    if (externalIp && !installed.ipAddresses.includes(externalIp)) {
       // Only the subject alternative name counts. Node's own
       // tls.checkServerIdentity does not consult the common name for an IP
       // identifier and neither do browsers, so a certificate carrying the
