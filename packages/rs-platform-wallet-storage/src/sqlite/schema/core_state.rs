@@ -184,15 +184,6 @@ pub fn apply(
         .flat_map(|record| record.transaction.input.iter())
         .map(|input| input.previous_output)
         .collect();
-    // Best-known processed height at this round, read AFTER the sync-state
-    // upsert above so a height carried by this same changeset is included.
-    // Stamped onto every tombstone this round creates or re-points; the
-    // collector compares it against the chainlock finality boundary. A
-    // sweeps-only round carries no heights of its own, which is exactly why
-    // this reads the stored watermark instead of `cs` directly. `None` on a
-    // wallet that has never recorded a height — the collector back-fills
-    // such stamps before it ever collects.
-    let stamp = tombstone_stamp(tx, wallet_id)?;
     for batch in &cs.sweeps {
         // Only this stays per batch: a release is true of the wallet its own
         // sweep saw, which is what lets a later batch correct an earlier one.
@@ -210,7 +201,7 @@ pub fn apply(
                 &batch.superseded_by,
                 &released,
                 &swept_txids,
-                stamp,
+                batch.winner_mined_height,
             )?;
         }
         // Releases are outpoint-keyed facts, so they are applied by outpoint
@@ -298,27 +289,32 @@ pub fn apply(
 /// durable — it refuses to clear `spent` while `spent_in_txid` is set, so the
 /// claim survives the funding upsert instead of being upserted away by it.
 ///
-/// The placeholder is created UNCONDITIONALLY, ownership unproven, and its
-/// LIFETIME is what is bounded — not its creation. A swept INCOMING payment
-/// reaches this loop too, and every sender-owned input it named lands a
-/// placeholder no funding upsert will ever overwrite and no release will
-/// ever name — zero-value junk, one row per foreign input, growable by
-/// anyone willing to double-spend payments at this wallet. It cannot be
-/// gated at creation because nothing anywhere can prove an input foreign:
-/// `input_details` and `direction` are computed from the wallet's UTXO
-/// snapshot AT RECORD TIME, so the held-but-unfunded claim this placeholder
-/// exists to preserve — our own coin, spent before its funding output was
-/// classified — is byte-identical to an attacker's fan-in; and the sweep
-/// site upstream cannot attest ownership either, because recording the
-/// loser already removed its inputs from `utxos` and the spent marks carry
-/// no ownership (dashpay/rust-dashcore#968 — the once-proposed "held
-/// outpoints attested ours" set is empty by construction). Instead
-/// `collect_finalized_tombstones` evicts never-materialised placeholders
-/// once the chainlock finality boundary passes their creation stamp,
-/// mirroring key-wallet's `prune_finalized_observed_spends` doctrine for
-/// the same shape — so attacker junk lives for the finality window
-/// (minutes), while a genuine claim materialises via the funding upsert
-/// (gaining a real `height`) and permanently leaves the collectible set.
+/// The placeholder is created only for a BLOCK-CONTEXT sweep
+/// (`winner_mined_height` is `Some`), and it stores that height — the
+/// winner's own, not any observation watermark. This is the projection of
+/// key-wallet's `observed_spent_outpoints`, which maps each outpoint
+/// observed spent in a block to the height of the block that spent it and
+/// deliberately records nothing for a mempool/IS-lock spend ("an
+/// unconfirmed spend must not invalidate a coin" — `wallet_checker.rs`).
+/// An IS-locked winner therefore leaves no placeholder here either: the
+/// wallet itself keeps no durable hold for an unconfirmed spend, so the
+/// mirror holding one would out-claim the thing it mirrors — and when the
+/// winner eventually mines, BIP158 delivery of its block (the funding
+/// output's script matches the winner's prevout) re-marks the coin through
+/// the ordinary channels. This is also what bounds the junk an attacker can
+/// grow by double-spending incoming payments at this wallet: a swept
+/// INCOMING payment reaches this loop too, and every sender-owned foreign
+/// input it names would land a placeholder nothing ever overwrites. It
+/// cannot be gated by ownership because nothing anywhere can prove an
+/// input foreign (`input_details` and `direction` are computed from the
+/// wallet's UTXO snapshot AT RECORD TIME; dashpay/rust-dashcore#968 — the
+/// once-proposed "held outpoints attested ours" set is empty by
+/// construction). Instead the mempool path creates none at all, and
+/// `collect_finalized_tombstones` evicts block-context placeholders once
+/// the chainlock finality boundary reaches their winner's height —
+/// key-wallet's `prune_finalized_observed_spends` condition verbatim —
+/// while a genuine claim materialises via the funding upsert (gaining a
+/// real `height`) and permanently leaves the collectible set.
 ///
 /// Idempotent: a txid this store never recorded is a successful no-op, not an
 /// error. A sweep can legitimately name a transaction this wallet dropped, or
@@ -333,7 +329,7 @@ fn apply_sweep(
     superseded_by: &dashcore::Txid,
     released: &HashSet<dashcore::OutPoint>,
     swept_txids: &HashSet<dashcore::Txid>,
-    stamp: Option<u32>,
+    winner_mined_height: Option<u32>,
 ) -> Result<(), WalletStorageError> {
     let loser_blob: Option<Vec<u8>> = tx
         .query_row(
@@ -379,28 +375,38 @@ fn apply_sweep(
     // NULL (nobody's claim), a held one is attributed to `superseded_by` so
     // the claim outlives this row's own deletion below.
     // A held, never-materialised claim (`height IS NULL`) is re-stamped
-    // with this round's height: the claim now belongs to this sweep's
-    // winner, whose own confirmation is what the collector's margin is
-    // measured from. Materialised rows (`height` set) keep their NULL stamp
-    // — they are outside the collector's reach either way.
+    // with the NEW winner's mined height when this sweep has one — the
+    // claim now belongs to that winner, and its height is what the
+    // collector compares against the finality boundary. An IS-locked
+    // winner (`?5` NULL) re-points the claim but keeps the existing stamp:
+    // the earlier block-context observation stands, exactly as upstream's
+    // `observed_spent_outpoints` entry is never retracted by an
+    // unconfirmed conflict, and collection at the old height stays sound —
+    // the funding output of a spent outpoint is mined at or below the
+    // height of ANY block-context spender of it, so the boundary passing
+    // that height still proves the funding was delivered or never will be.
+    // Materialised rows (`height` set) keep their NULL stamp — they are
+    // outside the collector's reach either way.
     let mut spend_stmt = tx.prepare_cached(
         "UPDATE core_utxos SET spent = ?3, spent_in_txid = ?4, \
-            held_since_height = CASE \
-                WHEN ?3 AND height IS NULL THEN COALESCE(?5, held_since_height) \
-                ELSE held_since_height END \
+            winner_mined_height = CASE \
+                WHEN ?3 AND height IS NULL THEN COALESCE(?5, winner_mined_height) \
+                ELSE winner_mined_height END \
          WHERE wallet_id = ?1 AND outpoint = ?2",
     )?;
-    // Only reached for a held input with no existing row — see the
-    // doc comment above. `value`/`script`/`height`/`account_index` are
-    // placeholders; the funding UTXO's own upsert overwrites them (and,
-    // thanks to the `spent_in_txid` guard in `execute_upsert_utxo`, does
-    // not clear `spent` while doing it). `held_since_height` is the
-    // creation stamp `collect_finalized_tombstones` measures the row's
-    // bounded lifetime from.
+    // Only reached for a held input with no existing row AND a
+    // block-context winner — see the doc comment above; an IS-locked
+    // winner creates no placeholder at all, mirroring upstream's refusal
+    // to record an unconfirmed spend. `value`/`script`/`height`/
+    // `account_index` are placeholders; the funding UTXO's own upsert
+    // overwrites them (and, thanks to the `spent_in_txid` guard in
+    // `execute_upsert_utxo`, does not clear `spent` while doing it).
+    // `winner_mined_height` is the winner's own block height, the row's
+    // whole lifetime rule for `collect_finalized_tombstones`.
     let mut tombstone_stmt = tx.prepare_cached(
         "INSERT INTO core_utxos \
             (wallet_id, outpoint, value, script, height, account_index, spent, spent_in_txid, \
-             held_since_height) \
+             winner_mined_height) \
          VALUES (?1, ?2, 0, X'', NULL, 0, 1, ?3, ?4)",
     )?;
     for input in &loser.transaction.input {
@@ -449,14 +455,23 @@ fn apply_sweep(
             &key[..],
             !freed,
             spent_in_txid,
-            stamp.map(i64::from)
+            winner_mined_height.map(i64::from)
         ])?;
         if affected == 0 && !freed {
+            // No row to hold and nothing durable to key a hold on: an
+            // IS-locked winner (`winner_mined_height` None) gets no
+            // placeholder — upstream records nothing for an unconfirmed
+            // spend, and this is where the foreign-input junk an attacker
+            // could grow by double-spending incoming payments is killed at
+            // the source rather than aged out.
+            let Some(height) = winner_mined_height else {
+                continue;
+            };
             tombstone_stmt.execute(params![
                 wallet_id.as_slice(),
                 &key[..],
                 AsRef::<[u8]>::as_ref(superseded_by),
-                stamp.map(i64::from)
+                i64::from(height)
             ])?;
         }
     }
@@ -479,10 +494,10 @@ const ACCOUNT_INDEX_BY_ADDRESS_SQL: &str =
 // exactly the arrival that tombstone exists to survive, so it must not
 // double as the thing that erases it. `spent_in_txid` itself is left out of
 // the SET list entirely — untouched, it carries the claim forward.
-// `held_since_height` DOES clear: this statement always binds a real
+// `winner_mined_height` DOES clear: this statement always binds a real
 // funding `height`, so the row it lands on is materialised from here on —
 // permanently outside `collect_finalized_tombstones`'s reach — and a stale
-// creation stamp would only mislead.
+// stamp would only mislead.
 const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
         (wallet_id, outpoint, value, script, height, account_index, spent, spent_in_txid) \
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL) \
@@ -491,7 +506,7 @@ const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
         script = excluded.script, \
         height = excluded.height, \
         account_index = excluded.account_index, \
-        held_since_height = NULL, \
+        winner_mined_height = NULL, \
         spent = CASE WHEN core_utxos.spent_in_txid IS NOT NULL \
             THEN core_utxos.spent ELSE excluded.spent END";
 
@@ -603,55 +618,23 @@ fn read_sync_heights(
     ))
 }
 
-/// Blocks the finality boundary must clear past a tombstone's stamp
-/// before the row is collectible.
-///
-/// The stamp is taken when the sweep is OBSERVED, which on the
-/// InstantSend path is before the winner mines — customarily in the very
-/// next block, so the margin's first block covers it and the second is
-/// slack. Requiring `boundary >= stamp + 2` therefore means the winner's
-/// typical block is itself chain-locked and filter-scanned before the
-/// hold is dropped, matching upstream's eviction precondition of
-/// "spend height at or below the boundary" without knowing the winner's
-/// height (the winner need not be wallet-relevant, so no row records
-/// it). A winner that mines later than the margin allows is covered by
-/// convergence, not the tombstone: BIP158 filters match input prevout
-/// scripts, so any delivery path that ever classifies the funding output
-/// also delivers the winner's spend and re-marks the coin — and upstream
-/// itself retains nothing in memory for an unmined or unrecorded winner,
-/// so the bounded row is never less protection than the wallet it
-/// mirrors.
-const TOMBSTONE_COLLECT_MARGIN: u32 = 2;
-
-/// Best-known processed height for stamping a tombstone created this
-/// round: the max of the stored watermarks (the caller upserts incoming
-/// heights first, so a height carried by the same round is included).
-fn tombstone_stamp(
-    tx: &Transaction<'_>,
-    wallet_id: &WalletId,
-) -> Result<Option<u32>, WalletStorageError> {
-    let (lp, sy, _) = read_sync_heights(tx, wallet_id)?;
-    Ok(match (lp, sy) {
-        (Some(a), Some(b)) => Some(a.max(b)),
-        (a, b) => a.or(b),
-    })
-}
-
 /// Evict never-materialised sweep tombstones once the chainlock finality
-/// boundary passes their creation stamp — the storage-side mirror of
-/// key-wallet's `prune_finalized_observed_spends`, which applies the same
-/// doctrine to the same shape in memory: an entry at or below
+/// boundary reaches their winner's mined height — the storage-side mirror
+/// of key-wallet's `prune_finalized_observed_spends`, same condition
+/// verbatim: an entry whose spend height is at or below
 /// `min(chainlock_height, synced_height)` is safe to forget, because the
-/// spend it guards is chain-locked and every filter below the boundary
-/// has been matched, so no delivery path can hand the coin back
-/// unobserved. This is what bounds the junk an attacker can grow by
-/// double-spending incoming payments (see `apply_sweep`): a foreign-input
-/// placeholder lives for the finality window instead of forever, while a
-/// genuine claim materialises through the funding upsert — gaining a real
-/// `height` — and permanently leaves the collectible set, so nothing this
-/// function deletes can ever be a coin the wallet still holds data for.
+/// spend at that height is chain-locked and every BIP158 filter below the
+/// boundary has been matched with no false negatives, so the funding
+/// transaction of the outpoint it guards — necessarily mined at or below
+/// the spend's own height — has either been delivered (materialising the
+/// row) or provably never will be. No observation-age margin: the stamp IS
+/// the winner's height, carried on the sweep event itself, so nothing here
+/// guesses when the winner mined. Rows with no stamp are never collected —
+/// under the current writers none can exist (an IS-locked winner creates
+/// no placeholder and never clears an existing stamp), so an unstamped row
+/// is foreign or legacy data, and holding it forever is the safe reading.
 ///
-/// Three passes, all narrowed to `height IS NULL` (only the tombstone
+/// Two passes, both narrowed to `height IS NULL` (only the tombstone
 /// insert leaves `height` NULL, so the set is exactly the
 /// never-materialised rows, served by the partial index):
 ///
@@ -659,12 +642,8 @@ fn tombstone_stamp(
 ///    never-materialised claim holds nothing and would read as a
 ///    zero-value phantom coin. The release path now deletes these
 ///    in-line; this pass self-heals rows written before it did.
-/// 2. Held rows with no stamp (written before `held_since_height`
-///    existed, or on a wallet with no recorded heights) are back-filled
-///    with the current best-known height, so they wait a full margin from
-///    first sight rather than being guessed collectible.
-/// 3. Held rows whose stamp sits at least [`TOMBSTONE_COLLECT_MARGIN`]
-///    below the boundary are collected.
+/// 2. Held rows whose winner height is at or below the boundary are
+///    collected.
 ///
 /// Like upstream, a no-op until a chainlock height has been persisted —
 /// without a finality boundary nothing can be proven final.
@@ -677,26 +656,16 @@ fn collect_finalized_tombstones(
          WHERE wallet_id = ?1 AND height IS NULL AND spent = 0",
         params![wallet_id.as_slice()],
     )?;
-    let (lp, sy, cl) = read_sync_heights(tx, wallet_id)?;
+    let (_, sy, cl) = read_sync_heights(tx, wallet_id)?;
     let (Some(sy), Some(cl)) = (sy, cl) else {
         return Ok(());
     };
-    let best = lp.map_or(sy, |lp| lp.max(sy));
-    tx.execute(
-        "UPDATE core_utxos SET held_since_height = ?2 \
-         WHERE wallet_id = ?1 AND height IS NULL AND spent = 1 \
-           AND held_since_height IS NULL",
-        params![wallet_id.as_slice(), i64::from(best)],
-    )?;
     let boundary = cl.min(sy);
-    let Some(cut) = boundary.checked_sub(TOMBSTONE_COLLECT_MARGIN) else {
-        return Ok(());
-    };
     tx.execute(
         "DELETE FROM core_utxos \
          WHERE wallet_id = ?1 AND height IS NULL AND spent = 1 \
-           AND held_since_height <= ?2",
-        params![wallet_id.as_slice(), i64::from(cut)],
+           AND winner_mined_height <= ?2",
+        params![wallet_id.as_slice(), i64::from(boundary)],
     )?;
     Ok(())
 }

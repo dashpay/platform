@@ -1286,6 +1286,7 @@ mod tests {
             wallet_id,
             txids: vec![dashcore::Txid::from_byte_array([0xAA; 32])],
             superseded_by: dashcore::Txid::from_byte_array([0xBB; 32]),
+            winner_mined_height: None,
             released_outpoints: vec![],
             balance: corrected,
             account_balances: Default::default(),

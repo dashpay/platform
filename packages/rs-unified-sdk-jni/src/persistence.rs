@@ -199,6 +199,9 @@ pub(crate) fn build_extension() -> PersistenceCallbacksExtension {
     PersistenceCallbacksExtension {
         on_persist_dpns_name_states_fn: Some(tramp_persist_dpns_name_states),
         on_persist_wallet_changeset_sweeps_fn: Some(tramp_persist_wallet_changeset_sweeps),
+        on_persist_wallet_changeset_chain_lock_height_fn: Some(
+            tramp_persist_wallet_changeset_chain_lock_height,
+        ),
         ..Default::default()
     }
 }
@@ -722,18 +725,53 @@ unsafe fn persist_changeset_sweep_batch(
         })?;
     }
 
+    // The winner's finality context: its mined height for a block-context
+    // sweep, -1 for an InstantSend-locked winner still waiting to be mined.
+    // The sentinel is unambiguous — block heights are non-negative — and
+    // the Kotlin bridge maps it back to null. The handler keys the whole
+    // lifetime rule of a pending-input tombstone on it: no height, no
+    // tombstone.
+    let winner_mined_height: i32 = if batch.has_winner_mined_height {
+        batch.winner_mined_height as i32
+    } else {
+        -1
+    };
+
     env.call_method(
         bridge,
         "onWalletChangesetTransactionsSwept",
-        "([B[[B[[B[[B)I",
+        "([B[[B[[B[[BI)I",
         &[
             wid.into(),
             (&txids_arr).into(),
             (&winners).into(),
             (&released_arr).into(),
+            JValue::Int(winner_mined_height),
         ],
     )?
     .i()
+}
+
+/// Deliver the round's numeric chainlock height (see
+/// `PersistWalletChangesetChainLockHeightFn`). One scalar, one call — the
+/// bincode chainlock blob on the header call is opaque to Kotlin, and this
+/// is the half of the tombstone-collection boundary
+/// `min(chainlockHeight, syncedHeight)` the handler cannot otherwise know.
+unsafe extern "C" fn tramp_persist_wallet_changeset_chain_lock_height(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    chain_lock_height: u32,
+) -> i32 {
+    with_bridge(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        env.call_method(
+            bridge,
+            "onWalletChangesetChainLockHeight",
+            "([BI)I",
+            &[(&wid).into(), JValue::Int(chain_lock_height as i32)],
+        )?
+        .i()
+    })
 }
 
 unsafe fn persist_changeset_account(
@@ -4393,7 +4431,13 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
     // right where a failed round freezes the wallet's watermark. Descriptor
     // must track the literal at the `call_method` site in
     // `persist_changeset_sweep_batch` above.
-    ("onWalletChangesetTransactionsSwept", "([B[[B[[B[[B)I"),
+    ("onWalletChangesetTransactionsSwept", "([B[[B[[B[[BI)I"),
+    // Same drift risk as the sweeps descriptor above: this slot fires on
+    // chainlock-advancing rounds only, so a stale descriptor would surface
+    // exactly when the first real chainlock crossed. Must track the
+    // literal at the `call_method` site in
+    // `tramp_persist_wallet_changeset_chain_lock_height`.
+    ("onWalletChangesetChainLockHeight", "([BI)I"),
     (
         "onPersistIdentityUpsert",
         "([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;\

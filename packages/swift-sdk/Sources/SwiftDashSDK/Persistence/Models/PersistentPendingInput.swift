@@ -93,23 +93,30 @@ public final class PersistentPendingInput {
     /// existing rows migrate as ordinary pending entries.
     public var isSweptTombstone: Bool = false
 
-    /// Creation stamp of a swept tombstone: the wallet's `syncedHeight` at
-    /// the round that flagged (or re-pointed) this row. A tombstone whose
-    /// outpoint is a foreign input of a swept incoming payment never
-    /// drains — no funding TXO ever arrives — so without a bound it is
-    /// permanent junk an attacker grows one row per input by repeatedly
-    /// double-spending payments at this wallet. The changeset-header
-    /// collector (`collectFinalizedSweptTombstones`) deletes tombstones
-    /// once `syncedHeight` clears this stamp by the sweep margin — the
-    /// storage mirror of key-wallet's `prune_finalized_observed_spends`
-    /// doctrine; a genuine claim drains into its TXO on funding arrival
-    /// and leaves the collectible set with the row. `nil` means "flagged
-    /// before this property existed, or with no synced height on record"
-    /// — the collector back-fills it with the current height rather than
-    /// guessing, so such rows wait a full margin from first sight.
-    /// Optional, so existing stores lightweight-migrate with the rows
-    /// reading unstamped.
-    public var heldSinceHeight: UInt32?
+    /// The WINNER'S own mined block height, stamped when a block-context
+    /// sweep (`SweepBatchFFI.has_winner_mined_height`) repurposes this row
+    /// into a tombstone — the projection of upstream key-wallet's
+    /// `observed_spent_outpoints`, which maps each outpoint observed spent
+    /// in a block to the height of the block that spent it and deliberately
+    /// records nothing for a mempool/IS-lock spend ("an unconfirmed spend
+    /// must not invalidate a coin"). Not an observation watermark: the
+    /// height rides the sweep event itself, so nothing here guesses when
+    /// the winner mined. It is the row's whole lifetime rule —
+    /// `collectFinalizedSweptTombstones` deletes the tombstone exactly when
+    /// the finality boundary `min(chainlockHeight, syncedHeight)` reaches
+    /// this stamp (upstream's `prune_finalized_observed_spends` condition
+    /// verbatim, no margin): every BIP158 filter at or below the boundary
+    /// has been matched with no false negatives, so the funding transaction
+    /// of the guarded outpoint — necessarily mined at or below the spend's
+    /// own height — has either been delivered (draining the row) or
+    /// provably never will be. A mempool-context sweep never stamps this:
+    /// it creates no tombstone at all, and re-pointing an existing
+    /// tombstone keeps the earlier block-context stamp untouched (upstream
+    /// never retracts an observed-spend entry for an unconfirmed conflict).
+    /// `nil` on a tombstone therefore means foreign or legacy data — the
+    /// collector holds it forever rather than guess it collectible.
+    /// Optional, so existing stores lightweight-migrate.
+    public var winnerMinedHeight: UInt32?
 
     public init(
         outpoint: Data,

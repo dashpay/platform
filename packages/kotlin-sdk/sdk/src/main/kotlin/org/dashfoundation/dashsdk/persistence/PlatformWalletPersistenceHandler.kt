@@ -705,34 +705,84 @@ class PlatformWalletPersistenceHandler(
                     lastUpdated = now(),
                 ),
             )
-            // Bounded tombstone lifetime (the Room mirror of the SQLite
-            // store's `collect_finalized_tombstones`): once the synced
-            // height clears a swept tombstone's stamp by the margin, the
-            // row has provably never drained — a genuine claim's row is
-            // deleted by the drain in `onWalletChangesetUtxoAdded` when
-            // its funding TXO lands — so what remains is junk from foreign
-            // inputs of swept incoming payments, previously permanent and
-            // attacker-growable. Unstamped rows are back-filled first so
-            // they wait a full margin from first sight. Gated on a
-            // chainlock having been applied at some point, mirroring
-            // upstream's "no-op until a chainlock has been applied"; the
-            // chainlock's own height is bincode-opaque on this side of the
-            // FFI, so the boundary is the synced height alone — the
-            // winner's finality never depended on it (a sweep only fires
-            // for a chainlocked or InstantSend-locked winner), and synced
-            // height is the half of the upstream boundary that certifies
-            // filter coverage.
-            val chainLockApplied = lastAppliedChainLockBytes.isNotEmpty() ||
-                wallet.lastAppliedChainLockBytes?.isNotEmpty() == true
-            if (hasSyncedHeight && syncedHeight > 0 && chainLockApplied) {
-                db.documentDao().backfillSweptTombstoneStamps(walletId, syncedHeight)
-                val cut = syncedHeight - SWEPT_TOMBSTONE_COLLECT_MARGIN
-                if (cut > 0) {
-                    db.documentDao().collectFinalizedSweptTombstones(walletId, cut)
-                }
+            // Bounded tombstone lifetime, synced-height half (the Room
+            // mirror of the SQLite store's `collect_finalized_tombstones`):
+            // once the chainlock finality boundary reaches a swept
+            // tombstone's winner height, the row has provably never
+            // drained — a genuine claim's row is deleted by the drain in
+            // `onWalletChangesetUtxoAdded` when its funding TXO lands — so
+            // what remains is junk from foreign inputs of swept incoming
+            // payments, previously permanent and attacker-growable. The
+            // chainlock half of the boundary is the NUMERIC height
+            // `onWalletChangesetChainLockHeight` stores on the wallet row;
+            // the mere presence of chainlock bytes proves nothing about
+            // WHICH block is final, so until a numeric height is on record
+            // there is no boundary and nothing collects — mirroring
+            // upstream's "no-op until a chainlock height has been
+            // persisted".
+            if (hasSyncedHeight && syncedHeight > 0) {
+                collectFinalizedSweptTombstones(
+                    db, walletId,
+                    chainLockHeight = wallet.lastAppliedChainLockHeight,
+                    syncedHeight = syncedHeight,
+                )
             }
         }
         0
+    }
+
+    override fun onWalletChangesetChainLockHeight(walletId: ByteArray, height: Int): Int = guarded {
+        stage(walletId) { db ->
+            // Drop stale post-deletion callbacks (can't resurrect a wallet).
+            val wallet = db.walletDao().getByWalletId(walletId) ?: return@stage
+            // Monotonic max — a stale round's chainlock never lowers the
+            // finality boundary, matching the SQLite store's
+            // `upsert_sync_state`.
+            val advanced = maxOf(height, wallet.lastAppliedChainLockHeight ?: Int.MIN_VALUE)
+            db.walletDao().upsert(
+                wallet.copy(
+                    lastAppliedChainLockHeight = advanced,
+                    lastUpdated = now(),
+                ),
+            )
+            // Bounded tombstone lifetime, chainlock half: this call is
+            // what turns the boundary on at all (no numeric height, no
+            // collection), so a chainlock-advancing round must collect
+            // too — otherwise a wallet whose synced height stopped moving
+            // would hold finalized junk until the next header.
+            collectFinalizedSweptTombstones(
+                db, walletId,
+                chainLockHeight = advanced,
+                syncedHeight = wallet.syncedHeight,
+            )
+        }
+        0
+    }
+
+    /**
+     * Delete this wallet's swept tombstones whose winner's mined height
+     * the chainlock finality boundary `min(chainlockHeight, syncedHeight)`
+     * has reached — key-wallet's `prune_finalized_observed_spends`
+     * condition verbatim, and the same boundary the SQLite store's
+     * `collect_finalized_tombstones` applies. Both halves must be on
+     * record: without a numeric chainlock height nothing is provably
+     * final, and without filter coverage up to the winner's height the
+     * funding output could still be delivered by the unscanned range.
+     * Called from both watermark writers — the header (synced height) and
+     * the chainlock-height slot — since either half advancing can
+     * complete the boundary.
+     */
+    private suspend fun collectFinalizedSweptTombstones(
+        db: DashDatabase,
+        walletId: ByteArray,
+        chainLockHeight: Int?,
+        syncedHeight: Int,
+    ) {
+        if (chainLockHeight == null || syncedHeight <= 0) return
+        db.documentDao().collectFinalizedSweptTombstones(
+            walletId,
+            boundary = minOf(chainLockHeight, syncedHeight),
+        )
     }
 
     override fun onWalletChangesetAccountBegin(
@@ -1203,6 +1253,26 @@ class PlatformWalletPersistenceHandler(
      * `onWalletChangesetUtxoAdded` knows to keep the coin spent — durably,
      * via `TxoEntity.supersededByTxid` — once the funding TXO materializes.
      *
+     * The tombstone is created only for a BLOCK-CONTEXT sweep
+     * ([winnerMinedHeight] non-null), stamped with the winner's own mined
+     * height — the projection of key-wallet's `observed_spent_outpoints`,
+     * which records nothing for a mempool/IS-lock spend ("an unconfirmed
+     * spend must not invalidate a coin"). An IS-locked, unmined winner
+     * leaves no tombstone: the wallet itself keeps no durable hold for an
+     * unconfirmed spend, so the mirror holding one would out-claim the
+     * thing it mirrors — and when the winner eventually mines, BIP158
+     * delivery of its block re-marks the coin through the ordinary
+     * channels. This is also what kills the attacker-growable junk at the
+     * source: a swept INCOMING payment reaches this path too, and every
+     * sender-owned foreign input it names would land a tombstone nothing
+     * ever drains. Ownership cannot gate it (nothing can prove an input
+     * foreign; dashpay/rust-dashcore#968), so the mempool path creates
+     * none at all, and the collector evicts block-context tombstones once
+     * the chainlock finality boundary reaches their winner's height.
+     * Materialized `TxoEntity` rows still get spend-marked either way —
+     * they carry real funding data, so holding them costs nothing an
+     * attacker controls.
+     *
      * A tombstoned row can itself need to move again: [supersededBy] is a
      * winner in this round, but nothing stops it from losing a later round
      * to a further winner while [supersededBy]'s own funding TXO is still
@@ -1243,16 +1313,18 @@ class PlatformWalletPersistenceHandler(
         txids: Array<ByteArray>,
         supersededBy: Array<ByteArray>,
         releasedOutpoints: Array<ByteArray>,
+        winnerMinedHeight: Int,
     ): Int = guarded {
         stage(walletId) { db ->
-            val wallet = db.walletDao().getByWalletId(walletId) ?: return@stage
-            // Creation stamp for any tombstone this round flags or
-            // re-points: the wallet's best-known synced height, `null`
-            // while none has been recorded (the collector back-fills
-            // rather than guesses). The collector in
-            // `onWalletChangesetHeader` measures the tombstone's bounded
-            // lifetime from this.
-            val tombstoneStamp = wallet.syncedHeight.takeIf { it > 0 }
+            if (db.walletDao().getByWalletId(walletId) == null) return@stage
+            // The winner's finality context: its own mined block height
+            // for a block-context sweep, null (JNI sentinel -1) for an
+            // InstantSend-locked winner not yet mined. This is the whole
+            // lifetime rule of any tombstone this round creates or
+            // re-points — the collector compares it against the chainlock
+            // finality boundary — and the null case creates no tombstone
+            // at all.
+            val winnerHeight = winnerMinedHeight.takeIf { it >= 0 }
             // Hold every input first, then free the ones upstream named: the
             // released set spans the whole round's removals, so it is
             // applied once rather than per transaction.
@@ -1323,16 +1395,26 @@ class PlatformWalletPersistenceHandler(
                     db.documentDao().deletePendingInputs(goneStaged)
                 }
                 if (heldStaged.isNotEmpty()) {
-                    db.documentDao().updatePendingInputs(
-                        heldStaged.map {
-                            it.copy(
-                                spendingTransactionTxid = null,
-                                spendingTxid = supersededBy[i],
-                                isSweptTombstone = true,
-                                heldSinceHeight = tombstoneStamp,
-                            )
-                        },
-                    )
+                    if (winnerHeight != null) {
+                        db.documentDao().updatePendingInputs(
+                            heldStaged.map {
+                                it.copy(
+                                    spendingTransactionTxid = null,
+                                    spendingTxid = supersededBy[i],
+                                    isSweptTombstone = true,
+                                    winnerMinedHeight = winnerHeight,
+                                )
+                            },
+                        )
+                    } else {
+                        // An IS-locked, unmined winner creates no
+                        // tombstone — see the doc comment above. The rows
+                        // would cascade with the loser's delete anyway;
+                        // deleting them here makes the end state explicit
+                        // and independent of whether the shared loser row
+                        // itself survives another wallet's claim below.
+                        db.documentDao().deletePendingInputs(heldStaged)
+                    }
                 }
                 // A pending input an EARLIER sweep already tombstoned to
                 // txids[i] (that txid was itself a sweep's winner, and is
@@ -1350,14 +1432,24 @@ class PlatformWalletPersistenceHandler(
                     db.documentDao().deletePendingInputs(gonePrior)
                 }
                 if (stillHeld.isNotEmpty()) {
-                    // Re-pointed to a new winner ⇒ re-stamped: the claim now
-                    // belongs to a winner whose confirmation is measured from
-                    // this round, not the original sweep's.
+                    // Re-pointed to a new block-context winner ⇒
+                    // re-stamped with THAT winner's mined height: the
+                    // claim now belongs to a spend anchored at a later
+                    // block, and its collection horizon moves with it. An
+                    // IS-locked winner (null height) re-points the claim
+                    // but keeps the existing stamp — upstream's
+                    // observed-spend entry is never retracted by an
+                    // unconfirmed conflict, and collection at the old
+                    // height stays sound: the funding output of a spent
+                    // outpoint is mined at or below the height of ANY
+                    // block-context spender of it, so the boundary
+                    // passing that height still proves the funding was
+                    // delivered or never will be.
                     db.documentDao().updatePendingInputs(
                         stillHeld.map {
                             it.copy(
                                 spendingTxid = supersededBy[i],
-                                heldSinceHeight = tombstoneStamp ?: it.heldSinceHeight,
+                                winnerMinedHeight = winnerHeight ?: it.winnerMinedHeight,
                             )
                         },
                     )
@@ -3621,21 +3713,6 @@ class PlatformWalletPersistenceHandler(
 
         /** `TransactionContext::InBlock` — spends only count once in-block. */
         private const val CONTEXT_IN_BLOCK = 2
-
-        /**
-         * Blocks the synced height must clear past a swept tombstone's
-         * [PendingInputEntity.heldSinceHeight] stamp before the collector
-         * in [onWalletChangesetHeader] deletes it. Mirrors the SQLite
-         * store's `TOMBSTONE_COLLECT_MARGIN`: the stamp is taken when the
-         * sweep is observed — on the InstantSend path before the winner
-         * mines, customarily in the very next block — so the margin's
-         * first block covers the winner's own confirmation and the second
-         * is slack. Past the margin, convergence carries the claim
-         * instead: BIP158 filters match input prevout scripts, so any
-         * delivery path that ever classifies the funding output also
-         * delivers the winner's spend.
-         */
-        private const val SWEPT_TOMBSTONE_COLLECT_MARGIN = 2
 
         /** `Network.testnet` rawValue — the Swift fallback network. */
         private const val NETWORK_TESTNET = 1

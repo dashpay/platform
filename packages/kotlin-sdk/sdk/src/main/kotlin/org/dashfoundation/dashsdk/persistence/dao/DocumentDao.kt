@@ -238,33 +238,29 @@ interface DocumentDao {
     suspend fun hasOtherWalletPendingInput(txid: ByteArray, walletId: ByteArray): Boolean
 
     /**
-     * Back-fill unstamped swept tombstones with the current synced
-     * height, so rows written before `heldSinceHeight` existed (or while
-     * no height was on record) wait a full collection margin from first
-     * sight instead of being guessed collectible.
-     */
-    @Query(
-        "UPDATE pending_inputs SET heldSinceHeight = :stamp " +
-            "WHERE walletId = :walletId AND isSweptTombstone = 1 " +
-            "AND heldSinceHeight IS NULL",
-    )
-    suspend fun backfillSweptTombstoneStamps(walletId: ByteArray, stamp: Int)
-
-    /**
      * Bounded tombstone lifetime: delete this wallet's swept tombstones
-     * whose stamp the synced height has cleared by the collection margin
-     * (`:cut` = synced − margin, computed by the caller). A tombstone
-     * still collectible here never drained — its funding TXO never
-     * arrived — so the junk case (a foreign input of a swept incoming
-     * payment) is exactly what this removes; a genuine claim's row was
-     * already deleted by the drain that moved the hold onto the TXO.
+     * whose winner's mined height the chainlock finality boundary has
+     * reached (`:boundary` = `min(chainlockHeight, syncedHeight)`,
+     * computed by the caller) — key-wallet's
+     * `prune_finalized_observed_spends` condition verbatim, no
+     * observation-age margin: the stamp IS the winner's height, so at the
+     * boundary the funding transaction (mined at or below it) has been
+     * filter-scanned with no false negatives. A tombstone still
+     * collectible here never drained — its funding TXO never arrived — so
+     * the junk case (a foreign input of a swept incoming payment) is
+     * exactly what this removes; a genuine claim's row was already
+     * deleted by the drain that moved the hold onto the TXO. Unstamped
+     * rows are never collected — no current writer produces one (a
+     * mempool-context sweep creates no tombstone, an IS-locked re-point
+     * keeps the existing stamp), so an unstamped row is legacy or foreign
+     * data and holding it forever is the safe reading.
      */
     @Query(
         "DELETE FROM pending_inputs " +
             "WHERE walletId = :walletId AND isSweptTombstone = 1 " +
-            "AND heldSinceHeight IS NOT NULL AND heldSinceHeight <= :cut",
+            "AND winnerMinedHeight IS NOT NULL AND winnerMinedHeight <= :boundary",
     )
-    suspend fun collectFinalizedSweptTombstones(walletId: ByteArray, cut: Int)
+    suspend fun collectFinalizedSweptTombstones(walletId: ByteArray, boundary: Int)
 
     @Upsert
     suspend fun upsertPendingInput(pendingInput: PendingInputEntity)

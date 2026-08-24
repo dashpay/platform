@@ -925,25 +925,27 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             }
 
             // Bounded tombstone lifetime (the SwiftData mirror of the SQLite
-            // store's `collect_finalized_tombstones`): once the synced
-            // height clears a swept tombstone's stamp by the margin, the
+            // store's `collect_finalized_tombstones`): once the finality
+            // boundary reaches a swept tombstone's winner-height stamp, the
             // row has provably never drained — a genuine claim's rows are
             // deleted by the drain in `upsertUtxo` when its funding TXO
             // lands — so what remains is junk from foreign inputs of swept
             // incoming payments, previously permanent and attacker-growable.
-            // Gated on a chainlock having been applied at some point,
-            // mirroring upstream's "no-op until a chainlock has been
-            // applied"; the chainlock's own height is bincode-opaque on
-            // this side of the FFI, so the boundary is the synced height
-            // alone — the winner's finality never depended on it (a sweep
-            // only fires for a chainlocked or InstantSend-locked winner),
-            // and synced height is the half of the upstream boundary that
-            // certifies filter coverage.
+            // The boundary is upstream's verbatim:
+            // `min(chainlockHeight, syncedHeight)` — the chainlock half
+            // proves the winner's spend final, the synced half certifies
+            // BIP158 filter coverage of every block that could have carried
+            // the funding output. The chainlock height arrives NUMERICALLY
+            // through the extension's chain-lock-height slot (the bincode
+            // bytes above are opaque here); until one has been stored no
+            // finality boundary exists and nothing may be collected —
+            // present chainlock BYTES prove nothing about how far finality
+            // reaches, and synced-height progress alone is not finality.
             if cs.has_chain, cs.chain.has_synced_height, cs.chain.synced_height > 0,
-               wallet.lastAppliedChainLockBytes?.isEmpty == false {
+               let clHeight = wallet.lastAppliedChainLockHeight {
                 collectFinalizedSweptTombstones(
                     walletId: walletId,
-                    syncedHeight: cs.chain.synced_height
+                    boundary: min(clHeight, cs.chain.synced_height)
                 )
             }
 
@@ -978,29 +980,24 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
-    /// Blocks the synced height must clear past a swept tombstone's
-    /// `heldSinceHeight` stamp before `collectFinalizedSweptTombstones`
-    /// deletes it. Mirrors the SQLite store's `TOMBSTONE_COLLECT_MARGIN`:
-    /// the stamp is taken when the sweep is observed — on the InstantSend
-    /// path before the winner mines, customarily in the very next block —
-    /// so the margin's first block covers the winner's own confirmation
-    /// and the second is slack. Past the margin, convergence carries the
-    /// claim instead: BIP158 filters match input prevout scripts, so any
-    /// delivery path that ever classifies the funding output also delivers
-    /// the winner's spend.
-    private static let sweptTombstoneCollectMargin: UInt32 = 2
-
-    /// Delete this wallet's swept tombstones whose stamp `syncedHeight`
-    /// has cleared by [`sweptTombstoneCollectMargin`], back-filling
-    /// unstamped rows (written before `heldSinceHeight` existed, or while
-    /// no height was on record) with the current height so they wait a
-    /// full margin from first sight. See the property doc on
-    /// `PersistentPendingInput.heldSinceHeight` for why the bound exists.
+    /// Delete this wallet's swept tombstones whose winner-height stamp the
+    /// finality boundary has reached: `winnerMinedHeight <= boundary`,
+    /// where the caller computes `boundary = min(chainlockHeight,
+    /// syncedHeight)` — upstream key-wallet's
+    /// `prune_finalized_observed_spends` condition verbatim, and the
+    /// SQLite store's `collect_finalized_tombstones`. No observation-age
+    /// margin: the stamp IS the winner's own mined height, carried on the
+    /// sweep event, so nothing here guesses when the winner mined. Rows
+    /// with no stamp are never collected — under the current writers none
+    /// can exist (a mempool-context sweep creates no tombstone and never
+    /// clears an existing stamp), so an unstamped row is foreign or legacy
+    /// data, and holding it forever is the safe reading. See the property
+    /// doc on `PersistentPendingInput.winnerMinedHeight`.
     ///
     /// Housekeeping, not correctness: a pass that cannot run self-heals on
-    /// the next height-carrying round, so a fetch failure logs and returns
-    /// instead of failing the round the way the sweep path must.
-    private func collectFinalizedSweptTombstones(walletId: Data, syncedHeight: UInt32) {
+    /// the next boundary-carrying round, so a fetch failure logs and
+    /// returns instead of failing the round the way the sweep path must.
+    private func collectFinalizedSweptTombstones(walletId: Data, boundary: UInt32) {
         var descriptor = FetchDescriptor<PersistentPendingInput>(
             predicate: #Predicate { $0.walletId == walletId }
         )
@@ -1019,17 +1016,71 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             )
             return
         }
-        let cut = syncedHeight > Self.sweptTombstoneCollectMargin
-            ? syncedHeight - Self.sweptTombstoneCollectMargin
-            : nil
         for pending in rows where pending.isSweptTombstone && !pending.isDeleted {
-            guard let stamp = pending.heldSinceHeight else {
-                pending.heldSinceHeight = syncedHeight
-                continue
-            }
-            if let cut, stamp <= cut {
+            // A nil stamp is deliberately NOT back-filled: no current
+            // writer produces one, and stamping it here would convert
+            // "no proof of finality" into a fabricated horizon.
+            guard let stamp = pending.winnerMinedHeight else { continue }
+            if stamp <= boundary {
                 backgroundContext.delete(pending)
             }
+        }
+    }
+
+    /// Extension entry for the round's NUMERIC chainlock height — the
+    /// same watermark whose bincode blob rides
+    /// `WalletChangeSetFFI.last_applied_chain_lock_bytes` (still stored,
+    /// for the Rust-side metadata roundtrip), delivered separately because
+    /// that blob is opaque here and the tombstone collection boundary
+    /// needs the number. Fired inside the round's begin/end bracket, after
+    /// the changeset callback, only when the round advanced the chainlock
+    /// watermark.
+    ///
+    /// Stores monotonic-max (chain locks only move forward; a late or
+    /// re-emitted lower height must not walk the boundary backwards),
+    /// then runs the tombstone collector with the completed boundary
+    /// `min(chainlockHeight, syncedHeight)` — the freshly known chainlock
+    /// half is what can newly prove a stamp final, so waiting for the next
+    /// height-carrying changeset would hold collectible junk for no
+    /// reason. Same fail-the-round contract as every per-kind callback: a
+    /// throwing wallet lookup returns `false` so Rust does not treat the
+    /// round as durable.
+    @discardableResult
+    func persistWalletChangesetChainLockHeight(
+        walletId: Data,
+        height: UInt32
+    ) -> Bool {
+        onQueue {
+            let wallet: PersistentWallet?
+            do {
+                wallet = try fetchWalletRecord(walletId: walletId)
+            } catch {
+                print(
+                    "⚠️ persistWalletChangesetChainLockHeight: wallet lookup failed: "
+                        + "\(error.localizedDescription); failing the round"
+                )
+                return false
+            }
+            guard let wallet else { return true }
+
+            let effective = max(wallet.lastAppliedChainLockHeight ?? 0, height)
+            if wallet.lastAppliedChainLockHeight != effective {
+                wallet.lastAppliedChainLockHeight = effective
+                wallet.lastUpdated = Date()
+            }
+
+            // `syncedHeight == 0` means no filter coverage is certified at
+            // all — the boundary's synced half is missing, so nothing can
+            // be proven final yet.
+            if wallet.syncedHeight > 0 {
+                collectFinalizedSweptTombstones(
+                    walletId: walletId,
+                    boundary: min(effective, wallet.syncedHeight)
+                )
+            }
+
+            // No save() — bracketed by changesetBegin/End.
+            return true
         }
     }
 
@@ -1067,15 +1118,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 )
                 return false
             }
-            guard let wallet else { return true }
+            guard wallet != nil else { return true }
             guard count > 0, let sweepsPtr = sweeps else { return true }
-
-            // Creation stamp for any tombstone this round flags or
-            // re-points: the wallet's best-known synced height, `nil`
-            // while none has been recorded (the collector back-fills
-            // rather than guesses). `collectFinalizedSweptTombstones`
-            // measures the tombstone's bounded lifetime from this.
-            let tombstoneStamp: UInt32? = wallet.syncedHeight > 0 ? wallet.syncedHeight : nil
 
             // The funding txids this round removes, across every batch —
             // the same changeset-wide set the SQLite co-swept rule keys
@@ -1120,6 +1164,18 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
 
                 let supersededBy = Swift.withUnsafeBytes(of: batch.superseded_by) { Data($0) }
+
+                // The winner's finality context, carried on the batch
+                // itself: `nil` means the winner is InstantSend-locked and
+                // NOT yet mined (upstream's only other sweep trigger), and
+                // such a sweep must leave no durable placeholder — this is
+                // the projection of key-wallet's `observed_spent_outpoints`,
+                // which records nothing for an unconfirmed spend. A present
+                // height is the winner's OWN mined block, the stamp every
+                // tombstone this batch writes (or re-points) carries and
+                // the collector's whole lifetime rule.
+                let winnerMinedHeight: UInt32? =
+                    batch.has_winner_mined_height ? batch.winner_mined_height : nil
 
                 if batch.txids_count > 0, let txidsPtr = batch.txids {
                     // This wallet's detached tombstones, fetched ONCE per
@@ -1185,7 +1241,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                             coSwept: coSwept,
                             row: row,
                             priorTombstones: tombstonesBySpender[txid] ?? [],
-                            stamp: tombstoneStamp
+                            winnerMinedHeight: winnerMinedHeight
                         )
                     }
                 }
@@ -1326,6 +1382,30 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// left for the cascade, the same as a released materialized input needs
     /// no special handling beyond the loop above.
     ///
+    /// The tombstone is written only for a BLOCK-CONTEXT sweep
+    /// (`winnerMinedHeight` non-nil), stamped with that height — the
+    /// winner's own, not any observation watermark. This is the projection
+    /// of key-wallet's `observed_spent_outpoints`, which deliberately
+    /// records nothing for a mempool/IS-lock spend ("an unconfirmed spend
+    /// must not invalidate a coin"). A mempool-context sweep
+    /// (`winnerMinedHeight` nil — the winner is IS-locked and not yet
+    /// mined) DELETES the held pending row instead: the wallet itself
+    /// keeps no durable hold for an unconfirmed spend, so the mirror
+    /// holding one would out-claim the thing it mirrors — and when the
+    /// winner eventually mines, BIP158 delivery of its block (the funding
+    /// output's script matches the winner's prevout) re-marks the coin
+    /// through the ordinary channels. This is also what bounds the junk an
+    /// attacker can grow by double-spending incoming payments at this
+    /// wallet: a swept INCOMING payment reaches this loop too, and every
+    /// sender-owned foreign input it names would land a placeholder
+    /// nothing ever overwrites. It cannot be gated by ownership — nothing
+    /// anywhere can prove an input foreign (dashpay/rust-dashcore#968) —
+    /// so the mempool path creates none at all, and
+    /// `collectFinalizedSweptTombstones` evicts block-context tombstones
+    /// once the finality boundary reaches their winner's height, while a
+    /// genuine claim drains into its TXO on funding arrival and leaves the
+    /// collectible set with the rows.
+    ///
     /// A tombstoned row can itself need to move again: `supersededBy` is
     /// only this round's winner, and nothing stops it from losing a later
     /// round to a further winner while its own funding TXO is still
@@ -1370,7 +1450,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         coSwept: Set<Data>,
         row: PersistentTransaction?,
         priorTombstones: [PersistentPendingInput],
-        stamp: UInt32?
+        winnerMinedHeight: UInt32?
     ) {
         if let row {
             // The global half, done every time this function runs regardless
@@ -1437,10 +1517,27 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     backgroundContext.delete(pending)
                     continue
                 }
+                guard let winnerMinedHeight else {
+                    // Mempool context: the winner is IS-locked and not yet
+                    // mined, and upstream records nothing durable for an
+                    // unconfirmed spend — so the loser's claim dies with
+                    // the loser instead of being repurposed into a
+                    // tombstone. Deleted explicitly rather than left for
+                    // the row's cascade for the same reason as the
+                    // released branch above: still attached, it would read
+                    // as this wallet's live claim in the ownership check
+                    // below and stalemate another wallet's callback. No
+                    // row is the correct end state — if the funding output
+                    // ever classifies, its ordinary upsert lands it
+                    // freshly unspent, exactly as the wallet engine itself
+                    // would credit it.
+                    backgroundContext.delete(pending)
+                    continue
+                }
                 pending.spendingTransaction = nil
                 pending.spendingTxid = supersededBy
                 pending.isSweptTombstone = true
-                pending.heldSinceHeight = stamp
+                pending.winnerMinedHeight = winnerMinedHeight
             }
 
             // Whatever is still attached to `row` after the scoping above
@@ -1499,11 +1596,23 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             {
                 backgroundContext.delete(pending)
             } else {
-                // Re-pointed to a new winner ⇒ re-stamped: the claim now
-                // belongs to a winner whose confirmation is measured from
-                // this round, not the original sweep's.
+                // Re-pointed to the new winner; the stamp moves ONLY when
+                // this sweep has a block context. A block-context re-point
+                // re-stamps to the NEW winner's mined height — the claim
+                // now belongs to a spend anchored at that block, and its
+                // collection horizon moves with it. A mempool-context
+                // re-point (`winnerMinedHeight` nil) keeps the existing
+                // stamp untouched: upstream never retracts a block-context
+                // observed-spend entry for an unconfirmed conflict, and
+                // collection at the retained height stays sound — the
+                // funding output of a spent outpoint is mined at or below
+                // the height of ANY block-context spender of it, so the
+                // boundary passing that height still proves the funding
+                // was delivered or never will be.
                 pending.spendingTxid = supersededBy
-                pending.heldSinceHeight = stamp ?? pending.heldSinceHeight
+                if let winnerMinedHeight {
+                    pending.winnerMinedHeight = winnerMinedHeight
+                }
             }
         }
     }
@@ -2436,6 +2545,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         // reading memory the other never allocated.
         extensionCallbacks.on_persist_wallet_changeset_sweeps_fn =
             persistWalletChangesetSweepsCallback
+        // The numeric chainlock height rides its own slot for the same
+        // reason: the bincode chainlock bytes on `WalletChangeSetFFI` are
+        // opaque to this side, and the tombstone-collection finality
+        // boundary `min(chainlockHeight, syncedHeight)` needs the number.
+        extensionCallbacks.on_persist_wallet_changeset_chain_lock_height_fn =
+            persistWalletChangesetChainLockHeightCallback
         return extensionCallbacks
     }
 
@@ -7703,6 +7818,32 @@ private func persistWalletChangesetSweepsCallback(
         walletId: walletId,
         sweeps: sweepsPtr,
         count: sweepsCount
+    ) ? 0 : 1
+}
+
+/// C shim for the extension's
+/// `on_persist_wallet_changeset_chain_lock_height_fn` — the round's
+/// NUMERIC chainlock height, fired inside the same begin/end bracket
+/// after the changeset callback whenever the round advanced the chainlock
+/// watermark. Same non-zero-fails-the-round contract as its siblings.
+private func persistWalletChangesetChainLockHeightCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    chainLockHeight: UInt32
+) -> Int32 {
+    guard let context = context,
+          let walletIdPtr = walletIdPtr else {
+        return 0
+    }
+
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+    return handler.persistWalletChangesetChainLockHeight(
+        walletId: walletId,
+        height: chainLockHeight
     ) ? 0 : 1
 }
 

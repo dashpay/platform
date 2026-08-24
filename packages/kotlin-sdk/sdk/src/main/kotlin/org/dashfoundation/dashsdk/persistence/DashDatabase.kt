@@ -143,14 +143,18 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * swept.
  *
  * Version 13 (bounded tombstone lifetime): adds
- * `pending_inputs.heldSinceHeight`, the creation stamp the header
- * callback's collector measures a swept tombstone's bounded lifetime
- * from. A tombstone for a foreign input of a swept incoming payment never
- * drains, and before this column existed it was permanent — junk an
- * attacker could grow without limit by double-spending payments at the
- * wallet. Nullable and additive: pre-migration rows read back unstamped,
- * and the collector back-fills them with the current synced height before
- * it ever collects them.
+ * `pending_inputs.winnerMinedHeight` — the sweep winner's own mined block
+ * height, the stamp the collector compares against the chainlock finality
+ * boundary `min(chainlockHeight, syncedHeight)` — and
+ * `wallets.lastAppliedChainLockHeight`, the numeric chainlock height
+ * delivered by `onWalletChangesetChainLockHeight` that supplies the
+ * chainlock half of that boundary (the bincode chainlock blob is opaque
+ * here). A tombstone for a foreign input of a swept incoming payment
+ * never drains, and before these columns existed it was permanent — junk
+ * an attacker could grow without limit by double-spending payments at the
+ * wallet. Both nullable and additive: pre-migration tombstones read back
+ * unstamped and are never collected (no proof of finality), and a wallet
+ * with no recorded chainlock height has no boundary at all.
  */
 @Database(
     version = 13,
@@ -617,15 +621,20 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
-         * v12 → v13: adds `pending_inputs.heldSinceHeight` (additive,
-         * nullable — no default needed) — see the version-13 class doc
-         * above. Pre-migration tombstones read back unstamped and are
-         * back-filled by the collector before they can be collected.
+         * v12 → v13: adds `pending_inputs.winnerMinedHeight` and
+         * `wallets.lastAppliedChainLockHeight` (both additive, nullable —
+         * no default needed) — see the version-13 class doc above.
+         * Pre-migration tombstones read back unstamped and are never
+         * collected; the chainlock height starts NULL, so no boundary
+         * exists until `onWalletChangesetChainLockHeight` records one.
          */
         val MIGRATION_12_13: Migration = object : Migration(12, 13) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
-                    "ALTER TABLE `pending_inputs` ADD COLUMN `heldSinceHeight` INTEGER",
+                    "ALTER TABLE `pending_inputs` ADD COLUMN `winnerMinedHeight` INTEGER",
+                )
+                db.execSQL(
+                    "ALTER TABLE `wallets` ADD COLUMN `lastAppliedChainLockHeight` INTEGER",
                 )
             }
         }

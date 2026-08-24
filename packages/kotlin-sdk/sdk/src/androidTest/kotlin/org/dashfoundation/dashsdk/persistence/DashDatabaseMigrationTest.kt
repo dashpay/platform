@@ -478,34 +478,50 @@ class DashDatabaseMigrationTest {
     }
 
     /**
-     * v12 → v13 adds `pending_inputs.heldSinceHeight` (nullable, no
-     * default) — additive. Pre-existing tombstones must survive and read
-     * back unstamped (NULL — the collector back-fills them before it ever
-     * collects), and the column must accept an explicit stamp on write.
+     * v12 → v13 adds `pending_inputs.winnerMinedHeight` and
+     * `wallets.lastAppliedChainLockHeight` (both nullable, no default) —
+     * additive. Pre-existing rows must survive and read back NULL
+     * (an unstamped tombstone is never collected, and no chainlock height
+     * means no finality boundary), and both columns must accept an
+     * explicit value on write.
      */
     @Test
-    fun migrate12To13AddsTombstoneStamp() {
+    fun migrate12To13AddsWinnerHeightAndChainLockHeight() {
         val legacy = helper.createDatabase(dbName, 12)
         legacy.execSQL(
             "INSERT INTO pending_inputs (outpoint, inputIndex, spendingTxid, " +
                 "walletId, createdAt, isSweptTombstone) " +
                 "VALUES (x'04', 0, x'05', x'06', 0, 1)",
         )
+        legacy.execSQL(
+            "INSERT INTO wallets (walletId, walletGroupId, networkRaw, name, birthHeight, " +
+                "syncedHeight, lastSynced, isImported, createdAt, lastUpdated) " +
+                "VALUES (x'06', x'02', 1, 'w', 0, 0, 0, 0, 0, 0)",
+        )
         legacy.close()
 
         val db = helper.runMigrationsAndValidate(dbName, 13, true, DashDatabase.MIGRATION_12_13)
-        db.query("SELECT heldSinceHeight FROM pending_inputs WHERE outpoint = x'04'").use { c ->
+        db.query("SELECT winnerMinedHeight FROM pending_inputs WHERE outpoint = x'04'").use { c ->
             assertTrue(c.moveToFirst())
             assertTrue("pre-migration tombstones read back unstamped", c.isNull(0))
         }
+        db.query("SELECT lastAppliedChainLockHeight FROM wallets WHERE walletId = x'06'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue("pre-migration wallets have no chainlock height on record", c.isNull(0))
+        }
         db.execSQL(
             "INSERT INTO pending_inputs (outpoint, inputIndex, spendingTxid, " +
-                "walletId, createdAt, isSweptTombstone, heldSinceHeight) " +
+                "walletId, createdAt, isSweptTombstone, winnerMinedHeight) " +
                 "VALUES (x'07', 0, x'05', x'06', 0, 1, 1234)",
         )
-        db.query("SELECT heldSinceHeight FROM pending_inputs WHERE outpoint = x'07'").use { c ->
+        db.query("SELECT winnerMinedHeight FROM pending_inputs WHERE outpoint = x'07'").use { c ->
             assertTrue(c.moveToFirst())
             assertEquals(1234, c.getInt(0))
+        }
+        db.execSQL("UPDATE wallets SET lastAppliedChainLockHeight = 4321 WHERE walletId = x'06'")
+        db.query("SELECT lastAppliedChainLockHeight FROM wallets WHERE walletId = x'06'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(4321, c.getInt(0))
         }
         db.close()
     }

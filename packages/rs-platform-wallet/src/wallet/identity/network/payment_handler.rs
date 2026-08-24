@@ -489,6 +489,7 @@ mod tests {
             wallet_id: [0u8; 32],
             txids: vec![dashcore::Txid::from([0x21; 32])],
             superseded_by: dashcore::Txid::from([0x22; 32]),
+            winner_mined_height: None,
             released_outpoints: Vec::new(),
             balance: WalletCoreBalance::default(),
             account_balances: std::collections::BTreeMap::new(),

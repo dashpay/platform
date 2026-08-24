@@ -842,6 +842,7 @@ async fn build_core_changeset(
         WalletEvent::TransactionsSwept {
             txids,
             superseded_by,
+            winner_mined_height,
             released_outpoints,
             ..
         } => {
@@ -864,12 +865,21 @@ async fn build_core_changeset(
                 swept = txids.len(),
                 released = released_outpoints.len(),
                 superseded_by = %superseded_by,
+                winner_mined_height = ?winner_mined_height,
                 "Mirroring swept transactions to the persister"
             );
             CoreChangeSet {
                 sweeps: vec![SweepBatch {
                     txids: txids.clone(),
                     superseded_by: *superseded_by,
+                    // The winner's finality context rides with the batch:
+                    // only the event has it (the winner may never appear in
+                    // this wallet's records), and every persister keys the
+                    // lifetime of a held-but-unfunded placeholder on it —
+                    // `Some` anchors the hold at a height that chainlocks,
+                    // `None` (IS-locked, unmined) creates no placeholder at
+                    // all, mirroring upstream's observed-spends doctrine.
+                    winner_mined_height: *winner_mined_height,
                     released_outpoints: released_outpoints.clone(),
                 }],
                 ..CoreChangeSet::default()
@@ -1353,6 +1363,9 @@ mod swept_transaction_projection_tests {
         record
     }
 
+    /// Mined height every block-context sweep event in these tests carries.
+    const WINNER_HEIGHT: u32 = 700;
+
     fn swept(txids: Vec<Txid>) -> WalletEvent {
         swept_releasing(txids, vec![])
     }
@@ -1362,6 +1375,7 @@ mod swept_transaction_projection_tests {
             wallet_id: WALLET_ID,
             txids,
             superseded_by: txid(0xff),
+            winner_mined_height: Some(WINNER_HEIGHT),
             released_outpoints,
             balance: WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),
@@ -1377,6 +1391,7 @@ mod swept_transaction_projection_tests {
             vec![SweepBatch {
                 txids: vec![txid(1), txid(2)],
                 superseded_by: txid(0xff),
+                winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
             }]
         );
@@ -1385,6 +1400,30 @@ mod swept_transaction_projection_tests {
         assert!(cs.records.is_empty(), "a sweep carries no records");
         assert!(cs.spent_utxos.is_empty(), "a sweep spends nothing");
         assert!(cs.new_utxos.is_empty(), "a sweep creates nothing");
+    }
+
+    /// An IS-locked winner's sweep carries `winner_mined_height: None`
+    /// through to the batch untouched. Every persister keys the lifetime of
+    /// a held-but-unfunded placeholder on this field — a bridge that
+    /// fabricated a height here would hand the placeholder a finality
+    /// horizon the winner does not have, and one that dropped the `Some`
+    /// leg would make block-context holds uncollectible.
+    #[tokio::test]
+    async fn sweep_carries_the_winners_finality_context_verbatim() {
+        let event = WalletEvent::TransactionsSwept {
+            wallet_id: WALLET_ID,
+            txids: vec![txid(1)],
+            superseded_by: txid(0xff),
+            winner_mined_height: None,
+            released_outpoints: vec![],
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        };
+        let cs = build_core_changeset(&test_manager(), &event).await;
+        assert_eq!(
+            cs.sweeps[0].winner_mined_height, None,
+            "an unmined IS-locked winner must cross the bridge with no mined height"
+        );
     }
 
     #[tokio::test]
@@ -2770,6 +2809,9 @@ mod tests {
         }
     }
 
+    /// Mined height every block-context sweep event in this module carries.
+    const WINNER_HEIGHT: u32 = 700;
+
     /// A `TransactionsSwept` event for a helper below.
     fn swept_event(wallet_id: WalletId, txid_byte: u8, superseded_by_byte: u8) -> WalletEvent {
         use dashcore::hashes::Hash as _;
@@ -2777,6 +2819,7 @@ mod tests {
             wallet_id,
             txids: vec![dashcore::Txid::from_byte_array([txid_byte; 32])],
             superseded_by: dashcore::Txid::from_byte_array([superseded_by_byte; 32]),
+            winner_mined_height: Some(WINNER_HEIGHT),
             released_outpoints: vec![],
             balance: WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),
@@ -3217,6 +3260,7 @@ mod tests {
                 wallet_id,
                 txids: vec![tx.txid()],
                 superseded_by: dashcore::Txid::from_byte_array([0x77; 32]),
+                winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
                 balance: WalletCoreBalance::default(),
                 account_balances: BTreeMap::new(),

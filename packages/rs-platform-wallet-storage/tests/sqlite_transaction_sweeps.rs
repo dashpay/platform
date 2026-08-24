@@ -24,6 +24,11 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet_storage::sqlite::schema::{blob, core_state};
 use rusqlite::params;
 
+/// Mined height carried by every block-context sweep in these tests
+/// unless a test pins its own. High enough that the pre-seeded funding
+/// heights (10) and default watermarks sit below it.
+const WINNER_HEIGHT: u32 = 400;
+
 fn p2pkh(byte: u8) -> Address {
     use dashcore::address::Payload;
     use dashcore::hashes::Hash;
@@ -162,6 +167,7 @@ fn sweep_only_changeset_deletes_loser_row_and_its_outputs() {
             sweeps: vec![SweepBatch {
                 txids: vec![loser_txid],
                 superseded_by: Txid::from_byte_array([0x11; 32]),
+                winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
             }],
             ..Default::default()
@@ -201,6 +207,7 @@ fn sweeping_an_unknown_txid_is_a_no_op() {
         sweeps: vec![SweepBatch {
             txids: vec![Txid::from_byte_array([0x20; 32])],
             superseded_by: Txid::from_byte_array([0x21; 32]),
+            winner_mined_height: Some(WINNER_HEIGHT),
             released_outpoints: vec![],
         }],
         ..Default::default()
@@ -296,6 +303,7 @@ fn the_released_set_frees_exactly_the_inputs_it_names() {
             sweeps: vec![SweepBatch {
                 txids: vec![loser_txid],
                 superseded_by: winner_txid,
+                winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![exclusive_input],
             }],
             ..Default::default()
@@ -379,6 +387,7 @@ fn an_absent_winner_still_keeps_its_own_input_spent() {
             sweeps: vec![SweepBatch {
                 txids: vec![loser_txid],
                 superseded_by: unrecorded_winner_txid,
+                winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![loser_exclusive],
             }],
             ..Default::default()
@@ -476,6 +485,7 @@ fn a_released_coin_a_surviving_record_reclaims_stays_spent() {
             sweeps: vec![SweepBatch {
                 txids: vec![loser_txid],
                 superseded_by: winner_txid,
+                winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![freed_coin],
             }],
             ..Default::default()
@@ -544,6 +554,7 @@ fn sweeping_a_transaction_deletes_its_instant_lock() {
             sweeps: vec![SweepBatch {
                 txids: vec![loser_txid],
                 superseded_by: Txid::from_byte_array([0x61; 32]),
+                winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
             }],
             ..Default::default()
@@ -636,6 +647,7 @@ fn a_later_sweep_keeping_a_coin_spent_overrides_an_earlier_release() {
                 SweepBatch {
                     txids: vec![first_loser],
                     superseded_by: Txid::from_byte_array([0x7a; 32]),
+                    winner_mined_height: Some(WINNER_HEIGHT),
                     released_outpoints: vec![contested],
                 },
                 // The second winner consumed the coin, so this sweep frees
@@ -643,6 +655,7 @@ fn a_later_sweep_keeping_a_coin_spent_overrides_an_earlier_release() {
                 SweepBatch {
                     txids: vec![second_loser],
                     superseded_by: Txid::from_byte_array([0x7b; 32]),
+                    winner_mined_height: Some(WINNER_HEIGHT),
                     released_outpoints: vec![],
                 },
             ],
@@ -717,6 +730,7 @@ fn a_held_input_with_no_utxo_row_survives_restart_and_stays_spent_when_funded() 
             sweeps: vec![SweepBatch {
                 txids: vec![loser_txid],
                 superseded_by: winner_txid,
+                winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
             }],
             ..Default::default()
@@ -826,6 +840,7 @@ fn a_chained_sweep_before_funding_still_frees_an_earlier_tombstone_on_release() 
             sweeps: vec![SweepBatch {
                 txids: vec![first_loser],
                 superseded_by: second_loser,
+                winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
             }],
             ..Default::default()
@@ -857,6 +872,7 @@ fn a_chained_sweep_before_funding_still_frees_an_earlier_tombstone_on_release() 
             sweeps: vec![SweepBatch {
                 txids: vec![second_loser],
                 superseded_by: final_winner,
+                winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![unfunded_input],
             }],
             ..Default::default()
@@ -949,6 +965,7 @@ fn a_chained_sweep_before_funding_repoints_an_earlier_tombstone_to_the_new_winne
             sweeps: vec![SweepBatch {
                 txids: vec![first_loser],
                 superseded_by: second_loser,
+                winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
             }],
             ..Default::default()
@@ -971,6 +988,7 @@ fn a_chained_sweep_before_funding_repoints_an_earlier_tombstone_to_the_new_winne
             sweeps: vec![SweepBatch {
                 txids: vec![second_loser],
                 superseded_by: final_winner,
+                winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
             }],
             ..Default::default()
@@ -1081,6 +1099,7 @@ fn a_multi_wallet_chained_sweep_before_funding_reconciles_each_wallets_own_tombs
             sweeps: vec![SweepBatch {
                 txids: vec![shared_loser],
                 superseded_by: shared_winner,
+                winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
             }],
             ..Default::default()
@@ -1111,6 +1130,7 @@ fn a_multi_wallet_chained_sweep_before_funding_reconciles_each_wallets_own_tombs
             sweeps: vec![SweepBatch {
                 txids: vec![shared_winner],
                 superseded_by: final_winner,
+                winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![p1],
             }],
             ..Default::default()
@@ -1154,6 +1174,7 @@ fn a_multi_wallet_chained_sweep_before_funding_reconciles_each_wallets_own_tombs
             sweeps: vec![SweepBatch {
                 txids: vec![shared_winner],
                 superseded_by: final_winner,
+                winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
             }],
             ..Default::default()
@@ -1263,6 +1284,7 @@ fn sweep_of_a_shared_loser_txid_is_independent_per_wallet() {
             sweeps: vec![SweepBatch {
                 txids: vec![loser_txid],
                 superseded_by: winner_txid,
+                winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![coin],
             }],
             ..Default::default()
@@ -1309,6 +1331,7 @@ fn sweep_of_a_shared_loser_txid_is_independent_per_wallet() {
             sweeps: vec![SweepBatch {
                 txids: vec![loser_txid],
                 superseded_by: winner_txid,
+                winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
             }],
             ..Default::default()
@@ -1410,6 +1433,7 @@ fn sweep_deletion_is_durable_even_when_the_other_wallets_callback_never_arrives(
             sweeps: vec![SweepBatch {
                 txids: vec![loser_txid],
                 superseded_by: winner_txid,
+                winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
             }],
             ..Default::default()
@@ -1525,6 +1549,7 @@ fn a_record_reinstating_a_swept_txid_in_a_later_round_is_accepted_and_durable() 
             sweeps: vec![SweepBatch {
                 txids: vec![txid],
                 superseded_by: winner_txid,
+                winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
             }],
             ..Default::default()
@@ -1647,6 +1672,7 @@ fn a_release_applies_even_when_the_swept_txid_has_no_row() {
             sweeps: vec![SweepBatch {
                 txids: vec![loser_txid],
                 superseded_by: winner_txid,
+                winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
             }],
             ..Default::default()
@@ -1672,6 +1698,7 @@ fn a_release_applies_even_when_the_swept_txid_has_no_row() {
             sweeps: vec![SweepBatch {
                 txids: vec![winner_txid],
                 superseded_by: final_winner,
+                winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![p],
             }],
             ..Default::default()
@@ -1761,6 +1788,7 @@ fn a_batch_sweeping_parent_and_child_leaves_no_placeholder_for_the_parents_outpu
             sweeps: vec![SweepBatch {
                 txids: vec![parent_txid, child_txid],
                 superseded_by: winner_txid,
+                winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
             }],
             ..Default::default()
@@ -1856,6 +1884,7 @@ fn a_co_swept_parent_with_no_row_still_has_its_output_removed() {
             sweeps: vec![SweepBatch {
                 txids: vec![parent_txid, child_txid],
                 superseded_by: winner_txid,
+                winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
             }],
             ..Default::default()
@@ -1958,6 +1987,7 @@ fn a_co_swept_parent_known_only_through_the_childs_spend_is_still_removed() {
             sweeps: vec![SweepBatch {
                 txids: vec![parent_txid, child_txid],
                 superseded_by: winner_txid,
+                winner_mined_height: Some(WINNER_HEIGHT),
                 released_outpoints: vec![],
             }],
             ..Default::default()
@@ -2003,11 +2033,12 @@ fn a_co_swept_parent_known_only_through_the_childs_spend_is_still_removed() {
 
 // ───────────────────────── tombstone collection ─────────────────────────
 //
-// `collect_finalized_tombstones` bounds the LIFETIME of the unconditional
-// held-but-absent placeholder: attacker-created foreign-input rows live
-// until the chainlock finality boundary passes their creation stamp by
-// `TOMBSTONE_COLLECT_MARGIN`, instead of forever. These tests drive the
-// collector through ordinary `core_state::apply` rounds.
+// A held-but-absent placeholder exists only for a block-context sweep and
+// stores the winner's own mined height; `collect_finalized_tombstones`
+// deletes it exactly when `min(chainlock_height, synced_height)` reaches
+// that height — upstream's `prune_finalized_observed_spends` condition
+// verbatim, no observation-age margin. These tests drive both the creation
+// gate and the collector through ordinary `core_state::apply` rounds.
 
 fn chain_lock_at(height: u32) -> dashcore::ephemerealdata::chain_lock::ChainLock {
     use dashcore::bls_sig_utils::BLSSignature;
@@ -2033,7 +2064,7 @@ fn apply_heights(conn: &mut rusqlite::Connection, w: &WalletId, height: u32) {
     tx.commit().unwrap();
 }
 
-/// `(spent, height, held_since_height)` of a `core_utxos` row, or `None`
+/// `(spent, height, winner_mined_height)` of a `core_utxos` row, or `None`
 /// when absent.
 fn utxo_row_state(
     conn: &rusqlite::Connection,
@@ -2042,7 +2073,7 @@ fn utxo_row_state(
 ) -> Option<(bool, Option<i64>, Option<i64>)> {
     let bytes = blob::encode_outpoint(op).unwrap();
     conn.query_row(
-        "SELECT spent, height, held_since_height FROM core_utxos \
+        "SELECT spent, height, winner_mined_height FROM core_utxos \
          WHERE wallet_id = ?1 AND outpoint = ?2",
         params![w.as_slice(), &bytes[..]],
         |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
@@ -2051,14 +2082,17 @@ fn utxo_row_state(
     .unwrap()
 }
 
-/// Record a loser spending `input` (no funding row exists), then sweep it —
-/// leaving the held-but-absent placeholder the collection tests reason about.
+/// Record a loser spending `input` (no funding row exists), then sweep it
+/// in the given winner context — `Some(height)` leaves the held-but-absent
+/// placeholder the collection tests reason about, `None` (an IS-locked,
+/// unmined winner) must leave nothing.
 fn seed_tombstone(
     conn: &mut rusqlite::Connection,
     w: &WalletId,
     input: OutPoint,
     loser: Txid,
     winner: Txid,
+    winner_mined_height: Option<u32>,
 ) {
     {
         let tx = conn.transaction().unwrap();
@@ -2074,6 +2108,7 @@ fn seed_tombstone(
         sweeps: vec![SweepBatch {
             txids: vec![loser],
             superseded_by: winner,
+            winner_mined_height,
             released_outpoints: vec![],
         }],
         ..Default::default()
@@ -2082,12 +2117,13 @@ fn seed_tombstone(
     tx.commit().unwrap();
 }
 
-/// The attacker-shaped row: a swept incoming payment's foreign input lands
-/// a placeholder, and the collector deletes it once
-/// `min(chainlock_height, synced_height)` clears its stamp by the margin —
-/// and not one block sooner. Bounded lifetime is the whole fix: without the
-/// collector this row was permanent, growable without limit by anyone
-/// repeatedly double-spending payments at this wallet.
+/// A block-context placeholder stores the WINNER'S mined height and is
+/// collected exactly when `min(chainlock_height, synced_height)` reaches
+/// it — upstream's `prune_finalized_observed_spends` condition verbatim,
+/// no observation-age margin. At that boundary the funding transaction of
+/// the outpoint (necessarily mined at or below the winner's height) has
+/// been filter-scanned with no false negatives, so an unmaterialised row
+/// is provably not the wallet's coin.
 #[test]
 fn a_never_materialised_tombstone_is_collected_at_finality_and_not_before() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -2100,29 +2136,226 @@ fn a_never_materialised_tombstone_is_collected_at_finality_and_not_before() {
 
     let mut conn = persister.lock_conn_for_test();
     apply_heights(&mut conn, &w, 100);
-    seed_tombstone(&mut conn, &w, p, loser, winner);
+    seed_tombstone(&mut conn, &w, p, loser, winner, Some(WINNER_HEIGHT));
 
     assert_eq!(
         utxo_row_state(&conn, &w, &p),
-        Some((true, None, Some(100))),
+        Some((true, None, Some(i64::from(WINNER_HEIGHT)))),
         "sanity: the sweep left a held, never-materialised row stamped with \
-         the round's best-known height"
+         the winner's own mined height — not any observation watermark"
     );
 
-    // Boundary one short of stamp + margin: the hold must survive — the
-    // winner customarily mines at stamp + 1, and the margin keeps the claim
-    // through that block's own finality.
-    apply_heights(&mut conn, &w, 101);
+    // Boundary one below the winner's height: the winner's block is not
+    // yet inside the finality boundary, so the hold must survive.
+    apply_heights(&mut conn, &w, WINNER_HEIGHT - 1);
     assert!(
         row_exists(&conn, &w, &p),
-        "boundary 101 has not cleared stamp 100 by the margin — the hold stays"
+        "boundary {} has not reached the winner's height {} — the hold stays",
+        WINNER_HEIGHT - 1,
+        WINNER_HEIGHT
     );
 
-    apply_heights(&mut conn, &w, 102);
+    apply_heights(&mut conn, &w, WINNER_HEIGHT);
     assert!(
         !row_exists(&conn, &w, &p),
-        "boundary 102 cleared stamp 100 by the margin — the junk row is gone"
+        "the boundary reaching the winner's height collects the row"
     );
+}
+
+/// The reviewer's unrelated-advancement scenario, block-context half: the
+/// chainlock can run arbitrarily far ahead, but while `synced_height` sits
+/// below the winner's mined height the boundary has not reached the spend
+/// and the hold must survive — the funding output could still be delivered
+/// by the unscanned range. It collects the moment the synced height
+/// catches up.
+#[test]
+fn a_block_context_tombstone_outlives_unrelated_advancement_below_its_winners_height() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xF7);
+    ensure_wallet_meta(&persister, &w);
+
+    let p = OutPoint::new(Txid::from_byte_array([0x62; 32]), 0);
+    let loser = Txid::from_byte_array([0x63; 32]);
+    let winner = Txid::from_byte_array([0x64; 32]);
+
+    let mut conn = persister.lock_conn_for_test();
+    seed_tombstone(&mut conn, &w, p, loser, winner, Some(WINNER_HEIGHT));
+
+    // Chainlocks race ahead by thousands of blocks; the filter scan has
+    // only reached one block short of the winner.
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            synced_height: Some(WINNER_HEIGHT - 1),
+            last_applied_chain_lock: Some(chain_lock_at(WINNER_HEIGHT + 10_000)),
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    assert!(
+        row_exists(&conn, &w, &p),
+        "min(chainlock, synced) = {} is below the winner's height {} — any \
+         amount of unrelated chainlock progress must not collect the hold",
+        WINNER_HEIGHT - 1,
+        WINNER_HEIGHT
+    );
+
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            synced_height: Some(WINNER_HEIGHT),
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    assert!(
+        !row_exists(&conn, &w, &p),
+        "the scan reaching the winner's height completes the boundary and collects"
+    );
+}
+
+/// A mempool-context sweep — an InstantSend-locked winner that has not
+/// mined — creates NO placeholder for a held-but-unfunded input, however
+/// often it happens. This is upstream's own doctrine projected ("an
+/// unconfirmed spend must not invalidate a coin": `record_observed_spends`
+/// refuses mempool/IS contexts), and it kills the attacker-growable
+/// population at the source — a swept incoming payment's foreign inputs
+/// land nothing, so repeated double-spends at this wallet grow nothing.
+#[test]
+fn a_mempool_context_sweep_creates_no_placeholder_rows() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xF8);
+    ensure_wallet_meta(&persister, &w);
+
+    let mut conn = persister.lock_conn_for_test();
+    // Repeated double-spent incoming payments: distinct losers, each
+    // claiming distinct foreign inputs, each swept by an IS-locked winner.
+    for i in 0u8..3 {
+        let p = OutPoint::new(Txid::from_byte_array([0x70 + i; 32]), 0);
+        let loser = Txid::from_byte_array([0x80 + i; 32]);
+        let winner = Txid::from_byte_array([0x90 + i; 32]);
+        seed_tombstone(&mut conn, &w, p, loser, winner, None);
+        assert!(
+            !row_exists(&conn, &w, &p),
+            "an unmined IS-locked winner must leave no placeholder for input #{i}"
+        );
+    }
+    let rows: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM core_utxos WHERE wallet_id = ?1",
+            params![w.as_slice()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        rows, 0,
+        "repeated mempool-path double-spends must leave zero placeholder rows"
+    );
+}
+
+/// The mempool-context sweep still spend-marks a coin that HAS
+/// materialised: the row carries real funding data, so holding it costs
+/// nothing an attacker controls, and the winner's own record (or its
+/// eventual block delivery) is the durable evidence. Its stamp stays NULL
+/// — a materialised row is outside the collector's reach anyway.
+#[test]
+fn a_mempool_context_sweep_still_spend_marks_a_materialised_coin() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xF9);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = p2pkh(0x65);
+    let funding_txid = Txid::from_byte_array([0x66; 32]);
+    let p = OutPoint::new(funding_txid, 0);
+    let loser = Txid::from_byte_array([0x67; 32]);
+    let winner = Txid::from_byte_array([0x68; 32]);
+
+    let mut conn = persister.lock_conn_for_test();
+    derive_address(&conn, &w, 0, &addr);
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            new_utxos: vec![make_utxo(&addr, funding_txid, 0, 50_000)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    seed_tombstone(&mut conn, &w, p, loser, winner, None);
+    assert_eq!(
+        utxo_row_state(&conn, &w, &p),
+        Some((true, Some(10), None)),
+        "a materialised coin is spend-marked by the IS-locked winner, with \
+         no stamp — its funding data is real and the collector never sees it"
+    );
+}
+
+/// The reviewer's named regression, resolved by engine parity: an
+/// IS-locked winner sweeps on the mempool path and never mines, the app
+/// restarts, chainlocks and heights advance arbitrarily, and only then is
+/// the funding output delivered. The wallet engine itself keeps no
+/// durable hold for an unconfirmed spend and would credit the coin — so
+/// the store must land it unspent too, with no stale placeholder in the
+/// way and no placeholder wrongly collected beforehand (none ever
+/// existed). Convergence is the winner's job: when it mines, BIP158
+/// delivery of its block re-marks the coin through the ordinary channels.
+#[test]
+fn a_funding_output_arriving_after_a_mempool_sweep_and_restart_lands_unspent() {
+    let (persister, tmp, path) = fresh_persister();
+    let w: WalletId = wid(0xFA);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = p2pkh(0x69);
+    let funding_txid = Txid::from_byte_array([0x6A; 32]);
+    let p = OutPoint::new(funding_txid, 0);
+    let loser = Txid::from_byte_array([0x6B; 32]);
+    let winner = Txid::from_byte_array([0x6C; 32]);
+
+    {
+        let mut conn = persister.lock_conn_for_test();
+        derive_address(&conn, &w, 0, &addr);
+        seed_tombstone(&mut conn, &w, p, loser, winner, None);
+    }
+    // Restart.
+    drop(persister);
+    let cfg = SqlitePersisterConfig::new(&path);
+    let persister = SqlitePersister::open(cfg).expect("reopen");
+
+    let mut conn = persister.lock_conn_for_test();
+    // Arbitrary chainlock/height advancement while the winner stays unmined.
+    apply_heights(&mut conn, &w, 25_000);
+
+    // The funding output is finally delivered and classified.
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            new_utxos: vec![make_utxo(&addr, funding_txid, 0, 50_000)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    assert!(
+        unspent(&conn, &w).contains(&p),
+        "the engine credits a coin whose only spender is unconfirmed — the \
+         mirror must agree after a restart, not hold a claim the wallet \
+         itself no longer remembers"
+    );
+    let rows: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM core_utxos WHERE wallet_id = ?1",
+            params![w.as_slice()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        rows, 1,
+        "exactly the funding row itself — no leftover placeholder"
+    );
+    drop(conn);
+    drop(tmp);
 }
 
 /// Synced height alone is not finality: with no chainlock ever persisted
@@ -2149,7 +2382,7 @@ fn a_tombstone_is_never_collected_without_a_persisted_chainlock() {
         core_state::apply(&tx, &w, &cs).unwrap();
         tx.commit().unwrap();
     }
-    seed_tombstone(&mut conn, &w, p, loser, winner);
+    seed_tombstone(&mut conn, &w, p, loser, winner, Some(WINNER_HEIGHT));
     {
         let tx = conn.transaction().unwrap();
         let cs = CoreChangeSet {
@@ -2166,13 +2399,13 @@ fn a_tombstone_is_never_collected_without_a_persisted_chainlock() {
          outlast any amount of synced-height progress"
     );
 
-    // The moment a chainlock does land, the boundary exists and the aged
-    // stamp collects immediately.
+    // The moment a chainlock does land, the boundary exists and the
+    // winner's height sits inside it — the row collects immediately.
     apply_heights(&mut conn, &w, 500);
     assert!(
         !row_exists(&conn, &w, &p),
         "the first persisted chainlock supplies the boundary and the \
-         long-aged stamp collects"
+         winner-height stamp collects"
     );
 }
 
@@ -2194,11 +2427,11 @@ fn a_materialised_claim_is_never_collected() {
     let mut conn = persister.lock_conn_for_test();
     derive_address(&conn, &w, 0, &addr);
     apply_heights(&mut conn, &w, 100);
-    seed_tombstone(&mut conn, &w, p, loser, winner);
+    seed_tombstone(&mut conn, &w, p, loser, winner, Some(WINNER_HEIGHT));
     assert_eq!(
         utxo_row_state(&conn, &w, &p),
-        Some((true, None, Some(100))),
-        "sanity: held, unmaterialised, stamped"
+        Some((true, None, Some(i64::from(WINNER_HEIGHT)))),
+        "sanity: held, unmaterialised, stamped with the winner's height"
     );
 
     // The funding output classifies: the valve keeps the coin spent, the
@@ -2227,49 +2460,50 @@ fn a_materialised_claim_is_never_collected() {
     );
 }
 
-/// A tombstone written before `held_since_height` existed (or on a wallet
-/// with no recorded heights) has a NULL stamp. The collector back-fills it
-/// with the current best-known height on first sight rather than guessing,
-/// so it waits a full margin from then — never collected in the same round
-/// that first saw it.
+/// A held, unmaterialised row with a NULL winner height is never
+/// collected. No current writer produces one — the tombstone insert
+/// requires a block context and an IS-locked re-point keeps the existing
+/// stamp — so an unstamped row is foreign or legacy data, and the safe
+/// reading is to hold it forever rather than guess it collectible.
 #[test]
-fn an_unstamped_tombstone_is_backfilled_before_it_can_be_collected() {
+fn a_tombstone_without_a_winner_height_is_never_collected() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xF4);
     ensure_wallet_meta(&persister, &w);
 
     let p = OutPoint::new(Txid::from_byte_array([0x59; 32]), 0);
-    let loser = Txid::from_byte_array([0x5A; 32]);
     let winner = Txid::from_byte_array([0x5B; 32]);
 
     let mut conn = persister.lock_conn_for_test();
-    // No heights have ever been recorded: the sweep stamps NULL.
-    seed_tombstone(&mut conn, &w, p, loser, winner);
+    // Plant the shape directly — the current writers cannot produce it.
+    {
+        let bytes = blob::encode_outpoint(&p).unwrap();
+        conn.execute(
+            "INSERT INTO core_utxos \
+                (wallet_id, outpoint, value, script, height, account_index, spent, spent_in_txid) \
+             VALUES (?1, ?2, 0, X'', NULL, 0, 1, ?3)",
+            params![w.as_slice(), &bytes[..], AsRef::<[u8]>::as_ref(&winner)],
+        )
+        .unwrap();
+    }
+
+    // Two rounds, not one: a back-filling collector (the rejected design)
+    // would stamp the row on the first round and collect it on the second.
+    apply_heights(&mut conn, &w, 1_000_000);
+    apply_heights(&mut conn, &w, 1_000_010);
     assert_eq!(
         utxo_row_state(&conn, &w, &p),
         Some((true, None, None)),
-        "sanity: no watermark existed, so the stamp is NULL"
-    );
-
-    apply_heights(&mut conn, &w, 1_000);
-    assert_eq!(
-        utxo_row_state(&conn, &w, &p),
-        Some((true, None, Some(1_000))),
-        "first collection pass back-fills the stamp instead of collecting"
-    );
-
-    apply_heights(&mut conn, &w, 1_002);
-    assert!(
-        !row_exists(&conn, &w, &p),
-        "the back-filled stamp ages out like any other"
+        "no winner height, no proof of finality — the hold outlasts any boundary"
     );
 }
 
-/// A chained sweep that re-points a still-unfunded claim to a new winner
-/// also re-stamps it: the claim now belongs to a winner whose confirmation
-/// is measured from this round, not the original sweep's.
+/// A chained sweep that re-points a still-unfunded claim to a new
+/// block-context winner also re-stamps it with THAT winner's mined
+/// height: the claim now belongs to a spend anchored at a later block,
+/// and its collection horizon moves with it.
 #[test]
-fn a_repointed_tombstone_is_restamped_to_the_later_sweep() {
+fn a_repointed_tombstone_is_restamped_to_the_later_winners_height() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xF5);
     ensure_wallet_meta(&persister, &w);
@@ -2280,19 +2514,22 @@ fn a_repointed_tombstone_is_restamped_to_the_later_sweep() {
     let final_winner = Txid::from_byte_array([0x5F; 32]);
 
     let mut conn = persister.lock_conn_for_test();
-    apply_heights(&mut conn, &w, 100);
-    seed_tombstone(&mut conn, &w, p, first_loser, second_loser);
+    seed_tombstone(
+        &mut conn,
+        &w,
+        p,
+        first_loser,
+        second_loser,
+        Some(WINNER_HEIGHT),
+    );
     assert_eq!(
         utxo_row_state(&conn, &w, &p).and_then(|(_, _, s)| s),
-        Some(100),
-        "sanity: stamped at the first sweep's height"
+        Some(i64::from(WINNER_HEIGHT)),
+        "sanity: stamped with the first winner's mined height"
     );
 
-    // One block of progress — within the collection margin, so the
-    // tombstone survives to be re-pointed (through the UPDATE's re-stamp
-    // CASE) rather than collected and re-created by the insert path.
-    apply_heights(&mut conn, &w, 101);
-    // The first winner is itself swept, still holding the unfunded input.
+    // The first winner is itself swept — by a winner mined 50 blocks
+    // later — still holding the unfunded input.
     {
         let tx = conn.transaction().unwrap();
         let cs = CoreChangeSet {
@@ -2308,6 +2545,7 @@ fn a_repointed_tombstone_is_restamped_to_the_later_sweep() {
             sweeps: vec![SweepBatch {
                 txids: vec![second_loser],
                 superseded_by: final_winner,
+                winner_mined_height: Some(WINNER_HEIGHT + 50),
                 released_outpoints: vec![],
             }],
             ..Default::default()
@@ -2317,8 +2555,76 @@ fn a_repointed_tombstone_is_restamped_to_the_later_sweep() {
     }
     assert_eq!(
         utxo_row_state(&conn, &w, &p),
-        Some((true, None, Some(101))),
-        "the re-pointed claim is re-stamped to the later sweep's height"
+        Some((true, None, Some(i64::from(WINNER_HEIGHT + 50)))),
+        "the re-pointed claim is re-stamped to the later winner's mined height"
+    );
+}
+
+/// The IS-locked half of the chained case: an unmined winner re-points
+/// the claim but must NOT disturb the earlier block-context stamp —
+/// upstream's observed-spend entry is never retracted by an unconfirmed
+/// conflict. Collection at the retained height stays sound (the funding
+/// output is mined at or below the FIRST spender's height regardless of
+/// who claims the coin now), so the row still collects at that boundary.
+#[test]
+fn a_mempool_repointed_tombstone_keeps_its_block_context_stamp() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xFB);
+    ensure_wallet_meta(&persister, &w);
+
+    let p = OutPoint::new(Txid::from_byte_array([0x6D; 32]), 0);
+    let first_loser = Txid::from_byte_array([0x6E; 32]);
+    let second_loser = Txid::from_byte_array([0x6F; 32]);
+    let final_winner = Txid::from_byte_array([0x71; 32]);
+
+    let mut conn = persister.lock_conn_for_test();
+    seed_tombstone(
+        &mut conn,
+        &w,
+        p,
+        first_loser,
+        second_loser,
+        Some(WINNER_HEIGHT),
+    );
+
+    // The first winner is evicted by an IS-locked, unmined conflict that
+    // also claims the unfunded input.
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![tx_record(second_loser, vec![p], vec![])],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![second_loser],
+                superseded_by: final_winner,
+                winner_mined_height: None,
+                released_outpoints: vec![],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    assert_eq!(
+        utxo_row_state(&conn, &w, &p),
+        Some((true, None, Some(i64::from(WINNER_HEIGHT)))),
+        "an unmined winner re-points the claim without touching the earlier \
+         block-context stamp"
+    );
+
+    apply_heights(&mut conn, &w, WINNER_HEIGHT);
+    assert!(
+        !row_exists(&conn, &w, &p),
+        "the retained stamp still bounds the row: the funding output sits at \
+         or below the first spender's height, so the boundary reaching it \
+         proves delivery-or-never"
     );
 }
 

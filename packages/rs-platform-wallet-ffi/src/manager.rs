@@ -8,9 +8,9 @@ use crate::event_handler::{
 };
 use crate::handle::*;
 use crate::persistence::{
-    FFIPersister, PersistDpnsNameStatesFn, PersistWalletChangesetSweepsFn, PersistenceCallbacks,
-    PersistenceCallbacksExtension, PersistenceCapabilitiesFFI,
-    PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
+    FFIPersister, PersistDpnsNameStatesFn, PersistWalletChangesetChainLockHeightFn,
+    PersistWalletChangesetSweepsFn, PersistenceCallbacks, PersistenceCallbacksExtension,
+    PersistenceCapabilitiesFFI, PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
@@ -78,6 +78,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create(
         None,
         None,
         None,
+        None,
         out_handle,
     )
 }
@@ -102,6 +103,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_persistence_capabil
         persistence,
         event_handler,
         declaration,
+        None,
         None,
         None,
         None,
@@ -132,6 +134,8 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_persistence_extensi
     let declaration = persistence_capabilities_declaration(&*persistence_capabilities);
     let dpns_callback = persistence_extension_dpns_callback(persistence_extension);
     let sweeps_callback = persistence_extension_sweeps_callback(persistence_extension);
+    let chain_lock_height_callback =
+        persistence_extension_chain_lock_height_callback(persistence_extension);
     platform_wallet_manager_create_impl(
         sdk_ptr,
         persistence,
@@ -139,6 +143,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_persistence_extensi
         declaration,
         dpns_callback,
         sweeps_callback,
+        chain_lock_height_callback,
         None,
         out_handle,
     )
@@ -164,6 +169,8 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_extensions(
     let declaration = persistence_capabilities_declaration(&*persistence_capabilities);
     let dpns_persistence_callback = persistence_extension_dpns_callback(persistence_extension);
     let sweeps_persistence_callback = persistence_extension_sweeps_callback(persistence_extension);
+    let chain_lock_height_persistence_callback =
+        persistence_extension_chain_lock_height_callback(persistence_extension);
     let dpns_event_callback = event_extension_dpns_callback(event_extension);
     platform_wallet_manager_create_impl(
         sdk_ptr,
@@ -172,6 +179,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_extensions(
         declaration,
         dpns_persistence_callback,
         sweeps_persistence_callback,
+        chain_lock_height_persistence_callback,
         dpns_event_callback,
         out_handle,
     )
@@ -232,6 +240,18 @@ unsafe fn persistence_extension_sweeps_callback(
     )
 }
 
+unsafe fn persistence_extension_chain_lock_height_callback(
+    extension: *const PersistenceCallbacksExtension,
+) -> Option<PersistWalletChangesetChainLockHeightFn> {
+    negotiated_extension_slot!(
+        extension,
+        PersistenceCallbacksExtension,
+        PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
+        on_persist_wallet_changeset_chain_lock_height_fn,
+        PersistWalletChangesetChainLockHeightFn
+    )
+}
+
 unsafe fn event_extension_dpns_callback(
     extension: *const EventHandlerCallbacksExtension,
 ) -> Option<DpnsMarketplaceSyncCompletedFn> {
@@ -255,6 +275,7 @@ unsafe fn platform_wallet_manager_create_impl(
     declared_capabilities: PersistenceCapabilities,
     dpns_name_states_callback: Option<PersistDpnsNameStatesFn>,
     wallet_changeset_sweeps_callback: Option<PersistWalletChangesetSweepsFn>,
+    wallet_changeset_chain_lock_height_callback: Option<PersistWalletChangesetChainLockHeightFn>,
     dpns_event_callback: Option<DpnsMarketplaceSyncCompletedFn>,
     out_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
@@ -292,11 +313,12 @@ unsafe fn platform_wallet_manager_create_impl(
 
     let sdk = Arc::new((*(sdk_ptr as *const Sdk)).clone());
     let persister = Arc::new(
-        FFIPersister::new_with_persistence_capabilities_and_extension_callbacks(
+        FFIPersister::new_with_persistence_capabilities_and_all_extension_callbacks(
             std::ptr::read(persistence),
             declared_capabilities,
             dpns_name_states_callback,
             wallet_changeset_sweeps_callback,
+            wallet_changeset_chain_lock_height_callback,
         ),
     );
     let handler: Arc<dyn platform_wallet::PlatformEventHandler> = Arc::new(FFIEventHandler::new(
@@ -818,6 +840,14 @@ mod tests {
         0
     }
 
+    unsafe extern "C" fn persist_wallet_changeset_chain_lock_height(
+        _context: *mut c_void,
+        _wallet_id: *const u8,
+        _chain_lock_height: u32,
+    ) -> i32 {
+        0
+    }
+
     fn persistence_callbacks() -> PersistenceCallbacks {
         PersistenceCallbacks {
             on_changeset_begin_fn: Some(begin_changeset),
@@ -1143,6 +1173,8 @@ mod tests {
         assert!(unsafe { persistence_extension_dpns_callback(&unknown) }.is_none());
         assert!(unsafe { persistence_extension_sweeps_callback(&short) }.is_none());
         assert!(unsafe { persistence_extension_sweeps_callback(&unknown) }.is_none());
+        assert!(unsafe { persistence_extension_chain_lock_height_callback(&short) }.is_none());
+        assert!(unsafe { persistence_extension_chain_lock_height_callback(&unknown) }.is_none());
     }
 
     /// The exact cross-version pairing the sweep transport exists for: a
@@ -1170,13 +1202,37 @@ mod tests {
         };
         assert!(unsafe { persistence_extension_dpns_callback(&legacy) }.is_some());
         assert!(unsafe { persistence_extension_sweeps_callback(&legacy) }.is_none());
+        assert!(unsafe { persistence_extension_chain_lock_height_callback(&legacy) }.is_none());
+
+        // A host built when the extension ended at the sweeps slot: sweeps
+        // negotiate, the chainlock-height slot is refused, never read.
+        let sweeps_era_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_persist_wallet_changeset_chain_lock_height_fn
+        );
+        let sweeps_era = PersistenceCallbacksExtension {
+            struct_size: sweeps_era_size,
+            on_persist_dpns_name_states_fn: Some(persist_dpns_name_states),
+            on_persist_wallet_changeset_sweeps_fn: Some(persist_wallet_changeset_sweeps),
+            on_persist_wallet_changeset_chain_lock_height_fn: Some(
+                persist_wallet_changeset_chain_lock_height,
+            ),
+            ..Default::default()
+        };
+        assert!(unsafe { persistence_extension_dpns_callback(&sweeps_era) }.is_some());
+        assert!(unsafe { persistence_extension_sweeps_callback(&sweeps_era) }.is_some());
+        assert!(unsafe { persistence_extension_chain_lock_height_callback(&sweeps_era) }.is_none());
 
         let current = PersistenceCallbacksExtension {
             on_persist_dpns_name_states_fn: Some(persist_dpns_name_states),
             on_persist_wallet_changeset_sweeps_fn: Some(persist_wallet_changeset_sweeps),
+            on_persist_wallet_changeset_chain_lock_height_fn: Some(
+                persist_wallet_changeset_chain_lock_height,
+            ),
             ..Default::default()
         };
         assert!(unsafe { persistence_extension_sweeps_callback(&current) }.is_some());
+        assert!(unsafe { persistence_extension_chain_lock_height_callback(&current) }.is_some());
     }
 }
 

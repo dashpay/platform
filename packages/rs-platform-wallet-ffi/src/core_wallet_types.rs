@@ -298,6 +298,22 @@ pub struct SweepBatchFFI {
     /// this is the only thing telling it which to hand back.
     pub released_outpoints: *const OutPointFFI,
     pub released_outpoints_count: usize,
+    /// Whether `winner_mined_height` is meaningful. `false` means the sweep
+    /// was triggered by an InstantSend-locked winner still waiting to be
+    /// mined (upstream's only other trigger — an unlocked mempool arrival
+    /// never sweeps), and the winner has NO finality horizon: a persister
+    /// must not create a durable placeholder for a held-but-unfunded input
+    /// on such a sweep, mirroring upstream's refusal to record an
+    /// unconfirmed spend, and must keep (not clear) the stamp of any
+    /// existing placeholder it re-points.
+    pub has_winner_mined_height: bool,
+    /// Mined height of `superseded_by` when `has_winner_mined_height` —
+    /// the winner's own block, carried from the sweep event because the
+    /// winner may never appear anywhere else in this wallet's stream. A
+    /// persister stamps it onto the placeholder it writes for a
+    /// held-but-unfunded input, and collects that placeholder exactly when
+    /// `min(chainlock_height, synced_height)` reaches the stamp.
+    pub winner_mined_height: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -592,6 +608,8 @@ pub(crate) fn build_sweep_batches_for_callback(
                     backing.released.as_ptr()
                 },
                 released_outpoints_count: backing.released.len(),
+                has_winner_mined_height: batch.winner_mined_height.is_some(),
+                winner_mined_height: batch.winner_mined_height.unwrap_or(0),
             }
         })
         .collect();

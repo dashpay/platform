@@ -239,6 +239,28 @@ pub struct SweepBatch {
     /// and still sweep, which is why it cannot be looked up to work out what
     /// it took.
     pub superseded_by: Txid,
+    /// Mined height of `superseded_by` when the sweep was triggered by its
+    /// arrival in a block; `None` when it was triggered by an
+    /// InstantSend-locked winner still waiting to be mined (upstream's only
+    /// two triggers — an unlocked mempool arrival never sweeps).
+    ///
+    /// This is the winner's finality context, straight from the event: the
+    /// winner need not be wallet-relevant, so no persister can look its
+    /// height up in its own records. A held-but-unfunded input is only
+    /// mirrored as a durable placeholder when this is `Some` — the exact
+    /// projection of upstream's `observed_spent_outpoints`, which records a
+    /// spend's own block height and deliberately records nothing for a
+    /// mempool/IS-lock spend ("an unconfirmed spend must not invalidate a
+    /// coin"). The stored height is then the placeholder's whole lifetime
+    /// rule: collectible once `min(chainlock_height, synced_height)`
+    /// reaches it, exactly upstream's `prune_finalized_observed_spends`
+    /// boundary.
+    ///
+    /// `serde(default)`: a journaled payload written before this field
+    /// existed reads back as `None` — the conservative reading (no new
+    /// placeholder, existing stamps kept).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub winner_mined_height: Option<u32>,
     /// Of the inputs those removed transactions claimed, the ones that came
     /// free — no surviving transaction spends them too. Everything else they
     /// claimed was taken by `superseded_by` and stays spent.

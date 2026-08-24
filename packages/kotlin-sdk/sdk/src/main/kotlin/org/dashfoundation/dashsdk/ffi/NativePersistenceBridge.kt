@@ -312,7 +312,14 @@ abstract class NativePersistenceBridge {
      * each paired by index with the transaction that settled its inputs,
      * plus the outpoints the removals actually freed. Fired once after the
      * per-account decomposition, and only when the round swept something.
-     * Descriptor `([B[[B[[B[[B)I`.
+     * Descriptor `([B[[B[[B[[BI)I`.
+     *
+     * [winnerMinedHeight] is the winner's own mined block height for a
+     * block-context sweep, or -1 for an InstantSend-locked winner not yet
+     * mined (the sentinel is unambiguous — block heights are
+     * non-negative — and the handler maps it back to null). It keys the
+     * whole lifetime rule of a pending-input tombstone: no height, no
+     * tombstone.
      *
      * Each removed transaction was a recorded spend that its winner beat to
      * one of its inputs, so it can never confirm. Every other slot on this
@@ -354,8 +361,23 @@ abstract class NativePersistenceBridge {
         txids: Array<ByteArray>,
         supersededBy: Array<ByteArray>,
         releasedOutpoints: Array<ByteArray>,
+        winnerMinedHeight: Int,
     ): Int =
         if (persistenceCapabilitiesBits() and CAPABILITY_CORE_SWEEP_REMOVAL != 0L) 1 else 0
+
+    /**
+     * The round's numeric chainlock height, fired on chainlock-advancing
+     * persistence rounds after the header slot. Descriptor `([BI)I`.
+     *
+     * The bincode chainlock blob on the header call is opaque to Kotlin,
+     * and this scalar is the half of the swept-tombstone collection
+     * boundary `min(chainlockHeight, syncedHeight)` an implementation
+     * cannot otherwise know. Purely additive: a host that ignores it
+     * simply never collects tombstones, which is the safe direction —
+     * holding a tombstone forever is junk, collecting one early is a
+     * wrongly-freed claim.
+     */
+    open fun onWalletChangesetChainLockHeight(walletId: ByteArray, height: Int): Int = 0
 
     // ── Identities ────────────────────────────────────────────────────
 

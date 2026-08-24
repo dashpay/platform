@@ -138,10 +138,19 @@ final class SweptTransactionPersistTests: XCTestCase {
     /// Drive one changeset round of sweeps through the same entry point the
     /// Rust persister calls.
     /// One sweep batch: the transactions it removed, the winner it is
-    /// attributed to, and the coins it freed.
+    /// attributed to, the winner's finality context, and the coins it
+    /// freed.
     private struct Batch {
         var losers: [Data]
         var winner: Data
+        /// The winner's own mined block height — `SweepBatchFFI`'s
+        /// `has_winner_mined_height`/`winner_mined_height` pair. Non-nil
+        /// models a block-context sweep (the winner is mined, tombstones
+        /// are written and stamped with this height); `nil` models a
+        /// mempool-context sweep (the winner is IS-locked and not yet
+        /// mined, and no tombstone may be created). Deliberately
+        /// undefaulted so every test states which world it is in.
+        var winnerMinedHeight: UInt32?
         var released: [(txid: Data, vout: UInt32)] = []
     }
 
@@ -226,6 +235,12 @@ final class SweptTransactionPersistTests: XCTestCase {
             Swift.withUnsafeMutableBytes(of: &entry.superseded_by) { dst in
                 batch.winner.withUnsafeBytes { src in dst.copyMemory(from: src) }
             }
+            // The winner's finality context: `has_winner_mined_height`
+            // false is the mempool path (IS-locked, unmined winner —
+            // no tombstone may be created), true carries the winner's
+            // own mined block.
+            entry.has_winner_mined_height = batch.winnerMinedHeight != nil
+            entry.winner_mined_height = batch.winnerMinedHeight ?? 0
             ffiBatches.append(entry)
         }
 
@@ -277,7 +292,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         try seedSpend(in: container, winnerTakesA: true)
 
         sweep(handler, [
-            Batch(losers: [sweptTxid], winner: winnerTxid, released: [(txid: fundingTxid, vout: 1)])
+            Batch(losers: [sweptTxid], winner: winnerTxid, winnerMinedHeight: 400, released: [(txid: fundingTxid, vout: 1)])
         ])
 
         XCTAssertNil(transaction(container, txid: sweptTxid), "the swept row is gone")
@@ -292,7 +307,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         try seedSpend(in: container, winnerTakesA: true)
 
         sweep(handler, [
-            Batch(losers: [sweptTxid], winner: winnerTxid, released: [(txid: fundingTxid, vout: 1)])
+            Batch(losers: [sweptTxid], winner: winnerTxid, winnerMinedHeight: 400, released: [(txid: fundingTxid, vout: 1)])
         ])
 
         let takenByWinner = txo(container, txid: fundingTxid, vout: 0)
@@ -316,7 +331,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         try seedSpend(in: container, winnerTakesA: false)
 
         sweep(handler, [
-            Batch(losers: [sweptTxid], winner: winnerTxid, released: [(txid: fundingTxid, vout: 1)])
+            Batch(losers: [sweptTxid], winner: winnerTxid, winnerMinedHeight: 400, released: [(txid: fundingTxid, vout: 1)])
         ])
 
         XCTAssertNil(transaction(container, txid: sweptTxid), "the swept row still goes")
@@ -352,7 +367,7 @@ final class SweptTransactionPersistTests: XCTestCase {
     func testWalletReDeliveringAStampedHeldCoinKeepsItSpent() throws {
         let (handler, container) = try makeHandler()
         try seedSpend(in: container, winnerTakesA: false)
-        sweep(handler, [Batch(losers: [sweptTxid], winner: winnerTxid)])
+        sweep(handler, [Batch(losers: [sweptTxid], winner: winnerTxid, winnerMinedHeight: 400)])
         XCTAssertTrue(txo(container, txid: fundingTxid, vout: 1)!.isSpent)
 
         redeliverCoinB(handler)
@@ -396,7 +411,7 @@ final class SweptTransactionPersistTests: XCTestCase {
 
         // The sweep holds the claim; the funding TXO then materializes it
         // as a stamped hold.
-        sweep(handler, [Batch(losers: [sweptTxid], winner: winnerTxid)])
+        sweep(handler, [Batch(losers: [sweptTxid], winner: winnerTxid, winnerMinedHeight: 400)])
         deliverFundingUtxo(handler, vout: 0, amount: 100_000)
         XCTAssertTrue(try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0)).isSpent)
 
@@ -452,7 +467,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         ))
         try context.save()
 
-        sweep(handler, [Batch(losers: [sweptTxid], winner: winnerTxid)])
+        sweep(handler, [Batch(losers: [sweptTxid], winner: winnerTxid, winnerMinedHeight: 400)])
         deliverFundingUtxo(handler, vout: 0, amount: 100_000)
         XCTAssertTrue(try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0)).isSpent)
 
@@ -640,9 +655,9 @@ final class SweptTransactionPersistTests: XCTestCase {
         try context.save()
 
         sweep(handler, [
-            Batch(losers: [sweptTxid], winner: winnerTxid, released: [(txid: fundingTxid, vout: 1)]),
+            Batch(losers: [sweptTxid], winner: winnerTxid, winnerMinedHeight: 400, released: [(txid: fundingTxid, vout: 1)]),
             // Its winner consumed B, so this batch frees nothing.
-            Batch(losers: [secondLoser], winner: Data(repeating: 0x56, count: 32)),
+            Batch(losers: [secondLoser], winner: Data(repeating: 0x56, count: 32), winnerMinedHeight: 400),
         ])
 
         let contested = txo(container, txid: fundingTxid, vout: 1)
@@ -769,7 +784,7 @@ final class SweptTransactionPersistTests: XCTestCase {
 
         // Wallet B first: its own released set names nothing, so its coin
         // (Q) is held rather than freed.
-        sweep(handler, [Batch(losers: [loserTxid], winner: winner)], walletId: walletB)
+        sweep(handler, [Batch(losers: [loserTxid], winner: winner, winnerMinedHeight: 400)], walletId: walletB)
 
         XCTAssertNotNil(
             transaction(container, txid: loserTxid),
@@ -781,7 +796,7 @@ final class SweptTransactionPersistTests: XCTestCase {
 
         // Wallet A second: its own released set names P.
         sweep(handler, [
-            Batch(losers: [loserTxid], winner: winner, released: [(txid: fundingTxid, vout: 0)])
+            Batch(losers: [loserTxid], winner: winner, winnerMinedHeight: 400, released: [(txid: fundingTxid, vout: 0)])
         ], walletId: walletId)
 
         XCTAssertNil(
@@ -812,7 +827,7 @@ final class SweptTransactionPersistTests: XCTestCase {
 
         // Wallet A first: releases P.
         sweep(handler, [
-            Batch(losers: [loserTxid], winner: winner, released: [(txid: fundingTxid, vout: 0)])
+            Batch(losers: [loserTxid], winner: winner, winnerMinedHeight: 400, released: [(txid: fundingTxid, vout: 0)])
         ], walletId: walletId)
 
         XCTAssertNotNil(
@@ -824,7 +839,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         XCTAssertNotNil(untouchedQ.spendingTransaction, "Q is still linked to the loser, untouched")
 
         // Wallet B second: releases nothing.
-        sweep(handler, [Batch(losers: [loserTxid], winner: winner)], walletId: walletB)
+        sweep(handler, [Batch(losers: [loserTxid], winner: winner, winnerMinedHeight: 400)], walletId: walletB)
 
         XCTAssertNil(
             transaction(container, txid: loserTxid),
@@ -876,7 +891,7 @@ final class SweptTransactionPersistTests: XCTestCase {
             // Only wallet B's callback ever runs, and it releases nothing —
             // wallet A's own callback (which would release P) never arrives
             // in this test at all.
-            sweep(handler, [Batch(losers: [loserTxid], winner: winner)], walletId: walletB)
+            sweep(handler, [Batch(losers: [loserTxid], winner: winner, winnerMinedHeight: 400)], walletId: walletB)
 
             XCTAssertNotNil(
                 transaction(container, txid: loserTxid),
@@ -947,7 +962,7 @@ final class SweptTransactionPersistTests: XCTestCase {
             // outstanding, so the shared row survives physically even
             // though the global half of the sweep already tombstoned it and
             // deleted its phantom output.
-            sweep(handler, [Batch(losers: [loserTxid], winner: winner)], walletId: walletB)
+            sweep(handler, [Batch(losers: [loserTxid], winner: winner, winnerMinedHeight: 400)], walletId: walletB)
 
             let tombstoned = try XCTUnwrap(transaction(container, txid: loserTxid))
             XCTAssertTrue(tombstoned.isGloballySwept, "sanity: the row is tombstoned after round 1")
@@ -1052,7 +1067,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         }
         try context.save()
 
-        let applied = sweep(handler, [Batch(losers: [sweptTxid], winner: winnerTxid)])
+        let applied = sweep(handler, [Batch(losers: [sweptTxid], winner: winnerTxid, winnerMinedHeight: 400)])
 
         XCTAssertTrue(applied, "a stale post-deletion callback is not a failure")
         XCTAssertNotNil(
@@ -1092,7 +1107,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         handle.truncateFile(atOffset: 16)
         try handle.close()
 
-        let applied = sweep(handler, [Batch(losers: [sweptTxid], winner: winnerTxid)])
+        let applied = sweep(handler, [Batch(losers: [sweptTxid], winner: winnerTxid, winnerMinedHeight: 400)])
 
         XCTAssertFalse(applied, "a genuinely failed wallet lookup must fail the round")
     }
@@ -1142,11 +1157,11 @@ final class SweptTransactionPersistTests: XCTestCase {
         try context.save()
 
         sweep(handler, [
-            Batch(losers: [sweptTxid], winner: winnerTxid, released: [(txid: fundingTxid, vout: 8)])
+            Batch(losers: [sweptTxid], winner: winnerTxid, winnerMinedHeight: 400, released: [(txid: fundingTxid, vout: 8)])
         ])
         sweep(
             handler,
-            [Batch(losers: [sweptTxid], winner: winnerTxid, released: [(txid: fundingTxid, vout: 9)])],
+            [Batch(losers: [sweptTxid], winner: winnerTxid, winnerMinedHeight: 400, released: [(txid: fundingTxid, vout: 9)])],
             walletId: walletB
         )
 
@@ -1164,7 +1179,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         try seedSpend(in: container, winnerTakesA: true)
 
         let applied = sweep(handler, [
-            Batch(losers: [Data(repeating: 0x99, count: 32)], winner: winnerTxid)
+            Batch(losers: [Data(repeating: 0x99, count: 32)], winner: winnerTxid, winnerMinedHeight: 400)
         ])
 
         XCTAssertTrue(applied, "an absent row is a successful no-op, not a failed round")
@@ -1214,7 +1229,7 @@ final class SweptTransactionPersistTests: XCTestCase {
                 "sanity: the funding TXO has not arrived yet"
             )
 
-            sweep(handler, [Batch(losers: [sweptTxid], winner: winnerTxid)])
+            sweep(handler, [Batch(losers: [sweptTxid], winner: winnerTxid, winnerMinedHeight: 400)])
 
             XCTAssertNil(transaction(container, txid: sweptTxid), "the loser is gone")
         }
@@ -1294,7 +1309,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         ))
         try context.save()
 
-        sweep(handler, [Batch(losers: [sweptTxid], winner: winnerTxid)])
+        sweep(handler, [Batch(losers: [sweptTxid], winner: winnerTxid, winnerMinedHeight: 400)])
 
         // Sanity: the coexisting pair this regression is about — the
         // winner's ordinary row plus the repointed tombstone.
@@ -1355,7 +1370,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         try context.save()
 
         // First sweep: W beats L, holding P (still unfunded).
-        sweep(handler, [Batch(losers: [firstLoser], winner: secondLoser)])
+        sweep(handler, [Batch(losers: [firstLoser], winner: secondLoser, winnerMinedHeight: 400)])
 
         let pOutpoint = PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0)
         let tombstoneDescriptor = FetchDescriptor<PersistentPendingInput>(
@@ -1399,7 +1414,7 @@ final class SweptTransactionPersistTests: XCTestCase {
 
         // Second sweep: X beats W, this time releasing P.
         sweep(handler, [
-            Batch(losers: [secondLoser], winner: finalWinner, released: [(txid: fundingTxid, vout: 0)])
+            Batch(losers: [secondLoser], winner: finalWinner, winnerMinedHeight: 400, released: [(txid: fundingTxid, vout: 0)])
         ])
 
         let survivingTombstones = try context.fetch(tombstoneDescriptor)
@@ -1453,7 +1468,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         try context.save()
 
         // First sweep: W beats L, holding P.
-        sweep(handler, [Batch(losers: [firstLoser], winner: secondLoser)])
+        sweep(handler, [Batch(losers: [firstLoser], winner: secondLoser, winnerMinedHeight: 400)])
 
         // W's own row — this time claiming ONLY P, so the second sweep has
         // no other input to reason about.
@@ -1468,7 +1483,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         try context.save()
 
         // Second sweep: X beats W, still holding the same input.
-        sweep(handler, [Batch(losers: [secondLoser], winner: finalWinner)])
+        sweep(handler, [Batch(losers: [secondLoser], winner: finalWinner, winnerMinedHeight: 400)])
 
         let pOutpoint = PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0)
         let tombstoneDescriptor = FetchDescriptor<PersistentPendingInput>(
@@ -1535,7 +1550,7 @@ final class SweptTransactionPersistTests: XCTestCase {
 
         // One batch removes both; upstream excludes P:0 from the released
         // set because its funder is itself a loser.
-        sweep(handler, [Batch(losers: [fundingTxid, childTxid], winner: winner)])
+        sweep(handler, [Batch(losers: [fundingTxid, childTxid], winner: winner, winnerMinedHeight: 400)])
 
         let pendingDescriptor = FetchDescriptor<PersistentPendingInput>(
             predicate: #Predicate { $0.outpoint == pOutpoint }
@@ -1593,10 +1608,11 @@ final class SweptTransactionPersistTests: XCTestCase {
         // One callback, two batches: W beats L holding the unfunded coin,
         // then X beats W and frees it.
         sweep(handler, [
-            Batch(losers: [firstLoser], winner: secondLoser),
+            Batch(losers: [firstLoser], winner: secondLoser, winnerMinedHeight: 400),
             Batch(
                 losers: [secondLoser],
                 winner: finalWinner,
+                winnerMinedHeight: 400,
                 released: [(txid: fundingTxid, vout: 0)]
             ),
         ])
@@ -1653,7 +1669,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         try context.save()
 
         // First sweep: W beats L, holding the still-unfunded coin.
-        sweep(handler, [Batch(losers: [firstLoser], winner: secondLoser)])
+        sweep(handler, [Batch(losers: [firstLoser], winner: secondLoser, winnerMinedHeight: 400)])
 
         // W's own record lands before the funding TXO does, so the drain
         // below links `spendingTransaction` as well as stamping the marker.
@@ -1675,7 +1691,7 @@ final class SweptTransactionPersistTests: XCTestCase {
 
         // Second sweep: X beats W, and this time upstream frees the coin.
         sweep(handler, [
-            Batch(losers: [secondLoser], winner: finalWinner, released: [(txid: fundingTxid, vout: 0)])
+            Batch(losers: [secondLoser], winner: finalWinner, winnerMinedHeight: 400, released: [(txid: fundingTxid, vout: 0)])
         ])
 
         let freed = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
@@ -1723,7 +1739,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         try context.save()
 
         // First sweep: W beats L, holding the still-unfunded coin.
-        sweep(handler, [Batch(losers: [firstLoser], winner: unrecordedWinner)])
+        sweep(handler, [Batch(losers: [firstLoser], winner: unrecordedWinner, winnerMinedHeight: 400)])
 
         // The funding TXO arrives with W still unrecorded: the drain stamps
         // the marker but has no row to link.
@@ -1739,6 +1755,7 @@ final class SweptTransactionPersistTests: XCTestCase {
             Batch(
                 losers: [unrecordedWinner],
                 winner: finalWinner,
+                winnerMinedHeight: 400,
                 released: [(txid: fundingTxid, vout: 0)]
             )
         ])
@@ -1799,8 +1816,8 @@ final class SweptTransactionPersistTests: XCTestCase {
 
         // First sweep, one independently committed callback per wallet: W
         // beats L, holding everything (nothing funded, nothing released).
-        sweep(handler, [Batch(losers: [sharedLoser], winner: sharedWinner)], walletId: walletId)
-        sweep(handler, [Batch(losers: [sharedLoser], winner: sharedWinner)], walletId: walletB)
+        sweep(handler, [Batch(losers: [sharedLoser], winner: sharedWinner, winnerMinedHeight: 400)], walletId: walletId)
+        sweep(handler, [Batch(losers: [sharedLoser], winner: sharedWinner, winnerMinedHeight: 400)], walletId: walletB)
         XCTAssertNil(transaction(container, txid: sharedLoser), "L is gone once both wallets ran")
 
         // W's own record arrives, claiming all three outpoints. The
@@ -1827,7 +1844,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         // its own coin, and — finding no attached claim of any other
         // wallet's — deletes the shared row.
         sweep(handler, [
-            Batch(losers: [sharedWinner], winner: finalWinner, released: [(txid: fundingTxid, vout: 0)])
+            Batch(losers: [sharedWinner], winner: finalWinner, winnerMinedHeight: 400, released: [(txid: fundingTxid, vout: 0)])
         ], walletId: walletId)
         XCTAssertNil(
             transaction(container, txid: sharedWinner),
@@ -1838,7 +1855,7 @@ final class SweptTransactionPersistTests: XCTestCase {
         // Wallet B's callback arrives after the row is gone, releasing one
         // of its two coins and holding the other.
         sweep(handler, [
-            Batch(losers: [sharedWinner], winner: finalWinner, released: [(txid: fundingTxid, vout: 2)])
+            Batch(losers: [sharedWinner], winner: finalWinner, winnerMinedHeight: 400, released: [(txid: fundingTxid, vout: 2)])
         ], walletId: walletB)
 
         let heldOutpoint = PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 1)
@@ -2029,13 +2046,24 @@ final class SweptTransactionPersistTests: XCTestCase {
 
     // MARK: - Bounded tombstone lifetime
 
-    /// One committed round carrying chain progress: the synced height and
-    /// (unless the caller opts out) chainlock bytes, driving the
-    /// `collectFinalizedSweptTombstones` pass in `persistWalletChangeset`.
+    /// The block-context winner's mined height used across the bounded-
+    /// lifetime tests — the stamp every tombstone carries, and the exact
+    /// boundary value at which it collects.
+    private static let winnerHeight: UInt32 = 400
+
+    /// One committed round carrying chain progress: the synced height,
+    /// (unless the caller opts out) opaque chainlock bytes, and — when
+    /// `chainLockHeight` is supplied — the NUMERIC chainlock height
+    /// through the extension's dedicated slot, fired inside the same
+    /// begin/end bracket after the changeset callback exactly the way the
+    /// Rust persister fires it. The bytes and the number are deliberately
+    /// independent knobs: the reviewer's point is precisely that bytes
+    /// alone must not enable collection.
     private func heightsRound(
         _ handler: PlatformWalletPersistenceHandler,
         synced: UInt32,
-        chainLock: Bool = true
+        chainLock: Bool = true,
+        chainLockHeight: UInt32? = nil
     ) {
         handler.beginChangeset(walletId: walletId)
         var cs = WalletChangeSetFFI()
@@ -2052,19 +2080,32 @@ final class SweptTransactionPersistTests: XCTestCase {
                 _ = handler.persistWalletChangeset(walletId: walletId, changeset: csPtr)
             }
         }
+        if let chainLockHeight {
+            _ = handler.persistWalletChangesetChainLockHeight(
+                walletId: walletId,
+                height: chainLockHeight
+            )
+        }
         _ = handler.endChangeset(walletId: walletId, success: true)
     }
 
-    /// Record a loser spending `(fundingTxid, 0)` with the funding side
-    /// unobserved, then sweep it — leaving the pending tombstone the
-    /// collection tests reason about.
+    /// Record a loser spending `(spentTxid, 0)` with the funding side
+    /// unobserved, then sweep it in the given winner context —
+    /// `winnerMinedHeight` non-nil leaves the stamped tombstone the
+    /// collection tests reason about; `nil` (an IS-locked, unmined winner)
+    /// must leave nothing.
     private func seedSweptTombstone(
         _ handler: PlatformWalletPersistenceHandler,
-        _ container: ModelContainer
+        _ container: ModelContainer,
+        winnerMinedHeight: UInt32?,
+        spentTxid: Data? = nil,
+        loser: Data? = nil,
+        winner: Data? = nil
     ) throws {
+        let loser = loser ?? sweptTxid
         let context = ModelContext(container)
         let swept = PersistentTransaction(
-            txid: sweptTxid,
+            txid: loser,
             transactionData: Data(repeating: 0x05, count: 10),
             context: 0,
             blockHeight: 0,
@@ -2072,101 +2113,139 @@ final class SweptTransactionPersistTests: XCTestCase {
         )
         context.insert(swept)
         context.insert(PersistentPendingInput(
-            outpoint: PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0),
+            outpoint: PersistentTxo.makeOutpoint(txid: spentTxid ?? fundingTxid, vout: 0),
             inputIndex: 0,
-            spendingTxid: sweptTxid,
+            spendingTxid: loser,
             spendingTransaction: swept,
             walletId: walletId
         ))
         try context.save()
-        sweep(handler, [Batch(losers: [sweptTxid], winner: winnerTxid)])
+        sweep(handler, [Batch(
+            losers: [loser],
+            winner: winner ?? winnerTxid,
+            winnerMinedHeight: winnerMinedHeight
+        )])
     }
 
-    private func pendingRows(_ container: ModelContainer) throws -> [PersistentPendingInput] {
-        let outpoint = PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0)
+    private func pendingRows(
+        _ container: ModelContainer,
+        spentTxid: Data? = nil
+    ) throws -> [PersistentPendingInput] {
+        let outpoint = PersistentTxo.makeOutpoint(txid: spentTxid ?? fundingTxid, vout: 0)
         let descriptor = FetchDescriptor<PersistentPendingInput>(
             predicate: #Predicate { $0.outpoint == outpoint }
         )
         return try ModelContext(container).fetch(descriptor)
     }
 
-    /// The attacker-shaped row: a swept incoming payment's foreign input
-    /// leaves a pending tombstone that never drains — no funding TXO ever
-    /// arrives — and before the collector existed it was permanent,
-    /// growable one row per input by repeatedly double-spending payments at
-    /// this wallet. The changeset-header collector deletes it once the
-    /// synced height clears its stamp by the margin — and not one block
-    /// sooner: the winner customarily mines at stamp + 1, and the margin
-    /// keeps the claim through that block.
+    /// Every pending-input row this wallet holds, regardless of outpoint —
+    /// the attacker-growth metric the mempool-context tests measure.
+    private func walletPendingRows(
+        _ container: ModelContainer
+    ) throws -> [PersistentPendingInput] {
+        let walletId = self.walletId
+        let descriptor = FetchDescriptor<PersistentPendingInput>(
+            predicate: #Predicate { $0.walletId == walletId }
+        )
+        return try ModelContext(container).fetch(descriptor)
+    }
+
+    /// This wallet's persisted row, for asserting on the stored numeric
+    /// chainlock height.
+    private func walletRow(_ container: ModelContainer) throws -> PersistentWallet? {
+        let walletId = self.walletId
+        let descriptor = FetchDescriptor<PersistentWallet>(
+            predicate: #Predicate { $0.walletId == walletId }
+        )
+        return try ModelContext(container).fetch(descriptor).first
+    }
+
+    /// The attacker-shaped row's lawful cousin: a block-context sweep's
+    /// tombstone stores the WINNER'S own mined height and is collected
+    /// exactly when the finality boundary `min(chainlockHeight,
+    /// syncedHeight)` reaches it — upstream key-wallet's
+    /// `prune_finalized_observed_spends` condition verbatim, no
+    /// observation-age margin. At that boundary the funding transaction of
+    /// the guarded outpoint (necessarily mined at or below the winner's
+    /// height) has been filter-scanned with no false negatives, so an
+    /// undrained tombstone is provably not guarding the wallet's coin.
     func testASweptTombstoneIsCollectedAtFinalityAndNotBefore() throws {
         let (handler, container) = try makeHandler()
         let context = ModelContext(container)
         context.insert(PersistentWallet(walletId: walletId, network: .testnet))
         try context.save()
-        heightsRound(handler, synced: 100)
-        try seedSweptTombstone(handler, container)
+        try seedSweptTombstone(handler, container, winnerMinedHeight: Self.winnerHeight)
 
         let tombstone = try XCTUnwrap(try pendingRows(container).first)
         XCTAssertTrue(tombstone.isSweptTombstone, "sanity: the sweep flagged the row")
         XCTAssertEqual(
-            tombstone.heldSinceHeight, 100,
-            "the tombstone is stamped with the wallet's synced height"
+            tombstone.winnerMinedHeight, Self.winnerHeight,
+            "the tombstone is stamped with the WINNER'S own mined height — "
+                + "not any observation watermark"
         )
 
-        heightsRound(handler, synced: 101)
+        heightsRound(
+            handler,
+            synced: Self.winnerHeight - 1,
+            chainLockHeight: Self.winnerHeight - 1
+        )
         XCTAssertEqual(
             try pendingRows(container).count, 1,
-            "boundary 101 has not cleared stamp 100 by the margin — the hold stays"
+            "boundary \(Self.winnerHeight - 1) has not reached the winner's "
+                + "height \(Self.winnerHeight) — the hold stays"
         )
 
-        heightsRound(handler, synced: 102)
+        heightsRound(handler, synced: Self.winnerHeight, chainLockHeight: Self.winnerHeight)
         XCTAssertTrue(
             try pendingRows(container).isEmpty,
-            "boundary 102 cleared stamp 100 by the margin — the junk row is gone"
+            "the boundary reaching the winner's height collects the row — no margin"
         )
     }
 
-    /// Synced height alone is not finality: until a chainlock has been
-    /// applied the collector must not run, mirroring upstream's (and the
-    /// SQLite store's) "no-op until a chainlock has been applied". The
-    /// moment one lands, the aged stamp collects.
-    func testASweptTombstoneOutlivesSyncProgressWithoutAChainLock() throws {
+    /// The reviewer's "weaker still" point, named: synced-height progress
+    /// plus even PRESENT chainlock BYTES must not collect — the bincode
+    /// blob proves a chainlock was once applied, but says nothing about
+    /// how far finality reaches. Only the NUMERIC chainlock height
+    /// delivered through the extension slot supplies the boundary's
+    /// chainlock half, mirroring upstream's (and the SQLite store's)
+    /// "no-op until a chainlock height has been persisted".
+    func testASweptTombstoneOutlivesSyncProgressWithoutANumericChainLockHeight() throws {
         let (handler, container) = try makeHandler()
         let context = ModelContext(container)
         context.insert(PersistentWallet(walletId: walletId, network: .testnet))
         try context.save()
-        heightsRound(handler, synced: 100, chainLock: false)
-        try seedSweptTombstone(handler, container)
+        try seedSweptTombstone(handler, container, winnerMinedHeight: Self.winnerHeight)
 
-        heightsRound(handler, synced: 500, chainLock: false)
+        heightsRound(handler, synced: 10_000, chainLock: true)
         XCTAssertEqual(
             try pendingRows(container).count, 1,
-            "no chainlock has ever been applied — the hold outlasts any "
-                + "amount of synced-height progress"
+            "chainlock BYTES exist and the synced height is far past the "
+                + "stamp — but no numeric chainlock height has ever been "
+                + "stored, so no finality boundary exists and the hold stays"
         )
 
-        heightsRound(handler, synced: 500)
+        heightsRound(handler, synced: 10_000, chainLockHeight: 10_000)
         XCTAssertTrue(
             try pendingRows(container).isEmpty,
-            "the first applied chainlock supplies the boundary and the "
-                + "long-aged stamp collects"
+            "the first NUMERIC chainlock height supplies the boundary and "
+                + "the long-aged stamp collects"
         )
     }
 
     /// The genuine claim the tombstone exists for: its funding TXO arrives,
     /// the drain moves the hold onto the TXO row (`supersededByTxid`) and
-    /// deletes the pending rows — so no amount of later sync progress may
-    /// touch the materialised hold.
+    /// deletes the pending rows — so no amount of later boundary progress
+    /// may touch the materialised hold.
     func testADrainedClaimIsImmuneToTheCollector() throws {
         let (handler, container) = try makeHandler()
         let context = ModelContext(container)
         context.insert(PersistentWallet(walletId: walletId, network: .testnet))
         try context.save()
-        heightsRound(handler, synced: 100)
-        try seedSweptTombstone(handler, container)
+        try seedSweptTombstone(handler, container, winnerMinedHeight: Self.winnerHeight)
         XCTAssertEqual(
-            try XCTUnwrap(try pendingRows(container).first).heldSinceHeight, 100,
-            "sanity: held, undrained, stamped"
+            try XCTUnwrap(try pendingRows(container).first).winnerMinedHeight,
+            Self.winnerHeight,
+            "sanity: held, undrained, stamped with the winner's height"
         )
 
         deliverFundingUtxo(handler, vout: 0, amount: 100_000)
@@ -2175,7 +2254,7 @@ final class SweptTransactionPersistTests: XCTestCase {
             "sanity: the drain consumed the pending rows"
         )
 
-        heightsRound(handler, synced: 10_000)
+        heightsRound(handler, synced: 10_000, chainLockHeight: 10_000)
         let coin = try XCTUnwrap(
             txo(container, txid: fundingTxid, vout: 0),
             "the materialised claim's row survives collection"
@@ -2184,65 +2263,336 @@ final class SweptTransactionPersistTests: XCTestCase {
         XCTAssertEqual(coin.supersededByTxid, winnerTxid)
     }
 
-    /// A tombstone flagged while no synced height was on record (or written
-    /// before `heldSinceHeight` existed — lightweight migration leaves
-    /// those `nil`) is back-filled with the current height on the
-    /// collector's first sight of it, never collected in that same round,
-    /// and then ages out like any other.
-    func testAnUnstampedTombstoneIsBackfilledBeforeItCanBeCollected() throws {
+    /// A held tombstone with a nil winner-height stamp is never collected.
+    /// No current writer produces one — a mempool-context sweep creates no
+    /// tombstone at all and a mempool re-point keeps the existing stamp —
+    /// so an unstamped row is foreign or legacy data, and with no proof of
+    /// finality the safe reading is to hold it forever rather than guess.
+    /// Replaces the rejected back-fill design, which stamped such a row
+    /// with the current height and thereby fabricated a finality horizon.
+    func testATombstoneWithoutAWinnerHeightIsNeverCollected() throws {
         let (handler, container) = try makeHandler()
         let context = ModelContext(container)
         context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        // Plant the shape directly — the current writers cannot produce it.
+        let orphan = PersistentPendingInput(
+            outpoint: PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0),
+            inputIndex: 0,
+            spendingTxid: winnerTxid,
+            spendingTransaction: nil,
+            walletId: walletId
+        )
+        orphan.isSweptTombstone = true
+        context.insert(orphan)
         try context.save()
-        try seedSweptTombstone(handler, container)
+
+        // Two rounds, not one: a back-filling collector (the rejected
+        // design) would stamp the row on the first round and collect it on
+        // the second.
+        heightsRound(handler, synced: 1_000_000, chainLockHeight: 1_000_000)
+        heightsRound(handler, synced: 1_000_010, chainLockHeight: 1_000_010)
+
+        let row = try XCTUnwrap(
+            try pendingRows(container).first,
+            "no winner height, no proof of finality — the hold outlasts any boundary"
+        )
+        XCTAssertTrue(row.isSweptTombstone)
         XCTAssertNil(
-            try XCTUnwrap(try pendingRows(container).first).heldSinceHeight,
-            "sanity: no synced height existed, so the stamp is nil"
-        )
-
-        heightsRound(handler, synced: 1_000)
-        XCTAssertEqual(
-            try XCTUnwrap(try pendingRows(container).first).heldSinceHeight, 1_000,
-            "first collection pass back-fills the stamp instead of collecting"
-        )
-
-        heightsRound(handler, synced: 1_002)
-        XCTAssertTrue(
-            try pendingRows(container).isEmpty,
-            "the back-filled stamp ages out like any other"
+            row.winnerMinedHeight,
+            "and the stamp is never back-filled — that would fabricate the horizon"
         )
     }
 
     /// A chained sweep that re-points a still-unfunded claim to a new
-    /// winner also re-stamps it: the claim now belongs to a winner whose
-    /// confirmation is measured from this round, not the original sweep's.
+    /// BLOCK-context winner also re-stamps it with THAT winner's mined
+    /// height: the claim now belongs to a spend anchored at a later block,
+    /// and its collection horizon moves with it.
     func testARepointedTombstoneIsRestampedToTheLaterSweep() throws {
         let (handler, container) = try makeHandler()
         let context = ModelContext(container)
         context.insert(PersistentWallet(walletId: walletId, network: .testnet))
         try context.save()
-        heightsRound(handler, synced: 100)
-        try seedSweptTombstone(handler, container)
+        try seedSweptTombstone(handler, container, winnerMinedHeight: Self.winnerHeight)
         XCTAssertEqual(
-            try XCTUnwrap(try pendingRows(container).first).heldSinceHeight, 100,
-            "sanity: stamped at the first sweep's height"
+            try XCTUnwrap(try pendingRows(container).first).winnerMinedHeight,
+            Self.winnerHeight,
+            "sanity: stamped with the first winner's mined height"
         )
 
-        // One block of progress — within the collection margin, so the
-        // tombstone survives to be re-pointed rather than collected.
-        heightsRound(handler, synced: 101)
-        // The first winner is itself swept — the chained-sweep continuation
-        // that re-points the earlier tombstone (no row needed: the
-        // tombstone is found by the scalar `spendingTxid` it carries).
+        // The first winner is itself swept — by a winner mined 50 blocks
+        // later — the chained-sweep continuation that re-points the
+        // earlier tombstone (no row needed: the tombstone is found by the
+        // scalar `spendingTxid` it carries).
         let finalWinner = Data(repeating: 0x66, count: 32)
-        sweep(handler, [Batch(losers: [winnerTxid], winner: finalWinner)])
+        sweep(handler, [Batch(
+            losers: [winnerTxid],
+            winner: finalWinner,
+            winnerMinedHeight: Self.winnerHeight + 50
+        )])
 
         let row = try XCTUnwrap(try pendingRows(container).first)
         XCTAssertTrue(row.isSweptTombstone)
         XCTAssertEqual(row.spendingTxid, finalWinner)
         XCTAssertEqual(
-            row.heldSinceHeight, 101,
-            "re-pointed ⇒ re-stamped to the later sweep's height"
+            row.winnerMinedHeight, Self.winnerHeight + 50,
+            "re-pointed to a later block-context winner ⇒ re-stamped to "
+                + "THAT winner's mined height"
+        )
+
+        // And the horizon moved with it: the old height no longer collects,
+        // the new one does.
+        heightsRound(
+            handler,
+            synced: Self.winnerHeight + 49,
+            chainLockHeight: Self.winnerHeight + 49
+        )
+        XCTAssertEqual(
+            try pendingRows(container).count, 1,
+            "the boundary reaching only the FIRST winner's height must no "
+                + "longer collect the re-stamped claim"
+        )
+        heightsRound(
+            handler,
+            synced: Self.winnerHeight + 50,
+            chainLockHeight: Self.winnerHeight + 50
+        )
+        XCTAssertTrue(try pendingRows(container).isEmpty)
+    }
+
+    /// A mempool-context sweep — an InstantSend-locked winner that has not
+    /// mined — creates NO placeholder for a held-but-unfunded input,
+    /// however often it happens. This is upstream's own doctrine projected
+    /// ("an unconfirmed spend must not invalidate a coin"), and it kills
+    /// the attacker-growable population at the source: a swept incoming
+    /// payment's foreign inputs land nothing, so repeated double-spends at
+    /// this wallet grow nothing.
+    func testAMempoolContextSweepCreatesNoPlaceholderRows() throws {
+        let (handler, container) = try makeHandler()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        try context.save()
+
+        // Repeated double-spent incoming payments: distinct losers, each
+        // claiming a distinct unobserved input, each swept by an IS-locked
+        // winner.
+        for i in 0..<3 {
+            let spent = Data(repeating: UInt8(0x70 + i), count: 32)
+            try seedSweptTombstone(
+                handler,
+                container,
+                winnerMinedHeight: nil,
+                spentTxid: spent,
+                loser: Data(repeating: UInt8(0x80 + i), count: 32),
+                winner: Data(repeating: UInt8(0x90 + i), count: 32)
+            )
+            XCTAssertTrue(
+                try pendingRows(container, spentTxid: spent).isEmpty,
+                "an unmined IS-locked winner must leave no placeholder for input #\(i)"
+            )
+        }
+        XCTAssertTrue(
+            try walletPendingRows(container).isEmpty,
+            "repeated mempool-path double-spends must leave zero pending-input rows"
+        )
+    }
+
+    /// The mempool-context sweep still spend-marks a coin that HAS
+    /// materialised — that path is unchanged: the row carries real funding
+    /// data, so holding it costs nothing an attacker controls, and the
+    /// winner's eventual block delivery is the durable evidence. Only the
+    /// never-materialised claim (the pending row) dies with the loser.
+    func testAMempoolContextSweepStillSpendMarksAMaterialisedCoin() throws {
+        let (handler, container) = try makeHandler()
+        try seedSpend(in: container, winnerTakesA: false)
+
+        // The same loser also claims an input whose funding side was never
+        // observed — the shape that would have become a tombstone.
+        let unfundedTxid = Data(repeating: 0x77, count: 32)
+        let context = ModelContext(container)
+        let loserRow = try XCTUnwrap(transaction(container, txid: sweptTxid))
+        context.insert(PersistentPendingInput(
+            outpoint: PersistentTxo.makeOutpoint(txid: unfundedTxid, vout: 0),
+            inputIndex: 2,
+            spendingTxid: sweptTxid,
+            spendingTransaction: loserRow,
+            walletId: walletId
+        ))
+        try context.save()
+
+        sweep(handler, [Batch(
+            losers: [sweptTxid],
+            winner: winnerTxid,
+            winnerMinedHeight: nil
+        )])
+
+        let coinB = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 1))
+        XCTAssertTrue(
+            coinB.isSpent,
+            "a materialised coin is spend-marked by the IS-locked winner exactly as before"
+        )
+        XCTAssertEqual(coinB.supersededByTxid, winnerTxid)
+        XCTAssertTrue(
+            try pendingRows(container, spentTxid: unfundedTxid).isEmpty,
+            "while the never-materialised claim dies with the loser — no tombstone"
+        )
+    }
+
+    /// The reviewer's named regression, resolved by engine parity: an
+    /// IS-locked winner sweeps on the mempool path and never mines, the
+    /// app restarts, chainlocks and heights advance arbitrarily, and only
+    /// then is the funding output delivered. The wallet engine itself
+    /// keeps no durable hold for an unconfirmed spend and would credit the
+    /// coin — so the mirror must land it unspent too, with no stale
+    /// placeholder in the way and none wrongly collected beforehand (none
+    /// ever existed). Convergence is the winner's job: when it mines,
+    /// BIP158 delivery of its block re-marks the coin through the ordinary
+    /// channels.
+    func testAFundingOutputArrivingAfterAMempoolSweepAndRestartLandsUnspent() throws {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mempool-sweep-restart-\(UUID().uuidString).store")
+        defer { try? FileManager.default.removeItem(at: storeURL) }
+
+        do {
+            let (handler, container) = try makeHandler(url: storeURL)
+            let context = ModelContext(container)
+            context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+            try context.save()
+            try seedSweptTombstone(handler, container, winnerMinedHeight: nil)
+            XCTAssertNil(transaction(container, txid: sweptTxid), "sanity: the loser is gone")
+            XCTAssertTrue(
+                try walletPendingRows(container).isEmpty,
+                "sanity: the mempool sweep left no pending rows behind"
+            )
+        }
+
+        // Restart: a fresh persister loading the same on-disk store, then
+        // arbitrary chainlock/height advancement while the winner stays
+        // unmined, and only then the funding delivery.
+        let (handler, container) = try makeHandler(url: storeURL)
+        heightsRound(handler, synced: 25_000, chainLockHeight: 25_000)
+        deliverFundingUtxo(handler, vout: 0, amount: 100_000)
+
+        let coin = try XCTUnwrap(
+            txo(container, txid: fundingTxid, vout: 0),
+            "the funding UTXO's own upsert must still create the row"
+        )
+        XCTAssertFalse(
+            coin.isSpent,
+            "the engine credits a coin whose only spender is unconfirmed — "
+                + "the mirror must agree after a restart, not hold a claim "
+                + "the wallet itself no longer remembers"
+        )
+        XCTAssertNil(coin.supersededByTxid)
+        XCTAssertTrue(
+            try walletPendingRows(container).isEmpty,
+            "and no leftover pending rows either"
+        )
+    }
+
+    /// The unrelated-advancement scenario, block-context half: the
+    /// chainlock can run arbitrarily far ahead, but while `syncedHeight`
+    /// sits below the winner's mined height the boundary has not reached
+    /// the spend and the hold must survive — the funding output could
+    /// still be delivered by the unscanned range. It collects the moment
+    /// the synced height catches up.
+    func testABlockContextTombstoneOutlivesUnrelatedAdvancementBelowItsWinnersHeight() throws {
+        let (handler, container) = try makeHandler()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        try context.save()
+        try seedSweptTombstone(handler, container, winnerMinedHeight: Self.winnerHeight)
+
+        // Chainlocks race ahead by thousands of blocks; the filter scan
+        // has only reached one block short of the winner.
+        heightsRound(
+            handler,
+            synced: Self.winnerHeight - 1,
+            chainLockHeight: Self.winnerHeight + 10_000
+        )
+        XCTAssertEqual(
+            try pendingRows(container).count, 1,
+            "min(chainlock, synced) = \(Self.winnerHeight - 1) is below the "
+                + "winner's height — any amount of unrelated chainlock "
+                + "progress must not collect the hold"
+        )
+
+        // No fresh chainlock this round: the changeset-path collector runs
+        // off the STORED numeric height.
+        heightsRound(handler, synced: Self.winnerHeight)
+        XCTAssertTrue(
+            try pendingRows(container).isEmpty,
+            "the scan reaching the winner's height completes the boundary and collects"
+        )
+    }
+
+    /// The IS-locked half of the chained case: an unmined winner re-points
+    /// the claim but must NOT disturb the earlier block-context stamp —
+    /// upstream's observed-spend entry is never retracted by an
+    /// unconfirmed conflict. Collection at the retained height stays sound
+    /// (the funding output is mined at or below the FIRST spender's height
+    /// regardless of who claims the coin now), so the row still collects
+    /// at that boundary.
+    func testAMempoolRepointedTombstoneKeepsItsBlockContextStamp() throws {
+        let (handler, container) = try makeHandler()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        try context.save()
+        try seedSweptTombstone(handler, container, winnerMinedHeight: Self.winnerHeight)
+
+        // The first winner is evicted by an IS-locked, unmined conflict.
+        let finalWinner = Data(repeating: 0x66, count: 32)
+        sweep(handler, [Batch(
+            losers: [winnerTxid],
+            winner: finalWinner,
+            winnerMinedHeight: nil
+        )])
+
+        let row = try XCTUnwrap(try pendingRows(container).first)
+        XCTAssertEqual(row.spendingTxid, finalWinner)
+        XCTAssertEqual(
+            row.winnerMinedHeight, Self.winnerHeight,
+            "an unmined winner re-points the claim without touching the "
+                + "earlier block-context stamp"
+        )
+
+        heightsRound(handler, synced: Self.winnerHeight, chainLockHeight: Self.winnerHeight)
+        XCTAssertTrue(
+            try pendingRows(container).isEmpty,
+            "the retained stamp still bounds the row: the funding output "
+                + "sits at or below the first spender's height, so the "
+                + "boundary reaching it proves delivery-or-never"
+        )
+    }
+
+    /// The chainlock-height extension callback stores monotonic-max on the
+    /// wallet row: chain locks only move forward, and a late or re-emitted
+    /// lower height must not walk the finality boundary backwards.
+    func testTheChainLockHeightCallbackStoresMonotonicMaxOnTheWalletRow() throws {
+        let (handler, container) = try makeHandler()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        try context.save()
+        XCTAssertNil(
+            try XCTUnwrap(try walletRow(container)).lastAppliedChainLockHeight,
+            "sanity: fresh row, no numeric chainlock height yet"
+        )
+
+        heightsRound(handler, synced: 10, chainLockHeight: 500)
+        XCTAssertEqual(
+            try XCTUnwrap(try walletRow(container)).lastAppliedChainLockHeight, 500,
+            "the first height lands as stored"
+        )
+
+        heightsRound(handler, synced: 11, chainLockHeight: 300)
+        XCTAssertEqual(
+            try XCTUnwrap(try walletRow(container)).lastAppliedChainLockHeight, 500,
+            "a lower height must not walk the watermark backwards"
+        )
+
+        heightsRound(handler, synced: 12, chainLockHeight: 700)
+        XCTAssertEqual(
+            try XCTUnwrap(try walletRow(container)).lastAppliedChainLockHeight, 700,
+            "a higher height advances it"
         )
     }
 }

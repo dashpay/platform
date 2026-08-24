@@ -53,14 +53,14 @@ members = [
 ]
 
 [workspace.dependencies]
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "b66db390d71d2065b817ca8eba69f808a01ec37a" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "b66db390d71d2065b817ca8eba69f808a01ec37a" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "b66db390d71d2065b817ca8eba69f808a01ec37a" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "b66db390d71d2065b817ca8eba69f808a01ec37a" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "b66db390d71d2065b817ca8eba69f808a01ec37a" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "b66db390d71d2065b817ca8eba69f808a01ec37a" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "b66db390d71d2065b817ca8eba69f808a01ec37a" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "b66db390d71d2065b817ca8eba69f808a01ec37a" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "090faea22494b2b9d6d3995e78f87b8e2a3bd5be" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "090faea22494b2b9d6d3995e78f87b8e2a3bd5be" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "090faea22494b2b9d6d3995e78f87b8e2a3bd5be" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "090faea22494b2b9d6d3995e78f87b8e2a3bd5be" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "090faea22494b2b9d6d3995e78f87b8e2a3bd5be" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "090faea22494b2b9d6d3995e78f87b8e2a3bd5be" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "090faea22494b2b9d6d3995e78f87b8e2a3bd5be" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "090faea22494b2b9d6d3995e78f87b8e2a3bd5be" }
 
 tokio-metrics = "0.5"
 
