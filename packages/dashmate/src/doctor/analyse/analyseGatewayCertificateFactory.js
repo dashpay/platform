@@ -2,7 +2,11 @@ import chalk from 'chalk';
 import { SEVERITY } from '../Prescription.js';
 import Problem from '../Problem.js';
 import renderConfigFlag from '../../util/renderConfigFlag.js';
-import { GATED_NETWORKS, requiresReplacement } from '../../ssl/checkGatewayCertificateFactory.js';
+import {
+  CERTIFICATE_REASONS,
+  GATED_NETWORKS,
+  requiresReplacement,
+} from '../../ssl/checkGatewayCertificateFactory.js';
 
 /**
  * The manual obtain command writes certificate files but does not signal the gateway, so an
@@ -124,15 +128,22 @@ export default function analyseGatewayCertificateFactory() {
     const installedForce = requiresReplacement(installed) ? ' --force' : '';
 
     if (installed) {
-      installed.reasons.forEach(({ message }) => {
-        problems.push(new Problem(
-          message,
-          chalk`${UPDATE_CONSEQUENCE}
+      installed.reasons.forEach(({ code, message }) => {
+        // Nothing can be issued for an address dashmate does not have, and the
+        // obtain command refuses to start without one, so the address has to
+        // be set before a certificate is worth asking for.
+        const remedy = code === CERTIFICATE_REASONS.NO_EXTERNAL_IP
+          ? chalk`${UPDATE_CONSEQUENCE}
+
+Set this node's public address, then obtain a certificate:
+{bold.cyanBright dashmate config set ${cfg} externalIp <your-public-ip>}
+{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt}`
+          : chalk`${UPDATE_CONSEQUENCE}
 
 Obtain a new certificate. No restart needed:
-{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${installedForce}}`,
-          SEVERITY.HIGH,
-        ));
+{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${installedForce}}`;
+
+        problems.push(new Problem(message, remedy, SEVERITY.HIGH));
       });
 
       installed.warnings.forEach(({ message }) => {

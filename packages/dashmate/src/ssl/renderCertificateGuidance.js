@@ -3,6 +3,13 @@ import renderConfigFlag from '../util/renderConfigFlag.js';
 import { CERTIFICATE_REASONS, requiresReplacement } from './checkGatewayCertificateFactory.js';
 
 /**
+ * @param {Object} verdict
+ * @param {string} code
+ * @return {boolean}
+ */
+const hasReason = (verdict, code) => verdict.reasons.some((reason) => reason.code === code);
+
+/**
  * How the run went for the images, said only as far as it was observed.
  *
  * A registry outage plus a bad certificate must not report that patches were
@@ -117,6 +124,24 @@ function renderLetsEncryptDiagnosis(cfg) {
 }
 
 /**
+ * Without an address there is nothing to put in a certificate, and the obtain
+ * command refuses to start - so prescribing it here would hand an operator a
+ * command that cannot work. The address is the repair; the certificate follows
+ * once one exists.
+ *
+ * @param {string} cfg
+ * @return {string}
+ */
+function renderNoExternalIpGuidance(cfg) {
+  return `  To fix it, tell dashmate this node's public address, then get a
+  certificate for it:
+
+      dashmate config set ${cfg} externalIp <your-public-ip>
+      dashmate ssl obtain ${cfg} --provider letsencrypt
+`;
+}
+
+/**
  * @param {string} cfg
  * @param {boolean} isAlreadyLetsEncrypt
  * @param {Object} verdict - decides whether the certificate can be reinstated
@@ -211,7 +236,12 @@ ${obtainAttemptFailed
       blocks.push(renderLetsEncryptDiagnosis(cfg));
     }
 
-    blocks.push(renderFix(cfg, provider === SSL_PROVIDERS.LETSENCRYPT, verdict));
+    if (hasReason(verdict, CERTIFICATE_REASONS.NO_EXTERNAL_IP)) {
+      blocks.push(renderNoExternalIpGuidance(cfg));
+    } else {
+      blocks.push(renderFix(cfg, provider === SSL_PROVIDERS.LETSENCRYPT, verdict));
+    }
+
     blocks.push(renderPortEightyPermanence());
 
     blocks.push(`  Cannot open port 80? There is no other way to get an IP-address

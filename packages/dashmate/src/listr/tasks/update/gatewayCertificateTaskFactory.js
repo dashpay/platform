@@ -366,6 +366,14 @@ export default function gatewayCertificateTaskFactory(
         throw new CertificateUnresolvedError(verdict);
       }
 
+      // Nothing can be obtained for an address dashmate does not have - the
+      // obtain command refuses to start - so offering to run one here would
+      // replace a clear diagnosis with a raw failure part way through. The
+      // guidance names the setting that has to come first.
+      if (hasReason(verdict, CERTIFICATE_REASONS.NO_EXTERNAL_IP)) {
+        throw new CertificateUnresolvedError(verdict);
+      }
+
       // Only when the interrupted switch is the whole problem. The pair being
       // byte-identical to the one lego produced says nothing about whether it
       // is still valid, so this state can carry an expired or misaddressed

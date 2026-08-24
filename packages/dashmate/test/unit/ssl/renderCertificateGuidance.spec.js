@@ -413,6 +413,23 @@ describe('renderCertificateGuidance', () => {
     expect(output).to.not.contain('To fix it');
   });
 
+  // The obtain command refuses to start without an address, so prescribing it
+  // for this verdict hands the operator a command that cannot work and leaves
+  // the node failing the gate with no way forward.
+  it('should prescribe the address, not an obtain that cannot run', () => {
+    const output = render({
+      verdict: verdict({
+        reasons: [{
+          code: CERTIFICATE_REASONS.NO_EXTERNAL_IP,
+          message: "This node's public address is not set",
+        }],
+      }),
+    });
+
+    expect(output).to.contain('dashmate config set --config base externalIp');
+    expect(output).to.not.contain('To fix it, switch to');
+  });
+
   // lego installed this certificate and only the saved provider still
   // disagrees, so the certificate itself is sound. Opening with the flat claim
   // that it is not valid sends an operator hunting a problem that is not there.

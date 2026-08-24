@@ -106,6 +106,30 @@ describe('analyseGatewayCertificateFactory', () => {
     expect(problem.getSolution()).to.include('--force');
   });
 
+  // Nothing can be issued for an address dashmate does not have, and the
+  // obtain command refuses to start without one, so advising it here sends the
+  // operator to a command that fails before it does anything.
+  it('should prescribe the address rather than an obtain that cannot run', () => {
+    samples.setServiceInfo('gateway', 'installedCertificate', {
+      status: 'INVALID',
+      reasons: [{
+        code: 'NO_EXTERNAL_IP',
+        message: "This node's public address is not set",
+      }],
+      warnings: [],
+      fingerprint256: 'AA:BB',
+    });
+
+    const [problem] = analyseGatewayCertificate(samples);
+
+    const solution = problem.getSolution();
+
+    // Obtain still belongs here - it is what the operator runs once an address
+    // exists - but only after the setting that makes it able to run at all.
+    expect(solution).to.include('externalIp');
+    expect(solution.indexOf('externalIp')).to.be.lessThan(solution.indexOf('ssl obtain'));
+  });
+
   it('should report no problem for a healthy certificate', () => {
     expect(analyse(served())).to.be.empty();
   });
