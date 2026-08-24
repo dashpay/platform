@@ -386,9 +386,11 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// onto the freshly-created `NetworkShieldedCoordinator` that
     /// forwards into `on_shielded_sync_progress`. Sub-managers
     /// (`SpvRuntime`, `PlatformAddressSyncManager`, etc.) hold their
-    /// own clones already, so `configure_shielded` is the only reader of
-    /// this retained handle — hence it is `shielded`-gated.
-    #[cfg(feature = "shielded")]
+    /// own clones already, so `configure_shielded` is the only
+    /// production reader of this retained handle — hence it is gated to
+    /// `shielded`, plus `test` so the handler-wiring test can dispatch
+    /// an event through the manager's own fan-out.
+    #[cfg(any(test, feature = "shielded"))]
     pub(super) event_manager: Arc<PlatformEventManager>,
     pub(super) persister: Arc<P>,
     /// Cancellation token + join handle for the wallet-event adapter
@@ -544,7 +546,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             shielded_sync_manager: shielded_sync,
             #[cfg(feature = "shielded")]
             shielded_coordinator,
-            #[cfg(feature = "shielded")]
+            #[cfg(any(test, feature = "shielded"))]
             event_manager,
             persister,
             event_adapter_cancel,
@@ -1021,6 +1023,77 @@ mod tests {
             Arc::new(NoopPersister),
             Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>,
         ))
+    }
+
+    /// The constructor must register [`SpendObservationHandler`] on the event
+    /// fan-out, over the LIVE wallets map (`dashpay/platform#4309`, review
+    /// round 6): a spend-bearing wallet event dispatched through the manager's
+    /// own `event_manager` must release a registered wallet's in-broadcast
+    /// fence. Dropping the handler from the constructor's handler list — the
+    /// accidental-omission regression this pins — fails the final assertion,
+    /// because nothing else on the fan-out calls `observe_spent`.
+    #[tokio::test]
+    async fn constructor_wires_spend_observation_into_the_event_fanout() {
+        use dashcore::hashes::Hash as _;
+
+        let mgr = make_manager();
+
+        // A funded wallet registered in the manager's live wallets map — the
+        // same map the constructor handed to its handlers.
+        let (wallet_manager, wallet_id, generation, _signer) =
+            crate::test_support::funded_wallet_manager(
+                key_wallet::account::account_type::StandardAccountType::BIP44Account,
+            )
+            .await;
+        let spv = Arc::new(SpvRuntime::new(
+            Arc::clone(&wallet_manager),
+            Arc::new(PlatformEventManager::new(Vec::new())),
+        ));
+        let wallet = Arc::new(PlatformWallet::new(
+            Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk")),
+            wallet_id,
+            wallet_manager,
+            Arc::clone(&generation),
+            Arc::new(Notify::new()),
+            Arc::new(NoopPersister) as Arc<dyn PlatformWalletPersistence>,
+            Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
+        ));
+        mgr.wallets.write().await.insert(wallet_id, wallet);
+
+        // Fence an outpoint the way a dispatch does: pin, then settle into the
+        // pending-spend phase that only an observed spend may end.
+        let tx = dashcore::Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![dashcore::TxIn {
+                previous_output: dashcore::OutPoint {
+                    txid: dashcore::Txid::from_slice(&[9u8; 32]).expect("txid"),
+                    vout: 0,
+                },
+                script_sig: dashcore::ScriptBuf::new(),
+                sequence: 0xffff_ffff,
+                witness: dashcore::Witness::new(),
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        generation.pin_in_broadcast(&tx).settle_pending_spend();
+        assert!(
+            generation.in_broadcast_conflict(&tx).is_some(),
+            "the settled pin must leave the pending-spend fence up"
+        );
+
+        // The spend event, dispatched through the manager's OWN fan-out — not
+        // a hand-built handler — so the assertion covers registration itself.
+        mgr.event_manager
+            .on_wallet_event(&crate::test_support::observed_spend_event(wallet_id, &tx));
+
+        assert!(
+            generation.in_broadcast_conflict(&tx).is_none(),
+            "a spend event through the manager's event fan-out must release \
+             the registered wallet's fence — is SpendObservationHandler still \
+             in the constructor's handler list?"
+        );
     }
 
     /// `shutdown()` joins every started coordinator through the shared

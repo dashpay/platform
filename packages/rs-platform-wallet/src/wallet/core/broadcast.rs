@@ -404,7 +404,8 @@ mod tests {
         funded_wallet_manager, AlwaysMaybeSentBroadcaster, AlwaysOkBroadcaster,
         RejectFirstBroadcaster, WalletSigner,
     };
-    use crate::wallet::core::CoreWallet;
+    use crate::wallet::core::{CoreWallet, SpendObservationHandler};
+    use crate::wallet::platform_wallet::WalletId;
     use crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS;
     use crate::{PlatformWalletError, SignedCoreTransaction};
 
@@ -783,72 +784,76 @@ mod tests {
     }
 
     /// The `WalletEvent` the wallet emits when it observes `tx` — the real
-    /// shape the spend-observation seam consumes.
-    ///
-    /// `input_details` is what upstream populates for inputs that spent OUR
-    /// outpoints, and it is the only part of the record either the fence or
-    /// `CoreChangeSet::spent_utxos` reads.
+    /// shape the spend-observation seam consumes. Shared fixture, so this
+    /// module and the manager-level wiring test cannot drift onto different
+    /// event shapes.
     fn spend_event<B: TransactionBroadcaster>(
         core: &CoreWallet<B>,
         tx: &Transaction,
     ) -> key_wallet_manager::WalletEvent {
-        use key_wallet::managed_account::transaction_record::{
-            InputDetail, TransactionDirection, TransactionRecord,
-        };
-        use key_wallet::transaction_checking::transaction_router::TransactionType;
-        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
-
-        let record = TransactionRecord::new(
-            tx.clone(),
-            key_wallet::account::AccountType::Standard {
-                index: 0,
-                standard_account_type: StandardAccountType::BIP44Account,
-            },
-            TransactionContext::InBlock(BlockInfo::new(
-                1_000,
-                dashcore::BlockHash::from([7u8; 32]),
-                1_234_567_890,
-            )),
-            TransactionType::Standard,
-            TransactionDirection::Outgoing,
-            tx.input
-                .iter()
-                .enumerate()
-                .map(|(index, _)| InputDetail {
-                    index: index as u32,
-                    value: 0,
-                    address: DashAddress::dummy(Network::Testnet, 1),
-                })
-                .collect(),
-            Vec::new(),
-            0,
-        );
-        key_wallet_manager::WalletEvent::TransactionDetected {
-            wallet_id: core.wallet_id(),
-            record: Box::new(record),
-            balance: key_wallet::WalletCoreBalance::default(),
-            account_balances: std::collections::BTreeMap::new(),
-            addresses_derived: Vec::new(),
-        }
+        crate::test_support::observed_spend_event(core.wallet_id(), tx)
     }
 
-    /// Retire fences from `event` through the REAL projection the
-    /// `SpendObservationHandler` uses, so these tests exercise the production
-    /// event→outpoints mapping rather than a stand-in.
-    ///
-    /// Only the generation lookup is short-circuited: resolving it goes through
-    /// the manager's `wallets` map, which a `CoreWallet` fixture does not build.
+    /// An `Arc<PlatformWallet>` sharing `core`'s manager, wallet id, and
+    /// generation — the entry the production wallets map holds for this
+    /// wallet, so the spend-observation tests can resolve the REAL registered
+    /// generation through a real map. Its own `SpvBroadcaster` is inert: the
+    /// spend-observation seam only ever reads `generation()` through it.
+    fn platform_wallet_sharing<B: TransactionBroadcaster>(
+        core: &CoreWallet<B>,
+    ) -> Arc<crate::wallet::PlatformWallet> {
+        let spv = Arc::new(crate::spv::SpvRuntime::new(
+            Arc::clone(&core.wallet_manager),
+            Arc::new(crate::events::PlatformEventManager::new(Vec::new())),
+        ));
+        Arc::new(crate::wallet::PlatformWallet::new(
+            Arc::clone(&core.sdk),
+            core.wallet_id(),
+            Arc::clone(&core.wallet_manager),
+            Arc::clone(core.generation()),
+            Arc::new(tokio::sync::Notify::new()),
+            Arc::new(crate::test_support::NoopTestPersister)
+                as Arc<dyn crate::changeset::PlatformWalletPersistence>,
+            Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
+        ))
+    }
+
+    /// A wallets map — the production `BTreeMap<WalletId, Arc<PlatformWallet>>`
+    /// behind its own `RwLock` — holding one entry per fixture wallet.
+    fn wallets_map<B: TransactionBroadcaster>(
+        cores: &[&CoreWallet<B>],
+    ) -> Arc<
+        tokio::sync::RwLock<
+            std::collections::BTreeMap<WalletId, Arc<crate::wallet::PlatformWallet>>,
+        >,
+    > {
+        Arc::new(tokio::sync::RwLock::new(
+            cores
+                .iter()
+                .map(|core| (core.wallet_id(), platform_wallet_sharing(core)))
+                .collect(),
+        ))
+    }
+
+    /// Retire fences from `event` by driving the PRODUCTION spend-observation
+    /// seam end to end: a real [`SpendObservationHandler`] over a real wallets
+    /// map whose entry shares `core`'s registered generation. `on_wallet_event`
+    /// therefore exercises the whole handler path — the variant gate
+    /// (`observing_wallet`), the projection (`observed_spends`), the
+    /// wallets-map `try_read`, the wallet-id lookup, and the selected
+    /// generation's release — not a shortcut to `observe_spent`
+    /// (`dashpay/platform#4309`, review round 6).
     fn observe_via_event_handler<B: TransactionBroadcaster>(
         core: &CoreWallet<B>,
         event: key_wallet_manager::WalletEvent,
     ) {
-        let spent = crate::wallet::core::spend_observer::observed_spends(&event);
         assert!(
-            !spent.is_empty(),
+            !crate::wallet::core::spend_observer::observed_spends(&event).is_empty(),
             "the fixture event must report at least one spend, or the test \
              would pass without observing anything"
         );
-        core.generation().observe_spent(spent);
+        let handler = SpendObservationHandler::new(wallets_map(&[core]));
+        dash_spv::EventHandler::on_wallet_event(&handler, &event);
     }
 
     /// Assert that `result` is the typed in-broadcast conflict, and return the
@@ -1129,6 +1134,93 @@ mod tests {
             "the fixture has one UTXO, so the rebuild reselects the same outpoint"
         );
         core.abandon_transaction(&after).await;
+    }
+
+    /// The handler releases ONLY the generation registered under the event's
+    /// wallet id (`dashpay/platform#4309`, review round 6). Two fenced wallets
+    /// share ONE wallets map — the production shape — and: an event naming a
+    /// wallet id registered NOWHERE releases neither fence, and wallet A's own
+    /// spend event releases A's fence while B's stands. A handler that routed
+    /// by anything but the event's wallet id, or that failed its map lookup
+    /// open, fails one of the two halves.
+    #[tokio::test]
+    async fn spend_observation_releases_only_the_matching_registered_generation() {
+        let (core_a, signer_a, outputs_a) = funded_core_wallet(
+            StandardAccountType::BIP44Account,
+            Arc::new(AlwaysOkBroadcaster),
+        )
+        .await;
+        let (core_b, signer_b, outputs_b) = funded_core_wallet(
+            StandardAccountType::BIP44Account,
+            Arc::new(AlwaysOkBroadcaster),
+        )
+        .await;
+        assert_ne!(
+            core_a.wallet_id(),
+            core_b.wallet_id(),
+            "the fixture must model two distinct wallets"
+        );
+
+        // Dispatch both wallets' single UTXO and sweep both funding
+        // reservations, so each fence is the only thing holding its input
+        // (see the sibling release tests).
+        let mut sent = Vec::new();
+        for (core, signer, outputs) in [
+            (&core_a, &signer_a, &outputs_a),
+            (&core_b, &signer_b, &outputs_b),
+        ] {
+            let stamped = core
+                .last_processed_height()
+                .await
+                .expect("last processed height");
+            let finalized = finalize_tx(core, AccountTypePreference::BIP44, outputs, signer).await;
+            sent.push(finalized.transaction().clone());
+            assert!(core
+                .broadcast_finalized_transaction(&finalized)
+                .await
+                .is_ok());
+            advance_processed_height(core, stamped + 17_000).await;
+            expect_mid_broadcast(
+                try_finalize_tx(core, AccountTypePreference::BIP44, outputs, signer).await,
+                "the dispatched input must be fenced before any spend is observed",
+            );
+        }
+
+        let handler = SpendObservationHandler::new(wallets_map(&[&core_a, &core_b]));
+
+        // An event naming a wallet id registered NOWHERE: the lookup misses,
+        // nothing panics, and neither fence moves — the fail-safe direction.
+        let mut foreign = spend_event(&core_a, &sent[0]);
+        match &mut foreign {
+            key_wallet_manager::WalletEvent::TransactionDetected { wallet_id, .. } => {
+                *wallet_id = [0xEE; 32];
+            }
+            other => unreachable!("the fixture builds TransactionDetected, got {other:?}"),
+        }
+        dash_spv::EventHandler::on_wallet_event(&handler, &foreign);
+        for (core, signer, outputs) in [
+            (&core_a, &signer_a, &outputs_a),
+            (&core_b, &signer_b, &outputs_b),
+        ] {
+            expect_mid_broadcast(
+                try_finalize_tx(core, AccountTypePreference::BIP44, outputs, signer).await,
+                "an event for an unregistered wallet must release no fence",
+            );
+        }
+
+        // Wallet A's own spend event: A's registered generation releases,
+        // B's — same map, same handler, different wallet id — stands.
+        dash_spv::EventHandler::on_wallet_event(&handler, &spend_event(&core_a, &sent[0]));
+        let rebuilt = try_finalize_tx(&core_a, AccountTypePreference::BIP44, &outputs_a, &signer_a)
+            .await
+            .unwrap_or_else(|error| {
+                panic!("the matching wallet's fence must release, got {error:?}")
+            });
+        core_a.abandon_transaction(&rebuilt).await;
+        expect_mid_broadcast(
+            try_finalize_tx(&core_b, AccountTypePreference::BIP44, &outputs_b, &signer_b).await,
+            "the other registered wallet's fence must stand",
+        );
     }
 
     /// The ORPHAN BACKSTOP, and its catch-up immunity in one test.
