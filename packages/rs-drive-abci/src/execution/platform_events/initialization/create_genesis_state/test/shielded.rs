@@ -310,13 +310,18 @@ impl<C> Platform<C> {
                 .raw_storage()
                 .get_transactional_storage_context(subtree_path, Some(&data_batch), tx)
                 .unwrap();
-            let mut ct = CommitmentTree::<_, DashMemo>::open(0, chunk_power, storage_ctx)
-                .value
-                .map_err(|e| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
-                        format!("seed: CommitmentTree::open: {e}").into_boxed_str(),
-                    )))
-                })?;
+            let mut ct = CommitmentTree::<_, DashMemo>::open(
+                0,
+                chunk_power,
+                storage_ctx,
+                &platform_version.drive.grove_version,
+            )
+            .value
+            .map_err(|e| {
+                Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
+                    format!("seed: CommitmentTree::open: {e}").into_boxed_str(),
+                )))
+            })?;
 
             // Batched seed via repeated `append_many_raw` (grovedb PR #751).
             // Each batch:
