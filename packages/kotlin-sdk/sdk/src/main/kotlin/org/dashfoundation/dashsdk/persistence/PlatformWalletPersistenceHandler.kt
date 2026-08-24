@@ -1253,25 +1253,39 @@ class PlatformWalletPersistenceHandler(
      * `onWalletChangesetUtxoAdded` knows to keep the coin spent — durably,
      * via `TxoEntity.supersededByTxid` — once the funding TXO materializes.
      *
-     * The tombstone is created only for a BLOCK-CONTEXT sweep
-     * ([winnerMinedHeight] non-null), stamped with the winner's own mined
-     * height — the projection of key-wallet's `observed_spent_outpoints`,
-     * which records nothing for a mempool/IS-lock spend ("an unconfirmed
-     * spend must not invalidate a coin"). An IS-locked, unmined winner
-     * leaves no tombstone: the wallet itself keeps no durable hold for an
-     * unconfirmed spend, so the mirror holding one would out-claim the
-     * thing it mirrors — and when the winner eventually mines, BIP158
-     * delivery of its block re-marks the coin through the ordinary
-     * channels. This is also what kills the attacker-growable junk at the
-     * source: a swept INCOMING payment reaches this path too, and every
-     * sender-owned foreign input it names would land a tombstone nothing
-     * ever drains. Ownership cannot gate it (nothing can prove an input
-     * foreign; dashpay/rust-dashcore#968), so the mempool path creates
-     * none at all, and the collector evicts block-context tombstones once
-     * the chainlock finality boundary reaches their winner's height.
-     * Materialized `TxoEntity` rows still get spend-marked either way —
-     * they carry real funding data, so holding them costs nothing an
-     * attacker controls.
+     * The tombstone is created for EVERY sweep context; only the stamp
+     * differs. A BLOCK-CONTEXT sweep ([winnerMinedHeight] non-null)
+     * stamps the winner's own mined height — the projection of
+     * key-wallet's `observed_spent_outpoints` — and the collector evicts
+     * the row once the chainlock finality boundary reaches it. An
+     * IS-locked, unmined winner leaves the SAME tombstone UNSTAMPED
+     * (null), which the collector never touches. The in-memory model an
+     * unstamped tombstone mirrors is the account's `spent_outpoints`:
+     * upstream's `drop_conflicted_transactions` deletes the loser and
+     * RETAINS the winner's shared inputs there — under DIP-10 the IS
+     * lock alone settles them — but that set is rebuilt from live
+     * records on load, and after the sweep neither the deleted loser nor
+     * a (possibly wallet-irrelevant) winner leaves a record to rebuild
+     * it from. The tombstone is the hold's only durable carrier;
+     * dropping it lets a post-restart funding delivery credit a coin the
+     * network has provably consumed.
+     *
+     * Nothing may collect an unstamped tombstone: an IS-locked winner
+     * has no mining deadline (and the funding tx of an input it spends
+     * may itself be IS-locked and unmined), so no watermark proves the
+     * funding delivered-or-never. It resolves only through proof — the
+     * funding TXO drains it (a wallet-owned claim always eventually
+     * delivers via BIP158), a later block-context sweep re-stamps it
+     * into the collectible set, or a release deletes it. The permanent
+     * residue is foreign inputs of IS-context sweeps (a swept incoming
+     * payment's sender-owned inputs; ownership cannot gate it — nothing
+     * can prove an input foreign, dashpay/rust-dashcore#968), bounded by
+     * attack cost rather than collection: masternodes lock first-seen,
+     * so every such row needs a conflicting payment delivered straight
+     * to this wallet while withheld from the network, plus a fee-paying
+     * IS-locked double-spend. Materialized `TxoEntity` rows still get
+     * spend-marked either way — they carry real funding data, so
+     * holding them costs nothing an attacker controls.
      *
      * A tombstoned row can itself need to move again: [supersededBy] is a
      * winner in this round, but nothing stops it from losing a later round
@@ -1322,8 +1336,8 @@ class PlatformWalletPersistenceHandler(
             // InstantSend-locked winner not yet mined. This is the whole
             // lifetime rule of any tombstone this round creates or
             // re-points — the collector compares it against the chainlock
-            // finality boundary — and the null case creates no tombstone
-            // at all.
+            // finality boundary — and the null case leaves the tombstone
+            // unstamped, which the collector never touches.
             val winnerHeight = winnerMinedHeight.takeIf { it >= 0 }
             // Hold every input first, then free the ones upstream named: the
             // released set spans the whole round's removals, so it is
@@ -1395,26 +1409,23 @@ class PlatformWalletPersistenceHandler(
                     db.documentDao().deletePendingInputs(goneStaged)
                 }
                 if (heldStaged.isNotEmpty()) {
-                    if (winnerHeight != null) {
-                        db.documentDao().updatePendingInputs(
-                            heldStaged.map {
-                                it.copy(
-                                    spendingTransactionTxid = null,
-                                    spendingTxid = supersededBy[i],
-                                    isSweptTombstone = true,
-                                    winnerMinedHeight = winnerHeight,
-                                )
-                            },
-                        )
-                    } else {
-                        // An IS-locked, unmined winner creates no
-                        // tombstone — see the doc comment above. The rows
-                        // would cascade with the loser's delete anyway;
-                        // deleting them here makes the end state explicit
-                        // and independent of whether the shared loser row
-                        // itself survives another wallet's claim below.
-                        db.documentDao().deletePendingInputs(heldStaged)
-                    }
+                    // Held in every winner context — `CORE_SWEEP_REMOVAL`
+                    // requires each non-released input to keep a durable
+                    // spend claim before its funding TXO materializes. A
+                    // block-context winner stamps its mined height; an
+                    // IS-locked, unmined winner leaves the stamp null and
+                    // the collector never touches the row — see the doc
+                    // comment above for what resolves an unstamped hold.
+                    db.documentDao().updatePendingInputs(
+                        heldStaged.map {
+                            it.copy(
+                                spendingTransactionTxid = null,
+                                spendingTxid = supersededBy[i],
+                                isSweptTombstone = true,
+                                winnerMinedHeight = winnerHeight,
+                            )
+                        },
+                    )
                 }
                 // A pending input an EARLIER sweep already tombstoned to
                 // txids[i] (that txid was itself a sweep's winner, and is

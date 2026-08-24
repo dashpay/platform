@@ -303,10 +303,15 @@ pub struct SweepBatchFFI {
     /// was triggered by an InstantSend-locked winner still waiting to be
     /// mined (upstream's only other trigger — an unlocked mempool arrival
     /// never sweeps), and the winner has NO finality horizon: a persister
-    /// must not create a durable placeholder for a held-but-unfunded input
-    /// on such a sweep, mirroring upstream's refusal to record an
-    /// unconfirmed spend, and must keep (not clear) the stamp of any
-    /// existing placeholder it re-points.
+    /// must still create a durable placeholder for a held-but-unfunded
+    /// input — under DIP-10 the lock alone settles it, and the placeholder
+    /// is the only claim that survives a restart — but must leave it
+    /// UNSTAMPED and never collect an unstamped placeholder (the winner has
+    /// no mining deadline, so no watermark proves its funding output
+    /// delivered-or-never; only funding materialisation, a later
+    /// block-context re-stamp, or a release resolves it). Re-pointing an
+    /// existing placeholder on such a sweep must keep (not clear) any
+    /// stamp it already carries.
     pub has_winner_mined_height: bool,
     /// Mined height of `superseded_by` when `has_winner_mined_height` —
     /// the winner's own block, carried from the sweep event because the

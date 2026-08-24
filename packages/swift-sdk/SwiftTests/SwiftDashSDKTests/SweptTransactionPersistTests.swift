@@ -2264,27 +2264,20 @@ final class SweptTransactionPersistTests: XCTestCase {
     }
 
     /// A held tombstone with a nil winner-height stamp is never collected.
-    /// No current writer produces one — a mempool-context sweep creates no
-    /// tombstone at all and a mempool re-point keeps the existing stamp —
-    /// so an unstamped row is foreign or legacy data, and with no proof of
-    /// finality the safe reading is to hold it forever rather than guess.
+    /// The mempool-context sweep path writes exactly this shape — an
+    /// IS-locked, unmined winner has no finality horizon to stamp — and
+    /// legacy rows read identically. With no proof of finality the safe
+    /// reading is to hold it forever rather than guess.
     /// Replaces the rejected back-fill design, which stamped such a row
     /// with the current height and thereby fabricated a finality horizon.
     func testATombstoneWithoutAWinnerHeightIsNeverCollected() throws {
         let (handler, container) = try makeHandler()
         let context = ModelContext(container)
         context.insert(PersistentWallet(walletId: walletId, network: .testnet))
-        // Plant the shape directly — the current writers cannot produce it.
-        let orphan = PersistentPendingInput(
-            outpoint: PersistentTxo.makeOutpoint(txid: fundingTxid, vout: 0),
-            inputIndex: 0,
-            spendingTxid: winnerTxid,
-            spendingTransaction: nil,
-            walletId: walletId
-        )
-        orphan.isSweptTombstone = true
-        context.insert(orphan)
         try context.save()
+        // The real writer: an IS-context sweep of a loser whose funding
+        // TXO never arrived.
+        try seedSweptTombstone(handler, container, winnerMinedHeight: nil)
 
         // Two rounds, not one: a back-filling collector (the rejected
         // design) would stamp the row on the first round and collect it on
@@ -2360,21 +2353,21 @@ final class SweptTransactionPersistTests: XCTestCase {
     }
 
     /// A mempool-context sweep — an InstantSend-locked winner that has not
-    /// mined — creates NO placeholder for a held-but-unfunded input,
-    /// however often it happens. This is upstream's own doctrine projected
-    /// ("an unconfirmed spend must not invalidate a coin"), and it kills
-    /// the attacker-growable population at the source: a swept incoming
-    /// payment's foreign inputs land nothing, so repeated double-spends at
-    /// this wallet grow nothing.
-    func testAMempoolContextSweepCreatesNoPlaceholderRows() throws {
+    /// mined — preserves an UNSTAMPED tombstone for every held-but-unfunded
+    /// input. Under DIP-10 the IS lock alone settles those inputs: upstream
+    /// deletes the loser and retains them in the account's
+    /// `spent_outpoints`, a hold with no height that no record survives to
+    /// rebuild (the winner need not be wallet-relevant). The tombstone is
+    /// that hold's only durable carrier — `CORE_SWEEP_REMOVAL` requires
+    /// every non-released input to keep a durable spend claim before its
+    /// funding TXO materializes — and it is unstamped because an IS-locked
+    /// winner has no mining deadline, so no boundary may ever collect it.
+    func testAMempoolContextSweepPreservesAnUnstampedTombstone() throws {
         let (handler, container) = try makeHandler()
         let context = ModelContext(container)
         context.insert(PersistentWallet(walletId: walletId, network: .testnet))
         try context.save()
 
-        // Repeated double-spent incoming payments: distinct losers, each
-        // claiming a distinct unobserved input, each swept by an IS-locked
-        // winner.
         for i in 0..<3 {
             let spent = Data(repeating: UInt8(0x70 + i), count: 32)
             try seedSweptTombstone(
@@ -2385,22 +2378,33 @@ final class SweptTransactionPersistTests: XCTestCase {
                 loser: Data(repeating: UInt8(0x80 + i), count: 32),
                 winner: Data(repeating: UInt8(0x90 + i), count: 32)
             )
-            XCTAssertTrue(
-                try pendingRows(container, spentTxid: spent).isEmpty,
-                "an unmined IS-locked winner must leave no placeholder for input #\(i)"
+            let row = try XCTUnwrap(
+                try pendingRows(container, spentTxid: spent).first,
+                "an unmined IS-locked winner must leave a held tombstone for input #\(i)"
             )
+            XCTAssertTrue(row.isSweptTombstone)
+            XCTAssertNil(row.winnerMinedHeight, "and it carries no finality stamp")
         }
-        XCTAssertTrue(
-            try walletPendingRows(container).isEmpty,
-            "repeated mempool-path double-spends must leave zero pending-input rows"
+        // Arbitrary chainlock/height advancement never collects an
+        // unstamped hold — two rounds, so a back-filling collector would
+        // be caught too.
+        heightsRound(handler, synced: 1_000_000, chainLockHeight: 1_000_000)
+        heightsRound(handler, synced: 1_000_010, chainLockHeight: 1_000_010)
+        XCTAssertEqual(
+            try walletPendingRows(container).count, 3,
+            "every unstamped hold outlasts any boundary — only funding "
+                + "materialization, a block-context re-stamp, or a release "
+                + "resolves one"
         )
     }
 
     /// The mempool-context sweep still spend-marks a coin that HAS
     /// materialised — that path is unchanged: the row carries real funding
-    /// data, so holding it costs nothing an attacker controls, and the
-    /// winner's eventual block delivery is the durable evidence. Only the
-    /// never-materialised claim (the pending row) dies with the loser.
+    /// data and `supersededByTxid` is its durable hold. The
+    /// never-materialised claim the same loser carries survives too, as an
+    /// unstamped tombstone — the pending row is the only durable carrier
+    /// of a hold upstream keeps in `spent_outpoints` and cannot rebuild
+    /// after the loser's record is gone.
     func testAMempoolContextSweepStillSpendMarksAMaterialisedCoin() throws {
         let (handler, container) = try makeHandler()
         try seedSpend(in: container, winnerTakesA: false)
@@ -2431,23 +2435,26 @@ final class SweptTransactionPersistTests: XCTestCase {
             "a materialised coin is spend-marked by the IS-locked winner exactly as before"
         )
         XCTAssertEqual(coinB.supersededByTxid, winnerTxid)
-        XCTAssertTrue(
-            try pendingRows(container, spentTxid: unfundedTxid).isEmpty,
-            "while the never-materialised claim dies with the loser — no tombstone"
+        let claim = try XCTUnwrap(
+            try pendingRows(container, spentTxid: unfundedTxid).first,
+            "while the never-materialised claim survives as a tombstone"
         )
+        XCTAssertTrue(claim.isSweptTombstone)
+        XCTAssertEqual(claim.spendingTxid, winnerTxid, "re-pointed at the winner")
+        XCTAssertNil(claim.winnerMinedHeight, "unstamped — the winner is unmined")
     }
 
-    /// The reviewer's named regression, resolved by engine parity: an
-    /// IS-locked winner sweeps on the mempool path and never mines, the
-    /// app restarts, chainlocks and heights advance arbitrarily, and only
-    /// then is the funding output delivered. The wallet engine itself
-    /// keeps no durable hold for an unconfirmed spend and would credit the
-    /// coin — so the mirror must land it unspent too, with no stale
-    /// placeholder in the way and none wrongly collected beforehand (none
-    /// ever existed). Convergence is the winner's job: when it mines,
-    /// BIP158 delivery of its block re-marks the coin through the ordinary
-    /// channels.
-    func testAFundingOutputArrivingAfterAMempoolSweepAndRestartLandsUnspent() throws {
+    /// The reviewer's named regression: an IS-locked winner sweeps on the
+    /// mempool path and never mines, the app restarts, chainlocks and
+    /// heights advance arbitrarily, and only then is the funding output
+    /// delivered. Under DIP-10 the IS lock already settled that input —
+    /// upstream deleted the loser and retained the hold in the account's
+    /// `spent_outpoints`, a set rebuilt from records on load that no
+    /// surviving record can reconstruct. The unstamped tombstone is the
+    /// claim's only durable carrier, so the funding delivery must drain
+    /// INTO it and land spent: crediting the coin would hand coin
+    /// selection an outpoint the network has provably consumed.
+    func testAFundingOutputArrivingAfterAMempoolSweepAndRestartLandsSpent() throws {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("mempool-sweep-restart-\(UUID().uuidString).store")
         defer { try? FileManager.default.removeItem(at: storeURL) }
@@ -2459,33 +2466,39 @@ final class SweptTransactionPersistTests: XCTestCase {
             try context.save()
             try seedSweptTombstone(handler, container, winnerMinedHeight: nil)
             XCTAssertNil(transaction(container, txid: sweptTxid), "sanity: the loser is gone")
-            XCTAssertTrue(
-                try walletPendingRows(container).isEmpty,
-                "sanity: the mempool sweep left no pending rows behind"
+            let tombstone = try XCTUnwrap(
+                try walletPendingRows(container).first,
+                "sanity: the mempool sweep left the hold behind"
             )
+            XCTAssertTrue(tombstone.isSweptTombstone)
+            XCTAssertNil(tombstone.winnerMinedHeight, "unstamped — no finality horizon exists")
         }
 
         // Restart: a fresh persister loading the same on-disk store, then
         // arbitrary chainlock/height advancement while the winner stays
-        // unmined, and only then the funding delivery.
+        // unmined — none of it may collect the unstamped hold — and only
+        // then the funding delivery.
         let (handler, container) = try makeHandler(url: storeURL)
         heightsRound(handler, synced: 25_000, chainLockHeight: 25_000)
+        XCTAssertEqual(
+            try walletPendingRows(container).count, 1,
+            "the unstamped hold survives the restart and every boundary"
+        )
         deliverFundingUtxo(handler, vout: 0, amount: 100_000)
 
         let coin = try XCTUnwrap(
             txo(container, txid: fundingTxid, vout: 0),
             "the funding UTXO's own upsert must still create the row"
         )
-        XCTAssertFalse(
+        XCTAssertTrue(
             coin.isSpent,
-            "the engine credits a coin whose only spender is unconfirmed — "
-                + "the mirror must agree after a restart, not hold a claim "
-                + "the wallet itself no longer remembers"
+            "an input the IS-locked winner consumed must never come back "
+                + "spendable — the sweep's claim outlives the restart"
         )
-        XCTAssertNil(coin.supersededByTxid)
+        XCTAssertEqual(coin.supersededByTxid, winnerTxid, "held by the winner the sweep named")
         XCTAssertTrue(
             try walletPendingRows(container).isEmpty,
-            "and no leftover pending rows either"
+            "the claim drained into the TXO row"
         )
     }
 
@@ -2522,6 +2535,53 @@ final class SweptTransactionPersistTests: XCTestCase {
         XCTAssertTrue(
             try pendingRows(container).isEmpty,
             "the scan reaching the winner's height completes the boundary and collects"
+        )
+    }
+
+    /// The other direction of the chained case: an UNSTAMPED hold
+    /// (IS-context sweep) re-pointed by a later BLOCK-context sweep gains
+    /// that winner's stamp — the claim now belongs to a spend anchored in
+    /// a real block, so it enters the collectible set and the boundary
+    /// reaching the new winner's height collects it. One of the three
+    /// resolution channels that bound the unstamped population.
+    func testAnUnstampedTombstoneRestampedByABlockContextSweepBecomesCollectible() throws {
+        let (handler, container) = try makeHandler()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        try context.save()
+        // IS-context sweep: the hold lands unstamped.
+        try seedSweptTombstone(handler, container, winnerMinedHeight: nil)
+        XCTAssertNil(
+            try XCTUnwrap(try pendingRows(container).first).winnerMinedHeight,
+            "sanity: held and unstamped"
+        )
+
+        // The IS-locked first winner is itself beaten by a mined conflict
+        // still claiming the unfunded input — the chained-sweep
+        // continuation finds the tombstone by its scalar `spendingTxid`.
+        let finalWinner = Data(repeating: 0x66, count: 32)
+        sweep(handler, [Batch(
+            losers: [winnerTxid],
+            winner: finalWinner,
+            winnerMinedHeight: Self.winnerHeight + 50
+        )])
+
+        let row = try XCTUnwrap(try pendingRows(container).first)
+        XCTAssertTrue(row.isSweptTombstone)
+        XCTAssertEqual(row.spendingTxid, finalWinner)
+        XCTAssertEqual(
+            row.winnerMinedHeight, Self.winnerHeight + 50,
+            "the block-context re-point stamps the previously unstamped hold"
+        )
+
+        heightsRound(
+            handler,
+            synced: Self.winnerHeight + 50,
+            chainLockHeight: Self.winnerHeight + 50
+        )
+        XCTAssertTrue(
+            try pendingRows(container).isEmpty,
+            "once stamped, the ordinary finality boundary collects the row"
         )
     }
 

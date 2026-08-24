@@ -877,8 +877,10 @@ async fn build_core_changeset(
                     // this wallet's records), and every persister keys the
                     // lifetime of a held-but-unfunded placeholder on it —
                     // `Some` anchors the hold at a height that chainlocks,
-                    // `None` (IS-locked, unmined) creates no placeholder at
-                    // all, mirroring upstream's observed-spends doctrine.
+                    // `None` (IS-locked, unmined) leaves the hold unstamped
+                    // and uncollectible, the durable stand-in for the
+                    // `spent_outpoints` retention upstream cannot rebuild
+                    // once the loser's record is gone.
                     winner_mined_height: *winner_mined_height,
                     released_outpoints: released_outpoints.clone(),
                 }],

@@ -289,32 +289,54 @@ pub fn apply(
 /// durable — it refuses to clear `spent` while `spent_in_txid` is set, so the
 /// claim survives the funding upsert instead of being upserted away by it.
 ///
-/// The placeholder is created only for a BLOCK-CONTEXT sweep
-/// (`winner_mined_height` is `Some`), and it stores that height — the
-/// winner's own, not any observation watermark. This is the projection of
-/// key-wallet's `observed_spent_outpoints`, which maps each outpoint
-/// observed spent in a block to the height of the block that spent it and
-/// deliberately records nothing for a mempool/IS-lock spend ("an
-/// unconfirmed spend must not invalidate a coin" — `wallet_checker.rs`).
-/// An IS-locked winner therefore leaves no placeholder here either: the
-/// wallet itself keeps no durable hold for an unconfirmed spend, so the
-/// mirror holding one would out-claim the thing it mirrors — and when the
-/// winner eventually mines, BIP158 delivery of its block (the funding
-/// output's script matches the winner's prevout) re-marks the coin through
-/// the ordinary channels. This is also what bounds the junk an attacker can
-/// grow by double-spending incoming payments at this wallet: a swept
-/// INCOMING payment reaches this loop too, and every sender-owned foreign
-/// input it names would land a placeholder nothing ever overwrites. It
-/// cannot be gated by ownership because nothing anywhere can prove an
-/// input foreign (`input_details` and `direction` are computed from the
-/// wallet's UTXO snapshot AT RECORD TIME; dashpay/rust-dashcore#968 — the
-/// once-proposed "held outpoints attested ours" set is empty by
-/// construction). Instead the mempool path creates none at all, and
-/// `collect_finalized_tombstones` evicts block-context placeholders once
-/// the chainlock finality boundary reaches their winner's height —
-/// key-wallet's `prune_finalized_observed_spends` condition verbatim —
-/// while a genuine claim materialises via the funding upsert (gaining a
-/// real `height`) and permanently leaves the collectible set.
+/// The placeholder is created for EVERY sweep context; only the stamp
+/// differs. A BLOCK-CONTEXT sweep (`winner_mined_height` is `Some`)
+/// stamps the winner's own mined height — the projection of key-wallet's
+/// `observed_spent_outpoints`, which maps each outpoint observed spent in
+/// a block to the height of the block that spent it — and
+/// `collect_finalized_tombstones` evicts the row once the chainlock
+/// finality boundary reaches that height, key-wallet's
+/// `prune_finalized_observed_spends` condition verbatim. A
+/// MEMPOOL-CONTEXT sweep (IS-locked winner, unmined) writes the same row
+/// UNSTAMPED (`winner_mined_height` NULL), and the collector never takes
+/// an unstamped row. The in-memory model an unstamped row mirrors is not
+/// `observed_spent_outpoints` (which indeed records nothing for an
+/// unconfirmed spend) but the account's `spent_outpoints`:
+/// `drop_conflicted_transactions` deletes the loser and RETAINS the
+/// winner's shared inputs there — a hold that carries no height, because
+/// under DIP-10 the IS lock alone settles the input. That set is
+/// `serde(skip_serializing)` upstream and rebuilt from live records on
+/// load, so after the sweep no record can reconstruct it; this row is the
+/// hold's only durable carrier, and dropping it lets a post-restart
+/// funding delivery credit a coin the network has already consumed.
+///
+/// Nothing may collect an unstamped row, ever: an IS-locked winner has no
+/// mining deadline, and the funding transaction of an input it spends may
+/// itself be IS-locked and unmined (DIP-10 eligibility allows chained
+/// locks), so no height watermark can prove the funding output "delivered
+/// or never will be". An unstamped row instead leaves the set only
+/// through proof: the funding upsert materialises it (a wallet-owned
+/// claim — DIP-10 eligibility means the funding tx is mined or will mine,
+/// and BIP158 matches its block by our script, so delivery is guaranteed;
+/// the row gains a real `height` and becomes an ordinary spent coin), a
+/// later block-context sweep re-points it and stamps it into the
+/// collectible set, or a release deletes it.
+///
+/// The residue is foreign inputs — a swept INCOMING payment reaches this
+/// loop too, and a sender-owned input's funding output never delivers, so
+/// its unstamped row is permanent. It cannot be gated by ownership
+/// because nothing anywhere can prove an input foreign (`input_details`
+/// and `direction` are computed from the wallet's UTXO snapshot AT RECORD
+/// TIME; dashpay/rust-dashcore#968 — the once-proposed "held outpoints
+/// attested ours" set is empty by construction). What bounds the residue
+/// is attack cost, not collection: masternodes lock first-seen, so for
+/// the winner to earn the IS lock this sweep requires, the conflicting
+/// loser must have been delivered straight to this wallet while withheld
+/// from the network, and every batch of rows costs the attacker a
+/// fee-paying, network-accepted double-spend. The unconditional-placeholder
+/// shape this narrows (every context leaking rows with no collector at
+/// all) does not return: block-context rows still collect at the finality
+/// boundary, and only the IS-context shared-input residue is permanent.
 ///
 /// Idempotent: a txid this store never recorded is a successful no-op, not an
 /// error. A sweep can legitimately name a transaction this wallet dropped, or
@@ -394,15 +416,16 @@ fn apply_sweep(
                 ELSE winner_mined_height END \
          WHERE wallet_id = ?1 AND outpoint = ?2",
     )?;
-    // Only reached for a held input with no existing row AND a
-    // block-context winner — see the doc comment above; an IS-locked
-    // winner creates no placeholder at all, mirroring upstream's refusal
-    // to record an unconfirmed spend. `value`/`script`/`height`/
-    // `account_index` are placeholders; the funding UTXO's own upsert
-    // overwrites them (and, thanks to the `spent_in_txid` guard in
-    // `execute_upsert_utxo`, does not clear `spent` while doing it).
-    // `winner_mined_height` is the winner's own block height, the row's
-    // whole lifetime rule for `collect_finalized_tombstones`.
+    // Only reached for a held input with no existing row — see the doc
+    // comment above. `value`/`script`/`height`/`account_index` are
+    // placeholders; the funding UTXO's own upsert overwrites them (and,
+    // thanks to the `spent_in_txid` guard in `execute_upsert_utxo`, does
+    // not clear `spent` while doing it). `winner_mined_height` is the
+    // winner's own block height when the sweep has one — the row's whole
+    // lifetime rule for `collect_finalized_tombstones` — and NULL for an
+    // IS-locked, unmined winner, which the collector never touches: the
+    // hold then lasts until the funding upsert materialises it, a later
+    // block-context sweep stamps it, or a release deletes it.
     let mut tombstone_stmt = tx.prepare_cached(
         "INSERT INTO core_utxos \
             (wallet_id, outpoint, value, script, height, account_index, spent, spent_in_txid, \
@@ -458,20 +481,18 @@ fn apply_sweep(
             winner_mined_height.map(i64::from)
         ])?;
         if affected == 0 && !freed {
-            // No row to hold and nothing durable to key a hold on: an
-            // IS-locked winner (`winner_mined_height` None) gets no
-            // placeholder — upstream records nothing for an unconfirmed
-            // spend, and this is where the foreign-input junk an attacker
-            // could grow by double-spending incoming payments is killed at
-            // the source rather than aged out.
-            let Some(height) = winner_mined_height else {
-                continue;
-            };
+            // A held input with no row gets a placeholder in EVERY sweep
+            // context — `CORE_SWEEP_REMOVAL`'s contract: each non-released
+            // input retains a durable spend claim even when its funding
+            // TXO has not materialised yet. An IS-locked, unmined winner
+            // just leaves the stamp NULL, which the collector never
+            // touches — see the doc comment above for what resolves (and
+            // what bounds) an unstamped row.
             tombstone_stmt.execute(params![
                 wallet_id.as_slice(),
                 &key[..],
                 AsRef::<[u8]>::as_ref(superseded_by),
-                i64::from(height)
+                winner_mined_height.map(i64::from)
             ])?;
         }
     }
@@ -629,10 +650,13 @@ fn read_sync_heights(
 /// the spend's own height — has either been delivered (materialising the
 /// row) or provably never will be. No observation-age margin: the stamp IS
 /// the winner's height, carried on the sweep event itself, so nothing here
-/// guesses when the winner mined. Rows with no stamp are never collected —
-/// under the current writers none can exist (an IS-locked winner creates
-/// no placeholder and never clears an existing stamp), so an unstamped row
-/// is foreign or legacy data, and holding it forever is the safe reading.
+/// guesses when the winner mined. Rows with no stamp are never collected:
+/// a mempool-context sweep (IS-locked winner, unmined) deliberately
+/// writes its placeholder unstamped, because such a winner has no mining
+/// deadline and no watermark can prove its inputs' funding "delivered or
+/// never will be" — an unstamped row is a live hold, resolved only by the
+/// funding upsert materialising it, a later block-context sweep stamping
+/// it, or a release deleting it (see `apply_sweep`).
 ///
 /// Two passes, both narrowed to `height IS NULL` (only the tombstone
 /// insert leaves `height` NULL, so the set is exactly the

@@ -79,26 +79,26 @@ data class PendingInputEntity(
     /**
      * The mined block height of the WINNER that swept this tombstone's
      * loser — the winner's own height, carried on the sweep event itself,
-     * not any observation watermark. A tombstone whose outpoint is a
-     * foreign input of a swept incoming payment never drains — no funding
-     * TXO ever arrives — so without a bound it is permanent junk an
-     * attacker grows one row per input by repeatedly double-spending
-     * payments at this wallet. This stamp is the row's whole lifetime
-     * rule: the collector deletes the tombstone once the chainlock
-     * finality boundary `min(chainlockHeight, syncedHeight)` reaches it —
-     * key-wallet's `prune_finalized_observed_spends` condition verbatim,
-     * no observation-age margin — because at that boundary the funding
-     * transaction (necessarily mined at or below the winner's height) has
-     * been filter-scanned with no false negatives, so an undrained row is
-     * provably not the wallet's coin. A genuine claim drains into its TXO
-     * on funding arrival and leaves the collectible set with the row.
+     * not any observation watermark. This stamp is the row's whole
+     * lifetime rule: the collector deletes the tombstone once the
+     * chainlock finality boundary `min(chainlockHeight, syncedHeight)`
+     * reaches it — key-wallet's `prune_finalized_observed_spends`
+     * condition verbatim, no observation-age margin — because at that
+     * boundary the funding transaction (necessarily mined at or below
+     * the winner's height) has been filter-scanned with no false
+     * negatives, so an undrained row is provably not the wallet's coin.
+     * A genuine claim drains into its TXO on funding arrival and leaves
+     * the collectible set with the row.
      *
      * NULL is never collected. A mempool/IS-context sweep (unmined
-     * winner) creates no tombstone at all, and an IS-locked re-point
-     * keeps the existing stamp — so under the current writers an
-     * unstamped tombstone is legacy or foreign data, and holding it
-     * forever is the safe reading. Nullable, so the ADD COLUMN migration
-     * needs no default and pre-migration rows read as unstamped.
+     * winner) writes its tombstone unstamped on purpose: under DIP-10
+     * the IS lock alone settles the input, but the winner has no mining
+     * deadline, so no boundary can ever prove its funding output
+     * delivered-or-never — the hold lasts until the funding TXO drains
+     * it, a later block-context sweep stamps it, or a release deletes
+     * it. An IS-locked re-point likewise keeps the existing stamp.
+     * Nullable, so the ADD COLUMN migration needs no default and
+     * pre-migration rows read as unstamped.
      */
     val winnerMinedHeight: Int? = null,
 )

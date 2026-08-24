@@ -246,15 +246,21 @@ pub struct SweepBatch {
     ///
     /// This is the winner's finality context, straight from the event: the
     /// winner need not be wallet-relevant, so no persister can look its
-    /// height up in its own records. A held-but-unfunded input is only
-    /// mirrored as a durable placeholder when this is `Some` — the exact
-    /// projection of upstream's `observed_spent_outpoints`, which records a
-    /// spend's own block height and deliberately records nothing for a
-    /// mempool/IS-lock spend ("an unconfirmed spend must not invalidate a
-    /// coin"). The stored height is then the placeholder's whole lifetime
-    /// rule: collectible once `min(chainlock_height, synced_height)`
-    /// reaches it, exactly upstream's `prune_finalized_observed_spends`
-    /// boundary.
+    /// height up in its own records. A held-but-unfunded input is mirrored
+    /// as a durable placeholder in EITHER case; this field decides the
+    /// placeholder's lifetime. `Some` stamps the winner's own block height
+    /// — the projection of upstream's `observed_spent_outpoints` — and the
+    /// placeholder is collectible once `min(chainlock_height,
+    /// synced_height)` reaches it, exactly upstream's
+    /// `prune_finalized_observed_spends` boundary. `None` (IS-locked
+    /// winner, unmined) leaves the placeholder UNSTAMPED and never
+    /// collectible: under DIP-10 the lock alone settles the input —
+    /// upstream retains it in the account's `spent_outpoints`, a hold with
+    /// no height that no record survives to rebuild — and an IS-locked
+    /// winner has no mining deadline, so no watermark can ever prove the
+    /// funding output delivered-or-never. An unstamped placeholder
+    /// resolves only through proof: funding materialisation, a later
+    /// block-context sweep's re-stamp, or a release.
     ///
     /// `serde(default)`: a journaled payload written before this field
     /// existed reads back as `None` — the conservative reading (no new

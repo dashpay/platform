@@ -109,12 +109,16 @@ public final class PersistentPendingInput {
     /// has been matched with no false negatives, so the funding transaction
     /// of the guarded outpoint — necessarily mined at or below the spend's
     /// own height — has either been delivered (draining the row) or
-    /// provably never will be. A mempool-context sweep never stamps this:
-    /// it creates no tombstone at all, and re-pointing an existing
-    /// tombstone keeps the earlier block-context stamp untouched (upstream
-    /// never retracts an observed-spend entry for an unconfirmed conflict).
-    /// `nil` on a tombstone therefore means foreign or legacy data — the
-    /// collector holds it forever rather than guess it collectible.
+    /// provably never will be. A mempool-context sweep (IS-locked winner,
+    /// unmined) writes its tombstone with this NIL on purpose: under
+    /// DIP-10 the lock alone settles the input, but the winner has no
+    /// mining deadline, so no boundary can ever prove its funding output
+    /// delivered-or-never — the collector never touches an unstamped row,
+    /// and the hold lasts until the funding TXO drains it, a later
+    /// block-context sweep stamps it, or a release deletes it.
+    /// Re-pointing an existing tombstone on a mempool-context sweep keeps
+    /// the earlier block-context stamp untouched (upstream never retracts
+    /// an observed-spend entry for an unconfirmed conflict).
     /// Optional, so existing stores lightweight-migrate.
     public var winnerMinedHeight: UInt32?
 

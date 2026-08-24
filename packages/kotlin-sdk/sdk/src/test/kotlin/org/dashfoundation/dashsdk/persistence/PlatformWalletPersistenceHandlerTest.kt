@@ -4750,7 +4750,8 @@ class PlatformWalletPersistenceHandlerTest {
      * Record a loser spending [outpoint] (funding unknown), then sweep it
      * in the given winner context — a mined height (default 400) leaves
      * the block-context tombstone the collection tests reason about, -1
-     * (an IS-locked, unmined winner) must leave nothing.
+     * (an IS-locked, unmined winner) leaves the same tombstone unstamped,
+     * which the collector never touches.
      */
     private fun seedSweptTombstone(
         outpoint: ByteArray,
@@ -4895,28 +4896,20 @@ class PlatformWalletPersistenceHandlerTest {
 
     @Test
     fun aTombstoneWithoutAWinnerHeightIsNeverCollected() = runTest {
-        // A tombstone with a NULL stamp is never collected. No current
-        // writer produces one — a mempool-context sweep creates no
-        // tombstone at all and an IS-locked re-point keeps the existing
-        // stamp — so an unstamped row is legacy data (the v12 → v13
-        // migration leaves pre-existing tombstones NULL) or foreign, and
-        // with no proof of finality the safe reading is to hold it
-        // forever rather than guess it collectible.
+        // A tombstone with a NULL stamp is never collected. The
+        // mempool-context sweep path writes exactly this shape — an
+        // IS-locked, unmined winner has no finality horizon to stamp —
+        // and legacy rows (the v12 → v13 migration leaves pre-existing
+        // tombstones NULL) read identically. With no proof of finality
+        // the safe reading is to hold it forever rather than guess it
+        // collectible.
         handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
 
         val fundingTxid = ByteArray(32) { 80 }
         val p = makeOutpoint(fundingTxid, 0)
-        // Plant the shape directly — the current writers cannot produce it.
-        db.documentDao().upsertPendingInput(
-            PendingInputEntity(
-                outpoint = p,
-                inputIndex = 0,
-                spendingTxid = ByteArray(32) { 82 },
-                walletId = walletId,
-                isSweptTombstone = true,
-                winnerMinedHeight = null,
-            ),
-        )
+        // The real writer: an IS-context sweep of a loser whose funding
+        // TXO never arrived.
+        seedSweptTombstone(p, ByteArray(32) { 81 }, ByteArray(32) { 82 }, winnerMinedHeight = -1)
 
         // Two rounds, not one: a back-filling collector (the rejected
         // design) would stamp the row on the first round and collect it
@@ -5011,19 +5004,20 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun aMempoolContextSweepCreatesNoPlaceholderRows() = runTest {
+    fun aMempoolContextSweepPreservesAnUnstampedTombstone() = runTest {
         // A mempool-context sweep — an InstantSend-locked winner that has
-        // not mined — creates NO tombstone for a held-but-unfunded input,
-        // however often it happens. This is upstream's own doctrine
-        // projected ("an unconfirmed spend must not invalidate a coin"),
-        // and it kills the attacker-growable population at the source: a
-        // swept incoming payment's foreign inputs land nothing, so
-        // repeated double-spends at this wallet grow nothing.
+        // not mined — preserves an UNSTAMPED tombstone for every
+        // held-but-unfunded input. Under DIP-10 the IS lock alone settles
+        // those inputs: upstream deletes the loser and retains them in the
+        // account's `spent_outpoints`, a hold with no height that no
+        // record survives to rebuild (the winner need not be
+        // wallet-relevant). The tombstone is that hold's only durable
+        // carrier — CORE_SWEEP_REMOVAL requires every non-released input
+        // to keep a durable spend claim before its funding TXO
+        // materializes — and it is unstamped because an IS-locked winner
+        // has no mining deadline, so no boundary may ever collect it.
         handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
 
-        // Repeated double-spent incoming payments: distinct losers, each
-        // claiming distinct still-unfunded inputs, each swept by an
-        // IS-locked winner.
         for (i in 0 until 3) {
             val p = makeOutpoint(ByteArray(32) { (114 + i).toByte() }, 0)
             seedSweptTombstone(
@@ -5032,14 +5026,23 @@ class PlatformWalletPersistenceHandlerTest {
                 ByteArray(32) { (120 + i).toByte() },
                 winnerMinedHeight = -1,
             )
+            val row = db.documentDao().getPendingInputsByOutpoint(p).single()
             assertTrue(
-                "an unmined IS-locked winner must leave no pending row for input #$i",
-                db.documentDao().getPendingInputsByOutpoint(p).isEmpty(),
+                "an unmined IS-locked winner must leave a held tombstone for input #$i",
+                row.isSweptTombstone,
             )
+            assertNull("and it carries no finality stamp", row.winnerMinedHeight)
         }
+        // Arbitrary chainlock/height advancement never collects an
+        // unstamped hold — two rounds, so a back-filling collector would
+        // be caught too.
+        chainLockHeightRound(handler, 1_000_000)
+        headerRound(handler, 1_000_000)
+        headerRound(handler, 1_000_010)
         assertEquals(
-            "repeated mempool-path double-spends must leave zero pending rows",
-            0L, db.documentDao().countPendingInputs().first(),
+            "every unstamped hold outlasts any boundary — only funding " +
+                "materialization, a block-context re-stamp, or a release resolves one",
+            3L, db.documentDao().countPendingInputs().first(),
         )
     }
 
@@ -5099,17 +5102,18 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun aFundingOutputArrivingAfterAMempoolSweepAndRestartLandsUnspent() = runTest {
-        // The reviewer's named regression, resolved by engine parity: an
-        // IS-locked winner sweeps on the mempool path and never mines, the
-        // app restarts, chainlocks and heights advance arbitrarily, and
-        // only then is the funding output delivered. The wallet engine
-        // itself keeps no durable hold for an unconfirmed spend and would
-        // credit the coin — so this store must land it unspent too, with
-        // no stale tombstone in the way and no tombstone wrongly collected
-        // beforehand (none ever existed). Convergence is the winner's job:
-        // when it mines, BIP158 delivery of its block re-marks the coin
-        // through the ordinary channels.
+    fun aFundingOutputArrivingAfterAMempoolSweepAndRestartLandsSpent() = runTest {
+        // The reviewer's named regression: an IS-locked winner sweeps on
+        // the mempool path and never mines, the app restarts, chainlocks
+        // and heights advance arbitrarily, and only then is the funding
+        // output delivered. Under DIP-10 the IS lock already settled that
+        // input — upstream deleted the loser and retained the hold in the
+        // account's `spent_outpoints`, a set rebuilt from records on load
+        // that no surviving record can reconstruct. The unstamped
+        // tombstone is the claim's only durable carrier, so the funding
+        // delivery must drain INTO it and land spent: crediting the coin
+        // would hand coin selection an outpoint the network has provably
+        // consumed.
         handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
         val xpub = ByteArray(78) { 30 }
         handler.onPersistAccountRegistration(
@@ -5128,11 +5132,11 @@ class PlatformWalletPersistenceHandlerTest {
 
         val fundingTxid = ByteArray(32) { 126 }
         val p = makeOutpoint(fundingTxid, 0)
-        seedSweptTombstone(p, ByteArray(32) { 127 }, ByteArray(32) { 0x7F }, winnerMinedHeight = -1)
-        assertTrue(
-            "sanity: the mempool-context sweep left no pending row",
-            db.documentDao().getPendingInputsByOutpoint(p).isEmpty(),
-        )
+        val winner = ByteArray(32) { 0x7F }
+        seedSweptTombstone(p, ByteArray(32) { 127 }, winner, winnerMinedHeight = -1)
+        val tombstone = db.documentDao().getPendingInputsByOutpoint(p).single()
+        assertTrue("sanity: the mempool-context sweep left a tombstone", tombstone.isSweptTombstone)
+        assertNull("unstamped — no finality horizon exists", tombstone.winnerMinedHeight)
 
         // Restart: a fresh handler bound to the same underlying store —
         // this suite's restart idiom (see
@@ -5140,13 +5144,18 @@ class PlatformWalletPersistenceHandlerTest {
         val restarted = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)
 
         // Arbitrary chainlock/height advancement while the winner stays
-        // unmined.
+        // unmined — none of it may collect the unstamped hold.
         headerRound(restarted, 25_000)
         restarted.onChangesetBegin(walletId)
         restarted.onWalletChangesetChainLockHeight(walletId, 25_000)
         restarted.onChangesetEnd(walletId, success = true)
+        assertEquals(
+            "the unstamped hold survives the restart and every boundary",
+            1, db.documentDao().getPendingInputsByOutpoint(p).size,
+        )
 
-        // The funding output is finally delivered and classified.
+        // The funding output is finally delivered and classified: it must
+        // drain into the tombstone and stay spent.
         restarted.onChangesetBegin(walletId)
         restarted.onWalletChangesetUtxoAdded(
             walletId, fundingTxid, 0, 50_000, "yFundAddr", ByteArray(25) { 6 },
@@ -5156,15 +5165,23 @@ class PlatformWalletPersistenceHandlerTest {
 
         val coin = db.txoDao().getByOutpoint(p)
         assertNotNull(coin)
-        assertFalse(
-            "the engine credits a coin whose only spender is unconfirmed — the " +
-                "mirror must agree after a restart, not hold a claim the wallet " +
-                "itself no longer remembers",
+        assertTrue(
+            "an input the IS-locked winner consumed must never come back " +
+                "spendable — the sweep's claim outlives the restart",
             coin!!.isSpent,
         )
-        assertNull(coin.supersededByTxid)
-        assertTrue(db.documentDao().getPendingInputsByOutpoint(p).isEmpty())
-        assertEquals(1, restarted.onLoadWalletList().single().utxos.size)
+        assertTrue(
+            "held by the winner the sweep named",
+            winner.contentEquals(coin.supersededByTxid),
+        )
+        assertTrue(
+            "the claim drained into the TXO row",
+            db.documentDao().getPendingInputsByOutpoint(p).isEmpty(),
+        )
+        assertTrue(
+            "a spent coin never reaches the restored UTXO set",
+            restarted.onLoadWalletList().single().utxos.isEmpty(),
+        )
     }
 
     @Test
@@ -5222,6 +5239,61 @@ class PlatformWalletPersistenceHandlerTest {
                 "proves delivery-or-never",
             db.documentDao().getPendingInputsByOutpoint(p)
                 .none { it.isSweptTombstone },
+        )
+    }
+
+    @Test
+    fun anUnstampedTombstoneRestampedByABlockContextSweepBecomesCollectible() = runTest {
+        // The other direction of the chained case: an UNSTAMPED hold
+        // (IS-context sweep) re-pointed by a later BLOCK-context sweep
+        // gains that winner's stamp — the claim now belongs to a spend
+        // anchored in a real block, so it enters the collectible set and
+        // the boundary reaching the new winner's height collects it. One
+        // of the three resolution channels that bound the unstamped
+        // population.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+
+        val fundingTxid = ByteArray(32) { 115 }
+        val p = makeOutpoint(fundingTxid, 0)
+        val firstLoser = ByteArray(32) { 116 }
+        val secondLoser = ByteArray(32) { 118 }
+        val finalWinner = ByteArray(32) { 119 }
+        seedSweptTombstone(p, firstLoser, secondLoser, winnerMinedHeight = -1)
+        assertNull(
+            "sanity: held and unstamped",
+            db.documentDao().getPendingInputsByOutpoint(p).single().winnerMinedHeight,
+        )
+
+        // The IS-locked first winner is itself beaten by a mined conflict
+        // still claiming the unfunded input.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, secondLoser, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -40_000, 0, false, "", 1_700_000_093,
+            p, 1,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(secondLoser), arrayOf(finalWinner), emptyArray(), 450,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val rows = db.documentDao().getPendingInputsByOutpoint(p)
+            .filter { it.isSweptTombstone }
+        assertTrue("sanity: the claim survives the chained sweep", rows.isNotEmpty())
+        for (row in rows) {
+            assertEquals(
+                "the block-context re-point stamps the previously unstamped hold",
+                450, row.winnerMinedHeight,
+            )
+        }
+
+        chainLockHeightRound(handler, 10_000)
+        headerRound(handler, 450)
+        assertTrue(
+            "once stamped, the ordinary finality boundary collects the row",
+            db.documentDao().getPendingInputsByOutpoint(p).none { it.isSweptTombstone },
         )
     }
 
