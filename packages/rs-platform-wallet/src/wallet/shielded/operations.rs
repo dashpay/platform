@@ -447,8 +447,14 @@ fn reserve_shield_fee_on_input_0(
 }
 
 /// Shield credits from transparent platform addresses into the
-/// shielded pool, with the resulting note assigned to `account`'s
-/// default Orchard payment address derived from `keys`.
+/// shielded pool. `recipient` selects the note's Orchard payment
+/// address: `None` assigns it to `account`'s default address derived
+/// from `keys` (the internal shield-to-self); `Some` pays a
+/// third-party address — the note funds THAT wallet's pool and never
+/// becomes spendable here. Either way the output is encrypted under
+/// our own OVK, so the scan recovers the send from chain data and the
+/// live and scan-derived activity ids line up (same convention as
+/// [`transfer`], which also does not special-case a self recipient).
 #[allow(clippy::too_many_arguments)]
 pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardProver>(
     sdk: &Arc<dash_sdk::Sdk>,
@@ -457,12 +463,20 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
     wallet_id: WalletId,
     keys: &AccountViewingKeys,
     account: u32,
+    recipient: Option<&PaymentAddress>,
     inputs: BTreeMap<PlatformAddress, Credits>,
     amount: u64,
+    memo: [u8; 36],
     signer: &Sig,
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
-    let recipient_addr = default_orchard_address(keys)?;
+    let (recipient_addr, external_counterparty) = match recipient {
+        Some(payment_address) => (
+            payment_address_to_orchard(payment_address)?,
+            Some(payment_address.to_raw_address_bytes().to_vec()),
+        ),
+        None => (default_orchard_address(keys)?, None),
+    };
     let id = SubwalletId::new(wallet_id, account);
 
     // Reserve the flat shielded fee `F` on top of `amount` in the input
@@ -515,7 +529,12 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
     let fee_strategy: AddressFundsFeeStrategy =
         vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
 
-    info!(account, credits = amount, "Shield: building proof");
+    info!(
+        account,
+        credits = amount,
+        external = external_counterparty.is_some(),
+        "Shield: building proof"
+    );
 
     let claimed_inputs = inputs_with_nonce.clone();
 
@@ -527,7 +546,7 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
         signer,
         0, // user_fee_increase
         prover,
-        [0u8; 36], // empty memo
+        memo,
         // Encrypt the output under the account's own OVK so the wallet's
         // shielded sync can recover this send (recipient, value, memo)
         // from chain data alone.
@@ -540,11 +559,19 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
     trace!("Shield credits: state transition built, broadcasting...");
     let network = sdk.network;
 
-    // Live activity: Shield is `direction in`, amount = the note value
-    // entering the pool, fee = the flat shielded fee reserved above. The
-    // visible output cmx is the recipient note (own address, OVK-keyed),
-    // which the scan later sees as an outgoing note recovered to self —
-    // the ids line up.
+    // Live activity. Shield-to-self is `Shield`/`direction in` (the note
+    // value enters our pool); an external recipient is `Sent`/`direction
+    // out` with the recipient's raw 43-byte Orchard address as
+    // counterparty — the exact classification the scan deriver produces
+    // for an OVK-recovered send to a non-own address, so a restore
+    // derives the same row. Fee = the flat shielded fee reserved above.
+    // The visible output cmx is the recipient note (OVK-keyed either
+    // way), so the live and scan ids line up.
+    let (kind, direction) = if external_counterparty.is_some() {
+        (ShieldedActivityKind::Sent, ShieldedDirection::Out)
+    } else {
+        (ShieldedActivityKind::Shield, ShieldedDirection::In)
+    };
     let pending_entry = record_pending_activity(
         store,
         persister,
@@ -552,12 +579,12 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
         id,
         keys,
         LiveEntryParams {
-            kind: ShieldedActivityKind::Shield,
-            direction: ShieldedDirection::In,
+            kind,
+            direction,
             amount,
             fee: Some(fee),
-            counterparty: None,
-            memo: None,
+            counterparty: external_counterparty,
+            memo: non_zero_memo(&memo),
             actions: shielded_actions(&state_transition),
             spent_notes: &[],
         },

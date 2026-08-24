@@ -721,6 +721,91 @@ extension PlatformWalletManager {
         }.value
     }
 
+    /// Platform → EXTERNAL Shielded. The Type 15 shield with the note
+    /// assigned to `recipientRaw43` (a third-party raw 43-byte Orchard
+    /// payment address — same shape [`shieldedTransfer`] takes) instead
+    /// of the wallet's own default address. Input selection, fees, and
+    /// error shapes are identical to [`shieldedShield`]; the wallet
+    /// still needs a bound shielded sub-wallet at `shieldedAccount`
+    /// because the send is OVK-encrypted to (and its activity recorded
+    /// under) that account — that is how the wallet's own scan later
+    /// shows it as sent history.
+    ///
+    /// `memo` follows [`shieldedTransfer`]'s rules: `nil` / empty means
+    /// no memo; a non-empty memo's UTF-8 byte length must be at most 32
+    /// or Rust rejects it. The 36-byte on-chain encoding is done on the
+    /// Rust side.
+    ///
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
+    /// broadcast was accepted but its execution result couldn't be
+    /// confirmed — the shield may already be on chain, so the caller
+    /// must NOT retry (a retry would rebuild the bundle and could
+    /// double-pay; the next sync reconciles the outcome). A shield
+    /// spends no notes, so nothing is reserved wallet-side.
+    public func shieldedShieldToRecipient(
+        walletId: Data,
+        shieldedAccount: UInt32 = 0,
+        paymentAccount: UInt32 = 0,
+        recipientRaw43: Data,
+        amount: UInt64,
+        memo: String? = nil,
+        addressSigner: KeychainSigner
+    ) async throws {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+        guard recipientRaw43.count == 43 else {
+            throw PlatformWalletError.invalidParameter(
+                "recipient must be exactly 43 raw Orchard bytes"
+            )
+        }
+
+        let handle = self.handle
+        let signerHandle = addressSigner.handle
+
+        try await Task.detached(priority: .userInitiated) {
+            // Keepalive — same rationale as `shieldedShield`.
+            _ = addressSigner
+
+            try walletId.withUnsafeBytes { widRaw in
+                guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                else {
+                    throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                }
+                try recipientRaw43.withUnsafeBytes { recipientRaw in
+                    guard let recipientPtr = recipientRaw.baseAddress?
+                        .assumingMemoryBound(to: UInt8.self)
+                    else {
+                        throw PlatformWalletError.invalidParameter(
+                            "recipient baseAddress is nil"
+                        )
+                    }
+                    // `nil` / empty → null pointer (no memo); otherwise
+                    // pass the text as a C string — Rust validates the
+                    // 32-byte limit and does the 36-byte encoding.
+                    let send: (UnsafePointer<CChar>?) throws -> Void = { memoCStr in
+                        try platform_wallet_manager_shielded_shield_to_recipient(
+                            handle, widPtr, shieldedAccount, paymentAccount,
+                            recipientPtr, amount, memoCStr, signerHandle
+                        ).check()
+                    }
+                    if let memo, !memo.isEmpty {
+                        try memo.withCString { try send($0) }
+                    } else {
+                        try send(nil)
+                    }
+                }
+            }
+        }.value
+    }
+
     /// Shielded → Platform unshield. Spends notes from `walletId`'s
     /// shielded balance and credits `toPlatformAddress`, a bech32m
     /// string (`"dash1…"` on mainnet, `"tdash1…"` on testnet). Rust

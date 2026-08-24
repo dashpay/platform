@@ -978,6 +978,116 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
     map_spend_result(result, "shielded shield")
 }
 
+/// Shield: spend credits from a Platform Payment account into a
+/// THIRD-PARTY shielded pool — the Type 15 shield with the note
+/// assigned to `recipient_raw_43` (the recipient's raw 43-byte
+/// Orchard payment address, same shape
+/// `platform_wallet_manager_shielded_transfer` takes) instead of the
+/// wallet's own default address.
+///
+/// Input selection, fees, and error shapes are identical to
+/// [`platform_wallet_manager_shielded_shield`]; the wallet still needs
+/// a bound shielded sub-wallet at `shielded_account` because the send
+/// is OVK-encrypted to (and its activity recorded under) that account.
+///
+/// `memo_text` is an optional NUL-terminated UTF-8 string attached to
+/// the recipient's note — same rules as
+/// `platform_wallet_manager_shielded_transfer`: `null` or empty means
+/// no memo; a non-empty memo's UTF-8 byte length must be ≤ 32.
+///
+/// `signer_address_handle` is a `*mut SignerHandle` produced by
+/// `dash_sdk_signer_create_with_ctx` (typically Swift's
+/// `KeychainSigner.handle`). The caller retains ownership; this
+/// function does not destroy the handle.
+///
+/// # Safety
+/// - `wallet_id_bytes` must point to 32 readable bytes.
+/// - `recipient_raw_43` must point to 43 readable bytes.
+/// - `memo_text`, when non-null, must be a valid NUL-terminated UTF-8
+///   C string for the duration of the call.
+/// - `signer_address_handle` must be a valid, non-destroyed
+///   `*const SignerHandle` that outlives this call and points at a
+///   `VTableSigner` with the callback variant (the native variant
+///   doesn't satisfy `Signer<PlatformAddress>`).
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_shield_to_recipient(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    shielded_account: u32,
+    payment_account: u32,
+    recipient_raw_43: *const u8,
+    amount: u64,
+    memo_text: *const c_char,
+    signer_address_handle: *const SignerHandle,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(recipient_raw_43);
+    check_ptr!(signer_address_handle);
+
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+    let mut recipient = [0u8; 43];
+    std::ptr::copy_nonoverlapping(recipient_raw_43, recipient.as_mut_ptr(), 43);
+
+    // Decode the optional memo string before resolving the wallet so a
+    // malformed memo fails fast without touching wallet state.
+    let memo_str = if memo_text.is_null() {
+        None
+    } else {
+        match CStr::from_ptr(memo_text).to_str() {
+            Ok(s) => Some(s),
+            Err(e) => {
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorUtf8Conversion,
+                    format!("memo_text is not valid UTF-8: {e}"),
+                );
+            }
+        }
+    };
+    let memo = match encode_memo_text(memo_str) {
+        Ok(m) => m,
+        Err(result) => return result,
+    };
+
+    // Shield writes its live activity entry to the coordinator's shared
+    // in-memory store, so resolve the coordinator alongside the wallet
+    // (same resolver the transfer / unshield / withdraw spends use).
+    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        Ok(p) => p,
+        Err(result) => return result,
+    };
+
+    // Signer pointer round-trip through `usize` — same rationale as
+    // `platform_wallet_manager_shielded_shield`.
+    let signer_addr = signer_address_handle as usize;
+
+    // Run the proof on a worker thread (8 MB stack). Halo 2 circuit
+    // synthesis recurses past the ~512 KB iOS dispatch-thread stack
+    // and crashes with EXC_BAD_ACCESS at the first
+    // `synthesize(... measure(pass))` call when polled on the
+    // calling thread.
+    let result = block_on_worker(async move {
+        // SAFETY: re-materialize the borrow under the caller's
+        // documented lifetime contract; valid for the duration of
+        // this synchronously-awaited task.
+        let address_signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+        let prover = CachedOrchardProver::new();
+        wallet
+            .shielded_shield_from_account_to_recipient(
+                &coordinator,
+                shielded_account,
+                payment_account,
+                &recipient,
+                amount,
+                memo,
+                address_signer,
+                &prover,
+            )
+            .await
+    });
+    map_spend_result(result, "shielded shield to recipient")
+}
+
 /// Fund the shielded pool from a Core L1 asset lock, orchestrated
 /// through the wallet's `AssetLockManager` (build → IS-or-CL →
 /// submit → consume). The asset-lock-proof signature is produced
