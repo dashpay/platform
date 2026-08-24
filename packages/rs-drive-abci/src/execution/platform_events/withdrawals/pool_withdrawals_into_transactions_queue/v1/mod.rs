@@ -100,9 +100,11 @@ where
         }
 
         // Only take documents up to the withdrawal amount
-        let withdrawals_info = self
-            .drive
-            .calculate_current_withdrawal_limit(transaction, platform_version)?;
+        let withdrawals_info = self.drive.calculate_current_withdrawal_limit(
+            block_info,
+            transaction,
+            platform_version,
+        )?;
 
         tracing::trace!(
             ?withdrawals_info,
