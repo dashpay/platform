@@ -603,9 +603,12 @@ enum DepartureResolution {
     /// the durable row untouched.
     Retry,
     /// Terminal per-item failure: a NON-retryable persistence read
-    /// failure while Platform confirms the domain document absent, so
-    /// the removal delta's `document_id` is unknown and will not become
-    /// known by retrying. The caller MUST NOT take the
+    /// failure at a point where the recovered document id is
+    /// load-bearing (a confirmed-absent document's removal delta, a
+    /// live history-unrelated document's choice of WHICH row departs,
+    /// or a classified departure's prior-incarnation retirement), so
+    /// the right deltas are unknown and will not become known by
+    /// retrying. The caller MUST NOT take the
     /// successful-departure path — no label drop, no deltas, no entry in
     /// `names_departed` — because the retained label is the only trigger
     /// that lets a later pass re-detect the departure and finish the
@@ -1741,6 +1744,12 @@ impl IdentityWallet {
     /// target the recovered prior incarnation and leave the replacement
     /// untouched.
     ///
+    /// A classified Sold/Transferred departure writes the live
+    /// document's historical row; when the recovered prior incarnation
+    /// sits under a different id (the label cycled through this identity
+    /// after a delete + re-registration), that prior row is retired in
+    /// the same changeset — the label drop would otherwise orphan it.
+    ///
     /// The removal delta needs the departed name's `document_id`, which
     /// [`previous_document_id_for`] resolves from the in-memory snapshot
     /// and — when that is empty, as it always is on the first pass after
@@ -1763,11 +1772,12 @@ impl IdentityWallet {
     /// `LockPoisoned`) cannot be retried into success, so it must not
     /// park the departure queue — but it does not establish that no
     /// durable row exists, either. The error is HELD until the pass
-    /// learns whether the id is actually needed: a Sold/Transferred
-    /// departure never reads it and resolves normally, while either
-    /// branch whose removal delta the id feeds — a confirmed-absent
-    /// domain document, or a live one whose history never departs this
-    /// identity (where the recovered id decides WHICH row is removed) —
+    /// learns whether the id is actually needed: the retry arms resolve
+    /// without it, while every branch that consumes it — a
+    /// confirmed-absent domain document, a live one whose history never
+    /// departs this identity (where the recovered id decides WHICH row
+    /// is removed), or a classified Sold/Transferred departure (where it
+    /// decides whether a prior incarnation must be retired) —
     /// turns the held error into a
     /// terminal per-item failure ([`DepartureResolution::Failed`]) —
     /// the label and the durable row are preserved and the failure is
@@ -1808,11 +1818,14 @@ impl IdentityWallet {
                 }
                 // Non-retryable: HOLD the error instead of acting on it.
                 // Whether it matters depends on what Platform says next —
-                // the id is load-bearing only where it feeds the removal
-                // delta (the confirmed-absent branch, and a live document
-                // whose history never departs this identity), and failing
-                // a Sold/Transferred departure (which never reads it)
-                // over a broken read slot would be gratuitous.
+                // every RESOLVED outcome consumes the recovered id (as
+                // the removal delta under a confirmed-absent or
+                // history-unrelated live document, or to decide whether a
+                // classified departure must retire a prior incarnation),
+                // but the retry arms (domain fetch, history
+                // classification) fire before the id is read, and failing
+                // them over a broken read slot would turn an ordinary
+                // network retry into a terminal failure.
                 Err(error) => Err(error),
             };
         let state = match self.dpns_name_state(label).await {
@@ -1974,6 +1987,53 @@ impl IdentityWallet {
                 resolution: DepartureResolution::Resolved,
             };
         };
+        // A classified departure normally concerns the identity's own
+        // durable row: the historical entry is keyed by the live
+        // document's id, so writing it replaces that row in place and no
+        // separate removal is needed. But the recovered PRIOR incarnation
+        // may sit under a DIFFERENT id — persisted document A was
+        // deleted, the label was re-registered as B, and B itself passed
+        // through this identity and departed, all before this pass. The
+        // entry then lands under B while the durable row stays under A,
+        // and the caller drops the label — the only trigger that would
+        // ever revisit A — so A would survive as `Owned` forever. Retire
+        // the recovered incarnation alongside the classified entry
+        // whenever its id differs from the live document's.
+        let previous_document_id = match previous_document_id {
+            Ok(document_id) => document_id,
+            // The recovered id decides whether a prior incarnation must
+            // be retired with this entry, so the held non-retryable
+            // persistence error is load-bearing here exactly as in the
+            // other id-consuming branches: resolving without it could
+            // orphan an unknown prior row. Fail this one departure; the
+            // label and any durable row survive, and a later pass
+            // completes the retirement once the backend is repaired.
+            Err(error) => {
+                tracing::warn!(
+                    identity = %identity_id,
+                    name = label,
+                    document = %state.document_id,
+                    "persisted DPNS row lookup failed unrecoverably for a classified \
+                     departure; preserving the label and any prior durable row rather \
+                     than resolving without knowing which incarnation to retire: {error}"
+                );
+                return ResolvedDepartedName {
+                    summary: DepartedDpnsName {
+                        identity_id: *identity_id,
+                        label: label.to_string(),
+                        document_id: None,
+                        status: None,
+                    },
+                    entry: None,
+                    remove_document_id: None,
+                    resolution: DepartureResolution::Failed(error),
+                };
+            }
+        };
+        let remove_document_id = match previous_document_id {
+            Some(document_id) if document_id != state.document_id => Some(document_id),
+            _ => None,
+        };
         ResolvedDepartedName {
             summary: DepartedDpnsName {
                 identity_id: *identity_id,
@@ -1982,7 +2042,7 @@ impl IdentityWallet {
                 status: Some(sale_status),
             },
             entry: Some(state.to_entry(*identity_id, sale_status, now)),
-            remove_document_id: None,
+            remove_document_id,
             resolution: DepartureResolution::Resolved,
         }
     }
@@ -2875,8 +2935,8 @@ mod tests {
     /// classification (whose fetch fails on this mock and requests a
     /// plain retry). A regression that failed the departure eagerly —
     /// before knowing whether the id is needed — would turn every
-    /// Sold/Transferred departure on a degraded backend into a permanent
-    /// failure.
+    /// departure whose network state is merely transiently unreadable
+    /// into a permanent failure instead of an ordinary retry.
     #[tokio::test]
     async fn resolve_departed_name_defers_a_fatal_persistence_error_until_the_id_is_needed() {
         let document_id = Identifier::from([0xA5; 32]);
@@ -3068,6 +3128,229 @@ mod tests {
         );
         assert_eq!(healed.remove_document_id, Some(prior_document_id));
         assert_eq!(healed.summary.document_id, Some(prior_document_id));
+    }
+
+    /// A Document History `transfer` document recording that `from`
+    /// transferred the source domain document to `to` at `at_ms`. Only
+    /// the fields [`history_event_from_document`] reads are populated
+    /// (`$ownerId` is the departing side, `toIdentityId` the recipient).
+    fn transfer_history_document(
+        history_document_id: Identifier,
+        from: Identifier,
+        to: Identifier,
+        at_ms: u64,
+    ) -> Document {
+        let mut properties = BTreeMap::new();
+        properties.insert(
+            "toIdentityId".to_string(),
+            Value::Identifier(to.to_buffer()),
+        );
+        Document::V0(dpp::document::DocumentV0 {
+            id: history_document_id,
+            owner_id: from,
+            properties,
+            revision: Some(1),
+            created_at: Some(at_ms),
+            ..Default::default()
+        })
+    }
+
+    /// THE ROUND-6 REGRESSION (successor to the round-5 one above): the
+    /// re-registered replacement itself passed through this wallet
+    /// identity and departed. Persisted document A (the identity's own
+    /// row) was deleted, the label was re-registered as B, and B was
+    /// acquired by this identity and transferred away — all before this
+    /// sync pass. `classify_departure(B)` correctly yields
+    /// `Transferred`, but the old code wrote B's historical entry with
+    /// `remove_document_id: None`; the caller then dropped the label —
+    /// the only trigger that would ever revisit the durable row —
+    /// leaving recovered row A persisted as `Owned` forever. B's
+    /// classified entry and A's retirement must land in the same
+    /// changeset.
+    #[tokio::test]
+    async fn resolve_departed_name_retires_the_prior_incarnation_when_the_replacement_also_departed(
+    ) {
+        let prior_document_id = Identifier::from([0xD1; 32]);
+        let identity_id = Identifier::from([0xD2; 32]);
+        let replacement_document_id = Identifier::from([0xD3; 32]);
+        let new_owner = Identifier::from([0xD4; 32]);
+
+        let mirror = Arc::new(MirrorPersister::hydrated(vec![mirrored_row(
+            prior_document_id,
+            identity_id,
+        )]));
+        let mut documents = dash_sdk::query_types::Documents::new();
+        documents.insert(
+            replacement_document_id,
+            Some(listed_domain_document(
+                replacement_document_id,
+                new_owner,
+                None,
+            )),
+        );
+        let transfer_id = Identifier::from([0xD5; 32]);
+        let mut transfers = dash_sdk::query_types::Documents::new();
+        transfers.insert(
+            transfer_id,
+            Some(transfer_history_document(
+                transfer_id,
+                identity_id,
+                new_owner,
+                900,
+            )),
+        );
+        let wallet = mirror_backed_identity_wallet_with_sdk(
+            Arc::clone(&mirror),
+            sdk_with_dpns_domain_history(
+                DEPARTED_LABEL,
+                documents,
+                replacement_document_id,
+                dash_sdk::query_types::Documents::new(),
+                transfers,
+            )
+            .await,
+        );
+
+        // Post-restart in-memory state: empty, so the prior incarnation
+        // is recovered through the persister.
+        let resolved = wallet
+            .resolve_departed_name(&identity_id, DEPARTED_LABEL, &BTreeMap::new(), 1_000)
+            .await;
+
+        assert!(
+            matches!(resolved.resolution, DepartureResolution::Resolved),
+            "test precondition: with the domain and history lookups primed and the \
+             mirror healthy, the classified departure must resolve, got {:?}",
+            resolved.resolution
+        );
+        assert_eq!(
+            resolved.summary.status,
+            Some(DpnsNameSaleStatus::Transferred { to: new_owner }),
+            "the departure is classified from the replacement's own history"
+        );
+        assert_eq!(
+            resolved.summary.document_id,
+            Some(replacement_document_id),
+            "a classified departure reports the document the identity departed from"
+        );
+        assert_eq!(
+            resolved
+                .entry
+                .as_ref()
+                .expect("the classified departure must write the historical row")
+                .document_id,
+            replacement_document_id,
+            "the historical row is keyed by the departed (replacement) document"
+        );
+        assert_eq!(
+            resolved.remove_document_id,
+            Some(prior_document_id),
+            "the recovered prior incarnation must be retired alongside the \
+             classified entry — the caller's label drop leaves nothing else to \
+             ever reconcile it"
+        );
+    }
+
+    /// The companion failure arm of the round-6 regression: the label
+    /// carries a live document whose history DOES depart this identity,
+    /// and the persistence read fails non-retryably. Whether a prior
+    /// incarnation must be retired with the classified entry is
+    /// unknowable, so resolving anyway could orphan a durable row under
+    /// a different id. The departure must fail terminally — preserving
+    /// the label — and complete, entry and retirement together, once the
+    /// backend is repaired.
+    #[tokio::test]
+    async fn resolve_departed_name_fails_terminally_when_a_classified_departure_needs_the_failed_lookup(
+    ) {
+        let prior_document_id = Identifier::from([0xD6; 32]);
+        let identity_id = Identifier::from([0xD7; 32]);
+        let replacement_document_id = Identifier::from([0xD8; 32]);
+        let new_owner = Identifier::from([0xD9; 32]);
+
+        let mirror = Arc::new(MirrorPersister::hydrated_but_failing(
+            vec![mirrored_row(prior_document_id, identity_id)],
+            PersistenceErrorKind::Fatal,
+        ));
+        let mut documents = dash_sdk::query_types::Documents::new();
+        documents.insert(
+            replacement_document_id,
+            Some(listed_domain_document(
+                replacement_document_id,
+                new_owner,
+                None,
+            )),
+        );
+        let transfer_id = Identifier::from([0xDA; 32]);
+        let mut transfers = dash_sdk::query_types::Documents::new();
+        transfers.insert(
+            transfer_id,
+            Some(transfer_history_document(
+                transfer_id,
+                identity_id,
+                new_owner,
+                900,
+            )),
+        );
+        let wallet = mirror_backed_identity_wallet_with_sdk(
+            Arc::clone(&mirror),
+            sdk_with_dpns_domain_history(
+                DEPARTED_LABEL,
+                documents,
+                replacement_document_id,
+                dash_sdk::query_types::Documents::new(),
+                transfers,
+            )
+            .await,
+        );
+
+        let resolved = wallet
+            .resolve_departed_name(&identity_id, DEPARTED_LABEL, &BTreeMap::new(), 1_000)
+            .await;
+
+        match &resolved.resolution {
+            DepartureResolution::Failed(error) => assert!(
+                !error.is_transient(),
+                "the terminal failure must carry the non-retryable error: {error}"
+            ),
+            other => panic!(
+                "an unrecoverable read under a classified departure must be a \
+                 terminal per-item failure — resolving could orphan an unknown \
+                 prior incarnation, got {other:?}"
+            ),
+        }
+        assert!(
+            resolved.entry.is_none(),
+            "no historical row may be written while the retirement set is unknown"
+        );
+        assert_eq!(
+            resolved.remove_document_id, None,
+            "nothing may be removed while the prior incarnation is unknown"
+        );
+        assert_eq!(
+            resolved.summary.document_id, None,
+            "the summary must not claim an id the lookup never produced"
+        );
+
+        // Backend repaired: the SAME departure — re-detected through the
+        // label the failure preserved — writes the classified entry AND
+        // retires the recovered prior incarnation.
+        mirror.heal();
+        let healed = wallet
+            .resolve_departed_name(&identity_id, DEPARTED_LABEL, &BTreeMap::new(), 1_000)
+            .await;
+        assert!(
+            matches!(healed.resolution, DepartureResolution::Resolved),
+            "a repaired backend must let the preserved departure resolve"
+        );
+        assert_eq!(
+            healed.summary.status,
+            Some(DpnsNameSaleStatus::Transferred { to: new_owner })
+        );
+        assert_eq!(healed.remove_document_id, Some(prior_document_id));
+        assert_eq!(
+            healed.entry.as_ref().expect("classified entry").document_id,
+            replacement_document_id
+        );
     }
 
     /// The labels `identity_id` currently carries in the wallet manager —
@@ -3312,16 +3595,15 @@ mod tests {
     /// A mock SDK primed like [`sdk_answering_dpns_domain_query`] and
     /// additionally answering the Document History contract fetch and the
     /// purchase/transfer history lookups for `history_document_id` with
-    /// EMPTY pages — a live domain document whose history never departs
-    /// any wallet identity, which is exactly what
-    /// [`IdentityWallet::classify_departure`] sees when a label was
-    /// deleted and re-registered by an unrelated party. Without these
-    /// expectations the history fetch errors and resolution can only take
-    /// its retry arm, never reaching the branch under test.
-    async fn sdk_with_history_unrelated_dpns_domain(
+    /// the given pages. Without these expectations the history fetch
+    /// errors and resolution can only take its retry arm, never reaching
+    /// the branches under test.
+    async fn sdk_with_dpns_domain_history(
         label: &str,
         documents: dash_sdk::query_types::Documents,
         history_document_id: Identifier,
+        purchase_documents: dash_sdk::query_types::Documents,
+        transfer_documents: dash_sdk::query_types::Documents,
     ) -> Arc<dash_sdk::Sdk> {
         let mut sdk = mock_sdk_answering_dpns_domain_query(label, documents).await;
         let history_contract = dpp::system_data_contracts::load_system_data_contract(
@@ -3337,7 +3619,10 @@ mod tests {
             .await
             .expect("Document History contract expectation");
         let history_contract = Arc::new(history_contract);
-        for doc_type in [HISTORY_TYPE_PURCHASE, HISTORY_TYPE_TRANSFER] {
+        for (doc_type, page) in [
+            (HISTORY_TYPE_PURCHASE, purchase_documents),
+            (HISTORY_TYPE_TRANSFER, transfer_documents),
+        ] {
             let query = history_by_source_document_query(
                 Arc::clone(&history_contract),
                 doc_type,
@@ -3348,12 +3633,31 @@ mod tests {
             sdk.mock()
                 .expect_fetch_many::<Identifier, Document, _, dash_sdk::query_types::Documents>(
                     query,
-                    Some(dash_sdk::query_types::Documents::new()),
+                    Some(page),
                 )
                 .await
                 .expect("history-document expectation");
         }
         Arc::new(sdk)
+    }
+
+    /// [`sdk_with_dpns_domain_history`] with EMPTY history pages — a live
+    /// domain document whose history never departs any wallet identity,
+    /// which is exactly what [`IdentityWallet::classify_departure`] sees
+    /// when a label was deleted and re-registered by an unrelated party.
+    async fn sdk_with_history_unrelated_dpns_domain(
+        label: &str,
+        documents: dash_sdk::query_types::Documents,
+        history_document_id: Identifier,
+    ) -> Arc<dash_sdk::Sdk> {
+        sdk_with_dpns_domain_history(
+            label,
+            documents,
+            history_document_id,
+            dash_sdk::query_types::Documents::new(),
+            dash_sdk::query_types::Documents::new(),
+        )
+        .await
     }
 
     /// A mock SDK primed for a full [`IdentityWallet::sync_dpns_marketplace`]
