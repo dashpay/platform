@@ -3,7 +3,8 @@ mod queries;
 
 pub use contested_queries::ContestedDpnsUsername;
 pub use dash_platform_queries::dpns_usernames::{
-    convert_to_homograph_safe_chars, is_contested_username, is_valid_username,
+    build_dpns_preorder_and_domain_documents, convert_to_homograph_safe_chars,
+    is_contested_username, is_valid_username,
 };
 pub use queries::DpnsUsername;
 
@@ -14,15 +15,12 @@ use dash_context_provider::ContextProvider;
 use dpp::dashcore::secp256k1::rand::rngs::StdRng;
 use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::DataContract;
-use dpp::document::{DocumentV0, DocumentV0Getters};
+use dpp::document::DocumentV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::platform_value::{Bytes32, Value};
 use dpp::prelude::Identifier;
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 fn extract_dpns_label(name: &str) -> &str {
@@ -44,158 +42,6 @@ fn extract_dpns_label(name: &str) -> &str {
 /// (e.g. `"a11ce"`).
 fn normalize_dpns_label(input: &str) -> String {
     convert_to_homograph_safe_chars(extract_dpns_label(input))
-}
-
-/// Hash a buffer twice using SHA256 (double SHA256)
-fn hash_double(data: Vec<u8>) -> [u8; 32] {
-    use dpp::dashcore::hashes::{sha256d, Hash};
-    // sha256d already does double SHA256
-    let hash = sha256d::Hash::hash(&data);
-    hash.to_byte_array()
-}
-
-/// Build the DPNS `preorder` and `domain` documents that register
-/// `label`.dash for `identity_id`, exactly as platform consensus expects
-/// them.
-///
-/// This is the pure document-assembly half of [`Sdk::register_dpns_name`]:
-/// no networking, and no randomness — the caller supplies the `entropy`
-/// that derives both document ids (the same entropy must later be attached
-/// to both create transitions) and the preorder `salt`, whose double-SHA256
-/// over `salt ‖ "<normalized label>.dash"` becomes the preorder's
-/// `saltedDomainHash`.
-///
-/// The raw label is stored
-/// in the domain document's `label` property while its
-/// [homograph-safe](convert_to_homograph_safe_chars) form is stored in
-/// `normalizedLabel`.
-///
-/// # Salt secrecy and reveal order
-///
-/// The preorder/domain split is DPNS's front-running protection: the
-/// preorder commits to `saltedDomainHash` without revealing which name
-/// is being registered, and only the later domain document discloses
-/// the `label` and the `preorderSalt` that tie it to the commitment.
-/// That protection holds only if the caller upholds what
-/// [`Sdk::register_dpns_name`] does automatically:
-///
-/// - generate a **fresh 32-byte salt from a CSPRNG** for every
-///   registration attempt (the SDK draws it from
-///   `StdRng::from_entropy()`). A reused or predictable salt lets an
-///   observer precompute `sha256d(salt ‖ "<candidate>.dash")` for
-///   candidate labels and identify — then front-run — the name from
-///   the preorder alone;
-/// - keep the salt, the label, and the assembled domain document
-///   **private until the preorder create transition is confirmed**
-///   (the SDK submits the preorder and waits for its response before
-///   broadcasting the domain document). Revealing them earlier
-///   discloses the name while it is still unclaimed, defeating the
-///   commitment.
-///
-/// Callers driving their own flow inherit both obligations — this
-/// builder takes `salt` as an argument precisely because it has no
-/// randomness of its own and cannot enforce either one.
-///
-/// Returns `(preorder_document, domain_document)`.
-pub fn build_dpns_preorder_and_domain_documents(
-    contract: &DataContract,
-    identity_id: Identifier,
-    label: &str,
-    entropy: [u8; 32],
-    salt: [u8; 32],
-) -> Result<(Document, Document), Error> {
-    let preorder_document_type = contract
-        .document_type_for_name("preorder")
-        .map_err(|_| Error::Generic("DPNS preorder document type not found".to_string()))?;
-
-    let domain_document_type = contract
-        .document_type_for_name("domain")
-        .map_err(|_| Error::Generic("DPNS domain document type not found".to_string()))?;
-
-    let preorder_id = Document::generate_document_id_v0(
-        &contract.id(),
-        &identity_id,
-        preorder_document_type.name(),
-        entropy.as_slice(),
-    );
-    let domain_id = Document::generate_document_id_v0(
-        &contract.id(),
-        &identity_id,
-        domain_document_type.name(),
-        entropy.as_slice(),
-    );
-
-    // Create salted domain hash for preorder
-    let normalized_label = convert_to_homograph_safe_chars(label);
-    let mut salted_domain_buffer: Vec<u8> = vec![];
-    salted_domain_buffer.extend(salt);
-    salted_domain_buffer.extend((normalized_label.clone() + ".dash").as_bytes());
-    let salted_domain_hash = hash_double(salted_domain_buffer);
-
-    let preorder_document = Document::V0(DocumentV0 {
-        id: preorder_id,
-        owner_id: identity_id,
-        properties: BTreeMap::from([(
-            "saltedDomainHash".to_string(),
-            Value::Bytes32(salted_domain_hash),
-        )]),
-        revision: None,
-        created_at: None,
-        updated_at: None,
-        transferred_at: None,
-        created_at_block_height: None,
-        updated_at_block_height: None,
-        transferred_at_block_height: None,
-        created_at_core_block_height: None,
-        updated_at_core_block_height: None,
-        transferred_at_core_block_height: None,
-        creator_id: None,
-    });
-
-    let domain_document = Document::V0(DocumentV0 {
-        id: domain_id,
-        owner_id: identity_id,
-        properties: BTreeMap::from([
-            (
-                "parentDomainName".to_string(),
-                Value::Text("dash".to_string()),
-            ),
-            (
-                "normalizedParentDomainName".to_string(),
-                Value::Text("dash".to_string()),
-            ),
-            ("label".to_string(), Value::Text(label.to_string())),
-            ("normalizedLabel".to_string(), Value::Text(normalized_label)),
-            ("preorderSalt".to_string(), Value::Bytes32(salt)),
-            (
-                "records".to_string(),
-                Value::Map(vec![(
-                    Value::Text("identity".to_string()),
-                    Value::Identifier(identity_id.to_buffer()),
-                )]),
-            ),
-            (
-                "subdomainRules".to_string(),
-                Value::Map(vec![(
-                    Value::Text("allowSubdomains".to_string()),
-                    Value::Bool(false),
-                )]),
-            ),
-        ]),
-        revision: None,
-        created_at: None,
-        updated_at: None,
-        transferred_at: None,
-        created_at_block_height: None,
-        updated_at_block_height: None,
-        transferred_at_block_height: None,
-        created_at_core_block_height: None,
-        updated_at_core_block_height: None,
-        transferred_at_core_block_height: None,
-        creator_id: None,
-    });
-
-    Ok((preorder_document, domain_document))
 }
 
 /// Callback type for preorder document
@@ -309,8 +155,8 @@ impl Sdk {
         let entropy = Bytes32::random_with_rng(&mut rng);
         let salt: [u8; 32] = rng.gen();
 
-        // Assemble both documents in the pure builder above, keeping
-        // document assembly separate from this networked flow.
+        // Assemble both documents in the shared transport-free builder, so
+        // networked and embedder flows produce byte-identical documents.
         let (preorder_document, domain_document) = build_dpns_preorder_and_domain_documents(
             &dpns_contract,
             input.identity.id().to_owned(),

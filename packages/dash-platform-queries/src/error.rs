@@ -15,12 +15,34 @@ pub enum Error {
     /// Query is not configured properly for the target platform version
     #[error("SDK misconfigured: {0}")]
     Config(String),
+    /// Input to a document builder failed validation (bad label, wrong
+    /// ciphertext length, unknown document type, ...). `dash-sdk` maps this
+    /// to its `Error::Generic`, preserving the messages these checks
+    /// produced before they moved here.
+    #[error("{0}")]
+    InvalidInput(String),
     /// Drive error
     #[error("Drive error: {0}")]
     Drive(#[from] drive::error::Error),
     /// DPP error
     #[error("Protocol error: {0}")]
     Protocol(#[from] ProtocolError),
+}
+
+impl From<crate::documents::proto_conversions::DecodeError> for Error {
+    fn from(value: crate::documents::proto_conversions::DecodeError) -> Self {
+        use crate::documents::proto_conversions::DecodeError;
+        match value {
+            // Malformed wire bytes — a decoding failure, not a
+            // misconfiguration.
+            DecodeError::InvalidArgument(msg) => Self::Protocol(ProtocolError::DecodingError(msg)),
+            // Well-formed wire shape the decode target can't express
+            // yet — same classification the server gives it.
+            DecodeError::Unsupported(msg) => Self::Drive(drive::error::Error::Query(
+                drive::error::query::QuerySyntaxError::Unsupported(msg),
+            )),
+        }
+    }
 }
 
 impl From<ConsensusError> for Error {
