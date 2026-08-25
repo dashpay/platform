@@ -190,7 +190,7 @@ export default class DockerCompose {
    * @param {string} [options.serviceName]
    * @return {Observable<{string}>}
    */
-
+  // eslint-disable-next-line no-unused-vars
   async build(config, options = {}) {
     const envs = this.#generateEnvs(config);
 
@@ -205,7 +205,7 @@ export default class DockerCompose {
    * @param {string} [options.serviceName]
    * @return {Observable<{string}>}
    */
-
+  // eslint-disable-next-line no-unused-vars
   async buildWithEnvs(envs, options = {}) {
     try {
       return new Observable(async (observer) => {

@@ -188,6 +188,7 @@ export default function configureCoreTaskFactory(
                   ]),
                 }));
 
+                // eslint-disable-next-line consistent-return
                 return new Listr(subTasks);
               },
             },
