@@ -128,6 +128,23 @@ internal object WalletManagerNative {
     /** Balance as `long[4]` = {confirmed, unconfirmed, immature, locked}. */
     external fun walletGetBalance(walletHandle: Long): LongArray
 
+    /**
+     * Widen an account's address-pool gap limit, generating the addresses
+     * the wider limit now requires (capped Rust-side at MAX_GAP_LIMIT =
+     * 1000). The compact-filter scan watches `last used index + gap`, so
+     * this is the host's lever for wallets whose usage frontier advanced
+     * OUTSIDE the SDK's view (another client on the same seed spending
+     * past the default window). `accountType`: 0 BIP44, 1 BIP32,
+     * 2 CoinJoin — AllSpendable (3) is rejected, gap limits are
+     * per-account.
+     */
+    external fun coreWalletSetGapLimit(
+        walletHandle: Long,
+        accountType: Int,
+        accountIndex: Int,
+        gapLimit: Int,
+    )
+
     // ── Core transaction builder (1:1 over `core_wallet_tx_builder_*`) ─
     //
     // Each step is a thin extern (one export = one FFI call, per

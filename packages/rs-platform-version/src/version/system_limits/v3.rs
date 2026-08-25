@@ -18,9 +18,10 @@ pub const SYSTEM_LIMITS_V3: SystemLimits = SystemLimits {
     max_transitions_in_documents_batch: 1,
     withdrawal_transactions_per_block_limit: 4,
     retry_signing_expired_withdrawal_documents_per_block_limit: 1,
-    max_withdrawal_amount: 50_000_000_000_000,   //500 Dash
-    daily_withdrawal_limit: 200_000_000_000_000, //2000 Dash (Core v22 limit)
-    min_withdrawal_amount: 1_000_000,            //1000 duffs (raised from 190 in v12)
+    max_withdrawal_amount: 50_000_000_000_000, //500 Dash
+    daily_withdrawal_limit_percent: None,      // relative daily withdrawal limit arrives in v14
+    max_daily_withdrawal_amount: None,
+    min_withdrawal_amount: 1_000_000, //1000 duffs (raised from 190 in v12)
     max_contract_group_size: 256,
     max_token_redemption_cycles: 128,
     // NOTE: the Halo 2 proof grows with the action count (~2,273 B/action on

@@ -39,6 +39,7 @@ export type GroveElementType =
   | "mmrTree"
   | "bulkAppendTree"
   | "denseAppendOnlyFixedSizeTree"
+  | "privateDocumentStore"
   | "nonCountedItem"
   | "nonCountedReference"
   | "nonCountedTree"
@@ -60,6 +61,7 @@ export type GroveElementType =
   | "nonCountedMmrTree"
   | "nonCountedBulkAppendTree"
   | "nonCountedDenseAppendOnlyFixedSizeTree"
+  | "nonCountedPrivateDocumentStore"
   | "notSummedSumTree"
   | "notSummedBigSumTree"
   | "notSummedCountSumTree"
@@ -941,6 +943,8 @@ fn element_type_name(element: &Element) -> &'static str {
         Element::MmrTree(_, _) => "mmrTree",
         Element::BulkAppendTree(_, _, _) => "bulkAppendTree",
         Element::DenseAppendOnlyFixedSizeTree(_, _, _) => "denseAppendOnlyFixedSizeTree",
+
+        Element::PrivateDocumentStore(_, _, _, _) => "privateDocumentStore",
         Element::NonCounted(inner) => non_counted_element_type_name(inner),
         Element::NotSummed(inner) => not_summed_element_type_name(inner),
         Element::NotCountedOrSummed(inner) => not_counted_or_summed_element_type_name(inner),
@@ -974,6 +978,8 @@ fn non_counted_element_type_name(element: &Element) -> &'static str {
         Element::MmrTree(_, _) => "nonCountedMmrTree",
         Element::BulkAppendTree(_, _, _) => "nonCountedBulkAppendTree",
         Element::DenseAppendOnlyFixedSizeTree(_, _, _) => "nonCountedDenseAppendOnlyFixedSizeTree",
+
+        Element::PrivateDocumentStore(_, _, _, _) => "nonCountedPrivateDocumentStore",
         Element::NonCounted(_) | Element::NotSummed(_) | Element::NotCountedOrSummed(_) => {
             element_type_name(element)
         }
@@ -1938,6 +1944,14 @@ mod tests {
             (
                 Element::DenseAppendOnlyFixedSizeTree(1, 2, None),
                 "denseAppendOnlyFixedSizeTree",
+            ),
+            (
+                Element::PrivateDocumentStore(0, 32, 2, None),
+                "privateDocumentStore",
+            ),
+            (
+                Element::NonCounted(Box::new(Element::PrivateDocumentStore(0, 32, 2, None))),
+                "nonCountedPrivateDocumentStore",
             ),
             (
                 Element::NonCounted(Box::new(Element::ReferenceWithSumItem(

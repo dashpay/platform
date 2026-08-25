@@ -28,6 +28,27 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
         }
 
     /**
+     * Widen [accountType]/[accountIndex]'s address-pool gap limit,
+     * deriving the addresses the wider limit requires (Rust caps at
+     * 1000). Use when the seed's usage frontier moved outside the SDK's
+     * watched window — e.g. a migrated wallet whose other client (dashj)
+     * kept spending — then re-scan so the newly watched scripts match
+     * their history.
+     */
+    fun setGapLimit(
+        accountType: CoreTransactionBuilder.AccountType,
+        accountIndex: Int,
+        gapLimit: Int,
+    ): Unit = mapNativeErrors {
+        WalletManagerNative.coreWalletSetGapLimit(
+            handle,
+            accountType.ffiValue,
+            accountIndex,
+            gapLimit,
+        )
+    }
+
+    /**
      * Consume and broadcast a finalized transaction. A handle held past the
      * reservation age bound throws the typed
      * [StaleReservationToken][org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.StaleReservationToken]

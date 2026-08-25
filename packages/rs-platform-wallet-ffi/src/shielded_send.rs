@@ -156,6 +156,24 @@ pub unsafe extern "C" fn platform_wallet_shielded_prover_is_ready() -> bool {
     CachedOrchardProver::new().is_ready()
 }
 
+/// Map a fee `kind` byte to its consensus fee formula, or `None` for an
+/// unknown kind. All three formulas share the `(num_actions, version) →
+/// credits` shape, so the selection is version-independent and testable
+/// against any explicit [`PlatformVersion`].
+#[allow(clippy::type_complexity)]
+fn shielded_fee_formula(
+    kind: u8,
+) -> Option<
+    fn(usize, &dpp::version::PlatformVersion) -> Result<dpp::fee::Credits, dpp::ProtocolError>,
+> {
+    match kind {
+        0 => Some(compute_minimum_shielded_fee),
+        1 => Some(compute_shielded_unshield_fee),
+        2 => Some(compute_shielded_withdrawal_fee),
+        _ => None,
+    }
+}
+
 /// Estimate the consensus-pinned flat shielded fee (in credits) for a
 /// pool-paid shielded transition.
 ///
@@ -169,40 +187,47 @@ pub unsafe extern "C" fn platform_wallet_shielded_prover_is_ready() -> bool {
 ///   the flat Core withdrawal-document cost).
 ///
 /// `num_actions` is the Orchard action count of the bundle the host will
-/// build (a single-note spend with change is 2 actions). The version is
-/// pinned to [`PlatformVersion::latest()`] — the same version the shielded
-/// builders in `platform-wallet` resolve via `sdk.version()`, so the
-/// estimate can't drift from the fee the builder carves and the consensus
-/// gate validates.
+/// build (a single-note spend with change is 2 actions). The fee is
+/// computed at `handle`'s manager's network-tracked platform version
+/// (`sdk.version()`) — the same version the shielded builders in
+/// `platform-wallet` resolve — so the estimate can't drift from the fee
+/// the builder carves and the consensus gate validates, even when the
+/// connected network hasn't activated the client's latest protocol
+/// version yet.
 ///
-/// Pure computation: no wallet handle, no network. Writes the fee to
-/// `out_fee` and returns `ok()`. An unknown `kind` returns
-/// `ErrorInvalidParameter`; a fee-formula overflow returns
-/// `ErrorArithmeticOverflow`.
+/// No network round-trip and no wallet resolution — just the handle →
+/// version lookup and a pure computation. Writes the fee to `out_fee` and
+/// returns `ok()`. An unknown `kind` returns `ErrorInvalidParameter` (and
+/// is checked before the handle, so it fails the same way regardless of
+/// handle validity); an unknown `handle` returns `ErrorInvalidHandle`; a
+/// fee-formula overflow returns `ErrorArithmeticOverflow`.
 ///
 /// # Safety
 /// `out_fee` must point to 8 writable bytes (a `u64`).
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_shielded_estimate_fee(
+    handle: Handle,
     kind: u8,
     num_actions: usize,
     out_fee: *mut u64,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_fee);
 
-    let platform_version = dpp::version::PlatformVersion::latest();
-    let fee = match kind {
-        0 => compute_minimum_shielded_fee(num_actions, platform_version),
-        1 => compute_shielded_unshield_fee(num_actions, platform_version),
-        2 => compute_shielded_withdrawal_fee(num_actions, platform_version),
-        other => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                format!("unknown shielded fee kind {other} (expected 0/1/2)"),
-            );
-        }
+    let Some(formula) = shielded_fee_formula(kind) else {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!("unknown shielded fee kind {kind} (expected 0/1/2)"),
+        );
     };
-    match fee {
+    let Some(platform_version) =
+        PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.sdk().version())
+    else {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+            format!("invalid manager handle: {handle}"),
+        );
+    };
+    match formula(num_actions, platform_version) {
         Ok(credits) => {
             *out_fee = credits;
             PlatformWalletFFIResult::ok()
@@ -613,6 +638,80 @@ fn map_spend_result(
     }
 }
 
+/// Render a caught panic payload as a human-readable string.
+fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = payload.downcast_ref::<&'static str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "<non-string panic payload>".to_string()
+    }
+}
+
+/// Run an FFI export body under [`std::panic::catch_unwind`], converting a panic into the
+/// operation's contract-appropriate result `code` (with `guidance` appended to the message)
+/// instead of letting it reach the `extern "C"` frame.
+///
+/// A Rust panic cannot unwind through a C ABI boundary: it aborts the process. The JNI layer
+/// wraps its calls in `support::guard` (which catches panics and raises a Java exception), but
+/// that guard sits on the FAR side of this `extern "C"` export, so it never sees the unwind — the
+/// process is already gone. `block_on_worker` makes this reachable rather than theoretical: it
+/// `.expect`s on the tokio `JoinError`, so any panic inside the proving future (Halo 2 synthesis,
+/// note bookkeeping, the SDK) re-panics right here inside the export.
+///
+/// The `code` must be chosen per operation to preserve that operation's result contract — a
+/// panic can strike after side effects (note reservation, a broadcast) have happened, so the
+/// outcome is genuinely ambiguous and the code must never promise a definitive failure. See
+/// [`catch_spend_panic`] and the per-export call sites.
+///
+/// NOTE: this guard is only effective where panics unwind. The Android (`*-android`) and
+/// host/test profiles build with `panic = "unwind"`, so it works there; the iOS profiles
+/// (`dev-ios` / `release-ios`) build with `panic = "abort"` as part of their staticlib size
+/// tuning (see the workspace `Cargo.toml` profile comments), so on iOS a panic still aborts the
+/// process before this guard can see it.
+fn catch_panic_to_code(
+    operation: &str,
+    code: PlatformWalletFFIResultCode,
+    guidance: &str,
+    body: impl FnOnce() -> PlatformWalletFFIResult,
+) -> PlatformWalletFFIResult {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
+        Ok(result) => result,
+        Err(payload) => PlatformWalletFFIResult::err(
+            code,
+            format!(
+                "{operation} panicked: {}. {guidance}",
+                panic_payload_message(payload.as_ref())
+            ),
+        ),
+    }
+}
+
+/// Post-panic guidance for the note-spending exports. Paired with
+/// `ErrorShieldedSpendUnconfirmed` in [`catch_spend_panic`].
+const SPEND_PANIC_GUIDANCE: &str = "The spend may or may not have been broadcast — do NOT \
+     retry; the next shielded sync reconciles the outcome.";
+
+/// [`catch_panic_to_code`] specialized for the note-spending exports.
+///
+/// The panic is mapped to [`PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed`], NOT to
+/// a definitive failure code: a panic can strike after the notes were reserved and even after the
+/// transition was broadcast, so the outcome is genuinely ambiguous. That code's contract is
+/// exactly the conservative one this needs — the host must not auto-retry, the reservation stays
+/// in place, and the next nullifier sync (or an app restart) reconciles whether the spend landed.
+fn catch_spend_panic(
+    operation: &str,
+    body: impl FnOnce() -> PlatformWalletFFIResult,
+) -> PlatformWalletFFIResult {
+    catch_panic_to_code(
+        operation,
+        PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
+        SPEND_PANIC_GUIDANCE,
+        body,
+    )
+}
+
 /// Preserve the typed "already consumed" funding report across the FFI
 /// boundary while keeping every other funding failure on the existing generic
 /// error path. The wallet retains nonterminal consumption-unknown state; the
@@ -976,6 +1075,158 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
             .await
     });
     map_spend_result(result, "shielded shield")
+}
+
+/// Shield: spend credits from a Platform Payment account into a
+/// THIRD-PARTY shielded pool — the Type 15 shield with the note
+/// assigned to `recipient_raw_43` (the recipient's raw 43-byte
+/// Orchard payment address, same shape
+/// `platform_wallet_manager_shielded_transfer` takes) instead of the
+/// wallet's own default address.
+///
+/// Input selection, fees, and error shapes are identical to
+/// [`platform_wallet_manager_shielded_shield`]; the wallet still needs
+/// a bound shielded sub-wallet at `shielded_account` because the send
+/// is OVK-encrypted to (and its activity recorded under) that account.
+///
+/// The recipient must actually be a third party: an address the
+/// account's own IVK recognizes (default or any diversified index) is
+/// rejected with a wallet-operation error — self-shields go through
+/// [`platform_wallet_manager_shielded_shield`].
+///
+/// `memo_text` is an optional NUL-terminated UTF-8 string attached to
+/// the recipient's note — same rules as
+/// `platform_wallet_manager_shielded_transfer`: `null` or empty means
+/// no memo; a non-empty memo's UTF-8 byte length must be ≤ 32.
+///
+/// `signer_address_handle` is a `*mut SignerHandle` produced by
+/// `dash_sdk_signer_create_with_ctx` (typically Swift's
+/// `KeychainSigner.handle`). The caller retains ownership; this
+/// function does not destroy the handle.
+///
+/// # Safety
+/// - `wallet_id_bytes` must point to 32 readable bytes.
+/// - `recipient_raw_43` must point to 43 readable bytes.
+/// - `memo_text`, when non-null, must be a valid NUL-terminated UTF-8
+///   C string for the duration of the call.
+/// - `signer_address_handle` must be a valid, non-destroyed
+///   `*const SignerHandle` that outlives this call and points at a
+///   `VTableSigner` with the callback variant (the native variant
+///   doesn't satisfy `Signer<PlatformAddress>`).
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_shield_to_recipient(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    shielded_account: u32,
+    payment_account: u32,
+    recipient_raw_43: *const u8,
+    amount: u64,
+    memo_text: *const c_char,
+    signer_address_handle: *const SignerHandle,
+) -> PlatformWalletFFIResult {
+    // The whole body runs under `catch_unwind`: a panic (most concretely `block_on_worker`'s
+    // `.expect` on a panicking proving task) must NOT reach this `extern "C"` frame, where it
+    // would abort the process instead of surfacing to the host as a typed error. A shield
+    // reserves no notes, but the transition may already have been broadcast when the panic
+    // struck, so the same ambiguous spend-unconfirmed contract applies (matching
+    // `map_spend_result`'s mapping for this operation); a later manual retry self-heals through
+    // the address-nonce check.
+    catch_spend_panic("shielded shield to recipient", || {
+        shielded_shield_to_recipient_inner(
+            handle,
+            wallet_id_bytes,
+            shielded_account,
+            payment_account,
+            recipient_raw_43,
+            amount,
+            memo_text,
+            signer_address_handle,
+        )
+    })
+}
+
+/// Body of [`platform_wallet_manager_shielded_shield_to_recipient`], as an ordinary Rust
+/// function so a panic unwinds into [`catch_spend_panic`] instead of across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+#[allow(clippy::too_many_arguments)]
+unsafe fn shielded_shield_to_recipient_inner(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    shielded_account: u32,
+    payment_account: u32,
+    recipient_raw_43: *const u8,
+    amount: u64,
+    memo_text: *const c_char,
+    signer_address_handle: *const SignerHandle,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(recipient_raw_43);
+    check_ptr!(signer_address_handle);
+
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+    let mut recipient = [0u8; 43];
+    std::ptr::copy_nonoverlapping(recipient_raw_43, recipient.as_mut_ptr(), 43);
+
+    // Decode the optional memo string before resolving the wallet so a
+    // malformed memo fails fast without touching wallet state.
+    let memo_str = if memo_text.is_null() {
+        None
+    } else {
+        match CStr::from_ptr(memo_text).to_str() {
+            Ok(s) => Some(s),
+            Err(e) => {
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorUtf8Conversion,
+                    format!("memo_text is not valid UTF-8: {e}"),
+                );
+            }
+        }
+    };
+    let memo = match encode_memo_text(memo_str) {
+        Ok(m) => m,
+        Err(result) => return result,
+    };
+
+    // Shield writes its live activity entry to the coordinator's shared
+    // in-memory store, so resolve the coordinator alongside the wallet
+    // (same resolver the transfer / unshield / withdraw spends use).
+    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        Ok(p) => p,
+        Err(result) => return result,
+    };
+
+    // Signer pointer round-trip through `usize` — same rationale as
+    // `platform_wallet_manager_shielded_shield`.
+    let signer_addr = signer_address_handle as usize;
+
+    // Run the proof on a worker thread (8 MB stack). Halo 2 circuit
+    // synthesis recurses past the ~512 KB iOS dispatch-thread stack
+    // and crashes with EXC_BAD_ACCESS at the first
+    // `synthesize(... measure(pass))` call when polled on the
+    // calling thread.
+    let result = block_on_worker(async move {
+        // SAFETY: re-materialize the borrow under the caller's
+        // documented lifetime contract; valid for the duration of
+        // this synchronously-awaited task.
+        let address_signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+        let prover = CachedOrchardProver::new();
+        wallet
+            .shielded_shield_from_account_to_recipient(
+                &coordinator,
+                shielded_account,
+                payment_account,
+                &recipient,
+                amount,
+                memo,
+                address_signer,
+                &prover,
+            )
+            .await
+    });
+    map_spend_result(result, "shielded shield to recipient")
 }
 
 /// Fund the shielded pool from a Core L1 asset lock, orchestrated
@@ -1637,36 +1888,142 @@ mod tests {
         );
     }
 
-    /// Pin the fee estimator to the on-chain ground-truth values observed at the current platform
-    /// version with 2 actions (single-note spend + change). These are the exact credits the
-    /// builder carves and the consensus gate validates, so the host's "Estimated Fee" must match.
+    /// Resolve the 2-action fee for `kind` at an explicit protocol version
+    /// through the same formula table the FFI dispatches on.
+    fn estimate_at(kind: u8, protocol_version: u32) -> u64 {
+        let version = dpp::version::PlatformVersion::get(protocol_version)
+            .expect("protocol version must exist");
+        shielded_fee_formula(kind).expect("known kind")(2, version)
+            .expect("fee formula must not overflow at 2 actions")
+    }
+
+    /// Pin the fee estimator to the on-chain ground-truth values observed at protocol 13 (the
+    /// released fee constants) with 2 actions (single-note spend + change). The estimator resolves
+    /// the version from the manager's network-tracked `sdk.version()`, so on a protocol-13 network
+    /// these are the exact credits the builder carves and the consensus gate validates.
     #[test]
-    fn estimate_fee_matches_observed_onchain_values_for_2_actions() {
-        unsafe {
-            let estimate = |kind: u8| {
-                let mut fee: u64 = 0;
-                let result = platform_wallet_shielded_estimate_fee(kind, 2, &mut fee);
-                assert_eq!(
-                    result.code,
-                    PlatformWalletFFIResultCode::Success,
-                    "kind {kind} must succeed"
-                );
-                fee
+    fn estimate_fee_matches_observed_onchain_values_at_protocol_13() {
+        // kind 0 — ShieldedTransfer / Shield base.
+        assert_eq!(
+            estimate_at(0, 13),
+            162_851_200,
+            "shielded transfer fee (2 actions, protocol 13)"
+        );
+        // kind 1 — Unshield.
+        assert_eq!(
+            estimate_at(1, 13),
+            168_934_000,
+            "unshield fee (2 actions, protocol 13)"
+        );
+        // kind 2 — ShieldedWithdrawal.
+        assert_eq!(
+            estimate_at(2, 13),
+            275_191_200,
+            "shielded withdrawal fee (2 actions, protocol 13)"
+        );
+    }
+
+    /// The protocol-14 side of the boundary: the rebalanced constants
+    /// (40M proof verification + 550 storage bytes/action). A network that
+    /// has activated protocol 14 must quote these, and a network still on
+    /// protocol 13 must NOT — the pre-fix estimator pinned
+    /// `PlatformVersion::latest()` and silently under-quoted protocol-13
+    /// networks by ~30%.
+    #[test]
+    fn estimate_fee_matches_rebalanced_values_at_protocol_14() {
+        assert_eq!(
+            estimate_at(0, 14),
+            114_140_000,
+            "shielded transfer fee (2 actions, protocol 14)"
+        );
+        assert_eq!(
+            estimate_at(1, 14),
+            120_222_800,
+            "unshield fee (2 actions, protocol 14)"
+        );
+        assert_eq!(
+            estimate_at(2, 14),
+            226_480_000,
+            "shielded withdrawal fee (2 actions, protocol 14)"
+        );
+    }
+
+    /// The heart of the fix, exercised end-to-end through the exported
+    /// estimator: the version is resolved from the manager handle's
+    /// network-tracked `sdk.version()`, so managers pinned to protocol 13
+    /// and protocol 14 quote different fees through the SAME entry point.
+    /// Reverting the lookup to `PlatformVersion::latest()` fails the
+    /// protocol-13 half of this test.
+    #[test]
+    fn estimate_fee_resolves_version_through_manager_handle() {
+        unsafe extern "C" fn begin_changeset(
+            _context: *mut std::os::raw::c_void,
+            _wallet_id: *const u8,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn end_changeset(
+            _context: *mut std::os::raw::c_void,
+            _wallet_id: *const u8,
+            _success: bool,
+        ) -> i32 {
+            0
+        }
+
+        for (protocol_version, expected_transfer_fee) in
+            [(13u32, 162_851_200u64), (14, 114_140_000)]
+        {
+            let version = dpp::version::PlatformVersion::get(protocol_version)
+                .expect("protocol version must exist");
+            let sdk = dash_sdk::SdkBuilder::new_mock()
+                .with_version(version)
+                .build()
+                .expect("mock sdk");
+
+            let persistence = crate::persistence::PersistenceCallbacks {
+                on_changeset_begin_fn: Some(begin_changeset),
+                on_changeset_end_fn: Some(end_changeset),
+                ..Default::default()
             };
-            // kind 0 — ShieldedTransfer / Shield base.
+            let events = crate::event_handler::EventHandlerCallbacks {
+                context: std::ptr::null_mut(),
+                on_wallet_event_fn: None,
+                on_error_fn: None,
+                on_platform_address_sync_completed_fn: None,
+                on_shielded_sync_completed_fn: None,
+                on_shielded_sync_progress_fn: None,
+                on_shielded_tree_progress_fn: None,
+                release_fn: None,
+            };
+            let mut handle: Handle = 0;
+            let create = unsafe {
+                crate::manager::platform_wallet_manager_create(
+                    &sdk as *const dash_sdk::Sdk as *const std::os::raw::c_void,
+                    &persistence,
+                    &events,
+                    &mut handle,
+                )
+            };
             assert_eq!(
-                estimate(0),
-                162_851_200,
-                "shielded transfer fee (2 actions)"
+                create.code,
+                PlatformWalletFFIResultCode::Success,
+                "manager create must succeed at protocol {protocol_version}"
             );
-            // kind 1 — Unshield.
-            assert_eq!(estimate(1), 168_934_000, "unshield fee (2 actions)");
-            // kind 2 — ShieldedWithdrawal.
+
+            let mut fee: u64 = 0;
+            let result = unsafe { platform_wallet_shielded_estimate_fee(handle, 0, 2, &mut fee) };
             assert_eq!(
-                estimate(2),
-                275_191_200,
-                "shielded withdrawal fee (2 actions)"
+                result.code,
+                PlatformWalletFFIResultCode::Success,
+                "estimate must succeed at protocol {protocol_version}"
             );
+            assert_eq!(
+                fee, expected_transfer_fee,
+                "2-action transfer fee quoted through a protocol-{protocol_version} manager"
+            );
+
+            let destroy = unsafe { crate::manager::platform_wallet_manager_destroy(handle) };
+            assert_eq!(destroy.code, PlatformWalletFFIResultCode::Success);
         }
     }
 
@@ -1674,10 +2031,26 @@ mod tests {
     fn estimate_fee_rejects_unknown_kind() {
         unsafe {
             let mut fee: u64 = 0;
-            let result = platform_wallet_shielded_estimate_fee(7, 2, &mut fee);
+            // The kind check runs before handle resolution, so a bogus kind
+            // fails identically with or without a live manager handle.
+            let result = platform_wallet_shielded_estimate_fee(0, 7, 2, &mut fee);
             assert_eq!(
                 result.code,
                 PlatformWalletFFIResultCode::ErrorInvalidParameter
+            );
+        }
+    }
+
+    #[test]
+    fn estimate_fee_rejects_unknown_manager_handle() {
+        unsafe {
+            let mut fee: u64 = 0;
+            let result = platform_wallet_shielded_estimate_fee(0, 0, 2, &mut fee);
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorInvalidHandle,
+                "a versionless fallback here would silently mis-quote — an \
+                 unknown handle must be a hard error"
             );
         }
     }
@@ -1716,6 +2089,56 @@ mod tests {
         unsafe { CStr::from_ptr(result.message) }
             .to_string_lossy()
             .into_owned()
+    }
+
+    /// A non-panicking body passes its result straight through — the guard must be invisible on
+    /// the happy path.
+    #[test]
+    fn catch_spend_panic_passes_results_through() {
+        let ok = catch_spend_panic("test", PlatformWalletFFIResult::ok);
+        assert_eq!(ok.code, PlatformWalletFFIResultCode::Success);
+
+        let err = catch_spend_panic("test", || {
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                "bad input",
+            )
+        });
+        assert_eq!(err.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+        assert_eq!(message_of(&err), "bad input");
+    }
+
+    /// A panic inside a shielded-spend export must NOT unwind into the `extern "C"` frame (that
+    /// aborts the process). It becomes `ErrorShieldedSpendUnconfirmed` — the conservative
+    /// "may have been broadcast, do NOT retry" contract, because a panic can strike after the
+    /// transition is submitted.
+    ///
+    /// The panic hook is deliberately left alone: it is process-global, `cargo test` runs tests
+    /// concurrently, and `take_hook` + restore from two tests can interleave so that one restores
+    /// the other's temporary hook last — suppressing panic diagnostics for the rest of the
+    /// process, including unrelated concurrent panics. The libtest harness already captures this
+    /// test's output, so the deliberate panic's backtrace does not reach the console anyway.
+    #[test]
+    fn catch_spend_panic_maps_a_panic_to_the_unconfirmed_contract() {
+        let result = catch_spend_panic("shielded shield to recipient", || {
+            panic!("tokio worker panicked");
+        });
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
+            "a panic must map to the ambiguous, do-not-retry code"
+        );
+        let message = message_of(&result);
+        assert!(
+            message.contains("shielded shield to recipient panicked")
+                && message.contains("tokio worker panicked"),
+            "the panic payload must survive into the FFI message: {message}"
+        );
+        assert!(
+            message.contains("do NOT retry"),
+            "the message must carry the do-not-retry guidance: {message}"
+        );
     }
 
     /// `map_spend_result` pins the retry-relevant code split the three spend

@@ -23,12 +23,12 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use dashcore::Address as DashAddress;
+use platform_wallet::masternode::MasternodeRecord;
 use platform_wallet::{
     MasternodeWithdrawalKey, MasternodeWithdrawalKeys, MasternodeWithdrawalRequest, PlatformWallet,
 };
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle};
 
-use crate::core_wallet_types::{aggregate_masternodes, ListMembership, MasternodeAggregate};
 use crate::error::*;
 use crate::handle::*;
 use crate::runtime::block_on_worker;
@@ -63,37 +63,26 @@ impl MasternodeWithdrawalKeysFFI {
     }
 }
 
-/// Resolve `(wallet, masternode aggregate)` for a `pro_tx_hash` (wire
-/// order) from the manager — the same aggregation the masternode list
-/// renders. Clones the `Arc<PlatformWallet>` out so callers can do network
-/// work after the handle-storage guard is released.
+/// Resolve `(wallet, masternode record)` for a `pro_tx_hash` (wire order)
+/// from the manager — the same records the masternode list renders
+/// (`PlatformWalletManager::wallet_masternodes_blocking`). Clones the
+/// `Arc<PlatformWallet>` out so callers can do network work after the
+/// handle-storage guard is released.
 unsafe fn resolve_masternode(
     manager_handle: Handle,
     wallet_id: *const u8,
     pro_tx_hash: *const u8,
-) -> Result<(Arc<PlatformWallet>, MasternodeAggregate), PlatformWalletFFIResult> {
+) -> Result<(Arc<PlatformWallet>, MasternodeRecord), PlatformWalletFFIResult> {
     let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
     let target: [u8; 32] = std::ptr::read(pro_tx_hash as *const [u8; 32]);
 
     let resolved = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
         let wallet = manager.get_wallet_blocking(&wid)?;
-        let (_network, txs, dml, _operator_index, _platform_index) =
-            manager.provider_masternode_txs_blocking(&wid)?;
-        let membership = |pro_tx_hash: &[u8; 32]| -> ListMembership {
-            match &dml {
-                None => ListMembership::ListUnavailable,
-                Some(map) => match map.get(pro_tx_hash) {
-                    Some(true) => ListMembership::ValidEntry,
-                    Some(false) => ListMembership::InvalidEntry,
-                    None => ListMembership::Absent,
-                },
-            }
-        };
-        let aggregate =
-            aggregate_masternodes(txs.iter().map(|(h, p, tx)| (*h, *p, tx)), membership)
-                .into_iter()
-                .find(|mn| mn.pro_tx_hash == target);
-        Some((wallet, aggregate))
+        let record = manager
+            .wallet_masternodes_blocking(&wid)?
+            .find(&target)
+            .cloned();
+        Some((wallet, record))
     });
 
     match resolved {

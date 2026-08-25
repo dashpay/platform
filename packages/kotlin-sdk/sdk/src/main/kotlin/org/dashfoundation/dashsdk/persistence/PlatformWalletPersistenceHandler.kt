@@ -1015,6 +1015,8 @@ class PlatformWalletPersistenceHandler(
                 ?: db.walletDao().getByWalletId(walletId)?.networkRaw
                 ?: NETWORK_TESTNET
             val existing = db.identityDao().getByIdentityId(identityId)
+            val resolvedWalletId =
+                if (walletIdIsSome) identityWalletId else existing?.walletId
             val row = (existing ?: IdentityEntity(
                 identityId = identityId,
                 networkRaw = networkRaw,
@@ -1024,7 +1026,16 @@ class PlatformWalletPersistenceHandler(
                 revision = revision,
                 identityIndex = if (identityIndexIsSome) identityIndex
                 else existing?.identityIndex ?: 0,
-                walletId = if (walletIdIsSome) identityWalletId else existing?.walletId,
+                walletId = resolvedWalletId,
+                // Things from the wallet are always local — promote as soon
+                // as the row carries a wallet link. One-way: no path here
+                // writes `false` over a `true`, so a manual add (tracked,
+                // wallet-less) keeps its flag. An observed out-of-wallet
+                // identity has no link and stays `false`. The old constant
+                // `false` mis-marked every wallet-owned identity. Mirrors
+                // Swift `persistIdentities`
+                // (PlatformWalletPersistenceHandler.swift:1827-1829).
+                isLocal = existing?.isLocal == true || resolvedWalletId != null,
                 lastUpdated = now(),
             )
             db.identityDao().upsert(row)
@@ -1039,8 +1050,22 @@ class PlatformWalletPersistenceHandler(
                 .map(::normalizeDpnsLabel)
                 .toSet()
             for (persisted in db.dpnsNameDao().getAllByIdentity(identityId)) {
-                if (persisted.isOwned && persisted.normalizedLabel !in canonicalLabels) {
+                if (persisted.normalizedLabel in canonicalLabels) continue
+                if (persisted.documentId == null) {
+                    // No marketplace history is attached, so this is only a
+                    // stale label-cache row and can be removed entirely.
                     db.dpnsNameDao().delete(persisted)
+                } else {
+                    // Marketplace-tracked: the row survives as departed
+                    // history (its sale status and counterparty are the
+                    // record of where the name went), but owned-name
+                    // queries and UI selection must not surface it. The
+                    // identity snapshot's authority stops at `isOwned` —
+                    // deleting here permanently destroyed the sale history
+                    // whenever the departure round could not classify it.
+                    db.dpnsNameDao().upsert(
+                        persisted.copy(isOwned = false, lastUpdated = now()),
+                    )
                 }
             }
 
@@ -1061,9 +1086,18 @@ class PlatformWalletPersistenceHandler(
                         identityId = identityId,
                         documentId = existingName?.documentId,
                         isOwned = true,
+                        // Marketplace columns belong to the marketplace
+                        // reconciliation lane, not to the identity
+                        // snapshot: this branch refreshes only
+                        // acquiredAt/label (+ `isOwned = true`) and carries
+                        // every marketplace field through untouched.
+                        // Writing 0/null here clobbered a live listing or a
+                        // recorded sale on the next identity sweep. Mirrors
+                        // Swift `upsertDPNSNames`
+                        // (PlatformWalletPersistenceHandler.swift:1932-1958).
                         priceCredits = existingName?.priceCredits,
-                        saleStatusRaw = 0,
-                        counterpartyIdentityId = null,
+                        saleStatusRaw = existingName?.saleStatusRaw ?: 0,
+                        counterpartyIdentityId = existingName?.counterpartyIdentityId,
                         documentCreatedAtMs = existingName?.documentCreatedAtMs ?: 0L,
                         documentUpdatedAtMs = existingName?.documentUpdatedAtMs ?: 0L,
                         documentTransferredAtMs = existingName?.documentTransferredAtMs ?: 0L,
@@ -1600,6 +1634,24 @@ class PlatformWalletPersistenceHandler(
         stage(walletId) { db ->
             val outPointHex = encodeOutPointHex(outPoint)
             val existing = db.assetLockDao().getByOutPointHex(outPointHex)
+            // Consumed (4) is the terminal lifecycle state — never let a
+            // non-Consumed snapshot regress it. Writers race: the
+            // wallet-event adapter's batched drain can deliver a stale
+            // reconstruction/enrichment snapshot AFTER the live flow's
+            // synchronous consumption write, and this upsert is otherwise
+            // last-write-wins. Mirrors the same guard in
+            // `AssetLockChangeSet::merge`, the rs-platform-wallet-storage
+            // sqlite upsert, and Swift `persistAssetLocks`
+            // (PlatformWalletPersistenceHandler.swift:270). All other
+            // transitions stay last-write-wins because non-terminal
+            // statuses legitimately move both ways.
+            val incomingStatus = status.toInt() and 0xFF
+            if (existing != null &&
+                existing.statusRaw == ASSET_LOCK_STATUS_CONSUMED &&
+                incomingStatus != ASSET_LOCK_STATUS_CONSUMED
+            ) {
+                return@stage
+            }
             db.assetLockDao().upsert(
                 AssetLockEntity(
                     outPointHex = outPointHex,
@@ -1609,7 +1661,7 @@ class PlatformWalletPersistenceHandler(
                     identityIndexRaw = identityIndex,
                     accountIndexRaw = accountIndex,
                     amountDuffs = amountDuffs,
-                    statusRaw = status.toInt() and 0xFF,
+                    statusRaw = incomingStatus,
                     proofBytes = proofBytes,
                     createdAt = existing?.createdAt ?: java.util.Date(),
                     updatedAt = now(),
@@ -1620,7 +1672,20 @@ class PlatformWalletPersistenceHandler(
     }
 
     override fun onPersistAssetLockRemoval(walletId: ByteArray, outPoint: ByteArray): Int = guarded {
-        stage(walletId) { db -> db.assetLockDao().deleteByOutPointHex(encodeOutPointHex(outPoint)) }
+        stage(walletId) { db ->
+            val outPointHex = encodeOutPointHex(outPoint)
+            // Same terminal rule as the upsert guard above: a Consumed (4)
+            // row is deliberately retained for historical lookup and the
+            // only removal emitter (`untrack_asset_lock`) targets rejected
+            // Built rows — a removal reaching a consumed row is by
+            // construction a stale write. Mirrors Swift `persistAssetLocks`
+            // (PlatformWalletPersistenceHandler.swift:310).
+            val existing = db.assetLockDao().getByOutPointHex(outPointHex)
+            if (existing != null && existing.statusRaw == ASSET_LOCK_STATUS_CONSUMED) {
+                return@stage
+            }
+            db.assetLockDao().deleteByOutPointHex(outPointHex)
+        }
         0
     }
 
@@ -1838,8 +1903,43 @@ class PlatformWalletPersistenceHandler(
 
     // ── Load callbacks ────────────────────────────────────────────────
 
+    /**
+     * One-shot upgrade heal: promote `isLocal` on wallet-linked identity
+     * rows still carrying `false` — the persister used to write a constant
+     * `false`, so a wallet's own identities (which are always local) were
+     * mis-marked on stores from that era.
+     *
+     * Promote-only and idempotent; a `true` on an unlinked row (a manual
+     * add) is never touched. Runs from the load path because that is the
+     * one guaranteed per-launch pass over the store, outside any changeset
+     * round — a round in flight would interleave this blanket UPDATE with
+     * the round's own staged writes, so it is skipped while one is open
+     * and picked up on the next launch. Mirror of Swift
+     * `healIdentityIsLocalFlags` (PlatformWalletPersistenceHandler.swift:4688,
+     * called from `loadWalletList` :4719).
+     *
+     * Safe on Android precisely because the Kotlin persister never
+     * mislinked `walletId`: it only ever writes the link the FFI entry
+     * declared, so "has a wallet link" is exactly "is wallet-owned".
+     */
+    private suspend fun healIdentityIsLocalFlags() {
+        if (buffers.isNotEmpty()) return
+        val healed = runCatching { database.identityDao().healIsLocalFlags() }
+            .onFailure {
+                // Non-fatal: the next launch retries. The restore fetches
+                // below read the same rows and are unaffected by a skipped
+                // heal (they never consult `isLocal`).
+                Log.w(TAG, "load: isLocal heal failed; retrying next launch", it)
+            }
+            .getOrDefault(0)
+        if (healed > 0) {
+            Log.i(TAG, "load: healed isLocal on $healed identity row(s)")
+        }
+    }
+
     override fun onLoadWalletList(): Array<WalletRestoreData> = guardedLoad(emptyArray()) {
         runBlockingResult {
+            healIdentityIsLocalFlags()
             // Restorable = wallet with ≥1 account carrying an xpub,
             // scoped to the manager's network (see the constructor doc).
             val wallets = network
@@ -3192,6 +3292,9 @@ class PlatformWalletPersistenceHandler(
 
         /** DIP-13 IdentityInvitation account type tag (`AccountTypeTagFFI` 5). */
         private const val ACCOUNT_TYPE_IDENTITY_INVITATION = 5
+
+        /** `AssetLockStatus::Consumed` — the terminal lifecycle state. */
+        private const val ASSET_LOCK_STATUS_CONSUMED = 4
 
         private val HEX = "0123456789abcdef".toCharArray()
     }

@@ -287,6 +287,9 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V5: DriveAbciValidationVersions =
             // Pinning every version to the same per-action fee lets a client computing the
             // fee under a stale protocol version still reserve the consensus-correct amount.
             shielded_per_action_processing_fee: 22_000_000,
+            // The declared physical payload (312 note bytes + 32 nullifier
+            // bytes); locked — released versions replay what they charged.
+            shielded_storage_bytes_per_action: 344,
             shielded_implicit_fee_cap: 20_000_000_000,
             shielded_identity_create_denominations: &[],
         },
