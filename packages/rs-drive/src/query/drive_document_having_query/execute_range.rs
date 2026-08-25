@@ -46,10 +46,12 @@ impl DriveDocumentHavingQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<RankedEntry>, Error> {
         if self.prefix_branches.len() > 1 {
-            // One grovedb call for the whole union — same single-snapshot
-            // rule as the ranked executor: absence at any depth is the
-            // branched reader's empty branch, and every branch page comes
-            // from one snapshot under the caller's transaction.
+            // One grovedb call for the whole union under the caller's
+            // transaction — same read-consistency model as the ranked
+            // executor (see its comment: no storage-level snapshot for
+            // `None` reads exists in grovedb yet; DAPI's committed-height
+            // guard and the proved path carry consistency). Absence at any
+            // depth is the branched reader's empty branch.
             let grove_version = &platform_version.drive.grove_version;
             let paths = (0..self.prefix_branches.len())
                 .map(|branch| self.indexed_property_name_tree_path(branch))

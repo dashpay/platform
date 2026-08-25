@@ -29,15 +29,16 @@ impl DriveDocumentRankedQuery<'_> {
     ///
     /// Fewer than `k` entries is normal (the index simply has fewer
     /// groups than `offset + k`) and is not an error. On an `IN`-pinned
-    /// request, an element whose prefix was never written contributes
-    /// an **empty branch** (union semantics). A missing path under a
-    /// single `==` pin — or under a *present* branch key — *is* an
-    /// error rather than an empty result: the indexed
-    /// property-name tree is created when the contract is registered, so
-    /// its absence means the contract-level state is not what the
-    /// request claims, not that the ranking is empty. (An index with no
-    /// documents yet has the tree, with an empty secondary, and yields
-    /// an empty entry list.)
+    /// request, an element whose branch chain is missing at ANY depth —
+    /// the branch key itself, or any deeper pinned segment under a
+    /// *present* key — contributes an **empty branch** (union
+    /// semantics), exactly as the proved envelope authenticates it. A
+    /// missing path under a single `==` pin *is* an error rather than
+    /// an empty result: the indexed property-name tree is created when
+    /// the contract is registered, so its absence means the
+    /// contract-level state is not what the request claims, not that
+    /// the ranking is empty. (An index with no documents yet has the
+    /// tree, with an empty secondary, and yields an empty entry list.)
     ///
     /// The paginated grovedb primitive is used unconditionally, with
     /// `offset = 0` standing in for an unpaginated request, so the
@@ -79,11 +80,15 @@ impl DriveDocumentRankedQuery<'_> {
     ) -> Result<RankedPage, Error> {
         if self.prefix_branches.len() > 1 {
             // The whole union is read through ONE grovedb call — a branched
-            // keys-only PathQuery — so every absence decision and every
-            // branch page comes from the same snapshot (and the same
-            // caller transaction): per-branch reads interleaved with a
-            // block commit could merge pages that never coexisted in one
-            // committed state. Absence at any depth of a branch's chain is
+            // keys-only PathQuery — under the caller's transaction, the
+            // narrowest read window grovedb offers an unproved read today
+            // (a `None` read is NOT a storage-level snapshot: grovedb has
+            // no snapshot-pinned read primitive yet, so as with every
+            // cross-subtree unproved read, torn reads across a concurrent
+            // commit are excluded operationally by DAPI's committed-height
+            // guard, and clients needing authenticated cross-branch
+            // consistency use `prove = true`, whose envelope binds one
+            // committed root). Absence at any depth of a branch's chain is
             // the branched reader's empty branch, exactly as the proved
             // path authenticates it. `offset` is grammar-rejected with
             // `IN`, so `skipped` is always 0 here.

@@ -61,8 +61,10 @@ pub struct DocumentRankedRequest<'a> {
     /// field); its direction is the ranking direction.
     pub order_by: &'a [OrderClause],
     /// Structured `where` clauses. Empty for the single-property form;
-    /// equality pins on the covering compound index's leading
-    /// properties for the pinned-prefix form.
+    /// pins on the covering compound index's leading properties for
+    /// the pinned-prefix form: one equality pin per property, of which
+    /// at most one may instead be a bounded `IN` (one branch per
+    /// element, merged; entries then carry `in_key`).
     pub where_clauses: &'a [WhereClause],
     /// Request `limit` — the ranking's `k`. **Required**; there is no
     /// server default a verifying client could reproduce.

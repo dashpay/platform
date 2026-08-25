@@ -3482,7 +3482,7 @@ mod having_range_tests {
     /// IN [X, Y] GROUP BY class HAVING AVG(grade) > 80 LIMIT 10` fans
     /// out across both identities' secondaries and answers one merged
     /// `ResultData.ranked` page whose entries carry `in_key`; the
-    /// proved variant returns the branch container as its Proof
+    /// proved variant returns the unified branched `PathQuery` envelope as its Proof
     /// payload. Merge/proof semantics are pinned in rs-drive's suites;
     /// this pins the wire encoding, routing, and `in_key` mapping.
     #[test]
@@ -3543,9 +3543,9 @@ mod having_range_tests {
             "merged entries carry their branch's in_key on the wire"
         );
 
-        // The proved variant answers with a Proof payload (the branch
-        // container — decoded and verified client-side, pinned in
-        // rs-drive's tamper suite).
+        // The proved variant answers with a Proof payload (the unified
+        // branched `PathQuery` envelope — verified client-side, pinned
+        // in rs-drive's tamper suite).
         request.prove = true;
         let result = platform
             .query_documents_v1(request, &state, version)

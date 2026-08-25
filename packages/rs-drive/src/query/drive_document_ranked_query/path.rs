@@ -29,9 +29,9 @@ use dpp::data_contract::document_type::Index;
 /// per property before the terminal one. Empty for a single-property
 /// index. The arity must match exactly: a compound index's terminal
 /// tree sits under one prefix value tree per leading property, and only
-/// an equality `where` clause can name those values, so a missing or
-/// surplus value means the caller resolved the wrong index — a typed
-/// error, not a guess.
+/// a `where` pin (an equality, or one element of the single permitted
+/// `IN`) can name those values, so a missing or surplus value means the
+/// caller resolved the wrong index — a typed error, not a guess.
 pub(crate) fn indexed_property_name_tree_path_for_index(
     contract_id: &[u8; 32],
     document_type_name: &str,
@@ -49,8 +49,8 @@ pub(crate) fn indexed_property_name_tree_path_for_index(
             "ranked and having-range queries over a compound index require exactly one \
              encoded equality value per leading index property: the axis secondary lives \
              on the index's terminal property-name tree, which for a compound index sits \
-             under one prefix value tree per leading property, and only an equality \
-             `where` clause can name those values",
+             under one prefix value tree per leading property, and only a `where` pin (an \
+             equality, or one element of the single permitted `IN`) can name those values",
         )));
     }
     let mut path = Vec::with_capacity(5 + 2 * leading_properties.len());
