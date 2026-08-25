@@ -27,6 +27,7 @@ import org.dashfoundation.dashsdk.ffi.DpnsMarketplaceNative
 import org.dashfoundation.dashsdk.ffi.FundingNative
 import org.dashfoundation.dashsdk.ffi.NativeWalletEventBridge
 import org.dashfoundation.dashsdk.ffi.WalletManagerNative
+import org.dashfoundation.dashsdk.funding.ShieldedProver
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.PlatformWalletPersistenceHandler
 import org.dashfoundation.dashsdk.persistence.entities.DashpayPaymentEntity
@@ -1464,6 +1465,27 @@ class PlatformWalletManager(
         require(account >= 0) { "account must be non-negative, got $account" }
         mapNativeErrors {
             FundingNative.shieldedDefaultAddress(managerHandle, walletId, account)
+        }
+    }
+
+    /**
+     * Consensus-pinned flat shielded fee (in credits) for a pool-paid
+     * shielded transition of [kind] with [numActions] Orchard actions —
+     * port of Swift's `PlatformWalletManager.estimateShieldedFee`
+     * (`PlatformWalletManagerShieldedSync.swift`). Computed at this
+     * manager's network-tracked platform version (the same version the
+     * shielded builders carve fees with), so the preview can't drift from
+     * the fee the consensus gate validates even when the connected network
+     * hasn't activated the client's latest protocol version yet. No
+     * network round-trip. A single-note spend with change is
+     * `numActions = 2`.
+     */
+    suspend fun estimateShieldedFee(
+        kind: ShieldedProver.FeeKind,
+        numActions: Int = 2,
+    ): Long = withContext(Dispatchers.IO) {
+        mapNativeErrors {
+            FundingNative.estimateShieldedFee(managerHandle, kind.raw, numActions)
         }
     }
 

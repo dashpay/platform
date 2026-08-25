@@ -465,18 +465,32 @@ extension PlatformWalletManager {
     }
 
     /// Consensus-pinned flat shielded fee (in credits) for a pool-paid
-    /// shielded transition with `numActions` Orchard actions. Pure
-    /// computation on the Rust side (no handle, no network) against
-    /// `PlatformVersion::latest()` — the same version the builders pin —
-    /// so the estimate can't drift from the carved fee. A single-note
-    /// spend with change is `numActions: 2`.
-    public static func estimateShieldedFee(
+    /// shielded transition with `numActions` Orchard actions, computed at
+    /// this manager's network-tracked platform version (`sdk.version()`) —
+    /// the same version the shielded builders carve fees with — so the
+    /// estimate can't drift from the carved fee even when the connected
+    /// network hasn't activated the client's latest protocol version yet.
+    /// No network round-trip; just the handle → version lookup and a pure
+    /// computation. A single-note spend with change is `numActions: 2`.
+    public func estimateShieldedFee(
         kind: ShieldedFeeKind,
         numActions: Int = 2
     ) throws -> UInt64 {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        // `num_actions` is `usize` on the Rust side → imported as `UInt`,
+        // whose checked initializer traps on a negative Int.
+        guard numActions >= 0 else {
+            throw PlatformWalletError.invalidParameter(
+                "numActions must be non-negative, got \(numActions)"
+            )
+        }
         var fee: UInt64 = 0
-        // `num_actions` is `usize` on the Rust side → imported as `UInt`.
         try platform_wallet_shielded_estimate_fee(
+            handle,
             kind.rawValue,
             UInt(numActions),
             &fee
