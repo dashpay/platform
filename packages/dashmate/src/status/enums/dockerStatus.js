@@ -1,3 +1,4 @@
+/* eslint-disable import-x/prefer-default-export */
 export const DockerStatusEnum = {
   // all possible Docker statuses
   created: 'created',
