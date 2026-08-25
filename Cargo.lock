@@ -2232,6 +2232,7 @@ dependencies = [
  "console-subscriber",
  "dapi-grpc",
  "dash-platform-macros",
+ "dash-platform-queries",
  "delegate",
  "derive_more 1.0.0",
  "dotenvy",

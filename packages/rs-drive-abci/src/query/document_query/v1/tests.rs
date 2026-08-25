@@ -4817,4 +4817,349 @@ mod time_range_proof_verification {
              members — the older #ibiza post and the #berlin post are not"
         );
     }
+
+    // ----- the SDK `FromProof` entry points -------------------------------
+    //
+    // The tests above re-run the client sequence step by step so a failure
+    // names the broken link. These run the same signed responses through the
+    // aggregate `FromProof<DocumentQuery>` entry points the SDK actually
+    // exposes — resolution from signed metadata time, provenance, shape
+    // guard, index pick and proof verification all happen *inside* the call
+    // — so a regression in how that layer wires the steps together (not just
+    // in a step) turns a test red.
+
+    use dash_platform_queries::documents::document_query::DocumentQuery as SdkDocumentQuery;
+    use drive::query::SelectProjection;
+    use drive_proof_verifier::{DocumentAverage, DocumentCount, DocumentSum};
+    use std::sync::Arc;
+
+    const SUMMABLE_INDEX: &str = "trendingLikes";
+
+    /// `likes` per post, aligned with [`POSTS`]: the two newest-bucket
+    /// `#ibiza` posts carry 10 and 30 (sum 40, average 20), the older
+    /// `#ibiza` post carries 100 and the `#berlin` post 7 — both excluded,
+    /// so an aggregate that leaked either is off by an unmistakable amount.
+    const LIKES: [u64; 4] = [10, 30, 100, 7];
+
+    /// The summable twin of [`register_trending_contract`]: the same
+    /// six-hour/two-hour bucketed `(timeRange($createdAt), hashtag)` index,
+    /// but countable *and* summable over a `likes` property — the CountSum
+    /// value trees that SUM reads and AVG derives `(count, sum)` from. The
+    /// plain `byHashtag` index mirrors both aggregate declarations so index
+    /// selection again has a wrong-but-covering candidate to reject.
+    fn register_engagement_contract(
+        platform: &Platform<MockCoreRPCLike>,
+        platform_version: &PlatformVersion,
+    ) -> DataContract {
+        let factory = DataContractFactory::new(platform_version.protocol_version)
+            .expect("expected a factory");
+        let schemas = platform_value!({
+            DOCUMENT_TYPE: {
+                "type": "object",
+                "properties": {
+                    "hashtag": { "type": "string", "maxLength": 63, "position": 0 },
+                    "likes": { "type": "integer", "position": 1 },
+                },
+                "indices": [
+                    {
+                        "name": SUMMABLE_INDEX,
+                        "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }],
+                        "countable": true,
+                        "summable": "likes",
+                        "timeRange": { "on": "$createdAt", "range": 21_600u64, "step": 7_200u64 },
+                    },
+                    {
+                        "name": "byHashtag",
+                        "properties": [{ "hashtag": "asc" }, { "$createdAt": "asc" }],
+                        "countable": true,
+                        "summable": "likes",
+                    },
+                ],
+                "required": ["$createdAt", "hashtag", "likes"],
+                "additionalProperties": false,
+            }
+        });
+        let contract = factory
+            .create_with_value_config(Identifier::new([8u8; 32]), 0, schemas, None, None)
+            .expect("the engagement contract is well-formed")
+            .data_contract_owned();
+        store_data_contract(platform, &contract, platform_version);
+        contract
+    }
+
+    /// [`insert_posts`] with a `likes` value from [`LIKES`] on each post.
+    fn insert_engagement_posts(
+        platform: &Platform<MockCoreRPCLike>,
+        contract: &DataContract,
+        platform_version: &PlatformVersion,
+    ) {
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("post doctype exists");
+        for (i, ((created_at_ms, hashtag), likes)) in POSTS.iter().zip(LIKES).enumerate() {
+            let mut document: Document = document_type
+                .random_document(Some(8_000 + i as u64), platform_version)
+                .expect("random document");
+            document.set_properties(BTreeMap::from([
+                ("hashtag".to_string(), Value::Text(hashtag.to_string())),
+                ("likes".to_string(), Value::U64(likes)),
+            ]));
+            document.set_created_at(Some(*created_at_ms));
+            store_document(
+                platform,
+                contract,
+                document_type,
+                &document,
+                platform_version,
+            );
+        }
+    }
+
+    /// Engagement contract registered, liked posts inserted, and a platform
+    /// state whose committed block time is [`BLOCK_TIME_MS`].
+    fn setup_engagement(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        base_state: &PlatformState,
+        platform_version: &PlatformVersion,
+    ) -> (DataContract, PlatformState) {
+        let contract = register_engagement_contract(platform, platform_version);
+        insert_engagement_posts(platform, &contract, platform_version);
+        let state = state_with_committed_block_time(base_state, &platform.drive, platform_version);
+        (contract, state)
+    }
+
+    /// The query a real SDK caller would build: the selector still pending in
+    /// `time_range_clauses`, to be resolved by the entry point itself from
+    /// the signed metadata time.
+    fn sdk_query(
+        contract: &DataContract,
+        hashtag: &str,
+        select: SelectProjection,
+    ) -> SdkDocumentQuery {
+        SdkDocumentQuery::new(Arc::new(contract.clone()), DOCUMENT_TYPE)
+            .expect("the fixture has this document type")
+            .with_select(select)
+            .with_where(WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text(hashtag.to_string()),
+            })
+            .with_time_range(CREATED_AT, TimeRangeSelector::Newest)
+    }
+
+    /// Wrap a handler proof and its metadata the way the wire does, so the
+    /// entry points consume exactly what a node returns.
+    fn signed_response(proof: Proof, mtd: &ResponseMetadata) -> GetDocumentsResponse {
+        GetDocumentsResponse {
+            version: Some(ResponseVersion::V1(GetDocumentsResponseV1 {
+                result: Some(get_documents_response_v1::Result::Proof(proof)),
+                metadata: Some(mtd.clone()),
+            })),
+        }
+    }
+
+    fn select_field(function: v1_select::Function, field: &str) -> Vec<V1Select> {
+        vec![V1Select {
+            function: function as i32,
+            field: field.to_string(),
+        }]
+    }
+
+    /// Nudge the signed time one full step so the entry point's own
+    /// resolution lands on a different bucket than the proof covers.
+    fn one_step_later(
+        contract: &DataContract,
+        index: &str,
+        mtd: &ResponseMetadata,
+    ) -> ResponseMetadata {
+        let step_ms = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("post doctype exists")
+            .indexes()
+            .get(index)
+            .expect("the bucketed index survives contract registration")
+            .time_range
+            .as_ref()
+            .expect("the bucketed index carries its transform")
+            .step_ms();
+        let mut tampered = mtd.clone();
+        tampered.time_ms += step_ms;
+        tampered
+    }
+
+    fn assert_proof_or_signature_rejection(error: ProofVerifierError) {
+        assert!(
+            matches!(
+                error,
+                ProofVerifierError::InvalidSignature { .. }
+                    | ProofVerifierError::GroveDBError { .. }
+                    | ProofVerifierError::DriveError { .. }
+            ),
+            "the rejection must be the proof or the signature binding, got: {error:?}"
+        );
+    }
+
+    #[test]
+    fn a_count_proof_verifies_through_the_sdk_from_proof_entry_point() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, _documents, state) = setup_trending(&platform, &base_state, version);
+
+        let request = trending_request(contract.id().to_vec(), "ibiza", select_count_star());
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+
+        let query = sdk_query(&contract, "ibiza", SelectProjection::count_star());
+        let (count, verified_mtd, _proof) =
+            <DocumentCount as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                query,
+                signed_response(proof, &mtd),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect("a correctly signed count must verify through the entry point");
+
+        assert_eq!(
+            count.expect("the newest bucket is not empty"),
+            DocumentCount(2),
+            "the two #ibiza posts in the newest bucket count once each through \
+             the entry point, exactly as through the step-by-step sequence"
+        );
+        assert_eq!(
+            verified_mtd.time_ms, BLOCK_TIME_MS,
+            "the metadata handed back is the one the resolution consumed"
+        );
+    }
+
+    #[test]
+    fn a_tampered_metadata_time_is_rejected_at_the_count_entry_point() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, _documents, state) = setup_trending(&platform, &base_state, version);
+
+        let request = trending_request(contract.id().to_vec(), "ibiza", select_count_star());
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+        let tampered = one_step_later(&contract, BUCKETED_INDEX, &mtd);
+
+        let query = sdk_query(&contract, "ibiza", SelectProjection::count_star());
+        let error = <DocumentCount as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+            query,
+            signed_response(proof, &tampered),
+            Network::Testnet,
+            version,
+            &provider,
+        )
+        .expect_err("an altered signed time must not yield a verified count");
+        assert_proof_or_signature_rejection(error);
+    }
+
+    #[test]
+    fn a_sum_proof_verifies_through_the_sdk_from_proof_entry_point() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, state) = setup_engagement(&platform, &base_state, version);
+
+        let request = GetDocumentsRequestV1 {
+            selects: select_field(v1_select::Function::Sum, "likes"),
+            ..trending_request(contract.id().to_vec(), "ibiza", Vec::new())
+        };
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+
+        let query = sdk_query(&contract, "ibiza", SelectProjection::sum("likes"));
+        let (sum, _mtd, _proof) =
+            <DocumentSum as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                query,
+                signed_response(proof, &mtd),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect("a correctly signed sum must verify through the entry point");
+
+        assert_eq!(
+            sum.expect("the newest bucket is not empty"),
+            DocumentSum(40),
+            "10 + 30 likes on the two newest-bucket #ibiza posts — the older \
+             #ibiza post's 100 and the #berlin post's 7 must not leak in, and \
+             overlap fan-out must not multiply the total"
+        );
+    }
+
+    #[test]
+    fn a_tampered_metadata_time_is_rejected_at_the_sum_entry_point() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, state) = setup_engagement(&platform, &base_state, version);
+
+        let request = GetDocumentsRequestV1 {
+            selects: select_field(v1_select::Function::Sum, "likes"),
+            ..trending_request(contract.id().to_vec(), "ibiza", Vec::new())
+        };
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+        let tampered = one_step_later(&contract, SUMMABLE_INDEX, &mtd);
+
+        let query = sdk_query(&contract, "ibiza", SelectProjection::sum("likes"));
+        let error = <DocumentSum as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+            query,
+            signed_response(proof, &tampered),
+            Network::Testnet,
+            version,
+            &provider,
+        )
+        .expect_err("an altered signed time must not yield a verified sum");
+        assert_proof_or_signature_rejection(error);
+    }
+
+    #[test]
+    fn an_average_proof_verifies_through_the_sdk_from_proof_entry_point() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, state) = setup_engagement(&platform, &base_state, version);
+
+        let request = GetDocumentsRequestV1 {
+            selects: select_field(v1_select::Function::Avg, "likes"),
+            ..trending_request(contract.id().to_vec(), "ibiza", Vec::new())
+        };
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+
+        let query = sdk_query(&contract, "ibiza", SelectProjection::avg("likes"));
+        let (average, _mtd, _proof) =
+            <DocumentAverage as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                query,
+                signed_response(proof, &mtd),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect("a correctly signed average must verify through the entry point");
+
+        let average = average.expect("the newest bucket is not empty");
+        assert_eq!(
+            average,
+            DocumentAverage { count: 2, sum: 40 },
+            "the verified pair is the newest bucket's two #ibiza posts and \
+             their 40 likes — nothing from outside the bucket, nothing doubled"
+        );
+        assert_eq!(average.as_f64(), Some(20.0));
+    }
+
+    #[test]
+    fn a_tampered_metadata_time_is_rejected_at_the_average_entry_point() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, state) = setup_engagement(&platform, &base_state, version);
+
+        let request = GetDocumentsRequestV1 {
+            selects: select_field(v1_select::Function::Avg, "likes"),
+            ..trending_request(contract.id().to_vec(), "ibiza", Vec::new())
+        };
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+        let tampered = one_step_later(&contract, SUMMABLE_INDEX, &mtd);
+
+        let query = sdk_query(&contract, "ibiza", SelectProjection::avg("likes"));
+        let error =
+            <DocumentAverage as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                query,
+                signed_response(proof, &tampered),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect_err("an altered signed time must not yield a verified average");
+        assert_proof_or_signature_rejection(error);
+    }
 }
