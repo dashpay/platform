@@ -1095,9 +1095,9 @@ fn derive_spent_utxos(record: &TransactionRecord) -> Vec<Utxo> {
         .input_details
         .iter()
         .filter_map(|detail| {
-            let input = record.transaction.input.get(detail.index as usize)?;
+            let outpoint = spent_outpoint(record, detail)?;
             Some(Utxo {
-                outpoint: input.previous_output,
+                outpoint,
                 txout: TxOut {
                     value: detail.value,
                     script_pubkey: detail.address.script_pubkey(),
@@ -1112,6 +1112,41 @@ fn derive_spent_utxos(record: &TransactionRecord) -> Vec<Utxo> {
             })
         })
         .collect()
+}
+
+/// The outpoint one [`InputDetail`] says this record spent, or `None` when the
+/// detail's index does not address a real input.
+///
+/// The single definition of "this record spent one of ours", shared by
+/// [`derive_spent_utxos`] above — which turns it into the persister's
+/// [`CoreChangeSet::spent_utxos`] removals — and by
+/// [`spent_outpoints`], which drives the in-broadcast fence's release. The two
+/// consumers must not be able to disagree about which inputs count: the fence
+/// releases an outpoint precisely when the wallet treats it as spent, so a
+/// divergence would either strand a fence forever or drop one early
+/// (`dashpay/platform#4309`).
+///
+/// [`InputDetail`]: key_wallet::managed_account::transaction_record::InputDetail
+fn spent_outpoint(
+    record: &TransactionRecord,
+    detail: &key_wallet::managed_account::transaction_record::InputDetail,
+) -> Option<OutPoint> {
+    record
+        .transaction
+        .input
+        .get(detail.index as usize)
+        .map(|input| input.previous_output)
+}
+
+/// Every outpoint of ours that `record` spends.
+///
+/// The fence-side view of [`derive_spent_utxos`], built on the same
+/// [`spent_outpoint`] walk — see that function for why they share it.
+pub(crate) fn spent_outpoints(record: &TransactionRecord) -> impl Iterator<Item = OutPoint> + '_ {
+    record
+        .input_details
+        .iter()
+        .filter_map(|detail| spent_outpoint(record, detail))
 }
 
 impl CoreChangeSet {

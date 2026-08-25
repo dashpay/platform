@@ -118,8 +118,67 @@ pub enum PlatformWalletError {
     )]
     TransactionBroadcastUnconfirmed(String),
 
+    /// A finalized transaction handle
+    /// (`core_wallet_tx_builder_finalize` → `broadcast_finalized_transaction`)
+    /// was held long enough that its funding reservation may already have been
+    /// swept and re-selected by key-wallet's TTL: the wallet's
+    /// `last_processed_height` advanced at least
+    /// `RESERVATION_MAX_AGE_BLOCKS`
+    /// blocks past the height the reservation was stamped at
+    /// ([`SignedCoreTransaction::reservation_height`](crate::SignedCoreTransaction::reservation_height)).
+    /// Broadcasting it could spend against a newer, unrelated reservation, so it
+    /// is refused **before** touching the network — NOT retryable in place, the
+    /// caller must rebuild the payment. The refusal reconciles the reservation
+    /// on the way out: a funded finalize always stamps an owner token, so the
+    /// release is owner-guarded (`release_reservation_if_owner`, safe at any
+    /// age — it no-ops once ownership transferred) and the still-owned inputs
+    /// are freed for the instructed rebuild. Abandoning/freeing the handle
+    /// likewise releases owner-guarded at any age; only a token-less build
+    /// skips its unguarded by-outpoint release past the bound and leaves the
+    /// aged outpoint for key-wallet's TTL to reclaim.
+    ///
+    /// This is the handle-path sibling of the deferred registry-token
+    /// [`SignedPaymentError::StaleReservationToken`](crate::SignedPaymentError::StaleReservationToken);
+    /// both share the same age bound and the FFI `ErrorStaleReservationToken`
+    /// code. Carries no token — the handle path is keyed by an opaque handle,
+    /// not a numeric reservation token.
+    #[error("finalized transaction reservation has outlived its lifetime; rebuild the payment")]
+    StaleReservation,
+
     #[error("Transaction building failed: {0}")]
     TransactionBuild(String),
+
+    /// Coin selection picked an outpoint that a broadcast dispatch is still
+    /// holding — the transaction spending it is in flight, or has reached the
+    /// network and has not yet been observed spent by this wallet
+    /// ([`WalletGeneration::in_broadcast_conflict`](crate::wallet::core::WalletGeneration::in_broadcast_conflict)).
+    /// Completing the build would race that transaction on the wire, so it is
+    /// refused and its own fresh reservation released. NOTHING was built,
+    /// signed or broadcast.
+    ///
+    /// A TRANSIENT, EXPECTED condition, and the reason it is a variant of its
+    /// own rather than a [`Self::TransactionBuild`] /
+    /// [`Self::AssetLockTransaction`] string: it is the one build failure a
+    /// caller may safely retry UNCHANGED once the in-flight dispatch settles,
+    /// and telling it apart from a genuine build failure previously meant
+    /// substring-matching prose (`message.contains("mid-broadcast")`, which the
+    /// tests did too). All three selection choke points — the
+    /// finalized-transaction build, the contact-payment build and the
+    /// asset-lock build — now return this one variant.
+    ///
+    /// `outpoint` is the first conflicting input, carried structurally so
+    /// callers and diagnostics need not parse it back out of a message.
+    ///
+    /// Reaching a caller at all is the uncommon path: a fenced input is
+    /// normally still reserved and never offered to selection. This fires only
+    /// in the window after key-wallet's reservation TTL swept that dispatch's
+    /// reservation, which is exactly what the fence exists to cover
+    /// (`dashpay/platform#4309`).
+    #[error(
+        "selected input {outpoint} is mid-broadcast by an in-flight dispatch; \
+         retry after it completes"
+    )]
+    InputMidBroadcast { outpoint: dashcore::OutPoint },
 
     /// The address handed to [`CoreWallet::sign_message`] cannot be a signing
     /// target at all: unparseable, encoded for a different network than the
