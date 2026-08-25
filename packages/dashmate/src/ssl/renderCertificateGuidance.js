@@ -79,9 +79,17 @@ function renderObservation(verdict) {
 function renderZeroSslExplanation(renewal) {
   // Once ZeroSSL has actually said so, this stops being background about how
   // the free tier works and becomes what happened to this node.
-  if (renewal?.code === 'QUOTA_EXHAUSTED') {
+  // Only where ZeroSSL actually said so. Printed against an unrelated failure
+  // - an unreachable API, an interrupted renewal - it reads as the diagnosis
+  // and sends an operator to switch provider over something transient.
+  if (renewal?.code === 'QUOTA_EXHAUSTED' || renewal?.code === 'PROVIDER_PLAN_REQUIRED') {
     return `  This node uses ZeroSSL, and its free account has used all three of its
   certificates - so ZeroSSL will not issue another one.
+`;
+  }
+
+  if (renewal?.cause) {
+    return `  This node uses ZeroSSL. Renewal is failing: ${renewal.cause}.
 `;
   }
 

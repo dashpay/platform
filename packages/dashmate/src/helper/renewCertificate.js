@@ -10,6 +10,9 @@
  * @param {string} options.provider
  * @param {number} options.expirationDays
  * @param {function(Config): Listr} options.obtainCertificateTask
+ * @param {number|null} [options.generation] - the scheduling chain's fence, so
+ *   an install performed inside a renewal does not lock that renewal out of
+ *   recording the success it just achieved
  * @param {ConfigFileJsonRepository} options.configFileRepository
  * @param {writeConfigTemplates} options.writeConfigTemplates
  * @return {Promise<{config: Config, renewed: boolean}>}
@@ -18,6 +21,7 @@ export default async function renewCertificate({
   configName,
   provider,
   expirationDays,
+  generation = null,
   obtainCertificateTask,
   configFileRepository,
   writeConfigTemplates,
@@ -44,6 +48,7 @@ export default async function renewCertificate({
       await tasks.run({
         expirationDays,
         noRetry: true,
+        renewalGeneration: generation,
       });
     } catch (e) {
       if (config.isChanged()) {

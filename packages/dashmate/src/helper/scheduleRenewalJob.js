@@ -78,6 +78,7 @@ export default function scheduleRenewalJob({
         configName,
         provider,
         expirationDays,
+        generation,
         obtainCertificateTask,
         configFileRepository,
         writeConfigTemplates,

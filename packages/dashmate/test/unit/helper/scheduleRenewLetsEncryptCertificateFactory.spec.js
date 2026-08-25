@@ -75,6 +75,7 @@ describe('scheduleRenewLetsEncryptCertificateFactory', () => {
     expect(run).to.have.been.calledOnceWith({
       expirationDays: LegoCertificate.EXPIRATION_LIMIT_DAYS,
       noRetry: true,
+      renewalGeneration: 1,
     });
     expect(configFileRepository.write).to.have.been.calledOnce();
     expect(writeConfigTemplates).to.have.been.calledOnceWith(config);

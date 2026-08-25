@@ -1255,6 +1255,46 @@ describe('analyseGatewayCertificateFactory', () => {
       expect(renewal.getSeverity()).to.equal(SEVERITY.HIGH);
     });
 
+    it('should not prescribe a certificate when it could not read what it recorded', () => {
+      // The record may be the one saying an issuance is outstanding. Update
+      // already refused to spend a certificate on evidence nobody could
+      // inspect; the doctor refusing too is what keeps the two agreeing.
+      config.set('platform.gateway.ssl.enabled', true);
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+      installedValid({
+        status: 'INVALID',
+        validTo: validTo(-1),
+        reasons: [{ code: 'EXPIRED', message: 'The installed certificate expired on 2026-08-20' }],
+      });
+      samples.setServiceInfo('gateway', 'certificateRenewal', {
+        state: 'UNREADABLE',
+        path: '~/.dashmate/base/platform/gateway/ssl/renewal.json',
+        error: 'EACCES: permission denied',
+      });
+
+      const [expired] = analyseGatewayCertificate(samples)
+        .filter((p) => p.getDescription().includes('expired'));
+
+      expect(expired.getSolution()).to.not.contain('ssl obtain');
+      expect(expired.getSolution()).to.contain('could not read');
+    });
+
+    it('should be urgent when the retry never came, however far off expiry is', () => {
+      // Nothing is renewing this node at all, which does not become less
+      // pressing just because the certificate it is still serving lasts months.
+      config.set('platform.gateway.ssl.provider', 'zerossl');
+      installedValid({ validTo: validTo(60) });
+      renewalFailed({
+        provider: 'zerossl',
+        code: 'PROVIDER_UNREACHABLE',
+        attemptedAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
+      });
+
+      const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
+
+      expect(renewal.getSeverity()).to.equal(SEVERITY.HIGH);
+    });
+
     it('should say nothing about renewal for a provider dashmate does not renew', () => {
       // `file` and `self-signed` are installed by the operator; there is no
       // scheduled renewal to report on, and reporting one would call a

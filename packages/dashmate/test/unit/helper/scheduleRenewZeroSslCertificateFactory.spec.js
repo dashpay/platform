@@ -314,6 +314,7 @@ describe('scheduleRenewZeroSslCertificateFactory', () => {
     expect(run).to.have.been.calledOnceWith({
       expirationDays: Certificate.EXPIRATION_LIMIT_DAYS,
       noRetry: true,
+      renewalGeneration: 1,
     });
     expect(configFileRepository.write).to.have.been.calledOnce();
     expect(writeConfigTemplates).to.have.been.calledOnceWith(config);
@@ -368,6 +369,7 @@ describe('scheduleRenewZeroSslCertificateFactory', () => {
     expect(tasks.run).to.have.been.calledOnceWithExactly({
       expirationDays: 3,
       noRetry: true,
+      renewalGeneration: 1,
     });
   });
 
@@ -396,6 +398,7 @@ describe('scheduleRenewZeroSslCertificateFactory', () => {
     expect(run).to.have.been.calledOnceWith({
       expirationDays: Certificate.EXPIRATION_LIMIT_DAYS,
       noRetry: true,
+      renewalGeneration: 1,
     });
   });
 });

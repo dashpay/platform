@@ -37,11 +37,12 @@ export default function scheduleRenewLetsEncryptCertificateFactory(
     // flight, so a configuration change cannot be overwritten by the attempt it
     // replaced - the old job's callback keeps running after the watcher hands
     // over, and both chains write to the same file.
-    const generation = renewalRecordRepository.claimGeneration(configName);
-
+    let generation = null;
     let currentConfig;
 
     try {
+      generation = renewalRecordRepository.claimGeneration(configName);
+
       currentConfig = configFileRepository.read().getConfig(configName);
     } catch (e) {
       if (e instanceof ConfigIsNotPresentError) {

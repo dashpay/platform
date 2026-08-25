@@ -98,12 +98,15 @@ export default function saveCertificateTaskFactory(homeDir, renewalRecordReposit
           // their node is told renewal is failing, at the moment they run the
           // command to check their work.
           try {
-            // Claims a new generation first: the operator is acting now, so a
-            // renewal attempt still in flight from before must not be able to
-            // recreate the failure this install just settled.
+            // A renewal that reaches this point is installing its own
+            // certificate, and it still has to record the success afterwards -
+            // so it clears under the generation it already holds. A command run
+            // by hand holds none, and takes a new one: the operator is acting
+            // now, so an attempt still in flight from before must not be able
+            // to recreate the failure this install just settled.
             renewalRecordRepository.remove(
               config.getName(),
-              renewalRecordRepository.claimGeneration(config.getName()),
+              ctx.renewalGeneration ?? renewalRecordRepository.claimGeneration(config.getName()),
             );
           } catch (e) {
             // Bookkeeping must not fail an install. The pair is already on

@@ -43,13 +43,25 @@ export default class RenewalRecordRepository {
    * @return {number}
    */
   #readGeneration(configName) {
-    try {
-      const parsed = Number.parseInt(fs.readFileSync(this.#generationPath(configName), 'utf8'), 10);
+    let contents;
 
-      return Number.isInteger(parsed) && parsed >= 0 ? parsed : 0;
-    } catch {
-      return 0;
+    try {
+      contents = fs.readFileSync(this.#generationPath(configName), 'utf8');
+    } catch (e) {
+      // No fence yet is the ordinary first-run case and means nobody has been
+      // superseded. Any other failure means the fence exists and cannot be
+      // read, which is not the same thing - treating it as absent would let
+      // every superseded writer through exactly when the guard is needed.
+      if (e.code === 'ENOENT') {
+        return 0;
+      }
+
+      throw e;
     }
+
+    const parsed = Number.parseInt(contents, 10);
+
+    return Number.isInteger(parsed) && parsed >= 0 ? parsed : 0;
   }
 
   /**

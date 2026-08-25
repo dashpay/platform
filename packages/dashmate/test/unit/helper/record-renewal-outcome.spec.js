@@ -15,6 +15,7 @@ import { RENEWAL_FAILURE_CODES } from '../../../src/ssl/renewal-failure.js';
 import LegoArtifactsMissingError from '../../../src/ssl/errors/LegoArtifactsMissingError.js';
 import LegoResultNotObservedError from '../../../src/ssl/errors/LegoResultNotObservedError.js';
 import LegoDidNotStartError from '../../../src/ssl/errors/LegoDidNotStartError.js';
+import RenewalRecord from '../../../src/ssl/renewalRecord/RenewalRecord.js';
 
 const CONFIG_NAME = 'mainnet';
 const PROVIDER = 'letsencrypt';
@@ -161,6 +162,31 @@ describe('recordRenewalOutcome', () => {
     }));
 
     expect(read().state).to.not.equal(RENEWAL_RECORD_STATES.PRESENT);
+  });
+
+  it('should not let an unreadable fence silently permit every superseded writer', () => {
+    // A fence that exists and cannot be read is not the same as no fence.
+    // Treating it as absent lets every superseded chain through at exactly the
+    // moment the guard is needed, so the failure is surfaced instead.
+    const generationPath = path.join(
+      path.dirname(renewalRecordRepository.getPath(CONFIG_NAME)),
+      '.renewal-generation',
+    );
+
+    fs.mkdirSync(generationPath, { recursive: true });
+
+    // A real record, so the only thing that can decide the outcome is the
+    // fence - passing null would throw on its own and prove nothing.
+    const record = RenewalRecord.fromObject({
+      provider: PROVIDER,
+      outcome: 'failed',
+      code: RENEWAL_FAILURE_CODES.PORT_80_UNREACHABLE,
+      attemptedAt: new Date().toISOString(),
+      consecutiveFailures: 1,
+    });
+
+    expect(() => renewalRecordRepository.read(CONFIG_NAME)).to.not.throw();
+    expect(() => renewalRecordRepository.write(CONFIG_NAME, record, 1)).to.throw();
   });
 
   it('should not let a superseded chain describe a node it no longer renews', () => {

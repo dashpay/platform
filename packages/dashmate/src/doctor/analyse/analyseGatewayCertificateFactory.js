@@ -436,7 +436,15 @@ export default function analyseGatewayCertificateFactory() {
     // for a certificate is safe, and what an outstanding issuance does to that
     // - is decided in one place, because deciding it twice is what let the two
     // surfaces contradict each other about the same node.
-    const guidance = deriveRenewalGuidance({ record: failedRenewal });
+    const guidance = deriveRenewalGuidance({
+      record: failedRenewal,
+      // A record that exists and cannot be read may be the one saying an
+      // issuance is outstanding. Update already refused to spend a certificate
+      // on evidence nobody could inspect; the doctor has to as well, or the two
+      // disagree again about the same node.
+      isRecordUnreadable: isRenewalManaged(config)
+        && renewalSample?.state === RENEWAL_RECORD_STATES.UNREADABLE,
+    });
 
     // Let's Encrypt issues IP certificates on a six-day profile, so port 80 has
     // to stay open permanently. ZeroSSL's last ninety days, and telling its
@@ -529,14 +537,26 @@ Obtain a new certificate. No restart needed:
 {bold.cyanBright dashmate config set ${cfg} externalIp <your-public-ip>}`
           : null;
 
-        problems.push(new Problem(
-          message,
-          failedRenewal
-            ? [UPDATE_CONSEQUENCE, prerequisite, renderRenewalCause(false)]
-              .filter(Boolean).join('\n\n')
-            : remedy,
-          SEVERITY.HIGH,
-        ));
+        // A cause that forbids asking again outranks the reason's own repair,
+        // and so does a record that could not be read at all - it may be the
+        // one saying an issuance is already outstanding.
+        const cannotObtain = guidance.safeAction === SAFE_ACTION.DO_NOT_OBTAIN;
+
+        let solution = remedy;
+
+        if (failedRenewal) {
+          solution = [UPDATE_CONSEQUENCE, prerequisite, renderRenewalCause(false)]
+            .filter(Boolean).join('\n\n');
+        } else if (cannotObtain) {
+          solution = chalk`${UPDATE_CONSEQUENCE}
+
+dashmate could not read what it recorded about the last renewal, so it cannot
+tell whether a certificate is already outstanding. Obtaining one now could spend
+a second one against this node's weekly limit:
+{bold.cyanBright dashmate doctor report ${cfg}}`;
+        }
+
+        problems.push(new Problem(message, solution, SEVERITY.HIGH));
       });
 
       // Fires on a node every other check calls healthy. Nothing is wrong with
@@ -555,7 +575,13 @@ Obtain a new certificate. No restart needed:
       const renewalWindowDays = config.get('platform.gateway.ssl.provider') === SSL_PROVIDERS.ZEROSSL
         ? ZEROSSL_EXPIRATION_LIMIT_DAYS
         : LEGO_EXPIRATION_LIMIT_DAYS;
-      const isInsideRenewalWindow = expiresInDays === null || expiresInDays <= renewalWindowDays;
+      // An attempt that was due and never came means nothing is renewing this
+      // node, which is urgent regardless of how far off expiry still is.
+      const isRetryOverdue = failedRenewal !== null
+        && failedRenewal.getAttemptedAt().getTime() + RETRY_INTERVAL_MS <= sampledAt;
+      const isInsideRenewalWindow = expiresInDays === null
+        || expiresInDays <= renewalWindowDays
+        || isRetryOverdue;
 
       if (failedRenewal && isCertificateUsable) {
         problems.push(new Problem(
@@ -696,9 +722,15 @@ restarting will not help. Get a current one:
       problems.push(new Problem(
         `This node is using a certificate that expired on ${served.certificate.validTo}. `
         + 'Clients cannot connect to it',
+        // eslint-disable-next-line no-nested-ternary
         failedRenewal
           ? renderRenewalCause(false)
-          : chalk`Renewal has not succeeded. Check the logs, then obtain a new certificate:
+          : guidance.safeAction === SAFE_ACTION.DO_NOT_OBTAIN
+            ? chalk`dashmate could not read what it recorded about the last renewal, so it cannot
+tell whether a certificate is already outstanding. Obtaining one now could spend
+a second one against this node's weekly limit:
+{bold.cyanBright dashmate doctor report ${cfg}}`
+            : chalk`Renewal has not succeeded. Check the logs, then obtain a new certificate:
 {bold.cyanBright dashmate logs ${cfg} dashmate_helper}
 {bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${installedForce}}`,
         SEVERITY.HIGH,
