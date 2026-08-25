@@ -1064,6 +1064,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
 /// a bound shielded sub-wallet at `shielded_account` because the send
 /// is OVK-encrypted to (and its activity recorded under) that account.
 ///
+/// The recipient must actually be a third party: an address the
+/// account's own IVK recognizes (default or any diversified index) is
+/// rejected with a wallet-operation error — self-shields go through
+/// [`platform_wallet_manager_shielded_shield`].
+///
 /// `memo_text` is an optional NUL-terminated UTF-8 string attached to
 /// the recipient's note — same rules as
 /// `platform_wallet_manager_shielded_transfer`: `null` or empty means

@@ -703,20 +703,23 @@ extension PlatformWalletManager {
         let signerHandle = addressSigner.handle
 
         try await Task.detached(priority: .userInitiated) {
-            // Keepalive — same rationale as `topUpFromAddresses`.
-            // The trampoline ctx pointer inside the signer
-            // dangles unless the Swift owner outlives this
-            // detached work.
-            _ = addressSigner
-
-            try walletId.withUnsafeBytes { widRaw in
-                guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
-                else {
-                    throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+            // KeychainSigner is passed to Rust via `passUnretained`, so
+            // the Rust ctx pointer dangles unless the Swift owner stays
+            // alive across the whole FFI call — Rust re-materializes it
+            // inside the proof worker and signs through it. A bare
+            // `_ = addressSigner` is folklore the optimizer may elide in
+            // -O builds; `withExtendedLifetime` is the guaranteed
+            // keepalive (same as `shieldedTransfer`).
+            try withExtendedLifetime(addressSigner) {
+                try walletId.withUnsafeBytes { widRaw in
+                    guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                    else {
+                        throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                    }
+                    try platform_wallet_manager_shielded_shield(
+                        handle, widPtr, shieldedAccount, paymentAccount, amount, signerHandle
+                    ).check()
                 }
-                try platform_wallet_manager_shielded_shield(
-                    handle, widPtr, shieldedAccount, paymentAccount, amount, signerHandle
-                ).check()
             }
         }.value
     }
@@ -730,6 +733,10 @@ extension PlatformWalletManager {
     /// because the send is OVK-encrypted to (and its activity recorded
     /// under) that account — that is how the wallet's own scan later
     /// shows it as sent history.
+    ///
+    /// The recipient must actually be a third party: an address the
+    /// account's own keys recognize (default or diversified) is
+    /// rejected by Rust — self-shields go through [`shieldedShield`].
     ///
     /// `memo` follows [`shieldedTransfer`]'s rules: `nil` / empty means
     /// no memo; a non-empty memo's UTF-8 byte length must be at most 32
@@ -771,35 +778,36 @@ extension PlatformWalletManager {
         let signerHandle = addressSigner.handle
 
         try await Task.detached(priority: .userInitiated) {
-            // Keepalive — same rationale as `shieldedShield`.
-            _ = addressSigner
-
-            try walletId.withUnsafeBytes { widRaw in
-                guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
-                else {
-                    throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
-                }
-                try recipientRaw43.withUnsafeBytes { recipientRaw in
-                    guard let recipientPtr = recipientRaw.baseAddress?
-                        .assumingMemoryBound(to: UInt8.self)
+            // Guaranteed signer keepalive across the whole FFI call —
+            // same rationale as `shieldedShield`.
+            try withExtendedLifetime(addressSigner) {
+                try walletId.withUnsafeBytes { widRaw in
+                    guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
                     else {
-                        throw PlatformWalletError.invalidParameter(
-                            "recipient baseAddress is nil"
-                        )
+                        throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
                     }
-                    // `nil` / empty → null pointer (no memo); otherwise
-                    // pass the text as a C string — Rust validates the
-                    // 32-byte limit and does the 36-byte encoding.
-                    let send: (UnsafePointer<CChar>?) throws -> Void = { memoCStr in
-                        try platform_wallet_manager_shielded_shield_to_recipient(
-                            handle, widPtr, shieldedAccount, paymentAccount,
-                            recipientPtr, amount, memoCStr, signerHandle
-                        ).check()
-                    }
-                    if let memo, !memo.isEmpty {
-                        try memo.withCString { try send($0) }
-                    } else {
-                        try send(nil)
+                    try recipientRaw43.withUnsafeBytes { recipientRaw in
+                        guard let recipientPtr = recipientRaw.baseAddress?
+                            .assumingMemoryBound(to: UInt8.self)
+                        else {
+                            throw PlatformWalletError.invalidParameter(
+                                "recipient baseAddress is nil"
+                            )
+                        }
+                        // `nil` / empty → null pointer (no memo); otherwise
+                        // pass the text as a C string — Rust validates the
+                        // 32-byte limit and does the 36-byte encoding.
+                        let send: (UnsafePointer<CChar>?) throws -> Void = { memoCStr in
+                            try platform_wallet_manager_shielded_shield_to_recipient(
+                                handle, widPtr, shieldedAccount, paymentAccount,
+                                recipientPtr, amount, memoCStr, signerHandle
+                            ).check()
+                        }
+                        if let memo, !memo.isEmpty {
+                            try memo.withCString { try send($0) }
+                        } else {
+                            try send(nil)
+                        }
                     }
                 }
             }

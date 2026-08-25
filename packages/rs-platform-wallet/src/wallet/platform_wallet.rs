@@ -1682,6 +1682,13 @@ impl PlatformWallet {
     /// activity recorded under) that account — which is how the scan
     /// later recovers it as outgoing history.
     ///
+    /// The recipient must actually be a third party: an address this
+    /// account's own IVK recognizes (default or any diversified index)
+    /// is rejected, because its note would be spendable here and the
+    /// live `Sent`/`Out` row would diverge from the self-pay row a
+    /// restore's scan derives. Self-shields go through
+    /// [`shielded_shield_from_account`](Self::shielded_shield_from_account).
+    ///
     /// `memo` is the 36-byte on-chain `DashMemo` encoding attached to
     /// the recipient's note (all-zero = no memo).
     #[cfg(feature = "shielded")]
@@ -1785,7 +1792,7 @@ impl PlatformWallet {
                 })?
                 .clone()
         };
-        super::shielded::operations::shield(
+        super::shielded::operations::shield_to(
             &self.sdk,
             coordinator.store(),
             Some(&self.persister),
